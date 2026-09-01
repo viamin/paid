@@ -108,6 +108,22 @@
   *Code:* `app/services/knowledge/collectors/okf_collector.rb`.
   *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
 
+- [x] **KNOWLEDGE-009** — When an agent or human requests a project's
+  knowledge map, the system SHALL return a bounded summary of active/stale
+  artifact counts by type, top scope directories, per-collector freshness
+  (latest run status and commit), business-context and imported-document
+  presence, and inferred collector coverage gaps (never run, failed, or
+  stale relative to the latest indexed commit), without including chunk
+  bodies, and SHALL leave existing search and context-bundle behavior
+  unchanged.
+  *Code:* `app/services/knowledge/map/build.rb`,
+  `app/controllers/api/knowledge_map_controller.rb`,
+  `app/controllers/api/proxy/knowledge_map_controller.rb`,
+  `app/controllers/knowledge/browse_controller.rb`.
+  *Test:* `spec/services/knowledge/map/build_spec.rb`,
+  `spec/requests/api/knowledge_map_spec.rb`,
+  `spec/requests/api/proxy/knowledge_map_spec.rb`.
+
 - [x] **KNOWLEDGE-OKF-005** — When a project member exports selected active
   knowledge artifacts as an OKF bundle, the system SHALL render each selected
   artifact as Markdown with YAML frontmatter carrying its artifact type,

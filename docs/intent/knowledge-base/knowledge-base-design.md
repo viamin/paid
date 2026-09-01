@@ -127,6 +127,19 @@ cleaned and remain searchable. For already-indexed data, retroactive scrub and
 re-embed workflows update PostgreSQL content and Qdrant state without losing
 the surrounding knowledge graph.
 
+### Progressive-disclosure knowledge map
+
+`Knowledge::Map::Build` gives agents and humans a compact orientation view of
+a project's knowledge base before they run search: active/stale artifact
+counts by type, top scope directories, per-collector freshness (latest run
+status against the most recently indexed commit), business-context and
+imported-document presence, and inferred collector coverage gaps (never run,
+failed, or stale). Output is bounded (top-N scopes/documents, no chunk
+bodies) so it stays cheap to fetch repeatedly. It is exposed as a
+user-authenticated API endpoint, a container-authenticated proxy endpoint for
+agent tool use, and a section on the human knowledge browse page. It does not
+change `Knowledge::Search` or `Knowledge::ContextBundle::Build` behavior.
+
 ### Knowledge evolution
 
 Projects can opt into knowledge evolution. The workflow samples
