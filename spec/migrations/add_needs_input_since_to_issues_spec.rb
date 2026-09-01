@@ -9,21 +9,11 @@ RSpec.describe AddNeedsInputSinceToIssues, :aggregate_failures do
   let(:migration) { described_class.new }
 
   after do
-    ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE
-        issues,
-        projects,
-        account_memberships,
-        user_settings,
-        tenant_settings,
-        users,
-        accounts
-      RESTART IDENTITY CASCADE
-    SQL
+    cleanup_records
   end
 
   it "is reversible and backfills existing needs_input issues on re-apply" do
-    issue = create(:issue, :needs_input)
+    issue = create_needs_input_issue
     issue.update_column(:needs_input_since, nil)
 
     migration.down
@@ -53,5 +43,51 @@ RSpec.describe AddNeedsInputSinceToIssues, :aggregate_failures do
       .ordered
 
     migration.send(:ensure_needs_input_since_index!)
+  end
+
+  def cleanup_records
+    models = [
+      Issue,
+      Project,
+      Account
+    ]
+
+    models.each(&:delete_all)
+    models.each { |model| ActiveRecord::Base.connection.reset_pk_sequence!(model.table_name) }
+  end
+
+  def create_needs_input_issue
+    account = Account.create!(
+      name: "Migration Spec Account #{SecureRandom.hex(4)}",
+      slug: "migration-spec-account-#{SecureRandom.hex(4)}"
+    )
+
+    project = Project.create!(
+      account: account,
+      github_token: nil,
+      created_by: nil,
+      name: "Migration Spec Project",
+      github_id: rand(1_000_000_000),
+      owner: "migration-owner",
+      repo: "migration-repo",
+      active: false,
+      poll_interval_seconds: 60,
+      default_branch: "main",
+      allowed_github_usernames: [ "viamin" ]
+    )
+
+    Issue.create!(
+      project: project,
+      github_issue_id: rand(1_000_000_000),
+      github_number: 1,
+      title: "Needs input issue",
+      body: "Body",
+      github_creator_login: "viamin",
+      github_state: "open",
+      paid_state: "needs_input",
+      labels: [ project.enhance_issue_needs_input_label_name ],
+      github_created_at: 1.day.ago,
+      github_updated_at: Time.current
+    )
   end
 end
