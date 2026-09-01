@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "delegate"
 require "octokit"
 require "digest"
 require "faraday/retry"
@@ -64,6 +65,61 @@ class GithubClient
     end
   end
 
+  # @spec GITHUB-SYNC-011
+  PASS_THROUGH_METHODS = %i[
+    repository
+    tree
+    search_code
+    search_issues
+    pull_request
+    issue
+    add_comment
+    update_comment
+    ref
+    commit
+    create_ref
+    delete_ref
+    pull_requests
+    request_pull_request_review
+  ].freeze
+  INTERNAL_PASS_THROUGH_METHODS = (PASS_THROUGH_METHODS + %i[remove_label]).freeze
+
+  # @spec GITHUB-SYNC-011
+  class ErrorHandlingClient < SimpleDelegator
+    def self.wraps(*method_names)
+      method_names.each do |method_name|
+        define_method(method_name) do |*args, **kwargs, &block|
+          @error_handler.call do
+            call_wrapped(method_name, *args, **kwargs, &block)
+          end
+        end
+      end
+    end
+
+    wraps(*INTERNAL_PASS_THROUGH_METHODS)
+
+    def initialize(octokit_client, error_handler:)
+      super(octokit_client)
+      @error_handler = error_handler
+    end
+
+    private
+
+    def call_wrapped(method_name, *args, **kwargs, &block)
+      __getobj__.public_send(method_name, *args, **kwargs, &block)
+    end
+  end
+
+  def self.delegates_to_client(*method_names)
+    method_names.each do |method_name|
+      define_method(method_name) do |*args, **kwargs, &block|
+        client.public_send(method_name, *args, **kwargs, &block)
+      end
+    end
+  end
+
+  delegates_to_client(*PASS_THROUGH_METHODS)
+
   attr_reader :client, :health_endpoint
 
   # @param token [String] GitHub personal access token
@@ -78,11 +134,7 @@ class GithubClient
     @token = token
     @token_refresher = token_refresher
     @client_options = options
-    @client = Octokit::Client.new(
-      access_token: token,
-      auto_paginate: false,
-      **options
-    )
+    @client = build_client(token)
     @health_endpoint = health_endpoint
 
     configure_middleware
@@ -122,16 +174,6 @@ class GithubClient
     @authenticated_login = nil
   end
 
-  # Fetches repository metadata.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @return [Sawyer::Resource] Repository data
-  # @raise [NotFoundError] if the repository does not exist
-  # @raise [AuthenticationError] if access is denied
-  def repository(repo)
-    handle_errors { client.repository(repo) }
-  end
-
   # Fetches file contents from a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -169,30 +211,6 @@ class GithubClient
     end
   end
 
-  # Fetches the full file tree for a repository at a given ref.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param ref [String] Git ref (branch, tag, or SHA)
-  # @param recursive [Boolean] Whether to fetch the tree recursively
-  # @return [Sawyer::Resource] Tree data with .tree array of items
-  # @raise [NotFoundError] if the ref does not exist
-  def tree(repo, ref, recursive: false)
-    handle_errors { client.tree(repo, ref, recursive: recursive) }
-  end
-
-  def search_code(query, per_page: 30)
-    handle_errors { client.search_code(query, per_page: per_page) }
-  end
-
-  # Searches issues and pull requests using GitHub's search API.
-  #
-  # @param query [String] GitHub search query (e.g. "repo:owner/name is:issue duplicate label:bug")
-  # @param per_page [Integer] Max results to return (GitHub caps at 100)
-  # @return [Sawyer::Resource] Search result with .total_count and .items
-  def search_issues(query, per_page: 30)
-    handle_errors { client.search_issues(query, per_page: per_page) }
-  end
-
   # Lists repositories the token has push access to.
   # Filters by permissions.push to exclude repos where the token only
   # has metadata access (relevant for fine-grained PATs with selected repos).
@@ -222,16 +240,6 @@ class GithubClient
     opts = { state: state, **options }
     opts[:labels] = Array(labels).join(",") if labels
     handle_errors { client.issues(repo, opts) }
-  end
-
-  # Fetches a pull request by number.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param number [Integer] Pull request number
-  # @return [Sawyer::Resource] Pull request data (includes .head.ref, .head.sha, .base.ref, etc.)
-  # @raise [NotFoundError] if the pull request does not exist
-  def pull_request(repo, number)
-    handle_errors { client.pull_request(repo, number) }
   end
 
   # Lists files changed in a pull request.
@@ -346,14 +354,6 @@ class GithubClient
     handle_errors { client.patch(path, params) }
   end
 
-  # Fetches an issue-shaped resource by number.
-  #
-  # Pull requests are also exposed through GitHub's issues API; this is the
-  # representation our local issues table stores.
-  def issue(repo, number)
-    handle_errors { client.issue(repo, number) }
-  end
-
   # Updates an issue. Accepts the same keys the GitHub REST API does
   # (+state+, +state_reason+, +title+, +body+, ...); policy code only
   # uses it for lifecycle transitions today.
@@ -395,34 +395,8 @@ class GithubClient
     handle_errors { client.add_labels_to_an_issue(repo, number, labels) }
   end
 
-  # Adds a comment to an issue or pull request.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param number [Integer] Issue or PR number
-  # @param body [String] Comment body (Markdown supported)
-  # @return [Sawyer::Resource] The created comment
-  def add_comment(repo, number, body)
-    handle_errors { client.add_comment(repo, number, body) }
-  end
-
-  # Updates an existing comment on an issue or pull request.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param comment_id [Integer] The ID of the comment to update
-  # @param body [String] New comment body (Markdown supported)
-  # @return [Sawyer::Resource] The updated comment
-  def update_comment(repo, comment_id, body)
-    handle_errors { client.update_comment(repo, comment_id, body) }
-  end
-
-  # Removes a label from an issue or pull request.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param number [Integer] Issue or PR number
-  # @param label [String] Label name to remove
-  # @return [Array<Sawyer::Resource>] Updated list of labels
   def remove_label_from_issue(repo, number, label)
-    handle_errors { client.remove_label(repo, number, label) }
+    client.remove_label(repo, number, label)
   end
 
   # Removes multiple labels from an issue in individual API calls,
@@ -438,7 +412,7 @@ class GithubClient
     failed = []
 
     labels.each do |label|
-      handle_errors { client.remove_label(repo, number, label) }
+      client.remove_label(repo, number, label)
       removed << label
     rescue Error => e
       failed << { label: label, error: e.message }
@@ -916,16 +890,6 @@ class GithubClient
     end
   end
 
-  # Requests review from users on a pull request.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param number [Integer] Pull request number
-  # @param reviewers [Array<String>] GitHub logins to request review from
-  # @return [Sawyer::Resource] The review request response
-  def request_pull_request_review(repo, number, reviewers:)
-    handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
-  end
-
   # Creates a pull request review.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -1043,52 +1007,6 @@ class GithubClient
 
     path = "#{Octokit::Repository.path repo}/pulls/#{number}/merge"
     handle_errors { client.put(path, options) }
-  end
-
-  # Fetches a git reference (branch or tag).
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param ref [String] Reference name (e.g., "heads/main")
-  # @return [Sawyer::Resource] The reference object with :object containing :sha
-  def ref(repo, ref)
-    handle_errors { client.ref(repo, ref) }
-  end
-
-  # Fetches a single commit by SHA.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param sha [String] Commit SHA
-  # @return [Sawyer::Resource] The commit object with :commit containing :committer/:author dates
-  def commit(repo, sha)
-    handle_errors { client.commit(repo, sha) }
-  end
-
-  # Creates a git reference (branch or tag).
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param ref [String] Reference name (e.g., "refs/heads/feature-branch")
-  # @param sha [String] SHA to point the reference at
-  # @return [Sawyer::Resource] The created reference
-  def create_ref(repo, ref, sha)
-    handle_errors { client.create_ref(repo, ref, sha) }
-  end
-
-  # Deletes a git reference (branch or tag).
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param ref [String] Reference name (e.g., "heads/feature-branch")
-  # @return [Boolean] true if successfully deleted
-  def delete_ref(repo, ref)
-    handle_errors { client.delete_ref(repo, ref) }
-  end
-
-  # Lists pull requests for a repository.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param options [Hash] Filter options (state, head, base, etc.)
-  # @return [Array<Sawyer::Resource>] List of pull requests
-  def pull_requests(repo, **options)
-    handle_errors { client.pull_requests(repo, **options) }
   end
 
   # Merges a branch into another branch via the GitHub API.
@@ -1788,7 +1706,7 @@ class GithubClient
 
     @token = new_token
     @cache_token_digest = nil
-    @client = Octokit::Client.new(access_token: new_token, auto_paginate: false, **@client_options)
+    @client.__setobj__(build_octokit_client(new_token))
     configure_middleware
 
     Rails.logger.info(
@@ -1803,6 +1721,21 @@ class GithubClient
       error: e.message
     )
     false
+  end
+
+  def build_client(token)
+    ErrorHandlingClient.new(
+      build_octokit_client(token),
+      error_handler: ->(&block) { handle_errors(&block) }
+    )
+  end
+
+  def build_octokit_client(token)
+    Octokit::Client.new(
+      access_token: token,
+      auto_paginate: false,
+      **@client_options
+    )
   end
 
   class TokenNamespacedStore

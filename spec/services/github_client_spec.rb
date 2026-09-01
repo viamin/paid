@@ -200,6 +200,42 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "delegated pass-throughs" do
+    # @spec GITHUB-SYNC-011
+    let(:octokit_client) { instance_double(Octokit::Client) }
+    let(:delegated_client) { described_class.new(token: token, health_endpoint: health_endpoint) }
+
+    before do
+      allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+      allow(octokit_client).to receive(:middleware=)
+    end
+
+    it "routes positional pass-through methods through the error-handling delegator" do
+      repository = double(full_name: "owner/repo")
+      allow(octokit_client).to receive(:repository).with("owner/repo").and_return(repository)
+
+      expect(delegated_client).to respond_to(:repository)
+      expect(delegated_client.repository("owner/repo")).to eq(repository)
+    end
+
+    it "routes keyword pass-through methods through the error-handling delegator" do
+      response = instance_double(Sawyer::Resource)
+      allow(octokit_client).to receive(:request_pull_request_review)
+        .with("owner/repo", 42, reviewers: %w[alice bob])
+        .and_return(response)
+
+      expect(delegated_client.request_pull_request_review("owner/repo", 42, reviewers: %w[alice bob])).to eq(response)
+    end
+
+    it "translates Octokit errors raised by delegated methods" do
+      allow(octokit_client).to receive(:repository)
+        .with("owner/repo")
+        .and_raise(Octokit::NotFound.new(status: 404, body: { message: "Not Found" }.to_json))
+
+      expect { delegated_client.repository("owner/repo") }.to raise_error(GithubClient::NotFoundError)
+    end
+  end
+
   describe "#merge_pull_request" do
     let(:repo) { "owner/repo" }
     let(:merge_url) { "#{api_base}/repos/#{repo}/pulls/42/merge" }
@@ -2735,6 +2771,43 @@ RSpec.describe GithubClient do
 
       expect(test_client.client.access_token).to eq(fresh_token)
       expect(test_client.client.api_endpoint).to eq("https://gh.example.com/api/v3/")
+    end
+
+    it "preserves delegated error translation after a token refresh" do
+      refresher = -> { fresh_token }
+      test_client = described_class.new(token: token, health_endpoint: health_endpoint, token_refresher: refresher)
+
+      test_client.send(:refresh_token!)
+
+      allow(test_client.client.__getobj__).to receive(:repository)
+        .with("owner/repo")
+        .and_raise(Octokit::NotFound.new(status: 404, body: { message: "Not Found" }.to_json))
+
+      expect { test_client.repository("owner/repo") }.to raise_error(GithubClient::NotFoundError)
+    end
+
+    it "retries delegated pass-through methods with the refreshed token after a 401" do
+      refresher = -> { fresh_token }
+      test_client = described_class.new(token: token, health_endpoint: health_endpoint, token_refresher: refresher)
+
+      stub_request(:get, "#{api_base}/repos/owner/repo")
+        .with(headers: { "Authorization" => "token #{token}" })
+        .to_return(
+          status: 401,
+          body: { message: "Bad credentials" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      stub_request(:get, "#{api_base}/repos/owner/repo")
+        .with(headers: { "Authorization" => "token #{fresh_token}" })
+        .to_return(
+          status: 200,
+          body: { id: 1, full_name: "owner/repo" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      repository = test_client.repository("owner/repo")
+
+      expect(repository.full_name).to eq("owner/repo")
     end
   end
 end
