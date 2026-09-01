@@ -88,6 +88,39 @@ Projects can opt into knowledge evolution. The workflow samples
 analysis, and persists pending `KnowledgeRecommendation` records while
 dismissing no-longer-flagged pending recommendations.
 
+### Stable knowledge URIs
+
+Every active `KnowledgeArtifact`/`KnowledgeChunk` exposes a canonical
+`paidkb://` URI (`Knowledge::Uri`, `#knowledge_uri` on both models) instead of
+relying on database ids as the citable handle:
+
+```
+paidkb://project/<project_id>/artifact/<artifact_type>/<scope>/<identifier>
+paidkb://project/<project_id>/chunk/<chunk_uuid>
+paidkb://project/<project_id>/commit/<sha>/artifact/<artifact_type>/<scope>/<identifier>
+```
+
+`<scope>` and `<identifier>` are percent-encoded; a blank scope_path or
+identifier encodes as an empty path segment rather than a sentinel string, so
+encode/decode stay lossless. The `commit/<sha>` segment adds a
+version-pinned handle (`KnowledgeArtifact#versioned_knowledge_uri`) that
+resolves against the artifact's project version even after it goes stale,
+without changing the active-view grammar.
+
+`Knowledge::Uri::Resolver` resolves a URI back to its record, scoped to a
+project the caller has already authorized elsewhere (Pundit); it raises
+`ProjectMismatchError` rather than resolve across a project boundary embedded
+in the URI. `Api::KnowledgeSearchController#resolve`
+(`GET /api/knowledge/resolve?uri=...`) exposes this for future agent/MCP
+tools.
+
+URIs are threaded into: hybrid/exact/semantic search results (`uri`,
+`artifact_uri`), knowledge browse/artifact views, `Knowledge::ContextBundle::Build`'s
+`citations` output, and `KnowledgeAuditEvent#details[:uri]` for
+chunk-targeted audit events (auto-attached in `Knowledge::Provenance::AuditLog`
+since a chunk URI needs only the project id and chunk id already present on
+every event's target).
+
 ## Important Boundaries
 
 - **Not MeiliSearch.** The superseded RDR-018 sketch referenced MeiliSearch for
@@ -98,3 +131,9 @@ dismissing no-longer-flagged pending recommendations.
 - **Not automatic collector mutation.** Knowledge-evolution analysis produces
   pending recommendations for human review; it does not silently add or remove
   collectors.
+- **Project id in the URI is not a new leak.** `Project` has no external UUID;
+  its bigint id is already exposed in every project URL
+  (`/projects/:id`, `/projects/:id/knowledge/...`), so embedding it in a
+  knowledge URI doesn't expose anything that wasn't already public within the
+  app's own authorization boundary. Artifact/chunk database ids stay internal
+  — the URI carries the artifact's natural identifier instead.

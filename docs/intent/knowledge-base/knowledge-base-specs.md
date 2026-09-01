@@ -99,3 +99,43 @@
   `spec/services/knowledge/embeddings/proxy_generator_spec.rb`,
   `spec/services/knowledge/runner_selector_spec.rb`,
   `spec/services/knowledge/provider_selector_spec.rb`.
+
+- [x] **KNOWLEDGE-URI-001** — When Paid generates a handle for an active
+  knowledge artifact or chunk, the system SHALL build a canonical
+  `paidkb://project/<project_id>/...` URI using percent-encoded scope/
+  identifier segments, and SHALL additionally support a version-pinned
+  variant that inserts a `commit/<sha>` segment without changing the
+  active-view grammar. Parsing an arbitrary string back into a URI SHALL
+  raise `Knowledge::Uri::InvalidUriError` for anything that isn't a
+  well-formed `paidkb://` URI.
+  *Code:* `app/services/knowledge/uri.rb`, `app/models/knowledge_artifact.rb`,
+  `app/models/knowledge_chunk.rb`.
+  *Test:* `spec/services/knowledge/uri_spec.rb`.
+
+- [x] **KNOWLEDGE-URI-002** — When Paid resolves a knowledge URI, the system
+  SHALL look up the referenced chunk or artifact (active-view, or pinned to
+  the project version matching a `commit/<sha>` segment) scoped to the
+  project the caller already authorized, and SHALL raise
+  `Knowledge::Uri::Resolver::ProjectMismatchError` rather than resolve when
+  the URI's embedded project id does not match that project.
+  *Code:* `app/services/knowledge/uri/resolver.rb`,
+  `app/controllers/api/knowledge_search_controller.rb`.
+  *Test:* `spec/services/knowledge/uri/resolver_spec.rb`,
+  `spec/requests/api/knowledge_search_spec.rb`.
+
+- [x] **KNOWLEDGE-URI-003** — When Paid returns knowledge search results,
+  renders knowledge browse/artifact views, builds a context bundle, or
+  records a chunk-targeted knowledge audit event, the system SHALL include
+  the stable knowledge URI for the cited chunk/artifact alongside its
+  existing database-id fields.
+  *Code:* `app/services/knowledge/search/exact.rb`,
+  `app/services/knowledge/search/semantic.rb`,
+  `app/services/knowledge/context_bundle/build.rb`,
+  `app/services/knowledge/provenance/audit_log.rb`,
+  `app/views/knowledge/search/_results.html.erb`,
+  `app/views/knowledge/browse/show.html.erb`,
+  `app/views/knowledge/artifacts/show.html.erb`.
+  *Test:* `spec/services/knowledge/search/exact_spec.rb`,
+  `spec/services/knowledge/search/semantic_spec.rb`,
+  `spec/services/knowledge/context_bundle/build_spec.rb`,
+  `spec/services/knowledge/provenance/audit_log_spec.rb`.

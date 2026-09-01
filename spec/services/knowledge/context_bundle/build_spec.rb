@@ -26,11 +26,12 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:sections]).to be_empty
         expect(result[:total_tokens]).to eq(0)
         expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
+        expect(result[:citations]).to eq([])
       end
     end
 
     context "with route artifacts" do
-      before do
+      let!(:route_artifact) do
         create(:knowledge_artifact,
           project: project,
           collector_run: collector_run,
@@ -46,6 +47,13 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:sections]).to include(:routes)
         expect(result[:content]).to include("Relevant Routes")
         expect(result[:content]).to include("POST /api/users → UsersController#create")
+      end
+
+      # @spec KNOWLEDGE-URI-003
+      it "cites the cited artifacts by their stable knowledge uri" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:citations]).to include(route_artifact.knowledge_uri)
       end
 
       it "frames the bundle as quarantined context" do

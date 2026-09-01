@@ -73,6 +73,8 @@ module Knowledge
           content: chunk.content,
           score: 1.0,
           source: "exact",
+          uri: chunk.knowledge_uri,
+          artifact_uri: artifact.knowledge_uri,
           project_version: version_info(version),
           scope_tags: chunk.scope_tags || [],
           start_line: start_line_for(artifact),

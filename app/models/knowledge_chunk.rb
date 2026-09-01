@@ -38,6 +38,11 @@ class KnowledgeChunk < ApplicationRecord
     redaction_scanned_at.present?
   end
 
+  # @spec KNOWLEDGE-URI-001
+  def knowledge_uri
+    Knowledge::Uri.for_chunk(self)
+  end
+
   def self.content_tsvector_trigger_present?
     return @content_tsvector_trigger_present if defined?(@content_tsvector_trigger_present)
 

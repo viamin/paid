@@ -33,6 +33,7 @@
             <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Identifier</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Scope Path</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Collector</th>
+            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Knowledge URI</th>
             <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Chunks</th>
           </tr>
         </thead>
@@ -53,6 +54,9 @@
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                 <%= artifact.collector_type %>
+              </td>
+              <td class="px-4 py-3 text-xs text-gray-400">
+                <code class="break-all"><%= artifact.knowledge_uri %></code>
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
                 <%= artifact.chunks_count %>

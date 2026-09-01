@@ -55,6 +55,15 @@
           </div>
         <% end %>
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Knowledge URI</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0 space-y-1">
+            <code class="block rounded bg-gray-100 px-2 py-1 font-mono text-xs break-all"><%= @artifact.knowledge_uri %></code>
+            <% if @artifact.versioned_knowledge_uri.present? %>
+              <code class="block rounded bg-gray-100 px-2 py-1 font-mono text-xs break-all"><%= @artifact.versioned_knowledge_uri %></code>
+            <% end %>
+          </dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
           <dt class="text-sm font-medium text-gray-500">Content Hash</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
             <code class="rounded bg-gray-100 px-2 py-1 font-mono text-xs"><%= @artifact.content_hash %></code>
@@ -108,6 +117,9 @@
                   Embedding: <%= chunk.embedding_model %>
                 </div>
               <% end %>
+              <div class="mt-2 text-xs text-gray-400">
+                <code class="break-all"><%= chunk.knowledge_uri %></code>
+              </div>
             </div>
           </div>
         <% end %>

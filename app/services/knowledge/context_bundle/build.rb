@@ -52,7 +52,8 @@ module Knowledge
           sections: sections.map { |s| s[:name] },
           total_tokens: estimate_tokens(content),
           queries_made: queries_made,
-          artifact_type_counts: artifact_type_counts
+          artifact_type_counts: artifact_type_counts,
+          citations: sections.flat_map { |s| s[:citations] || [] }.uniq
         }
       end
 
@@ -284,7 +285,8 @@ module Knowledge
           artifact_type: section_artifact_type(name),
           artifact_count: artifacts.size,
           chunk_count: chunk_count,
-          token_count: estimate_tokens("### #{heading}\n#{content}")
+          token_count: estimate_tokens("### #{heading}\n#{content}"),
+          citations: artifacts.map(&:knowledge_uri)
         }
       end
 
@@ -422,7 +424,8 @@ module Knowledge
           artifact_type: section[:artifact_type],
           artifact_count: section[:name] == :business_context ? truncated_lines.count { |l| l.start_with?("#### ") } : item_count,
           chunk_count: [ section[:chunk_count].to_i, item_count ].min,
-          token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}")
+          token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}"),
+          citations: section[:citations]
         }
       end
 
@@ -502,7 +505,7 @@ module Knowledge
       end
 
       def empty_result(queries_made = 0)
-        { content: "", sections: [], total_tokens: 0, queries_made: queries_made, artifact_type_counts: {} }
+        { content: "", sections: [], total_tokens: 0, queries_made: queries_made, artifact_type_counts: {}, citations: [] }
       end
     end
   end
