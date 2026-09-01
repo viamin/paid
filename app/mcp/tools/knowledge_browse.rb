@@ -59,7 +59,7 @@ module Tools
             SELECT COUNT(*)
             FROM knowledge_chunks
             WHERE knowledge_chunks.knowledge_artifact_id = knowledge_artifacts.id
-              AND knowledge_chunks.status = 'active'
+              AND knowledge_chunks.status IN ('active', 'stale')
           ) AS chunk_count
         SQL
         .order(:scope_path, :identifier, :id)

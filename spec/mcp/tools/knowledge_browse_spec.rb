@@ -45,6 +45,16 @@ RSpec.describe Tools::KnowledgeBrowse do
       )
     end
 
+    it "includes stale chunks in chunk_count, matching paid_knowledge_get visibility" do
+      artifact = create_artifact(scope_path: "app/models/user.rb", identifier: "User")
+      create(:knowledge_chunk, knowledge_artifact: artifact, project: project, status: "stale")
+      create(:knowledge_chunk, knowledge_artifact: artifact, project: project, status: "deleted")
+
+      result = tool.call(project_id: project.id, artifact_type: "symbol")
+
+      expect(result[:artifacts]).to contain_exactly(hash_including(artifact_id: artifact.id, chunk_count: 2))
+    end
+
     it "excludes artifacts of other types and stale artifacts" do
       create_artifact(scope_path: "config/routes.rb", identifier: "GET /x", artifact_type: "route")
       create_artifact(scope_path: "app/models/stale.rb", identifier: "Stale", status: "stale")
