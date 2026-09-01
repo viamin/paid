@@ -93,7 +93,6 @@ module Projects
     # get a specific consequence description; any project-custom name falls
     # back to the generic one.
     AUTO_PICK_SKIP_LABEL_COLOR = "bfd4f2"
-    AUTO_PICK_SKIP_LABEL_KIND = :control
     AUTO_PICK_SKIP_LABEL_DESCRIPTIONS = {
       "planning" => "Excludes this issue from Paid auto-pick while planning is in progress.",
       "research" => "Excludes this issue from Paid auto-pick while research is in progress.",
