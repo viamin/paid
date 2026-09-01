@@ -398,6 +398,34 @@ RSpec.describe WorktreeService do
     end
   end
 
+  describe "#tracked_files" do
+    it "returns an empty set when the bare repo does not exist" do
+      expect(service.tracked_files).to eq(Set.new)
+    end
+
+    context "when the bare repo exists" do
+      before do
+        FileUtils.mkdir_p(repo_path)
+      end
+
+      it "returns the set of paths tracked at HEAD" do
+        allow(service).to receive(:run_git)
+          .with("ls-tree", "-r", "--name-only", "HEAD", chdir: repo_path)
+          .and_return("app/models/foo.rb\nconfig/routes.rb\n")
+
+        expect(service.tracked_files).to eq(Set["app/models/foo.rb", "config/routes.rb"])
+      end
+
+      it "raises when the git command fails" do
+        allow(service).to receive(:run_git)
+          .with("ls-tree", "-r", "--name-only", "HEAD", chdir: repo_path)
+          .and_raise(WorktreeService::Error, "bad object HEAD")
+
+        expect { service.tracked_files }.to raise_error(WorktreeService::Error)
+      end
+    end
+  end
+
   describe "#run_repo_command" do
     before do
       FileUtils.mkdir_p(repo_path)

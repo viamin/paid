@@ -14,7 +14,7 @@ RSpec.describe Knowledge::Quality::Checks::StaleScopePath do
       scope_path: "app/controllers/missing.rb")
 
     worktree_service = instance_double(WorktreeService)
-    allow(worktree_service).to receive(:file_exists?).and_raise(WorktreeService::Error, "no repo")
+    allow(worktree_service).to receive(:tracked_files).and_raise(WorktreeService::Error, "no repo")
     allow(WorktreeService).to receive(:new).and_return(worktree_service)
 
     findings = described_class.new(project: project).findings
@@ -48,5 +48,21 @@ RSpec.describe Knowledge::Quality::Checks::StaleScopePath do
 
     findings = described_class.new(project: project).findings
     expect(findings).to be_empty
+  end
+
+  it "lists the HEAD tree once and checks membership in-memory, regardless of artifact count" do
+    present = create(:knowledge_artifact, project: project, collector_run: collector_run,
+      scope_path: "config/routes.rb")
+    missing = create(:knowledge_artifact, project: project, collector_run: collector_run,
+      scope_path: "app/controllers/missing.rb")
+
+    worktree_service = instance_double(WorktreeService, tracked_files: Set["config/routes.rb"])
+    allow(WorktreeService).to receive(:new).and_return(worktree_service)
+
+    findings = described_class.new(project: project).findings
+
+    expect(worktree_service).to have_received(:tracked_files).once
+    expect(findings.map { |f| f[:target_id] }).to contain_exactly(missing.id.to_s)
+    expect(findings.map { |f| f[:target_id] }).not_to include(present.id.to_s)
   end
 end

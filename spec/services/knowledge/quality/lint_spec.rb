@@ -272,6 +272,29 @@ RSpec.describe Knowledge::Quality::Lint do
       expect(after).to eq(before)
     end
 
+    it "caps a check's findings at MAX_FINDINGS_PER_CHECK and reports the omitted count" do
+      project_version = create(:project_version, project: project)
+      collector_run = create(:collector_run, :completed, project_version: project_version, collector_type: "routes")
+      finding_count = described_class::MAX_FINDINGS_PER_CHECK + 3
+      finding_count.times do
+        create(:knowledge_artifact, project: project, collector_run: collector_run,
+          artifact_type: "route", status: "active")
+      end
+
+      report = described_class.call(project: project)
+
+      orphaned = report[:findings].select { |f| f[:code] == "orphaned_artifact" }
+      expect(orphaned.size).to eq(described_class::MAX_FINDINGS_PER_CHECK)
+      expect(report[:truncated_checks]).to include(code: "orphaned_artifact", omitted_count: 3)
+      expect(report[:summary][:total]).to eq(report[:findings].size)
+    end
+
+    it "reports no truncated checks when every check stays within the cap" do
+      report = described_class.call(project: project)
+
+      expect(report[:truncated_checks]).to eq([])
+    end
+
     it "summarizes findings by severity" do
       project_version = create(:project_version, project: project)
       create(:collector_run, :failed, project_version: project_version, collector_type: "schema",

@@ -42,16 +42,19 @@ module Knowledge
       end
 
       # Exposed for tests so they can stub filesystem access without monkey-
-      # patching the worktree service. Returns true when the path is present
-      # (or could be present — unknown paths are conservatively treated as
-      # present so we don't false-positive in CI without git access).
+      # patching the worktree service.
       def file_exists?(scope_path)
-        worktree_service.file_exists?(scope_path)
-      rescue WorktreeService::Error, StandardError
-        true
+        tracked_files.include?(scope_path)
       end
 
       private
+
+      # Lists HEAD's tree once per check run instead of spawning a `git
+      # cat-file` subprocess per artifact — the difference between one
+      # process and thousands on a project with many scoped artifacts.
+      def tracked_files
+        @tracked_files ||= worktree_service.tracked_files
+      end
 
       def worktree_service
         @worktree_service ||= WorktreeService.new(project)

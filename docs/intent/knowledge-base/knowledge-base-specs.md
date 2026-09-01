@@ -232,7 +232,13 @@
   findings, plus: stale file-path scope_paths, stale commit SHA references,
   empty or fully-redacted artifact bodies, missing embeddings on active chunks,
   chunks without a redaction scan, low-usage artifact types, and links whose
-  endpoints no longer resolve.
+  endpoints no longer resolve. Each check SHALL contribute at most
+  `MAX_FINDINGS_PER_CHECK` findings to the report; a check that exceeds the cap
+  SHALL be listed in a `truncated_checks` field with its omitted count so the
+  "bounded" guarantee holds even for projects with tens of thousands of
+  matches. The `stale_scope_path` check SHALL determine file existence by
+  listing the repository's HEAD tree once per report and checking membership
+  in-memory, rather than spawning a git subprocess per artifact.
   *Code:* `app/services/knowledge/quality/lint.rb`,
   `app/services/knowledge/quality/checks/*.rb`,
   `app/controllers/api/knowledge_quality_controller.rb`,

@@ -6,6 +6,8 @@ module Knowledge
     # and returns a bounded, structured report. Each finding carries a
     # stable `code` so callers can filter and aggregate, a severity (info,
     # warning, error), and the target type/id needed to act on the issue.
+    # Each check contributes at most MAX_FINDINGS_PER_CHECK findings; checks
+    # that exceed it are listed in `truncated_checks` with an omitted count.
     #
     # The report is read-only: no knowledge state is mutated. Existing
     # collection, search, context-bundle, and redaction behavior is
@@ -16,6 +18,7 @@ module Knowledge
     class Lint
       # @spec KNOWLEDGE-LINT-001
       SEVERITIES = %w[info warning error].freeze
+      MAX_FINDINGS_PER_CHECK = 500
       CHECK_CLASSES = [
         Knowledge::Quality::Checks::StaleScopePath,
         Knowledge::Quality::Checks::StaleCommitReference,
@@ -47,25 +50,38 @@ module Knowledge
       end
 
       def call
-        findings = run_checks
+        findings, truncated_checks = run_checks
 
         {
           project_id: project.id,
           generated_at: Time.current.iso8601,
           checks: CHECK_CLASSES.map { |klass| klass.code },
           findings: findings,
+          truncated_checks: truncated_checks,
           summary: summarize(findings)
         }
       end
 
       private
 
+      # Caps each check's contribution to MAX_FINDINGS_PER_CHECK so a single
+      # check with e.g. tens of thousands of matches can't blow up the JSON
+      # payload or the findings list view. Checks that hit the cap are
+      # reported in `truncated_checks` with how many findings were omitted.
       def run_checks
         findings = []
+        truncated_checks = []
+
         CHECK_CLASSES.each do |klass|
-          findings.concat(safe_findings(klass))
+          check_findings = safe_findings(klass)
+          if check_findings.size > MAX_FINDINGS_PER_CHECK
+            truncated_checks << { code: klass.code, omitted_count: check_findings.size - MAX_FINDINGS_PER_CHECK }
+            check_findings = check_findings.first(MAX_FINDINGS_PER_CHECK)
+          end
+          findings.concat(check_findings)
         end
-        findings
+
+        [ findings, truncated_checks ]
       end
 
       def safe_findings(klass)

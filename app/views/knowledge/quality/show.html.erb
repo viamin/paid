@@ -55,6 +55,16 @@
       <p class="mt-1 text-sm text-gray-500">
         Read-only knowledge quality findings. Each finding has a stable code and severity for filtering and CI integration.
       </p>
+      <% if @report[:truncated_checks].present? %>
+        <ul class="mt-2 text-sm text-amber-700">
+          <% @report[:truncated_checks].each do |truncated| %>
+            <li>
+              <%= truncated[:code] %>: showing the first <%= Knowledge::Quality::Lint::MAX_FINDINGS_PER_CHECK %> findings,
+              <%= number_with_delimiter(truncated[:omitted_count]) %> omitted.
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
     </div>
     <% if @report[:findings].any? %>
       <ul class="divide-y divide-gray-200">
