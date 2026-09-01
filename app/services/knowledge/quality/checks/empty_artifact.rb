@@ -1,0 +1,41 @@
+# frozen_string_literal: true
+
+require_relative "base"
+
+module Knowledge
+  module Quality
+    # Flags active artifacts whose chunks are all empty after stripping
+    # whitespace/redaction markers. Such artifacts are noise: they appear in
+    # counts but contribute nothing retrievable.
+    class Checks::EmptyArtifact < Checks::Base
+      code "empty_artifact"
+      severity "warning"
+
+      def findings
+        results = []
+        KnowledgeArtifact
+          .active
+          .for_project(project)
+          .joins(:knowledge_chunks)
+          .where.not(knowledge_chunks: { status: "deleted" })
+          .group("knowledge_artifacts.id")
+          .having(
+            "COUNT(*) = SUM(CASE WHEN BTRIM(knowledge_chunks.content) = '' " \
+            "OR BTRIM(knowledge_chunks.content) = '[REDACTED:mixed]' " \
+            "OR knowledge_chunks.content ~ '^\\[REDACTED(:[^]]+)?\\]?$' " \
+            "THEN 1 ELSE 0 END)"
+          )
+          .find_each(batch_size: 200) do |artifact|
+            results << build_finding(
+              target_type: "KnowledgeArtifact",
+              target_id: artifact.id,
+              artifact_type: artifact.artifact_type,
+              detail: "all chunks are empty or fully redacted"
+            )
+          end
+
+        results
+      end
+    end
+  end
+end

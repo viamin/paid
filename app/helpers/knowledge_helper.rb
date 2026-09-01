@@ -33,4 +33,14 @@ module KnowledgeHelper
   def artifact_type_label(artifact_type)
     artifact_type.titleize.pluralize
   end
+
+  SEVERITY_CLASSES = {
+    "error" => "bg-red-100 text-red-700",
+    "warning" => "bg-amber-100 text-amber-700",
+    "info" => "bg-blue-100 text-blue-700"
+  }.freeze
+
+  def severity_classes(severity)
+    SEVERITY_CLASSES.fetch(severity.to_s, "bg-gray-100 text-gray-700")
+  end
 end

@@ -198,6 +198,25 @@ class WorktreeService
     ).strip
   end
 
+  # Check whether a path exists in the bare repository HEAD tree. Used by
+  # knowledge lint to detect scope_paths that no longer refer to a real
+  # file. Returns false when the bare repo is missing or git errors so
+  # callers can treat absence as "unknown" if they wish.
+  #
+  # @param relative_path [String] Path relative to the repository root
+  # @return [Boolean] true when the path exists in HEAD
+  def file_exists?(relative_path)
+    return false unless Dir.exist?(project_repo_path)
+
+    output = run_git(
+      "cat-file", "-e", "HEAD:#{relative_path}",
+      chdir: project_repo_path, raise_on_error: false
+    )
+    output.is_a?(String)
+  rescue WorktreeService::Error, StandardError
+    false
+  end
+
   # Push an agent run's branch to the remote.
   #
   # @param agent_run [AgentRun] The agent run whose branch to push

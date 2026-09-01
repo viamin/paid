@@ -218,3 +218,27 @@
   `spec/services/knowledge/embeddings/proxy_generator_spec.rb`,
   `spec/services/knowledge/runner_selector_spec.rb`,
   `spec/services/knowledge/provider_selector_spec.rb`.
+
+- [x] **KNOWLEDGE-LINT-001** — When a project requests a knowledge quality
+  report, the system SHALL run read-only lint/drift checks against the
+  project's artifacts, chunks, links, and usage telemetry, SHALL return a
+  bounded list of structured findings with stable severity levels (info,
+  warning, error) and evidence (target type/id, scope, artifact type, and a
+  short detail string), SHALL classify each finding with a stable `code` so
+  callers can filter and aggregate, SHALL NOT mutate any knowledge state, and
+  SHALL leave existing collection, search, context-bundle, and redaction
+  behavior unchanged. The checks overlap the existing knowledge map (`Knowledge::Map::Build`)
+  by surfacing the same stale-collector and coverage-gap signals as structured
+  findings, plus: stale file-path scope_paths, stale commit SHA references,
+  empty or fully-redacted artifact bodies, missing embeddings on active chunks,
+  chunks without a redaction scan, low-usage artifact types, and links whose
+  endpoints no longer resolve.
+  *Code:* `app/services/knowledge/quality/lint.rb`,
+  `app/services/knowledge/quality/checks/*.rb`,
+  `app/controllers/api/knowledge_quality_controller.rb`,
+  `app/controllers/knowledge/quality_controller.rb`,
+  `app/views/knowledge/quality/show.html.erb`.
+  *Test:* `spec/services/knowledge/quality/lint_spec.rb`,
+  `spec/services/knowledge/quality/checks/*_spec.rb`,
+  `spec/requests/api/knowledge_quality_spec.rb`,
+  `spec/requests/knowledge/quality_spec.rb`.
