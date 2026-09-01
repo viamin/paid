@@ -8,11 +8,12 @@
 - [x] **GH-LABELS-001** — `Projects::EnsureStandardLabels` SHALL provision,
   in one idempotent call, the complete canonical set of Paid-owned and
   built-in control labels: the four project-configurable labels,
-  `recommend_close`, `paused`, `escalated`, `dismiss_escalation`,
-  `skip_auto_merge`, `auto_merged`, `auto_merged_dependabot`,
-  `auto_released`, `model_health`, the three TDD gate labels, the priority
-  tiers, and the project's effective auto-pick skip labels — creating any
-  that are missing.
+  `recommend_close`, the `needs_input` stage mapping (when it diverges from
+  `enhance_issue_needs_input_label_name`), `paused`, `escalated`,
+  `dismiss_escalation`, `skip_auto_merge`, `auto_merged`,
+  `auto_merged_dependabot`, `auto_released`, `paid_ready`, `model_health`,
+  the three TDD gate labels, the priority tiers, and the project's effective
+  auto-pick skip labels — creating any that are missing.
   *Code:* `app/services/projects/ensure_standard_labels.rb#expected_labels`.
   *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`.
 
@@ -38,10 +39,11 @@
 
 - [x] **GH-LABELS-004** — `EnsureStandardLabels` SHALL resolve every
   project-configurable label name (generated, automation, enhance-issue
-  pair, recommend_close, priority tiers, auto-pick skip labels) from the
-  project's own settings, and SHALL NOT create or modify any repository
-  label outside its canonical set, so custom label names keep working and
-  unrelated user-owned taxonomy labels are never overwritten.
+  pair, recommend_close, the needs_input stage mapping, priority tiers,
+  auto-pick skip labels) from the project's own settings, and SHALL NOT
+  create or modify any repository label outside its canonical set, so
+  custom label names keep working and unrelated user-owned taxonomy labels
+  are never overwritten.
   *Code:* `app/services/projects/ensure_standard_labels.rb#expected_labels`.
   *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`
   ("custom priority label names", "custom auto-pick skip label",

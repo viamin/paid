@@ -23,8 +23,11 @@ module Projects
   # - enhance_issue_enhanced_label_name    (e.g. "paid-enhanced")
   # - recommend_close                      (e.g. "paid-recommend-close"; overridable via
   #                                        Project#label_for_stage("recommend_close"))
+  # - needs_input                          (defaults to the same name as
+  #                                        enhance_issue_needs_input_label_name; overridable
+  #                                        via Project#label_for_stage("needs_input"))
   # - paused, escalated, dismiss_escalation, skip_auto_merge, auto_merged,
-  #   auto_merged_dependabot, auto_released, model_health (hard-coded, literal names)
+  #   auto_merged_dependabot, auto_released, paid_ready, model_health (hard-coded, literal names)
   # - tdd test-review labels (RDR-056):
   #   * tests_ready_for_review             (paid-tests-ready-for-review)
   #   * tests_approved                     (paid-tests-approved)
@@ -57,6 +60,7 @@ module Projects
       auto_merged: { color: "0e8a16", description: "Applied by Paid after automatically merging this pull request.", kind: :status },
       auto_merged_dependabot: { color: "0e8a16", description: "Applied by Paid after automatically merging this Dependabot pull request.", kind: :status },
       auto_released: { color: "0e8a16", description: "Applied by Paid after automatically merging this release pull request.", kind: :status },
+      paid_ready: { color: "0e8a16", description: "Applied by Paid when a pull request is marked ready for review.", kind: :status },
       model_health: { color: "5319e7", description: "Flags provider model drift or broken runner models. Informational only.", kind: :informational },
       tdd_test_review: {
         name: "paid-tests-ready-for-review",
@@ -163,6 +167,7 @@ module Projects
       [
         *configurable_labels,
         *recommend_close_label,
+        *needs_input_stage_label,
         *fixed_control_labels,
         *tdd_labels,
         *auto_pick_skip_label_definitions,
@@ -199,6 +204,23 @@ module Projects
       [ label_entry(name, :recommend_close, category: "recommend_close_label_mapping") ]
     end
 
+    # HandleNoOutputIssueRunActivity#add_needs_input_label resolves the
+    # needs-input label the same way (label_for_stage with a literal
+    # fallback) rather than through enhance_issue_needs_input_label_name, so
+    # the two are independently configurable even though their defaults
+    # coincide (FetchIssuesActivity#repair_questionless_needs_input already
+    # treats them as distinct sources to repair). Skip re-adding the entry
+    # when it resolves to the name already covered by configurable_labels'
+    # enhance_issue_needs_input entry, so an unconfigured project's shared
+    # default doesn't trip the cross-category collision guard.
+    def needs_input_stage_label
+      name = project.label_for_stage("needs_input") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
+      return [] if name.casecmp?(project.enhance_issue_needs_input_label_name)
+
+      [ label_entry(name, :enhance_issue_needs_input, category: "needs_input_label_mapping") ]
+    end
+
     # Hard-coded control/status labels (@spec GH-LABELS-006 for escalation).
     # Names are deliberately literal and not configurable per-project — each
     # is defined once on its owning class/model and referenced here so this
@@ -217,6 +239,8 @@ module Projects
           category: "DependabotAutoMergeJob::PAID_AUTO_MERGED_LABEL"),
         label_entry(AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL, :auto_released,
           category: "AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL"),
+        label_entry(Activities::MarkPrReadyActivity::PAID_READY_LABEL, :paid_ready,
+          category: "Activities::MarkPrReadyActivity::PAID_READY_LABEL"),
         label_entry(Models::FileModelHealthIssue::LABEL, :model_health,
           category: "Models::FileModelHealthIssue::LABEL")
       ]

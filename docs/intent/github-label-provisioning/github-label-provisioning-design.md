@@ -46,7 +46,8 @@ contract for every GitHub label with a Paid behavioral consequence. Its
 - `:status` — applied by Paid as an output/status marker with no further
   automation effect (`paid-generated`, `paid-enhanced`,
   `paid-needs-input`, `paid-recommend-close`, `paid-dismiss-escalation`,
-  `paid-auto-merged`, `paid-auto-merged-dependabot`, `paid-auto-released`).
+  `paid-auto-merged`, `paid-auto-merged-dependabot`, `paid-auto-released`,
+  `paid-ready`).
 - `:informational` — descriptive taxonomy (`model-health`, priority tiers).
 
 Every description states the applying/removing consequence in plain
@@ -61,18 +62,25 @@ every one of them rather than re-declaring the literal:
 
 - **Project-configurable columns** — `generated_label_name`,
   `automation_label_name`, `enhance_issue_*_label_name`, `label_mappings`
-  (`recommend_close`), `priority_labels` (P1/P2/P3), and
+  (`recommend_close`, `needs_input`), `priority_labels` (P1/P2/P3), and
   `effective_auto_pick_skip_labels` (project → user → tenant → the
   `AutoPickSkipLabels::DEFAULTS` fallback). Reconciling these labels by their
   *configured* name — not a hard-coded one — is what keeps custom label
   names working without Paid creating or touching a differently-named label
-  the project didn't ask for.
+  the project didn't ask for. The `needs_input` stage mapping
+  (`HandleNoOutputIssueRunActivity#add_needs_input_label`) resolves
+  independently of `enhance_issue_needs_input_label_name` and defaults to
+  the same literal name, so `EnsureStandardLabels` only adds a second entry
+  for it when a project has configured the two to diverge — otherwise the
+  shared default would trip the cross-category collision guard on every
+  unconfigured project.
 - **Hard-coded, cross-file canonical constants** — `Issue::ESCALATED_LABEL`,
   `Issue::DISMISS_ESCALATION_LABEL`,
   `Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL`,
   `Activities::MergePullRequestActivity::PAID_AUTO_MERGED_LABEL`,
   `DependabotAutoMergeJob::PAID_AUTO_MERGED_LABEL`,
   `AutoReleaseEvaluationJob::PAID_AUTO_RELEASED_LABEL`,
+  `Activities::MarkPrReadyActivity::PAID_READY_LABEL`,
   `Models::FileModelHealthIssue::LABEL`, `Issue::PAUSED_LABEL`. Each of these
   is defined exactly once on the class that owns the behavior; every other
   file that reads or writes the label references that constant instead of

@@ -36,13 +36,15 @@ RSpec.describe Projects::EnsureStandardLabels do
   end
 
   # The full canonical set provisioned for the default project stub above:
-  # 4 configurable + recommend_close + 8 fixed control/status labels + 3 TDD
-  # labels + 6 default auto-pick skip labels + 3 priority tiers.
+  # 4 configurable + recommend_close + 9 fixed control/status labels + 3 TDD
+  # labels + 6 default auto-pick skip labels + 3 priority tiers. (The
+  # needs_input stage mapping defaults to the same name as
+  # enhance_issue_needs_input_label_name, so it is not a distinct entry here.)
   def all_label_names
     %w[
       paid-generated paid-automation paid-needs-input paid-enhanced paid-recommend-close
       paid-paused paid-escalated paid-dismiss-escalation paid-skip-auto-merge
-      paid-auto-merged paid-auto-merged-dependabot paid-auto-released model-health
+      paid-auto-merged paid-auto-merged-dependabot paid-auto-released paid-ready model-health
       paid-tests-ready-for-review paid-tests-approved paid-test-changes-requested
       planning research waiting tracking epic needs-manual-setup
       P1 P2 P3
@@ -67,6 +69,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       "paid-auto-merged" => { color: "0e8a16", description: "Applied by Paid after automatically merging this pull request." },
       "paid-auto-merged-dependabot" => { color: "0e8a16", description: "Applied by Paid after automatically merging this Dependabot pull request." },
       "paid-auto-released" => { color: "0e8a16", description: "Applied by Paid after automatically merging this release pull request." },
+      "paid-ready" => { color: "0e8a16", description: "Applied by Paid when a pull request is marked ready for review." },
       "model-health" => { color: "5319e7", description: "Flags provider model drift or broken runner models. Informational only." },
       "paid-tests-ready-for-review" => { color: "fbca04", description: "Tests are ready for review; implementation is blocked until approved." },
       "paid-tests-approved" => { color: "0e8a16", description: "Tests approved — Paid may begin implementation." },
@@ -349,6 +352,51 @@ RSpec.describe Projects::EnsureStandardLabels do
 
         expect(result.created).to include("needs-review")
         expect(result.created).not_to include("paid-recommend-close")
+      end
+    end
+
+    context "when the project configures a custom needs_input stage label" do
+      let(:project) do
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "paid-generated",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "paid-enhanced",
+          effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
+          effective_auto_pick_skip_labels: AutoPickSkipLabels::DEFAULTS,
+          label_mappings: { "needs_input" => "no-output-needs-input" }
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+      end
+
+      it "provisions both the enhance-issue label and the diverged stage label" do
+        result = described_class.call(project: project)
+
+        expect(result.created).to include("paid-needs-input", "no-output-needs-input")
+        expect(result.errors).to be_empty
+      end
+    end
+
+    context "when the needs_input stage label is unconfigured and shares the enhance-issue default" do
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+      end
+
+      it "provisions paid-needs-input once instead of reporting a collision" do
+        result = described_class.call(project: project)
+
+        expect(result.created.count("paid-needs-input")).to eq(1)
+        expect(result.errors).to be_empty
       end
     end
 
