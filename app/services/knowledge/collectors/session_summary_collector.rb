@@ -28,6 +28,7 @@ module Knowledge
           metadata: {
             agent_run_session_summary_id: record.id,
             agent_run_id: record.agent_run_id,
+            change_intent_id: record.change_intent_id,
             issue_id: record.issue_id,
             pull_request_number: record.pull_request_number,
             pull_request_url: record.pull_request_url,
