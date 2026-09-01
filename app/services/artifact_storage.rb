@@ -15,9 +15,10 @@ require "aws-sdk-s3"
 # `ArtifactStorage` owns S3 client construction (region, credentials, endpoint,
 # bucket, presigned-URL TTL) and the generic upload / signed-URL / delete
 # operations that work for arbitrary key prefixes. Specialist services
-# (`Screenshots::Storage`) delegate client construction here instead of building
-# their own potentially divergent clients, while keeping their own key-layout
-# and listing logic.
+# (`Screenshots::Storage`) compose an `ArtifactStorage` and reach for the
+# shared client through it instead of building their own potentially
+# divergent clients, while keeping their own key-layout, listing, and
+# content-type-aware upload logic.
 #
 # Configuration is identical to the historical screenshot config and defaults to
 # the `SCREENSHOTS_S3_*` environment variables / Rails credentials, so existing
@@ -67,9 +68,10 @@ class ArtifactStorage
     @client ||= Aws::S3::Client.new(client_options)
   end
 
-  # Backwards-compatible alias; `Screenshots::Storage` and `Previews::TraceViewer`
-  # historically reached for `s3_client`. Implemented as a delegation (rather
-  # than `alias`) so dependency-injected clients propagate through both names.
+  # Backwards-compatible alias; `Previews::TraceViewer` historically reached
+  # for `s3_client` after `Screenshots::Storage` cut its re-export. Implemented
+  # as a delegation (rather than `alias`) so dependency-injected clients
+  # propagate through both names.
   #
   # @return [Aws::S3::Client]
   def s3_client

@@ -42,14 +42,17 @@ so the storage contract is explicit.
 - **Configuration checks** — `configured?` (instance and class) so callers
   degrade gracefully when object storage is absent.
 
-`Screenshots::Storage` was refactored to **delegate client construction** to
-`ArtifactStorage`: it composes an `ArtifactStorage`, exposes `s3_client`/`bucket`/
-`region`/`configured?` through it, and delegates `signed_url` and prefix deletion.
-It keeps its screenshot-specific responsibilities (key layout, before/after
-listing, retention cleanup). `Previews::TraceViewer` continues to reach the
-shared bucket through `Screenshots::Storage#s3_client`, which now resolves to
-the shared client. Historical constants (`MAX_URL_TTL`, etc.) are aliased to the
-shared module so external references keep resolving.
+`Screenshots::Storage` was refactored to **compose an `ArtifactStorage`** for
+S3 client construction. It keeps its screenshot-specific responsibilities
+(key layout, before/after listing, retention cleanup, content-type-aware
+upload helpers) and reaches for the shared client, bucket, and signed URL
+through `@artifact_storage` internally. Callers that need direct S3 access
+(`Previews::TraceViewer`) now depend on `ArtifactStorage` directly rather than
+via `Screenshots::Storage`. The historical re-exports (`DEFAULT_BUCKET`,
+`DEFAULT_REGION`, `MAX_URL_TTL`, `DEFAULT_URL_TTL`) and delegations
+(`client`/`s3_client`/`bucket`/`region`/`signed_url`/`configured?`) were cut
+so external callers must reference `ArtifactStorage` for the shared storage
+surface.
 
 ## Scope decisions
 

@@ -17,9 +17,10 @@ module Previews
   # * builds the embeddable viewer URL (viewer index + `?trace=<signed url>`),
   # * reports whether a trace is available so the UI can degrade gracefully.
   #
-  # Traces share the screenshots S3 bucket/configuration (see
-  # {Screenshots::Storage}), so trace objects uploaded by the recording pipeline
-  # (issue #2847) and read here land in the same bucket by default.
+  # The trace viewer reads bucket/region/credentials from the same
+  # configuration as the screenshot pipeline (the shared {ArtifactStorage}
+  # module); {Screenshots::Storage} only contributes the trace object-key
+  # contract.
   #
   # @example Build an embeddable URL for a stored trace
   #   viewer = Previews::TraceViewer.new
@@ -33,13 +34,17 @@ module Previews
     DEFAULT_TRACE_FILENAME = "trace.zip"
     TRACE_QUERY_PARAM = "trace"
 
-    # @param storage [Screenshots::Storage] Storage backend used for presigned
-    #   URLs and S3 access. Defaults to a new {Screenshots::Storage}; the trace
-    #   viewer reads bucket/region/credentials from the same configuration.
+    # @param storage [Screenshots::Storage] Storage backend that owns the trace
+    #   object-key contract. Defaults to a new {Screenshots::Storage}.
+    # @param artifact_storage [ArtifactStorage] Object storage backend used for
+    #   every S3 access (presigned URLs, `head_object`, `put_object`). Defaults
+    #   to a new {ArtifactStorage} resolved from the same configuration as
+    #   `storage`.
     # @param viewer_prefix [String] S3 key prefix where the trace viewer static
     #   bundle is served from.
-    def initialize(storage: Screenshots::Storage.new, viewer_prefix: DEFAULT_VIEWER_PREFIX)
+    def initialize(storage: Screenshots::Storage.new, artifact_storage: ArtifactStorage.new, viewer_prefix: DEFAULT_VIEWER_PREFIX)
       @storage = storage
+      @artifact_storage = artifact_storage
       @viewer_prefix = viewer_prefix.to_s
     end
 
@@ -47,7 +52,7 @@ module Previews
     #
     # @return [Boolean]
     def configured?
-      @storage.configured?
+      @artifact_storage.configured?
     end
 
     # Builds the S3 object key for a trace `.zip`.
@@ -61,7 +66,7 @@ module Previews
     #
     # @return [String]
     def trace_url(org:, repo:, pr_number:, commit_sha:)
-      @storage.signed_url(trace_object_key(org:, repo:, pr_number:, commit_sha:))
+      @artifact_storage.signed_url(trace_object_key(org:, repo:, pr_number:, commit_sha:))
     end
 
     # Whether a trace `.zip` exists for the given PR/commit.
@@ -74,7 +79,7 @@ module Previews
       return false unless configured?
 
       key = trace_object_key(org:, repo:, pr_number:, commit_sha:)
-      @storage.s3_client.head_object(bucket: @storage.bucket, key: key)
+      @artifact_storage.client.head_object(bucket: @artifact_storage.bucket, key: key)
       true
     rescue Aws::S3::Errors::NotFound, Aws::S3::Errors::Forbidden, Aws::S3::Errors::ServiceError
       false
@@ -105,7 +110,7 @@ module Previews
     #
     # @return [String]
     def viewer_index_url
-      @storage.signed_url(viewer_object_key)
+      @artifact_storage.signed_url(viewer_object_key)
     end
 
     # S3 object key for the trace viewer entry point.
@@ -153,8 +158,8 @@ module Previews
 
     def put_object(key:, file_path:, content_type:)
       File.open(file_path, "rb") do |file|
-        @storage.s3_client.put_object(
-          bucket: @storage.bucket,
+        @artifact_storage.client.put_object(
+          bucket: @artifact_storage.bucket,
           key: key,
           body: file,
           content_type: content_type

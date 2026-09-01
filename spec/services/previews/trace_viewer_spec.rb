@@ -6,14 +6,9 @@ require "aws-sdk-s3"
 # @spec LIVE-PREVIEW-006
 RSpec.describe Previews::TraceViewer, :no_db do
   let(:s3_client) { Aws::S3::Client.new(stub_responses: true) }
-  let(:storage) do
-    instance_double(Screenshots::Storage,
-      bucket: "paid-screenshots",
-      configured?: true,
-      s3_client: s3_client,
-      signed_url: nil)
-  end
-  let(:viewer) { described_class.new(storage: storage) }
+  let(:artifact_storage) { instance_double(ArtifactStorage, bucket: "paid-screenshots", client: s3_client, configured?: true) }
+  let(:storage) { instance_double(Screenshots::Storage) }
+  let(:viewer) { described_class.new(storage: storage, artifact_storage: artifact_storage) }
 
   let(:trace_params) { { org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234" } }
 
@@ -21,7 +16,7 @@ RSpec.describe Previews::TraceViewer, :no_db do
     allow(storage).to receive(:trace_object_key) do |org:, repo:, pr_number:, commit_sha:|
       "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/trace.zip"
     end
-    allow(storage).to receive(:signed_url) do |key|
+    allow(artifact_storage).to receive(:signed_url) do |key|
       "https://example.test/#{key}?X-Amz-Signature=abc"
     end
   end
@@ -47,7 +42,7 @@ RSpec.describe Previews::TraceViewer, :no_db do
     end
 
     it "honors a custom viewer prefix" do
-      custom = described_class.new(storage: storage, viewer_prefix: "custom-viewer")
+      custom = described_class.new(storage: storage, artifact_storage: artifact_storage, viewer_prefix: "custom-viewer")
 
       expect(custom.viewer_index_url)
         .to eq("https://example.test/custom-viewer/index.html?X-Amz-Signature=abc")
@@ -67,7 +62,7 @@ RSpec.describe Previews::TraceViewer, :no_db do
     end
 
     it "appends with a bare `?` when the viewer index URL has no query string" do
-      allow(storage).to receive(:signed_url).and_return("https://example.test/trace-viewer/index.html")
+      allow(artifact_storage).to receive(:signed_url).and_return("https://example.test/trace-viewer/index.html")
 
       url = viewer.viewer_url(trace_url: "https://example.test/trace.zip")
 
@@ -105,8 +100,8 @@ RSpec.describe Previews::TraceViewer, :no_db do
     end
 
     it "returns false when storage is not configured" do
-      unconfigured = described_class.new(storage: storage)
-      allow(storage).to receive(:configured?).and_return(false)
+      unconfigured = described_class.new(storage: storage, artifact_storage: artifact_storage)
+      allow(artifact_storage).to receive(:configured?).and_return(false)
 
       expect(unconfigured.trace_available?(**trace_params)).to be(false)
       expect(s3_client).not_to receive(:head_object)
@@ -176,11 +171,11 @@ RSpec.describe Previews::TraceViewer, :no_db do
   end
 
   describe "#configured?" do
-    it "delegates to the storage backend" do
-      allow(storage).to receive(:configured?).and_return(true)
+    it "delegates to the artifact storage backend" do
+      allow(artifact_storage).to receive(:configured?).and_return(true)
       expect(viewer.configured?).to be(true)
 
-      allow(storage).to receive(:configured?).and_return(false)
+      allow(artifact_storage).to receive(:configured?).and_return(false)
       expect(viewer.configured?).to be(false)
     end
   end
