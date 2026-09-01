@@ -26,15 +26,15 @@ RSpec.describe Knowledge::SessionSummaries::SyncKnowledgeArtifact do
       expect(collector_run.status).to eq("completed")
     end
 
-    it "reuses the same synthetic project version and collector run across summaries" do
+    it "gives each summary its own synthetic project version and collector run" do
       other_agent_run = create(:agent_run, :completed, project: project)
       other_summary = create(:agent_run_session_summary, project: project, agent_run: other_agent_run)
 
       described_class.call(session_summary: session_summary)
       described_class.call(session_summary: other_summary)
 
-      expect(ProjectVersion.where(project: project, branch: "session-summaries").count).to eq(1)
-      expect(CollectorRun.where(collector_type: "session_summary").count).to eq(1)
+      expect(ProjectVersion.where(project: project, branch: "session-summaries").count).to eq(2)
+      expect(CollectorRun.where(collector_type: "session_summary").count).to eq(2)
       expect(KnowledgeArtifact.active.where(artifact_type: "session_summary").count).to eq(2)
     end
 

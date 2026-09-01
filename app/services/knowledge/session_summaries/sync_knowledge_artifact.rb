@@ -4,9 +4,12 @@ module Knowledge
   module SessionSummaries
     # Syncs a captured AgentRunSessionSummary into the knowledge-artifact
     # pipeline so it becomes searchable and eligible for context-bundle
-    # assembly. Mirrors ChangeIntents::SyncKnowledgeArtifact: a shared
-    # synthetic project version/collector run per project holds every
-    # summary's artifact, distinguished by scope_path/identifier.
+    # assembly. Each summary gets its own synthetic project version/collector
+    # run (keyed by agent_run_id) rather than sharing one per project: the
+    # KnowledgeArtifact unique index is scoped to (collector_run_id,
+    # content_hash), so two summaries with identical content but different
+    # scope_path would otherwise collapse onto a single artifact row if they
+    # shared a collector run.
     #
     # @spec SESSION-SUMMARY-003
     class SyncKnowledgeArtifact
@@ -67,7 +70,7 @@ module Knowledge
       end
 
       def synthetic_commit_sha
-        Digest::SHA1.hexdigest("session-summaries/#{project.id}")[0, 40]
+        Digest::SHA1.hexdigest("session-summaries/#{project.id}/#{session_summary.agent_run_id}")[0, 40]
       end
 
       def project
