@@ -49,7 +49,7 @@
   tool through `@tailwindcss/cli` and SHALL NOT also pin a redundant direct
   `tailwindcss` dependency, because the CLI already carries the runtime the
   build entry point needs.
-  *Tests:* `spec/config/package_json_spec.rb`.
+  *Tests:* `spec/config/toolchain_pins_spec.rb`.
   *Code:* `package.json`.
 
 ## PostgreSQL Pins
