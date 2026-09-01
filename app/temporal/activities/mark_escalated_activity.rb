@@ -168,19 +168,26 @@ module Activities
     end
 
     # This activity only writes paid-escalated and paid-ready (removing the
-    # latter). An unrelated catalog problem elsewhere — e.g. a colliding
-    # priority label or a stale paid-auto-released description the sync
-    # can't update — must not block every escalation; only bail out when the
-    # labels this activity actually touches failed to sync, so the PR never
-    # looks escalated locally without a dismissible control label on GitHub.
+    # latter when present). An unrelated catalog problem elsewhere — e.g. a
+    # colliding priority label or a stale paid-auto-released description the
+    # sync can't update — must not block every escalation; only bail out when
+    # the labels this activity actually touches failed to sync, so the PR
+    # never looks escalated locally without a dismissible control label on
+    # GitHub. +paid-ready+ is a blocking dependency only when the issue
+    # currently has that label — a draft PR with no ready label can be
+    # escalated safely even if +paid-ready+ failed to sync, since the
+    # activity does not need to remove a label it would never write.
     # @spec GH-LABELS-005
-    ESCALATION_DEPENDENT_LABELS = [ PAID_ESCALATED_LABEL, MarkPrReadyActivity::PAID_READY_LABEL ].freeze
-
     def ensure_standard_labels(project, issue)
       result = Projects::EnsureStandardLabels.call(project: project)
       return true unless result.any_errors?
 
-      blocking_errors = result.errors.select { |error| ESCALATION_DEPENDENT_LABELS.include?(error[:name]) }
+      blocking_labels = [ PAID_ESCALATED_LABEL ]
+      if issue.has_label?(MarkPrReadyActivity::PAID_READY_LABEL)
+        blocking_labels << MarkPrReadyActivity::PAID_READY_LABEL
+      end
+
+      blocking_errors = result.errors.select { |error| blocking_labels.include?(error[:name]) }
 
       logger.warn(
         message: "pr_review.escalation_label_sync_failed",

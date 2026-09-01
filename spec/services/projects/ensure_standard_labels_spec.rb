@@ -670,6 +670,21 @@ RSpec.describe Projects::EnsureStandardLabels do
       expect(result).to be_nil
       expect(logger).to have_received(:warn).with(hash_including(project_id: project.id))
     end
+
+    # GithubClient#handle_errors re-raises raw Faraday::Error after recording
+    # the health failure. A transport-level timeout during the labels-list call
+    # must not propagate to the calling job/activity — the primary state
+    # change has already succeeded.
+    it "rescues a Faraday transport error and logs a warning instead of raising" do
+      allow(github_client).to receive(:labels).with("test-owner/test-repo")
+        .and_raise(Faraday::TimeoutError, "execution expired")
+      logger = instance_double(Logger, warn: nil)
+
+      result = described_class.call_best_effort(project: project, logger: logger)
+
+      expect(result).to be_nil
+      expect(logger).to have_received(:warn).with(hash_including(project_id: project.id))
+    end
   end
 
   describe "Result#notice_message" do

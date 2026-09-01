@@ -722,6 +722,81 @@ RSpec.describe Activities::MarkEscalatedActivity do
       end
     end
 
+    context "when ensuring standard labels reports a paid-ready sync failure on an issue without paid-ready" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "draft",
+          labels: [ "paid-automation" ])
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: "paid-ready", error: "Unable to reconcile color/description drift" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      # The activity only needs to remove paid-ready when it is present on
+      # the issue, so a paid-ready sync failure must not block escalation
+      # for a draft PR that does not carry the label.
+      it "still escalates, since the issue has no paid-ready label to remove" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: true)
+        expect(issue.reload.pr_review_phase).to eq("escalated")
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with(issue.project.full_name, issue.github_number, [ described_class::PAID_ESCALATED_LABEL ])
+      end
+
+      it "does not attempt to remove paid-ready when it is not on the issue" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
+    context "when ensuring standard labels reports a paid-ready sync failure on an issue with paid-ready" do
+      # paid-ready becomes a blocking dependency only when the issue currently
+      # has that label — otherwise the activity has nothing to remove and a
+      # catalog drift on the unrelated label must not stop the escalation.
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "ready",
+          labels: [ "paid-generated", "paid-automation", "paid-ready" ])
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: "paid-ready", error: "Unable to reconcile color/description drift" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      it "bails out so the PR never loses paid-ready locally without a synced catalog entry" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("ready")
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
+      it "does not remove paid-ready before the label catalog is synced" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
     context "when comment posting fails" do
       let(:issue) do
         create(:issue, :pull_request,
