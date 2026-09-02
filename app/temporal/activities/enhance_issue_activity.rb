@@ -91,7 +91,7 @@ module Activities
       sync_needs_input_questions(issue, questions)
 
       agent_run.log!("stdout", comment_body)
-      complete_run!(agent_run, paid_state_for(parsed, project, issue))
+      complete_run!(agent_run, paid_state_for(parsed, project, issue), reason: (max_rounds_reason(project) if max_rounds_reached))
       ProcessRunQueueJob.perform_later
 
       logger.info(
@@ -325,7 +325,8 @@ module Activities
 
     def complete_existing(agent_run, client, project, issue, existing_comment)
       label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
-      complete_run!(agent_run, existing_paid_state(issue, existing_comment))
+      paid_state = existing_paid_state(issue, existing_comment)
+      complete_run!(agent_run, paid_state, reason: (max_rounds_reason(project) if paid_state == "manual_review"))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
@@ -344,7 +345,7 @@ module Activities
       if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
-        issue.update!(paid_state: "manual_review")
+        issue.update!(paid_state: "manual_review", manual_review_reason: max_rounds_reason(project))
         return { applied: nil, max_rounds_reached: true, sufficient_context: false }
       end
 
@@ -361,9 +362,22 @@ module Activities
       "completed"
     end
 
-    def complete_run!(agent_run, paid_state = "completed")
+    def complete_run!(agent_run, paid_state = "completed", reason: nil)
       agent_run.complete!
-      agent_run.issue.update!(paid_state: paid_state) if agent_run.issue
+      return unless agent_run.issue
+
+      attrs = { paid_state: paid_state }
+      attrs[:manual_review_reason] = reason if reason
+      agent_run.issue.update!(attrs)
+    end
+
+    # Shared with stop_after_max_rounds' GitHub comment copy, so the persisted
+    # reason (surfaced in the inbox) and the public comment tell the operator
+    # the same story.
+    # @spec ISSUE-ENHANCEMENT-012
+    def max_rounds_reason(project)
+      "Paid reached the configured limit of #{project.max_enhance_issue_reevaluation_rounds} " \
+        "enhancement re-evaluation rounds for this issue."
     end
 
     def trusted_comments(project, comments)

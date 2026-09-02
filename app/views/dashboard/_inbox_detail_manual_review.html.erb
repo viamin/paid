@@ -1,0 +1,27 @@
+<%# @spec OPERATOR-INBOX-002D %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
+    <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
+    <p class="mt-1 text-sm text-purple-800">
+      Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+    </p>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
+    <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+      <%= entry.summary %>
+    </p>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <% if policy(entry.project).run_agent? %>
+      <%= button_to "Start enhancement run",
+            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
+            method: :post,
+            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
+            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?" } } %>
+    <% end %>
+  </div>
+</div>

@@ -302,6 +302,44 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(">Unblock<")
   end
 
+  # @spec OPERATOR-INBOX-002D
+  it "lists manual_review issues scoped to auto-pick projects" do
+    ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    create_manual_review_issue(title: "Parked issue", github_number: 507)
+    create_manual_review_issue(title: "Not gated", github_number: 508, project: ungated_project)
+
+    get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Manual Review", "Parked issue")
+    expect(response.body).not_to include("Not gated")
+  end
+
+  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  it "renders manual_review detail with the reason and the inbox-scoped resume action" do
+    parked = create_manual_review_issue(
+      title: "Parked issue",
+      github_number: 509,
+      reason: "Structured output failed validation."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Structured output failed validation.", "Start enhancement run")
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(
+      %(form[action="#{resume_manual_review_project_agent_runs_path(project, issue_id: parked.id)}"])
+    )
+
+    expect(form).to be_present
+    expect(form.at_css('input[name="return_to"]')["value"]).to eq(
+      inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+    )
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
@@ -459,6 +497,18 @@ RSpec.describe "Inbox" do
       pr_review_phase: "escalated",
       pr_escalation_reason: reason,
       labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+      **attrs
+    )
+  end
+
+  def create_manual_review_issue(title: "Manual review issue", github_number: 506, reason: "Round limit reached.", **attrs)
+    create(
+      :issue,
+      project: project,
+      title: title,
+      github_number: github_number,
+      paid_state: "manual_review",
+      manual_review_reason: reason,
       **attrs
     )
   end

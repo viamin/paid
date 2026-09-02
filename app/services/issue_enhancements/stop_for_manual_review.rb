@@ -14,11 +14,11 @@ module IssueEnhancements
       @reason = reason
     end
 
-    # @spec ISSUE-ENHANCEMENT-002, ISSUE-ENHANCEMENT-011
+    # @spec ISSUE-ENHANCEMENT-002, ISSUE-ENHANCEMENT-011, ISSUE-ENHANCEMENT-012
     def call
       should_post = issue.with_lock do
         newly_stopped = issue.paid_state != "manual_review"
-        issue.update!(paid_state: "manual_review", needs_input_questions: nil)
+        issue.update!(paid_state: "manual_review", needs_input_questions: nil, manual_review_reason: reason)
         newly_stopped
       end
       remove_needs_input_label

@@ -133,14 +133,24 @@ class Issue < ApplicationRecord
   # @spec INBOX-FOUNDATION-001
   before_save :sync_needs_input_since, if: :will_save_change_to_paid_state?
 
+  # Same contract as sync_needs_input_since, for the other hard-stop state:
+  # `updated_at` is a shared touch timestamp bumped by label syncs and unrelated
+  # writes, so it cannot report how long an issue has actually been parked in
+  # manual_review (the same problem pr_escalation_started_at was added to solve
+  # on the PR side). Stamps on entry, clears on exit; `manual_review_reason` is
+  # set by the caller alongside `paid_state` (see IssueEnhancements::
+  # StopForManualReview) so it is cleared here too rather than left stale.
+  # @spec ISSUE-ENHANCEMENT-012
+  before_save :sync_manual_review_started_at, if: :will_save_change_to_paid_state?
+
   # Invalidates the cached inbox nav badge count whenever an issue enters or
-  # leaves the needs_input queue, or when a waiting issue is closed/reopened
-  # on GitHub, so the async badge endpoint recomputes instead of serving a
-  # stale number for the rest of its TTL. Also covers a pull request entering
-  # or leaving the escalated_pr inbox lane, since
-  # merge_approval_candidate_state_changed? already watches
+  # leaves the needs_input queue, enters or leaves manual_review, or when a
+  # waiting issue is closed/reopened on GitHub, so the async badge endpoint
+  # recomputes instead of serving a stale number for the rest of its TTL. Also
+  # covers a pull request entering or leaving the escalated_pr inbox lane,
+  # since merge_approval_candidate_state_changed? already watches
   # saved_change_to_pr_review_phase? for every pull request.
-  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -347,6 +357,21 @@ class Issue < ApplicationRecord
       self.needs_input_since ||= Time.current
     elsif paid_state_was == "needs_input"
       self.needs_input_since = nil
+    end
+  end
+
+  # Stamps `manual_review_started_at` on entry into `paid_state:
+  # "manual_review"` and clears it (and the reason) on exit. Mirrors
+  # sync_needs_input_since's contract exactly, including the `||=` that
+  # preserves the original entry time across idempotent re-applications of the
+  # same state.
+  # @spec ISSUE-ENHANCEMENT-012
+  def sync_manual_review_started_at
+    if paid_state == "manual_review"
+      self.manual_review_started_at ||= Time.current
+    elsif paid_state_was == "manual_review"
+      self.manual_review_started_at = nil
+      self.manual_review_reason = nil
     end
   end
 
@@ -589,6 +614,7 @@ class Issue < ApplicationRecord
 
   def inbox_count_cache_invalidation_needed?
     saved_change_to_needs_input_since? ||
+      saved_change_to_manual_review_started_at? ||
       waiting_issue_github_state_changed? ||
       merge_approval_candidate_state_changed?
   end
@@ -598,7 +624,7 @@ class Issue < ApplicationRecord
   end
 
   def waiting_issue_github_state_changed?
-    saved_change_to_github_state? && paid_state == "needs_input"
+    saved_change_to_github_state? && paid_state.in?(%w[needs_input manual_review])
   end
 
   def merge_approval_candidate_state_changed?
