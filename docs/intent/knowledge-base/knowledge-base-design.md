@@ -181,6 +181,22 @@ Projects can opt into knowledge evolution. The workflow samples
 analysis, and persists pending `KnowledgeRecommendation` records while
 dismissing no-longer-flagged pending recommendations.
 
+### Knowledge lint and drift checks
+
+`Knowledge::Quality::Lint` adds a read-only "knowledge lint" pass adapted from
+OKF validate/lint. It runs a fixed set of `Knowledge::Quality::Checks::*`
+checks against a project's artifacts, chunks, links, and usage telemetry and
+returns a bounded list of structured findings. Each finding carries a stable
+`code` (e.g. `stale_scope_path`, `orphaned_chunk`, `low_usage_type`,
+`chunk_missing_embedding`), a severity (`info`, `warning`, `error`), a
+`target_type`/`target_id` for traceability, and a short `detail` string.
+The service is read-only — no `Knowledge*` model is mutated — and does not
+change `Knowledge::CollectorRunner`, `Knowledge::Search`, or
+`Knowledge::ContextBundle::Build` behavior. The report is exposed through a
+JSON API endpoint (matching the existing `/api/knowledge/*` namespace) for
+agents and CI consumers and through a human-readable project page section so
+operators can review findings without writing a script.
+
 ## Important Boundaries
 
 - **Not MeiliSearch.** The superseded RDR-018 sketch referenced MeiliSearch for

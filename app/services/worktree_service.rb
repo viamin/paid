@@ -198,6 +198,22 @@ class WorktreeService
     ).strip
   end
 
+  # List every file path tracked at the default branch's remote-tracking tip
+  # (origin/<default_branch>, kept current by fetch_latest — unlike the bare
+  # repo's local HEAD, which is frozen at initial clone time). Used by
+  # knowledge lint to check scope_path membership in-memory instead of
+  # spawning one `git cat-file` subprocess per artifact. Returns an empty
+  # set when the bare repo is missing; raises on git failure so callers can
+  # tell "no files" apart from "couldn't ask".
+  #
+  # @return [Set<String>] paths relative to the repository root
+  def tracked_files
+    return Set.new unless Dir.exist?(project_repo_path)
+
+    output = run_git("ls-tree", "-r", "--name-only", "origin/#{project.default_branch}", chdir: project_repo_path)
+    output.each_line(chomp: true).to_set
+  end
+
   # Push an agent run's branch to the remote.
   #
   # @param agent_run [AgentRun] The agent run whose branch to push
