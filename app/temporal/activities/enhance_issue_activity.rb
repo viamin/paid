@@ -326,7 +326,7 @@ module Activities
     def complete_existing(agent_run, client, project, issue, existing_comment)
       label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
       paid_state = existing_paid_state(issue, existing_comment)
-      complete_run!(agent_run, paid_state, reason: (max_rounds_reason(project) if paid_state == "manual_review"))
+      complete_run!(agent_run, paid_state, reason: (issue.manual_review_reason if paid_state == "manual_review"))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
@@ -341,11 +341,19 @@ module Activities
       }
     end
 
+    # `## Auto-enhancement stopped` markers can be posted by either the
+    # max-rounds path (max_rounds_reason) or raise_parse_error! (the
+    # "Paid could not validate..." reason). On a retry that re-enters this
+    # branch, the reason the issue was originally parked with is the source
+    # of truth — overwrite it with the round-limit copy and the inbox lane
+    # will show operators the wrong cause.
     def reconcile_existing_label_state(client, project, issue, existing_comment)
       if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
-        issue.update!(paid_state: "manual_review", manual_review_reason: max_rounds_reason(project))
+        attrs = { paid_state: "manual_review" }
+        attrs[:manual_review_reason] = max_rounds_reason(project) if issue.manual_review_reason.blank?
+        issue.update!(attrs)
         return { applied: nil, max_rounds_reached: true, sufficient_context: false }
       end
 
