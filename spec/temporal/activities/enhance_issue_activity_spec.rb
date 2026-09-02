@@ -81,6 +81,32 @@ RSpec.describe Activities::EnhanceIssueActivity do
     )
   end
 
+  def park_issue_with_manual_review_reason(reason:)
+    issue.update!(
+      paid_state: "manual_review",
+      manual_review_reason: reason,
+      manual_review_started_at: 1.hour.ago
+    )
+  end
+
+  def stub_existing_stop_comment(reason:)
+    body = [
+      described_class::COMMENT_MARKER,
+      IssueEnhancements::StopForManualReview::COMMENT_MARKER,
+      "## Auto-enhancement stopped",
+      "",
+      reason,
+      "",
+      "Manual review is required before automation can continue."
+    ].join("\n")
+    existing_comment = OpenStruct.new(
+      body: body,
+      html_url: "https://github.com/owner/repo/issues/42#issuecomment-0",
+      user: OpenStruct.new(login: "viamin")
+    )
+    allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+  end
+
   def configure_app_backed_project
     project.update!(
       github_token: nil,
@@ -172,6 +198,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_comment_including("## Auto-enhancement stopped", "could not validate")
       expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.needs_input_questions).to be_nil
+      expect(issue.manual_review_reason).to include("could not validate")
+      expect(issue.manual_review_started_at).to be_present
     end
 
     it "fails before completing when adding the enhanced GitHub label fails" do
@@ -221,6 +249,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_comment_including("## Auto-enhancement stopped", "Manual review is needed")
       expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.manual_review_reason).to include("#{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds")
+      expect(issue.manual_review_started_at).to be_present
     end
 
     it "does not post a duplicate enhancement comment when one already exists" do
@@ -339,6 +369,28 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.manual_review_reason).to include("#{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds")
+      expect(issue.manual_review_started_at).to be_present
+    end
+
+    # raise_parse_error! and stop_after_max_rounds both post comments with
+    # "## Auto-enhancement stopped" — only the parse-error path carries a
+    # distinct reason. A retry that re-enters complete_existing must not
+    # overwrite that reason with the round-limit copy, otherwise the inbox
+    # lane tells operators the wrong story.
+    it "preserves a parse-error manual_review_reason when reconciling an existing stop comment" do
+      parse_error_reason = "Paid could not validate the enhancement agent's structured output."
+      park_issue_with_manual_review_reason(reason: parse_error_reason)
+      stub_existing_stop_comment(reason: parse_error_reason)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(client).not_to have_received(:add_comment)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to eq(parse_error_reason)
+      expect(issue.manual_review_started_at).to be_present
     end
 
     it "ignores untrusted enhancement-marker comments" do

@@ -299,6 +299,29 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
+    # manual_review only clears when an explicit operator-triggered run
+    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
+    # queues a fresh manual enhance_issue run rather than just clearing state,
+    # since nothing else would ever move the issue out of manual_review.
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    def resume_manual_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ],
+        on_error_path: safe_return_target || dashboard_path,
+        custom_prompt: nil,
+        goal: "enhance_issue",
+        priority_tier: nil
+      )
+    end
+
     def toggle_auto_continue_pause
       authorize @project, :run_agent?
 
@@ -764,6 +787,12 @@ module Projects
       return nil if params[:pull_request_id].blank?
 
       @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
+    end
+
+    def resolve_manual_review_issue
+      return nil if params[:issue_id].blank?
+
+      @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
     end
 
     def cancel_in_flight_execution_for_resume!

@@ -161,3 +161,26 @@
   `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
   `app/temporal/activities/fetch_issues_activity.rb`.
+
+## Manual-review visibility
+
+- [x] **ISSUE-ENHANCEMENT-012** — When an issue's `paid_state` transitions
+  into `manual_review`, the system SHALL stamp a durable
+  `manual_review_started_at` timestamp (preserved across idempotent
+  re-application of the same state, mirroring `needs_input_since`) and SHALL
+  persist a human-readable `manual_review_reason` describing why automation
+  stopped, sourced from `IssueEnhancements::StopForManualReview`'s `reason`
+  wherever the issue enters `manual_review` through that service, and from the
+  equivalent round-limit copy where `EnhanceIssueActivity` sets the state
+  directly. When `paid_state` leaves `manual_review`, the system SHALL clear
+  both columns. The operator inbox (`docs/intent/operator-inbox/`) SHALL
+  derive an issue's manual-review age from `manual_review_started_at` (falling
+  back to `updated_at` for legacy rows predating the column) rather than
+  `updated_at`, the same fallback precedent `pr_escalation_started_at`
+  established on the PR side.
+  *Tests:* `spec/models/issue_spec.rb`,
+  `spec/services/issue_enhancements/stop_for_manual_review_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/models/issue.rb#sync_manual_review_started_at`,
+  `app/services/issue_enhancements/stop_for_manual_review.rb`,
+  `app/temporal/activities/enhance_issue_activity.rb`.

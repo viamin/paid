@@ -237,6 +237,15 @@ the needs-input label. This keeps the Paid state, GitHub label, and operator UI
 from simultaneously claiming that the issue awaits an answer and a manual
 review.
 
+Every write path that moves an issue into `manual_review` also stamps
+`manual_review_started_at` (cleared on exit, via the same model callback
+contract as `needs_input_since`) and persists a human-readable
+`manual_review_reason`, mirroring `pr_escalation_started_at` on the PR side.
+`updated_at` is a shared touch timestamp bumped by label syncs and unrelated
+writes, so it cannot report how long an issue has actually been parked — the
+operator inbox's `manual_review` lane (see `docs/intent/operator-inbox/`)
+derives the entry's age and displayed reason from these columns instead.
+
 When the configured enhancement-round limit has already been reached, Paid
 does not queue another enhancement run. It moves the issue to `manual_review`
 and posts at most one marked stop comment. Repeated poll or queue ticks are

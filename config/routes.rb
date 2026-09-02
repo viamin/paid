@@ -273,6 +273,7 @@ Rails.application.routes.draw do
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
       post :unblock_escalation, on: :collection
+      post :resume_manual_review, on: :collection
       get :docker_host_options, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
