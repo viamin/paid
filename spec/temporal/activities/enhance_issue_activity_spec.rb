@@ -742,6 +742,40 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
       end
 
+      # A top-level "turn.completed" event carries the final answer in
+      # "result" rather than "text"/"message"/"last_agent_message". Mirrors
+      # the shape spec/models/agent_run_spec.rb already covers for AgentRun's
+      # stdout normalizer.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload from a top-level turn.completed event's result field" do
+        event = { type: "turn.completed", result: delimiter_wrapped(structured_output) }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # Same #3786 discard shape as the agent_message regression above, but
+      # for a runner that emits the final answer via a top-level
+      # "turn.completed" event's "result" field instead of an agent_message
+      # envelope.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a turn.completed transcript discards a valid delimited payload" do
+        issue.update!(enhance_issue_rounds: 2)
+        valid_event = { type: "turn.completed", result: delimiter_wrapped(structured_output) }
+        malformed_final_event = { type: "turn.completed", result: delimiter_wrapped("not valid json at all {{{") }
+        log_agent_stdout([ "#{valid_event.to_json}\n", "#{malformed_final_event.to_json}\n" ], wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(1)
+      end
+
       # @spec ISSUE-ENHANCEMENT-006
       it "parses a delimited payload carried in assistant content blocks" do
         event = {

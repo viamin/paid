@@ -28,13 +28,16 @@ module Activities
     STDOUT_TAIL_CHUNKS = 50
     MAX_COMMENT_BODY = 50_000
     # Assistant-message JSONL shapes recognized across runners: a bare
-    # "agent_message"/"task_complete" event, or an envelope carrying one of
-    # these (e.g. Codex's "item.completed" -> "item", "event_msg" ->
-    # "payload", "response_item" -> "payload"). Mirrors the shapes AgentRun's
-    # stdout normalizer already recognizes (see spec/models/agent_run_spec.rb)
-    # so a delimited payload isn't missed just because a runner nests its
-    # final message differently than the one we happened to check for.
-    ASSISTANT_MESSAGE_TYPES = %w[agent_message task_complete turn_complete].freeze
+    # "agent_message"/"task_complete"/"turn_complete" event (including the
+    # dotted "turn.complete"/"turn.completed" spellings some runners emit,
+    # matching Containers::StreamingEventProcessor::TURN_COMPLETE_EVENT_TYPES),
+    # or an envelope carrying one of these (e.g. Codex's "item.completed" ->
+    # "item", "event_msg" -> "payload", "response_item" -> "payload"). Mirrors
+    # the shapes AgentRun's stdout normalizer already recognizes (see
+    # spec/models/agent_run_spec.rb) so a delimited payload isn't missed just
+    # because a runner nests its final message differently than the one we
+    # happened to check for.
+    ASSISTANT_MESSAGE_TYPES = %w[agent_message task_complete turn_complete turn.complete turn.completed].freeze
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -204,7 +207,7 @@ module Activities
       return unless item.is_a?(Hash)
       return unless item["type"].in?(ASSISTANT_MESSAGE_TYPES) || item["role"] == "assistant"
 
-      text = item["text"] || item["message"] || item["last_agent_message"] || content_block_text(item["content"])
+      text = item["text"] || item["message"] || item["last_agent_message"] || item["result"] || content_block_text(item["content"])
       text if text.is_a?(String) && text.present?
     end
 
