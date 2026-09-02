@@ -165,6 +165,31 @@ After the agent finishes exploring the repo and producing structured output,
 run logs, builds the comment with the marker, posts it via the GitHub client,
 and applies label state — preserving the existing output contract.
 
+Structured runners (OpenCode, Codex) capture the transcript as JSONL: one
+`agent_message`-shaped event per physical line, with the delimiter's newlines
+escaped inside a JSON string field. A blind regex match against the raw
+stdout can never find the delimiter there, and a runner's own turn-selection
+heuristics can select an earlier progress message instead of the true final
+one — both observed in production (#3786, run 5177 on `viamin/yupyup#9`),
+where a produced, correctly delimited answer was discarded and the issue
+parked in `manual_review`. `EnhanceIssueActivity#delimited_payload` decodes
+every transcript event's own message text and keeps the last delimiter match
+found, rather than trusting the runner's own "final message" selection or a
+provider-specific parser. This is deliberately narrower than fixing the
+runner's turn-selection logic (which belongs in `agent-harness`, not Paid):
+Paid only needs to find its own delimiter, not reconstruct general turn
+semantics. When the parse path fails even though a delimited payload that
+satisfies the structured-output contract was present in the raw output —
+i.e. Paid discarded a valid payload — the run fails non-retryably into
+`manual_review` as before, but the enhancement round consumed at queue
+time is refunded: a Paid-side extraction defect should not spend round
+budget meant to bound repeated *automatic* re-evaluation
+(ISSUE-ENHANCEMENT-011). The refund check re-scans every recognized
+delimited payload (plain and JSONL-embedded) against the full contract, so
+a delimited payload that is itself malformed JSON or omits the required
+keys is an agent contract failure and consumes the round — printing the
+wrapper alone does not earn a refund.
+
 The container agent does not post the enhancement comment itself. Its GitHub
 proxy authorization is read-only, and its only durable result is the delimited
 structured payload consumed by `EnhanceIssueActivity`. Keeping the external
