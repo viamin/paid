@@ -41,3 +41,13 @@
   no-code-required issue does not loop back into the queue on its own.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
+- [x] **AUTO-PICK-QUEUE-005** — When an open issue's `paid_state` is outside
+  Auto-Pick's eligible-state set, lifecycle reporting SHALL not classify that
+  issue as `:eligible`; lifecycle reporting and Auto-Pick candidate selection
+  SHALL derive their eligible-`paid_state` rule from one shared definition,
+  including the recoverable `paid_state=completed` path.
+  *Tests:* `spec/models/issue_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/models/issue.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
