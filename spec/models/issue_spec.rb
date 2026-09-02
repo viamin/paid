@@ -2118,11 +2118,14 @@ RSpec.describe Issue do
       manual_review = create(:issue, project: project, github_state: "open", paid_state: "manual_review")
       needs_input = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
       eligible = create(:issue, project: project, github_state: "open", paid_state: "new")
+      non_recoverable_completed = create(:issue, project: project, github_state: "open", paid_state: "completed")
 
-      statuses = described_class.lifecycle_statuses([ recoverable_completed, manual_review, needs_input, eligible ])
+      issues = [ recoverable_completed, manual_review, needs_input, eligible, non_recoverable_completed ]
+      statuses = described_class.lifecycle_statuses(issues)
       eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).pluck(:id)
 
       expect(statuses.select { |_, status| status == :eligible }.keys).to match_array(eligible_ids)
+      expect(statuses[non_recoverable_completed.id]).to eq(:blocked)
     end
 
     it "returns correct statuses for multiple issues" do
