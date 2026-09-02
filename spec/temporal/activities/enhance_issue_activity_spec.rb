@@ -687,6 +687,234 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(issue.reload.paid_state).to eq("completed")
       end
 
+      # Modeled on agent run 5177 (viamin/yupyup#9, issue #3786): an
+      # OpenCode/Codex-style runner emits one agent_message JSON event per
+      # physical line, so the delimiter's newlines are escaped inside a
+      # string field and never match on raw JSONL text. A trailing
+      # completion event can also carry a stale last_agent_message snapshot
+      # that a runner's own turn-selection logic prefers over the true final
+      # message. Extraction must scan every agent_message event itself and
+      # keep the last delimiter match rather than trusting that selection.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "extracts the final delimited payload from an OpenCode/Codex JSONL transcript" do
+        narration = [
+          { type: "agent_message", text: "OK" },
+          { type: "agent_message", text: "I'm reading the repo instructions, checking whether CodeGraph..." },
+          { type: "agent_message", text: "The tests confirm the intended seam: models parse successfully..." }
+        ]
+        final_event = { type: "agent_message", text: delimiter_wrapped(structured_output) }
+        stale_completion_event = { type: "task_complete", last_agent_message: "The tests confirm the intended seam: models parse successfully..." }
+
+        log_agent_stdout((narration + [ final_event, stale_completion_event ]).map { |event| "#{event.to_json}\n" })
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload wrapped in an event_msg envelope" do
+        event = {
+          type: "event_msg",
+          payload: { type: "agent_message", role: "assistant", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload wrapped in a response_item envelope" do
+        event = {
+          type: "response_item",
+          payload: { role: "assistant", item_type: "assistant_message", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # A top-level "turn.completed" event carries the final answer in
+      # "result" rather than "text"/"message"/"last_agent_message". Mirrors
+      # the shape spec/models/agent_run_spec.rb already covers for AgentRun's
+      # stdout normalizer.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload from a top-level turn.completed event's result field" do
+        event = { type: "turn.completed", result: delimiter_wrapped(structured_output) }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # Same #3786 discard shape as the agent_message regression above, but
+      # for a runner that emits the final answer via a top-level
+      # "turn.completed" event's "result" field instead of an agent_message
+      # envelope.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a turn.completed transcript discards a valid delimited payload" do
+        issue.update!(enhance_issue_rounds: 2)
+        valid_event = { type: "turn.completed", result: delimiter_wrapped(structured_output) }
+        malformed_final_event = { type: "turn.completed", result: delimiter_wrapped("not valid json at all {{{") }
+        log_agent_stdout([ "#{valid_event.to_json}\n", "#{malformed_final_event.to_json}\n" ], wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(1)
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload carried in assistant content blocks" do
+        event = {
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            content: [ { type: "output_text", text: delimiter_wrapped(structured_output) } ]
+          }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload from a role-only assistant item with no explicit type" do
+        event = {
+          type: "item.completed",
+          item: { role: "assistant", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "ignores a delimited-looking payload in a non-assistant reasoning item" do
+        event = {
+          type: "item.completed",
+          item: { type: "reasoning", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+      end
+
+      # A delimited payload that is itself malformed JSON is an agent
+      # contract failure, not a Paid extraction defect: the round consumed
+      # at queue time must still bound repeated automatic attempts after an
+      # operator reruns the issue out of manual_review.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "does not refund an enhancement round when the delimited payload is malformed JSON" do
+        issue.update!(enhance_issue_rounds: 2)
+        log_agent_stdout(delimiter_wrapped("not valid json at all {{{"), wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "does not refund an enhancement round when the delimited payload omits required keys" do
+        issue.update!(enhance_issue_rounds: 2)
+        log_agent_stdout(delimiter_wrapped({ sufficient_context: true }.to_json), wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
+      # Extraction keeps the last delimiter match; when an earlier match was
+      # itself a valid structured payload, Paid demonstrably discarded agent
+      # output that satisfied the contract, so the consumed round is
+      # refunded (#3786).
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a valid delimited payload is discarded behind a later malformed match" do
+        issue.update!(enhance_issue_rounds: 2)
+        log_agent_stdout([ "#{delimiter_wrapped(structured_output)}\n", delimiter_wrapped("not valid json at all {{{") ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(1)
+      end
+
+      # The #3786 transcript shape: the valid payload rides an earlier
+      # agent_message event and the final event's delimited match is
+      # malformed. Extraction keeps the final match and fails; the refund
+      # recognizes the valid payload it discarded.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a JSONL transcript discards a valid delimited payload" do
+        issue.update!(enhance_issue_rounds: 2)
+        valid_event = { type: "agent_message", text: delimiter_wrapped(structured_output) }
+        malformed_final_event = { type: "agent_message", text: delimiter_wrapped("not valid json at all {{{") }
+        log_agent_stdout([ "#{valid_event.to_json}\n", "#{malformed_final_event.to_json}\n" ], wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(1)
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "does not refund an enhancement round when the agent produced no delimited output" do
+        issue.update!(enhance_issue_rounds: 2)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
+      # Manual runs never consume an enhancement round at queue time
+      # (ISSUE-ENHANCEMENT-011), so even a discarded valid payload must not
+      # refund one for an operator-triggered run.
+      # @spec ISSUE-ENHANCEMENT-006, ISSUE-ENHANCEMENT-011
+      it "does not refund an enhancement round for an operator-triggered manual run" do
+        issue.update!(enhance_issue_rounds: 2)
+        agent_run.update!(trigger_type: "manual")
+        log_agent_stdout([ "#{delimiter_wrapped(structured_output)}\n", delimiter_wrapped("not valid json at all {{{") ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
       it "parses undelimited JSON as a backward-compatible fallback" do
         log_agent_stdout(structured_output, wrap: false)
 
