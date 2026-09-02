@@ -105,5 +105,27 @@ RSpec.describe Knowledge::Uri::Resolver do
 
       expect(resolved).to eq(blank_artifact)
     end
+
+    it "resolves an artifact with nil scope_path and identifier through its active-view uri" do
+      nil_artifact = create(:knowledge_artifact,
+        project: project, collector_run: collector_run,
+        artifact_type: "language_stat", scope_path: nil, identifier: nil)
+
+      resolved = described_class.call(nil_artifact.knowledge_uri, project: project)
+
+      expect(resolved).to eq(nil_artifact)
+    end
+
+    it "resolves a commit-pinned artifact with nil scope_path and identifier" do
+      nil_artifact = create(:knowledge_artifact,
+        project: project, collector_run: collector_run,
+        artifact_type: "language_stat", scope_path: nil, identifier: nil)
+      uri = nil_artifact.versioned_knowledge_uri
+      nil_artifact.update!(status: "stale")
+
+      resolved = described_class.call(uri, project: project)
+
+      expect(resolved).to eq(nil_artifact)
+    end
   end
 end

@@ -45,17 +45,33 @@ module Knowledge
         KnowledgeArtifact
           .active
           .for_project(project)
-          .find_by(artifact_type: parsed.artifact_type, scope_path: parsed.scope_path, identifier: parsed.identifier)
+          .then { artifact_lookup(_1) }
+          .first
       end
 
       def resolve_versioned_artifact
         KnowledgeArtifact
           .for_project(project)
           .joins(collector_run: :project_version)
-          .where(artifact_type: parsed.artifact_type, scope_path: parsed.scope_path, identifier: parsed.identifier)
+          .then { artifact_lookup(_1) }
           .where(project_versions: { commit_sha: parsed.commit_sha })
           .order(id: :desc)
           .first
+      end
+
+      def artifact_lookup(relation)
+        relation
+          .where(artifact_type: parsed.artifact_type)
+          .where(normalized_text_sql(:scope_path), parsed.scope_path.to_s)
+          .where(normalized_text_sql(:identifier), parsed.identifier.to_s)
+      end
+
+      def normalized_text_sql(column)
+        "#{normalized_column_sql(column)} = ?"
+      end
+
+      def normalized_column_sql(column)
+        "COALESCE(NULLIF(#{KnowledgeArtifact.table_name}.#{column}, ''), '')"
       end
     end
   end
