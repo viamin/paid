@@ -15,7 +15,7 @@ module Activities
     activity_name "MergePullRequest"
 
     PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
     AUTO_MERGE_COMMENT = "This PR was automatically merged by paid's auto-merge feature."
     MERGE_PERMISSION_COMMENT_MARKER = "<!-- paid: merge-permission-rejection -->"
 
@@ -272,6 +272,7 @@ module Activities
     end
 
     def add_auto_merge_label(provider, project, repo, pr_number)
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       provider.add_labels(repo: repo, number: pr_number, labels: [ PAID_AUTO_MERGED_LABEL ])
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(

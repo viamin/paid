@@ -48,6 +48,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       recent_issue_comments: [],
       remove_labels_from_issue: { removed: [], failed: [] }
     )
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
   describe "#execute" do
@@ -209,6 +210,17 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(client).to have_received(:add_labels_to_issue)
           .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      # @spec GH-LABELS-001
+      it "syncs the standard label catalog before applying the recommend-close label" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
       end
 
       it "uses the project-configured recommend_close label when set" do
@@ -497,6 +509,16 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     context "when classification resolves to needs_input" do
       before do
         allow(activity).to receive(:classify_outcome).and_return("needs_input")
+      end
+
+      # @spec GH-LABELS-001
+      it "syncs the standard label catalog before applying the needs-input label" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
       end
 
       # @spec NO-OUTPUT-ISSUE-001

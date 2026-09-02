@@ -15,6 +15,7 @@ RSpec.describe Activities::MarkPrReadyActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
   describe "#execute" do
@@ -48,6 +49,13 @@ RSpec.describe Activities::MarkPrReadyActivity do
 
         expect(github_client).to have_received(:add_labels_to_issue)
           .with(project.full_name, 42, [ "paid-ready" ])
+      end
+
+      # @spec GH-LABELS-001
+      it "syncs the standard label catalog before applying the label" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
       end
 
       it "returns marked_ready: true" do

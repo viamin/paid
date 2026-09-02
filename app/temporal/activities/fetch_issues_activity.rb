@@ -12,7 +12,7 @@ module Activities
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
     ISSUE_RECONCILIATION_INTERVAL = 1.hour
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
 
     def execute(input)
       project_id = input[:project_id]

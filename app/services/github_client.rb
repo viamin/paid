@@ -374,6 +374,16 @@ class GithubClient
     handle_errors { with_auto_paginate { client.labels(repo, per_page: 100) } }
   end
 
+  # Fetches a single label by name.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param name [String] Label name
+  # @return [Sawyer::Resource] The label
+  # @raise [NotFoundError] When the label does not exist
+  def label(repo, name)
+    handle_errors { client.label(repo, name) }
+  end
+
   # Creates a label on a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -383,6 +393,17 @@ class GithubClient
   # @return [Sawyer::Resource] The created label
   def create_label(repo, name:, color:, description: "")
     handle_errors { client.add_label(repo, name, color, description: description) }
+  end
+
+  # Updates an existing label's color and/or description.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param name [String] Current label name
+  # @param color [String] New color (hex without #)
+  # @param description [String] New description
+  # @return [Sawyer::Resource] The updated label
+  def update_label(repo, name, color:, description: "")
+    handle_errors { client.update_label(repo, name, color: color, description: description) }
   end
 
   # Adds labels to an issue or pull request.

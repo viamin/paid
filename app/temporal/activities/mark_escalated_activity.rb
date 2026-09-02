@@ -6,7 +6,7 @@ module Activities
   class MarkEscalatedActivity < BaseActivity
     activity_name "MarkEscalated"
 
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
     COMMENT_MARKER = "<!-- paid:escalation-note -->"
 
     def execute(input)
@@ -21,6 +21,8 @@ module Activities
         record_noop_decision(project, issue, reason: input[:reason], phase_before:)
         return { updated: false }
       end
+
+      return { updated: false } unless ensure_standard_labels(project, issue)
 
       # Escalation invalidates the prior "ready" claim. Strip the label
       # before applying paid-escalated so human triage queues and any
@@ -163,6 +165,39 @@ module Activities
           phase: issue.pr_review_phase
         }
       )
+    end
+
+    # This activity only writes paid-escalated and paid-ready (removing the
+    # latter when present). An unrelated catalog problem elsewhere — e.g. a
+    # colliding priority label or a stale paid-auto-released description the
+    # sync can't update — must not block every escalation; only bail out when
+    # the labels this activity actually touches failed to sync, so the PR
+    # never looks escalated locally without a dismissible control label on
+    # GitHub. +paid-ready+ is a blocking dependency only when the issue
+    # currently has that label — a draft PR with no ready label can be
+    # escalated safely even if +paid-ready+ failed to sync, since the
+    # activity does not need to remove a label it would never write.
+    # @spec GH-LABELS-005
+    def ensure_standard_labels(project, issue)
+      result = Projects::EnsureStandardLabels.call(project: project)
+      return true unless result.any_errors?
+
+      blocking_labels = [ PAID_ESCALATED_LABEL ]
+      if issue.has_label?(MarkPrReadyActivity::PAID_READY_LABEL)
+        blocking_labels << MarkPrReadyActivity::PAID_READY_LABEL
+      end
+
+      blocking_errors = result.errors.select { |error| blocking_labels.include?(error[:name]) }
+
+      logger.warn(
+        message: "pr_review.escalation_label_sync_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        failed_labels: result.errors.map { |error| error[:name] },
+        blocking: blocking_errors.any?
+      )
+      blocking_errors.empty?
     end
 
     def remove_ready_label(client, project, issue)

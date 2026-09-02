@@ -435,6 +435,7 @@ module Activities
     end
 
     def labels_added(client, project, issue, labels)
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       labels.select { |label| add_label(client, project, issue, label) }
     end
 

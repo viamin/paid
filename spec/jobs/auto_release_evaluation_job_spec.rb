@@ -39,6 +39,7 @@ RSpec.describe AutoReleaseEvaluationJob do
     allow(client).to receive(:merge_pull_request)
     allow(client).to receive(:add_labels_to_issue)
     allow(client).to receive(:add_comment)
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
   describe "#perform" do
@@ -58,6 +59,13 @@ RSpec.describe AutoReleaseEvaluationJob do
         status: "merged",
         credential_mode: "pat"
       )
+    end
+
+    # @spec GH-LABELS-001
+    it "syncs the standard label catalog before applying the auto-released label" do
+      described_class.perform_now(project.id)
+
+      expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project)
     end
 
     it "skips when project has auto_release_granularity off" do

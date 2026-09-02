@@ -39,6 +39,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
     allow(client).to receive(:add_labels_to_issue)
     allow(client).to receive(:remove_label_from_issue)
     allow(ProcessRunQueueJob).to receive(:perform_later)
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
   def expect_label_added(label)
@@ -89,6 +90,15 @@ RSpec.describe Activities::EnhanceIssueActivity do
   end
 
   describe "#execute" do
+    # @spec GH-LABELS-001
+    it "syncs the standard label catalog before applying the enhanced label" do
+      log_agent_stdout(structured_output)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
+    end
+
     it "posts an implementation context comment" do
       log_agent_stdout(structured_output)
 

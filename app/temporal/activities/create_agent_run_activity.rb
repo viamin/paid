@@ -737,6 +737,7 @@ module Activities
       if client
         client.add_comment(project.full_name, issue.github_number, question_comment)
         label = project.enhance_issue_needs_input_label_name
+        Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
         client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
         # Persist the parsed questions locally so the dashboard needs-input
         # queue can render them without a per-issue GitHub API round-trip.

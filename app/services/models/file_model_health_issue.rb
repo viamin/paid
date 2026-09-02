@@ -11,8 +11,6 @@ module Models
   # fingerprint marker embedded in the body, commenting when findings change.
   class FileModelHealthIssue
     LABEL = "model-health"
-    LABEL_COLOR = "5319e7"
-    LABEL_DESCRIPTION = "Provider model availability drift, contract drift, or broken runner models detected by Paid"
     FINGERPRINT_MARKER = "model-health-fingerprint"
     AGENT_HARNESS_REPO = "viamin/agent-harness"
 
@@ -87,12 +85,15 @@ module Models
       Result.new(action: :error, error: e.message)
     end
 
+    # Routes through the canonical provisioning service rather than a blind
+    # create, so a stale `model-health` label's color/description gets
+    # reconciled too (@spec GH-LABELS-002) — not just created once and left
+    # to drift. Best-effort: this label is filed by a background job with no
+    # "Sync Labels" UI trigger in its path, and a sync failure must not block
+    # filing the issue — GitHub creates unknown labels on issue creation
+    # anyway.
     def ensure_label
-      @client.create_label(@project.full_name, name: LABEL, color: LABEL_COLOR, description: LABEL_DESCRIPTION)
-    rescue GithubClient::ApiError => e
-      # 422 == already exists; anything else (e.g. permissions) is non-fatal —
-      # GitHub creates unknown labels on issue creation anyway.
-      log(:label_ensure_skipped, error: e.message) unless e.status == 422
+      Projects::EnsureStandardLabels.call_best_effort(project: @project)
     end
 
     def issue_labels
