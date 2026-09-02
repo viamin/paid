@@ -514,8 +514,12 @@ module Knowledge
           chunk_count: [ section[:chunk_count].to_i, item_count ].min,
           token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}"),
           item_marker: section[:item_marker],
-          citations: section[:citations]
+          citations: truncated_citations(section, item_count)
         }
+      end
+
+      def truncated_citations(section, item_count)
+        Array(section[:citations]).first(item_count)
       end
 
       # Drop a trailing incomplete item so the truncated section reports

@@ -152,7 +152,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
 
       it "counts truncated OKF artifacts accurately when the section exceeds the budget" do
         long_body = (1..40).map { |i| "word#{i}" }.join(" ")
-        create_okf_artifacts!(count: 12, body: long_body)
+        artifacts = create_okf_artifacts!(count: 12, body: long_body)
 
         result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id, token_budget: 200)
 
@@ -160,6 +160,11 @@ RSpec.describe Knowledge::ContextBundle::Build do
         kept = result[:artifact_type_counts]["okf_concept"]
         expect(kept).to be > 0
         expect(kept).to be < 12
+        expected_citations = ([ *project.knowledge_artifacts.active.by_type("okf_concept").order(:identifier).limit(20) ])
+          .first(kept)
+          .map(&:knowledge_uri)
+        expect(result[:citations]).to eq(expected_citations)
+        expect(result[:citations]).not_to include(artifacts.last.knowledge_uri)
 
         stat = KnowledgeUsageStat.find_by!(agent_run: agent_run, artifact_type: "okf_concept")
         expect(stat.artifact_count).to eq(kept)
@@ -756,7 +761,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
   end
 
   def create_okf_artifacts!(count:, body:)
-    count.times do |i|
+    count.times.map do |i|
       artifact = create(:knowledge_artifact,
         project: project,
         collector_run: collector_run,
@@ -772,6 +777,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
         project: project,
         chunk_type: "definition",
         content: body)
+      artifact
     end
   end
 end
