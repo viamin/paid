@@ -42,3 +42,16 @@ must stay out of the candidate pool until its persisted next-attempt time,
 unless the owner's issue-analysis runner configuration / runner-health context
 has changed since that cooldown was recorded. Manual retries do not consult
 this gate.
+
+## Completed-issue recovery vs. agent-declared terminal completions
+
+`DefaultCandidateSource` re-includes open, `paid_state: "completed"` issues
+whose last automatic run finished without a PR, on the theory the run may
+have failed transiently and is worth retrying. That recovery path is a poor
+fit for an issue an agent explicitly declared complete without a code change
+(see the no-output-issue-handling segment's `no_code_required` outcome):
+retrying would just loop, since the agent will typically reach the same
+conclusion again. Such issues are stamped with `no_code_required_at`, which
+candidate selection excludes permanently and regardless of `paid_state` —
+the same always-on style already used for merged-PR-linked issues — so only a
+manually triggered run can pick the issue up again.

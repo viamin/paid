@@ -1149,6 +1149,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       allow(Prompts::BuildForCreateFeature).to receive(:call).and_return("feature prompt")
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments}).to_return(status: 200, body: "{}")
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/labels}).to_return(status: 200, body: "[]")
+      allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
     end
 
     it "returns paused: true via resume_queued_run when feature brief is sparse" do
@@ -1173,6 +1174,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
         a_string_matching(/constraints/),
         a_string_matching(/scope/)
       )
+    end
+
+    # @spec GH-LABELS-001
+    it "syncs the standard label catalog before applying the needs-input label" do
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
+      agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
     end
 
     it "does not pause when feature brief has all required fields" do

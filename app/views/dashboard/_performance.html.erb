@@ -1,3 +1,4 @@
+<%# @spec DASHBOARD-FILTER-A11Y-002 %>
 <%= turbo_frame_tag "dashboard-performance" do %>
   <%# Filter Buttons %>
   <div class="mb-6 space-y-3">
@@ -5,9 +6,9 @@
     <div class="flex flex-wrap items-center gap-2">
       <span class="text-sm font-medium text-gray-500 mr-1">Status:</span>
       <% Dashboard::Stats::VALID_STATUSES.each do |s| %>
-        <%= link_to DashboardHelper::STATUS_FILTER_LABELS[s],
+        <%= dashboard_filter_link DashboardHelper::STATUS_FILTER_LABELS[s],
               dashboard_performance_path(status: s, goal: goal_filter, time_range: time_range),
-              class: filter_button_classes(status_filter == s),
+              status_filter == s,
               data: { turbo_frame: "dashboard-performance" } %>
       <% end %>
     </div>
@@ -16,9 +17,9 @@
     <div class="flex flex-wrap items-center gap-2">
       <span class="text-sm font-medium text-gray-500 mr-1">Type:</span>
       <% Dashboard::Stats::VALID_GOALS.each do |g| %>
-        <%= link_to DashboardHelper::GOAL_FILTER_LABELS[g],
+        <%= dashboard_filter_link DashboardHelper::GOAL_FILTER_LABELS[g],
               dashboard_performance_path(status: status_filter, goal: g, time_range: time_range),
-              class: filter_button_classes(goal_filter == g),
+              goal_filter == g,
               data: { turbo_frame: "dashboard-performance" } %>
       <% end %>
     </div>
@@ -34,7 +35,7 @@
           <h3 class="text-sm font-semibold text-gray-900"><%= outcome_label(outcome) %></h3>
           <p class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</p>
           <% if perf[:run_count] > 0 %>
-            <div class="mt-3 flex flex-wrap gap-4 text-sm">
+            <dl class="mt-3 flex flex-wrap gap-4 text-sm">
               <% if perf[:avg_cost_cents].to_i > 0 %>
                 <div>
                   <dt class="text-xs text-gray-500">Avg Cost</dt>
@@ -51,7 +52,7 @@
                 <dt class="text-xs text-gray-500">Avg Duration</dt>
                 <dd class="mt-1 font-semibold text-gray-900"><%= format_duration(perf[:avg_duration_seconds]) %></dd>
               </div>
-            </div>
+            </dl>
             <% if perf[:total_cost_cents].to_i > 0 || perf[:total_tokens].to_i > 0 %>
               <div class="mt-2 text-xs text-gray-500">
                 Total:<%= " $#{format("%.2f", perf[:total_cost_cents].to_i / 100.0)}" if perf[:total_cost_cents].to_i > 0 %><%= "#{" · " if perf[:total_cost_cents].to_i > 0}#{number_with_delimiter(perf[:total_tokens])} tokens" if perf[:total_tokens].to_i > 0 %>

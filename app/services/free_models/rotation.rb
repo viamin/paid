@@ -85,12 +85,15 @@ module FreeModels
       runner&.free_model_policy?
     end
 
-    # Legacy openrouter_free rows keep their historical bare-key RunnerState;
-    # policy-based OpenCode free runners key their rotation state by routing
-    # key so multiple free-policy runners on distinct credentials do not
-    # collide.
+    # @spec MODEL-POLICY-012
+    # RunnerState rows for free-policy runners are keyed by the runner's
+    # routing-key state_key, not the bare runner_key string — a user may hold
+    # several free-policy opencode runners (one per OpenRouter credential),
+    # so a bare-key row would collide across them. Knowledge::RunnerExecutor
+    # resolves the same state_key for its free-policy interactions so both
+    # subsystems read/write the same row.
     def runner_state_name
-      runner&.free_model_rotation_state_key
+      runner.state_key
     end
 
     def exhausted_result(previous_model_id: nil)
@@ -224,7 +227,7 @@ module FreeModels
       return false unless runner.free_model_policy?
       return false unless user
 
-      state = user.runner_states.find_by(runner_name: runner.free_model_rotation_state_key)
+      state = user.runner_states.find_by(runner_name: runner.state_key)
       return false unless state
 
       snapshot = state.preferred_tier_model_ids

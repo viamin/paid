@@ -23,7 +23,7 @@ class AgentRun < ApplicationRecord
   # spec/lib/runner_support_spec.rb ("returns a valid agent type for every
   # container-executable runner key"). When you add a runner key, add its
   # agent_type here too.
-  AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp api devin factory internal_agent].freeze
+  AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi omp api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
@@ -212,6 +212,7 @@ class AgentRun < ApplicationRecord
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
+  has_one :agent_run_session_summary, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
@@ -3779,7 +3780,7 @@ class AgentRun < ApplicationRecord
     )
   ensure
     @container_service = nil
-    update_column(:container_id, nil) if container_id.present?
+    update_columns(container_id: nil) if container_id.present?
     clear_runtime_image_selection!
   end
 

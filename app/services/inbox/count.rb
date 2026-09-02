@@ -30,7 +30,8 @@ module Inbox
     attr_reader :user
 
     def compute_count
-      needs_input_count + open_plan_review_count + merge_approval_count
+      needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
+        escalated_pr_count + manual_review_count
     end
 
     def needs_input_count
@@ -49,6 +50,19 @@ module Inbox
       return 0 if project_ids.empty?
 
       merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
+    end
+
+    # Excludes notifications whose subject cannot be projected into a visible
+    # inbox project. Runner-scoped blocking notifications borrow the owner's
+    # first visible auto-pick project so they can render in the queue without a
+    # runner-specific inbox lane.
+    def action_required_count
+      notifications = NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
+        .includes(:subject)
+        .to_a
+      Notification.preload_resolved_projects(notifications)
+      preload_runner_users(notifications)
+      notifications.count { |notification| project_for(notification).present? }
     end
 
     # Narrows to rows that could plausibly be approval-only blockers before
@@ -71,6 +85,26 @@ module Inbox
         .where.not(projects: { owner_reviewer_login: nil })
     end
 
+    # A direct indexed count, unlike merge_approval_count: escalation is a
+    # column value, not a signal snapshot that needs a Ruby-side check.
+    # @spec OPERATOR-INBOX-002C
+    def escalated_pr_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      Issue.where(project_id: project_ids, is_pull_request: true, github_state: "open", pr_review_phase: "escalated").count
+    end
+
+    # A direct indexed count, unlike merge_approval_count: manual_review is a
+    # paid_state value, not a signal snapshot that needs a Ruby-side check.
+    # @spec OPERATOR-INBOX-002D
+    def manual_review_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      Issue.where(project_id: project_ids, paid_state: "manual_review", github_state: "open").count
+    end
+
     def gated_project_ids
       Project
         .includes(account: :tenant_setting, created_by: :user_setting)
@@ -88,6 +122,32 @@ module Inbox
       owner_ids = [ user.id ]
       owner_ids << nil if AgentRun.orphaned_project_owner?(user)
       owner_ids
+    end
+
+    def preload_runner_users(notifications)
+      runners = notifications.filter_map(&:subject).select { |subject| subject.is_a?(Runner) }
+      ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
+    end
+
+    def project_for(notification)
+      return runner_projects_by_user_id[notification.subject.user_id]&.first if notification.subject.is_a?(Runner)
+
+      notification.resolved_project
+    end
+
+    def runner_projects_by_user_id
+      @runner_projects_by_user_id ||= begin
+        Project
+          .includes(account: :tenant_setting, created_by: :user_setting)
+          .where(
+            account_id: user.account_id,
+            created_by_id: visible_owner_ids,
+            auto_pick_enabled: true,
+            active: true
+          )
+          .select { |candidate| Issues::AutoPickProjectGate.call(candidate) }
+          .group_by(&:created_by_id)
+      end
     end
 
     def cache_key

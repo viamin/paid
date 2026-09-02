@@ -17,5 +17,21 @@ FactoryBot.define do
     trait :disabled do
       enabled { false }
     end
+
+    # A project-scoped quality-gate threshold: applies regardless of goal.
+    trait :gate do
+      project
+      account { project.account }
+      goal_type { QualityThreshold::ALL_GOALS }
+    end
+
+    trait :critical do
+      severity { "critical" }
+      min_value { 0.3 }
+    end
+
+    trait :with_max do
+      max_value { 0.95 }
+    end
   end
 end

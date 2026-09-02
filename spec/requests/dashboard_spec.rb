@@ -55,6 +55,19 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Dashboard")
       end
 
+      it "renders motion-safe dashboard placeholders and live indicator" do # @spec DASHBOARD-FRAME-CACHE-008
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        live_ping = doc.at_css("#live-indicator > span.absolute")
+        skeletons = doc.css(".motion-safe\\:animate-pulse")
+
+        expect(live_ping["class"]).to include("motion-safe:animate-ping")
+        expect(live_ping["class"]).to include("motion-reduce:animate-none")
+        expect(skeletons).not_to be_empty
+        expect(skeletons).to all(satisfy { |node| node["class"].include?("motion-reduce:animate-none") })
+      end
+
       it "displays the user name" do
         get dashboard_path
         expect(response.body).to include("John Doe")
@@ -170,25 +183,35 @@ RSpec.describe "Dashboard" do
         expect(mobile_marketplace_link.text.strip).to eq("Marketplace")
       end
 
-      it "renders the user email dropdown in the desktop navbar" do
+      it "renders the user email dropdown disclosure in the desktop navbar" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
+        menu_disclosure = doc.at_css("#user-menu-disclosure")
         menu_button = doc.at_css("#user-menu-button")
         menu = doc.at_css("#user-menu")
 
+        expect(menu_disclosure).to be_present
+        expect(menu_disclosure["open"]).to be_nil
         expect(menu_button).to be_present
         expect(menu_button.text).to include(user.email)
-        expect(menu_button["aria-expanded"]).to eq("false")
-
+        expect(menu_button["aria-haspopup"]).to eq("menu")
+        expect(menu_button["aria-controls"]).to eq("user-menu")
         expect(menu).to be_present
         expect(menu["class"]).to include("hidden")
+      end
+
+      it "renders the user menu items in the desktop navbar" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        menu = doc.at_css("#user-menu")
         menu_labels = menu.css("a, form button").map { |node| node.text.strip }
         menu_roles = menu.css("a, form button").map { |node| node["role"] }
 
         expect(menu_labels).to include("Settings", "Account", "Sign out")
         expect(menu_roles).to all(eq("menuitem"))
-        expect(menu.css("a").map { |node| node["data-action"] }).to all(eq("dropdown#close"))
+        expect(menu.css("a").map { |node| node["data-action"] }).to all(be_nil)
       end
 
       it "removes settings and account actions from the desktop top-level nav" do
@@ -638,7 +661,7 @@ RSpec.describe "Dashboard" do
         headers = table.css("thead th").map { |header| header.text.squish }
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
         context_cell = row.css("td")[headers.index("Context")]
-        context_tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        context_tooltip_wrapper = context_cell.at_css('details')
         context_tooltip = context_tooltip_wrapper&.at_css('span[role="tooltip"]')
 
         expect(row).to be_present
@@ -665,7 +688,7 @@ RSpec.describe "Dashboard" do
         expect(goal_cell.text).to include("Code Review")
         expect(goal_label).to be_present
         expect(goal_label["title"]).to be_nil
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('details')).to be_nil
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
@@ -696,6 +719,9 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Paused Project")
         expect(response.body).to include("34.0%")
         expect(response.body).to include(edit_project_path(project))
+
+        review_link = Nokogiri::HTML(response.body).at_css("#quality-paused-projects a[href='#{edit_project_path(project)}']")
+        expect(review_link["class"]).to include("min-h-11")
       end
 
       it "shows the quality-paused notice above the queue and explains the empty queue" do
@@ -805,7 +831,7 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        details_elements = doc.css("details")
+        details_elements = doc.at_css("main").css("details")
 
         expect(details_elements.length).to eq(4)
       end
@@ -876,6 +902,8 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
       expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
       expect(chart["data-chartkick-options-value"]).to include("\"stacked\":true")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-danger)")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-success)")
       expect(chart["data-chartkick-data-value"]).to be_present
       expect(chart.text).to include("Loading...")
       expect(doc.css("script")).to be_empty
@@ -1173,6 +1201,8 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
       expect(chart["data-chartkick-type-value"]).to eq("LineChart")
       expect(chart["data-chartkick-options-value"]).to include("\"annotation\"")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-pr-cycle-average)")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-annotation-border)")
       expect(doc.css("script")).to be_empty
     end
   end
@@ -1246,7 +1276,7 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("2 runners are recovering in half-open mode.")
     end
 
-    it "shows free-model availability details for openrouter_free" do
+    it "shows free-model availability details for a free-policy opencode runner" do
       free_model = create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free",
         catalog_source: "openrouter_sync")
       create(:llm_model, model_id: "mid-free", provider: "moonshotai", tier: "mid", pricing_tier: "free",
@@ -1255,9 +1285,10 @@ RSpec.describe "Dashboard" do
       runner = create(
         :runner,
         user: user,
-        runner_key: "openrouter_free",
+        runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
         tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
       )
       create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)

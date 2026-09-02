@@ -1,8 +1,32 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::HandleNoOutputIssueRunActivity do
+  def issue_comment_failure_metadata(issue_state:, marker:, error: "comment rejected")
+    {
+      "issue_explanation_comment_failure" => {
+        "issue_state" => issue_state,
+        "marker" => marker,
+        "error" => error,
+        "recorded_at" => "2026-08-31T00:00:00Z"
+      }
+    }
+  end
+
+  def create_bot_project
+    create(:project, :with_github_installation,
+      label_mappings: { "build" => "paid-build", "needs_input" => "paid-needs-input" },
+      automation_on_label_enabled: false)
+  end
+
+  def stub_bot_backed_agent_run(agent_run, project)
+    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+    allow(agent_run).to receive(:project).and_return(project)
+    allow(project).to receive(:client).and_return(client)
+  end
+
   let(:activity) { described_class.new }
   let(:project) do
     create(:project,
@@ -10,13 +34,21 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       automation_on_label_enabled: false)
   end
   let(:client) { instance_double(GithubClient) }
+  let(:paid_bot_comment) do
+    OpenStruct.new(body: "existing marker", user: OpenStruct.new(login: "paid-agents[bot]"))
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive(:add_comment)
     allow(client).to receive(:add_labels_to_issue)
     allow(client).to receive(:remove_label_from_issue)
-    allow(client).to receive_messages(recent_issue_comments: [], remove_labels_from_issue: { removed: [], failed: [] })
+    allow(client).to receive_messages(
+      authenticated_login: nil,
+      recent_issue_comments: [],
+      remove_labels_from_issue: { removed: [], failed: [] }
+    )
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
   describe "#execute" do
@@ -136,6 +168,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     end
 
     context "when output_present is true (recommend_close)" do
+      # @spec NO-OUTPUT-ISSUE-001
       it "sets issue paid_state to recommend_close" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
@@ -177,6 +210,17 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(client).to have_received(:add_labels_to_issue)
           .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      # @spec GH-LABELS-001
+      it "syncs the standard label catalog before applying the recommend-close label" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
       end
 
       it "uses the project-configured recommend_close label when set" do
@@ -223,6 +267,275 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(client).not_to have_received(:remove_label_from_issue)
           .with(project.full_name, issue.github_number, "paid-needs-input")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-001
+      it "records a surfaced failure when recommend-close comment posting fails" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        allow(client).to receive(:add_comment).and_raise(GithubClient::Error, "comment rejected")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("recommend_close")
+        expect(agent_run.reload.error_message).to include("Recommend-close explanation comment could not be posted")
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to include(
+          "issue_state" => "recommend_close",
+          "marker" => "<!-- paid:recommend-close -->",
+          "error" => "comment rejected"
+        )
+      end
+    end
+
+    context "when the agent declares a no-code-required completion" do
+      let(:rationale) do
+        "The umbrella's closeout scope is documentation and follow-up filing, already completed via #3557 and #3583."
+      end
+      let(:declaration) do
+        <<~TEXT
+          <!-- paid:no-code-required -->
+          <!-- no-code-required-rationale-start -->
+          #{rationale}
+          <!-- no-code-required-rationale-end -->
+        TEXT
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "classifies the outcome as no_code_required, not recommend_close" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "sets issue paid_state to completed instead of recommend_close" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-006
+      it "stamps no_code_required_at so auto-pick's completed-issue recovery never re-picks it" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.no_code_required_at).to be_present
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "does not add the paid-recommend-close label" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).not_to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "posts a comment surfacing the declared rationale for a human" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including(rationale))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "marks the agent run completed" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "removes the needs-input label if present" do
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-needs-input" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-needs-input")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "detects the declaration when a verbose run logs past the comment-excerpt window" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        150.times { |i| agent_run.log!("stdout", "chatty progress line #{i}") }
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including(rationale))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "detects the declaration when the run logs heavily after declaring" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+        150.times { |i| agent_run.log!("stdout", "chatty follow-up line #{i}") }
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "detects the declaration on stderr even when stdout has ordinary progress output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "normal progress output, no declaration here")
+        agent_run.log!("stderr", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including(rationale))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-005
+      it "ignores a declaration that has fallen out of the combined recent-log window" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stderr", declaration)
+        (described_class::CLASSIFICATION_LOG_LIMIT + 1).times do |i|
+          agent_run.log!("stdout", "newer stdout line #{i}")
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-003
+      it "explains the omission when redaction empties the declared rationale" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", <<~TEXT)
+          <!-- paid:no-code-required -->
+          <!-- no-code-required-rationale-start -->
+          The linked account needs to add more credits, so no code change applies.
+          <!-- no-code-required-rationale-end -->
+        TEXT
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including("rationale was withheld"))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "falls through to recommend_close when the marker has no rationale block" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "<!-- paid:no-code-required -->\nNo rationale block here.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
+        expect(issue.reload.paid_state).to eq("recommend_close")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "does not classify as no_code_required when the run produced no output" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-004
+      it "does not classify as no_code_required when the run did zero iterations" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 100)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+        expect(issue.reload.paid_state).to eq("failed")
+        expect(agent_run.reload.status).to eq("failed")
+      end
+    end
+
+    context "when classification resolves to needs_input" do
+      before do
+        allow(activity).to receive(:classify_outcome).and_return("needs_input")
+      end
+
+      # @spec GH-LABELS-001
+      it "syncs the standard label catalog before applying the needs-input label" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
+      end
+
+      # @spec NO-OUTPUT-ISSUE-001
+      it "records a surfaced failure when needs-input comment posting fails" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        allow(client).to receive(:add_comment).and_raise(GithubClient::Error, "comment rejected")
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(agent_run.reload.error_message).to include("Needs-input explanation comment could not be posted")
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to include(
+          "issue_state" => "needs_input",
+          "marker" => "<!-- paid:needs-input -->",
+          "error" => "comment rejected"
+        )
       end
     end
 
@@ -292,10 +605,13 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
     context "when a comment marker already exists" do
       it "skips posting needs-input comment if marker already exists" do
-        issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue)
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue)
+        stub_bot_backed_agent_run(agent_run, bot_project)
 
-        existing_comment = Struct.new(:body).new("<!-- paid:needs-input -->\nOld comment")
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:needs-input -->\nOld comment"
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
@@ -304,16 +620,95 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
 
       it "skips posting recommend-close comment if marker already exists" do
-        issue = create(:issue, :in_progress, project: project)
-        agent_run = create(:agent_run, :running, project: project, issue: issue,
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue,
           iterations: 3, cost_cents: 100)
+        stub_bot_backed_agent_run(agent_run, bot_project)
 
-        existing_comment = Struct.new(:body).new("<!-- paid:recommend-close -->\nOld comment")
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:recommend-close -->\nOld comment"
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(client).not_to have_received(:add_comment)
+      end
+
+      it "does not let a human-authored marker suppress the no-code-required comment" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", <<~TEXT)
+          <!-- paid:no-code-required -->
+          <!-- no-code-required-rationale-start -->
+          No code change is needed.
+          <!-- no-code-required-rationale-end -->
+        TEXT
+        forged_comment = OpenStruct.new(
+          body: "<!-- paid:no-code-required-complete -->\nforged",
+          user: OpenStruct.new(login: "viamin")
+        )
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: [ forged_comment ]
+        )
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment)
+          .with(project.full_name, issue.github_number, a_string_including("Completed"))
+      end
+    end
+
+    context "when the handler is retried after the explanation comment succeeds" do
+      # @spec NO-OUTPUT-ISSUE-002
+      it "does not post a duplicate recommend-close comment and clears stale failure state" do
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue,
+          iterations: 3, cost_cents: 100,
+          error_message: "Recommend-close explanation comment could not be posted to GitHub. Review the run for details.",
+          external_metadata: issue_comment_failure_metadata(
+            issue_state: "recommend_close",
+            marker: "<!-- paid:recommend-close -->"
+          ))
+        stub_bot_backed_agent_run(agent_run, bot_project)
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:recommend-close -->\nOld comment"
+        allow(client).to receive(:recent_issue_comments).and_return([], [ existing_comment ])
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:add_comment).once
+        expect(agent_run.reload.error_message).to be_nil
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to be_nil
+      end
+
+      it "keeps PAT-backed retries idempotent when the posted marker was authored by the authenticated PAT owner" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100,
+          error_message: "Recommend-close explanation comment could not be posted to GitHub. Review the run for details.",
+          external_metadata: issue_comment_failure_metadata(
+            issue_state: "recommend_close",
+            marker: "<!-- paid:recommend-close -->"
+          ))
+        existing_comment = OpenStruct.new(
+          body: "<!-- paid:recommend-close -->\nOld comment",
+          user: OpenStruct.new(login: "paid-bot")
+        )
+        allow(client).to receive_messages(
+          authenticated_login: "paid-bot",
+          recent_issue_comments: [ existing_comment ]
+        )
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).not_to have_received(:add_comment)
+        expect(agent_run.reload.error_message).to be_nil
+        expect(agent_run.external_metadata["issue_explanation_comment_failure"]).to be_nil
       end
     end
 

@@ -53,6 +53,17 @@ RSpec.describe "FreeModels" do
       expect(response.body).to include("Below Quality Bar")
       expect(response.body).to include("Save Project Preferences")
     end
+
+    it "links a missing free-model runner to the free-policy OpenCode form" do
+      get free_models_path(project_id: project.id)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(ERB::Util.html_escape(new_runner_path(
+        form_variant: "api_key",
+        runner_key: "opencode",
+        model_policy: Runners::ModelOptions::FREE_POLICY_VALUE
+      )))
+    end
   end
 
   describe "PATCH /free_models/project_preferences" do

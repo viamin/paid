@@ -98,7 +98,7 @@ module Activities
       # off for PERMISSION_ERROR_BACKOFF (much shorter than the full
       # interval) instead of retrying every poll cycle. The workflow also
       # catches ConfigurationError and logs a warning.
-      project.update_column(:code_scanning_permission_error_at, Time.current)
+      project.update_columns(code_scanning_permission_error_at: Time.current)
       raise
     end
 

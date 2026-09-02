@@ -35,7 +35,7 @@ RSpec.describe Screenshots::ContainerCapture do
     let(:workspace) { Dir.mktmpdir("screenshots-perf-spec") }
 
     before do
-      allow(Screenshots::Storage).to receive(:configured?).and_return(false)
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
       allow(service).to receive(:with_workspace) do |&block|
         service.instance_variable_set(:@tmpdir, workspace)
         block.call(workspace)

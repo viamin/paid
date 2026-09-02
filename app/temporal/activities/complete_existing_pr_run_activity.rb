@@ -48,6 +48,7 @@ module Activities
         return result(agent_run.reload) unless completed
 
         record_draft_review_round_if_needed(agent_run)
+        capture_session_summary_if_needed(agent_run)
         refresh_pull_request_body(client, project, pr, agent_run)
         post_update_comment(client, project, pr.number, agent_run)
 

@@ -27,6 +27,17 @@ module Activities
     DELIMITED_OUTPUT_PATTERN = /^#{Regexp.escape(OUTPUT_DELIMITER)}[ \t]*\r?$\R(.*?)^#{Regexp.escape(OUTPUT_DELIMITER)}[ \t]*\r?$/m
     STDOUT_TAIL_CHUNKS = 50
     MAX_COMMENT_BODY = 50_000
+    # Assistant-message JSONL shapes recognized across runners: a bare
+    # "agent_message"/"task_complete"/"turn_complete" event (including the
+    # dotted "turn.complete"/"turn.completed" spellings some runners emit,
+    # matching Containers::StreamingEventProcessor::TURN_COMPLETE_EVENT_TYPES),
+    # or an envelope carrying one of these (e.g. Codex's "item.completed" ->
+    # "item", "event_msg" -> "payload", "response_item" -> "payload"). Mirrors
+    # the shapes AgentRun's stdout normalizer already recognizes (see
+    # spec/models/agent_run_spec.rb) so a delimited payload isn't missed just
+    # because a runner nests its final message differently than the one we
+    # happened to check for.
+    ASSISTANT_MESSAGE_TYPES = %w[agent_message task_complete turn_complete turn.complete turn.completed].freeze
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -80,7 +91,7 @@ module Activities
       sync_needs_input_questions(issue, questions)
 
       agent_run.log!("stdout", comment_body)
-      complete_run!(agent_run, paid_state_for(parsed, project, issue))
+      complete_run!(agent_run, paid_state_for(parsed, project, issue), reason: (max_rounds_reason(project) if max_rounds_reached))
       ProcessRunQueueJob.perform_later
 
       logger.info(
@@ -114,11 +125,11 @@ module Activities
       return recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "no structured output captured") if raw.blank?
 
       parsed = JSON.parse(strip_markdown_fence(extract_json_payload(raw)), symbolize_names: true)
-      return parsed if parsed[:sufficient_context].in?([ true, false ]) && parsed[:comment_body].is_a?(String) && parsed[:comment_body].present?
+      return parsed if valid_structured_output?(parsed)
 
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string")
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string", discarded_valid_payload: discarded_valid_delimited_payload?(raw))
     rescue JSON::ParserError => e
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message)
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message, discarded_valid_payload: discarded_valid_delimited_payload?(raw))
     end
 
     # Reads recent stdout through AgentRun's provider-aware output normalizer.
@@ -139,22 +150,129 @@ module Activities
       delimited_payload(raw) || raw.strip
     end
 
+    # Looks for our own delimited payload before falling back to a runner's
+    # generic output normalizer. Checks JSONL-wrapped agent messages first:
+    # structured runners (OpenCode/Codex) emit one JSON event per physical
+    # line, so the delimiter's newlines are escaped inside a string field and
+    # never match DELIMITED_OUTPUT_PATTERN's line anchors directly against the
+    # raw JSONL. Runner-side turn-selection logic can also pick an earlier
+    # progress message instead of the final one (#3786); scanning every
+    # agent_message event ourselves and keeping the last delimiter match
+    # sidesteps that without needing to replicate runner-specific turn
+    # semantics.
+    # @spec ISSUE-ENHANCEMENT-006
     def delimited_payload(raw)
+      @delimited_payloads ||= {}
+      @delimited_payloads.fetch(raw) { @delimited_payloads[raw] = jsonl_delimited_payload(raw) || plain_delimited_payload(raw) }
+    end
+
+    def plain_delimited_payload(raw)
+      delimited_payload_matches(raw).last
+    end
+
+    # Every delimited payload in the given text, in encounter order. The
+    # extraction keeps only the last match; the refund check needs all of
+    # them to tell a valid discarded payload from an invalid kept one.
+    def delimited_payload_matches(text)
+      text.scan(DELIMITED_OUTPUT_PATTERN).map { |match| match[0].strip }
+    end
+
+    def jsonl_delimited_payload(raw)
       payload = nil
-      raw.scan(DELIMITED_OUTPUT_PATTERN) { payload = Regexp.last_match(1) }
-      payload&.strip
+      raw.each_line do |line|
+        text = agent_message_text(line)
+        next unless text
+
+        match = plain_delimited_payload(text)
+        payload = match if match
+      end
+      payload
+    end
+
+    # Recognizes a top-level agent-message event or one nested in an
+    # envelope (e.g. `item.completed`'s `item`, or `event_msg`/`response_item`'s
+    # `payload`).
+    def agent_message_text(line)
+      event = JSON.parse(line)
+      return unless event.is_a?(Hash)
+
+      agent_message_item_text(event) ||
+        agent_message_item_text(event["item"]) ||
+        agent_message_item_text(event["payload"])
+    rescue JSON::ParserError
+      nil
+    end
+
+    def agent_message_item_text(item)
+      return unless item.is_a?(Hash)
+      return unless item["type"].in?(ASSISTANT_MESSAGE_TYPES) || item["role"] == "assistant"
+
+      text = item["text"] || item["message"] || item["last_agent_message"] || item["result"] || content_block_text(item["content"])
+      text if text.is_a?(String) && text.present?
+    end
+
+    def content_block_text(content)
+      return unless content.is_a?(Array)
+
+      content.filter_map { |block| block["text"] if block.is_a?(Hash) && block["type"] == "output_text" }.join.presence
+    end
+
+    # Whether the collected stdout contained a delimited payload that
+    # satisfies the structured-output contract even though the parse path
+    # failed — i.e. Paid's extraction (which keeps only the last delimiter
+    # match) demonstrably discarded a valid payload. A delimited payload
+    # that is itself malformed JSON or omits the required keys is an agent
+    # contract failure, not an extraction defect, and does not refund.
+    def discarded_valid_delimited_payload?(raw)
+      recognized_delimited_payloads(raw).any? { |payload| valid_delimited_payload_text?(payload) }
+    end
+
+    # Every delimited payload the extraction recognizes in the given stdout,
+    # in encounter order: matches embedded in recognized assistant-message
+    # JSONL events plus plain-text matches on the raw text itself.
+    def recognized_delimited_payloads(raw)
+      payloads = []
+      raw.each_line do |line|
+        text = agent_message_text(line)
+        payloads.concat(delimited_payload_matches(text)) if text
+      end
+      payloads.concat(delimited_payload_matches(raw))
+    end
+
+    def valid_delimited_payload_text?(payload_text)
+      valid_structured_output?(JSON.parse(strip_markdown_fence(payload_text), symbolize_names: true))
+    rescue JSON::ParserError
+      false
+    end
+
+    def valid_structured_output?(parsed)
+      parsed.is_a?(Hash) &&
+        parsed[:sufficient_context].in?([ true, false ]) &&
+        parsed[:comment_body].is_a?(String) &&
+        parsed[:comment_body].present?
     end
 
     # Fail loudly rather than posting garbled agent output as an enhancement
     # comment. A non-retryable error surfaces the problem for investigation
     # without marking the issue enhanced with unparseable content.
-    def raise_parse_error!(agent_run, detail)
+    #
+    # A round is refunded only when Paid demonstrably discarded a valid
+    # delimited payload — the stdout contained one that satisfies the
+    # structured-output contract, yet the parse path still failed. That is
+    # Paid's extraction bug, not the agent's, so it must not burn budget
+    # meant to bound repeated automatic re-evaluation (see #3652). Malformed
+    # JSON or missing keys inside the delimiters is an agent contract
+    # failure and consumes the round. Only automatic runs consume a round at
+    # queue time (manual runs never do, ISSUE-ENHANCEMENT-011), so only
+    # automatic runs may refund one.
+    def raise_parse_error!(agent_run, detail, discarded_valid_payload: false)
       if agent_run.issue
         IssueEnhancements::StopForManualReview.call(
           project: agent_run.project,
           issue: agent_run.issue,
           reason: "Paid could not validate the enhancement agent's structured output."
         )
+        refund_enhancement_round!(agent_run.issue) if discarded_valid_payload && agent_run.automatic?
       end
       agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
       raise Temporalio::Error::ApplicationError.new(
@@ -164,11 +282,19 @@ module Activities
       )
     end
 
-    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail)
+    def refund_enhancement_round!(issue)
+      issue.with_lock do
+        next if issue.enhance_issue_rounds <= 0
+
+        issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds - 1)
+      end
+    end
+
+    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail, discarded_valid_payload: false)
       comment = paid_question_comment(project, agent_run, comments)
       return recover_paid_question_comment!(agent_run, project, issue, client, comment) if comment
 
-      raise_parse_error!(agent_run, detail)
+      raise_parse_error!(agent_run, detail, discarded_valid_payload: discarded_valid_payload)
     end
 
     def recover_paid_question_comment!(agent_run, project, issue, client, comment)
@@ -199,7 +325,8 @@ module Activities
 
     def complete_existing(agent_run, client, project, issue, existing_comment)
       label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
-      complete_run!(agent_run, existing_paid_state(issue, existing_comment))
+      paid_state = existing_paid_state(issue, existing_comment)
+      complete_run!(agent_run, paid_state, reason: (issue.manual_review_reason if paid_state == "manual_review"))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
@@ -214,11 +341,19 @@ module Activities
       }
     end
 
+    # `## Auto-enhancement stopped` markers can be posted by either the
+    # max-rounds path (max_rounds_reason) or raise_parse_error! (the
+    # "Paid could not validate..." reason). On a retry that re-enters this
+    # branch, the reason the issue was originally parked with is the source
+    # of truth — overwrite it with the round-limit copy and the inbox lane
+    # will show operators the wrong cause.
     def reconcile_existing_label_state(client, project, issue, existing_comment)
       if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
-        issue.update!(paid_state: "manual_review")
+        attrs = { paid_state: "manual_review" }
+        attrs[:manual_review_reason] = max_rounds_reason(project) if issue.manual_review_reason.blank?
+        issue.update!(attrs)
         return { applied: nil, max_rounds_reached: true, sufficient_context: false }
       end
 
@@ -235,9 +370,22 @@ module Activities
       "completed"
     end
 
-    def complete_run!(agent_run, paid_state = "completed")
+    def complete_run!(agent_run, paid_state = "completed", reason: nil)
       agent_run.complete!
-      agent_run.issue.update!(paid_state: paid_state) if agent_run.issue
+      return unless agent_run.issue
+
+      attrs = { paid_state: paid_state }
+      attrs[:manual_review_reason] = reason if reason
+      agent_run.issue.update!(attrs)
+    end
+
+    # Shared with stop_after_max_rounds' GitHub comment copy, so the persisted
+    # reason (surfaced in the inbox) and the public comment tell the operator
+    # the same story.
+    # @spec ISSUE-ENHANCEMENT-012
+    def max_rounds_reason(project)
+      "Paid reached the configured limit of #{project.max_enhance_issue_reevaluation_rounds} " \
+        "enhancement re-evaluation rounds for this issue."
     end
 
     def trusted_comments(project, comments)
@@ -435,6 +583,7 @@ module Activities
     end
 
     def labels_added(client, project, issue, labels)
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       labels.select { |label| add_label(client, project, issue, label) }
     end
 

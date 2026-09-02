@@ -219,16 +219,17 @@ RSpec.describe Knowledge::RunnerExecutor do
       end
     end
 
-    context "with openrouter_free rotation" do
+    context "with free-policy rotation" do
       let!(:free_model_high) { create(:llm_model, :free, model_id: "free-high-current", tier: "high", capability_score: 7.0) }
       let(:free_model_high_alt) { create(:llm_model, :free, model_id: "free-high-other", tier: "high", capability_score: 5.0) }
       let!(:free_model_mid) { create(:llm_model, :free, model_id: "free-mid", tier: "mid", capability_score: 4.0) }
       let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
       let(:openrouter_runner) do
         user.runners.create!(
-          runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY,
+          runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: {
             "high" => free_model_high.model_id,
             "mid" => free_model_mid.model_id,
@@ -241,7 +242,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         free_model_high_alt
         allow(Knowledge::RunnerSelector).to receive(:for_chat)
           .with(user_setting: user_setting)
-          .and_return([ Runner::OPENROUTER_FREE_RUNNER_KEY, "openai" ])
+          .and_return([ "opencode", "openai" ])
         openrouter_runner # ensure created
       end
 
@@ -251,14 +252,14 @@ RSpec.describe Knowledge::RunnerExecutor do
 
         result = executor.execute do |runner|
           attempt += 1
-          if runner == Runner::OPENROUTER_FREE_RUNNER_KEY && attempt == 1
+          if runner == "opencode" && attempt == 1
             raise AgentHarness::RateLimitError, "rate limited"
           end
 
           "response from #{runner}"
         end
 
-        expect(result).to eq("response from openrouter_free")
+        expect(result).to eq("response from opencode")
         expect(attempt).to eq(2)
         # The rotated model succeeded and fully recovered the runner, so the
         # original user-configured model is restored (no permanent drift).
@@ -276,7 +277,7 @@ RSpec.describe Knowledge::RunnerExecutor do
           "ok"
         end
 
-        runner_state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        runner_state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
         # Recovery snapshot is cleared once restored so a later run does not
         # revert a user's manual edit.
         expect(runner_state.preferred_tier_model_ids).to be_nil
@@ -291,7 +292,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         # An open circuit blocks the full reset in record_success!, so the
         # rotated tier_model_ids must stay in place until recovery completes.
         runner_state = user.runner_states.create!(
-          runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
+          runner_name: openrouter_runner.state_key,
           circuit_state: "open",
           circuit_opened_at: 1.minute.ago,
           failure_count: 5
@@ -319,7 +320,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         openrouter_attempts = 0
 
         result = executor.execute do |runner|
-          if runner == Runner::OPENROUTER_FREE_RUNNER_KEY
+          if runner == "opencode"
             openrouter_attempts += 1
             raise AgentHarness::RateLimitError, "rate limited" if openrouter_attempts <= 2
           end
@@ -332,7 +333,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         expect(openrouter_attempts).to eq(2)
         expect(openrouter_runner.reload.tier_model_ids["high"]).to eq(free_model_high_alt.model_id)
 
-        state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
         expect(state.rate_limited_model_ids).to include(free_model_high.model_id, free_model_high_alt.model_id)
       end
 
@@ -345,7 +346,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         executor = described_class.new(user_setting: user_setting, operation: :chat)
 
         result = executor.execute do |runner|
-          raise AgentHarness::RateLimitError, "rate limited" if runner == Runner::OPENROUTER_FREE_RUNNER_KEY
+          raise AgentHarness::RateLimitError, "rate limited" if runner == "opencode"
           "response from #{runner}"
         end
 
@@ -356,39 +357,32 @@ RSpec.describe Knowledge::RunnerExecutor do
         executor = described_class.new(user_setting: user_setting, operation: :chat)
 
         executor.execute do |runner|
-          raise AgentHarness::RateLimitError, "rate limited" if runner == Runner::OPENROUTER_FREE_RUNNER_KEY
+          raise AgentHarness::RateLimitError, "rate limited" if runner == "opencode"
           "ok"
         end
 
-        state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
         expect(state).to be_present
         expect(state.rate_limited_model_ids).to include(free_model_high.model_id)
         expect(state.rate_limited_until).to be_present
       end
 
-      it "preserves pre-existing RunnerState keyed by the bare runner_key (no orphaned rows)" do
-        # The Knowledge subsystem (RunnerSelector + RunnerExecutor) has always
-        # keyed the openrouter_free RunnerState by the bare "openrouter_free"
-        # string, never the "runner:<id>" routing key. A failure recorded by
-        # the executor must land on the SAME bare-keyed row so an open circuit
-        # or accumulated failure_count is not silently reset across upgrades.
-        prior_state = user.runner_states.create!(
-          runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
-          circuit_state: "closed",
-          failure_count: 2
-        )
-
+      it "resolves free-policy RunnerState onto the runner's routing key, not the bare runner_key" do
+        # opencode is not single-instance (a user may hold several free-policy
+        # opencode runners, one per OpenRouter credential), so state must be
+        # disambiguated by routing key rather than the shared "opencode"
+        # runner_key string.
         executor = described_class.new(user_setting: user_setting, operation: :chat)
 
         executor.execute do |runner|
-          raise AgentHarness::Error, "error" if runner == Runner::OPENROUTER_FREE_RUNNER_KEY
+          raise AgentHarness::Error, "error" if runner == "opencode"
           "ok"
         end
 
-        expect(prior_state.reload.failure_count).to eq(3)
-        # No routing-key row must be created — state stays on the bare key.
-        expect(user.runner_states.where.not(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
-          .where(runner_name: openrouter_runner.state_key)).not_to exist
+        expect(user.runner_states.where(runner_name: "opencode")).not_to exist
+        state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
+        expect(state).to be_present
+        expect(state.failure_count).to eq(1)
       end
     end
 

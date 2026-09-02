@@ -1,3 +1,4 @@
+<%# @spec DASHBOARD-FRAME-CACHE-008 %>
 <% frame_options = {} %>
 <% frame_options[:src] = local_assigns[:src] if local_assigns[:src].present? %>
 
@@ -8,6 +9,6 @@
       paused_projects: paused_projects,
       queue_fairness_mode: local_assigns[:queue_fairness_mode] %>
   <% else %>
-    <div class="animate-pulse rounded-lg bg-gray-100 h-48"></div>
+    <div class="motion-safe:animate-pulse motion-reduce:animate-none rounded-lg bg-gray-100 h-48"></div>
   <% end %>
 <% end %>

@@ -97,9 +97,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
   let(:activity) { described_class.new }
   let(:github_client) { instance_double(GithubClient) }
+  let(:ensure_labels_result) do
+    instance_double(Projects::EnsureStandardLabels::Result, any_errors?: false, errors: [])
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(Projects::EnsureStandardLabels).to receive(:call).and_return(ensure_labels_result)
     allow(github_client).to receive(:add_comment)
     allow(github_client).to receive(:remove_label_from_issue)
     allow(github_client).to receive(:recent_issue_comments).and_return([])
@@ -483,13 +487,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_labels_to_issue)
-          .with(issue.project.full_name, issue.github_number, [ "paid-escalated" ])
+          .with(issue.project.full_name, issue.github_number, [ described_class::PAID_ESCALATED_LABEL ])
       end
 
       it "keeps the local labels aligned with the escalated phase" do
         activity.execute(issue_id: issue.id)
 
-        expect(issue.reload.labels).to include("paid-escalated")
+        expect(issue.reload.labels).to include(described_class::PAID_ESCALATED_LABEL)
       end
 
       it "posts an escalation comment" do
@@ -631,6 +635,11 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .and_raise(GithubClient::Error, "Not found")
       end
 
+      # Unlike a failed label-catalog sync (which bails out above), a failed
+      # label write after a successful sync still escalates: the hold must
+      # reach the owner, and the scan re-applies a missing paid-escalated
+      # label so the remote state converges with the local phase.
+      # @spec PR-ESCALATION-019 @spec PR-ESCALATION-021
       it "still updates the phase" do
         activity.execute(issue_id: issue.id)
 
@@ -640,13 +649,151 @@ RSpec.describe Activities::MarkEscalatedActivity do
       it "still keeps the local label aligned with the escalated phase" do
         activity.execute(issue_id: issue.id)
 
-        expect(issue.reload.labels).to include("paid-escalated")
+        expect(issue.reload.labels).to include(described_class::PAID_ESCALATED_LABEL)
       end
 
       it "still returns updated: true" do
         result = activity.execute(issue_id: issue.id)
 
         expect(result[:updated]).to be true
+      end
+    end
+
+    context "when ensuring standard labels reports errors" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "draft")
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: described_class::PAID_ESCALATED_LABEL, error: "sync failed" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      it "bails out before escalating locally or remotely" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("draft")
+        expect(issue.reload.labels).not_to include(described_class::PAID_ESCALATED_LABEL)
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      it "does not remove paid-ready before the label catalog is synced" do
+        issue.update!(pr_review_phase: "ready", labels: [ "paid-ready" ])
+
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
+    context "when ensuring standard labels reports errors unrelated to escalation" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "draft")
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: "P2", error: "Multiple Paid-owned categories claim the label 'P2'" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      it "still escalates, since paid-escalated and paid-ready are unaffected" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: true)
+        expect(issue.reload.pr_review_phase).to eq("escalated")
+      end
+    end
+
+    context "when ensuring standard labels reports a paid-ready sync failure on an issue without paid-ready" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "draft",
+          labels: [ "paid-automation" ])
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: "paid-ready", error: "Unable to reconcile color/description drift" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      # The activity only needs to remove paid-ready when it is present on
+      # the issue, so a paid-ready sync failure must not block escalation
+      # for a draft PR that does not carry the label.
+      it "still escalates, since the issue has no paid-ready label to remove" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: true)
+        expect(issue.reload.pr_review_phase).to eq("escalated")
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with(issue.project.full_name, issue.github_number, [ described_class::PAID_ESCALATED_LABEL ])
+      end
+
+      it "does not attempt to remove paid-ready when it is not on the issue" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
+    context "when ensuring standard labels reports a paid-ready sync failure on an issue with paid-ready" do
+      # paid-ready becomes a blocking dependency only when the issue currently
+      # has that label — otherwise the activity has nothing to remove and a
+      # catalog drift on the unrelated label must not stop the escalation.
+      let(:issue) do
+        create(:issue, :pull_request,
+          pr_review_phase: "ready",
+          labels: [ "paid-generated", "paid-automation", "paid-ready" ])
+      end
+      let(:ensure_labels_result) do
+        instance_double(
+          Projects::EnsureStandardLabels::Result,
+          any_errors?: true,
+          errors: [ { name: "paid-ready", error: "Unable to reconcile color/description drift" } ]
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      # @spec GH-LABELS-005
+      it "bails out so the PR never loses paid-ready locally without a synced catalog entry" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("ready")
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
+      it "does not remove paid-ready before the label catalog is synced" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
       end
     end
 
@@ -672,7 +819,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_labels_to_issue)
-          .with(issue.project.full_name, issue.github_number, [ "paid-escalated" ])
+          .with(issue.project.full_name, issue.github_number, [ described_class::PAID_ESCALATED_LABEL ])
       end
 
       it "still returns updated: true" do
@@ -703,7 +850,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
       it "removes the paid-ready label locally when escalating" do
         activity.execute(issue_id: issue.id)
 
-        expect(issue.reload.labels).to include("paid-escalated")
+        expect(issue.reload.labels).to include(described_class::PAID_ESCALATED_LABEL)
         expect(issue.reload.labels).not_to include("paid-ready")
       end
 
@@ -714,7 +861,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_labels_to_issue)
-          .with(issue.project.full_name, issue.github_number, [ "paid-escalated" ])
+          .with(issue.project.full_name, issue.github_number, [ described_class::PAID_ESCALATED_LABEL ])
       end
     end
 

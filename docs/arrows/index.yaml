@@ -200,6 +200,14 @@ arrows:
     taxonomy: knowledge
     status: OK
     audited: 2026-08-04
+  agent-run-session-summaries:
+    title: Agent-Run Session Summaries
+    path: docs/intent/agent-run-session-summaries/agent-run-session-summaries-design.md
+    specs: docs/intent/agent-run-session-summaries/agent-run-session-summaries-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-09-01
   configuration-profiles-chat:
     title: Configuration Profiles Chat
     path: docs/intent/configuration-profiles-chat/configuration-profiles-chat-design.md

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "delegate"
 require "net/http"
 require "qdrant"
 
@@ -8,8 +7,6 @@ require "qdrant"
 #
 # Translates low-level network exceptions into QdrantClient::ConnectionError so
 # callers can rescue a single hierarchy.
-# Error wrapping applies to all method calls on returned resource objects
-# (e.g. client.collections.list), not just the accessor itself.
 #
 # @example
 #   client = QdrantClient.new(url: "http://localhost:6333")
@@ -48,13 +45,9 @@ class QdrantClient
   def initialize(url:, api_key: nil, timeout: DEFAULT_TIMEOUT, open_timeout: DEFAULT_OPEN_TIMEOUT,
                  logger: self.class.default_logger)
     @client = Qdrant::Client.new(url: url, api_key: api_key, logger: logger)
-    install_timed_connection!(
-      url: url,
-      api_key: api_key,
-      timeout: timeout,
-      open_timeout: open_timeout,
-      logger: logger
-    )
+    @timeout = timeout
+    @open_timeout = open_timeout
+    configure_connection!
   end
 
   # The upstream Qdrant gem defaults to `Logger.new($stdout)` and logs each
@@ -69,22 +62,20 @@ class QdrantClient
     end
   end
 
-  # Returns a proxy around {Qdrant::Client#collections} that wraps connection
-  # errors on any subsequent method call (e.g. .list, .create).
+  # Returns the Qdrant collections resource with error handling.
   #
-  # @return [ErrorWrappingProxy] proxy around Qdrant::Collections
+  # @return [Qdrant::Collections] wrapped with error handling
   # @raise [ConnectionError] if Qdrant is unreachable
   def collections
-    ErrorWrappingProxy.new(client.collections)
+    ErrorProxy.new(client.collections)
   end
 
-  # Returns a proxy around {Qdrant::Client#points} that wraps connection
-  # errors on any subsequent method call (e.g. .upsert, .search).
+  # Returns the Qdrant points resource with error handling.
   #
-  # @return [ErrorWrappingProxy] proxy around Qdrant::Points
+  # @return [Qdrant::Points] wrapped with error handling
   # @raise [ConnectionError] if Qdrant is unreachable
   def points
-    ErrorWrappingProxy.new(client.points)
+    ErrorProxy.new(client.points)
   end
 
   # Checks whether the Qdrant service is reachable and responsive.
@@ -99,13 +90,37 @@ class QdrantClient
 
   private
 
+  # Wraps a Qdrant resource object to catch and translate connection errors.
+  class ErrorProxy
+    def initialize(resource)
+      @resource = resource
+    end
+
+    def method_missing(method, ...)
+      @resource.send(method, ...)
+    rescue *CONNECTION_ERRORS => e
+      raise QdrantClient::ConnectionError,
+        "Qdrant connection error during ##{method}: #{e.message}",
+        e.backtrace
+    end
+
+    def respond_to_missing?(method, _include_private = false)
+      @resource.respond_to?(method)
+    end
+  end
+
   attr_reader :client
 
-  def install_timed_connection!(url:, api_key:, timeout:, open_timeout:, logger:)
+  def configure_connection!
+    timeout = @timeout
+    open_timeout = @open_timeout
+    logger = client.instance_variable_get(:@logger)
+    api_key = client.instance_variable_get(:@api_key)
+
     client.instance_variable_set(
       :@connection,
-      TimedConnection.new(
-        url: url,
+      Connection.new(
+        url: client.instance_variable_get(:@url),
         api_key: api_key,
         raise_error: false,
         logger: logger,
@@ -115,7 +130,7 @@ class QdrantClient
     )
   end
 
-  class TimedConnection < Qdrant::Client::Connection
+  class Connection < Qdrant::Client::Connection
     def initialize(url:, api_key:, raise_error:, logger:, timeout:, open_timeout:)
       super(url: url, api_key: api_key, raise_error: raise_error, logger: logger)
       @timeout = timeout
@@ -125,71 +140,39 @@ class QdrantClient
     private
 
     def execute(verb, path, &block)
-      response = TimedRequestBuilder
-        .new(verb, @uri, path, @api_key, @logger, timeout: @timeout, open_timeout: @open_timeout)
+      request = build_timed_request(verb, path, &block)
+      perform_request(request)
+    end
+
+    def build_timed_request(verb, path, &block)
+      Qdrant::Client::RequestBuilder.new(verb, @uri, path, @api_key, @logger)
         .tap(&block)
         .build
-        .perform(@raise_error)
-
-      Qdrant::Client::ResponseBuilder.new(response).build
-    end
-  end
-
-  # Delegates all method calls to the wrapped object while catching
-  # Qdrant transport errors and re-raising as QdrantClient::ConnectionError.
-  class ErrorWrappingProxy < SimpleDelegator
-    def method_missing(method, ...)
-      super
-    rescue *CONNECTION_ERRORS => e
-      raise QdrantClient::ConnectionError,
-        "Qdrant connection error during ##{method}: #{e.message}",
-        e.backtrace
-    end
-  end
-
-  class TimedRequestBuilder < Qdrant::Client::RequestBuilder
-    def initialize(verb, base_url, path, api_key, logger, timeout:, open_timeout:)
-      super(verb, base_url, path, api_key, logger)
-      @timeout = timeout
-      @open_timeout = open_timeout
     end
 
-    def build
-      TimedRequest.new(
-        build_uri,
-        @verb,
-        @request.body,
-        @api_key,
-        @logger,
-        timeout: @timeout,
-        open_timeout: @open_timeout
-      )
-    end
-  end
+    def perform_request(request)
+      request_uri = request.instance_variable_get(:@uri)
+      request_data = request.instance_variable_get(:@data)
 
-  class TimedRequest < Qdrant::Client::Request
-    def initialize(uri, verb, body, api_key, logger, timeout:, open_timeout:)
-      super(uri, verb, body, api_key, logger)
-      @timeout = timeout
-      @open_timeout = open_timeout
-    end
+      @logger.info("Performing Request: #{request_verb_name(request)} #{request_uri}")
 
-    def perform(raise_error)
-      @logger.info("Performing Request: #{verb_name} #{@uri}")
-
-      response = Net::HTTP.new(@uri.host, @uri.port).tap do |http|
-        http.use_ssl = true if @uri.scheme == "https"
+      response = Net::HTTP.new(request_uri.host, request_uri.port).tap do |http|
+        http.use_ssl = true if request_uri.scheme == "https"
         http.read_timeout = @timeout
         http.open_timeout = @open_timeout
-      end.request(@data)
+      end.request(request_data)
 
-      response.value if raise_error
+      response.value if @raise_error
 
       @logger.info("Response status: #{response.code}")
-      response
+      Qdrant::Client::ResponseBuilder.new(response).build
     rescue => e
-      @logger.error("#{verb_name} #{@uri} failed: #{e.class}: #{e.message}")
+      @logger.error("Request failed: #{e.class}: #{e.message}")
       raise
+    end
+
+    def request_verb_name(request)
+      request.send(:verb_name)
     end
   end
 end

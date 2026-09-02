@@ -45,6 +45,13 @@
   *Tests:* `spec/lib/upstream_registries_spec.rb`.
   *Code:* `scripts/lib/upstream_registries.rb`, `bin/update`.
 
+- [x] **TOOLCHAIN-PIN-012** — `package.json` SHALL declare the Tailwind build
+  tool through `@tailwindcss/cli` and SHALL NOT also pin a redundant direct
+  `tailwindcss` dependency, because the CLI already carries the runtime the
+  build entry point needs.
+  *Tests:* `spec/config/toolchain_pins_spec.rb`.
+  *Code:* `package.json`.
+
 ## PostgreSQL Pins
 
 - [x] **TOOLCHAIN-PIN-020** — When a newer PostgreSQL patch release exists

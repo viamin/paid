@@ -1,12 +1,14 @@
+<%# @spec DASHBOARD-CHART-A11Y-006 %>
 <%= turbo_frame_tag "dashboard-metrics" do %>
   <%# Time Range Filter Buttons — navigate the full dashboard page so both
       metrics and performance frames reload with the new time_range, and the
       browser URL stays on /dashboard (not a frame-only endpoint). %>
+  <%# @spec DASHBOARD-FILTER-A11Y-002 %>
   <div class="mb-6 flex flex-wrap gap-2">
     <% Dashboard::Stats::TIME_RANGES.each do |range| %>
-      <%= link_to time_range_label(range),
+      <%= dashboard_filter_link time_range_label(range),
             dashboard_path(time_range: range),
-            class: filter_button_classes(time_range == range),
+            time_range == range,
             data: { turbo_frame: "_top" } %>
     <% end %>
   </div>
@@ -14,7 +16,7 @@
   <%# Run Volume & Outcome %>
   <div>
     <h2 class="text-lg font-semibold text-gray-900">Run Volume &amp; Outcome</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Total Runs</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -39,7 +41,7 @@
           <%= number_with_delimiter(stats[:run_volume][:active]) %>
         </dd>
       </div>
-    </div>
+    </dl>
 
     <%# Status breakdown %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
@@ -85,11 +87,12 @@
           </div>
         </div>
         <div class="mt-4">
-          <%= dashboard_chartkick_chart "ColumnChart", stats[:daily_run_status_chart],
+          <%= column_chart stats[:daily_run_status_chart],
               id: "daily-runs-chart",
+              caption: "Agent runs per day, stacked by completed and failed status, over the last 30 days.",
               stacked: true,
               height: "320px",
-              colors: ["#dc2626", "#16a34a"],
+              colors: dashboard_chart_colors(:daily_run_status),
               xtitle: "Day",
               ytitle: "Runs",
               discrete: true,
@@ -120,6 +123,7 @@
 
     <%# PR Creation Run Outcomes %>
     <% outcome_data = stats[:daily_outcome_chart] %>
+    <% outcome_chart_colors = dashboard_outcome_chart_colors(outcome_data[:series]) %>
     <% outcome_window_label = time_range_label(time_range) %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
       <div class="px-4 py-5 sm:p-6">
@@ -140,11 +144,12 @@
         <% if outcome_data[:overall_total] > 0 %>
           <%# Stacked column chart of outcomes per day %>
           <div class="mt-4">
-            <%= dashboard_chartkick_chart "ColumnChart", outcome_data[:series],
+            <%= column_chart outcome_data[:series],
                 id: "daily-outcome-chart",
+                caption: "PR Creation run outcomes per day for #{outcome_window_label}, grouped by completion status.",
                 stacked: true,
                 height: "280px",
-                colors: outcome_data[:colors],
+                colors: outcome_chart_colors,
                 xtitle: "Day",
                 ytitle: "Runs",
                 discrete: true,
@@ -174,10 +179,11 @@
           <%# Completion rate % line chart %>
           <div class="mt-6">
             <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Daily Completion Rate %</h4>
-            <%= dashboard_chartkick_chart "LineChart", outcome_data[:completion_rate],
+            <%= line_chart outcome_data[:completion_rate],
                 id: "daily-completion-rate-chart",
+                caption: "Daily PR creation completion rate percentage for #{outcome_window_label}.",
                 height: "180px",
-                colors: ["#16a34a"],
+                colors: dashboard_chart_colors(:outcome_completion_rate),
                 xtitle: "Day",
                 ytitle: "Completion %",
                 discrete: true,
@@ -200,7 +206,7 @@
               <% count = series[:data].values.sum %>
               <% next if count.zero? %>
               <div class="flex items-center gap-1.5">
-                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= outcome_data[:colors][index] %>"></span>
+                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= outcome_chart_colors[index] %>"></span>
                 <span class="text-gray-600"><%= series[:name] %></span>
                 <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
                 <span class="text-gray-400">(<%= ((count.to_f / outcome_data[:overall_total]) * 100).round(1) %>%)</span>
@@ -220,7 +226,7 @@
   <% if has_cost_or_token_data %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Cost &amp; Token Usage</h2>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -245,8 +251,8 @@
             $<%= format("%.2f", cost_tokens[:avg_cost_per_run_cents] / 100.0) %>
           </dd>
         </div>
-      </div>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      </dl>
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Avg Tokens / Run</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -259,14 +265,14 @@
             <%= cost_tokens[:avg_iterations_per_run] %>
           </dd>
         </div>
-      </div>
+      </dl>
     </div>
   <% end %>
 
   <%# Duration Percentiles %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Duration (Completed Runs)</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <% { "Median (p50)" => :p50, "p75" => :p75, "p90" => :p90, "Average" => :avg }.each do |label, key| %>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
@@ -275,7 +281,7 @@
           </dd>
         </div>
       <% end %>
-    </div>
+    </dl>
   </div>
 
   <%# Duration Trend Chart %>
@@ -295,10 +301,11 @@
               </span>
             </p>
           <% end %>
-          <%= dashboard_chartkick_chart "LineChart", dtc[:series],
+          <%= line_chart dtc[:series],
               id: "duration-trend-chart",
+              caption: "Daily average and median (p50) duration in seconds for completed PR creation runs.",
               height: "320px",
-              colors: ["#4f46e5", "#059669", "#94a3b8"],
+              colors: dashboard_chart_colors(:duration_trend),
               xtitle: "Date",
               ytitle: "Seconds",
               library: {
@@ -323,7 +330,7 @@
     <h2 class="text-lg font-semibold text-gray-900">Run Phase Breakdown</h2>
     <p class="mt-1 text-sm text-gray-500">Separate queue and setup overhead from prompt preparation, agent execution, and wrap-up work.</p>
     <% phase_groups = stats[:phase_breakdown].keys %>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <% phase_groups.each do |phase_group| %>
         <% phase_stats = stats[:phase_breakdown][phase_group] %>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
@@ -338,7 +345,7 @@
           </dd>
         </div>
       <% end %>
-    </div>
+    </dl>
 
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
       <div class="px-4 py-5 sm:p-6">
@@ -374,7 +381,7 @@
     <h2 class="text-lg font-semibold text-gray-900">Issue Completion <span class="text-sm font-normal text-gray-500">(All Time)</span></h2>
     <% ic = stats[:issue_completion] %>
     <% if ic[:merged_count] > 0 %>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Merged PRs (with agent runs)</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">
@@ -402,7 +409,7 @@
             <%= format_duration(ic[:agent_run_seconds][:avg_seconds]) %>
           </dd>
         </div>
-      </div>
+      </dl>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">

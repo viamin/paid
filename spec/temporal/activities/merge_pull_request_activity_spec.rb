@@ -17,6 +17,7 @@ RSpec.describe Activities::MergePullRequestActivity do
     allow(Automation::Providers::Resolver).to receive(:repository_for)
       .with(project)
       .and_return(provider)
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
   describe "#execute" do
@@ -117,6 +118,13 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(provider).to have_received(:add_labels)
           .with(repo: project.full_name, number: 42, labels: [ described_class::PAID_AUTO_MERGED_LABEL ])
+      end
+
+      # @spec GH-LABELS-001
+      it "syncs the standard label catalog before applying the label" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
       end
 
       it "posts an auto-merge comment on the PR" do

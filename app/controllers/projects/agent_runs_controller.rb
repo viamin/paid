@@ -9,7 +9,9 @@ module Projects
     InvalidDockerHostSelectionError = Containers::ResolveHostForRun::InvalidDockerHostSelectionError
 
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance ]
+    before_action :set_agent_run, only: [
+      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary
+    ]
 
     def index
       authorize @project, :show?
@@ -42,6 +44,7 @@ module Projects
       egress_audit_events = @agent_run.egress_security_events.audit_visible
       @egress_security_events = egress_audit_events.recent.limit(50).load
       @egress_denied_event_count = egress_audit_events.count
+      @session_summary = @agent_run.agent_run_session_summary
     end
 
     def provenance
@@ -77,6 +80,25 @@ module Projects
     def cancel
       authorize @agent_run
       cancel_agent_run(@agent_run, redirect_path: project_agent_run_path(@project, @agent_run))
+    end
+
+    # @spec SESSION-SUMMARY-004
+    def promote_session_summary
+      authorize @project, :update?
+      summary = @agent_run.agent_run_session_summary
+
+      if summary.nil?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "No session summary is available to promote."
+        return
+      end
+
+      change_intent = Knowledge::SessionSummaries::Promote.call(session_summary: summary, user: current_user)
+      redirect_to project_change_intent_path(@project, change_intent),
+        notice: "Session summary promoted to a draft Change Intent Record. Review and approve it to add it to the knowledge base."
+    rescue ActiveRecord::RecordInvalid => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
+    rescue ArgumentError => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
     def new
@@ -261,19 +283,43 @@ module Projects
     end
 
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
+    # @spec OPERATOR-INBOX-002C
     def unblock_escalation
       authorize @project, :run_agent?
 
       pr = resolve_pull_request_record
       unless pr
-        redirect_to dashboard_path, alert: "Please select a pull request."
+        redirect_to safe_return_target || dashboard_path, alert: "Please select a pull request."
         return
       end
 
       result = PullRequests::Unblock.call(pull_request: pr, actor: current_user)
       @project.broadcast_pull_requests_update if result.success?
 
-      redirect_to dashboard_path, **unblock_flash(result, pr)
+      redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
+    end
+
+    # manual_review only clears when an explicit operator-triggered run
+    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
+    # queues a fresh manual enhance_issue run rather than just clearing state,
+    # since nothing else would ever move the issue out of manual_review.
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    def resume_manual_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ],
+        on_error_path: safe_return_target || dashboard_path,
+        custom_prompt: nil,
+        goal: "enhance_issue",
+        priority_tier: nil
+      )
     end
 
     def toggle_auto_continue_pause
@@ -741,6 +787,12 @@ module Projects
       return nil if params[:pull_request_id].blank?
 
       @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
+    end
+
+    def resolve_manual_review_issue
+      return nil if params[:issue_id].blank?
+
+      @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
     end
 
     def cancel_in_flight_execution_for_resume!

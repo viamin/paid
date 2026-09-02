@@ -92,6 +92,44 @@ module DashboardHelper
     "failed" => "bg-rose-500"
   }.freeze
 
+  DASHBOARD_CHART_PALETTES = {
+    daily_run_status: %w[
+      var(--dashboard-chart-danger)
+      var(--dashboard-chart-success)
+    ],
+    outcome_completion_rate: %w[
+      var(--dashboard-chart-success)
+    ],
+    duration_trend: %w[
+      var(--dashboard-chart-accent)
+      var(--dashboard-chart-duration-median)
+      var(--dashboard-chart-duration-trend)
+    ],
+    pr_cycle_time: %w[
+      var(--dashboard-chart-pr-cycle-average)
+      var(--dashboard-chart-pr-cycle-median)
+      var(--dashboard-chart-pr-cycle-trend)
+    ]
+  }.transform_values(&:freeze).freeze
+
+  DASHBOARD_OUTCOME_CHART_COLOR_TOKENS = {
+    "completed" => "var(--dashboard-chart-success)",
+    "failed" => "var(--dashboard-chart-danger)",
+    "timeout" => "var(--dashboard-chart-orange)",
+    "token_budget_exceeded" => "var(--dashboard-chart-rose)",
+    "no_output" => "var(--dashboard-chart-violet)",
+    "auth_expired" => "var(--dashboard-chart-blue)",
+    "rate_limited" => "var(--dashboard-chart-rate-limited)",
+    "cancelled" => "var(--dashboard-chart-neutral)",
+    "retried" => "var(--dashboard-chart-muted)"
+  }.freeze
+
+  DASHBOARD_CHART_ANNOTATION_COLORS = {
+    border: "var(--dashboard-chart-annotation-border)",
+    label_background: "var(--dashboard-chart-annotation-background)",
+    label_text: "var(--dashboard-chart-annotation-text)"
+  }.freeze
+
   def time_range_label(range)
     TIME_RANGE_LABELS.fetch(range, range.to_s.titleize)
   end
@@ -140,31 +178,27 @@ module DashboardHelper
     end
   end
 
-  def dashboard_chartkick_chart(chart_type, data_source, **options)
-    @dashboard_chartkick_chart_id ||= 0
-
-    element_id = options.delete(:id) || "dashboard-chart-#{@dashboard_chartkick_chart_id += 1}"
-    height = (options.delete(:height) || "300px").to_s
-    width = (options.delete(:width) || "100%").to_s
-    loading = options.delete(:loading) || "Loading..."
-    chart_options = options.except(:html, :nonce, :defer, :content_for)
-    chart_data = data_source.respond_to?(:chart_json) ? data_source.chart_json : data_source.to_json
-
-    tag.div(
-      loading,
-      id: element_id,
-      style: "height: #{ERB::Util.html_escape(height)}; width: #{ERB::Util.html_escape(width)}; " \
-        "text-align: center; color: #999; line-height: #{ERB::Util.html_escape(height)}; " \
-        "font-size: 14px; font-family: 'Lucida Grande', 'Lucida Sans Unicode', Verdana, Arial, Helvetica, sans-serif;",
-      data: {
-        controller: "chartkick",
-        chartkick_type_value: chart_type,
-        chartkick_data_value: chart_data,
-        chartkick_options_value: chart_options.to_json
-      }
-    )
+  # @spec DASHBOARD-FILTER-A11Y-001
+  def dashboard_filter_link(label, url, active, **link_options)
+    aria = link_options.delete(:aria) || {}
+    link_to label, url, **link_options, class: filter_button_classes(active), aria: aria.merge(current: active ? "page" : nil)
   end
 
+  # @spec DASHBOARD-CHART-A11Y-010
+  def dashboard_chart_colors(key)
+    DASHBOARD_CHART_PALETTES.fetch(key)
+  end
+
+  # @spec DASHBOARD-CHART-A11Y-010
+  def dashboard_outcome_chart_colors(series)
+    series.map do |entry|
+      status = entry[:name] || entry["name"]
+      status = status.to_s.downcase.tr(" ", "_")
+      DASHBOARD_OUTCOME_CHART_COLOR_TOKENS.fetch(status, "var(--dashboard-chart-neutral)")
+    end
+  end
+
+  # @spec DASHBOARD-CHART-A11Y-010
   def chart_annotations(data)
     annotations = {}
     data[:outlier_annotations].each do |date, count|
@@ -172,15 +206,15 @@ module DashboardHelper
         type: "line",
         xMin: date.to_s,
         xMax: date.to_s,
-        borderColor: "rgba(245, 158, 11, 0.3)",
+        borderColor: DASHBOARD_CHART_ANNOTATION_COLORS[:border],
         borderWidth: 1,
         borderDash: [ 4, 4 ],
         label: {
           display: true,
           content: "#{count} outlier#{count > 1 ? "s" : ""}",
           position: "start",
-          backgroundColor: "rgba(245, 158, 11, 0.8)",
-          color: "#fff",
+          backgroundColor: DASHBOARD_CHART_ANNOTATION_COLORS[:label_background],
+          color: DASHBOARD_CHART_ANNOTATION_COLORS[:label_text],
           font: { size: 10 }
         }
       }

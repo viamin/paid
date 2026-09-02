@@ -83,6 +83,7 @@ RSpec.describe Knowledge::Embeddings::Generate do
 
       expect { generator.call(texts: texts) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
+      expect(AgentHarness).to have_received(:embed).exactly(4).times
     end
 
     it "respects Retry-After header on 429 responses" do
@@ -151,6 +152,13 @@ RSpec.describe Knowledge::Embeddings::Generate do
 
       expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /Invalid JSON/)
+    end
+
+    it "does not wrap programming errors as EmbeddingError" do
+      allow(AgentHarness).to receive(:embed).and_raise(NoMethodError.new("undefined method"))
+
+      expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
+        .to raise_error(NoMethodError)
     end
 
     it "supports arbitrary OpenAI-compatible proxy base URLs" do

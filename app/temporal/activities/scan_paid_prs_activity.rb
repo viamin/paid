@@ -50,7 +50,7 @@ module Activities
     # PROVIDER_BOT_USERNAMES, we can safely key off both author identity and
     # the marker without matching human-authored text.
     PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
     TDD_TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
       .dig(:tdd_test_review, :name)
       .freeze
@@ -464,7 +464,7 @@ module Activities
       return unless issue.pr_review_phase == "restarted"
       return if issue.review_goal_retry_reset_at.present?
 
-      issue.update_column(:review_goal_retry_reset_at, Time.current)
+      issue.update_columns(review_goal_retry_reset_at: Time.current)
       invalidate_pr_progress_state(issue)
     end
 
@@ -1093,14 +1093,14 @@ module Activities
       if blocked_only_on_approval
         return if issue.awaiting_approval_since.present?
 
-        issue.update_column(:awaiting_approval_since, Time.current)
+        issue.update_columns(awaiting_approval_since: Time.current)
         logger.info(
           message: "pr_scanner.approval_wait_started",
           project_id: project.id,
           pr_number: issue.github_number
         )
       elsif issue.awaiting_approval_since.present?
-        issue.update_column(:awaiting_approval_since, nil)
+        issue.update_columns(awaiting_approval_since: nil)
         logger.info(
           message: "pr_scanner.approval_wait_cleared",
           project_id: project.id,
@@ -2177,7 +2177,7 @@ module Activities
       end
 
       if rerun_succeeded
-        issue.update_column(:ci_retry_requested_at, Time.current)
+        issue.update_columns(ci_retry_requested_at: Time.current)
         logger.info(
           message: "pr_scanner.transient_ci_retry_requested",
           project_id: project.id,
@@ -2738,7 +2738,7 @@ module Activities
       new_count = eligible ? current + 1 : 0
       return if new_count == current
 
-      issue.update_column(:stuck_confirmation_count, new_count)
+      issue.update_columns(stuck_confirmation_count: new_count)
       logger.info(
         message: "pr_scanner.stuck_confirmation_updated",
         issue_id: issue.id,

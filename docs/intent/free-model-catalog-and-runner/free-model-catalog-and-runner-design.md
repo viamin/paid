@@ -12,7 +12,8 @@ prefix: FREE-MODEL
 
 ## Purpose
 
-Paid's `openrouter_free` runner is useful only if the privacy guarantees the
+Paid's free-policy runners (direct-outbound runners with `model_policy:
+"free"` — RDR-065, #3671) are useful only if the privacy guarantees the
 user configures at the project level are enforced consistently in two places:
 
 1. **Execution** — the request sent to OpenRouter must carry the correct
@@ -43,11 +44,10 @@ work must use this shared mapping rather than re-encoding part of it locally.
 
 ### Execution plan
 
-`Runners::FreeModelExecutionPlan` builds the direct-outbound runtime for the
-legacy `openrouter_free` runner and for `opencode` runners whose
-`model_policy` is `free`. OpenRouter-backed specific-model `opencode` runs
-reuse the same mapping when building their direct-outbound runtime. The plan
-or runtime includes:
+`Runners::FreeModelExecutionPlan` builds the direct-outbound runtime for any
+free-policy runner. OpenRouter-backed specific-model direct-outbound runs
+reuse the same routing mapping when they build their runtime. The plan or
+runtime includes:
 
 - the selected model id,
 - the OpenRouter base URL,

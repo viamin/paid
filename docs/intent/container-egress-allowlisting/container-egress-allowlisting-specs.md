@@ -26,9 +26,10 @@
   destination categories (`service_container`, `preview_tunnel`) that the
   resolver materializes later, and runner/provider destinations, where
   provider hosts are resolved from the run's runner key (claude → Anthropic,
-  codex → OpenAI, gemini → Google, copilot → GitHub Copilot,
-  openrouter_free / openrouter_pareto → OpenRouter) or its configured
-  direct-outbound API provider, and every container-executable runner key
+  codex → OpenAI, gemini → Google, copilot → GitHub Copilot) or its
+  configured direct-outbound API provider (opencode/kilocode/pi/omp,
+  including OpenRouter-routed free-policy and Pareto model selections —
+  RDR-065, #3671), and every container-executable runner key
   SHALL be classified (fixed-host, config-derived, or explicitly proxy-only)
   so direct-egress runner traffic never silently drops out of the registry.
   Registry drift (a pi/omp provider key with no mapped host, an unknown

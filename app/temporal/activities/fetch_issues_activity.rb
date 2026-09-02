@@ -12,7 +12,7 @@ module Activities
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
     ISSUE_RECONCILIATION_INTERVAL = 1.hour
-    PAID_ESCALATED_LABEL = "paid-escalated"
+    PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
 
     def execute(input)
       project_id = input[:project_id]
@@ -1109,7 +1109,7 @@ module Activities
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
       synced_issues = []
 
-      project.update_column(:last_issue_reconciliation_at, Time.current)
+      project.update_columns(last_issue_reconciliation_at: Time.current)
 
       if truncated
         logger.warn(

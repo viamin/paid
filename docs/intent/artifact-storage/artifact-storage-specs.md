@@ -22,10 +22,10 @@
   *Code:* `app/services/artifact_storage.rb`.
   *Test:* `spec/services/artifact_storage_spec.rb`.
 
-- [x] **ARTIFACT-STORAGE-003** — `Screenshots::Storage` SHALL delegate S3
-  client construction to `ArtifactStorage` (exposing the shared client via
-  `s3_client`) instead of constructing its own client, while preserving its
-  screenshot-specific key layout and listing behavior.
+- [x] **ARTIFACT-STORAGE-003** — `Screenshots::Storage` SHALL compose an
+  `ArtifactStorage` and reach for the shared S3 client through it instead of
+  constructing its own client, while preserving its screenshot-specific key
+  layout, listing behavior, and content-type-aware upload helpers.
   *Code:* `app/services/screenshots/storage.rb`.
   *Test:* `spec/services/screenshots/storage_spec.rb`,
   `spec/services/artifact_storage_durability_spec.rb`.

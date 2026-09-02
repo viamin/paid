@@ -10,6 +10,10 @@ The dashboard loads ~13 tiles as deferred turbo-frames (staggered by
 pulses that pop into content one-by-one — UI thrash that makes the page feel
 slow even when the underlying data is unchanged.
 
+The same page also shows a continuous "Live" ping in the header. Without a
+reduced-motion alternative, motion-sensitive operators still see perpetual
+animation on a dense operational screen.
+
 ## Approach
 
 Stale-while-revalidate, entirely inside the existing `dashboard-frames`
@@ -51,6 +55,9 @@ Stimulus controller (`app/javascript/controllers/dashboard_frames_controller.js`
   (Turbo's "Content missing") is prevented; nothing is cached.
 - **Storage failures degrade to skeletons** — private mode and quota errors
   are caught; the dashboard behaves exactly as before the feature.
+- **Reduced-motion users get static affordances** — the header live indicator
+  and skeleton placeholders keep their visual structure but disable pulse/ping
+  animation when the browser advertises `prefers-reduced-motion`.
 
 ## Testing
 
@@ -59,4 +66,5 @@ Stimulus controller (`app/javascript/controllers/dashboard_frames_controller.js`
   revalidation, scope isolation, navigation guard, error paths, restore skip,
   and storage failure degradation.
 - `spec/requests/dashboard_spec.rb` — asserts the cache scope value renders
-  with account + user id.
+  with account + user id, and that dashboard loading/live indicators render
+  motion-safe/motion-reduce classes.

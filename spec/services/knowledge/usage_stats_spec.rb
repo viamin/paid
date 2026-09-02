@@ -129,6 +129,42 @@ RSpec.describe Knowledge::UsageStats do
     end
   end
 
+  # @spec KNOWLEDGE-CURATED-005
+  describe "#usage_by_lane" do
+    subject(:result) { described_class.new(project: project).usage_by_lane }
+
+    before do
+      run = create(:agent_run, project: project)
+      create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "route", artifact_count: 5)
+      create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "symbol", artifact_count: 2)
+      create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "decision_record", artifact_count: 3)
+      create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "business_context", artifact_count: 1)
+    end
+
+    it "sums usage counts into curated and derived buckets" do
+      expect(result["curated"]).to eq(4)
+      expect(result["derived"]).to eq(7)
+    end
+
+    it "filters by goal" do
+      run_review = create(:agent_run, project: project, goal: "review", source_pull_request_number: 99, custom_prompt: "review", issue: nil)
+      create(:knowledge_usage_stat, agent_run: run_review, project: project, artifact_type: "route", artifact_count: 100)
+
+      result = described_class.new(project: project).usage_by_lane(goal: "create_pr")
+
+      expect(result["derived"]).to eq(7)
+    end
+
+    context "with no data" do
+      it "returns zero for both lanes" do
+        result = described_class.new(project: create(:project)).usage_by_lane
+
+        expect(result["curated"]).to eq(0)
+        expect(result["derived"]).to eq(0)
+      end
+    end
+  end
+
   describe "#usage_by_context_type" do
     subject(:result) { described_class.new(project: project).usage_by_context_type }
 

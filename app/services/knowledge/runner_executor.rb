@@ -72,7 +72,7 @@ module Knowledge
     end
 
     # After a full recovery (per-model rate-limit windows cleared), restore
-    # the openrouter_free runner's original tier_model_ids from the rotation
+    # the free-policy runner's original tier_model_ids from the rotation
     # recovery snapshot so the user's configured models are not permanently
     # overridden by a rate-limit-driven rotation. No-op for non-rotation
     # runners or when no snapshot exists.
@@ -112,23 +112,21 @@ module Knowledge
       end
     end
 
-    # Keyed by the resolved free-model runner's free_model_rotation_state_key
-    # when one exists, so writes land on the same RunnerState row
-    # FreeModels::Rotation reads rate_limited_model_ids from (routing key for
-    # policy-based free runners, bare "openrouter_free" for the legacy row).
-    # Falls back to the bare name passed in for every other runner.
+    # @spec MODEL-POLICY-012
+    # A free-policy runner's state is keyed by its routing-key state_key
+    # (matching FreeModels::Rotation) rather than the bare runner-name
+    # string, since a user may hold several free-policy runners sharing the
+    # same runner_key (e.g. opencode, one per OpenRouter credential) — a
+    # bare-key row would collide across them. Non-free-policy runners keep
+    # the bare-key convention.
     def runner_state_for(runner)
       @runner_states ||= {}
       @runner_states[runner] ||= @user_setting.user
         .runner_states
-        .find_or_create_by!(runner_name: runner_state_key_for(runner)) { |s|
+        .find_or_create_by!(runner_name: rotation_runner_record(runner)&.state_key || runner.to_s) { |s|
           s.circuit_state = "closed"
           s.failure_count = 0
         }
-    end
-
-    def runner_state_key_for(runner)
-      rotation_runner_record(runner)&.free_model_rotation_state_key || runner.to_s
     end
 
     # Returns the free-policy Runner record for the current user when the

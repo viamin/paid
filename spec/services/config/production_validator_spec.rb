@@ -20,6 +20,7 @@ RSpec.describe Config::ProductionValidator do
   # A plain recording logger so specs can assert on emitted warnings without
   # coupling to Rails.logger or RSpec mock limitations.
   let(:logger) { LoggerRecorder.new }
+  let(:production_config_document) { Rails.root.join("docs/PRODUCTION_CONFIG.md").read }
 
   # Fully-valid production configuration; each spec overrides one field to test
   # a specific branch.
@@ -235,6 +236,18 @@ RSpec.describe Config::ProductionValidator do
     end
   end
 
+  describe ".documentation", :no_db do
+    # @spec PROD-CONFIG-006
+    it "documents every required production infrastructure safety limit" do
+      missing_keys = Capacity::InfrastructureLimits::REQUIRED_PRODUCTION_KEYS.reject do |key|
+        production_config_document.include?(key)
+      end
+
+      expect(missing_keys).to be_empty,
+        "expected docs/PRODUCTION_CONFIG.md to document: #{missing_keys.join(', ')}"
+    end
+  end
+
   describe ".from_environment", :no_db do
     let(:writable_dir) { Dir.mktmpdir("workspace_root") }
 
@@ -261,7 +274,7 @@ RSpec.describe Config::ProductionValidator do
       allow(Capacity::InfrastructureLimits).to receive(:production_errors).and_return([])
       allow(Rails.application.config.x).to receive(:workspace_root).and_return(writable_dir)
       allow(Rails.application.credentials).to receive(:dig).with(:qdrant, :api_key).and_return(nil)
-      allow(Screenshots::Storage).to receive(:configured?).and_return(true)
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
     end
 
     it "builds a passing validator from resolved environment values" do

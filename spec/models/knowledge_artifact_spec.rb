@@ -91,5 +91,67 @@ RSpec.describe KnowledgeArtifact do
         expect(described_class.by_type("route")).to eq([ route ])
       end
     end
+
+    describe ".curated" do
+      it "returns only artifacts of curated types" do
+        curated = create(:knowledge_artifact, collector_run: collector_run, project: project,
+          artifact_type: "business_context")
+        create(:knowledge_artifact, collector_run: collector_run, project: project, artifact_type: "route")
+
+        expect(described_class.curated).to eq([ curated ])
+      end
+    end
+
+    describe ".derived" do
+      it "returns only artifacts of non-curated types" do
+        derived = create(:knowledge_artifact, collector_run: collector_run, project: project, artifact_type: "route")
+        create(:knowledge_artifact, collector_run: collector_run, project: project,
+          artifact_type: "business_context")
+
+        expect(described_class.derived).to eq([ derived ])
+      end
+    end
+  end
+
+  # @spec KNOWLEDGE-CURATED-001
+  describe ".curated_type?" do
+    it "returns true for each curated artifact type" do
+      described_class::CURATED_ARTIFACT_TYPES.each do |type|
+        expect(described_class.curated_type?(type)).to be(true)
+      end
+    end
+
+    it "returns false for a derived artifact type" do
+      expect(described_class.curated_type?("route")).to be(false)
+    end
+
+    it "returns false for an unknown artifact type" do
+      expect(described_class.curated_type?("something_new")).to be(false)
+    end
+  end
+
+  describe "#curated?" do
+    it "returns true for a curated artifact" do
+      artifact = build(:knowledge_artifact, artifact_type: "decision_record")
+      expect(artifact).to be_curated
+    end
+
+    it "returns false for a derived artifact" do
+      artifact = build(:knowledge_artifact, artifact_type: "route")
+      expect(artifact).not_to be_curated
+    end
+  end
+
+  describe ".bust_artifact_counts_cache" do
+    it "clears both the artifact counts cache and the OKF export availability cache" do
+      project_id = create(:project).id
+      Rails.cache.write(described_class.artifact_counts_cache_key(project_id), [ [ "route", 1 ] ])
+      Rails.cache.write(described_class.okf_export_available_cache_key(project_id), true)
+
+      described_class.bust_artifact_counts_cache(project_id)
+
+      expect(Rails.cache.read(described_class.artifact_counts_cache_key(project_id))).to be_nil
+      expect(Rails.cache.read(described_class.okf_export_available_cache_key(project_id))).to be_nil
+    end
   end
 end

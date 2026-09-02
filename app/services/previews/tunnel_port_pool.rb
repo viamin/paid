@@ -31,7 +31,7 @@ module Previews
           port = next_free_port
           raise Exhausted, "No preview tunnel ports available in #{range}" if port.nil?
 
-          session.update_column(:tunnel_port, port)
+          session.update_columns(tunnel_port: port)
           port
         end
       end
@@ -45,7 +45,7 @@ module Previews
 
       with_lock do
         TenantContext.with_system_access do
-          session.update_column(:tunnel_port, nil)
+          session.update_columns(tunnel_port: nil)
         end
       end
     end

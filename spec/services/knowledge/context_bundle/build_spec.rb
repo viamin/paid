@@ -17,6 +17,17 @@ RSpec.describe Knowledge::ContextBundle::Build do
   end
   let(:collector_run) { create(:collector_run, :completed, project_version: create(:project_version, project: project)) }
 
+  # @spec KNOWLEDGE-CURATED-004
+  describe "SECTION_ORDER" do
+    it "orders every curated section before every derived section" do
+      order = described_class::SECTION_ORDER
+      curated_positions = %i[business_context documents okf decisions change_intents].map { |s| order.index(s) }
+      derived_positions = %i[routes symbols schema hotspots stats].map { |s| order.index(s) }
+
+      expect(curated_positions.max).to be < derived_positions.min
+    end
+  end
+
   describe ".call" do
     context "when knowledge base is empty" do
       it "returns an empty result with accurate query count" do
@@ -25,6 +36,14 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to eq("")
         expect(result[:sections]).to be_empty
         expect(result[:total_tokens]).to eq(0)
+        # session_summaries is excluded by default (opt-in), so the default
+        # query count is one less than the full SECTION_ORDER.
+        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size - 1)
+      end
+
+      it "includes session_summaries in the query count when opted in" do
+        result = described_class.call(issue: issue, project: project, include_session_summaries: true)
+
         expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
       end
     end
@@ -85,6 +104,109 @@ RSpec.describe Knowledge::ContextBundle::Build do
         artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "reference_document")
 
         expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
+      end
+    end
+
+    context "with OKF curated knowledge artifacts" do
+      before do
+        artifact = create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          collector_type: "okf",
+          artifact_type: "okf_concept",
+          scope_path: ".okf/concepts/auth.md",
+          identifier: "Auth flows",
+          content: "Users sign in with SSO.",
+          metadata: {
+            "source_path" => ".okf/concepts/auth.md",
+            "concept_type" => "concept",
+            "title" => "Auth flows",
+            "tags" => %w[auth]
+          },
+          status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: artifact,
+          project: project,
+          chunk_type: "definition",
+          content: "Users sign in with SSO.")
+      end
+
+      # @spec KNOWLEDGE-OKF-003
+      it "includes an explicit OKF curated knowledge section" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).to include(:okf)
+        expect(result[:content]).to include("Curated Knowledge (OKF bundle)")
+        expect(result[:content]).to include("Auth flows")
+        expect(result[:content]).to include("Users sign in with SSO.")
+        expect(result[:artifact_type_counts]).to include("okf_concept" => 1)
+      end
+
+      it "counts truncated OKF artifacts accurately when the section exceeds the budget" do
+        long_body = (1..40).map { |i| "word#{i}" }.join(" ")
+        create_okf_artifacts!(count: 12, body: long_body)
+
+        result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id, token_budget: 200)
+
+        expect(result[:sections]).to include(:okf)
+        kept = result[:artifact_type_counts]["okf_concept"]
+        expect(kept).to be > 0
+        expect(kept).to be < 12
+
+        stat = KnowledgeUsageStat.find_by!(agent_run: agent_run, artifact_type: "okf_concept")
+        expect(stat.artifact_count).to eq(kept)
+        expect(stat.chunk_count).to eq(kept)
+        expect(stat.token_count).to be > 0
+      end
+
+      it "preloads active ordered chunks for OKF artifacts" do
+        artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "okf_concept")
+
+        expect(artifacts.map { |artifact| artifact.association(:active_ordered_chunks) }).to all(be_loaded)
+      end
+    end
+
+    # @spec SESSION-SUMMARY-005
+    context "with session summary artifacts" do
+      before do
+        artifact = create(:knowledge_artifact,
+          project: project,
+          collector_run: collector_run,
+          collector_type: "session_summary",
+          artifact_type: "session_summary",
+          scope_path: "agent_runs/#{agent_run.id}/session_summary",
+          identifier: "Agent run ##{agent_run.id}",
+          content: "# Session Summary\nImplemented rate limiting.",
+          status: "active")
+        create(:knowledge_chunk,
+          knowledge_artifact: artifact,
+          project: project,
+          chunk_type: "summary",
+          content: "Implemented rate limiting for the public API.")
+      end
+
+      it "is excluded by default" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).not_to include(:session_summaries)
+        expect(result[:content]).not_to include("Session Summaries")
+      end
+
+      it "is included and labeled as observations when opted in" do
+        result = described_class.call(issue: issue, project: project, include_session_summaries: true)
+
+        expect(result[:sections]).to include(:session_summaries)
+        expect(result[:content]).to include("Session Summaries (agent-run observations, not vetted intent)")
+        expect(result[:content]).to include("Implemented rate limiting for the public API.")
+        expect(result[:artifact_type_counts]).to include("session_summary" => 1)
+      end
+
+      it "records usage attribution when opted in with an agent_run_id" do
+        described_class.call(issue: issue, project: project, agent_run_id: agent_run.id, include_session_summaries: true)
+
+        stat = KnowledgeUsageStat.find_by(agent_run: agent_run, artifact_type: "session_summary")
+        expect(stat).to be_present
+        expect(stat.artifact_count).to eq(1)
       end
     end
 
@@ -319,14 +441,14 @@ RSpec.describe Knowledge::ContextBundle::Build do
       it "includes all section types in correct order" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:sections]).to eq(%i[routes symbols schema hotspots decisions change_intents stats])
+        expect(result[:sections]).to eq(%i[decisions change_intents routes symbols schema hotspots stats])
         expect(result[:content]).to include("Codebase Context")
       end
 
       it "reports queries_made as the number of section types queried" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
+        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size - 1)
       end
     end
 
@@ -568,7 +690,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       result = described_class.new(issue: issue, project: project, agent_run: agent_run)
 
       expect(result.token_budget).to eq(4000)
-      expect(result.section_order).to eq(described_class::SECTION_ORDER)
+      expect(result.section_order).to eq(described_class::SECTION_ORDER - [ :session_summaries ])
       expect(Rails.logger).to have_received(:warn).with(
         message: "prompt_evolution.experiment_lookup_failed",
         config_key: "knowledge.token_budget",
@@ -622,6 +744,26 @@ RSpec.describe Knowledge::ContextBundle::Build do
       # Without the fix, the bundle would break on the oversized route and miss decisions
       expect(result[:sections]).to include(:decisions)
       expect(result[:sections]).not_to include(:routes)
+    end
+  end
+
+  def create_okf_artifacts!(count:, body:)
+    count.times do |i|
+      artifact = create(:knowledge_artifact,
+        project: project,
+        collector_run: collector_run,
+        collector_type: "okf",
+        artifact_type: "okf_concept",
+        scope_path: ".okf/concepts/concept_#{i}.md",
+        identifier: "Concept #{i}",
+        content: body,
+        metadata: { "title" => "Concept #{i}", "concept_type" => "concept" },
+        status: "active")
+      create(:knowledge_chunk,
+        knowledge_artifact: artifact,
+        project: project,
+        chunk_type: "definition",
+        content: body)
     end
   end
 end

@@ -11,13 +11,13 @@ module RunnerSupport
   #
   # NOTE: Inclusion here does NOT mean the runner's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_RUNNER_KEYS.
-  APP_RUNNER_KEYS = %w[claude cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp].freeze
+  APP_RUNNER_KEYS = %w[claude cursor codex copilot gemini opencode kilocode pi omp].freeze
 
   # Runner keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
   # included via its --autopilot mode which enables fully autonomous,
   # non-interactive agent execution.
-  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi omp]).freeze
+  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[claude codex copilot cursor gemini kilocode opencode pi omp]).freeze
 
   # Economical runner keys suitable for lightweight goals (enhance_issue,
   # analyze_issue) that reason about an issue without aggressive codebase
@@ -26,11 +26,6 @@ module RunnerSupport
   # excluded so they stay reserved for create_pr / create_feature.
   # @spec RUNNER-SCHED-011
   LEAN_RUNNER_KEYS = %w[opencode omp codex].freeze
-
-  APP_RUNNER_TO_HARNESS_KEY = {
-    "openrouter_free" => "opencode",
-    "openrouter_pareto" => "opencode"
-  }.freeze
 
   # Upper bound on how far in the future a parsed rate-limit reset is trusted.
   #
@@ -160,7 +155,7 @@ module RunnerSupport
   end
 
   def harness_lookup_key_for(runner_key)
-    APP_RUNNER_TO_HARNESS_KEY.fetch(runner_key.to_s, runner_key.to_s).to_sym
+    runner_key.to_s.to_sym
   end
   private_class_method :harness_lookup_key_for
 
@@ -278,9 +273,7 @@ module RunnerSupport
     "claude" => "anthropic",
     "cursor" => "anthropic",
     "codex" => "openai",
-    "gemini" => "google",
-    "openrouter_free" => "openrouter",
-    "openrouter_pareto" => "openrouter"
+    "gemini" => "google"
   }.freeze
 
   # Reverse mapping: API service type → harness runner key.

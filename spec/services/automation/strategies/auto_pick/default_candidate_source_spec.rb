@@ -541,6 +541,24 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    it "excludes an agent-declared no-code-required completion from the completed-issue recovery path" do # @spec AUTO-PICK-QUEUE-004
+      issue = create(:issue, project: project, paid_state: "completed", no_code_required_at: Time.current)
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "keeps excluding a no-code-required issue even after paid_state is reset to a pre-completion state" do # @spec AUTO-PICK-QUEUE-004
+      create(:issue, project: project, paid_state: "new", no_code_required_at: Time.current)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "excludes completed issues whose completed run was not a recoverable auto-pick run" do
       manual_issue = create(:issue, project: project, paid_state: "completed", github_number: 50)
       analyze_issue = create(:issue, project: project, paid_state: "completed", github_number: 51)
@@ -581,6 +599,37 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       scope = described_class.eligible_scope(project)
 
       expect(scope.pluck(:id)).to include(parent.id)
+    end
+
+    it "keeps a parent eligible when its only open sub-issue is completed" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, :completed, project: project, github_number: 2, parent_issue: parent)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to include(parent.id)
+    end
+
+    # @spec AUTO-PICK-QUEUE-003
+    it "does not resurrect a recommend_close issue with no dependencies during queue sweeps" do
+      create(:issue, :recommend_close, project: project, github_number: 1)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "derives its eligible paid_state filter from the shared issue definition" do # @spec AUTO-PICK-QUEUE-005
+      recoverable_completed = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: recoverable_completed,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+      create(:issue, project: project, paid_state: "manual_review")
+      create(:issue, project: project, paid_state: "needs_input")
+      eligible = create(:issue, project: project, paid_state: "new")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(recoverable_completed.id, eligible.id)
     end
 
     it "uses project skip labels before user, tenant, and defaults" do

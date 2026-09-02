@@ -108,15 +108,16 @@ RSpec.describe Guardrails::DataClassificationPolicy do
       )
     end
 
-    context "when the run uses the openrouter_free runner with a non-openrouter_sync free model" do
+    context "when the run uses a free-policy opencode runner with a non-openrouter_sync free model" do
       let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
       let(:openrouter_free_runner) do
         create(
           :runner,
           user: project.created_by,
-          runner_key: "openrouter_free",
+          runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: openrouter_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { model.model_id }
         )
       end
