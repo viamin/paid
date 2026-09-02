@@ -207,6 +207,63 @@ RSpec.describe Inbox::Count do
       expect(after_enter).to eq(1)
       expect(after_exit).to eq(0)
     end
+
+    # @spec OPERATOR-INBOX-002C
+    it "counts escalated pull requests on gated projects" do
+      create_escalated_pr
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "excludes escalated pull requests on non-gated projects" do
+      other_project = create(
+        :project,
+        account: account,
+        created_by: user,
+        auto_pick_enabled: false,
+        active: true,
+        owner: "acme",
+        repo: "delta"
+      )
+      create(
+        :issue,
+        :pull_request,
+        project: other_project,
+        pr_review_phase: "escalated",
+        pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK
+      )
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "bumps the cache automatically when a PR enters or leaves the escalated queue" do
+      pr = create(:issue, :pull_request, project: project, pr_review_phase: "ready")
+      first = described_class.call(user: user)
+
+      pr.update!(pr_review_phase: "escalated", pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+      after_escalate = described_class.call(user: user)
+
+      pr.update!(pr_review_phase: "ready", pr_escalation_reason: nil)
+      after_clear = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_escalate).to eq(1)
+      expect(after_clear).to eq(0)
+    end
+  end
+
+  def create_escalated_pr(github_number: 88, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK, **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: reason,
+      **attrs
+    )
   end
 
   def create_agent_run_blocking_notification(github_number:)

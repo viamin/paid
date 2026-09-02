@@ -6,11 +6,13 @@ module Inbox
     PLAN_REVIEW_KIND = "plan_review"
     MERGE_APPROVAL_KIND = "merge_approval"
     ACTION_REQUIRED_KIND = "action_required"
+    ESCALATED_PR_KIND = "escalated_pr"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
       MERGE_APPROVAL_KIND,
-      ACTION_REQUIRED_KIND
+      ACTION_REQUIRED_KIND,
+      ESCALATED_PR_KIND
     ].freeze
 
     Entry = Struct.new(
@@ -47,13 +49,17 @@ module Inbox
         kind == ACTION_REQUIRED_KIND
       end
 
+      def escalated_pr?
+        kind == ESCALATED_PR_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
 
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
-        return summary_text if merge_approval? || action_required?
+        return summary_text if merge_approval? || action_required? || escalated_pr?
 
         "#{tasks.size} proposed tasks"
       end
@@ -69,13 +75,14 @@ module Inbox
       @kind = kind.to_s.presence
     end
 
-    # @spec INBOX-FOUNDATION-003
+    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C
     def call
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
       entries.concat(plan_review_entries) if include_kind?(PLAN_REVIEW_KIND)
       entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
       entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
+      entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
       sort_entries(entries)
     end
 
@@ -256,6 +263,39 @@ module Inbox
           .includes(:project)
           .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
       end
+    end
+
+    # Reuses Dashboard::BlockedPullRequests (PR-ESCALATION-011/012/013) rather
+    # than reimplementing the escalated-PR query, then narrows the account-wide
+    # result to the operator's auto-pick-gated projects, the same scope every
+    # other inbox kind uses. That is a deliberate divergence from the
+    # dashboard panel's account-wide scope (see operator-inbox-design.md).
+    # @spec OPERATOR-INBOX-002C
+    def escalated_pr_entries
+      ids = scoped_projects.map(&:id)
+      return [] if ids.empty?
+
+      Dashboard::BlockedPullRequests.call(account: user.account)
+        .select { |blocked| ids.include?(blocked.pull_request.project_id) }
+        .map { |blocked| escalated_pr_entry(blocked) }
+    end
+
+    def escalated_pr_entry(blocked)
+      pr = blocked.pull_request
+
+      Entry.new(
+        id: "#{ESCALATED_PR_KIND}:#{pr.id}",
+        kind: ESCALATED_PR_KIND,
+        project: pr.project,
+        issue: pr,
+        record: blocked,
+        waiting_since: blocked.blocked_since,
+        questions: [],
+        tasks: [],
+        summary_text: ApplicationHelper::ESCALATION_REASON_LABELS.fetch(blocked.reason.to_s, "Stopped"),
+        title_text: nil,
+        action_url: nil
+      )
     end
 
     def visible_blocking_notifications

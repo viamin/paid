@@ -2373,6 +2373,25 @@ RSpec.describe "AgentRuns" do
 
         expect(flash[:alert]).to include("#{project.full_name}#88")
       end
+
+      # @spec OPERATOR-INBOX-002C
+      it "redirects back to the inbox when return_to points there" do
+        post unblock_escalation_project_agent_runs_path(project),
+          params: {
+            pull_request_id: escalated_pr.id,
+            return_to: inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND)
+          }
+
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND))
+      end
+
+      # @spec OPERATOR-INBOX-002C
+      it "ignores an external return_to and falls back to the dashboard" do
+        post unblock_escalation_project_agent_runs_path(project),
+          params: { pull_request_id: escalated_pr.id, return_to: "https://evil.example.com" }
+
+        expect(response).to redirect_to(dashboard_path)
+      end
     end
   end
 

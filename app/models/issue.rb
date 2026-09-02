@@ -136,8 +136,11 @@ class Issue < ApplicationRecord
   # Invalidates the cached inbox nav badge count whenever an issue enters or
   # leaves the needs_input queue, or when a waiting issue is closed/reopened
   # on GitHub, so the async badge endpoint recomputes instead of serving a
-  # stale number for the rest of its TTL.
-  # @spec OPERATOR-INBOX-010
+  # stale number for the rest of its TTL. Also covers a pull request entering
+  # or leaving the escalated_pr inbox lane, since
+  # merge_approval_candidate_state_changed? already watches
+  # saved_change_to_pr_review_phase? for every pull request.
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
