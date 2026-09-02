@@ -715,6 +715,78 @@ RSpec.describe Activities::EnhanceIssueActivity do
       end
 
       # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload wrapped in an event_msg envelope" do
+        event = {
+          type: "event_msg",
+          payload: { type: "agent_message", role: "assistant", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload wrapped in a response_item envelope" do
+        event = {
+          type: "response_item",
+          payload: { role: "assistant", item_type: "assistant_message", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload carried in assistant content blocks" do
+        event = {
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            content: [ { type: "output_text", text: delimiter_wrapped(structured_output) } ]
+          }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "parses a delimited payload from a role-only assistant item with no explicit type" do
+        event = {
+          type: "item.completed",
+          item: { role: "assistant", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "ignores a delimited-looking payload in a non-assistant reasoning item" do
+        event = {
+          type: "item.completed",
+          item: { type: "reasoning", text: delimiter_wrapped(structured_output) }
+        }
+        log_agent_stdout("#{event.to_json}\n", wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
       it "refunds the consumed enhancement round when a delimited payload fails to parse" do
         issue.update!(enhance_issue_rounds: 2)
         log_agent_stdout(delimiter_wrapped("not valid json at all {{{"), wrap: false)

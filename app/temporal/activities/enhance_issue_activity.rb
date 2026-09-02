@@ -27,6 +27,14 @@ module Activities
     DELIMITED_OUTPUT_PATTERN = /^#{Regexp.escape(OUTPUT_DELIMITER)}[ \t]*\r?$\R(.*?)^#{Regexp.escape(OUTPUT_DELIMITER)}[ \t]*\r?$/m
     STDOUT_TAIL_CHUNKS = 50
     MAX_COMMENT_BODY = 50_000
+    # Assistant-message JSONL shapes recognized across runners: a bare
+    # "agent_message"/"task_complete" event, or an envelope carrying one of
+    # these (e.g. Codex's "item.completed" -> "item", "event_msg" ->
+    # "payload", "response_item" -> "payload"). Mirrors the shapes AgentRun's
+    # stdout normalizer already recognizes (see spec/models/agent_run_spec.rb)
+    # so a delimited payload isn't missed just because a runner nests its
+    # final message differently than the one we happened to check for.
+    ASSISTANT_MESSAGE_TYPES = %w[agent_message task_complete turn_complete].freeze
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -151,7 +159,8 @@ module Activities
     # semantics.
     # @spec ISSUE-ENHANCEMENT-006
     def delimited_payload(raw)
-      jsonl_delimited_payload(raw) || plain_delimited_payload(raw)
+      @delimited_payloads ||= {}
+      @delimited_payloads.fetch(raw) { @delimited_payloads[raw] = jsonl_delimited_payload(raw) || plain_delimited_payload(raw) }
     end
 
     def plain_delimited_payload(raw)
@@ -172,22 +181,32 @@ module Activities
       payload
     end
 
-    # Recognizes both a top-level agent_message event and a nested one
-    # wrapped in a completion envelope (e.g. `item.completed` / `response_item`).
+    # Recognizes a top-level agent-message event or one nested in an
+    # envelope (e.g. `item.completed`'s `item`, or `event_msg`/`response_item`'s
+    # `payload`).
     def agent_message_text(line)
       event = JSON.parse(line)
       return unless event.is_a?(Hash)
 
-      agent_message_item_text(event) || agent_message_item_text(event["item"])
+      agent_message_item_text(event) ||
+        agent_message_item_text(event["item"]) ||
+        agent_message_item_text(event["payload"])
     rescue JSON::ParserError
       nil
     end
 
     def agent_message_item_text(item)
-      return unless item.is_a?(Hash) && item["type"] == "agent_message"
+      return unless item.is_a?(Hash)
+      return unless item["type"].in?(ASSISTANT_MESSAGE_TYPES) || item["role"] == "assistant"
 
-      text = item["text"] || item["message"]
-      text if text.is_a?(String)
+      text = item["text"] || item["message"] || item["last_agent_message"] || content_block_text(item["content"])
+      text if text.is_a?(String) && text.present?
+    end
+
+    def content_block_text(content)
+      return unless content.is_a?(Array)
+
+      content.filter_map { |block| block["text"] if block.is_a?(Hash) && block["type"] == "output_text" }.join.presence
     end
 
     # Fail loudly rather than posting garbled agent output as an enhancement
