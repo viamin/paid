@@ -36,6 +36,31 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
+  `escalated` and its project is in the operator's auto-pick-gated scope
+  (`INBOX-FOUNDATION-006`, the same gate every other inbox kind uses — this is
+  a deliberate divergence from the dashboard's account-wide Blocked PRs panel,
+  so the two surfaces are not expected to agree on counts), the system SHALL
+  expose that pull request as an `escalated_pr` inbox entry showing the
+  escalation reason, how long it has been stopped (`pr_escalation_started_at`,
+  falling back to `updated_at`), and the tripped counters computed by
+  `Dashboard::BlockedPullRequests` (reused, not reimplemented), including its
+  operator-paused indicator when the pull request is both escalated and
+  paused. The entry SHALL offer the `unblock_escalation` clearing action for
+  every reason except `awaiting_approval`, for which the entry SHALL instead
+  direct the operator to re-approve the pull request on GitHub. The entry
+  SHALL clear on every recovery path the escalation itself clears through
+  (label removal, draft conversion, Unblock from either the dashboard or the
+  inbox, and operational auto-dismissal), and an escalation with reason
+  `awaiting_approval` SHALL remain a visible inbox entry across the `ready` →
+  `escalated` transition rather than disappearing from the queue and the nav
+  badge.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_escalated_pr.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

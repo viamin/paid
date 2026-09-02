@@ -230,6 +230,15 @@ last made meaningful progress.
 The panel reads issue state directly, like the other dashboard panels. It is a
 *surface*, not a detector — no new blocked-state logic lives in the view layer.
 
+**Cascade note:** escalated pull requests also surface as an `escalated_pr`
+entry in the operator inbox (`docs/intent/operator-inbox/`), which owns that
+spec (`OPERATOR-INBOX-002C`). The inbox reuses `Dashboard::BlockedPullRequests`
+for the same reason/counter data rather than duplicating this panel's query,
+but scopes results to the operator's auto-pick-gated projects instead of this
+panel's account-wide scope — the two surfaces intentionally do not agree on
+counts. This segment and `Dashboard::BlockedPullRequests` are otherwise
+unchanged by that work.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
