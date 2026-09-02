@@ -325,6 +325,7 @@ Rails.application.routes.draw do
       resources :browse, only: [ :index, :show ]
       get "search", to: "search#project_search", as: :search
       get "search/results", to: "search#project_search_results", as: :search_results
+      get "quality", to: "quality#show", as: :quality
     end
 
     # Preview session lifecycle. The iframe "show" page is served at /previews/:id
@@ -363,6 +364,7 @@ Rails.application.routes.draw do
 
     get "knowledge/search", to: "knowledge_search#search"
     get "knowledge/map", to: "knowledge_map#show"
+    get "knowledge/quality", to: "knowledge_quality#show"
     get "knowledge/audit", to: "knowledge_audit#index"
     resources :marketplace_entries, only: [ :index, :show ]
 

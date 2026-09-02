@@ -54,7 +54,7 @@ module Screenshots
       "inbox/path" => [ :dashboard ],
       "issues" => %i[dashboard project_show project_issue_clarifying_questions],
       "integrations" => %i[integrations integrations_new],
-      "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations],
+      "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations project_knowledge_quality],
       "projects/health_check" => [ :project_health_check ],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
       "roi_dashboard" => %i[account_roi_dashboard project_roi_dashboard],
@@ -219,6 +219,7 @@ module Screenshots
       project_pdf_knowledge_import_new: Target.new(slug: "project_pdf_knowledge_import_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/pdf_knowledge_import/new" }, requires_auth: true),
       project_okf_export_new: Target.new(slug: "project_okf_export_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/okf_export/new" }, requires_auth: true),
       project_knowledge_search: Target.new(slug: "project_knowledge_search", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/search" }, requires_auth: true),
+      project_knowledge_quality: Target.new(slug: "project_knowledge_quality", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/quality" }, requires_auth: true),
       project_knowledge_browse: Target.new(slug: "project_knowledge_browse", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse" }, requires_auth: true),
       project_knowledge_browse_show: Target.new(slug: "project_knowledge_browse_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse/route" }, requires_auth: true),
       project_knowledge_artifact_show: Target.new(slug: "project_knowledge_artifact_show", path_builder: ->(seed_data) { "/knowledge_artifacts/#{seed_data.fetch(:knowledge_artifact).id}" }, requires_auth: true),
@@ -342,6 +343,7 @@ module Screenshots
       "knowledge/browse_controller.rb" => %i[project_knowledge_browse project_knowledge_browse_show],
       "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
       "knowledge/context_intake_controller.rb" => [ :project_context_intake ],
+      "knowledge/quality_controller.rb" => [ :project_knowledge_quality ],
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
       "projects/change_intents_controller.rb" => [ :project_change_intent_show ],
       "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
@@ -598,6 +600,7 @@ module Screenshots
       when /\Aknowledge\/artifacts\// then [ :project_knowledge_artifact_show ]
       when /\Aknowledge\/browse\// then knowledge_browse_targets(relative_path.delete_prefix("knowledge/browse/"))
       when /\Aknowledge\/context_intake\// then [ :project_context_intake ]
+      when /\Aknowledge\/quality\// then [ :project_knowledge_quality ]
       when /\Aprojects\/pdf_knowledge_imports\// then [ :project_pdf_knowledge_import_new ]
       when /\Aprojects\/okf_exports\// then [ :project_okf_export_new ]
       when /\Aknowledge\/search\// then knowledge_search_targets(relative_path.delete_prefix("knowledge/search/"))
