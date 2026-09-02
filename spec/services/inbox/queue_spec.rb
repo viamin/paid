@@ -157,6 +157,101 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to eq([ notification ])
     end
 
+    # @spec OPERATOR-INBOX-002C
+    it "filters to escalated_pr when kind: escalated_pr is requested" do
+      create_needs_input(body: questions_body)
+      create_plan_review(project: project, workflow_id: "planning-workflow-1")
+      escalated = create_escalated_pr(github_number: 90)
+
+      entries = described_class.call(user: user, kind: described_class::ESCALATED_PR_KIND)
+
+      expect(entries.map(&:issue)).to eq([ escalated ])
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "returns typed entries for escalated pull requests, reusing Dashboard::BlockedPullRequests" do
+      pr = create_escalated_pr(
+        github_number: 91,
+        draft_review_count: 12,
+        pr_followup_count: 8,
+        pr_escalation_started_at: 2.days.ago
+      )
+
+      entries = described_class.call(user: user, kind: described_class::ESCALATED_PR_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == pr }
+      expect(entry).to have_attributes(
+        id: "#{described_class::ESCALATED_PR_KIND}:#{pr.id}",
+        kind: described_class::ESCALATED_PR_KIND,
+        project: project,
+        issue: pr
+      )
+      expect(entry.waiting_since).to be_within(1.second).of(2.days.ago)
+      expect(entry.record).to be_a(Dashboard::BlockedPullRequests::Entry)
+      expect(entry.record.counters.map(&:name)).to contain_exactly(:draft_review_count, :pr_followup_count)
+      expect(entry.summary).to eq("Failure streak")
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "directs an awaiting_approval escalation entry differently from an agent-failure escalation" do
+      awaiting = create_escalated_pr(github_number: 92, reason: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
+
+      entries = described_class.call(user: user, kind: described_class::ESCALATED_PR_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == awaiting }
+      expect(entry.record.reason).to eq(Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
+      expect(entry.summary).to eq("Awaiting approval")
+    end
+
+    # @spec OPERATOR-INBOX-002D
+    it "filters to manual_review when kind: manual_review is requested" do
+      create_needs_input(body: questions_body)
+      parked = create_manual_review_issue(github_number: 94)
+
+      entries = described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)
+
+      expect(entries.map(&:issue)).to eq([ parked ])
+    end
+
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-012
+    it "returns typed entries for manual_review issues, showing the reason and durable age" do
+      freeze_time = 3.days.ago
+      issue = travel_to(freeze_time) { create_manual_review_issue(github_number: 95, reason: "Structured output was invalid.") }
+
+      entries = described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == issue }
+      expect(entry).to have_attributes(
+        id: "#{described_class::MANUAL_REVIEW_KIND}:#{issue.id}",
+        kind: described_class::MANUAL_REVIEW_KIND,
+        project: project,
+        issue: issue
+      )
+      expect(entry.waiting_since).to be_within(1.second).of(freeze_time)
+      expect(entry.summary).to eq("Structured output was invalid.")
+    end
+
+    # @spec OPERATOR-INBOX-002D
+    it "excludes closed manual_review issues" do
+      create_manual_review_issue(github_number: 96, github_state: "closed")
+
+      entries = described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "keeps a PR in the inbox, as escalated_pr, when an awaiting_approval escalation fires on a merge_approval entry" do
+      pr = create_merge_approval_pr(github_number: 93)
+      expect(described_class.call(user: user).map(&:issue)).to include(pr)
+
+      pr.update!(pr_review_phase: "escalated", pr_escalation_reason: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
+
+      entries = described_class.call(user: user)
+      entry = entries.find { |candidate| candidate.issue == pr }
+      expect(entry.kind).to eq(described_class::ESCALATED_PR_KIND)
+    end
+
     it "excludes plan reviews that are no longer open" do
       review_issue = create(:issue, project: project)
       create_plan_review(project: project, issue: review_issue, workflow_id: "planning-workflow-1", plan_data: {})
@@ -311,6 +406,16 @@ RSpec.describe Inbox::Queue do
 
       expect(order).to eq([ approval, review, clarifying ])
     end
+
+    # @spec OPERATOR-INBOX-002C
+    it "orders escalated-pr entries oldest-stopped-first alongside other kinds" do
+      create_merge_approval_pr(github_number: 30, waiting_since: 2.days.ago)
+      escalated = create_escalated_pr(github_number: 40, pr_escalation_started_at: 4.days.ago)
+
+      first_entry = described_class.call(user: user).first
+
+      expect(first_entry.issue).to eq(escalated)
+    end
   end
 
   describe "including PRs" do
@@ -365,6 +470,56 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).not_to include(other_notification)
     end
 
+    # @spec OPERATOR-INBOX-002C
+    it "only returns escalated-pr entries from auto-pick projects" do
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      in_scope = create_escalated_pr(github_number: 50)
+      out_of_scope = create_escalated_pr(github_number: 51, project: other_project)
+
+      entries = described_class.call(user: user, kind: described_class::ESCALATED_PR_KIND)
+
+      expect(entries.map(&:issue)).to include(in_scope)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
+    end
+
+    # @spec OPERATOR-INBOX-002D
+    it "only returns manual_review entries from auto-pick projects" do
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      in_scope = create_manual_review_issue(github_number: 97)
+      out_of_scope = create_manual_review_issue(github_number: 98, project: other_project)
+
+      entries = described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)
+
+      expect(entries.map(&:issue)).to include(in_scope)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "narrows escalated-pr entries to a single project when project: is provided" do
+      scoped_escalated = create_escalated_pr(github_number: 80)
+      other_project = create(
+        :project,
+        account: account,
+        created_by: user,
+        auto_pick_enabled: true,
+        active: true,
+        owner: "acme",
+        repo: "delta"
+      )
+      create(
+        :issue,
+        :pull_request,
+        project: other_project,
+        github_number: 81,
+        pr_review_phase: "escalated",
+        pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK
+      )
+
+      entries = described_class.call(user: user, project: project, kind: described_class::ESCALATED_PR_KIND)
+
+      expect(entries.map(&:issue)).to eq([ scoped_escalated ])
+    end
+
     it "excludes clarifying-question projects from other accounts" do
       other_user = create(:user, account: create(:account))
       other_account_project = create(
@@ -414,6 +569,30 @@ RSpec.describe Inbox::Queue do
         failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ],
         not_evaluated: []
       )
+    )
+  end
+
+  def create_escalated_pr(github_number:, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK, **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: reason,
+      labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+      **attrs
+    )
+  end
+
+  def create_manual_review_issue(github_number:, reason: "Round limit reached.", **attrs)
+    create(
+      :issue,
+      project: project,
+      github_number: github_number,
+      paid_state: "manual_review",
+      manual_review_reason: reason,
+      **attrs
     )
   end
 

@@ -20,22 +20,38 @@ module Knowledge
       # @spec KNOWLEDGE-005
       DEFAULT_TOKEN_BUDGET = 4000
 
-      # Section builders in priority order.
-      # Conventions section is not yet implemented — will be added when
-      # a conventions collector lands in the knowledge pipeline.
-      SECTION_ORDER = %i[business_context documents routes symbols schema hotspots decisions change_intents stats].freeze
+      # Section builders in priority order. Curated sources (maintainer
+      # business context, imported documents, OKF bundles, decisions, change
+      # intents) come before derived collector output (routes, symbols,
+      # schema, hotspots, stats). Session summaries are raw agent-run
+      # observations, not vetted knowledge, so they sit last — conservative
+      # priority — and are only included when a caller opts in explicitly.
+      #
+      # @spec KNOWLEDGE-CURATED-004
+      # @spec SESSION-SUMMARY-005
+      SECTION_ORDER = %i[
+        business_context documents okf decisions change_intents routes symbols schema hotspots stats
+        session_summaries
+      ].freeze
 
-      attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
+      attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order, :include_session_summaries
 
       # issue is accepted for future relevance-ranking of artifacts.
       # Currently unused — all active artifacts are included project-wide.
-      def initialize(issue:, project:, agent_run: nil, agent_run_id: nil, token_budget: nil, section_order: nil)
+      #
+      # include_session_summaries defaults to false: session summaries are
+      # unvetted observations from individual agent runs, so context bundles
+      # only include them when a caller opts in explicitly.
+      def initialize(issue:, project:, agent_run: nil, agent_run_id: nil, token_budget: nil, section_order: nil,
+        include_session_summaries: false)
         @issue = issue
         @project = project
         @agent_run = agent_run
         @agent_run_id = agent_run_id
         @token_budget = token_budget || safe_experiment_value("knowledge.token_budget") || env_token_budget
-        @section_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
+        @include_session_summaries = include_session_summaries
+        resolved_order = section_order || safe_experiment_value("knowledge.section_order") || SECTION_ORDER
+        @section_order = include_session_summaries ? resolved_order : resolved_order - [ :session_summaries ]
       end
 
       def self.call(...)
@@ -124,7 +140,34 @@ module Knowledge
           heading: "Business Context (maintainer-provided)",
           content: lines.join("\n\n"),
           artifacts: artifacts,
-          chunk_count: total_chunks
+          chunk_count: total_chunks,
+          item_marker: "#### "
+        )
+      end
+
+      # @spec KNOWLEDGE-OKF-003
+      def build_okf_section
+        artifacts = active_artifacts("okf_concept")
+        return nil if artifacts.empty?
+
+        chunk_count = 0
+        lines = artifacts.map do |artifact|
+          title = artifact.metadata&.dig("title") || artifact.identifier
+          concept_type = artifact.metadata&.dig("concept_type")
+          heading = concept_type ? "#{title} (#{concept_type})" : title
+          body_chunk = artifact.active_ordered_chunks.find { |chunk| chunk.chunk_type == "definition" }
+          body = body_chunk&.content.presence || artifact.content.to_s
+          chunk_count += 1 if body_chunk
+          "#### #{heading}\n#{body.tr("\n", " ").truncate(400)}"
+        end
+
+        artifact_section(
+          name: :okf,
+          heading: "Curated Knowledge (OKF bundle)",
+          content: lines.join("\n\n"),
+          artifacts: artifacts,
+          chunk_count: chunk_count,
+          item_marker: "#### "
         )
       end
 
@@ -261,6 +304,30 @@ module Knowledge
         }
       end
 
+      # @spec SESSION-SUMMARY-005
+      def build_session_summaries_section
+        artifacts = active_artifacts("session_summary")
+        return nil if artifacts.empty?
+
+        total_chunks = 0
+        lines = artifacts.map do |artifact|
+          heading = artifact.identifier
+          summary_chunk = artifact.active_ordered_chunks.find { |chunk| chunk.chunk_type == "summary" }
+          total_chunks += 1 if summary_chunk
+          body = summary_chunk&.content.presence || artifact.content.to_s
+          "#### #{heading}\n#{body.tr("\n", " ").truncate(300)}"
+        end
+
+        artifact_section(
+          name: :session_summaries,
+          heading: "Session Summaries (agent-run observations, not vetted intent)",
+          content: lines.join("\n\n"),
+          artifacts: artifacts,
+          chunk_count: total_chunks,
+          item_marker: "#### "
+        )
+      end
+
       def build_stats_section
         artifacts = active_artifacts("language_stat")
         return nil if artifacts.empty?
@@ -277,7 +344,7 @@ module Knowledge
         artifact_section(name: :stats, heading: "Project Stats", content: lines.join("\n"), artifacts: artifacts)
       end
 
-      def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0)
+      def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0, item_marker: "- ")
         {
           name: name,
           heading: heading,
@@ -286,6 +353,7 @@ module Knowledge
           artifact_count: artifacts.size,
           chunk_count: chunk_count,
           token_count: estimate_tokens("### #{heading}\n#{content}"),
+          item_marker: item_marker,
           citations: artifacts.map(&:knowledge_uri)
         }
       end
@@ -294,13 +362,15 @@ module Knowledge
         {
           business_context: "business_context",
           documents: "reference_document",
+          okf: "okf_concept",
           routes: "route",
           symbols: "symbol",
           hotspots: "churn_hotspot",
           schema: "schema",
           stats: "language_stat",
           decisions: "decision_record",
-          change_intents: "change_intent"
+          change_intents: "change_intent",
+          session_summaries: "session_summary"
         }.fetch(section_name.to_sym)
       end
 
@@ -360,6 +430,12 @@ module Knowledge
             .order(:identifier)
             .limit(10)
             .to_a
+        elsif type == "okf_concept"
+          scope
+            .includes(:active_ordered_chunks)
+            .order(:identifier)
+            .limit(20)
+            .to_a
         elsif type == "churn_hotspot"
           # Order by hotspot rank (lower = hotter), with nulls last, then by
           # revision count descending for ties. Limit in SQL to avoid loading
@@ -378,6 +454,12 @@ module Knowledge
             .includes(:active_ordered_chunks)
             .order(:identifier)
             .limit(20)
+            .to_a
+        elsif type == "session_summary"
+          scope
+            .includes(:active_ordered_chunks)
+            .order(created_at: :desc)
+            .limit(10)
             .to_a
         else
           scope
@@ -414,19 +496,45 @@ module Knowledge
 
         return nil if truncated_lines.empty?
 
+        # Roll back trailing item fragments so we don't count an artifact
+        # without its body (or vice versa) when sections like :okf render
+        # each item as a `#### heading\nbody` block.
+        truncated_lines = roll_back_partial_item(truncated_lines, section[:item_marker] || "- ")
+        return nil if truncated_lines.empty?
+
         truncated_content = truncated_lines.join("\n")
-        item_count = truncated_lines.count { |l| l.start_with?("- ") }
+        item_count = truncated_lines.count { |l| l.start_with?(section[:item_marker] || "- ") }
 
         {
           name: section[:name],
           heading: section[:heading],
           content: truncated_content,
           artifact_type: section[:artifact_type],
-          artifact_count: section[:name] == :business_context ? truncated_lines.count { |l| l.start_with?("#### ") } : item_count,
+          artifact_count: item_count,
           chunk_count: [ section[:chunk_count].to_i, item_count ].min,
           token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}"),
+          item_marker: section[:item_marker],
           citations: section[:citations]
         }
+      end
+
+      # Drop a trailing incomplete item so the truncated section reports
+      # only items whose body survived the budget. Sections whose items
+      # are single "- " bullets already truncate atomically and skip this.
+      def roll_back_partial_item(truncated_lines, item_marker)
+        return truncated_lines if item_marker == "- "
+
+        item_indices = truncated_lines
+          .each_with_index
+          .select { |line, _| line.start_with?(item_marker) }
+          .map { |_, idx| idx }
+        return truncated_lines if item_indices.empty?
+
+        last_item_idx = item_indices.last
+        body_after = truncated_lines[(last_item_idx + 1)..] || []
+        return truncated_lines if body_after.any? { |line| line.strip.present? }
+
+        truncated_lines[0...last_item_idx]
       end
 
       # Fast token approximation: ~0.75 tokens per word (per issue spec)

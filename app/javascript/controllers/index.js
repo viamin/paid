@@ -28,9 +28,6 @@ application.register("chat-session-list", ChatSessionListController)
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
-import CheckboxToggleController from "./checkbox_toggle_controller"
-application.register("checkbox-toggle", CheckboxToggleController)
-
 import ClarifyingQuestionsController from "./clarifying_questions_controller"
 application.register("clarifying-questions", ClarifyingQuestionsController)
 
@@ -54,9 +51,6 @@ application.register("form-submit", FormSubmitController)
 
 import GoalToggleController from "./goal_toggle_controller"
 application.register("goal-toggle", GoalToggleController)
-
-import HelloController from "./hello_controller"
-application.register("hello", HelloController)
 
 import InboxMasterDetailController from "./inbox_master_detail_controller"
 application.register("inbox-master-detail", InboxMasterDetailController)
@@ -114,9 +108,6 @@ application.register("test-all", TestAllController)
 
 import ThemeController from "./theme_controller"
 application.register("theme", ThemeController)
-
-import TooltipController from "./tooltip_controller"
-application.register("tooltip", TooltipController)
 
 import TraceViewerController from "./trace_viewer_controller"
 application.register("trace-viewer", TraceViewerController)

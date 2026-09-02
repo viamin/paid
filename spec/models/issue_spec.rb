@@ -1553,6 +1553,55 @@ RSpec.describe Issue do
     end
   end
 
+  # @spec ISSUE-ENHANCEMENT-012
+  describe "#sync_manual_review_started_at" do
+    let(:project) { create(:project) }
+
+    it "stamps manual_review_started_at when paid_state transitions into \"manual_review\"" do
+      issue = create(:issue, project: project, paid_state: "new")
+      expect(issue.manual_review_started_at).to be_nil
+
+      freeze_time = Time.current
+      travel_to(freeze_time) do
+        issue.update!(paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      end
+
+      expect(issue.reload.manual_review_started_at).to be_within(1.second).of(freeze_time)
+    end
+
+    it "preserves the original timestamp when paid_state stays \"manual_review\"" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      original = issue.manual_review_started_at
+      expect(original).to be_present
+
+      travel_to(1.hour.from_now) do
+        issue.update!(labels: issue.labels | [ "another-label" ])
+        issue.update!(paid_state: "manual_review")
+      end
+
+      expect(issue.reload.manual_review_started_at).to be_within(1.second).of(original)
+    end
+
+    it "clears the timestamp and reason when leaving \"manual_review\" for any other state" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      expect(issue.manual_review_started_at).to be_present
+
+      issue.update!(paid_state: "completed")
+
+      expect(issue.reload.manual_review_started_at).to be_nil
+      expect(issue.manual_review_reason).to be_nil
+    end
+
+    it "is a no-op when paid_state is unchanged on a write that does not touch it" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      expect(issue.manual_review_started_at).to be_nil
+
+      issue.update!(title: "Refined title")
+
+      expect(issue.reload.manual_review_started_at).to be_nil
+    end
+  end
+
   # @spec OPERATOR-INBOX-010
   describe "inbox count cache invalidation" do
     let(:account) { create(:account) }
@@ -1597,6 +1646,37 @@ RSpec.describe Issue do
       issue.update!(github_state: "closed")
 
       expect(Dashboard::CacheVersion).not_to have_received(:bump)
+    end
+
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-012
+    it "bumps the inbox cache when an issue transitions into manual_review" do
+      issue = create(:issue, project: project, paid_state: "new")
+
+      issue.update!(paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+    end
+
+    it "bumps the inbox cache when an issue leaves manual_review" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+      issue.update!(paid_state: "completed")
+
+      # Once on creation (entering manual_review) and once on the transition out.
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
+    end
+
+    it "bumps the inbox cache when a manual_review issue closes on GitHub" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.", github_state: "open")
+
+      issue.update!(github_state: "closed")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
     end
   end
 
@@ -1939,12 +2019,20 @@ RSpec.describe Issue do
   describe ".lifecycle_statuses" do
     let(:project) { create(:project) }
 
-    it "returns :eligible for an issue with no dependencies or active runs" do
+    it "returns :eligible for an issue with no dependencies or active runs" do # @spec AUTO-PICK-QUEUE-005
       issue = create(:issue, project: project, github_state: "open")
 
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "does not report a manual_review issue as :eligible" do # @spec AUTO-PICK-QUEUE-005
+      issue = create(:issue, project: project, github_state: "open", paid_state: "manual_review")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
     end
 
     it "returns :blocked for an issue with an open local dependency" do
@@ -2092,13 +2180,32 @@ RSpec.describe Issue do
       expect(result[parent.id]).to eq(:eligible)
     end
 
-    it "returns :eligible for an issue with only completed agent runs" do
+    it "returns :eligible for a recoverable completed issue" do # @spec AUTO-PICK-QUEUE-005
       issue = create(:issue, project: project, github_state: "open")
-      create(:agent_run, issue: issue, project: project, status: "completed")
+      issue.update!(paid_state: "completed")
+      create(:agent_run, :completed, :automatic, issue: issue, project: project,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
 
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "matches auto-pick eligibility for issues that differ only by paid_state" do # @spec AUTO-PICK-QUEUE-005
+      recoverable_completed = create(:issue, project: project, github_state: "open", paid_state: "completed")
+      create(:agent_run, :completed, :automatic, issue: recoverable_completed, project: project,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+      manual_review = create(:issue, project: project, github_state: "open", paid_state: "manual_review")
+      needs_input = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
+      eligible = create(:issue, project: project, github_state: "open", paid_state: "new")
+      non_recoverable_completed = create(:issue, project: project, github_state: "open", paid_state: "completed")
+
+      issues = [ recoverable_completed, manual_review, needs_input, eligible, non_recoverable_completed ]
+      statuses = described_class.lifecycle_statuses(issues)
+      eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).pluck(:id)
+
+      expect(statuses.select { |_, status| status == :eligible }.keys).to match_array(eligible_ids)
+      expect(statuses[non_recoverable_completed.id]).to eq(:blocked)
     end
 
     it "returns correct statuses for multiple issues" do

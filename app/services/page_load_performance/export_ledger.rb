@@ -22,7 +22,7 @@ module PageLoadPerformance
     end
 
     def call
-      return skip unless Screenshots::Storage.configured?
+      return skip unless ArtifactStorage.configured?
 
       storage.upload_document(key: key, body: JSON.pretty_generate(document), content_type: "application/json")
     rescue Screenshots::Storage::StorageError => e

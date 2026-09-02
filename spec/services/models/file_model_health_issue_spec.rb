@@ -46,7 +46,7 @@ RSpec.describe Models::FileModelHealthIssue do
   end
 
   before do
-    allow(client).to receive(:create_label)
+    allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
     allow(client).to receive(:add_comment)
     allow(client).to receive(:update_issue)
   end
@@ -61,7 +61,7 @@ RSpec.describe Models::FileModelHealthIssue do
     )
 
     expect(result.action).to eq(:noop)
-    expect(client).not_to have_received(:create_label)
+    expect(Projects::EnsureStandardLabels).not_to have_received(:call_best_effort)
   end
 
   it "creates a labelled, auto-pick issue when no open issue exists" do
@@ -76,6 +76,7 @@ RSpec.describe Models::FileModelHealthIssue do
     )
 
     expect(result.action).to eq(:created)
+    expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project)
     expect(client).to have_received(:create_issue).with(
       "viamin/paid",
       hash_including(labels: array_including("model-health", "paid-generated", "paid-automation"))

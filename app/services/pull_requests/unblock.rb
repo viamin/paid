@@ -17,7 +17,7 @@ module PullRequests
   #
   # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-016
   class Unblock
-    ESCALATED_LABEL = "paid-escalated"
+    ESCALATED_LABEL = Issue::ESCALATED_LABEL
 
     Result = Data.define(:success, :error, :pull_request) do
       def success? = success

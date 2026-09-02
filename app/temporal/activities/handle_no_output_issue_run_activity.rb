@@ -367,11 +367,13 @@ module Activities
 
     def add_needs_input_label(client, project, issue)
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       add_phase_label(client, project, issue.github_number, label)
     end
 
     def add_recommend_close_label(client, project, issue)
       label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       add_phase_label(client, project, issue.github_number, label)
     end
 

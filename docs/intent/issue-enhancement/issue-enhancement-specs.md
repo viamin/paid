@@ -104,9 +104,27 @@
   base prompt, and unrelated issue bodies SHALL NOT bypass that boundary. After
   validating the agent's delimited structured output, the workflow SHALL post
   the `<!-- paid:enhance-issue -->` comment and label state without committing,
-  pushing, or creating a pull request.
+  pushing, or creating a pull request. Structured runners (e.g. OpenCode,
+  Codex) MAY wrap the agent's final message inside a JSONL transcript, where
+  the delimiter's newlines are escaped within a JSON string field and the
+  runner's own turn-selection logic MAY prefer an earlier progress message
+  over the true final one. Extraction SHALL decode each transcript event's
+  own message text and select the last delimiter match found across the
+  transcript, rather than depending on the runner-selected "final" message.
+  When the parse path fails even though the raw output demonstrably
+  contained a delimited payload that satisfies the structured-output
+  contract — i.e. Paid discarded a valid payload — the run SHALL still
+  fail non-retryably and move the issue to `manual_review`
+  (ISSUE-ENHANCEMENT-002), but SHALL refund the enhancement round consumed
+  at queue time (ISSUE-ENHANCEMENT-011) — which only automatic runs
+  consume, so manual runs SHALL NOT refund a round — so a Paid-side
+  extraction defect does not burn round budget meant to bound repeated
+  automatic re-evaluation. A delimited payload that is itself malformed
+  JSON or omits the required keys is an agent contract failure, not an
+  extraction defect, and SHALL consume the round.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
+  `app/temporal/activities/enhance_issue_activity.rb#delimited_payload`,
   `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/controllers/api/github_proxy_controller.rb`,
   `app/services/containers/provision.rb#workspace_mount_mode`,
@@ -143,3 +161,26 @@
   `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
   `app/temporal/activities/fetch_issues_activity.rb`.
+
+## Manual-review visibility
+
+- [x] **ISSUE-ENHANCEMENT-012** — When an issue's `paid_state` transitions
+  into `manual_review`, the system SHALL stamp a durable
+  `manual_review_started_at` timestamp (preserved across idempotent
+  re-application of the same state, mirroring `needs_input_since`) and SHALL
+  persist a human-readable `manual_review_reason` describing why automation
+  stopped, sourced from `IssueEnhancements::StopForManualReview`'s `reason`
+  wherever the issue enters `manual_review` through that service, and from the
+  equivalent round-limit copy where `EnhanceIssueActivity` sets the state
+  directly. When `paid_state` leaves `manual_review`, the system SHALL clear
+  both columns. The operator inbox (`docs/intent/operator-inbox/`) SHALL
+  derive an issue's manual-review age from `manual_review_started_at` (falling
+  back to `updated_at` for legacy rows predating the column) rather than
+  `updated_at`, the same fallback precedent `pr_escalation_started_at`
+  established on the PR side.
+  *Tests:* `spec/models/issue_spec.rb`,
+  `spec/services/issue_enhancements/stop_for_manual_review_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/models/issue.rb#sync_manual_review_started_at`,
+  `app/services/issue_enhancements/stop_for_manual_review.rb`,
+  `app/temporal/activities/enhance_issue_activity.rb`.

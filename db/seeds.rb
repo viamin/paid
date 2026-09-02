@@ -37,4 +37,8 @@ TenantContext.with_system_access do
 
   # Seed default orchestration strategies
   OrchestrationStrategies::Seed.call
+
+  # Seed baseline learned-orchestration strategies (formerly seeded by the
+  # 20260509233216 migration; see that file for why it moved here)
+  Strategies::SeedBaselineOrchestration.call
 end

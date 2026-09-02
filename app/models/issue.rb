@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
+  AUTO_PICK_ELIGIBLE_PAID_STATES = %w[new planning failed analyzed].freeze
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   # The first four reasons denote agent failure. `awaiting_approval` denotes
@@ -35,6 +36,16 @@ class Issue < ApplicationRecord
   # Adding the label in GitHub (or pausing from the UI) flips `paused`;
   # removing it flips `paused` back.
   PAUSED_LABEL = "paid-paused"
+
+  # Canonical names for the escalation control labels (@spec GH-LABELS-006).
+  # Defined once here and referenced by every activity/service that reads or
+  # writes them, so the literal string exists in a single place. Applying
+  # ESCALATED_LABEL pauses automation on a PR for human review; a trusted
+  # user removing it is the dismissal signal (see MarkEscalatedActivity,
+  # PullRequests::Unblock). DISMISS_ESCALATION_LABEL is an alternate marker
+  # cleared alongside it in #clear_escalation!.
+  ESCALATED_LABEL = "paid-escalated"
+  DISMISS_ESCALATION_LABEL = "paid-dismiss-escalation"
 
   # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
@@ -123,11 +134,24 @@ class Issue < ApplicationRecord
   # @spec INBOX-FOUNDATION-001
   before_save :sync_needs_input_since, if: :will_save_change_to_paid_state?
 
+  # Same contract as sync_needs_input_since, for the other hard-stop state:
+  # `updated_at` is a shared touch timestamp bumped by label syncs and unrelated
+  # writes, so it cannot report how long an issue has actually been parked in
+  # manual_review (the same problem pr_escalation_started_at was added to solve
+  # on the PR side). Stamps on entry, clears on exit; `manual_review_reason` is
+  # set by the caller alongside `paid_state` (see IssueEnhancements::
+  # StopForManualReview) so it is cleared here too rather than left stale.
+  # @spec ISSUE-ENHANCEMENT-012
+  before_save :sync_manual_review_started_at, if: :will_save_change_to_paid_state?
+
   # Invalidates the cached inbox nav badge count whenever an issue enters or
-  # leaves the needs_input queue, or when a waiting issue is closed/reopened
-  # on GitHub, so the async badge endpoint recomputes instead of serving a
-  # stale number for the rest of its TTL.
-  # @spec OPERATOR-INBOX-010
+  # leaves the needs_input queue, enters or leaves manual_review, or when a
+  # waiting issue is closed/reopened on GitHub, so the async badge endpoint
+  # recomputes instead of serving a stale number for the rest of its TTL. Also
+  # covers a pull request entering or leaving the escalated_pr inbox lane,
+  # since merge_approval_candidate_state_changed? already watches
+  # saved_change_to_pr_review_phase? for every pull request.
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -337,6 +361,21 @@ class Issue < ApplicationRecord
     end
   end
 
+  # Stamps `manual_review_started_at` on entry into `paid_state:
+  # "manual_review"` and clears it (and the reason) on exit. Mirrors
+  # sync_needs_input_since's contract exactly, including the `||=` that
+  # preserves the original entry time across idempotent re-applications of the
+  # same state.
+  # @spec ISSUE-ENHANCEMENT-012
+  def sync_manual_review_started_at
+    if paid_state == "manual_review"
+      self.manual_review_started_at ||= Time.current
+    elsif paid_state_was == "manual_review"
+      self.manual_review_started_at = nil
+      self.manual_review_reason = nil
+    end
+  end
+
   def draft_phase?
     pr_review_phase.in?(%w[draft restarted])
   end
@@ -365,7 +404,7 @@ class Issue < ApplicationRecord
   def clear_escalation!(draft:, reset_counters: true)
     token_limit_override = pr_escalation_reason == PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
     attrs = {
-      labels: labels - %w[paid-escalated paid-dismiss-escalation],
+      labels: labels - [ ESCALATED_LABEL, DISMISS_ESCALATION_LABEL ],
       pr_review_phase: draft ? "restarted" : "ready",
       pr_escalation_reason: nil,
       awaiting_approval_since: nil,
@@ -429,7 +468,7 @@ class Issue < ApplicationRecord
 
   # Compute lifecycle statuses for a collection of issues.
   # Returns a Hash of issue_id => :blocked | :in_progress | :eligible
-  def self.lifecycle_statuses(issues)
+  def self.lifecycle_statuses(issues) # @spec AUTO-PICK-QUEUE-005
     issues = issues.to_a
     return {} if issues.empty?
 
@@ -498,16 +537,53 @@ class Issue < ApplicationRecord
       .to_set
 
     in_progress_ids = active_run_ids | has_open_pr_ids
+    eligible_ids = auto_pick_eligible_paid_state_scope(where(id: issue_ids)).pluck(:id).to_set
 
     issues.each_with_object({}) do |issue, hash|
       hash[issue.id] = if blocked_ids.include?(issue.id)
         :blocked
       elsif in_progress_ids.include?(issue.id)
         :in_progress
-      else
+      elsif eligible_ids.include?(issue.id)
         :eligible
+      else
+        :blocked
       end
     end
+  end
+
+  AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
+    SELECT 1 FROM issues closed_prs
+    WHERE closed_prs.project_id = agent_runs.project_id
+      AND closed_prs.github_number = agent_runs.pull_request_number
+      AND closed_prs.is_pull_request = TRUE
+      AND closed_prs.github_state = 'closed'
+      AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
+  SQL
+
+  def self.auto_pick_eligible_paid_state_scope(base_scope) # @spec AUTO-PICK-QUEUE-005
+    scope = base_scope.where(paid_state: AUTO_PICK_ELIGIBLE_PAID_STATES)
+
+    scope.or(
+      base_scope.where(
+        paid_state: "completed",
+        id: recoverable_completed_auto_pick_issue_ids(base_scope)
+      )
+    )
+  end
+
+  def self.recoverable_completed_auto_pick_issue_ids(base_scope)
+    AgentRun.where(
+      status: "completed",
+      trigger_type: "automatic",
+      auto_pick: true
+    ).where.not(issue_id: nil)
+      .where.not(goal: "analyze_issue")
+      .where(issue_id: base_scope.select(:id))
+      .where(
+        "agent_runs.pull_request_number IS NULL OR EXISTS (#{AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})"
+      )
+      .select(:issue_id)
   end
 
   def self.open_pull_request_parent_issue_ids(project: nil, issue_ids: nil)
@@ -576,6 +652,7 @@ class Issue < ApplicationRecord
 
   def inbox_count_cache_invalidation_needed?
     saved_change_to_needs_input_since? ||
+      saved_change_to_manual_review_started_at? ||
       waiting_issue_github_state_changed? ||
       merge_approval_candidate_state_changed?
   end
@@ -585,7 +662,7 @@ class Issue < ApplicationRecord
   end
 
   def waiting_issue_github_state_changed?
-    saved_change_to_github_state? && paid_state == "needs_input"
+    saved_change_to_github_state? && paid_state.in?(%w[needs_input manual_review])
   end
 
   def merge_approval_candidate_state_changed?

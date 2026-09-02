@@ -29,6 +29,24 @@ RSpec.describe Runner do
     end
   end
 
+  describe "#update_columns legacy attribute bridge" do
+    it "mirrors runner-named values into the legacy provider key" do
+      runner = create(:runner, runner_key: "cursor")
+
+      runner.update_columns(runner_key: "codex")
+
+      expect(runner.reload.provider_key).to eq("codex")
+    end
+
+    it "mirrors legacy provider values into the runner key" do
+      runner = create(:runner, runner_key: "cursor")
+
+      runner.update_columns(provider_key: "codex")
+
+      expect(runner.reload.runner_key).to eq("codex")
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to belong_to(:provider_api_key).optional }

@@ -92,7 +92,7 @@
               caption: "Agent runs per day, stacked by completed and failed status, over the last 30 days.",
               stacked: true,
               height: "320px",
-              colors: ["#dc2626", "#16a34a"],
+              colors: dashboard_chart_colors(:daily_run_status),
               xtitle: "Day",
               ytitle: "Runs",
               discrete: true,
@@ -123,6 +123,7 @@
 
     <%# PR Creation Run Outcomes %>
     <% outcome_data = stats[:daily_outcome_chart] %>
+    <% outcome_chart_colors = dashboard_outcome_chart_colors(outcome_data[:series]) %>
     <% outcome_window_label = time_range_label(time_range) %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
       <div class="px-4 py-5 sm:p-6">
@@ -148,7 +149,7 @@
                 caption: "PR Creation run outcomes per day for #{outcome_window_label}, grouped by completion status.",
                 stacked: true,
                 height: "280px",
-                colors: outcome_data[:colors],
+                colors: outcome_chart_colors,
                 xtitle: "Day",
                 ytitle: "Runs",
                 discrete: true,
@@ -182,7 +183,7 @@
                 id: "daily-completion-rate-chart",
                 caption: "Daily PR creation completion rate percentage for #{outcome_window_label}.",
                 height: "180px",
-                colors: ["#16a34a"],
+                colors: dashboard_chart_colors(:outcome_completion_rate),
                 xtitle: "Day",
                 ytitle: "Completion %",
                 discrete: true,
@@ -205,7 +206,7 @@
               <% count = series[:data].values.sum %>
               <% next if count.zero? %>
               <div class="flex items-center gap-1.5">
-                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= outcome_data[:colors][index] %>"></span>
+                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= outcome_chart_colors[index] %>"></span>
                 <span class="text-gray-600"><%= series[:name] %></span>
                 <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
                 <span class="text-gray-400">(<%= ((count.to_f / outcome_data[:overall_total]) * 100).round(1) %>%)</span>
@@ -304,7 +305,7 @@
               id: "duration-trend-chart",
               caption: "Daily average and median (p50) duration in seconds for completed PR creation runs.",
               height: "320px",
-              colors: ["#4f46e5", "#059669", "#94a3b8"],
+              colors: dashboard_chart_colors(:duration_trend),
               xtitle: "Date",
               ytitle: "Seconds",
               library: {

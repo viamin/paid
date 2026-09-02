@@ -139,13 +139,13 @@ class PreviewSession < ApplicationRecord
   end
 
   def touch_last_active!
-    update_column(:last_active_at, Time.current) if persisted?
+    update_columns(last_active_at: Time.current) if persisted?
   end
 
   def touch_last_accessed!
     return if last_active_at.present? && last_active_at > 1.minute.ago
 
-    TenantContext.with_system_access { update_column(:last_active_at, Time.current) }
+    TenantContext.with_system_access { update_columns(last_active_at: Time.current) }
   rescue ActiveRecord::StatementInvalid, ActiveRecord::ActiveRecordError
     true
   end

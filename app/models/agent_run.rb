@@ -212,6 +212,7 @@ class AgentRun < ApplicationRecord
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
+  has_one :agent_run_session_summary, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
@@ -3779,7 +3780,7 @@ class AgentRun < ApplicationRecord
     )
   ensure
     @container_service = nil
-    update_column(:container_id, nil) if container_id.present?
+    update_columns(container_id: nil) if container_id.present?
     clear_runtime_image_selection!
   end
 

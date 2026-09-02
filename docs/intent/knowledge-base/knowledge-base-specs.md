@@ -76,6 +76,125 @@
   *Test:* `spec/temporal/workflows/knowledge_evolution_workflow_spec.rb`,
   `spec/temporal/activities/record_knowledge_recommendations_activity_spec.rb`.
 
+- [x] **KNOWLEDGE-OKF-001** — When Paid collects knowledge for a repository
+  that contains no OKF bundle, the OKF collector SHALL skip without producing
+  artifacts and SHALL leave other collectors and the overall collection status
+  unaffected.
+  *Code:* `app/services/knowledge/collectors/okf_collector.rb`,
+  `config/initializers/knowledge_collectors.rb`.
+  *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-002** — When a repository contains an OKF bundle at a
+  conventional `.okf/` root or an explicitly configured path, the OKF collector
+  SHALL index each valid Markdown concept file with YAML frontmatter as a
+  searchable curated artifact of the distinct `okf_concept` type whose metadata
+  carries source path, concept type, title, tags, and last-commit metadata, and
+  SHALL preserve the Markdown body as the artifact content and as curated
+  definition chunks.
+  *Code:* `app/services/knowledge/collectors/okf_collector.rb`.
+  *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-003** — When a knowledge context bundle is assembled for
+  a project with active `okf_concept` artifacts, the system SHALL include that
+  curated knowledge under an explicit OKF section within the token budget.
+  *Code:* `app/services/knowledge/context_bundle/build.rb`.
+  *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-004** — When an OKF bundle file is invalid (missing or
+  malformed frontmatter, non-mapping frontmatter, empty body, or oversized
+  file), the OKF collector SHALL record a finding in the collector run
+  metadata, SHALL complete the run, and SHALL still index the valid files in
+  the same bundle.
+  *Code:* `app/services/knowledge/collectors/okf_collector.rb`.
+  *Test:* `spec/services/knowledge/collectors/okf_collector_spec.rb`.
+
+- [x] **KNOWLEDGE-009** — When an agent or human requests a project's
+  knowledge map, the system SHALL return a bounded summary of active/stale
+  artifact counts by type, top scope directories, per-collector freshness
+  (latest run status and commit), business-context and imported-document
+  presence, and inferred collector coverage gaps (never run, failed, or
+  stale relative to the latest indexed commit), without including chunk
+  bodies, and SHALL leave existing search and context-bundle behavior
+  unchanged.
+  *Code:* `app/services/knowledge/map/build.rb`,
+  `app/controllers/api/knowledge_map_controller.rb`,
+  `app/controllers/api/proxy/knowledge_map_controller.rb`,
+  `app/controllers/knowledge/browse_controller.rb`.
+  *Test:* `spec/services/knowledge/map/build_spec.rb`,
+  `spec/requests/api/knowledge_map_spec.rb`,
+  `spec/requests/api/proxy/knowledge_map_spec.rb`.
+
+- [x] **KNOWLEDGE-OKF-005** — When a project member exports selected active
+  knowledge artifacts as an OKF bundle, the system SHALL render each selected
+  artifact as Markdown with YAML frontmatter carrying its artifact type,
+  collector type, scope, identifier, source commit SHA, timestamps, and a
+  Paid knowledge-base URI; SHALL exclude artifacts with no active
+  (non-redacted, non-stale) chunk content; SHALL let the caller choose
+  curated-only or additional derived artifact types; and SHALL package the
+  result as a downloadable archive whose files round-trip through the same
+  frontmatter parser the OKF collector uses to ingest bundles. The export is
+  opt-in and does not alter project knowledge state or imply OKF adoption.
+  *Code:* `app/services/knowledge/okf/export.rb`,
+  `app/services/knowledge/okf/frontmatter.rb`,
+  `app/services/knowledge/okf/bundle_archive.rb`,
+  `app/controllers/projects/okf_exports_controller.rb`.
+  *Test:* `spec/services/knowledge/okf/export_spec.rb`,
+  `spec/services/knowledge/okf/frontmatter_spec.rb`,
+  `spec/services/knowledge/okf/bundle_archive_spec.rb`,
+  `spec/requests/projects/okf_exports_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-001** — Paid SHALL maintain a single canonical list
+  of curated artifact types (durable, human/agent-authored knowledge —
+  business context, imported documents, decision records, change intents, OKF
+  concepts) distinct from derived collector output, and every consumer that
+  needs to classify an artifact type as curated or derived SHALL reference
+  that canonical list rather than duplicating it.
+  *Code:* `app/models/knowledge_artifact.rb`,
+  `app/services/knowledge/okf/export.rb`.
+  *Test:* `spec/models/knowledge_artifact_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-002** — When knowledge search returns results, the
+  system SHALL tag each result with whether its artifact type is curated so
+  callers can distinguish curated knowledge from derived knowledge without a
+  second lookup.
+  *Code:* `app/services/knowledge/search.rb`.
+  *Test:* `spec/services/knowledge/search_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-003** — When a project member browses knowledge,
+  the system SHALL present curated artifact types separately from derived
+  artifact types in the browse index and SHALL label an artifact type's
+  browse page as curated or derived.
+  *Code:* `app/controllers/knowledge/browse_controller.rb`,
+  `app/views/knowledge/browse/index.html.erb`,
+  `app/views/knowledge/browse/show.html.erb`.
+  *Test:* `spec/requests/knowledge/browse_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-004** — When Paid assembles a knowledge context
+  bundle within a token budget, the system SHALL order curated sections
+  (business context, imported documents, OKF, decisions, change intents)
+  before derived sections (routes, symbols, schema, hotspots, stats) so
+  curated knowledge is not displaced by codebase-derived context under
+  budget pressure.
+  *Code:* `app/services/knowledge/context_bundle/build.rb`.
+  *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-005** — When usage stats are aggregated for a
+  project or account, the system SHALL report curated-knowledge usage
+  separately from derived-artifact usage, bucketed from the existing
+  per-artifact-type usage records.
+  *Code:* `app/services/knowledge/usage_stats.rb`,
+  `app/services/knowledge/dashboard_stats.rb`,
+  `app/views/dashboard/_knowledge_widget.html.erb`.
+  *Test:* `spec/services/knowledge/usage_stats_spec.rb`,
+  `spec/services/knowledge/dashboard_stats_spec.rb`,
+  `spec/views/dashboard/knowledge_widget_partial_spec.rb`.
+
+- [x] **KNOWLEDGE-CURATED-006** — When the knowledge map is built for a
+  project, the system SHALL include an active/stale artifact-count breakdown
+  by curated/derived lane alongside the existing per-type artifact counts.
+  *Code:* `app/services/knowledge/map/build.rb`.
+  *Test:* `spec/services/knowledge/map/build_spec.rb`.
+
 - [x] **KNOWLEDGE-EMBED-001** — When a user configures a knowledge base, the
   system SHALL let them pick any embedding model id served by the configured
   embedding runner together with the dimensions the model emits, validate
@@ -139,3 +258,33 @@
   `spec/services/knowledge/search/semantic_spec.rb`,
   `spec/services/knowledge/context_bundle/build_spec.rb`,
   `spec/services/knowledge/provenance/audit_log_spec.rb`.
+
+- [x] **KNOWLEDGE-LINT-001** — When a project requests a knowledge quality
+  report, the system SHALL run read-only lint/drift checks against the
+  project's artifacts, chunks, links, and usage telemetry, SHALL return a
+  bounded list of structured findings with stable severity levels (info,
+  warning, error) and evidence (target type/id, scope, artifact type, and a
+  short detail string), SHALL classify each finding with a stable `code` so
+  callers can filter and aggregate, SHALL NOT mutate any knowledge state, and
+  SHALL leave existing collection, search, context-bundle, and redaction
+  behavior unchanged. The checks overlap the existing knowledge map (`Knowledge::Map::Build`)
+  by surfacing the same stale-collector and coverage-gap signals as structured
+  findings, plus: stale file-path scope_paths, stale commit SHA references,
+  empty or fully-redacted artifact bodies, missing embeddings on active chunks,
+  chunks without a redaction scan, low-usage artifact types, and links whose
+  endpoints no longer resolve. Each check SHALL contribute at most
+  `MAX_FINDINGS_PER_CHECK` findings to the report; a check that exceeds the cap
+  SHALL be listed in a `truncated_checks` field with its omitted count so the
+  "bounded" guarantee holds even for projects with tens of thousands of
+  matches. The `stale_scope_path` check SHALL determine file existence by
+  listing the repository's HEAD tree once per report and checking membership
+  in-memory, rather than spawning a git subprocess per artifact.
+  *Code:* `app/services/knowledge/quality/lint.rb`,
+  `app/services/knowledge/quality/checks/*.rb`,
+  `app/controllers/api/knowledge_quality_controller.rb`,
+  `app/controllers/knowledge/quality_controller.rb`,
+  `app/views/knowledge/quality/show.html.erb`.
+  *Test:* `spec/services/knowledge/quality/lint_spec.rb`,
+  `spec/services/knowledge/quality/checks/*_spec.rb`,
+  `spec/requests/api/knowledge_quality_controller_spec.rb`,
+  `spec/requests/knowledge/quality_spec.rb`.

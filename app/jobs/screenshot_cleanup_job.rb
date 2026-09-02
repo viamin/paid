@@ -17,7 +17,7 @@ class ScreenshotCleanupJob < ApplicationJob
   def perform(retention_days: 30)
     prune_page_load_measurements(retention_days)
 
-    return unless Screenshots::Storage.configured?
+    return unless ArtifactStorage.configured?
 
     storage = Screenshots::Storage.new
     deleted_count = storage.cleanup_old_screenshots(retention_days: retention_days)

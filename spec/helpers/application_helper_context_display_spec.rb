@@ -108,9 +108,21 @@ RSpec.describe ApplicationHelper, :no_db do
         run = stub_run("create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
         expect(result).to include('role="tooltip"')
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
+      end
+
+      it "reveals the tooltip on keyboard focus even when the info icon is hidden on fine-pointer devices" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix the login bug")
+        run = stub_run("create_pr_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        # The disclosure triangle is hidden on hover-capable fine-pointer devices, but the
+        # tooltip content must still be reachable by focusing the underlying link/span so
+        # keyboard users on desktop are not locked out (see #3517 review feedback).
+        expect(result).to include("group-focus-within:block")
       end
 
       it "falls back to the issue label tooltip when the issue title is absent" do
@@ -119,21 +131,44 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Issue #42"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 
-      it "includes aria attributes on tooltip button" do
+      it "includes aria attributes on tooltip summary" do
         issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
           title: "Fix bug")
         run = stub_run(id: 99, "create_pr_goal?": true, issue: issue)
         result = helper.agent_run_context_display(run)
 
-        expect(result).to include('aria-controls="context_99"')
-        expect(result).to include('aria-describedby="context_99"')
         expect(result).to include('aria-label="Show context details"')
-        expect(result).to include('aria-expanded="false"')
-        expect(result).to include('aria-hidden="true"')
+        expect(result).to include('id="context_99"')
+        expect(result).to include('role="tooltip"')
+      end
+
+      it "hides the native disclosure marker on the custom summary" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix bug")
+        run = stub_run("create_pr_goal?": true, issue: issue)
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        # list-style:none alone does not remove the WebKit ::-webkit-details-marker,
+        # so Safari/iOS would draw the browser triangle next to the info icon
+        # (see #3517 review feedback).
+        summary_class = fragment.at_css("summary")["class"]
+        expect(summary_class).to include("list-none")
+        expect(summary_class).to include("[&::-webkit-details-marker]:hidden")
+      end
+
+      it "associates the focusable link trigger with the tooltip content via aria-describedby" do
+        issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
+          title: "Fix bug")
+        run = stub_run(id: 99, "create_pr_goal?": true, issue: issue)
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        expect(fragment.at_css("a")["aria-describedby"]).to eq("context_99")
+        expect(fragment.at_css("summary")["aria-describedby"]).to eq("context_99")
+        expect(fragment.at_css('span[role="tooltip"]')["id"]).to eq("context_99")
       end
     end
 
@@ -157,7 +192,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Tighten tooltip coverage"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "shows source PR number as text when project is nil" do
@@ -192,6 +227,14 @@ RSpec.describe ApplicationHelper, :no_db do
 
         expect(result).to include("Refactor the flaky dashboard queue preview rows")
         expect(result).to include("text-gray-700")
+      end
+
+      it "associates the focusable text trigger with the tooltip content via aria-describedby" do
+        run = stub_run(id: 55, "create_pr_goal?": true, custom_prompt: "Refactor the flaky dashboard queue rows")
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        expect(fragment.at_css('span[tabindex="0"]')["aria-describedby"]).to eq("context_55")
+        expect(fragment.at_css('span[role="tooltip"]')["id"]).to eq("context_55")
       end
 
       it "truncates long prompts to 60 characters in the displayed label" do
@@ -237,7 +280,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Document tooltip behavior"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "falls back to the issue label when no richer created issue tooltip is available" do
@@ -313,7 +356,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Review the tooltip helper update"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "shows PR number as text when project is nil" do
@@ -348,7 +391,7 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include('title="Issue #55"')
-        expect(result).to include('data-controller="tooltip"')
+        expect(result).to include("<details")
       end
 
       it "shows placeholder when no issue" do
@@ -430,7 +473,7 @@ RSpec.describe ApplicationHelper, :no_db do
 
       expect(result).to include("PR Creation")
       expect(result).not_to include("title=")
-      expect(result).not_to include('data-controller="tooltip"')
+      expect(result).not_to include("<details")
       expect(result).not_to include('role="tooltip"')
     end
 

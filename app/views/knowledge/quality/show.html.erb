@@ -1,0 +1,106 @@
+<% content_for(:title) { "Knowledge Quality - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_knowledge_browse_index_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Knowledge
+    <% end %>
+  </div>
+
+  <div>
+    <h1 class="text-2xl font-semibold leading-6 text-gray-900">Knowledge Quality</h1>
+    <p class="mt-2 text-sm text-gray-700">
+      Lint and drift findings for <span class="font-medium"><%= @project.name %></span>.
+      Report generated at <%= @report[:generated_at] %>.
+    </p>
+  </div>
+
+  <%
+    summary = @report[:summary] || {}
+    error_count = summary[:error].to_i
+    warning_count = summary[:warning].to_i
+    info_count = summary[:info].to_i
+    total_count = summary[:total].to_i
+  %>
+
+  <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <p class="text-sm font-medium text-gray-500">Errors</p>
+      <p class="mt-1 text-2xl font-semibold <%= error_count.positive? ? "text-red-600" : "text-gray-900" %>">
+        <%= number_with_delimiter(error_count) %>
+      </p>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <p class="text-sm font-medium text-gray-500">Warnings</p>
+      <p class="mt-1 text-2xl font-semibold <%= warning_count.positive? ? "text-amber-600" : "text-gray-900" %>">
+        <%= number_with_delimiter(warning_count) %>
+      </p>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <p class="text-sm font-medium text-gray-500">Info</p>
+      <p class="mt-1 text-2xl font-semibold text-gray-900"><%= number_with_delimiter(info_count) %></p>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <p class="text-sm font-medium text-gray-500">Total</p>
+      <p class="mt-1 text-2xl font-semibold text-gray-900"><%= number_with_delimiter(total_count) %></p>
+    </div>
+  </div>
+
+  <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:px-6">
+      <h2 class="text-base font-semibold text-gray-900">Findings</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        Read-only knowledge quality findings. Each finding has a stable code and severity for filtering and CI integration.
+      </p>
+      <% if @report[:truncated_checks].present? %>
+        <ul class="mt-2 text-sm text-amber-700">
+          <% @report[:truncated_checks].each do |truncated| %>
+            <li>
+              <%= truncated[:code] %>: showing the first <%= Knowledge::Quality::Lint::MAX_FINDINGS_PER_CHECK %> findings,
+              <%= number_with_delimiter(truncated[:omitted_count]) %> omitted.
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+    <% if @report[:findings].any? %>
+      <ul class="divide-y divide-gray-200">
+        <% @report[:findings].each do |finding| %>
+          <li class="px-4 py-4 sm:px-6">
+            <div class="flex items-center justify-between gap-4">
+              <span class="font-mono text-sm text-gray-900"><%= finding[:code] %></span>
+              <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= severity_classes(finding[:severity]) %>">
+                <%= finding[:severity] %>
+              </span>
+            </div>
+            <p class="mt-1 text-sm text-gray-700"><%= finding[:detail] %></p>
+            <p class="mt-1 text-xs text-gray-500">
+              target: <span class="font-mono"><%= finding[:target_type] %>#<%= finding[:target_id] %></span>
+              <% if finding[:artifact_type].present? %>
+                &middot; artifact_type: <%= finding[:artifact_type] %>
+              <% end %>
+            </p>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="px-4 py-6 text-sm text-gray-500 sm:px-6">
+        No findings. Knowledge for this project is in good shape across all <%= @report[:checks].size %> checks.
+      </p>
+    <% end %>
+  </div>
+
+  <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 sm:px-6">
+      <h2 class="text-base font-semibold text-gray-900">Checks run</h2>
+    </div>
+    <ul class="divide-y divide-gray-200">
+      <% @report[:checks].each do |code| %>
+        <li class="px-4 py-3 font-mono text-sm text-gray-900 sm:px-6"><%= code %></li>
+      <% end %>
+    </ul>
+  </div>
+</div>

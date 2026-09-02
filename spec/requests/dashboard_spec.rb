@@ -661,7 +661,7 @@ RSpec.describe "Dashboard" do
         headers = table.css("thead th").map { |header| header.text.squish }
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
         context_cell = row.css("td")[headers.index("Context")]
-        context_tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        context_tooltip_wrapper = context_cell.at_css('details')
         context_tooltip = context_tooltip_wrapper&.at_css('span[role="tooltip"]')
 
         expect(row).to be_present
@@ -688,7 +688,7 @@ RSpec.describe "Dashboard" do
         expect(goal_cell.text).to include("Code Review")
         expect(goal_label).to be_present
         expect(goal_label["title"]).to be_nil
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('details')).to be_nil
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
@@ -902,6 +902,8 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
       expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
       expect(chart["data-chartkick-options-value"]).to include("\"stacked\":true")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-danger)")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-success)")
       expect(chart["data-chartkick-data-value"]).to be_present
       expect(chart.text).to include("Loading...")
       expect(doc.css("script")).to be_empty
@@ -1199,6 +1201,8 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
       expect(chart["data-chartkick-type-value"]).to eq("LineChart")
       expect(chart["data-chartkick-options-value"]).to include("\"annotation\"")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-pr-cycle-average)")
+      expect(chart["data-chartkick-options-value"]).to include("var(--dashboard-chart-annotation-border)")
       expect(doc.css("script")).to be_empty
     end
   end

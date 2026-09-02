@@ -51,6 +51,7 @@ class ThemeControllerNodeHarness
       const localStorageState = {
         theme_preference: storedPreference
       };
+      const dispatchedEvents = [];
 
       global.window = {
         matchMedia: () => ({
@@ -61,6 +62,15 @@ class ThemeControllerNodeHarness
         localStorage: {
           getItem(key) { return localStorageState[key] ?? null; },
           setItem(key, value) { localStorageState[key] = value; }
+        },
+        dispatchEvent(event) {
+          dispatchedEvents.push(event);
+        },
+        CustomEvent: class {
+          constructor(type, init = {}) {
+            this.type = type;
+            this.detail = init.detail;
+          }
         }
       };
 
@@ -93,7 +103,13 @@ class ThemeControllerNodeHarness
       controller.initialize();
       controller._lastPersisted = initialPreference;
 
-      return { button, controller, localStorageState, persistedCalls: () => persistedCalls };
+      return {
+        button,
+        controller,
+        localStorageState,
+        persistedCalls: () => persistedCalls,
+        dispatchedEvents
+      };
     }
 
     const signedInCase = buildController({
@@ -123,6 +139,10 @@ class ThemeControllerNodeHarness
       throw new Error(`Expected signed-in effective preference dataset to be light, saw ${document.documentElement.dataset.themeEffectivePreference}`);
     }
 
+    if (!signedInCase.dispatchedEvents.some((event) => event.type === "theme:changed" && event.detail.preference === "light")) {
+      throw new Error("Expected signed-in theme application to dispatch theme:changed");
+    }
+
     const guestCase = buildController({
       signedIn: false,
       storedPreference: "dark",
@@ -144,6 +164,10 @@ class ThemeControllerNodeHarness
 
     if (document.documentElement.dataset.themeEffectivePreference !== "dark") {
       throw new Error(`Expected guest effective preference dataset to be dark, saw ${document.documentElement.dataset.themeEffectivePreference}`);
+    }
+
+    if (!guestCase.dispatchedEvents.some((event) => event.type === "theme:changed" && event.detail.preference === "dark")) {
+      throw new Error("Expected guest theme application to dispatch theme:changed");
     }
   JAVASCRIPT
 

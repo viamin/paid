@@ -90,6 +90,77 @@ reuses the standard PR badge and GitHub-link conventions and directs the
 operator to re-approve on GitHub, after which the next scan naturally removes
 the entry.
 
+### `escalated_pr`
+
+Backed by `Dashboard::BlockedPullRequests`, the same query the dashboard's
+Blocked PRs panel uses — `Inbox::Queue` calls it and filters the result to the
+operator's auto-pick-gated projects rather than reimplementing the escalated-PR
+query. This is a deliberate scoping divergence: every other inbox kind is
+auto-pick + owner scoped (`INBOX-FOUNDATION-006`), while the dashboard panel is
+account-wide, so the two surfaces will not agree on counts. That is intentional
+— the Inbox stays consistent with itself rather than adopting the dashboard's
+broader scope for one kind — and is recorded here so the divergence reads as a
+decision, not drift.
+
+The entry payload carries the `Dashboard::BlockedPullRequests::Entry` as its
+`record`, so the detail pane shows the same reason, tripped counters,
+`last_progress_at`, and operator-paused indicator the dashboard panel shows —
+one query, two surfaces, no duplicated blocked-PR logic. The detail pane offers
+the same `unblock_escalation` action (`PullRequests::Unblock`,
+`PR-ESCALATION-014`) the dashboard panel offers, for every escalation reason
+except `awaiting_approval`; that reason denotes an unanswered human gate, not
+agent failure, so its entry directs the operator to re-approve on GitHub
+instead (mirroring the `merge_approval` kind's re-approval copy) rather than
+offering a clearing action that does not apply.
+
+A single kind covers all five escalation reasons rather than splitting
+`awaiting_approval` into its own kind: the only behavioral difference is which
+action the detail pane offers, which the entry already branches on by reason,
+the same way `unblock_confirmation_text` already does for the dashboard panel.
+Splitting into two kinds would add a nav filter and count-badge distinction for
+one copy difference.
+
+Because the entry is derived from `pr_review_phase` directly rather than a
+separate notification, an `awaiting_approval` escalation does not vanish from
+the inbox when a PR crosses from `ready` (where it may already have been a
+`merge_approval` entry, if blocked only on approval) into `escalated` — it
+just changes kind. This closes the gap the dashboard-only surface left: before
+this kind existed, that transition silently dropped the PR from the Inbox and
+its nav badge at the exact moment it became more urgent.
+
+### `manual_review`
+
+Backed by `Issue#paid_state == "manual_review"` directly, the same way
+`clarifying_questions` and `escalated_pr` derive from state rather than a
+separate notification. Before this kind existed, `manual_review` was a hard
+automation stop with no inbox lane, no dashboard panel, and no notification —
+the HLD tenet "No silent stops" requires the system to surface *that*
+automation stopped, *why*, and *what clears it*; a project's whole dependency
+graph could sit parked behind a `manual_review` root for days with zero
+operator-visible signal (issue #3788).
+
+The entry payload carries the issue's `manual_review_reason` (the message
+`IssueEnhancements::StopForManualReview` was given, or the equivalent
+round-limit copy when `EnhanceIssueActivity` sets the state directly without
+going through that service) as its summary, and `manual_review_started_at`
+(falling back to `updated_at` for legacy rows predating the column —
+`ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
+offers a "Start enhancement run" action that queues a manual `enhance_issue`
+run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
+`manual_review` and only an explicit operator-triggered run resumes work, so
+(unlike `unblock_escalation`, which clears state directly) this action queues
+the run rather than clearing state itself — nothing else ever moves the issue
+out of `manual_review`.
+
+Scoping follows `INBOX-FOUNDATION-006` like every other kind (auto-pick +
+owner gated), not the dashboard's broader account-wide scope — the same
+divergence-recording rationale as `escalated_pr` (`OPERATOR-INBOX-002C`).
+
+`Dashboard::EligibilityBreakdown` names `manual_review` as its own bucket
+(previously it fell into the unnamed `other_excluded` remainder), so the
+account-wide breakdown panel and the scoped inbox lane agree on what the
+state means, even though their scopes differ.
+
 ## Navigation
 
 The inbox is a top-level nav item (desktop and mobile), placed immediately
@@ -127,7 +198,16 @@ and queries open plan reviews. So the badge is async, not inline:
 Future inbox kinds extend the count the same way `Inbox::Queue` extends: add
 the candidate query to `Inbox::Count` and a matching cache-bump site, no nav
 or controller changes needed. `action_required` uses notification lifecycle
-updates as its cache-bump source.
+updates as its cache-bump source. `escalated_pr` needed no new cache-bump
+site: `Issue#merge_approval_candidate_state_changed?` already watches
+`saved_change_to_pr_review_phase?` for every pull request (despite its name,
+it is not merge-approval-specific), so a transition into or out of
+`escalated` already bumps `Dashboard::CacheVersion::INBOX_SCOPE` today.
+`manual_review` follows the `sync_needs_input_since` precedent instead: a
+`sync_manual_review_started_at` callback stamps/clears
+`manual_review_started_at` on `paid_state` transitions, and
+`saved_change_to_manual_review_started_at?` joins the cache-invalidation
+predicate the same way `saved_change_to_needs_input_since?` already does.
 
 ## Decisions
 
@@ -165,3 +245,20 @@ updates as its cache-bump source.
   rendering (zero/hidden, count, `99+` cap).
 - `spec/services/inbox/count_spec.rb` covers the approximate count query and
   cache invalidation on needs_input transitions and decision writes.
+- `spec/services/inbox/queue_spec.rb` and `spec/services/inbox/count_spec.rb`
+  cover `escalated_pr` discovery, scoping, and cache invalidation on
+  `pr_review_phase` transitions into and out of `escalated`.
+- `spec/requests/inbox_spec.rb` covers `escalated_pr` detail rendering
+  (agent-failure reasons vs. `awaiting_approval`) and the inbox-scoped
+  `return_to` on the Unblock action.
+- `spec/requests/agent_runs_spec.rb` covers `unblock_escalation`'s
+  inbox-aware redirect.
+- `spec/services/inbox/queue_spec.rb` and `spec/services/inbox/count_spec.rb`
+  cover `manual_review` discovery, scoping, and cache invalidation on
+  `paid_state` transitions into and out of `manual_review`.
+- `spec/requests/inbox_spec.rb` covers `manual_review` detail rendering (reason,
+  age, and the `resume_manual_review` action).
+- `spec/requests/agent_runs_spec.rb` covers `resume_manual_review` queuing a
+  manual `enhance_issue` run and its inbox-aware redirect.
+- `spec/services/dashboard/eligibility_breakdown_spec.rb` covers the named
+  `manual_review` bucket.

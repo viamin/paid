@@ -3637,7 +3637,7 @@ module Containers
       materialization.files.each do |path, content|
         write_container_file(path, content)
       end
-      credential.update_column(:last_used_at, Time.current)
+      credential.update_columns(last_used_at: Time.current)
 
       log_system("container.codex_credentials_seeded", source: "managed_json")
       record_auth_attempt!(
@@ -3666,7 +3666,7 @@ module Containers
       materialization.files.each do |path, content|
         write_container_file(path, content)
       end
-      credential.update_column(:last_used_at, Time.current)
+      credential.update_columns(last_used_at: Time.current)
 
       log_system("container.opencode_credentials_seeded", source: "managed_json")
       record_auth_attempt!(
@@ -3708,7 +3708,7 @@ module Containers
       )
       raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
 
-      credential.update_column(:last_used_at, Time.current)
+      credential.update_columns(last_used_at: Time.current)
       log_system("container.omp_credentials_seeded", source: "managed_import")
       record_auth_attempt!(
         runner_key: "omp",

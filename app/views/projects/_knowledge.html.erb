@@ -1,6 +1,6 @@
 <div id="<%= dom_id(project, :knowledge) %>" class="mt-8">
-  <div class="flex items-center justify-between">
-    <div class="flex items-center space-x-3">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div class="flex flex-wrap items-center gap-3">
       <h2 class="text-lg font-medium text-gray-900">Knowledge Base</h2>
       <% status = project.knowledge_status.to_s %>
       <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
@@ -22,13 +22,16 @@
             end %>
       </span>
     </div>
-    <div class="flex items-center space-x-3">
+    <div class="flex flex-wrap items-center gap-3">
       <% if policy(project).update? %>
         <%= link_to "Business Context", project_context_intake_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
         <%= link_to "Recommendations", project_knowledge_recommendations_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
         <% if project.account.paid_plan? %>
           <%= link_to "Import PDF", new_project_pdf_knowledge_import_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
         <% end %>
+      <% end %>
+      <% if okf_export_available %>
+        <%= link_to "Export OKF", new_project_okf_export_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <% end %>
       <%= link_to "Browse", project_knowledge_browse_index_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <%= link_to "Search", project_knowledge_search_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
