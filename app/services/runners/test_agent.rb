@@ -374,30 +374,18 @@ module Runners
     def container_provider_runtime
       return free_model_policy_provider_runtime if runner.free_model_policy?
       return kilocode_provider_runtime if kilocode_direct_outbound?
-      return openrouter_free_provider_runtime if openrouter_free_direct_outbound?
-      return openrouter_pareto_provider_runtime if openrouter_pareto_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
-      runner.agent_harness_runner_runtime
+      runner.agent_harness_runner_runtime(project: test_project)
     end
 
-    def openrouter_free_direct_outbound?
-      runner.runner_key == "openrouter_free" && runner.requires_direct_outbound?
-    end
-
-    # Builds the OpenRouter runtime for openrouter_free smoke tests.
+    # Builds the OpenRouter-routed runtime for free-policy smoke tests.
     #
-    # Unlike opencode (whose model lives in config), openrouter_free resolves
-    # its model through tier mappings, so mirror the live execution path
-    # (selected_runner_runtime) by resolving a model and passing the test
-    # project for data-collection routing.
-    def openrouter_free_provider_runtime
-      model_id = resolve_openrouter_free_model_id
-      raise MissingProjectContextError, "openrouter_free runner has no resolvable model" if model_id.blank?
-
-      runner.openrouter_free_runner_runtime(project: test_project, model_id: model_id)
-    end
-
+    # Unlike a specific-model direct-outbound runner (whose model lives in
+    # config), a free-policy runner resolves its model through tier mappings,
+    # so mirror the live execution path (selected_runner_runtime) by
+    # resolving a model and passing the test project for data-collection
+    # routing.
     def free_model_policy_provider_runtime
       model_id = resolve_openrouter_free_model_id
       raise MissingProjectContextError, "#{runner.runner_key} runner has no resolvable free model" if model_id.blank?
@@ -411,18 +399,6 @@ module Runners
         return result.model_id if result.success? && result.model_id.present?
       end
       nil
-    end
-
-    def openrouter_pareto_direct_outbound?
-      runner.runner_key == "openrouter_pareto" && runner.requires_direct_outbound?
-    end
-
-    # Builds the OpenRouter Pareto runtime for smoke tests.
-    #
-    # The Pareto router selects models dynamically, so no tier model resolution
-    # is needed — pass the test project for data-collection routing.
-    def openrouter_pareto_provider_runtime
-      runner.openrouter_pareto_runner_runtime(project: test_project)
     end
 
     def subscription_provider_runtime?
@@ -462,7 +438,7 @@ module Runners
     # subsequent smoke test runs.
     def prepare_kilocode_config!(run)
       config_json = runner.kilocode_config_json
-      run.execute_in_container(
+      run.execute_in_execution_environment(
         [ "sh", "-c",
           "mkdir -p /home/agent/.config/kilocode && " \
           "printf '%s' \"$KILOCODE_CONFIG_B64\" | base64 -d > /home/agent/.config/kilocode/kilo.json" ],

@@ -3,6 +3,9 @@
 class RunnersController < ApplicationController
   include AuditLogging
 
+  FORM_MODEL_RUNNER_KEYS = %w[opencode kilocode pi omp].freeze
+  RETIRED_PSEUDO_RUNNER_KEYS = %w[openrouter_free openrouter_pareto].freeze
+
   # Lightweight stand-in for RunnerState used by the cached_runner_states
   # method.  Caching full ActiveRecord objects is brittle across deploys and
   # bloats the cache payload; this struct holds only the primitive attributes
@@ -75,6 +78,7 @@ class RunnersController < ApplicationController
     end
 
     @runner = resource_records.new(auth_type: auth_type, runner_key: requested_runner_key)
+    apply_requested_model_policy(@runner, requested_runner_key)
     apply_new_runner_defaults(@runner)
     authorize @runner
   end
@@ -229,17 +233,17 @@ class RunnersController < ApplicationController
       :fallback_role,
       :agent_co_author_trailer,
       :monthly_token_budget,
-      :weight
+      :weight,
+      :model_selection_choice,
+      :custom_model_id
     ]
     if action_name == "create"
       permitted.push(:runner_key, :provider_key, :auth_type, :provider_api_key_id)
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model, :manual_model, :model_policy ],
-                kilocode: [ :api_provider, :model, :manual_model, :model_policy, :preflight_timeout_seconds ],
-                pi: [ :api_provider, :model, :manual_model, :model_policy ],
-                omp: [ :api_provider, :model, :manual_model, :model_policy ] },
+      config: { opencode: [ :api_provider, :model, :model_policy ], kilocode: [ :api_provider, :model, :model_policy, :preflight_timeout_seconds ],
+                pi: [ :api_provider, :model, :model_policy ], omp: [ :api_provider, :model, :model_policy ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -252,11 +256,18 @@ class RunnersController < ApplicationController
 
     runner_key = attrs[:runner_key].presence || attrs[:provider_key].presence || @runner&.runner_key
     config = config.slice(runner_key) if runner_key.present?
-    normalize_policy_model_submission!(config:, runner_key:)
+    config = feature_flagged_model_policy_config(
+      runner_key: runner_key,
+      config: config,
+      attrs: attrs.to_h,
+      raw_params: raw_params
+    )
     normalize_direct_outbound_free_policy!(config, runner_key)
 
     result = attrs.to_h.merge("config" => config)
     result["runner_key"] = result.delete("provider_key") if result.key?("provider_key")
+    result.delete("model_selection_choice")
+    result.delete("custom_model_id")
     if result.key?("tier_model_ids")
       result["tier_model_ids"] = result["tier_model_ids"].to_h.compact_blank
     end
@@ -264,51 +275,6 @@ class RunnersController < ApplicationController
       result["complexity_thresholds"] = normalize_complexity_thresholds(result["complexity_thresholds"])
     end
     result
-  end
-
-  # Normalizes the catalog-form sentinel values into the persisted config
-  # shape so server-rendered submissions remain valid even if Stimulus does
-  # not boot. The form always submits `model`, and may also submit
-  # `manual_model`; this method folds those into the existing `model` /
-  # `model_policy` contract.
-  # @spec MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004
-  def normalize_policy_model_submission!(config:, runner_key:)
-    runner_config = config[runner_key]
-    return unless runner_config.is_a?(Hash)
-    return unless policy_model_submission?(runner_config, runner_key:)
-
-    model = runner_config["model"].to_s
-    manual_model = runner_config["manual_model"].to_s
-
-    case model
-    when LlmModel::CUSTOM_MODEL_OPTION
-      runner_config["model"] = manual_model
-      runner_config["model_policy"] = "specific" if runner_key == "opencode"
-    when Runners::ModelOptions::FREE_POLICY_VALUE
-      runner_config.delete("model")
-      runner_config["model_policy"] = "free" if runner_key == "opencode"
-    else
-      if model.blank? && manual_model.present?
-        runner_config["model"] = manual_model
-        runner_config["model_policy"] = "specific" if runner_key == "opencode"
-      end
-
-      if runner_key == "opencode" && runner_config.key?("model_policy") && model.present?
-        runner_config["model_policy"] = "specific"
-      end
-    end
-
-    runner_config.delete("manual_model")
-  end
-
-  # Only the new catalog-policy form submits manual_model and the opencode
-  # hidden model_policy field. Without this guard, the legacy free-text form
-  # would reinterpret a literal model id like "custom" or "free" as a
-  # sentinel value, changing flag-off behavior.
-  # @spec MODEL-POLICY-FORM-001 MODEL-POLICY-FORM-003 MODEL-POLICY-FORM-004
-  def policy_model_submission?(runner_config, runner_key:)
-    runner_config.key?("manual_model") ||
-      (runner_key == "opencode" && runner_config.key?("model_policy"))
   end
 
   def normalize_direct_outbound_free_policy!(config, runner_key)
@@ -339,40 +305,26 @@ class RunnersController < ApplicationController
   end
 
   def load_runner_options
-    addable_keys = resource_addable_keys
+    addable_keys = feature_flagged_runner_addable_keys
     existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
-    # Only single-instance api_key runners (e.g. openrouter_free) are hidden
-    # once added. Other api_key runners (opencode, kilocode, pi, omp) allow
-    # legitimate duplicates when the API key or name differs, so they must
-    # keep appearing in the "Add Runner" options.
-    existing_single_instance_keys = resource_records.kept_only.api_key.pluck(:runner_key)
-      .select { |key| Runner.single_instance_runner_key?(key) }
-    subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
 
     # Subscription runners: only show keys not yet added
     @subscription_runner_options = if @runner&.persisted?
-      subscription_addable_keys - (existing_subscription_keys - [ @runner.runner_key ])
+      addable_keys - (existing_subscription_keys - [ @runner.runner_key ])
     else
-      subscription_addable_keys - existing_subscription_keys
+      addable_keys - existing_subscription_keys
     end
 
     # API key runners: show all addable keys that have a compatible API key.
-    # Single-instance keys are subtracted once the user already has one so
-    # the "Add Runner" CTA reflects reality.
     @available_api_keys = current_user.provider_api_keys.ordered
     @available_api_keys_by_service_type = group_api_keys_by_service_type(@available_api_keys)
-    candidate_api_key_keys = addable_keys.select do |key|
+    @api_key_runner_options = addable_keys.select do |key|
       @available_api_keys.any? { |ak| compatible_api_key_for_runner?(api_key: ak, runner_key: key) }
     end
-    @api_key_runner_options =
-      if @runner&.persisted?
-        candidate_api_key_keys - (existing_single_instance_keys - [ @runner.runner_key ])
-      else
-        candidate_api_key_keys - existing_single_instance_keys
-      end
 
     # Combined for backward compat
     @runner_options = @subscription_runner_options
+    prepare_model_policy_form_state
   end
 
   # When re-rendering :new after a validation failure, ensure the submitted
@@ -387,6 +339,8 @@ class RunnersController < ApplicationController
     elsif @runner.api_key?
       @api_key_runner_options |= [ key ] unless @api_key_runner_options.include?(key)
     end
+
+    prepare_model_policy_form_state
   end
 
   def load_remediation_history
@@ -398,12 +352,16 @@ class RunnersController < ApplicationController
 
   def validate_runner_key_enabled!
     return if @runner.runner_key.blank?
-    return if resource_addable_key?(@runner.runner_key)
+    return if create_addable_key?(@runner.runner_key)
+    if runner_model_policy_form_enabled? && RETIRED_PSEUDO_RUNNER_KEYS.include?(@runner.runner_key)
+      @runner.errors.add(:runner_key, unavailable_runner_key_message(@runner.runner_key))
+      return
+    end
     # Unsupported keys are caught by the model's inclusion validation;
     # here we only flag supported-but-not-yet-installed runners.
     return unless resource_supported_key?(@runner.runner_key)
 
-    @runner.errors.add(:runner_key, "is not available in paid-agent yet")
+    @runner.errors.add(:runner_key, unavailable_runner_key_message(@runner.runner_key))
   end
 
   def toggle_runner_flag(attribute, partial)
@@ -563,7 +521,7 @@ class RunnersController < ApplicationController
 
   def load_index_context
     @runners = policy_scope(resource_model_class).ordered
-    @free_model_runners = @runners.select { |runner| runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY }
+    @free_model_runners = @runners.select(&:free_model_policy?)
     @runner_states = cached_runner_states
     @user_setting = current_user.settings
 
@@ -614,19 +572,14 @@ class RunnersController < ApplicationController
     )
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
-    # Only single-instance runner keys are hidden from the index "Add Runner"
-    # CTA once added; other api_key runners allow legitimate duplicates.
-    existing_single_instance_keys = @runners.map(&:runner_key)
-      .select { |key| Runner.single_instance_runner_key?(key) }
-    addable_keys = resource_addable_keys
+    addable_keys = feature_flagged_runner_addable_keys
     subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
     api_key_compatible_addable_keys =
       addable_keys.select do |key|
         @available_api_keys.any? { |api_key| compatible_api_key_for_runner?(api_key: api_key, runner_key: key) }
       end
-    visible_api_key_keys = api_key_compatible_addable_keys.reject { |key| existing_single_instance_keys.include?(key) }
     @addable_runner_options = (
-      (subscription_addable_keys - existing_subscription_keys) + visible_api_key_keys
+      (subscription_addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
     ).uniq.presence || []
   end
 
@@ -760,9 +713,12 @@ class RunnersController < ApplicationController
     if runner_key == "omp"
       return resource_model_class::OMP_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
     end
-    return api_key.api_service_type == "openrouter" if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
     api_key.api_service_type == resource_api_service_type_for(runner_key)
+  end
+
+  def runner_model_policy_form_enabled?
+    FeatureFlags.enabled?(:runner_model_policy_form)
   end
 
   def preferred_auth_type_for_runner(runner_key, fallback:)
@@ -780,10 +736,11 @@ class RunnersController < ApplicationController
   end
 
   def apply_new_runner_defaults(runner)
-    return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    return unless runner.new_record? && runner.free_model_policy?
 
     submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
 
+    runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?
     runner.auth_type = "api_key"
     # @spec FREE-MODEL-RUNNER-002
     # @spec FREE-MODEL-RUNNER-003
@@ -791,11 +748,131 @@ class RunnersController < ApplicationController
     runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
-    runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?
   end
 
   def api_key_only_runner?(runner_key)
-    runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+    RETIRED_PSEUDO_RUNNER_KEYS.include?(runner_key)
+  end
+
+  def apply_requested_model_policy(runner, runner_key)
+    return unless Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS.include?(runner_key)
+    return unless params[:model_policy] == Runners::ModelOptions::FREE_POLICY_VALUE
+
+    runner.config = {
+      runner_key => {
+        "model_policy" => Runners::ModelOptions::FREE_POLICY_VALUE
+      }
+    }
+  end
+
+  def create_addable_key?(runner_key)
+    if runner_model_policy_form_enabled?
+      feature_flagged_runner_addable_keys.include?(runner_key)
+    else
+      resource_addable_key?(runner_key)
+    end
+  end
+
+  def unavailable_runner_key_message(runner_key)
+    if runner_model_policy_form_enabled? && RETIRED_PSEUDO_RUNNER_KEYS.include?(runner_key)
+      "is not available while the runner model policy form is enabled"
+    else
+      "is not available in paid-agent yet"
+    end
+  end
+
+  def feature_flagged_runner_addable_keys
+    keys = resource_addable_keys
+    return keys unless runner_model_policy_form_enabled?
+
+    keys - RETIRED_PSEUDO_RUNNER_KEYS
+  end
+
+  def prepare_model_policy_form_state
+    @runner_model_policy_form_enabled = runner_model_policy_form_enabled?
+    return unless @runner_model_policy_form_enabled
+
+    # Memoized: this can be invoked twice in one request (load_runner_options,
+    # then preserve_submitted_runner_key_in_options on a create failure).
+    @runner_model_options_map_json ||= model_options_map.to_json
+  end
+
+  # omp shares Pi's upstream API providers (Runner::OMP_API_PROVIDERS is the
+  # same object as PI_API_PROVIDERS) and neither runner has a runner-specific
+  # compatibility contract in agent-harness yet, so their option sets are
+  # always identical — the omp map reuses Pi's instead of recomputing it.
+  def model_options_map
+    omp_aliases_pi = Runner::OMP_API_PROVIDERS.equal?(Runner::PI_API_PROVIDERS)
+
+    runner_map = FORM_MODEL_RUNNER_KEYS.each_with_object({}) do |runner_key, map|
+      next if runner_key == "omp" && omp_aliases_pi
+
+      service_types = supported_service_types_for(runner_key)
+      map[runner_key] = service_types.index_with do |service_type|
+        Runners::ModelOptions.call(
+          runner_key: runner_key,
+          api_provider: service_type,
+          auth_type: "api_key"
+        ).map { |entry| { value: entry.value, label: entry.label, kind: entry.kind.to_s, family: entry.family } }
+      end
+    end
+
+    runner_map["omp"] = runner_map["pi"] if omp_aliases_pi
+    runner_map
+  end
+
+  def supported_service_types_for(runner_key)
+    case runner_key
+    when "opencode", "kilocode"
+      Runner::DIRECT_OUTBOUND_SERVICE_TYPES.to_a.sort
+    when "pi"
+      Runner::PI_API_PROVIDERS.values.map { |config| config[:service_type] }.uniq.sort
+    when "omp"
+      Runner::OMP_API_PROVIDERS.values.map { |config| config[:service_type] }.uniq.sort
+    else
+      []
+    end
+  end
+
+  def feature_flagged_model_policy_config(runner_key:, config:, attrs:, raw_params:)
+    return config unless runner_model_policy_form_enabled?
+    return config unless FORM_MODEL_RUNNER_KEYS.include?(runner_key)
+
+    api_key_id = attrs["provider_api_key_id"].presence || @runner&.provider_api_key_id
+    auth_type = attrs["auth_type"].presence || @runner&.auth_type
+    service_type = resolve_provider_api_service_type(api_key_id)
+    return config.except(runner_key) unless auth_type == "api_key" && service_type.present?
+
+    provider_key = Runner.api_service_type_to_provider_key(service_type)
+    runner_config = (config[runner_key] || {}).dup
+
+    runner_config["api_provider"] = provider_key if provider_key.present?
+
+    selected_model = attrs["model_selection_choice"].to_s.presence
+    custom_model_id = attrs["custom_model_id"].to_s.strip.presence
+
+    if Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS.include?(runner_key)
+      runner_config["model_policy"] = selected_model == Runners::ModelOptions::FREE_POLICY_VALUE ? "free" : "specific"
+    end
+
+    if selected_model == LlmModel::CUSTOM_MODEL_OPTION
+      runner_config["model"] = custom_model_id
+    elsif selected_model == Runners::ModelOptions::FREE_POLICY_VALUE
+      runner_config.delete("model")
+    elsif selected_model.present?
+      runner_config["model"] = selected_model
+    elsif raw_params.dig(:config, runner_key, :model).blank?
+      runner_config.delete("model")
+    end
+
+    config.merge(runner_key => runner_config)
+  end
+
+  def resolve_provider_api_service_type(api_key_id)
+    return @runner&.provider_api_key&.api_service_type if api_key_id.blank?
+
+    @available_api_keys&.find { |api_key| api_key.id == api_key_id.to_i }&.api_service_type ||
+      current_user.provider_api_keys.find_by(id: api_key_id)&.api_service_type
   end
 
   def group_api_keys_by_service_type(api_keys)
@@ -803,6 +880,7 @@ class RunnersController < ApplicationController
       RunnerSupport.api_service_type_label(service_type)
     end
   end
+
 
   def enabled_agent_runner_identifiers
     executable_keys = resource_container_executable_keys

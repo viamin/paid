@@ -1,0 +1,28 @@
+<div class="space-y-6">
+  <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+    <h3 class="text-sm font-semibold text-emerald-900">Re-approve on GitHub</h3>
+    <p class="mt-1 text-sm text-emerald-800">
+      <%= entry.summary %>. Re-approve this pull request on GitHub so Paid can merge it on the next PR scan.
+    </p>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
+    <ul class="space-y-2 text-sm text-gray-600">
+      <% entry.record.auto_merge_blockers.fetch("failed", []).each do |blocker| %>
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <p class="font-medium text-gray-900"><%= blocker.fetch("sanitized_message") %></p>
+          <p class="mt-1"><%= blocker.fetch("next_action") %></p>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <%= link_to inbox_issue_link_label(entry.issue),
+          entry.issue.github_url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500" %>
+  </div>
+</div>

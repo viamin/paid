@@ -191,6 +191,7 @@ class AutoReleaseEvaluationJob < ApplicationJob
   end
 
   def add_label(client, project, pr_number)
+    Projects::EnsureStandardLabels.call_best_effort(project: project)
     client.add_labels_to_issue(project.full_name, pr_number, [ PAID_AUTO_RELEASED_LABEL ])
   rescue GithubClient::Error => e
     Rails.logger.warn(

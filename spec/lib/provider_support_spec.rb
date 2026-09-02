@@ -182,6 +182,28 @@ RSpec.describe ProviderSupport do
 
       expect(supported_keys).not_to include("gemini")
     end
+
+    it "excludes the runner-only omp key even when omp is registered in the harness" do
+      allow(RunnerSupport).to receive(:supported_runner_keys).and_return(RunnerSupport::APP_RUNNER_KEYS)
+
+      expect(described_class.supported_provider_keys).not_to include("omp")
+    end
+  end
+
+  describe ".supported_provider_key?" do
+    it "returns false for the runner-only omp key even when omp is a supported runner" do
+      allow(RunnerSupport).to receive(:supported_runner_key?).with("omp").and_return(true)
+
+      expect(described_class.supported_provider_key?("omp")).to be false
+    end
+  end
+
+  describe ".supported_provider_keys_set" do
+    it "excludes the runner-only omp key even when omp is registered in the harness" do
+      allow(RunnerSupport).to receive(:supported_runner_keys_set).and_return(Set.new(RunnerSupport::APP_RUNNER_KEYS))
+
+      expect(described_class.supported_provider_keys_set).not_to include("omp")
+    end
   end
 
   describe ".subscription_auth_unset_vars_for" do
@@ -221,6 +243,50 @@ RSpec.describe ProviderSupport do
 
       expect { described_class.subscription_auth_unset_vars_for("gemini") }
         .to raise_error(AgentHarness::ConfigurationError, /broken gemini/)
+    end
+  end
+
+  describe ".subscription_auth_unset_vars" do
+    it "excludes the runner-only omp key even when RunnerSupport returns it" do
+      allow(RunnerSupport).to receive(:subscription_auth_unset_vars).and_return(
+        "codex" => [ "OPENAI_API_KEY" ],
+        "omp" => [ "SOME_OMP_VAR" ]
+      )
+
+      expect(described_class.subscription_auth_unset_vars).not_to have_key("omp")
+    end
+
+    it "returns the vars for provider keys unchanged" do
+      allow(RunnerSupport).to receive(:subscription_auth_unset_vars).and_return(
+        "codex" => [ "OPENAI_API_KEY" ],
+        "omp" => [ "SOME_OMP_VAR" ]
+      )
+
+      expect(described_class.subscription_auth_unset_vars).to eq("codex" => [ "OPENAI_API_KEY" ])
+    end
+  end
+
+  describe ".aggregated_error_classification_patterns" do
+    it "excludes the runner-only omp key even when RunnerSupport would include it" do
+      allow(RunnerSupport).to receive(:supported_runner_keys).and_return(RunnerSupport::APP_RUNNER_KEYS)
+      allow(described_class).to receive(:error_classification_patterns_for) do |key, category|
+        key == "omp" ? [ "omp-only-pattern" ] : RunnerSupport.error_classification_patterns_for(key, category)
+      end
+
+      patterns = described_class.aggregated_error_classification_patterns(:quota)
+
+      expect(patterns).not_to include("omp-only-pattern")
+    end
+  end
+
+  describe ".aggregated_noisy_error_patterns" do
+    it "excludes the omp-only generic noisy patterns" do
+      omp_patterns = AgentHarness.provider(:omp).noisy_error_patterns
+
+      patterns = described_class.aggregated_noisy_error_patterns
+
+      expect(omp_patterns).not_to be_empty
+      expect(patterns & omp_patterns).to be_empty
     end
   end
 

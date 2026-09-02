@@ -71,12 +71,17 @@ module HealthChecks
           preferred_agent_type_openrouter? || create_pr_runner_openrouter? || model.catalog_source == "openrouter_sync"
         end
 
+        # Historical projects may still carry the retired "openrouter_free"/
+        # "openrouter_pareto" runner-key strings in persisted preferences
+        # (RDR-065 #3671 migrated the underlying Runner rows to "opencode",
+        # but does not rewrite this project-level free-text preference).
         def preferred_agent_type_openrouter?
           %w[openrouter_free openrouter_pareto].include?(model_preferences["preferred_agent_type"])
         end
 
         def create_pr_runner_openrouter?
-          %w[openrouter_free openrouter_pareto].include?(create_pr_runner_key)
+          runner = create_pr_runner
+          runner&.free_model_policy? && runner.required_api_service_type == "openrouter"
         end
 
         # Health checks run without an AgentRun, so mirror the runtime

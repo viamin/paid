@@ -85,46 +85,46 @@ RSpec.describe "Runners" do
     }
   end
 
-  def create_free_policy_opencode_runner(api_key:)
-    user.runners.create!(
-      runner_key: "opencode",
-      auth_type: "api_key",
-      provider_api_key: api_key,
-      enabled_for_agent_runs: false,
-      enabled_for_chat: false,
-      enabled_for_fallback: false,
-      config: { "opencode" => { "model_policy" => "free" } }
+  def enable_runner_model_policy_form_for(user)
+    user.account.tenant_setting!.update!(
+      features: user.account.tenant_setting!.features.merge("runner_model_policy_form" => true)
     )
   end
 
-  def non_js_custom_runner_params(api_key_id:, model:)
+  def seed_openrouter_model_dropdown_catalog
+    model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2-0905")
+    model.assign_attributes(
+      display_name: "moonshotai/kimi-k2-0905",
+      provider: "openrouter",
+      category: "coding",
+      family: "Kimi",
+      tier: "mid",
+      pricing_tier: "paid",
+      active: true
+    )
+    model.save!
+
+    model = LlmModel.find_or_initialize_by(model_id: "openrouter/pareto-code")
+    model.assign_attributes(
+      display_name: "openrouter/pareto-code",
+      provider: "openrouter",
+      category: "coding",
+      family: "Pareto",
+      tier: "mid",
+      pricing_tier: "paid",
+      active: true
+    )
+    model.save!
+  end
+
+  def flagged_model_form_runner_params(api_key_id:, model_selection_choice:, custom_model_id: nil)
     {
       runner_key: "opencode",
       auth_type: "api_key",
       provider_api_key_id: api_key_id,
-      enabled_for_agent_runs: true,
-      enabled_for_fallback: true,
-      config: {
-        opencode: {
-          model: "custom",
-          manual_model: model
-        }
-      }
-    }
-  end
-
-  def non_js_switch_from_free_params(model:)
-    {
-      enabled_for_agent_runs: false,
-      enabled_for_chat: false,
-      enabled_for_fallback: false,
-      config: {
-        opencode: {
-          model: model,
-          model_policy: "free"
-        }
-      }
-    }
+      model_selection_choice: model_selection_choice,
+      custom_model_id: custom_model_id
+    }.compact
   end
 
   def form_style_free_policy_runner_params(api_key_id:, runner_key:)
@@ -231,13 +231,14 @@ RSpec.describe "Runners" do
         expect_disabled_checkbox(row: row, label: "Fallback", checked: true, title: "Enabled (rate-limit only)")
       end
 
-      it "shows the free models badge and section for an openrouter_free runner" do
+      it "shows the free models badge and section for a free-policy opencode runner" do
         free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         user.runners.create!(
-          runner_key: "openrouter_free",
+          runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )
 
@@ -751,7 +752,7 @@ RSpec.describe "Runners" do
       expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
     end
 
-    it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do # @spec MODEL-POLICY-FORM-001
+    it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post runners_path, params: {
@@ -764,7 +765,7 @@ RSpec.describe "Runners" do
       expect(runner.config.dig("opencode", "model_policy")).to be_nil
     end
 
-    it "keeps a literal legacy OpenCode model id of free when the catalog form flag is off" do # @spec MODEL-POLICY-FORM-001
+    it "keeps a literal legacy OpenCode model id of free when the catalog form flag is off" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post runners_path, params: {
@@ -865,13 +866,51 @@ RSpec.describe "Runners" do
       expect(runner.config).to eq("opencode" => { "model" => "moonshotai/kimi-k2-0905" })
     end
 
+    it "derives the OpenCode provider from the selected API key when the runner model policy form flag is enabled" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          model_selection_choice: "moonshotai/kimi-k2-0905"
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner.opencode_api_provider).to eq("openrouter")
+      expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
+    end
+
+    it "rejects hidden pseudo-runners when the runner model policy form flag is enabled" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "openrouter_free",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("Runner key is not available while the runner model policy form is enabled")
+      expect(user.runners.find_by(runner_key: "openrouter_free", auth_type: "api_key")).to be_nil
+    end
+
     # @spec FREE-MODEL-RUNNER-002
-    it "creates an openrouter_free runner with default free tier mappings and suggested flags" do
+    it "creates a free-policy opencode runner with default free tier mappings and suggested flags" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       seed_openrouter_synced_free_models
-      post_create_openrouter_free_runner(api_key:)
+      post_create_free_policy_opencode_runner(api_key:)
       expect(response).to redirect_to(runners_path)
-      runner = user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key")
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
       expect(runner.tier_model_ids).to eq(
         "low" => "free-low",
         "mid" => "free-mid",
@@ -884,15 +923,15 @@ RSpec.describe "Runners" do
     end
 
     # @spec FREE-MODEL-RUNNER-003
-    it "preserves explicit openrouter_free settings supplied by the user" do
+    it "preserves explicit free-policy opencode settings supplied by the user" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       seed_openrouter_synced_free_models
       create_free_model_override
-      post_create_openrouter_free_runner(api_key:, runner_attrs: explicit_openrouter_free_runner_attrs)
+      post_create_free_policy_opencode_runner(api_key:, runner_attrs: explicit_openrouter_free_runner_attrs)
 
       expect(response).to redirect_to(runners_path)
       expect_openrouter_free_runner_overrides(
-        user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key")
+        user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
       )
     end
 
@@ -1000,6 +1039,68 @@ RSpec.describe "Runners" do
       )
     end
 
+    it "preserves a custom model selection on validation re-render when the runner model policy form flag is enabled" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      post runners_path, params: { runner: flagged_model_form_runner_params(
+        api_key_id: api_key.id,
+        model_selection_choice: LlmModel::CUSTOM_MODEL_OPTION,
+        custom_model_id: "openrouter/new-hotness"
+      ) }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.at_css('select[name="runner[model_selection_choice]"] option[selected]')["value"]).to eq("custom")
+      expect(doc.at_css('input[name="runner[custom_model_id]"]')["value"]).to eq("openrouter/new-hotness")
+    end
+
+    it "preserves the custom model choice on validation re-render when the submitted custom model id is blank" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: { runner: flagged_model_form_runner_params(
+        api_key_id: api_key.id,
+        model_selection_choice: LlmModel::CUSTOM_MODEL_OPTION,
+        custom_model_id: ""
+      ) }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      doc = Nokogiri::HTML(response.body)
+      expect(doc.at_css('select[name="runner[model_selection_choice]"] option[selected]')["value"]).to eq("custom")
+      expect(doc.at_css('input[name="runner[custom_model_id]"]')["value"]).to eq("")
+    end
+
+    it "ignores stale flagged model config when the form submits a subscription OpenCode runner" do
+      enable_runner_model_policy_form_for(user)
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "opencode",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          config: {
+            opencode: {
+              api_provider: "openrouter",
+              model: "openrouter/new-hotness",
+              model_policy: "specific"
+            }
+          }
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "subscription")
+      expect(runner.config).to be_blank
+      expect(LlmModel.find_by(model_id: "new-hotness", catalog_source: "manual")).to be_nil
+    end
+
     it "rejects opencode API-key providers without a model id" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
@@ -1045,6 +1146,26 @@ RSpec.describe "Runners" do
 
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")).to be_present
+    end
+
+    it "re-renders the free model configuration when the free model option is selected through the flagged form" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      seed_openrouter_synced_free_models
+      user.runners.create!(runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+
+      post runners_path, params: { runner: flagged_model_form_runner_params(
+        api_key_id: api_key.id,
+        model_selection_choice: Runners::ModelOptions::FREE_POLICY_VALUE
+      ) }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("Free Model Configuration")
+      doc = Nokogiri::HTML(response.body)
+      selected_choice = doc.at_css('select[name="runner[model_selection_choice]"] option[selected]')
+      expect(selected_choice["value"]).to eq(Runners::ModelOptions::FREE_POLICY_VALUE)
+      expect_selected_free_tier_defaults(doc)
     end
 
     # @spec MODEL-POLICY-002 MODEL-POLICY-008
@@ -1193,25 +1314,14 @@ RSpec.describe "Runners" do
       expect(response.body).to include("Paid prefers it over host-mounted Claude auth")
     end
 
-    it "hides openrouter_free once the user already has one configured" do
-      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      free_model = create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free")
-      user.runners.create!(
-        runner_key: "openrouter_free",
-        auth_type: "api_key",
-        provider_api_key: user.provider_api_keys.first,
-        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
-      )
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free kilocode])
-
-      get new_runner_path(form_variant: "api_key")
-
-      expect(response).to have_http_status(:ok)
-      # Single-instance runner is hidden once added...
-      expect(response.body).not_to include('option value="openrouter_free"')
-      # ...but other API-key runners remain available.
-      expect(response.body).to include('option value="kilocode"')
-    end
+    # NOTE: The "single-instance runner key" concept (a key hidden from the
+    # "Add Runner" options once one instance exists) was removed by RDR-065
+    # (#3671) along with the legacy openrouter_free/openrouter_pareto runner
+    # keys. Every current api_key runner key (opencode, kilocode, pi, omp)
+    # legitimately allows duplicates, so there is no longer any key this
+    # scenario applies to. See app/controllers/runners_controller.rb
+    # `load_runner_options`, which no longer computes or subtracts a
+    # single-instance key set.
 
     it "keeps offering duplicate-capable API-key runners after one is added" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
@@ -1234,39 +1344,73 @@ RSpec.describe "Runners" do
       expect(response.body).to include('option value="opencode"')
     end
 
-    it "keeps the index Add Runner CTA available while only the single-instance runner is hidden" do
-      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      free_model = create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free")
-      user.runners.create!(
-        runner_key: "openrouter_free",
+    # NOTE: See the removal note above `"keeps offering duplicate-capable
+    # API-key runners after one is added"` — the single-instance-key hiding
+    # behavior this scenario exercised no longer exists post-RDR-065.
+
+    # @spec FREE-MODEL-RUNNER-004
+    # @spec FREE-MODEL-RUNNER-005
+    # @spec FREE-MODEL-RUNNER-006
+    it "shows free-model configuration guidance on the edit form for a free-policy opencode runner" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      seed_free_runner_form_models
+      runner = user.runners.create!(
+        runner_key: "opencode",
         auth_type: "api_key",
-        provider_api_key: user.provider_api_keys.first,
-        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+        tier_model_ids: { "high" => "high-free", "mid" => "mid-free", "low" => "low-free" }
       )
-      # openrouter_free is hidden (single-instance, already added) but kilocode
-      # is a duplicate-capable API-key runner with a compatible key, so the
-      # "Add Runner" CTA must remain instead of showing "No More Runners Yet".
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free kilocode])
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect_free_runner_form_guidance(response.body)
+    end
+
+    it "hides free and pareto pseudo-runners when the runner model policy form flag is enabled" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      enable_runner_model_policy_form_for(user)
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude opencode openrouter_free openrouter_pareto kilocode])
+
+      get new_runner_path(form_variant: "api_key")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('option value="opencode"')
+      expect(response.body).to include('option value="kilocode"')
+      expect(response.body).not_to include('option value="openrouter_free"')
+      expect(response.body).not_to include('option value="openrouter_pareto"')
+    end
+
+    it "hides the index Add Runner CTA when the model policy flag leaves only free and pareto pseudo-runners" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      enable_runner_model_policy_form_for(user)
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[openrouter_free openrouter_pareto])
 
       get runners_path
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Add Runner")
-      expect(response.body).not_to include("No More Runners Yet")
+      expect(response.body).not_to include("Add Runner")
+      expect(response.body).to include("No More Runners Yet")
     end
 
     # @spec FREE-MODEL-RUNNER-004
     # @spec FREE-MODEL-RUNNER-005
     # @spec FREE-MODEL-RUNNER-006
-    it "prefills openrouter_free setup from the catalog link with free-model guidance" do
+    it "shows free-model configuration guidance on the new form for the free-model catalog entry point" do
       create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
       seed_free_runner_form_models
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free])
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
 
-      get new_runner_path(form_variant: "api_key", runner_key: "openrouter_free")
+      get new_runner_path(
+        form_variant: "api_key",
+        runner_key: "opencode",
+        model_policy: Runners::ModelOptions::FREE_POLICY_VALUE
+      )
 
       expect(response).to have_http_status(:ok)
       expect_free_runner_form_guidance(response.body)
+      expect(response.body).to include('value="api_key" checked="checked"')
     end
 
     it "renders the free policy option and free-model tier controls for supported direct-outbound OpenRouter runners" do
@@ -1448,6 +1592,53 @@ RSpec.describe "Runners" do
       expect(response.body).to match(/name="runner\[config\]\[opencode\]\[model\]".*disabled/m)
     end
 
+    it "renders the flagged model dropdown for persisted OpenCode API-key runners" do
+      seed_openrouter_model_dropdown_catalog
+      seed_openrouter_synced_free_models
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('name="runner[model_selection_choice]"')
+      expect(response.body).to include('optgroup label="Kimi"')
+      expect(response.body).to include("OpenRouter Free (curated, tiered)")
+      expect(response.body).to include("Custom model ID")
+      expect(response.body).not_to include('id="runner_config_opencode_api_provider"')
+    end
+
+    # @spec MODEL-POLICY-005
+    it "renders the free-tier picker for a flagged specific-model OpenCode runner so it can be revealed on switch to free" do
+      seed_openrouter_model_dropdown_catalog
+      seed_openrouter_synced_free_models
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      tier_settings = doc.at_css("[data-runner-form-target='tierSettings']")
+      expect(tier_settings).to be_present
+      expect(tier_settings["data-tier-runner-key"]).to eq("opencode")
+      expect(tier_settings["data-tier-visibility"]).to eq("free_policy")
+      expect(response.body).to include("Free Model Configuration")
+      expect_selected_free_tier_defaults(doc)
+    end
+
     # @spec DIRECT-OUTBOUND-CATALOG-006
     it "renders Oh My Pi model inputs for persisted OMP API-key runners without an api_provider select" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
@@ -1465,6 +1656,26 @@ RSpec.describe "Runners" do
       expect(response.body).to include("Oh My Pi Model")
       expect(response.body).not_to include('name="runner[config][omp][api_provider]"')
       expect(response.body).to include('name="runner[config][omp][model]"')
+    end
+
+    it "gives omp the same flagged model options as Pi, since they share upstream API providers" do
+      seed_openrouter_model_dropdown_catalog
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      runner = user.runners.create!(
+        runner_key: "pi",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "pi" => { "api_provider" => "openrouter" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      options = JSON.parse(doc.at_css("form[data-runner-form-model-options-value]")["data-runner-form-model-options-value"])
+      expect(options["omp"]).to eq(options["pi"])
+      expect(options["pi"]["openrouter"]).to be_present
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-009
@@ -1525,180 +1736,6 @@ RSpec.describe "Runners" do
       expect(select_tag).to include("hidden")
     end
 
-    # @spec MODEL-POLICY-FORM-001 MODEL-POLICY-FORM-002 MODEL-POLICY-FORM-006
-    context "when runner_model_policy_form is enabled" do
-      around do |example|
-        FeatureFlags.enable!(:runner_model_policy_form)
-        example.run
-      ensure
-        FeatureFlags.disable!(:runner_model_policy_form)
-      end
-
-      # The runner-key-specific Model <select> node, parsed with Nokogiri so
-      # assertions read the rendered <option>s rather than the raw HTML —
-      # the select's own data-model-entries-by-service-type attribute value
-      # contains a literal ">" (from "change->runner-form#...") that breaks
-      # naive [^>]* tag-boundary regexes, and it intentionally carries every
-      # service type's entries (Free included) up front for the JS re-render,
-      # so a substring check against the raw body would see the embedded
-      # JSON for keys/providers that are not currently selected.
-      def catalog_select_node(body, runner_key)
-        Nokogiri::HTML(body).at_css("select#runner_config_#{runner_key}_model")
-      end
-
-      it "renders the Free policy option, catalog rows, and the Custom sentinel for OpenCode on an OpenRouter key" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        LlmModel.find_by!(model_id: "moonshotai/kimi-k2-0905").update!(display_name: "Kimi K2", family: "Kimi")
-        runner = user.runners.create!(
-          runner_key: "opencode",
-          auth_type: "api_key",
-          provider_api_key: api_key,
-          config: { "opencode" => { "model" => "moonshotai/kimi-k2-0905" } }
-        )
-
-        get edit_runner_path(runner)
-
-        expect(response).to have_http_status(:ok)
-        select = catalog_select_node(response.body, "opencode")
-        expect(select.at_css('option[value="free"]').text).to eq("OpenRouter Free (curated, tiered)")
-        expect(select.at_css('option[value="custom"]').text).to eq("Custom model ID…")
-        selected = select.at_css("option[selected]")
-        expect(selected["value"]).to eq("moonshotai/kimi-k2-0905")
-        expect(selected.text).to eq("Kimi K2")
-        expect(response.body).to include('name="runner[config][opencode][model_policy]"')
-        expect(response.body).not_to include('name="runner[config][opencode][api_provider]"')
-      end
-
-      it "omits the Free policy option for OpenCode on a non-OpenRouter key" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
-        create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", display_name: "Claude Sonnet 4")
-        runner = user.runners.create!(
-          runner_key: "opencode",
-          auth_type: "api_key",
-          provider_api_key: api_key,
-          config: { "opencode" => { "model" => "claude-sonnet-4-20250514" } }
-        )
-
-        get edit_runner_path(runner)
-
-        expect(response).to have_http_status(:ok)
-        select = catalog_select_node(response.body, "opencode")
-        expect(select.at_css('option[value="free"]')).to be_nil
-        selected = select.at_css("option[selected]")
-        expect(selected["value"]).to eq("claude-sonnet-4-20250514")
-      end
-
-      # @spec MODEL-POLICY-FORM-004
-      it "preselects the Free sentinel while keeping the model select submittable without JS" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        runner = create_free_policy_opencode_runner(api_key:)
-
-        get edit_runner_path(runner)
-
-        expect(response).to have_http_status(:ok)
-        select = catalog_select_node(response.body, "opencode")
-        selected = select.at_css("option[selected]")
-        expect(selected["value"]).to eq("free")
-        expect(select["name"]).to eq("runner[config][opencode][model]")
-        policy_field = Nokogiri::HTML(response.body).at_css('input[data-runner-form-target="policyModelPolicyField"]')
-        expect(policy_field["value"]).to eq("free")
-        manual_input = Nokogiri::HTML(response.body).at_css("#runner_config_opencode_model_manual")
-        expect(manual_input["name"]).to eq("runner[config][opencode][manual_model]")
-        expect(manual_input["disabled"]).to be_nil
-      end
-
-      # @spec MODEL-POLICY-FORM-003
-      it "preselects Custom and keeps the manual fallback field submittable without JS when the current model id is no longer active in the catalog" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        runner = user.runners.create!(
-          runner_key: "opencode",
-          auth_type: "api_key",
-          provider_api_key: api_key,
-          config: { "opencode" => { "model" => "moonshotai/kimi-k2.6" } }
-        )
-        LlmModel.find_by!(model_id: "moonshotai/kimi-k2.6").update!(active: false)
-
-        get edit_runner_path(runner)
-
-        expect(response).to have_http_status(:ok)
-        select = catalog_select_node(response.body, "opencode")
-        selected = select.at_css("option[selected]")
-        expect(selected["value"]).to eq("custom")
-        expect(select["name"]).to eq("runner[config][opencode][model]")
-        manual_input = Nokogiri::HTML(response.body).at_css("#runner_config_opencode_model_manual")
-        expect(manual_input["name"]).to eq("runner[config][opencode][manual_model]")
-        expect(manual_input["value"]).to eq("moonshotai/kimi-k2.6")
-        expect(manual_input["disabled"]).to be_nil
-      end
-
-      # @spec MODEL-POLICY-FORM-005
-      it "does not render a model_policy field or the Free option for KiloCode" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        runner = user.runners.create!(
-          runner_key: "kilocode",
-          auth_type: "api_key",
-          provider_api_key: api_key,
-          config: { "kilocode" => { "model" => "moonshotai/kimi-k2-0905" } }
-        )
-
-        get edit_runner_path(runner)
-
-        expect(response).to have_http_status(:ok)
-        expect(response.body).not_to include('name="runner[config][kilocode][model_policy]"')
-        expect(catalog_select_node(response.body, "kilocode").at_css('option[value="free"]')).to be_nil
-      end
-
-      # @spec MODEL-POLICY-FORM-003
-      it "normalizes a non-JS custom sentinel submission to the manual model id" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-
-        post runners_path, params: { runner: non_js_custom_runner_params(api_key_id: api_key.id, model: "openrouter/custom-non-js") }
-
-        expect(response).to redirect_to(runners_path)
-        runner = user.runners.order(:created_at).last
-        expect(runner.config.dig("opencode", "model")).to eq("openrouter/custom-non-js")
-        expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
-      end
-
-      # @spec MODEL-POLICY-FORM-003
-      it "normalizes a non-JS manual model submission when the sentinel select value is missing" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-
-        post runners_path, params: {
-          runner: {
-            runner_key: "opencode",
-            auth_type: "api_key",
-            provider_api_key_id: api_key.id,
-            enabled_for_agent_runs: true,
-            enabled_for_fallback: true,
-            config: {
-              opencode: {
-                model: "",
-                manual_model: "openrouter/manual-without-sentinel"
-              }
-            }
-          }
-        }
-
-        expect(response).to redirect_to(runners_path)
-        runner = user.runners.order(:created_at).last
-        expect(runner.config.dig("opencode", "model")).to eq("openrouter/manual-without-sentinel")
-        expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
-      end
-
-      # @spec MODEL-POLICY-FORM-004
-      it "normalizes a non-JS switch away from free policy back to a specific catalog model" do
-        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        runner = create_free_policy_opencode_runner(api_key:)
-
-        patch runner_path(runner), params: { runner: non_js_switch_from_free_params(model: "moonshotai/kimi-k2-0905") }
-
-        expect(response).to redirect_to(runners_path)
-        runner.reload
-        expect(runner.config.dig("opencode", "model")).to eq("moonshotai/kimi-k2-0905")
-        expect(runner.config.dig("opencode", "model_policy")).to eq("specific")
-      end
-    end
 
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do
       runner = user.runners.find_by!(runner_key: "claude")
@@ -1895,6 +1932,16 @@ RSpec.describe "Runners" do
       catalog_source: "openrouter_sync")
   end
 
+  # @spec FREE-MODEL-RUNNER-005
+  def expect_selected_free_tier_defaults(doc)
+    aggregate_failures do
+      %w[low mid high].each do |tier|
+        selected_option = doc.at_css(%(select[name="runner[tier_model_ids][#{tier}]"] option[selected]))
+        expect(selected_option["value"]).to eq("free-#{tier}")
+      end
+    end
+  end
+
   def expect_free_runner_form_guidance(body)
     aggregate_failures do
       expect(body).to include("OpenRouter Free")
@@ -1909,14 +1956,15 @@ RSpec.describe "Runners" do
     end
   end
 
-  def post_create_openrouter_free_runner(api_key:, runner_attrs: {})
+  def post_create_free_policy_opencode_runner(api_key:, runner_attrs: {})
     post runners_path, params: {
       runner: {
-        runner_key: "openrouter_free",
+        runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key_id: api_key.id,
         enabled_for_agent_runs: true,
-        enabled_for_fallback: true
+        enabled_for_fallback: true,
+        config: { opencode: { api_provider: "openrouter", model_policy: "free" } }
       }.deep_merge(runner_attrs)
     }
   end

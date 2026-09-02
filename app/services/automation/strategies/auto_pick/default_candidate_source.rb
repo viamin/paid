@@ -48,15 +48,6 @@ module Automation
           "%meta%issue%"
         ].freeze
 
-        CLOSED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
-          SELECT 1 FROM issues closed_prs
-          WHERE closed_prs.project_id = agent_runs.project_id
-            AND closed_prs.github_number = agent_runs.pull_request_number
-            AND closed_prs.is_pull_request = TRUE
-            AND closed_prs.github_state = 'closed'
-            AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
-        SQL
-
         # Bounds how long a completed +create_pr+ run without a locally
         # synced resolution keeps its source issue out of auto-pick.
         # +agent_runs.pull_request_number+ is written atomically with the
@@ -94,26 +85,9 @@ module Automation
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil)
+          def eligible_scope(project, excluding_run_id: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005
             base = without_open_non_pr_subissues(base_scope(project, excluding_run_id: excluding_run_id))
-
-            scope = base.where(paid_state: %w[new planning failed analyzed])
-
-            recoverable_completed_issue_ids = AgentRun.where(
-              project: project,
-              status: "completed",
-              trigger_type: "automatic",
-              auto_pick: true
-            ).where.not(issue_id: nil)
-              .where.not(goal: "analyze_issue")
-              .where(
-                "agent_runs.pull_request_number IS NULL OR EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})"
-              )
-              .select(:issue_id)
-
-            scope = scope.or(
-              base.where(paid_state: "completed", id: recoverable_completed_issue_ids)
-            )
+            scope = Issue.auto_pick_eligible_paid_state_scope(base)
 
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
             scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
@@ -270,6 +244,12 @@ module Automation
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
               .where(runner_retry_abandoned_at: nil)
+              # An agent-declared no-code-required completion is terminal: unlike
+              # the generic completed-issue recovery below, re-picking it would
+              # just loop (the agent will likely declare no-code-required again).
+              # Applies regardless of paid_state so this guard survives a later
+              # paid_state reset the same way the merged-PR guard above does.
+              .where(no_code_required_at: nil)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -292,7 +272,7 @@ module Automation
             AgentRun.where(project: project, status: "completed", goal: "create_pr")
               .where.not(pull_request_number: nil).where.not(issue_id: nil)
               .where("agent_runs.completed_at > ?", PR_SYNC_GRACE_PERIOD.ago)
-              .where("NOT EXISTS (#{CLOSED_PR_CORRELATED_SUBQUERY})")
+              .where("NOT EXISTS (#{Issue::AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})")
               .select(:issue_id)
           end
 
@@ -315,7 +295,7 @@ module Automation
                   AND sub_issues.project_id = issues.project_id
                   AND sub_issues.is_pull_request = FALSE
                   AND sub_issues.github_state = 'open'
-                  AND sub_issues.paid_state IS DISTINCT FROM 'recommend_close'
+                  AND sub_issues.paid_state NOT IN ('recommend_close', 'completed')
               )
             SQL
           end

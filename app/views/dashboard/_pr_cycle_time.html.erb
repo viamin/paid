@@ -1,3 +1,4 @@
+<%# @spec DASHBOARD-CHART-A11Y-006 %>
 <%= turbo_frame_tag "dashboard-pr-cycle-time" do %>
   <div class="overflow-hidden rounded-lg bg-white shadow"
     data-controller="pr-cycle-time"
@@ -22,7 +23,7 @@
 
       <% summary = data[:summary] %>
       <% if summary[:total_merged] > 0 %>
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div class="text-center">
             <dt class="text-xs font-medium text-gray-500">Total Merged</dt>
             <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= summary[:total_merged] %></dd>
@@ -39,13 +40,14 @@
             <dt class="text-xs font-medium text-gray-500">Days with Data</dt>
             <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= summary[:total_days] %></dd>
           </div>
-        </div>
+        </dl>
 
         <div class="mt-4">
-          <%= dashboard_chartkick_chart "LineChart", data[:series],
+          <%= line_chart data[:series],
               id: "pr-cycle-time-chart",
+              caption: "Daily average and median hours from issue creation to PR merge, with outliers above #{outlier_cutoff} hours excluded.",
               height: "320px",
-              colors: ["#6366f1", "#10b981", "#f59e0b"],
+              colors: dashboard_chart_colors(:pr_cycle_time),
               xtitle: "Merge Date",
               ytitle: "Hours",
               curve: false,

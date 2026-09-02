@@ -6,7 +6,7 @@ module Dashboard
 
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
-      :skip_label, :completed, :in_progress, :other_excluded,
+      :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
       keyword_init: true
     )
 
@@ -52,6 +52,7 @@ module Dashboard
         .select { |p| Issues::AutoPickProjectGate.call(p) }
     end
 
+    # @spec OPERATOR-INBOX-002D
     def breakdown_for(project)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
 
@@ -69,8 +70,9 @@ module Dashboard
       excluded_total, in_progress, completed, analyzable = row
 
       needs_input = excluded.where(paid_state: "needs_input").count
+      manual_review = excluded.where(paid_state: "manual_review").count
       skip_label = count_skip_labeled(excluded, analyzable, project)
-      other = excluded_total - needs_input - in_progress - completed - skip_label
+      other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
 
       ProjectBreakdown.new(
         project: project,
@@ -78,6 +80,7 @@ module Dashboard
         eligible: eligible_count,
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
+        manual_review: manual_review,
         other_excluded: other
       )
     end

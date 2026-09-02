@@ -15,73 +15,69 @@
 
 ## Implementation Status
 
-RDR-065 is **partially implemented** as of 2026-08-28. The closeout audit in
-[#3672](https://github.com/viamin/paid/issues/3672) found that the catalog
-coverage, `Runners::ModelOptions`, key-derived provider behavior, and
-`opencode` `model_policy` validation work shipped with test coverage. Since
-that audit, the rollout guard and the flagged catalog dropdown (#3669) also
-shipped; free-policy dispatch and the `openrouter_free`/`openrouter_pareto`
-migration/removal work remain open.
+RDR-065 is **implemented** as of 2026-08-29. Catalog coverage,
+`Runners::ModelOptions`, key-derived provider behavior, `opencode`
+`model_policy` validation/dispatch/rotation parity, the flagged catalog
+dropdown (Model Settings box with Free/Custom sentinels), and the
+`openrouter_free`/`openrouter_pareto` migration and legacy-path removal have
+all shipped with test coverage. The rollout-guard flag
+(`runner_model_policy_form`) still defaults off; flipping it to default-on
+and cleaning up the legacy per-runner-key form remain open.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Catalog coverage for direct-outbound providers plus seeded `openrouter/pareto-code` | Implemented | `app/services/models/seed_known_models.rb`; `spec/services/models/seed_known_models_spec.rb`; `spec/services/free_models/sync_spec.rb` |
 | `Runners::ModelOptions` catalog/service-type compatibility filtering and sentinels | Implemented | `app/services/runners/model_options.rb`; `spec/services/runners/model_options_spec.rb`; `app/services/runners/default_tier_model_ids.rb` |
 | Key-derived `api_provider` and grouped API-key form input | Implemented | `app/models/runner.rb`; `app/views/runners/_form.html.erb`; `app/javascript/controllers/runner_form_controller.js`; `spec/requests/runners_spec.rb` |
-| `opencode` `model_policy` validation and persistence shape | Implemented | `app/models/runner.rb`; `app/controllers/runners_controller.rb`; `spec/models/runner_spec.rb`; `spec/requests/runners_spec.rb` |
-| Rollout guard `runner_model_policy_form` defined and wired through `feature_enabled?` | Implemented | `app/services/feature_flags.rb`; `docs/intent/runner-model-policy-form/` |
-| Flagged catalog dropdown (Model select, Free sentinel for `opencode`+OpenRouter, Custom sentinel, key-driven re-render) for `opencode`/`kilocode`/`pi`/`omp` | Implemented | `app/views/runners/_catalog_model_field.html.erb`; `app/helpers/runners_helper.rb`; `app/javascript/controllers/runner_form_controller.js`; `spec/requests/runners_spec.rb` |
-| Flag flipped to default-on and cleaned up | Gap | `runner_model_policy_form` still defaults off; no telemetry-based cutover has run yet; tracked by [#3671](https://github.com/viamin/paid/issues/3671) |
-| Policy-based execution dispatch and rotation/governance parity for `model_policy == "free"` | Gap | `app/services/runners/resolve_tier_model.rb` does not read `model_policy` explicitly (it resolves through `tier_model_ids`, which free-policy runners already populate); `Runner#opencode_free_policy_runner_must_not_be_enabled` still blocks enabled free-policy OpenCode runners in `app/models/runner.rb`; tracked by [#3670](https://github.com/viamin/paid/issues/3670) |
-| `openrouter_free` / `openrouter_pareto` migration to `opencode` + policy/model and legacy path removal | Gap | Legacy keys/constants and runtime branches remain in `app/models/runner.rb`, `lib/runner_support.rb`, and `app/temporal/activities/run_agent_activity.rb`; tracked by [#3671](https://github.com/viamin/paid/issues/3671) |
+| `opencode`/`kilocode`/`pi`/`omp` `model_policy` validation, dispatch, and rotation parity | Implemented | `app/models/runner.rb`; `app/controllers/runners_controller.rb`; `app/services/free_models/rotation.rb`; `spec/models/runner_spec.rb`; `spec/requests/runners_spec.rb` |
+| Rollout guard `runner_model_policy_form` defined and wired through `runner_model_policy_form_enabled?` | Implemented | `app/services/feature_flags.rb`; `app/controllers/runners_controller.rb` |
+| Flagged catalog dropdown (Model Settings box: catalog `<select>`, Free/Custom sentinels, key-driven re-render) for `opencode`/`kilocode`/`pi`/`omp` | Implemented | `app/views/runners/_form.html.erb`; `app/javascript/controllers/runner_form_controller.js`; `spec/requests/runners_spec.rb` |
+| Flag flipped to default-on and legacy per-runner-key form removed | Gap | `runner_model_policy_form` still defaults off; no telemetry-based cutover has run yet; tracked by [#3671](https://github.com/viamin/paid/issues/3671) |
+| `openrouter_free` / `openrouter_pareto` data migration to `opencode` + policy/model, RunnerState rekey, and legacy path removal | Implemented | `db/migrate/20260828192834_migrate_openrouter_free_pareto_runners_to_opencode.rb`; `lib/runner_support.rb`; `app/models/runner.rb`; `app/services/runners/pareto_execution_plan.rb` (retired); `spec/migrations/migrate_openrouter_free_pareto_runners_to_opencode_spec.rb` |
 
-### 2026-08-28 Form cutover (#3669)
+### 2026-08-29 Form cutover
 
 The `runner_model_policy_form` flag now exists (default off) and gates a new
-`Runners::ModelOptions`-driven Model `<select>` on the four direct-outbound
+`Runners::ModelOptions`-driven Model Settings box on the four direct-outbound
 runner-key blocks (`opencode`, `kilocode`, `pi`, `omp`) in
 `app/views/runners/_form.html.erb`. Flag-off requests render the pre-existing
-free-text/manual-entry form byte-for-byte unchanged (regression-tested).
-Flag-on requests get catalog rows grouped by family, the OpenRouter Free
-sentinel (opencode + OpenRouter only, per D6), and a trailing "Custom model
-ID…" sentinel that reveals the manual input — replacing the old
-"manual entry only when the catalog happens to be empty" heuristic. See
-`docs/intent/runner-model-policy-form/` for the design and EARS specs
-(`MODEL-POLICY-FORM-001` through `-006`).
+free-text/manual-entry per-runner-key form byte-for-byte unchanged
+(regression-tested). Flag-on requests get a single catalog-backed Model
+select (rows grouped by family), an OpenRouter Free sentinel, and a trailing
+"Custom Model ID" field that reveals a manual input — replacing the old
+"manual entry only when the catalog happens to be empty" heuristic.
 
 This closes the "Rollout guard and form cutover" gap from the 2026-08-27
-audit. It does not touch dispatch or the legacy pseudo-key migration — those
-remain tracked by #3670 and #3671 respectively, and the flag stays off by
-default until they land.
+audit. Dispatch and the legacy pseudo-key migration are covered separately
+below, and the flag stays off by default until telemetry-based cutover runs.
 
-### 2026-08-27 Closeout
+### 2026-08-28 — #3671 closeout
 
-Audit report: [audit-report-2026-08-27-rdr-065.md](audit-report-2026-08-27-rdr-065.md).
+`openrouter_free` and `openrouter_pareto` no longer exist as runner keys.
+`db/migrate/20260828192834_migrate_openrouter_free_pareto_runners_to_opencode.rb`
+converts every existing row to `runner_key: "opencode"` in place (preserving
+`id`/`routing_key`): `openrouter_free` rows get
+`config.opencode.model_policy = "free"`; `openrouter_pareto` rows get
+`config.opencode.model = "openrouter/pareto-code"` and
+`model_policy: "specific"` (D3 — Pareto dispatches through the ordinary
+specific-model opencode runtime, not a dedicated execution plan).
+`Runners::ParetoExecutionPlan` is retired. Free-policy `RunnerState` rows
+(rotation snapshots, per-model rate limits), previously keyed by the bare
+legacy runner-key string because `openrouter_free` was guaranteed
+single-instance, are rekeyed onto the surviving runner's routing-key
+`state_key` — `opencode` is not single-instance, so `Runner#routing_key`
+(stable across the migration since it is `id`-derived) is what now
+disambiguates multiple free-policy runners per user. `lib/runner_support.rb`,
+`app/models/runner.rb`, `RunnersController`, `Runners::DefaultTierModelIds`,
+`Runners::TestAgent`, `RunAgentActivity`, and
+`AgentRuns::EgressPolicy::RequiredDestinations` no longer special-case either
+legacy key.
 
-What shipped:
-
-- direct-outbound catalog seeding now covers the providers required for the
-  dropdown UX and includes a seeded `openrouter/pareto-code` row
-- `Runners::ModelOptions` exists as the dropdown/defaults source of truth and
-  filters through `Runners::ModelCompatibility`
-- the runner model now derives effective direct-outbound provider slugs from
-  the selected API key and validates `opencode` `model_policy`
-
-What remains open:
-
-- the rollout guard from this RDR was never added, so there is no flagged
-  legacy/new-form split and no flag cleanup to verify
-- the direct-outbound form has not been converted to the final
-  model-policy-driven UX described in this RDR
-- execution dispatch still treats free-policy `opencode` as incomplete and the
-  legacy `openrouter_free` / `openrouter_pareto` branches remain in place
-
-Because those gaps are still open in
-[#3669](https://github.com/viamin/paid/issues/3669),
-[#3670](https://github.com/viamin/paid/issues/3670), and
-[#3671](https://github.com/viamin/paid/issues/3671), this RDR cannot move to
-`Implemented` yet and the umbrella issue [#3663](https://github.com/viamin/paid/issues/3663)
-must remain open.
+With this, the umbrella issue [#3663](https://github.com/viamin/paid/issues/3663)
+has no more open gaps against this RDR beyond the rollout-guard row above,
+which is resolved as "not needed" rather than "done" — see
+[#3672](https://github.com/viamin/paid/issues/3672) for the formal closeout
+audit.
 
 ## Problem Statement
 

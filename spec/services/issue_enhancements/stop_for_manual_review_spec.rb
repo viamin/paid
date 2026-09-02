@@ -30,6 +30,18 @@ RSpec.describe IssueEnhancements::StopForManualReview do
     expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
   end
 
+  # @spec ISSUE-ENHANCEMENT-012
+  it "persists the reason and stamps a durable entry timestamp" do
+    freeze_time = Time.current
+    travel_to(freeze_time) do
+      described_class.call(project: project, issue: issue, reason: "Structured output was invalid.")
+    end
+
+    issue.reload
+    expect(issue.manual_review_reason).to eq("Structured output was invalid.")
+    expect(issue.manual_review_started_at).to be_within(1.second).of(freeze_time)
+  end
+
   # @spec ISSUE-ENHANCEMENT-011
   it "still posts the stop notice when label removal fails" do
     allow(client).to receive(:remove_label_from_issue).and_raise(GithubClient::Error.new("label unavailable"))

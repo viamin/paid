@@ -35,7 +35,7 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
   end
 
   after do
-    FileUtils.remove_entry(worktree_path) if File.exist?(worktree_path)
+    FileUtils.remove_entry(worktree_path) if Dir.exist?(worktree_path)
   end
 
   context "with an RSpec file" do
@@ -126,11 +126,11 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
     end
   end
 
-  context "when the worktree path is missing" do
-    let(:worktree_path) { File.join(Dir.tmpdir, "review-surface-missing") }
-    let(:changed_files_output) { "spec/services/projects/import_spec.rb\n" }
+  context "when the stored worktree path is missing" do
+    let(:worktree_path) { "/var/paid/worktrees/project-123" }
+    let(:changed_files_output) { "" }
 
-    it "skips git diff collection and leaves the body unchanged" do
+    it "treats the run as having no diff and skips git" do # @spec TDD-PR-002
       body = described_class.call(body: "## Summary\n\nTest PR", agent_run: agent_run)
 
       expect(body).to eq("## Summary\n\nTest PR")

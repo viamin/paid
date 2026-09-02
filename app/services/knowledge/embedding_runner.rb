@@ -317,7 +317,7 @@ module Knowledge
           "Tmpfs" => {
             "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
           },
-          "NetworkMode" => Containers.agent_network_name,
+          "NetworkMode" => NetworkPolicy::NETWORK_NAME,
           "Binds" => [ "#{@input_dir}:/paid-input:ro" ]
         },
         "Env" => [

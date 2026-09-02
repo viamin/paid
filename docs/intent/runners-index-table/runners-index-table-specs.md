@@ -51,13 +51,15 @@
   *Test:* `spec/lib/test_agent_controller_node_harness_spec.rb`.
 
 - [x] **RUNNERS-INDEX-008** — When the `/runners` index renders the "Provider
-  Run Outcomes" stacked column charts, it SHALL use the CSP-safe
-  `dashboard_chartkick_chart` helper (data attributes + the `chartkick`
-  Stimulus controller) instead of Chartkick's raw `column_chart` helper, and
-  each chart's element id SHALL be derived from the entry's position rather
+  Run Outcomes" stacked column charts, it SHALL render them through the
+  app-wide CSP-safe Chartkick path — `ChartkickHelper`'s override of
+  `Chartkick::Helper#chartkick_chart` (data attributes + the `chartkick`
+  Stimulus controller) rather than Chartkick's stock inline-script output —
+  and each chart's element id SHALL be derived from the entry's position rather
   than interpolating the provider name, so the id stays DOM-safe regardless of
   provider slug contents.
-  *Code:* `app/views/runners/_provider_outcomes.html.erb`.
+  *Code:* `app/views/runners/_provider_outcomes.html.erb`,
+  `app/helpers/chartkick_helper.rb`.
   *Test:* `spec/requests/runners_spec.rb`.
 
 - [x] **RUNNERS-INDEX-009** — When the `/runners` index renders at least one

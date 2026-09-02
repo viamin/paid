@@ -45,6 +45,14 @@ RSpec.describe Knowledge::Redaction::Scrubber do
       embedding_model: embedding_model, content: content)
   end
 
+  def with_memory_cache
+    original = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    yield
+  ensure
+    Rails.cache = original
+  end
+
   describe ".call" do
     it "physically scrubs content that matches a redaction pattern" do
       chunk = build_chunk(content: "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl")
@@ -84,6 +92,19 @@ RSpec.describe Knowledge::Redaction::Scrubber do
       scrubber.call
 
       expect(chunk.reload.content).to eq(original_content)
+    end
+
+    it "busts the artifact counts and OKF export availability caches when chunks are scrubbed" do
+      with_memory_cache do
+        build_chunk(content: "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl")
+        Rails.cache.write(KnowledgeArtifact.artifact_counts_cache_key(project.id), { "route" => 3 })
+        Rails.cache.write(KnowledgeArtifact.okf_export_available_cache_key(project.id), true)
+
+        scrubber.call
+
+        expect(Rails.cache.read(KnowledgeArtifact.artifact_counts_cache_key(project.id))).to be_nil
+        expect(Rails.cache.read(KnowledgeArtifact.okf_export_available_cache_key(project.id))).to be_nil
+      end
     end
 
     it "emits a chunks_scrubbed summary audit event" do
@@ -216,6 +237,19 @@ RSpec.describe Knowledge::Redaction::Scrubber do
 
         expect(result.scrubbed_chunks).to eq(0)
         expect(result.skipped_chunks).to eq(2)
+      end
+
+      it "does not bust the artifact caches when no rows moved" do
+        with_memory_cache do
+          build_chunk(content: "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl")
+          Rails.cache.write(KnowledgeArtifact.artifact_counts_cache_key(project.id), { "route" => 3 })
+          Rails.cache.write(KnowledgeArtifact.okf_export_available_cache_key(project.id), true)
+
+          scrubber.call
+
+          expect(Rails.cache.read(KnowledgeArtifact.artifact_counts_cache_key(project.id))).to eq({ "route" => 3 })
+          expect(Rails.cache.read(KnowledgeArtifact.okf_export_available_cache_key(project.id))).to be(true)
+        end
       end
     end
 

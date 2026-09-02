@@ -56,7 +56,7 @@ module Containers
     # @param agent_run [AgentRun] the run whose mcp_server_snapshot to provision
     # @param network [String] Docker network name for sidecar containers
     # @return [Hash] with :stdio_servers and :url_servers arrays
-    def provision(agent_run, network: Containers.agent_network_name)
+    def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       snapshot = agent_run.mcp_server_snapshot
       sidecar_ids = []
       preserved_sidecar_ids = []

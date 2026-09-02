@@ -59,7 +59,7 @@ module PerformanceBenchmarks
         run.save!
 
         provision_start = now - fixture.fetch(:offset_minutes).minutes + 1.minute
-        AgentRunPhase.find_or_initialize_by(agent_run: run, phase_key: "provision_container").tap do |phase|
+        AgentRunPhase.find_or_initialize_by(agent_run: run, phase_key: "provision_execution_environment").tap do |phase|
           phase.assign_attributes(
             phase_group: "setup",
             status: "completed",

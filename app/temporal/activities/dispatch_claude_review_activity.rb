@@ -23,7 +23,7 @@ module Activities
         client_payload: { pr_number: pr_number }
       )
 
-      issue.update_column(:ci_action_dispatched_at, Time.current)
+      issue.update_columns(ci_action_dispatched_at: Time.current)
 
       logger.info(
         message: "pr_review.claude_review_dispatched",

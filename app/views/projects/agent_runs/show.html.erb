@@ -41,6 +41,10 @@
     </div>
   </div>
 
+  <% if @session_summary %>
+    <%= render "projects/agent_runs/session_summary", project: @project, agent_run: @agent_run, session_summary: @session_summary %>
+  <% end %>
+
   <% if @logs.any? %>
     <div class="mt-6 overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800">
       <h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-100">Execution Logs</h2>

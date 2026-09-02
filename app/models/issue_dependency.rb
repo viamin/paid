@@ -67,14 +67,13 @@ class IssueDependency < ApplicationRecord
 
   # External deps that should still block their dependent: target project
   # not synced into the account, target issue not yet synced, or target
-  # is observably open (and not parked at recommend_close — mirrors the
-  # local-dep convention that recommend_close is treated as effectively
-  # satisfied pending human confirmation).
+  # is observably open (and not in a local state treated as effectively
+  # resolved for downstream scheduling).
   scope :still_blocking_external_for_account, ->(account_id) {
     external_resolved_for_account(account_id)
       .where(
         "ext_project.id IS NULL OR ext_issue.id IS NULL OR " \
-        "(ext_issue.github_state = 'open' AND ext_issue.paid_state IS DISTINCT FROM 'recommend_close')"
+        "(ext_issue.github_state = 'open' AND ext_issue.paid_state NOT IN ('recommend_close', 'completed'))"
       )
   }
 

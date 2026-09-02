@@ -11,6 +11,7 @@ RSpec.describe Notifications::Rules::ZeroIterationTimeout do
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
   end
 
+  # @spec NOTIFICATION-SEVERITY-003
   it "publishes for a timeout with no iterations and no input tokens" do
     run = create(:agent_run, :timeout, project: project, issue: issue,
       iterations: 0, tokens_input: 0, container_id: nil)
@@ -20,7 +21,7 @@ RSpec.describe Notifications::Rules::ZeroIterationTimeout do
     }.to change(Notification, :count).by(1)
 
     notification = Notification.find_by!(source: "zero_iteration_timeout", subject: run)
-    expect(notification.severity).to eq("error")
+    expect(notification.severity).to eq("warning")
     expect(notification.metadata["duration_seconds"]).to eq(run.duration_seconds)
   end
 

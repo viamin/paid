@@ -1,3 +1,4 @@
+<%# @spec DASHBOARD-CHART-A11Y-006 %>
 <% if provider_outcome_stats.any? %>
   <div class="mt-8">
     <details class="rounded-lg border border-gray-200 bg-white shadow" open>
@@ -53,8 +54,9 @@
               <% end %>
 
               <%# Stacked column chart %>
-              <%= dashboard_chartkick_chart "ColumnChart", entry[:series],
+              <%= column_chart entry[:series],
                     id: "provider-outcomes-chart-#{index}",
+                    caption: "Daily run outcomes for #{entry[:provider]}, stacked by status.",
                     stacked: true,
                     height: "200px",
                     colors: entry[:colors],

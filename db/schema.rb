@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_02_071054) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -248,6 +248,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.index ["profile_level", "sample_count"], name: "idx_on_profile_level_sample_count_92a9d20505"
     t.index ["project_id"], name: "index_agent_run_resource_profiles_on_project_id"
     t.index ["runner_key", "goal"], name: "index_agent_run_resource_profiles_on_runner_key_and_goal", where: "((runner_key IS NOT NULL) AND (goal IS NOT NULL))"
+  end
+
+  create_table "agent_run_session_summaries", comment: "Synthesized session-summary knowledge observations captured after selected agent runs.", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false, comment: "Agent run this summary was synthesized from."
+    t.jsonb "assumptions", default: [], null: false, comment: "Assumptions the agent made when information was incomplete."
+    t.bigint "change_intent_id", comment: "Change Intent Record created when this observation was promoted."
+    t.datetime "created_at", null: false
+    t.jsonb "decisions", default: [], null: false, comment: "Decisions the agent made and why."
+    t.jsonb "failures", default: [], null: false, comment: "Approaches that were tried and failed, or errors encountered."
+    t.jsonb "files_touched", default: [], null: false, comment: "File paths created, modified, or investigated."
+    t.jsonb "follow_ups", default: [], null: false, comment: "Follow-up work identified but not completed in this run."
+    t.datetime "generated_at", comment: "When the LLM synthesis that produced this summary completed."
+    t.bigint "issue_id", comment: "Issue the agent run worked on, when applicable."
+    t.jsonb "learnings", default: [], null: false, comment: "Reusable insights about the repository or codebase."
+    t.bigint "project_id", null: false, comment: "Project the summarized agent run belongs to."
+    t.datetime "promoted_at", comment: "When this observation was promoted to a durable Change Intent Record."
+    t.bigint "promoted_by_id", comment: "User who promoted this observation, when applicable."
+    t.integer "pull_request_number", comment: "Pull request number produced or updated by the run, when applicable."
+    t.string "pull_request_url", comment: "Pull request URL produced or updated by the run, when applicable."
+    t.string "status", limit: 50, default: "observation", null: false, comment: "Lifecycle state: observation (raw capture) or promoted (accepted into durable intent)."
+    t.text "summary", null: false, comment: "Narrative summary of what happened during the agent run."
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_agent_run_session_summaries_on_agent_run_id", unique: true
+    t.index ["change_intent_id"], name: "index_agent_run_session_summaries_on_change_intent_id"
+    t.index ["issue_id"], name: "index_agent_run_session_summaries_on_issue_id"
+    t.index ["project_id", "created_at"], name: "index_agent_run_session_summaries_on_project_id_and_created_at"
+    t.index ["project_id", "status"], name: "index_agent_run_session_summaries_on_project_id_and_status"
+    t.index ["project_id"], name: "index_agent_run_session_summaries_on_project_id"
+    t.index ["promoted_by_id"], name: "index_agent_run_session_summaries_on_promoted_by_id"
   end
 
   create_table "agent_runs", force: :cascade do |t|
@@ -565,59 +594,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
-  end
-
-  create_table "claude_login_sessions", force: :cascade do |t|
-    t.bigint "account_id", null: false, comment: "Account that owns this browser-completed Claude login session."
-    t.datetime "completed_at"
-    t.string "container_id"
-    t.datetime "created_at", null: false
-    t.bigint "created_by_id", null: false, comment: "User who initiated the Claude browser login."
-    t.string "credential_name", null: false, comment: "IntegrationCredential name to create or replace on successful capture."
-    t.text "error_message"
-    t.datetime "expires_at", comment: "Session expiry until completed; replaced with credential expiry after capture."
-    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
-    t.datetime "failed_at"
-    t.bigint "integration_credential_id", comment: "Managed Claude credential captured when the login completes."
-    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Claude metadata."
-    t.text "oauth_url"
-    t.bigint "runner_credential_id", comment: "Managed Claude runner credential captured when the browser login completes."
-    t.string "session_token", null: false, comment: "Time-boxed shared secret required to submit the browser code."
-    t.string "status", default: "starting", null: false, comment: "Browser login lifecycle state."
-    t.datetime "submitted_at"
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_claude_login_sessions_on_account_id"
-    t.index ["created_by_id"], name: "index_claude_login_sessions_on_created_by_id"
-    t.index ["external_id"], name: "index_claude_login_sessions_on_external_id", unique: true
-    t.index ["integration_credential_id"], name: "index_claude_login_sessions_on_integration_credential_id"
-    t.index ["runner_credential_id"], name: "index_claude_login_sessions_on_runner_credential_id"
-    t.index ["session_token"], name: "index_claude_login_sessions_on_session_token", unique: true
-  end
-
-  create_table "codex_login_sessions", comment: "Device-code Connect Codex login sessions (RDR-041 / #2962).", force: :cascade do |t|
-    t.bigint "account_id", null: false, comment: "Account that owns this Connect Codex login session."
-    t.datetime "completed_at"
-    t.datetime "created_at", null: false
-    t.bigint "created_by_id", null: false, comment: "User who initiated the Connect Codex login."
-    t.string "credential_name", null: false, comment: "RunnerCredential name to create or replace on successful capture."
-    t.text "device_code", comment: "Encrypted device_code used to poll the OAuth token endpoint."
-    t.text "error_message"
-    t.datetime "expires_at", comment: "Device-code expiry; replaced with credential expiry after capture."
-    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
-    t.datetime "failed_at"
-    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Codex metadata."
-    t.integer "poll_interval", comment: "Seconds between token-endpoint polls."
-    t.bigint "runner_credential_id", comment: "Managed Codex credential captured when the login completes."
-    t.string "session_token", null: false, comment: "Time-boxed shared secret required to advance the device-code poll."
-    t.string "status", default: "starting", null: false, comment: "Device-code login lifecycle state."
-    t.datetime "updated_at", null: false
-    t.string "user_code", comment: "Short code the user enters at the verification URI."
-    t.text "verification_uri", comment: "URI the user visits to authorize the device."
-    t.index ["account_id"], name: "index_codex_login_sessions_on_account_id"
-    t.index ["created_by_id"], name: "index_codex_login_sessions_on_created_by_id"
-    t.index ["external_id"], name: "index_codex_login_sessions_on_external_id", unique: true
-    t.index ["runner_credential_id"], name: "index_codex_login_sessions_on_runner_credential_id"
-    t.index ["session_token"], name: "index_codex_login_sessions_on_session_token", unique: true
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -1309,7 +1285,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.check_constraint "billed_duration_seconds >= 0", name: "chk_execution_usages_billed_duration_nonneg"
     t.check_constraint "infra_cost_cents >= 0", name: "chk_execution_usages_infra_cost_nonneg"
     t.check_constraint "rate_cents_per_hour >= 0", name: "chk_execution_usages_rate_nonneg"
-    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'failed'::character varying, 'evicted'::character varying]::text[])", name: "chk_execution_usages_termination_reason_valid"
+    t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -1595,10 +1571,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.datetime "issue_analysis_next_attempt_at", comment: "When automatic analyze_issue retries become eligible again after provider exhaustion."
     t.jsonb "labels", default: [], null: false
     t.datetime "last_pr_scan_at"
+    t.text "manual_review_reason", comment: "Why automation stopped and parked this issue in manual_review, surfaced in the operator inbox."
+    t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
     t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
+    t.datetime "no_code_required_at", comment: "When non-null, an agent explicitly declared this issue's work complete without a code change (no_code_required outcome). Permanently excludes the issue from auto-pick's completed-issue recovery path even though paid_state is 'completed', so it does not loop back into the queue on its own; only a manually triggered run can pick it up again."
     t.datetime "operational_failure_reset_at"
     t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
     t.string "paid_state", default: "new", null: false
@@ -1842,6 +1821,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.index ["source_type", "source_id"], name: "index_llm_output_metrics_on_source_type_and_source_id"
   end
 
+  create_table "login_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this login session."
+    t.datetime "completed_at"
+    t.string "container_id", comment: "Container ID (Claude only)."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "User who initiated the login."
+    t.string "credential_name", null: false, comment: "Credential name to create or replace on successful capture."
+    t.text "device_code", comment: "Encrypted device_code (Codex only)."
+    t.text "error_message"
+    t.datetime "expires_at", comment: "Session/device-code expiry."
+    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
+    t.datetime "failed_at"
+    t.bigint "integration_credential_id", comment: "Managed credential (Claude only)."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details."
+    t.text "oauth_url", comment: "OAuth URL (Claude only)."
+    t.integer "poll_interval", comment: "Seconds between token-endpoint polls (Codex only)."
+    t.string "provider", null: false, comment: "Provider: claude or codex."
+    t.bigint "runner_credential_id", comment: "Managed credential (Codex only)."
+    t.string "session_token", null: false, comment: "Time-boxed shared secret."
+    t.string "status", default: "starting", null: false, comment: "Login lifecycle state."
+    t.datetime "submitted_at", comment: "When code was submitted (Claude only)."
+    t.datetime "updated_at", null: false
+    t.string "user_code", comment: "Short code the user enters (Codex only)."
+    t.text "verification_uri", comment: "URI the user visits to authorize (Codex only)."
+    t.index ["account_id"], name: "index_login_sessions_on_account_id"
+    t.index ["created_by_id"], name: "index_login_sessions_on_created_by_id"
+    t.index ["external_id"], name: "index_login_sessions_on_external_id", unique: true
+    t.index ["integration_credential_id"], name: "index_login_sessions_on_integration_credential_id"
+    t.index ["runner_credential_id"], name: "index_login_sessions_on_runner_credential_id"
+    t.index ["session_token"], name: "index_login_sessions_on_session_token", unique: true
+  end
+
   create_table "marketplace_entries", comment: "Team-shareable agent enhancements that can be attached to agent runs", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "added_by_email", limit: 255, null: false
@@ -1961,6 +1972,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   create_table "notifications", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action_url"
+    t.boolean "blocking", default: false, null: false, comment: "True when the notification's error state cannot self-resolve and requires human action to resume work."
     t.datetime "created_at", null: false
     t.text "description"
     t.datetime "dismissed_at"
@@ -1975,7 +1987,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id"
-    t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
+    t.index ["account_id", "blocking", "read_at"], name: "index_notifications_on_badge", where: "((dismissed_at IS NULL) AND (resolved_at IS NULL))"
     t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
     t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup_account_wide", unique: true, where: "(user_id IS NULL)"
     t.index ["account_id", "user_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
@@ -2538,30 +2550,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.string "event_type", limit: 20, null: false, comment: "Quality gate transition being recorded: trigger or recovery."
     t.jsonb "metadata", default: {}, null: false, comment: "Structured context about the gate evaluation and follow-up actions."
     t.bigint "project_id", null: false
-    t.bigint "quality_gate_threshold_id", null: false
     t.bigint "quality_metric_id", null: false
+    t.bigint "quality_threshold_id", null: false
     t.decimal "score_value", precision: 5, scale: 4, null: false, comment: "Observed metric value that triggered the event."
     t.decimal "threshold_value", precision: 5, scale: 4, null: false, comment: "Specific threshold value that was breached or recovered."
     t.datetime "updated_at", null: false
     t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
     t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
-    t.index ["quality_gate_threshold_id"], name: "index_quality_gate_events_on_quality_gate_threshold_id"
     t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
-  end
-
-  create_table "quality_gate_thresholds", comment: "Defines per-project quality gate rules that trigger pauses or recovery when metrics breach expected bounds.", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.boolean "enabled", default: true, null: false, comment: "Whether this threshold currently participates in quality gate evaluation."
-    t.jsonb "log_data"
-    t.decimal "max_threshold", precision: 5, scale: 4, comment: "Upper bound whose breach triggers the gate for metrics where too high is bad."
-    t.string "metric_key", limit: 50, null: false, comment: "Quality metric evaluated by the gate, such as composite_score, lint_clean, or review_score."
-    t.decimal "min_threshold", precision: 5, scale: 4, comment: "Lower bound whose breach triggers the gate for metrics where too low is bad."
-    t.bigint "project_id", null: false
-    t.string "severity", limit: 20, default: "warning", null: false, comment: "Severity assigned when the gate is breached: info, warning, or critical."
-    t.datetime "updated_at", null: false
-    t.index ["project_id", "enabled", "metric_key"], name: "idx_quality_gate_thresholds_project_enabled_metric"
-    t.index ["project_id", "metric_key"], name: "index_quality_gate_thresholds_on_project_id_and_metric_key", unique: true
-    t.index ["project_id"], name: "index_quality_gate_thresholds_on_project_id"
+    t.index ["quality_threshold_id"], name: "index_quality_gate_events_on_quality_threshold_id"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -2630,9 +2627,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
     t.boolean "enabled", default: true, null: false
     t.string "goal_type", limit: 50, null: false
     t.jsonb "log_data"
+    t.decimal "max_value", precision: 5, scale: 4, comment: "Upper bound whose breach triggers the gate for metrics where too high is bad."
     t.string "metric_type", limit: 50, null: false
-    t.decimal "min_value", precision: 5, scale: 4, null: false
+    t.decimal "min_value", precision: 5, scale: 4
     t.bigint "project_id"
+    t.string "severity", limit: 20, default: "warning", null: false, comment: "Severity assigned when the threshold is breached: info, warning, or critical."
     t.datetime "updated_at", null: false
     t.index ["account_id", "metric_type", "goal_type"], name: "index_quality_thresholds_on_account_defaults", unique: true, where: "(project_id IS NULL)"
     t.index ["account_id"], name: "index_quality_thresholds_on_account_id"
@@ -3369,6 +3368,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_resource_profiles", "accounts", on_delete: :cascade
   add_foreign_key "agent_run_resource_profiles", "projects", on_delete: :cascade
+  add_foreign_key "agent_run_session_summaries", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_session_summaries", "change_intents", on_delete: :nullify
+  add_foreign_key "agent_run_session_summaries", "issues", on_delete: :nullify
+  add_foreign_key "agent_run_session_summaries", "projects", on_delete: :cascade
+  add_foreign_key "agent_run_session_summaries", "users", column: "promoted_by_id", on_delete: :nullify
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
@@ -3396,13 +3400,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
-  add_foreign_key "claude_login_sessions", "accounts"
-  add_foreign_key "claude_login_sessions", "integration_credentials"
-  add_foreign_key "claude_login_sessions", "runner_credentials"
-  add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
-  add_foreign_key "codex_login_sessions", "accounts"
-  add_foreign_key "codex_login_sessions", "runner_credentials"
-  add_foreign_key "codex_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify
@@ -3503,6 +3500,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   add_foreign_key "llm_output_metrics", "accounts", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "projects", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "login_sessions", "accounts"
+  add_foreign_key "login_sessions", "integration_credentials"
+  add_foreign_key "login_sessions", "runner_credentials"
+  add_foreign_key "login_sessions", "users", column: "created_by_id"
   add_foreign_key "marketplace_entries", "accounts"
   add_foreign_key "marketplace_entries", "marketplace_entry_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "marketplace_entry_rules", "marketplace_entries"
@@ -3567,9 +3568,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
   add_foreign_key "provisioning_intents", "agent_runs"
   add_foreign_key "provisioning_intents", "projects"
   add_foreign_key "quality_gate_events", "projects"
-  add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
-  add_foreign_key "quality_gate_thresholds", "projects"
+  add_foreign_key "quality_gate_events", "quality_thresholds"
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_pause_events", "agent_runs"
@@ -4530,10 +4530,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_031257) do
 
   create_trigger :logidze_on_provider_api_keys, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_provider_api_keys BEFORE INSERT OR UPDATE ON public.provider_api_keys FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{api_key}')
-  SQL
-
-  create_trigger :logidze_on_quality_gate_thresholds, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_quality_gate_thresholds BEFORE INSERT OR UPDATE ON public.quality_gate_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL

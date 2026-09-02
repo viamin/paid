@@ -44,6 +44,7 @@ module Activities
 
       issue.update!(pr_review_phase: "ready")
 
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       add_phase_label(client, project, pr_number, PAID_READY_LABEL)
 
       { marked_ready: true, pr_number: pr_number }

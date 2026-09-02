@@ -1,0 +1,61 @@
+<%# @spec OPERATOR-INBOX-002C %>
+<% awaiting_approval = entry.record.reason == Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL %>
+<div class="space-y-6">
+  <% if awaiting_approval %>
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <h3 class="text-sm font-semibold text-emerald-900">Re-approve on GitHub</h3>
+      <p class="mt-1 text-sm text-emerald-800">
+        This pull request is waiting on owner approval. Re-approve it on GitHub so Paid can merge it on the next PR scan.
+      </p>
+    </div>
+  <% else %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Paid stopped working this PR</h3>
+      <p class="mt-1 text-sm text-amber-800">
+        Unblocking clears the counters below and returns the PR to the scanner.
+      </p>
+    </div>
+  <% end %>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
+        <%= escalation_reason_label(entry.record.reason) %>
+      </span>
+      <% if entry.record.operator_paused %>
+        <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-500/20" title="You paused auto-continue on this PR. Unblocking clears the escalation but leaves your pause in place.">Also paused by you</span>
+      <% end %>
+    </div>
+    <ul class="space-y-2 text-sm text-gray-600">
+      <% if entry.record.counters.any? %>
+        <% entry.record.counters.each do |counter| %>
+          <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <%= escalation_counter_label(counter.name) %> <span class="font-medium"><%= counter.value %> / <%= counter.limit %></span>
+          </li>
+        <% end %>
+      <% elsif entry.record.last_progress_at %>
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" title="Time since this PR last made meaningful progress">
+          No progress for <%= time_ago_in_words(entry.record.last_progress_at) %>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <% if awaiting_approval %>
+      <%= link_to inbox_issue_link_label(entry.issue),
+            entry.issue.github_url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500" %>
+    <% elsif policy(entry.project).run_agent? %>
+      <%= button_to "Unblock",
+            unblock_escalation_project_agent_runs_path(entry.project, pull_request_id: entry.issue.id),
+            method: :post,
+            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+            form: { data: { turbo_confirm: unblock_confirmation_text(entry.record) } } %>
+    <% end %>
+  </div>
+</div>

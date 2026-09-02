@@ -26,6 +26,7 @@ module Issues
       )
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
+      maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
     end
@@ -55,6 +56,65 @@ module Issues
     end
     private_class_method :closed_as_completed?
 
+    def self.maybe_unpark_recommend_close_dependents(issue, was_open:) # @spec AUTO-PICK-QUEUE-003
+      return unless was_open
+      return unless issue.github_state == "closed"
+
+      issue.dependents.includes(:project).where(github_state: "open", paid_state: "recommend_close").find_each do |dependent|
+        next unless dependent.ready_to_work?
+        next unless remove_recommend_close_label(dependent)
+
+        label = recommend_close_label(dependent.project)
+        dependent.update!(paid_state: "new", labels: dependent.labels - [ label ])
+        Rails.logger.info(
+          message: "recommend_close.dependency_closed_reset",
+          blocker_issue_id: issue.id,
+          blocker_github_number: issue.github_number,
+          dependent_issue_id: dependent.id,
+          dependent_github_number: dependent.github_number,
+          project_id: dependent.project_id,
+          removed_label: label
+        )
+      end
+    end
+    private_class_method :maybe_unpark_recommend_close_dependents
+
+    def self.remove_recommend_close_label(issue)
+      label = recommend_close_label(issue.project)
+      return true unless issue.labels.include?(label)
+
+      client = issue.project.client
+      if client.nil?
+        Rails.logger.warn(
+          message: "recommend_close.dependency_closed_reset_label_remove_skipped",
+          issue_id: issue.id,
+          project_id: issue.project_id,
+          github_number: issue.github_number,
+          label: label
+        )
+        return false
+      end
+
+      client.remove_label_from_issue(issue.project.full_name, issue.github_number, label)
+      true
+    rescue GithubClient::Error => e
+      Rails.logger.warn(
+        message: "recommend_close.dependency_closed_reset_label_remove_failed",
+        issue_id: issue.id,
+        project_id: issue.project_id,
+        github_number: issue.github_number,
+        label: label,
+        error: e.message
+      )
+      false
+    end
+    private_class_method :remove_recommend_close_label
+
+    def self.recommend_close_label(project)
+      project.label_for_stage("recommend_close") || RECOMMEND_CLOSE_LABEL
+    end
+    private_class_method :recommend_close_label
+
     # When a user removes the recommend-close label from an issue that Paid
     # had parked in paid_state=recommend_close, treat that as an explicit
     # "I disagree, work on this again" signal. Reset paid_state to new — the
@@ -66,7 +126,7 @@ module Issues
       return if issue.is_pull_request?
       return unless issue.paid_state == "recommend_close"
 
-      label = project.label_for_stage("recommend_close") || RECOMMEND_CLOSE_LABEL
+      label = recommend_close_label(project)
       return unless previous_labels.include?(label)
       return if new_labels.include?(label)
 

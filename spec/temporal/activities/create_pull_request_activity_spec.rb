@@ -101,6 +101,12 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(result[:pull_request_number]).to eq(42)
     end
 
+    # @spec SESSION-SUMMARY-001
+    it "enqueues session-summary capture once the pull request is created" do
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to have_enqueued_job(CaptureAgentRunSessionSummaryJob).with(agent_run.id)
+    end
+
     it "preserves conventional commit issue titles in the PR title" do
       issue.update!(title: "feat(quality): automatic pause on quality threshold breach")
 

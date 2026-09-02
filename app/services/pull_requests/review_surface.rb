@@ -267,8 +267,8 @@ module PullRequests
     end
 
     def run_git_diff(*args)
-      return "" if agent_run.worktree_path.blank? || agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
-      return "" unless Dir.exist?(agent_run.worktree_path)
+      return "" if agent_run.worktree_path.blank? || !Dir.exist?(agent_run.worktree_path)
+      return "" if agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
 
       stdout, _stderr, status = Open3.capture3(
         "git",

@@ -89,6 +89,22 @@ module Models
         tier: "mid"
       },
       {
+        model_id: "claude-fable-5-1",
+        display_name: "Claude Fable 5.1",
+        provider: "anthropic",
+        family: "claude-5",
+        category: "general",
+        context_window: 200_000,
+        max_output_tokens: 32_000,
+        input_cost_per_million: 3.0,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.6,
+        tier: "mid"
+      },
+      {
         model_id: "claude-opus-4-8",
         display_name: "Claude Opus 4.8",
         provider: "anthropic",
@@ -701,10 +717,11 @@ module Models
         tier: "mid"
       },
       # Pareto row (RDR-065 D3): openrouter/pareto-code is OpenRouter's Pareto
-      # Router, not a fixed model — Runners::ParetoExecutionPlan lets
-      # OpenRouter choose the actual backing coding model per request
-      # server-side. This row exists so the model dropdown (#3663) and
-      # tier/selection code have a catalog entry to list and resolve.
+      # Router, not a fixed model — OpenRouter chooses the actual backing
+      # coding model per request server-side. This row exists so the model
+      # dropdown (#3663) and tier/selection code have a catalog entry to list
+      # and resolve; it dispatches through the ordinary opencode
+      # specific-model runtime like any other catalog row (RDR-065 #3671).
       # catalog_source is explicitly "seeded" (not "openrouter_sync") so
       # FreeModels::Sync#deactivate_missing_models!, which only targets
       # LlmModel.openrouter_synced_free (catalog_source: "openrouter_sync"

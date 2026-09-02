@@ -10,7 +10,7 @@ RSpec.describe Activities::CleanupContainerActivity do
   describe "#execute" do
     it "cleans up the container for the agent run" do
       allow(AgentRun).to receive(:find_by).with(id: agent_run.id).and_return(agent_run)
-      expect(agent_run).to receive(:cleanup_container).with(force: true)
+      expect(agent_run).to receive(:cleanup_execution_environment).with(force: true)
 
       result = activity.execute(agent_run_id: agent_run.id)
 

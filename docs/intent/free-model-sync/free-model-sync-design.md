@@ -7,9 +7,10 @@ prefix: FREE-MODEL-SYNC
 
 ## Context
 
-Paid already treats free models as first-class `LlmModel` rows and exposes them
-through the `openrouter_free` runner. What is missing is the catalog ingestion
-path: the application must fetch OpenRouter's live free-model list, classify the
+Paid already treats free models as first-class `LlmModel` rows and exposes
+them through free-policy direct-outbound runners (`model_policy: "free"`;
+RDR-065, #3671). What is missing is the catalog ingestion path: the
+application must fetch OpenRouter's live free-model list, classify the
 models into Paid's existing tier semantics, and keep the catalog current as
 models appear, expire, or disappear.
 

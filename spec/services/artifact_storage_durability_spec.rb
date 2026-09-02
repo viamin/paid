@@ -62,20 +62,19 @@ RSpec.describe "Stateless host durability invariant", :no_db, type: :model do
     # Screenshots and traces are user-visible artifacts. They must reach object
     # storage via the shared ArtifactStorage client rather than constructing a
     # separate client or writing to local disk.
-    it "delegates S3 client construction to ArtifactStorage" do
+    it "composes an ArtifactStorage that owns the S3 client" do
       shared_client = Aws::S3::Client.new(stub_responses: true)
       storage = Screenshots::Storage.new(bucket: "shared-bucket", region: "us-east-1")
       allow(storage.artifact_storage).to receive(:client).and_return(shared_client)
 
       expect(storage.artifact_storage).to be_an(ArtifactStorage)
-      expect(storage.s3_client).to be(shared_client)
+      expect(storage.artifact_storage.client).to be(shared_client)
     end
 
     it "uploads a screenshot through the shared object-storage client" do
       s3_client = Aws::S3::Client.new(stub_responses: true)
       storage = Screenshots::Storage.new(bucket: "shared-bucket", region: "us-east-1")
-      allow(storage.artifact_storage).to receive(:client).and_return(s3_client)
-      allow(storage).to receive(:signed_url).and_return("https://example.test/dashboard.png?X-Amz-Signature=1")
+      allow(storage.artifact_storage).to receive_messages(client: s3_client, signed_url: "https://example.test/dashboard.png?X-Amz-Signature=1")
       s3_client.stub_responses(:put_object, {})
 
       file = Tempfile.new([ "screenshot", ".png" ])

@@ -4,9 +4,17 @@ module Inbox
   class Queue
     CLARIFYING_QUESTIONS_KIND = "clarifying_questions"
     PLAN_REVIEW_KIND = "plan_review"
+    MERGE_APPROVAL_KIND = "merge_approval"
+    ACTION_REQUIRED_KIND = "action_required"
+    ESCALATED_PR_KIND = "escalated_pr"
+    MANUAL_REVIEW_KIND = "manual_review"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
-      PLAN_REVIEW_KIND
+      PLAN_REVIEW_KIND,
+      MERGE_APPROVAL_KIND,
+      ACTION_REQUIRED_KIND,
+      ESCALATED_PR_KIND,
+      MANUAL_REVIEW_KIND
     ].freeze
 
     Entry = Struct.new(
@@ -18,6 +26,9 @@ module Inbox
       :waiting_since,
       :questions,
       :tasks,
+      :summary_text,
+      :title_text,
+      :action_url,
       keyword_init: true
     ) do
       def to_param
@@ -32,16 +43,31 @@ module Inbox
         kind == CLARIFYING_QUESTIONS_KIND
       end
 
+      def merge_approval?
+        kind == MERGE_APPROVAL_KIND
+      end
+
+      def action_required?
+        kind == ACTION_REQUIRED_KIND
+      end
+
+      def escalated_pr?
+        kind == ESCALATED_PR_KIND
+      end
+
+      def manual_review?
+        kind == MANUAL_REVIEW_KIND
+      end
+
       def title
-        issue.title
+        title_text.presence || issue&.title || record.try(:title)
       end
 
       def summary
-        if clarifying_questions?
-          questions.first(2).join(" ").truncate(220)
-        else
-          "#{tasks.size} proposed tasks"
-        end
+        return questions.first(2).join(" ").truncate(220) if clarifying_questions?
+        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review?
+
+        "#{tasks.size} proposed tasks"
       end
     end
 
@@ -55,11 +81,15 @@ module Inbox
       @kind = kind.to_s.presence
     end
 
-    # @spec INBOX-FOUNDATION-003
+    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D
     def call
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
       entries.concat(plan_review_entries) if include_kind?(PLAN_REVIEW_KIND)
+      entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
+      entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
+      entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
+      entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
       sort_entries(entries)
     end
 
@@ -76,9 +106,9 @@ module Inbox
         [
           entry.waiting_since.nil? ? 1 : 0,
           entry.waiting_since,
-          entry.project.owner,
-          entry.project.repo,
-          entry.issue.github_number,
+          entry.project&.owner.to_s,
+          entry.project&.repo.to_s,
+          entry.issue&.github_number || 0,
           entry.id
         ]
       end
@@ -97,7 +127,10 @@ module Inbox
           record: issue,
           waiting_since: issue.needs_input_since,
           questions: questions,
-          tasks: []
+          tasks: [],
+          summary_text: nil,
+          title_text: nil,
+          action_url: nil
         )
       end
     end
@@ -177,9 +210,201 @@ module Inbox
           record: review,
           waiting_since: review.created_at,
           questions: [],
-          tasks: tasks
+          tasks: tasks,
+          summary_text: nil,
+          title_text: nil,
+          action_url: nil
         )
       end
+    end
+
+    def merge_approval_entries
+      merge_approval_issues.filter_map do |issue|
+        snapshot = Inbox::MergeApproval.call(issue)
+        next unless snapshot
+
+        Entry.new(
+          id: "#{MERGE_APPROVAL_KIND}:#{issue.id}",
+          kind: MERGE_APPROVAL_KIND,
+          project: issue.project,
+          issue: issue,
+          record: issue,
+          waiting_since: snapshot.waiting_since,
+          questions: [],
+          tasks: [],
+          summary_text: snapshot.summary,
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    def action_required_entries
+      visible_blocking_notifications.filter_map do |notification|
+        project, issue = notification_context(notification)
+        next unless project
+        next if project_filter_excludes?(project)
+
+        Entry.new(
+          id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
+          kind: ACTION_REQUIRED_KIND,
+          project: project,
+          issue: issue,
+          record: notification,
+          waiting_since: notification.created_at,
+          questions: [],
+          tasks: remediation_steps_for(notification),
+          summary_text: notification.metadata["recommended_action"],
+          title_text: notification.title,
+          action_url: notification.action_url
+        )
+      end
+    end
+
+    def merge_approval_issues
+      @merge_approval_issues ||= begin
+        ids = scoped_projects.map(&:id)
+        return Issue.none if ids.empty?
+
+        Issue
+          .includes(:project)
+          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+      end
+    end
+
+    # Reuses Dashboard::BlockedPullRequests (PR-ESCALATION-011/012/013) rather
+    # than reimplementing the escalated-PR query, then narrows the account-wide
+    # result to the operator's auto-pick-gated projects, the same scope every
+    # other inbox kind uses. That is a deliberate divergence from the
+    # dashboard panel's account-wide scope (see operator-inbox-design.md).
+    # @spec OPERATOR-INBOX-002C
+    def escalated_pr_entries
+      ids = scoped_projects.map(&:id)
+      return [] if ids.empty?
+
+      Dashboard::BlockedPullRequests.call(account: user.account)
+        .select { |blocked| ids.include?(blocked.pull_request.project_id) }
+        .map { |blocked| escalated_pr_entry(blocked) }
+    end
+
+    def escalated_pr_entry(blocked)
+      pr = blocked.pull_request
+
+      Entry.new(
+        id: "#{ESCALATED_PR_KIND}:#{pr.id}",
+        kind: ESCALATED_PR_KIND,
+        project: pr.project,
+        issue: pr,
+        record: blocked,
+        waiting_since: blocked.blocked_since,
+        questions: [],
+        tasks: [],
+        summary_text: ApplicationHelper::ESCALATION_REASON_LABELS.fetch(blocked.reason.to_s, "Stopped"),
+        title_text: nil,
+        action_url: nil
+      )
+    end
+
+    # Only an explicit operator-triggered run clears manual_review
+    # (ISSUE-ENHANCEMENT-011), so this lane exists purely to surface the state
+    # and offer that action — it derives from `paid_state` directly, the same
+    # way clarifying_questions and escalated_pr do, rather than a separate
+    # notification.
+    # @spec OPERATOR-INBOX-002D
+    def manual_review_entries
+      ordered_manual_review_issues.map do |issue|
+        Entry.new(
+          id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
+          kind: MANUAL_REVIEW_KIND,
+          project: issue.project,
+          issue: issue,
+          record: issue,
+          waiting_since: issue.manual_review_started_at || issue.updated_at,
+          questions: [],
+          tasks: [],
+          summary_text: issue.manual_review_reason.presence || "Manual review required.",
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    # NULLS LAST mirrors ordered_clarifying_issues: legacy rows entering
+    # manual_review before manual_review_started_at existed sort to the end
+    # rather than pretending to have been waiting forever.
+    def ordered_manual_review_issues
+      ids = scoped_projects.map(&:id)
+      return Issue.none if ids.empty?
+
+      Issue
+        .joins(:project)
+        .includes(:project)
+        .where(project_id: ids, paid_state: "manual_review", github_state: "open")
+        .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
+        .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
+    end
+
+    def visible_blocking_notifications
+      @visible_blocking_notifications ||= begin
+        notifications = NotificationPolicy::Scope.new(user, Notification).resolve
+          .active
+          .blocking
+          .includes(:subject)
+          .recent
+          .to_a
+
+        preload_notification_subjects(notifications)
+        notifications
+      end
+    end
+
+    # notification_context dereferences subject.project for every entry, and
+    # for AgentRun subjects also calls source_pull_request_record. Batch both
+    # up front so an inbox page with N blocking notifications doesn't issue
+    # O(N) extra project/PR lookups.
+    def preload_notification_subjects(notifications)
+      Notification.preload_resolved_projects(notifications)
+
+      subjects = notifications.filter_map(&:subject)
+      agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
+      runners = subjects.select { |subject| subject.is_a?(Runner) }
+
+      ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
+      ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
+      AgentRun.preload_source_pull_requests(agent_runs)
+    end
+
+    def remediation_steps_for(notification)
+      steps = Array(notification.metadata["remediation_steps"])
+      return steps if steps.any?
+
+      Array(notification.metadata["recommended_action"])
+    end
+
+    def notification_context(notification)
+      issue = case notification.subject
+      when Issue then notification.subject
+      when AgentRun then notification.subject.source_pull_request_record || notification.subject.issue
+      end
+
+      project = case notification.subject
+      when Runner then runner_project(notification.subject)
+      else notification.resolved_project
+      end
+
+      [ project, issue ]
+    end
+
+    def project_filter_excludes?(candidate_project)
+      project.present? && candidate_project.id != project.id
+    end
+
+    def runner_project(runner)
+      runner_projects_by_user_id[runner.user_id]&.first
+    end
+
+    def runner_projects_by_user_id
+      @runner_projects_by_user_id ||= scoped_projects.group_by(&:created_by_id)
     end
   end
 end

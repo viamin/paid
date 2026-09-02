@@ -57,7 +57,7 @@ RSpec.describe "AgentRuns" do
 
         expect(goal_cell.text).to include("PR Creation")
         expect(truncated_label["title"]).to be_nil
-        expect(goal_cell.at_css('[data-controller="tooltip"]')).to be_nil
+        expect(goal_cell.at_css('details')).to be_nil
         expect(goal_cell.at_css('span[role="tooltip"]')).to be_nil
       end
 
@@ -184,13 +184,14 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         context_cell = cell_for_run(parsed_html, run, "Context")
-        tooltip_wrapper = context_cell.at_css('[data-controller="tooltip"]')
+        tooltip_wrapper = context_cell.at_css('details')
         tooltip_content = tooltip_wrapper&.at_css('span[role="tooltip"]')
 
         expect(context_cell.text).to include("PR ##{run.source_pull_request_number}")
         expect(tooltip_wrapper).to be_present
         expect(tooltip_content).to be_present
         expect(tooltip_content.text).to include(source_pull_request.title)
+        expect(tooltip_wrapper.at_css("a")["aria-describedby"]).to eq(tooltip_content["id"])
       end
 
       it "shows custom prompt context separately from the goal label" do
@@ -208,7 +209,7 @@ RSpec.describe "AgentRuns" do
         expect(goal_cell.text).not_to include(goal_text)
         expect(context_cell.text).to include(goal_text)
         expect(context_cell.at_css("span[title]")["title"]).to eq(goal_text)
-        expect(context_cell.at_css('[data-controller="tooltip"]')).to be_present
+        expect(context_cell.at_css('details')).to be_present
       end
 
       it "shows a titleized fallback label for unexpected goal values" do
@@ -2371,6 +2372,114 @@ RSpec.describe "AgentRuns" do
         post unblock_escalation_project_agent_runs_path(project), params: { pull_request_id: escalated_pr.id }
 
         expect(flash[:alert]).to include("#{project.full_name}#88")
+      end
+
+      # @spec OPERATOR-INBOX-002C
+      it "redirects back to the inbox when return_to points there" do
+        post unblock_escalation_project_agent_runs_path(project),
+          params: {
+            pull_request_id: escalated_pr.id,
+            return_to: inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND)
+          }
+
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND))
+      end
+
+      # @spec OPERATOR-INBOX-002C
+      it "ignores an external return_to and falls back to the dashboard" do
+        post unblock_escalation_project_agent_runs_path(project),
+          params: { pull_request_id: escalated_pr.id, return_to: "https://evil.example.com" }
+
+        expect(response).to redirect_to(dashboard_path)
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
+    let(:parked_issue) do
+      create(:issue,
+        project: project,
+        github_number: 89,
+        title: "Fix flaky specs",
+        paid_state: "manual_review",
+        manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+    end
+
+    context "when not authenticated" do
+      # @spec OPERATOR-INBOX-002D
+      it "redirects to the sign in page" do
+        post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec OPERATOR-INBOX-002D
+      it "refuses to queue a run" do
+        post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+
+        expect(response).not_to have_http_status(:ok)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "queues a manual enhance_issue run for the parked issue" do
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.issue).to eq(parked_issue)
+        expect(agent_run.goal).to eq("enhance_issue")
+        expect(agent_run.trigger_type).to eq("manual")
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "refuses when no issue is selected" do
+        post resume_manual_review_project_agent_runs_path(project), params: {}
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to be_present
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "refuses an issue that is not in manual_review" do
+        other_issue = create(:issue, project: project, paid_state: "new")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: other_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "redirects to the project page on success regardless of return_to" do
+        post resume_manual_review_project_agent_runs_path(project),
+          params: {
+            issue_id: parked_issue.id,
+            return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+          }
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "redirects back to the inbox on failure when return_to points there" do
+        post resume_manual_review_project_agent_runs_path(project),
+          params: { return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND) }
+
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
       end
     end
   end

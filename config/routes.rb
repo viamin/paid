@@ -267,11 +267,13 @@ Rails.application.routes.draw do
       post :diagnose_error, on: :member
       post :resume, on: :member
       post :terminate, on: :member
+      post :promote_session_summary, on: :member
       get :provenance, on: :member
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
       post :unblock_escalation, on: :collection
+      post :resume_manual_review, on: :collection
       get :docker_host_options, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
@@ -304,6 +306,7 @@ Rails.application.routes.draw do
       post :complete
     end
     resource :pdf_knowledge_import, only: [ :new, :create ], controller: "projects/pdf_knowledge_imports"
+    resource :okf_export, only: [ :new, :create ], controller: "projects/okf_exports"
     post :ensure_labels, on: :member
 
     resources :knowledge_recommendations, only: [ :index, :update ],
@@ -323,6 +326,7 @@ Rails.application.routes.draw do
       resources :browse, only: [ :index, :show ]
       get "search", to: "search#project_search", as: :search
       get "search/results", to: "search#project_search_results", as: :search_results
+      get "quality", to: "quality#show", as: :quality
     end
 
     # Preview session lifecycle. The iframe "show" page is served at /previews/:id
@@ -354,11 +358,14 @@ Rails.application.routes.draw do
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
     get "proxy/knowledge/search", to: "proxy/knowledge_search#search"
+    get "proxy/knowledge/map", to: "proxy/knowledge_map#show"
     get "proxy/research/fetch", to: "proxy/research#fetch"
     get "proxy/research/search", to: "proxy/research#search"
     get "proxy/git-credentials", to: "git_credentials#show"
 
     get "knowledge/search", to: "knowledge_search#search"
+    get "knowledge/map", to: "knowledge_map#show"
+    get "knowledge/quality", to: "knowledge_quality#show"
     get "knowledge/audit", to: "knowledge_audit#index"
     resources :marketplace_entries, only: [ :index, :show ]
 

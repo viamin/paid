@@ -9,7 +9,6 @@ RSpec.describe "Runner smoke test UI", :runner_smoke, system_driver: :paid_cupri
 
   let(:scenario) { RunnerSmokeHelpers.scenarios_from_env.first }
   let(:unique_suffix) { SecureRandom.hex(6) }
-  let(:browser_path) { ENV["CHROMIUM_PATH"].presence || "/usr/bin/chromium" }
   let!(:account) { create(:account, slug: "runner-smoke-ui-#{unique_suffix}") }
   let!(:user) do
     create(
@@ -31,7 +30,7 @@ RSpec.describe "Runner smoke test UI", :runner_smoke, system_driver: :paid_cupri
   end
 
   it "runs the runner smoke test from the runners page" do
-    skip "Chromium is not available for runner smoke system tests" unless File.exist?(browser_path)
+    skip "Chromium is not available for runner smoke system tests" unless chromium_path
     skip "No runner smoke scenarios configured" if scenario.nil?
 
     RunnerSmokeHelpers.create_smoke_project!(user: user)

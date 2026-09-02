@@ -66,11 +66,11 @@ RSpec.describe Dashboard::RunnerHealth do
       expect(stats[:runners].map(&:status)).to eq([ :recovering ])
     end
 
-    it "includes free-model availability details for openrouter_free runners" do
+    it "includes free-model availability details for free-policy opencode runners" do
       create_openrouter_free_runner_with_rate_limited_model(user:)
 
       summary = described_class.call(account: account)[:runners]
-        .find { |entry| entry.runner_key == "openrouter_free" }
+        .find { |entry| entry.runner_key == "opencode" }
         .free_model_summary
 
       expect(summary).to include(available: 1, total: 2, rate_limited: 1)
@@ -128,9 +128,10 @@ RSpec.describe Dashboard::RunnerHealth do
       runner = create(
         :runner,
         user: user,
-        runner_key: "openrouter_free",
+        runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
         tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
       )
       create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)

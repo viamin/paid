@@ -43,13 +43,12 @@ class FeatureFlags
       rollout_plan: "Default-off; enable only for scoped prompt investigation because it builds the alternate prompt path.",
       cleanup_criteria: "Remove once PromptAssembly parity is proven or a dedicated prompt comparison UI exists."
     ),
-    # @spec MODEL-POLICY-FORM-001
     runner_model_policy_form: Definition.new(
       name: :runner_model_policy_form,
-      owner: "runner-model-selection",
-      intent: "Gate the RDR-065 catalog-driven Model dropdown (Runners::ModelOptions: Free policy / Pareto / specific catalog rows / custom) on direct-outbound runners (opencode, kilocode, pi, omp) so free-text model ids are replaced by a discoverable, compatibility-filtered select.",
-      rollout_plan: "Per-tenant opt-in via tenant_settings.features; percentage-of-actors rollout once telemetry confirms parity with the legacy free-text model form (RDR-065).",
-      cleanup_criteria: "Remove once the new dropdown is the default for at least one billing period and Models::DetectBrokenRunnerModels / runner_settings_invalid telemetry matches or improves vs. legacy, and the openrouter_free/openrouter_pareto migration (RDR-065) is verified."
+      owner: "runner-config",
+      intent: "Gate the runner form rework that derives provider choice from API keys and uses catalog-backed model selection for direct-outbound runners (RDR-065).",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features, then expand after form parity metrics match or beat the legacy flow.",
+      cleanup_criteria: "Remove once the catalog-backed runner model form is the default and the legacy direct-outbound form path is retired."
     )
   }.freeze
 

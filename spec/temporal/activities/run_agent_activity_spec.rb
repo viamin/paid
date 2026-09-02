@@ -189,7 +189,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     activity.send(:run_runner_preflight!,
       agent_run: agent_run,
-      container_service: container_service,
+      execution_environment: container_service,
       command_context: command_context,
       runner: provider.runner_key,
       execution_env: {})
@@ -976,7 +976,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       # OpenRouter ids are "<vendor>/<model>" slugs that opencode addresses
       # directly, so they pass through unchanged (matching the execute path and
-      # openrouter_free runtime) rather than gaining a redundant prefix.
+      # free-policy runtime) rather than gaining a redundant prefix.
       expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
     end
 
@@ -1005,7 +1005,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime.model).to eq("minimax/MiniMax-M3")
     end
 
-    it "builds OpenRouter provider routing for openrouter_free runs from project classification" do
+    it "builds OpenRouter provider routing for free-policy runs from project classification" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
       restricted_run = build_openrouter_free_run(project: project, model: free_model, data_classification: "restricted")
@@ -1014,6 +1014,24 @@ RSpec.describe Activities::RunAgentActivity do
       runtime = activity.send(:selected_runner_runtime, runner, user, restricted_run)
 
       expect(runtime.model).to eq("deepseek/deepseek-v4-flash:free")
+      expect(runtime.env).to include(
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "openrouter" => { data_collection: "deny", zdr: true } }
+      )
+    end
+
+    it "preserves OpenRouter provider routing for migrated pareto runs" do # @spec MODEL-POLICY-009
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      project.update!(data_classification: "restricted")
+      runner = create_migrated_pareto_runner(user: user, api_key: api_key)
+      restricted_run = create_runner_backed_agent_run(project: project, runner: runner)
+
+      runtime = activity.send(:selected_runner_runtime, runner, user, restricted_run)
+
+      expect(runtime.model).to eq("openrouter/pareto-code")
       expect(runtime.env).to include(
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
@@ -1095,7 +1113,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime).to have_attributes(model: "qwen/qwen3-coder:free", api_provider: "openrouter")
     end
 
-    it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
+    it "raises instead of falling back to an unpinned runtime when no free model resolves for a free-policy runner" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
       run = build_openrouter_free_run(project: project, model: free_model, data_classification: "internal")
@@ -2003,9 +2021,9 @@ RSpec.describe Activities::RunAgentActivity do
     fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
     expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(third_config).not_to have_key("provider")
+    expect(third_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
     expect(fourth_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(fourth_config).not_to have_key("provider")
+    expect(fourth_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -2127,9 +2145,10 @@ RSpec.describe Activities::RunAgentActivity do
     create(
       :runner,
       user: user,
-      runner_key: "openrouter_free",
+      runner_key: "opencode",
       auth_type: "api_key",
       provider_api_key: api_key,
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
       tier_model_ids: LlmModel::TIERS.index_with { model }
     ).tap do |runner|
       runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => model, "provider_id" => runner.id } })
@@ -2171,6 +2190,20 @@ RSpec.describe Activities::RunAgentActivity do
       tier_models: {
         "mid" => { "model_id" => model, "provider_id" => 17 }
       }
+    )
+  end
+
+  def create_migrated_pareto_runner(user:, api_key:)
+    create(
+      :runner,
+      user: user,
+      runner_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      enabled_for_agent_runs: true,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      config: { "opencode" => { "model_policy" => "specific", "model" => "openrouter/pareto-code" } }
     )
   end
 
@@ -4022,7 +4055,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "reprovisions the container and continues with the fallback runner" do
-        expect(agent_run).to receive(:provision_container).with(restart_provisioning_cycle: true) do
+        expect(agent_run).to receive(:provision_execution_environment).with(restart_provisioning_cycle: true) do
           agent_run.update!(container_id: "reprovisioned-123")
         end
 
@@ -4063,7 +4096,7 @@ expect(container_service).to receive(:execute).with(
             exec_success
           end
         end
-        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(agent_run).to receive(:provision_execution_environment) { agent_run.update!(container_id: "reprovisioned-123") }
         allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
           raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
 
@@ -4116,7 +4149,7 @@ expect(container_service).to receive(:execute).with(
           end
         end
 
-        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(agent_run).to receive(:provision_execution_environment) { agent_run.update!(container_id: "reprovisioned-123") }
 
         reconnect_calls = 0
         allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
@@ -4158,7 +4191,7 @@ expect(container_service).to receive(:execute).with(
             diagnostics: { "elapsed_seconds" => 901.2, "output_received" => true, "heartbeat_active" => false }
           )
         end
-        allow(agent_run).to receive(:provision_container).and_raise(Containers::Provision::ProvisionError, "docker unavailable")
+        allow(agent_run).to receive(:provision_execution_environment).and_raise(Containers::Provision::ProvisionError, "docker unavailable")
       end
 
       it "preserves the timeout instead of failing the fallback with no container" do
@@ -4384,10 +4417,10 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted).to eq([])
       end
 
-      it "filters openrouter_free before execution when no free model resolves for the requested tier" do
+      it "filters a free-policy runner before execution when no free model resolves for the requested tier" do
         fallback_runner = create_low_only_openrouter_free_runner(user: user)
         user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_runner.routing_key ])
-        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude openrouter_free])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
 
         expect(container_service).not_to receive(:execute)
 

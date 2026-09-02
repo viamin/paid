@@ -305,6 +305,14 @@ RSpec.describe Knowledge::DashboardStats do
         summary = stats[:knowledge_usage_summary].to_h
         expect(summary["route"]).to eq(10)
       end
+
+      # @spec KNOWLEDGE-CURATED-005
+      it "buckets usage by curated/derived lane" do
+        run = create(:agent_run, project: project, goal: "create_pr")
+        create(:knowledge_usage_stat, agent_run: run, project: project, artifact_type: "decision_record", artifact_count: 4)
+
+        expect(stats[:usage_by_lane]).to eq("curated" => 4, "derived" => 15)
+      end
     end
 
     context "with no knowledge usage stats" do
@@ -314,6 +322,10 @@ RSpec.describe Knowledge::DashboardStats do
 
       it "returns empty usage by goal" do
         expect(stats[:usage_by_goal]).to be_empty
+      end
+
+      it "returns zero counts for usage by lane" do
+        expect(stats[:usage_by_lane]).to eq("curated" => 0, "derived" => 0)
       end
     end
 

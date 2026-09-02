@@ -62,6 +62,14 @@ RSpec.describe Notification do
       notification.severity = :error
       expect(notification).to be_valid
     end
+
+    # @spec NOTIFICATION-SEVERITY-007
+    it "requires blocking notifications to use error severity" do
+      notification = build(:notification, blocking: true, severity: :warning)
+
+      expect(notification).not_to be_valid
+      expect(notification.errors[:blocking]).to include("requires error severity")
+    end
   end
 
   describe "enums" do
@@ -108,6 +116,36 @@ RSpec.describe Notification do
       end
     end
 
+    describe ".badging" do
+      # @spec NOTIFICATION-SEVERITY-004
+      it "returns active, unread warning and error notifications" do
+        warning = create(:notification, :warning, account: account)
+        error = create(:notification, :error, account: account)
+
+        expect(described_class.badging).to contain_exactly(warning, error)
+      end
+
+      # @spec NOTIFICATION-SEVERITY-004
+      it "excludes info, read, dismissed, and resolved notifications" do
+        create(:notification, :info, account: account)
+        create(:notification, :warning, :read, account: account)
+        create(:notification, :warning, :dismissed, account: account)
+        create(:notification, :warning, :resolved, account: account)
+
+        expect(described_class.badging).to be_empty
+      end
+    end
+
+    describe ".blocking" do
+      # @spec NOTIFICATION-SEVERITY-007
+      it "returns only blocking notifications" do
+        blocking = create(:notification, :error, account: account, blocking: true)
+        create(:notification, :error, account: account, blocking: false)
+
+        expect(described_class.blocking).to contain_exactly(blocking)
+      end
+    end
+
     describe ".for_nav_section" do
       it "returns notifications for the given nav section" do
         projects = create(:notification, account: account, nav_section: "projects")
@@ -124,6 +162,36 @@ RSpec.describe Notification do
 
         expect(described_class.recent).to eq([ recent, old ])
       end
+    end
+  end
+
+  describe "#resolved_project" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    it "returns the subject itself when the subject is a project" do
+      notification = create(:notification, account: account, subject: project)
+
+      expect(notification.resolved_project).to eq(project)
+    end
+
+    it "returns the subject's project when the subject responds to :project" do
+      issue = create(:issue, project: project)
+      notification = create(:notification, account: account, subject: issue)
+
+      expect(notification.resolved_project).to eq(project)
+    end
+
+    it "returns nil when the subject does not resolve to a project" do
+      notification = create(:notification, account: account, subject: account)
+
+      expect(notification.resolved_project).to be_nil
+    end
+
+    it "returns nil when there is no subject" do
+      notification = create(:notification, account: account, subject: nil)
+
+      expect(notification.resolved_project).to be_nil
     end
   end
 end

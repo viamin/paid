@@ -134,6 +134,8 @@ module Guardrails
     end
 
     def recommended_action
+      return pr_token_budget_recommended_action if pr_token_budget_blocking?
+
       case violation_type
       when "loop_detected"
         "Review agent output for repeated patterns. Consider adjusting the prompt or terminating if the agent is stuck."
@@ -200,6 +202,7 @@ module Guardrails
         source: "guardrail_#{violation_type}",
         subject: agent_run,
         severity: notification_severity,
+        blocking: blocking_notification?,
         title: notification_title,
         description: details,
         metadata: {
@@ -209,9 +212,10 @@ module Guardrails
           trigger_type: agent_run.trigger_type,
           metrics: context[:metrics],
           recommended_action: context[:recommended_action],
+          remediation_steps: remediation_steps,
           triggered_at: context[:triggered_at]
         },
-        action_url: project_agent_run_path(agent_run.project, agent_run),
+        action_url: notification_action_url,
         nav_section: "agent_runs"
       )
     end
@@ -223,6 +227,34 @@ module Guardrails
     def notification_title
       action = terminal_violation? ? "terminated" : "paused"
       "Agent run ##{agent_run.id} #{action} by #{violation_type.tr("_", " ")} guardrail"
+    end
+
+    def blocking_notification?
+      violation_type == "token_budget" && agent_run.existing_pr?
+    end
+
+    def pr_token_budget_blocking?
+      violation_type == "token_budget" && blocking_notification?
+    end
+
+    def pr_token_budget_recommended_action
+      "PR exhausted its input token budget - review output so far, or raise the project/provider token budget to let continuation proceed."
+    end
+
+    def remediation_steps
+      return unless pr_token_budget_blocking?
+
+      [
+        "Review the PR output and logs produced before the token budget was exhausted.",
+        "Raise the project or provider input token budget if you want continuation to proceed automatically.",
+        "Re-run or continue the PR after adjusting the budget or taking over manually."
+      ]
+    end
+
+    def notification_action_url
+      return if blocking_notification?
+
+      project_agent_run_path(agent_run.project, agent_run)
     end
 
     class Result

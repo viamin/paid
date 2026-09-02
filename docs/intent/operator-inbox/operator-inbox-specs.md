@@ -19,6 +19,71 @@
   *Code:* `app/services/inbox/queue.rb`, `app/models/decomposition_decision.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002A** — When an open PR's persisted auto-merge blocker
+  snapshot reduces to approval-only failures (`owner_approved` and/or
+  `reviews_fresh`) with no other failed or not-evaluated blockers, the system
+  SHALL expose that PR as a `merge_approval` inbox entry until a later PR scan
+  records a non-approval blocker, a fresh approval, or a merge/close outcome.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
+  `blocking: true`, the system SHALL expose it as an `action_required` inbox
+  entry until the notification resolves or is dismissed, reusing notification
+  metadata for remediation copy instead of introducing a separate persistence
+  model.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/services/inbox/count_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
+  `escalated` and its project is in the operator's auto-pick-gated scope
+  (`INBOX-FOUNDATION-006`, the same gate every other inbox kind uses — this is
+  a deliberate divergence from the dashboard's account-wide Blocked PRs panel,
+  so the two surfaces are not expected to agree on counts), the system SHALL
+  expose that pull request as an `escalated_pr` inbox entry showing the
+  escalation reason, how long it has been stopped (`pr_escalation_started_at`,
+  falling back to `updated_at`), and the tripped counters computed by
+  `Dashboard::BlockedPullRequests` (reused, not reimplemented), including its
+  operator-paused indicator when the pull request is both escalated and
+  paused. The entry SHALL offer the `unblock_escalation` clearing action for
+  every reason except `awaiting_approval`, for which the entry SHALL instead
+  direct the operator to re-approve the pull request on GitHub. The entry
+  SHALL clear on every recovery path the escalation itself clears through
+  (label removal, draft conversion, Unblock from either the dashboard or the
+  inbox, and operational auto-dismissal), and an escalation with reason
+  `awaiting_approval` SHALL remain a visible inbox entry across the `ready` →
+  `escalated` transition rather than disappearing from the queue and the nav
+  badge.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_escalated_pr.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002D** — When an open issue's `paid_state` is
+  `manual_review` and its project is in the operator's auto-pick-gated scope
+  (`INBOX-FOUNDATION-006`, the same gate every other inbox kind uses), the
+  system SHALL expose that issue as a `manual_review` inbox entry showing why
+  automation stopped (`manual_review_reason`) and how long it has been stopped
+  (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
+  `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
+  `enhance_issue` run as its clearing action, since automatic picking excludes
+  `manual_review` and only an explicit operator-triggered run resumes work
+  (`ISSUE-ENHANCEMENT-011`). The entry SHALL clear when the issue leaves
+  `manual_review` or its underlying GitHub issue closes.
+  `Dashboard::EligibilityBreakdown` SHALL report `manual_review` as its own
+  named bucket instead of folding it into the unnamed `other_excluded`
+  remainder, and `Inbox::Count`'s cached badge SHALL invalidate on transitions
+  into and out of `manual_review` via `Dashboard::CacheVersion`'s `INBOX_SCOPE`.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/dashboard/eligibility_breakdown_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

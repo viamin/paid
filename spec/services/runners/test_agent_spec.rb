@@ -745,6 +745,43 @@ RSpec.describe Runners::TestAgent do
       end
     end
 
+    context "when a direct-outbound specific-model opencode runner (e.g. migrated Pareto) is tested" do
+      let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter") }
+      let(:runner_record) do
+        create(
+          :provider,
+          user: user,
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/pareto-code", "model_policy" => "specific" } }
+        )
+      end
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "opencode")
+        stub_container_smoke_test(
+          name: :opencode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "passes the test project so the runtime carries data-collection/zdr routing metadata" do
+        described_class.call(runner: provider)
+
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :opencode,
+          timeout: 60,
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: have_attributes(
+            metadata: hash_including(config: hash_including("provider" => hash_including("openrouter")))
+          )
+        )
+      end
+    end
+
     context "when direct-outbound kilocode is tested" do
       let(:api_key) { create(:runner_api_key, user: user, api_service_type: "anthropic") }
       let(:runner_record) do
@@ -769,7 +806,7 @@ RSpec.describe Runners::TestAgent do
           container_executable_runner_key?: true, harness_runner_key_for: "kilocode")
         stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
-        allow(test_run).to receive(:execute_in_container).and_return(prep_result)
+        allow(test_run).to receive(:execute_in_execution_environment).and_return(prep_result)
         allow(AgentHarness).to receive(:check_provider).and_return(
           name: :kilocode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
         )
@@ -789,7 +826,7 @@ RSpec.describe Runners::TestAgent do
       it "materializes the kilocode config file before the smoke test" do
         described_class.call(runner: provider)
 
-        expect(test_run).to have_received(:execute_in_container).with(
+        expect(test_run).to have_received(:execute_in_execution_environment).with(
           [ "sh", "-c", satisfy { |script|
             script.include?("mkdir -p /home/agent/.config/kilocode") &&
               script.include?("/home/agent/.config/kilocode/kilo.json")
@@ -800,7 +837,7 @@ RSpec.describe Runners::TestAgent do
 
       it "generates a v7.1.3-compatible config with provider as a record" do
         captured_env = nil
-        allow(test_run).to receive(:execute_in_container) do |cmd, **kwargs|
+        allow(test_run).to receive(:execute_in_execution_environment) do |cmd, **kwargs|
           captured_env = kwargs[:env] if cmd.is_a?(Array) && cmd.join.include?("kilo.json")
           prep_result
         end
@@ -812,18 +849,19 @@ RSpec.describe Runners::TestAgent do
       end
     end
 
-    context "when direct-outbound openrouter_free is tested" do
+    context "when a direct-outbound free-policy opencode runner is tested" do
       let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
       let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free") }
       let(:runner_record) do
         create(
           :runner,
           user: user,
-          runner_key: "openrouter_free",
+          runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
           enabled_for_agent_runs: false,
           enabled_for_fallback: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         ).tap do |runner|
           runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => free_model.model_id, "provider_id" => runner.id } })

@@ -11,7 +11,7 @@
   bind-mount compatibility path instead of the normal default.
   *Tests:* `spec/services/containers/provision_spec.rb`,
   `spec/models/agent_run_spec.rb`
-  *Code:* `Containers::Provision`, `AgentRun#provision_container`
+  *Code:* `Containers::Provision`, `AgentRun#provision_execution_environment`
 
 - [x] **CONTAINER-RUNTIME-002** — When Paid resolves Docker host placement for
   a new run, the system SHALL record explicit or preferred host-selection
@@ -184,7 +184,8 @@
   handles.
   *Tests:* `spec/models/agent_run_spec.rb`,
   `spec/migrations/add_runner_handle_to_execution_tables_spec.rb`
-  *Code:* `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
+  *Code:* `AgentRun#provision_execution_environment`,
+  `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
 
 - [x] **CONTAINER-RUNTIME-017** — The system SHALL isolate networking policy
   from Docker network implementation by carrying an
@@ -763,3 +764,67 @@
   *Tests:* `spec/services/execution_runners/local_docker_runner_spec.rb`
   *Code:* `ExecutionRunners::LocalDockerRunner.capabilities`,
   `ExecutionRunners::Base.capability_compatibility_for`
+
+- [x] **CONTAINER-RUNTIME-045** — The repository SHALL define the production-
+  readiness dimensions and benchmark capture shape that the shared runner
+  contract work tracked by `#3347` must exercise. The dimension catalog SHALL
+  cover exactly thirteen lifecycle checks: provision execution, clone fixture
+  repository, inject configuration, provide secrets securely, run workload,
+  provision service dependencies, retrieve and stream logs, report
+  success/failure, handle non-zero exits, enforce timeout, cancel a running
+  workload, clean up resources, and demonstrate retry/idempotency. The
+  benchmark report SHALL be JSON-ready and include the canonical fixture
+  workload identity plus provisioning latency, cold-start latency, execution
+  duration, cleanup latency, resource-usage fields, and estimated
+  infrastructure-cost fields so different providers can be compared
+  programmatically. The existing Docker runner SHALL emit this report from the
+  shared no-shared-filesystem conformance baseline.
+  *Tests:* `spec/services/execution_runners/conformance_suite_spec.rb`,
+  `spec/support/shared_examples/no_shared_filesystem_conformance.rb`,
+  `spec/services/execution_runners/local_docker_runner_spec.rb`
+  *Code:* `app/services/execution_runners/conformance_suite.rb`,
+  `spec/fixtures/execution_runners/conformance_repo/`,
+  `docs/intent/container-runtime/runner-conformance-benchmark-methodology.md`
+
+- [x] **CONTAINER-RUNTIME-046** — The repository SHALL document that a native
+  `docker build` of `docker/agent/Dockerfile` on some older Docker hosts —
+  observed on QNAP Container Station (`Docker Engine 27.1.2-qnap8`) — can fail
+  while extracting build-time tarballs (e.g. the pinned Ruby source archive)
+  with `tar: ... Cannot change mode to ...: Bad address`. The documented root
+  cause SHALL be the glibc >= 2.39 `fchmodat2` syscall that Ubuntu 24.04's
+  `tar`/`chmod` now issue for every mode change: when the host kernel or its
+  seccomp filter (older `libseccomp`/`runc`) does not recognize `fchmodat2`
+  and returns an error other than `ENOSYS`, glibc cannot fall back to the
+  legacy `fchmodat` syscall and the chmod call fails outright — a host-level
+  incompatibility no `tar` flag on the image side can route around, since
+  every glibc-linked chmod call on the image (not just `tar`'s) goes through
+  the same syscall. The documented, supported path for affected hosts SHALL
+  be building `paid-agent:latest` on an unaffected Docker host and loading it
+  onto the affected host with `docker save | docker load` (already the
+  verified QNAP walkthrough path for `linux/amd64` image transfer), not a
+  native build on the affected host.
+  *Tests:* documentation-only acceptance; `spec/config/agent_image_build_script_spec.rb`
+  asserts the guide names the `fchmodat2` root cause and the `docker save` /
+  `docker load` transfer path.
+  *Code:* `docs/guides/remote-docker-setup.md`
+
+- [x] **CONTAINER-RUNTIME-047** — Auto-created `paid_agent` networks SHALL NOT
+  be marked Docker-internal when the owning backend is remote, even in
+  production, because remote proxy-mode containers must reach
+  `PAID_PROXY_EXTERNAL_URL` on the Paid control plane and a Docker-internal
+  bridge network blocks that callback. `NetworkPolicy.create_network` (via
+  `NetworkPolicy.ensure_network!`) SHALL only apply the production-only
+  `Internal: true` / masquerade-disabled config to non-remote backends; the
+  in-container firewall continues to provide the egress restriction layer for
+  remote proxy-mode runs. `NetworkPolicy.ensure_network!` SHALL additionally
+  detect the broken pre-existing state where a `paid_agent` network was
+  already created with `Internal: true` on a remote backend, and SHALL raise
+  a `NetworkPolicy::Error` instructing the operator to remove the network
+  (Docker does not allow toggling `Internal` on an existing network). This
+  mirrors the guided setup wizard's
+  `DockerHosts::SetupActionRunner#docker_network_create_config`, which never
+  applied `Internal` for any backend, and the remote Docker setup guide, which
+  documents creating `paid_agent` as non-internal on remote hosts (issue
+  `#3545`).
+  *Tests:* `spec/services/network_policy_spec.rb`
+  *Code:* `NetworkPolicy.create_network`, `NetworkPolicy.ensure_network!`

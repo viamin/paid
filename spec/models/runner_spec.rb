@@ -29,6 +29,24 @@ RSpec.describe Runner do
     end
   end
 
+  describe "#update_columns legacy attribute bridge" do
+    it "mirrors runner-named values into the legacy provider key" do
+      runner = create(:runner, runner_key: "cursor")
+
+      runner.update_columns(runner_key: "codex")
+
+      expect(runner.reload.provider_key).to eq("codex")
+    end
+
+    it "mirrors legacy provider values into the runner key" do
+      runner = create(:runner, runner_key: "cursor")
+
+      runner.update_columns(provider_key: "codex")
+
+      expect(runner.reload.runner_key).to eq("codex")
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to belong_to(:provider_api_key).optional }
@@ -372,23 +390,25 @@ RSpec.describe Runner do
         expect(runner.errors[:tier_model_ids].join).to include("must match the configured direct-outbound model")
       end
 
-      it "rejects crafted tier_model_ids that pin openrouter_free to a paid model" do
+      it "rejects crafted tier_model_ids that pin a free-policy opencode runner to a paid model" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
         paid_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid")
-        runner = create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+        runner = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          config: { "opencode" => { "model_policy" => "free" } })
 
         runner.tier_model_ids = LlmModel::TIERS.index_with { paid_model.model_id }
         expect(runner).not_to be_valid
         expect(runner.errors[:tier_model_ids].join).to include("must reference free models")
       end
 
-      it "accepts free tier_model_ids for openrouter_free" do
+      it "accepts free tier_model_ids for a free-policy opencode runner" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         free_model = create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
-        runner = create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+        runner = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          config: { "opencode" => { "model_policy" => "free" } })
 
         runner.tier_model_ids = LlmModel::TIERS.index_with { free_model.model_id }
         expect(runner).to be_valid
@@ -425,16 +445,17 @@ RSpec.describe Runner do
         expect(runner.errors[:tier_models].join).to include("provider_id")
       end
 
-      it "rejects paid tier_models entries for openrouter_free" do
+      it "rejects paid tier_models entries for a free-policy opencode runner" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
         paid_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid")
-        openrouter_free_runner = create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+        free_policy_runner = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          config: { "opencode" => { "model_policy" => "free" } })
 
-        openrouter_free_runner.tier_models = { mid: { model_id: paid_model.model_id, provider_id: openrouter_free_runner.id } }
-        expect(openrouter_free_runner).not_to be_valid
-        expect(openrouter_free_runner.errors[:tier_models].join).to include("must reference a free model")
+        free_policy_runner.tier_models = { mid: { model_id: paid_model.model_id, provider_id: free_policy_runner.id } }
+        expect(free_policy_runner).not_to be_valid
+        expect(free_policy_runner.errors[:tier_models].join).to include("must reference a free model")
       end
 
       context "when runner compatibility validation is applied" do
@@ -863,12 +884,6 @@ RSpec.describe Runner do
         expect(runner).not_to be_free_model_policy
       end
 
-      it "treats the legacy openrouter_free runner as free_model_policy?" do
-        runner.runner_key = "openrouter_free"
-
-        expect(runner).to be_free_model_policy
-      end
-
       it "rejects crafted tier_model_ids that pin a free-policy opencode runner to a paid model" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
@@ -911,16 +926,11 @@ RSpec.describe Runner do
         expect(runner.display_name).to eq("OpenCode Free (OpenRouter) (API Key)")
       end
 
-      it "keeps the legacy OpenRouter Free display name unchanged" do
-        runner.runner_key = "openrouter_free"
-
-        expect(runner.display_name).to eq("OpenRouter Free")
-      end
-
       it "prevents a second free-policy runner on the same OpenRouter credential" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+        create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          name: "Free Policy Seed", config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         duplicate = build(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
           enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
@@ -934,7 +944,8 @@ RSpec.describe Runner do
         user = create(:user)
         api_key_a = create(:provider_api_key, user: user, api_service_type: "openrouter")
         api_key_b = create(:provider_api_key, user: user, api_service_type: "openrouter")
-        create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key_a)
+        create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key_a,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         second = build(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key_b,
           enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
@@ -947,7 +958,8 @@ RSpec.describe Runner do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
-        create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+        create(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+          name: "Free Policy Seed", config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
 
         specific = build(:runner, user: user, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
@@ -1571,29 +1583,6 @@ RSpec.describe Runner do
     let(:account) { create(:account, slug: "sync-tier-#{SecureRandom.hex(6)}") }
     let(:user) { create(:user, account: account, email: "sync-tier-#{SecureRandom.hex(6)}@example.com") }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
-
-    it "seeds openrouter_free tier_model_ids from active free models" do
-      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0,
-        catalog_source: "openrouter_sync")
-      create(:llm_model, model_id: "free-mid", provider: "moonshotai", tier: "mid", pricing_tier: "free", capability_score: 6.0,
-        catalog_source: "openrouter_sync")
-      create(:llm_model, model_id: "free-high", provider: "qwen", tier: "high", pricing_tier: "free", capability_score: 8.0,
-        catalog_source: "openrouter_sync")
-
-      runner = create(
-        :runner,
-        user: user,
-        runner_key: "openrouter_free",
-        auth_type: "api_key",
-        provider_api_key: api_key
-      )
-
-      expect(runner.tier_model_ids).to eq(
-        "low" => "free-low",
-        "mid" => "free-mid",
-        "high" => "free-high"
-      )
-    end
 
     # @spec MODEL-POLICY-005
     it "seeds tier_model_ids from active free models for a free-policy opencode runner" do
@@ -2314,29 +2303,18 @@ RSpec.describe Runner do
     end
   end
 
-  describe ".single_instance_runner_key?" do
-    it "returns true for the openrouter_free runner" do
-      expect(described_class.single_instance_runner_key?(Runner::OPENROUTER_FREE_RUNNER_KEY)).to be true
-    end
-
-    it "returns false for runners that allow duplicates" do
-      %w[opencode kilocode pi claude cursor].each do |key|
-        expect(described_class.single_instance_runner_key?(key)).to be false
-      end
-    end
-  end
-
   describe "free-model rotation snapshot clearing" do
     let(:user) { create(:user) }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
     let(:free_model) { create(:llm_model, :free, model_id: "free-orig", tier: "high", capability_score: 5.0) }
     let(:runner) do
-      create(:runner, user: user, runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY, auth_type: "api_key",
-        provider_api_key: api_key, tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id })
+      create(:runner, user: user, runner_key: "opencode", auth_type: "api_key",
+        provider_api_key: api_key, config: { "opencode" => { "model_policy" => "free" } },
+        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id })
     end
 
     it "clears the recovery snapshot when the user changes tier_model_ids" do
-      runner_state = user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      runner_state = user.runner_states.create!(runner_name: runner.state_key)
       runner_state.record_preferred_tier_model_ids!("high" => free_model.model_id)
 
       other_free = create(:llm_model, :free, model_id: "free-other", tier: "high", capability_score: 6.0)
@@ -2346,7 +2324,7 @@ RSpec.describe Runner do
     end
 
     it "does not clear the snapshot during a system rotation" do
-      runner_state = user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      runner_state = user.runner_states.create!(runner_name: runner.state_key)
       runner_state.record_preferred_tier_model_ids!("high" => free_model.model_id)
 
       other_free = create(:llm_model, :free, model_id: "free-other", tier: "high", capability_score: 6.0)

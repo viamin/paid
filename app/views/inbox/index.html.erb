@@ -20,7 +20,10 @@
       <% [
         [ "All", nil ],
         [ "Clarifying Questions", Inbox::Queue::CLARIFYING_QUESTIONS_KIND ],
-        [ "Plan Reviews", Inbox::Queue::PLAN_REVIEW_KIND ]
+        [ "Plan Reviews", Inbox::Queue::PLAN_REVIEW_KIND ],
+        [ "Merge Approvals", Inbox::Queue::MERGE_APPROVAL_KIND ],
+        [ "Action Required", Inbox::Queue::ACTION_REQUIRED_KIND ],
+        [ "Blocked PRs", Inbox::Queue::ESCALATED_PR_KIND ]
       ].each do |label, kind| %>
         <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
         <%= link_to label,
@@ -37,7 +40,7 @@
     <div class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm">
       <h2 class="text-sm font-semibold text-gray-900">Inbox clear</h2>
       <p class="mt-1 text-sm text-gray-500">
-        Paid does not currently have any clarifying-question or plan-review items waiting here.
+        Paid does not currently have any clarifying-question, plan-review, merge-approval, action-required, or blocked-PR items waiting here.
       </p>
     </div>
   <%# Split-pane activates at Tailwind's `lg` breakpoint (≥1024px) instead of

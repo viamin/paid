@@ -155,6 +155,17 @@ are shipped, and `#3336` stays open pending only `#3345` (remove Docker
 concepts from `AgentRun`/Temporal) and `#3348` (document a second runner
 implementation) — no other residual gaps were found.
 
+`#3345` stages the final higher-level cleanup by making the runner boundary the
+authoritative orchestration contract without removing compatibility columns yet.
+`AgentRun` exposes runner-oriented orchestration entry points
+(`provision_execution_environment`, `execute_in_execution_environment`,
+`cleanup_execution_environment`, `recover_in_flight_execution_environment!`,
+`with_execution_environment`) and keeps the older container-named methods only
+as explicit compatibility shims. Temporal phase tracking records
+`provision_execution_environment` / `cleanup_execution_environment` as the
+current orchestration phase keys while still labeling older persisted
+`provision_container` / `cleanup_container` rows for historical compatibility.
+
 - `ExecutionRunners::Base` is the abstract interface: `provision`, `start`,
   `running?`, `reconnect`, `status`, `cancel`, `cleanup`, `.compatible?`, `.ping`. Method
   names and parameters never reference Docker concepts.
@@ -194,8 +205,9 @@ implementation) — no other residual gaps were found.
 A `runner_handle` jsonb column on `agent_runs` (alongside, not replacing,
 `container_id`/`container_host`) stores the serialized `RunnerHandle` so a
 Temporal activity retry can recover after a worker restart or failover. When a
-retry finds a persisted `runner_handle`, `AgentRun#provision_via_runner` routes
-through `reuse_or_reconcile_via_runner`: it loads the handle via
+retry finds a persisted `runner_handle`, `AgentRun#provision_execution_environment`
+routes through `provision_via_runner`, which in turn routes through
+`reuse_or_reconcile_via_runner`: it loads the handle via
 `RunnerHandle.from_record`, checks `runner.running?`, and either reuses the
 still-running environment or cleans up a dead/missing one before provisioning
 fresh. A data migration backfills `runner_handle` from existing
@@ -593,6 +605,29 @@ stable enough to name explicitly:
   provider-neutral `runner_handle`; new runners should extend the handle-based
   contract, not propagate those compatibility fields upward.
 
+### Runner conformance benchmark methodology (#3358)
+
+The shared runner contract tracked by `#3347` is also the home for provider
+comparison readiness. This repository now defines that readiness surface
+explicitly instead of leaving it implicit in smoke tests:
+
+- `ExecutionRunners::ConformanceSuite.dimension_catalog` names the exact
+  thirteen lifecycle dimensions that the shared suite must map to.
+- `ExecutionRunners::ConformanceSuite.fixture_workload` defines the canonical,
+  deterministic fixture repository used for comparison runs.
+- `ExecutionRunners::ConformanceSuite::BenchmarkReport` defines the
+  JSON-ready capture format for provisioning latency, cold-start latency,
+  execution duration, cleanup latency, resource usage, cost, and per-dimension
+  pass/fail evidence.
+
+The no-shared-filesystem baseline now asserts this report shape as part of the
+existing Docker conformance path, so the executable suite proves both contract
+conformance and comparison-report compatibility. That stubbed baseline reports
+only the dimensions it actually exercises and labels the workload it actually
+ran; fixture metadata belongs only on runs that truly execute the deterministic
+repository fixture. Future providers should add their evidence to the same
+shared suite rather than creating a second benchmark framework.
+
 ### Execution resource ledger reconciliation (#3411)
 
 Provision-time `runner_handle` persistence solves retry-time recovery for a
@@ -709,6 +744,8 @@ requirement defaults to warn mode.
 - `spec/support/no_shared_filesystem_conformance.rb`
 - `spec/support/shared_examples/execution_runner_contract.rb`
 - `spec/support/shared_examples/no_shared_filesystem_conformance.rb`
+- `app/services/execution_runners/conformance_suite.rb`
+- `docs/intent/container-runtime/runner-conformance-benchmark-methodology.md`
 - `spec/services/containers/service_provisioner_spec.rb`
 - `spec/services/capacity/docker_snapshot_spec.rb`
 - `spec/services/capacity/run_admission_spec.rb`

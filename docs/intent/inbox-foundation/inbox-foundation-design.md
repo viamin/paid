@@ -12,8 +12,8 @@ prefix: INBOX
 >
 > 1. A `needs_input_since` timestamp on `Issue` so every inbox entry can answer
 >    "how long has this been waiting?"
-> 2. A typed `Inbox::Queue` service that returns structured entries — currently
->    clarifying questions, but designed to grow without UI churn.
+> 2. A typed `Inbox::Queue` service that returns structured entries —
+>    clarifying questions, plan reviews, and merge approvals without UI churn.
 
 The first user of these primitives is the existing
 `Dashboard::NeedsInputQueue` (kept as a thin delegator), so the rollout is
@@ -69,13 +69,19 @@ future inbox UI can branch on `entry.kind` instead of duck-typing the issue:
 Entry = Struct.new(:kind, :project, :issue, :questions, :waiting_since, keyword_init: true)
 ```
 
-Today only one kind exists:
+Today three kinds exist:
 
 - `:clarifying_questions` — `issue.paid_state == "needs_input"` and the issue
   has either parsed questions in `body` or a locally-persisted
   `needs_input_questions` (create_feature flow).
+- `:plan_review` — an open `DecompositionDecision` pending human review.
+- `:merge_approval` — an open PR whose persisted auto-merge blocker snapshot
+  shows approval-only failures (`owner_approved` and/or `reviews_fresh`) with
+  no other failed or short-circuited blockers. The inbox entry uses the PR's
+  approval-wait/head-activity timestamp instead of `needs_input_since`, so PRs
+  do not need to enter `paid_state: "needs_input"` just to become visible.
 
-Future kinds (`:plan_review`, `:pr_owner_approval`, `:paused_run_decision`)
+Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same
 ordering. The struct shape is fixed so the UI binds to it without churn.
 
@@ -122,6 +128,6 @@ own `is_pull_request: false` filter on top, and remaps entries to the legacy
 
 ## Future work
 
-This LLD does not introduce the inbox page UI, nor the non-clarifying-question
-kinds. Both are scoped future work; the foundation here is the smallest layer
-that unblocks both without churn.
+This LLD does not introduce additional future inbox kinds beyond the current
+set. Further kinds should plug into the same typed queue without rewriting the
+inbox surface.

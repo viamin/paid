@@ -861,31 +861,17 @@ module Activities
 
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
-      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime
+      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
       return nil if codex_subscription_auth_runtime?(runner_entry) ||
         codex_subscription_auth_candidate?(runner_candidate, user)
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
-      if runner_entry&.runner_key == "openrouter_free"
-        # Fail loudly rather than fall through to an unpinned opencode runtime.
-        # Without a resolvable free model, HarnessExecutionPlan would plan a
-        # plain opencode run that silently leaves the openrouter_free contract.
-        if model_id.blank?
-          raise RunnerExecutionError,
-            "openrouter_free runner #{runner_entry.id} has no resolvable free model for this run"
-        end
-
-        return runner_entry.openrouter_free_runner_runtime(project: agent_run&.project, model_id: model_id)
-      end
-
-      if runner_entry&.runner_key == "openrouter_pareto"
-        # The Pareto router selects models dynamically; no tier model resolution
-        # is needed — route the request directly through the Pareto router.
-        return runner_entry.openrouter_pareto_runner_runtime(project: agent_run&.project)
-      end
-
       if runner_entry&.free_model_policy?
+        # Fail loudly rather than fall through to an unpinned opencode
+        # runtime. Without a resolvable free model, HarnessExecutionPlan
+        # would plan a plain opencode run that silently leaves the
+        # free-policy contract.
         if model_id.blank?
           raise RunnerExecutionError,
             "#{runner_entry.runner_key} runner #{runner_entry.id} has no resolvable free model for this run"
@@ -952,14 +938,16 @@ module Activities
     end
 
     # Direct-outbound runners (opencode, kilocode, pi, omp) bring their own
-    # model from config and bypass the LlmModel tier catalog. openrouter_free
-    # is excluded because it still requires a tier-resolved free model.
-    # Uses the runner entry when available; falls back to the resolved runner
-    # key so bare agent-type candidates (e.g. "opencode") are still recognized.
+    # model from config and bypass the LlmModel tier catalog. A free-policy
+    # runner is excluded because it still requires a tier-resolved free
+    # model. Uses the runner entry when available; falls back to the
+    # resolved runner key so bare agent-type candidates (e.g. "opencode")
+    # are still recognized.
     def direct_outbound_runner?(runner_candidate, user)
       runner_entry = runner_entry_for(runner_candidate, user)
+      return false if runner_entry&.free_model_policy?
+
       runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
-      return false if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
       runner_entry&.requires_direct_outbound? ||
         Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
@@ -1490,7 +1478,7 @@ module Activities
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
-      container_service = begin
+      execution_environment = begin
         reconnect_container(agent_run)
       rescue Temporalio::Error::ApplicationError => e
         # When a prior runner attempt has already recorded a failure on this
@@ -1508,8 +1496,8 @@ module Activities
         raise
       end
 
-      unless container_service.container_running?
-        container_exit_info = container_exit_diagnostics(container_service)
+      unless execution_environment.container_running?
+        container_exit_info = container_exit_diagnostics(execution_environment)
         raise RunnerInfraExecutionError,
           "Container #{agent_run.container_id} is not running. #{container_exit_info}"
       end
@@ -1533,7 +1521,7 @@ module Activities
       # rate-limit fallback would leave the hook bound to the initial
       # runner's trailer for every subsequent commit in the run.
       if agent_run.repo_cloned?
-        refresh_co_author_trailer(container_service, agent_run, runner_candidate, user_settings.user)
+        refresh_co_author_trailer(execution_environment, agent_run, runner_candidate, user_settings.user)
       end
 
       prompt, verification_fallback_result = augment_prompt_for_goal(agent_run, prompt)
@@ -1555,7 +1543,7 @@ module Activities
       heartbeat = Containers::HeartbeatSetup.new(
         runner: runner,
         worktree_path: agent_run.worktree_path,
-        host_heartbeat_path: container_service.heartbeat_host_path,
+        host_heartbeat_path: execution_environment.heartbeat_host_path,
         harness_provider: resolved_harness_provider
       )
       if heartbeat.available?
@@ -1570,13 +1558,13 @@ module Activities
       # execution start so timeout/staleness semantics still begin here.
       agent_run.start! if !agent_run.running? || agent_run.started_at.blank?
 
-      Containers::TokenOptimization.rtk_init_for_runner(container_service: container_service, runner_key: runner)
+      Containers::TokenOptimization.rtk_init_for_runner(container_service: execution_environment, runner_key: runner)
 
-      pre_agent_sha = capture_head_sha(container_service, agent_run)
+      pre_agent_sha = capture_head_sha(execution_environment, agent_run)
 
       run_runner_preflight!(
         agent_run: agent_run,
-        container_service: container_service,
+        execution_environment: execution_environment,
         command_context: command_context,
         runner: runner,
         execution_env: command_env
@@ -1633,7 +1621,7 @@ module Activities
       # Runner calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
       result = with_periodic_heartbeat("executing", runner, agent_run: agent_run) do
-        container_service.execute(
+        execution_environment.execute(
           command,
           timeout: effective_timeout,
           startup_timeout: startup_timeout,
@@ -1686,7 +1674,7 @@ module Activities
         output_present = stdout.present? || stderr.present?
         output_chars = stdout.to_s.length + stderr.to_s.length
         track_harness_tokens(agent_run, runner_candidate, runner, user_settings.user, result, execution_started_at)
-        run_lid_coherence_check(agent_run: agent_run, container_service: container_service)
+        run_lid_coherence_check(agent_run: agent_run, execution_environment: execution_environment)
         agent_run.log!("system", "Agent execution succeeded with #{runner}")
         return {
           pre_agent_sha: pre_agent_sha,
@@ -1788,7 +1776,7 @@ module Activities
       raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
-    def run_runner_preflight!(agent_run:, container_service:, command_context:, runner:, execution_env:)
+    def run_runner_preflight!(agent_run:, execution_environment:, command_context:, runner:, execution_env:)
       # Run the runner-owned harness preflight (auth, CLI version,
       # OPENAI_BASE_URL reachability) when available — fails fast before
       # the smoke exec below.  The smoke exec always runs as a safety
@@ -1823,7 +1811,7 @@ module Activities
         smoke_attempt += 1
         execute_smoke_with_state_repair(
           agent_run: agent_run,
-          container_service: container_service,
+          execution_environment: execution_environment,
           command_context: command_context,
           runner: runner,
           preflight_timeout: preflight_timeout,
@@ -1924,14 +1912,14 @@ module Activities
     # CONTAINER-RUNTIME-029), wipes and re-seeds the state dir once, then
     # retries the smoke. Session data from the failed attempt is disposable:
     # stdout/JSONL remains the source of truth.
-    def execute_smoke_with_state_repair(agent_run:, container_service:, command_context:, runner:, preflight_timeout:, prompt:)
+    def execute_smoke_with_state_repair(agent_run:, execution_environment:, command_context:, runner:, preflight_timeout:, prompt:)
       command = build_command(command_context, prompt, agent_run: agent_run)
       env = command_env_for(command_context, prompt)
       preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
       attempt = 0
       loop do
         attempt += 1
-        result = container_service.execute(
+        result = execution_environment.execute(
           command,
           timeout: preflight_timeout,
           idle_timeout: preflight_timeout,
@@ -1941,7 +1929,7 @@ module Activities
         )
         return result if result.success? || attempt >= 2 || !runner_storage_failure?(runner, smoke_output(result, prompt))
 
-        repair_runner_state_dir!(container_service, agent_run: agent_run, runner: runner)
+        repair_runner_state_dir!(execution_environment, agent_run: agent_run, runner: runner)
       end
     end
 
@@ -1961,12 +1949,12 @@ module Activities
     end
 
     # @spec RUNNER-FALLBACK-004
-    def repair_runner_state_dir!(container_service, agent_run:, runner:)
+    def repair_runner_state_dir!(execution_environment, agent_run:, runner:)
       state_dir, seed_dir = RUNNER_STATE_DIRS.fetch(runner.to_s)
       # The state dir is a tmpfs mountpoint (CONTAINER-RUNTIME-029), so it
       # cannot be rm -rf'd — removing the contents works but rmdir of the
       # mountpoint fails EBUSY, which would short-circuit the seed restore.
-      result = container_service.execute(
+      result = execution_environment.execute(
         [ "sh", "-c",
          "find #{state_dir} -mindepth 1 -delete && " \
          "if [ -d #{seed_dir} ]; then cp -a #{seed_dir}/. #{state_dir}/; fi" ],
@@ -2038,8 +2026,8 @@ module Activities
       )
     end
 
-    def run_lid_coherence_check(agent_run:, container_service:)
-      Lid::CoherenceCheck.call(agent_run: agent_run, container_service: container_service, logger: logger)
+    def run_lid_coherence_check(agent_run:, execution_environment:)
+      Lid::CoherenceCheck.call(agent_run: agent_run, container_service: execution_environment, logger: logger)
     end
 
     # @spec RUNNER-FALLBACK-003
@@ -3188,9 +3176,9 @@ module Activities
       RunnerSupport.command_with_unset_env(plan.command, unset_vars)
     end
 
-    def capture_head_sha(container_service, agent_run)
+    def capture_head_sha(execution_environment, agent_run)
       git_ops = Containers::GitOperations.new(
-        container_service: container_service,
+        container_service: execution_environment,
         agent_run: agent_run
       )
       sha = git_ops.head_sha
@@ -3212,9 +3200,9 @@ module Activities
       return unless agent_run.container_id.present?
 
       committed = with_change_detection_retry(agent_run, operation: "commit_uncommitted_changes") do
-        container_service = reconnect_container(agent_run)
+        execution_environment = reconnect_container(agent_run)
         git_ops = Containers::GitOperations.new(
-          container_service: container_service,
+          container_service: execution_environment,
           agent_run: agent_run
         )
 
@@ -3280,10 +3268,10 @@ module Activities
       return false unless agent_run.container_id.present?
 
       with_change_detection_retry(agent_run, operation: "check_for_changes") do
-        container_service = reconnect_container(agent_run)
+        execution_environment = reconnect_container(agent_run)
 
         git_ops = Containers::GitOperations.new(
-          container_service: container_service,
+          container_service: execution_environment,
           agent_run: agent_run
         )
 
@@ -3408,9 +3396,9 @@ module Activities
       agent_run.reload
       return true if agent_run.container_id.blank?
 
-      container_service = reconnect_container(agent_run)
+      execution_environment = reconnect_container(agent_run)
 
-      !container_service.container_running?
+      !execution_environment.container_running?
     rescue StandardError => e
       return true if e.is_a?(ActiveRecord::RecordNotFound)
       return true if e.is_a?(Temporalio::Error::ApplicationError) && e.type == "ContainerNotProvisioned"
@@ -3424,11 +3412,11 @@ module Activities
 
     def reprovision_container_for_fallback!(agent_run)
       agent_run.ensure_proxy_token!
-      agent_run.provision_container(restart_provisioning_cycle: true)
+      agent_run.provision_execution_environment(restart_provisioning_cycle: true)
       return unless agent_run.repo_cloned?
 
-      container_service = reconnect_container(agent_run)
-      git_ops = Containers::GitOperations.new(container_service: container_service, agent_run: agent_run)
+      execution_environment = reconnect_container(agent_run)
+      git_ops = Containers::GitOperations.new(container_service: execution_environment, agent_run: agent_run)
       restore_repo_for_fallback!(git_ops, agent_run)
       git_ops.install_artifact_excludes
       install_quality_hooks_for_fallback(git_ops, agent_run)
@@ -3451,8 +3439,8 @@ module Activities
       install_quality_hooks(git_ops, agent_run)
     end
 
-    def container_exit_diagnostics(container_service)
-      container = container_service.container
+    def container_exit_diagnostics(execution_environment)
+      container = execution_environment.container
       return "Container object unavailable." unless container
 
       container.refresh!
@@ -4113,10 +4101,10 @@ module Activities
     # commits. When no runner record can be resolved from the candidate
     # (e.g. non-routing-key agent_type), the file is cleared so the hook
     # falls back to a no-op rather than silently using a stale trailer.
-    def refresh_co_author_trailer(container_service, agent_run, runner_candidate, user)
+    def refresh_co_author_trailer(execution_environment, agent_run, runner_candidate, user)
       runner_record = resolve_runner_record_for_candidate(runner_candidate, user)
       Containers::GitOperations
-        .new(container_service: container_service, agent_run: agent_run)
+        .new(container_service: execution_environment, agent_run: agent_run)
         .write_co_author_trailer(runner_record)
     end
 

@@ -7,7 +7,8 @@ class CodexLoginSessionsController < ApplicationController
 
   def new
     @flow_definition = flow_definition_for_new
-    @codex_login_session = current_account.codex_login_sessions.build(
+    @codex_login_session = CodexLoginSession.new(
+      account: current_account,
       created_by: current_user,
       credential_name: @flow_definition.credential_name
     )
@@ -19,7 +20,8 @@ class CodexLoginSessionsController < ApplicationController
   end
 
   def create
-    @codex_login_session = current_account.codex_login_sessions.build(codex_login_session_params)
+    @codex_login_session = CodexLoginSession.new(codex_login_session_params)
+    @codex_login_session.account = current_account
     @codex_login_session.created_by = current_user
     authorize @codex_login_session
 
