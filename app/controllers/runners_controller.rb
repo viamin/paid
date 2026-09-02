@@ -282,6 +282,7 @@ class RunnersController < ApplicationController
 
     runner_config = config[runner_key]
     return unless runner_config.is_a?(Hash)
+    return unless runner_config["model_policy"] == Runners::ModelOptions::FREE_POLICY_VALUE
     return unless runner_config["model"] == Runners::ModelOptions::FREE_POLICY_VALUE
 
     runner_config["model_policy"] = Runners::ModelOptions::FREE_POLICY_VALUE
