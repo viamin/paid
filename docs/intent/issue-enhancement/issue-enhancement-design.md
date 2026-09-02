@@ -178,11 +178,17 @@ found, rather than trusting the runner's own "final message" selection or a
 provider-specific parser. This is deliberately narrower than fixing the
 runner's turn-selection logic (which belongs in `agent-harness`, not Paid):
 Paid only needs to find its own delimiter, not reconstruct general turn
-semantics. When extraction still fails despite a delimited payload being
-present in the raw output, the run fails non-retryably into `manual_review`
-as before, but the enhancement round consumed at queue time is refunded —
-a Paid-side extraction defect should not spend round budget meant to bound
-repeated *automatic* re-evaluation (ISSUE-ENHANCEMENT-011).
+semantics. When the parse path fails even though a delimited payload that
+satisfies the structured-output contract was present in the raw output —
+i.e. Paid discarded a valid payload — the run fails non-retryably into
+`manual_review` as before, but the enhancement round consumed at queue
+time is refunded: a Paid-side extraction defect should not spend round
+budget meant to bound repeated *automatic* re-evaluation
+(ISSUE-ENHANCEMENT-011). The refund check re-scans every recognized
+delimited payload (plain and JSONL-embedded) against the full contract, so
+a delimited payload that is itself malformed JSON or omits the required
+keys is an agent contract failure and consumes the round — printing the
+wrapper alone does not earn a refund.
 
 The container agent does not post the enhancement comment itself. Its GitHub
 proxy authorization is read-only, and its only durable result is the delimited

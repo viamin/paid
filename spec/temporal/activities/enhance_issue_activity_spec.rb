@@ -786,10 +786,63 @@ RSpec.describe Activities::EnhanceIssueActivity do
         }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
       end
 
+      # A delimited payload that is itself malformed JSON is an agent
+      # contract failure, not a Paid extraction defect: the round consumed
+      # at queue time must still bound repeated automatic attempts after an
+      # operator reruns the issue out of manual_review.
       # @spec ISSUE-ENHANCEMENT-006
-      it "refunds the consumed enhancement round when a delimited payload fails to parse" do
+      it "does not refund an enhancement round when the delimited payload is malformed JSON" do
         issue.update!(enhance_issue_rounds: 2)
         log_agent_stdout(delimiter_wrapped("not valid json at all {{{"), wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "does not refund an enhancement round when the delimited payload omits required keys" do
+        issue.update!(enhance_issue_rounds: 2)
+        log_agent_stdout(delimiter_wrapped({ sufficient_context: true }.to_json), wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
+      # Extraction keeps the last delimiter match; when an earlier match was
+      # itself a valid structured payload, Paid demonstrably discarded agent
+      # output that satisfied the contract, so the consumed round is
+      # refunded (#3786).
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a valid delimited payload is discarded behind a later malformed match" do
+        issue.update!(enhance_issue_rounds: 2)
+        log_agent_stdout([ "#{delimiter_wrapped(structured_output)}\n", delimiter_wrapped("not valid json at all {{{") ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(1)
+      end
+
+      # The #3786 transcript shape: the valid payload rides an earlier
+      # agent_message event and the final event's delimited match is
+      # malformed. Extraction keeps the final match and fails; the refund
+      # recognizes the valid payload it discarded.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a JSONL transcript discards a valid delimited payload" do
+        issue.update!(enhance_issue_rounds: 2)
+        valid_event = { type: "agent_message", text: delimiter_wrapped(structured_output) }
+        malformed_final_event = { type: "agent_message", text: delimiter_wrapped("not valid json at all {{{") }
+        log_agent_stdout([ "#{valid_event.to_json}\n", "#{malformed_final_event.to_json}\n" ], wrap: false)
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
@@ -812,13 +865,13 @@ RSpec.describe Activities::EnhanceIssueActivity do
       end
 
       # Manual runs never consume an enhancement round at queue time
-      # (ISSUE-ENHANCEMENT-011), so a failed manual extraction must not
-      # refund one either.
+      # (ISSUE-ENHANCEMENT-011), so even a discarded valid payload must not
+      # refund one for an operator-triggered run.
       # @spec ISSUE-ENHANCEMENT-006, ISSUE-ENHANCEMENT-011
       it "does not refund an enhancement round for an operator-triggered manual run" do
         issue.update!(enhance_issue_rounds: 2)
         agent_run.update!(trigger_type: "manual")
-        log_agent_stdout(delimiter_wrapped("not valid json at all {{{"), wrap: false)
+        log_agent_stdout([ "#{delimiter_wrapped(structured_output)}\n", delimiter_wrapped("not valid json at all {{{") ])
 
         expect {
           activity.execute(agent_run_id: agent_run.id)

@@ -122,11 +122,11 @@ module Activities
       return recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "no structured output captured") if raw.blank?
 
       parsed = JSON.parse(strip_markdown_fence(extract_json_payload(raw)), symbolize_names: true)
-      return parsed if parsed[:sufficient_context].in?([ true, false ]) && parsed[:comment_body].is_a?(String) && parsed[:comment_body].present?
+      return parsed if valid_structured_output?(parsed)
 
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string", delimiter_found: delimited_payload(raw).present?)
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string", discarded_valid_payload: discarded_valid_delimited_payload?(raw))
     rescue JSON::ParserError => e
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message, delimiter_found: delimited_payload(raw).present?)
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message, discarded_valid_payload: discarded_valid_delimited_payload?(raw))
     end
 
     # Reads recent stdout through AgentRun's provider-aware output normalizer.
@@ -164,9 +164,14 @@ module Activities
     end
 
     def plain_delimited_payload(raw)
-      payload = nil
-      raw.scan(DELIMITED_OUTPUT_PATTERN) { payload = Regexp.last_match(1) }
-      payload&.strip
+      delimited_payload_matches(raw).last
+    end
+
+    # Every delimited payload in the given text, in encounter order. The
+    # extraction keeps only the last match; the refund check needs all of
+    # them to tell a valid discarded payload from an invalid kept one.
+    def delimited_payload_matches(text)
+      text.scan(DELIMITED_OUTPUT_PATTERN).map { |match| match[0].strip }
     end
 
     def jsonl_delimited_payload(raw)
@@ -209,24 +214,62 @@ module Activities
       content.filter_map { |block| block["text"] if block.is_a?(Hash) && block["type"] == "output_text" }.join.presence
     end
 
+    # Whether the collected stdout contained a delimited payload that
+    # satisfies the structured-output contract even though the parse path
+    # failed — i.e. Paid's extraction (which keeps only the last delimiter
+    # match) demonstrably discarded a valid payload. A delimited payload
+    # that is itself malformed JSON or omits the required keys is an agent
+    # contract failure, not an extraction defect, and does not refund.
+    def discarded_valid_delimited_payload?(raw)
+      recognized_delimited_payloads(raw).any? { |payload| valid_delimited_payload_text?(payload) }
+    end
+
+    # Every delimited payload the extraction recognizes in the given stdout,
+    # in encounter order: matches embedded in recognized assistant-message
+    # JSONL events plus plain-text matches on the raw text itself.
+    def recognized_delimited_payloads(raw)
+      payloads = []
+      raw.each_line do |line|
+        text = agent_message_text(line)
+        payloads.concat(delimited_payload_matches(text)) if text
+      end
+      payloads.concat(delimited_payload_matches(raw))
+    end
+
+    def valid_delimited_payload_text?(payload_text)
+      valid_structured_output?(JSON.parse(strip_markdown_fence(payload_text), symbolize_names: true))
+    rescue JSON::ParserError
+      false
+    end
+
+    def valid_structured_output?(parsed)
+      parsed.is_a?(Hash) &&
+        parsed[:sufficient_context].in?([ true, false ]) &&
+        parsed[:comment_body].is_a?(String) &&
+        parsed[:comment_body].present?
+    end
+
     # Fail loudly rather than posting garbled agent output as an enhancement
     # comment. A non-retryable error surfaces the problem for investigation
     # without marking the issue enhanced with unparseable content.
     #
-    # When the raw stdout demonstrably contained a delimited payload but Paid
-    # still failed to validate it, the failure is Paid's extraction bug, not
-    # the agent's — refund the enhancement round so this doesn't burn budget
-    # meant to bound repeated automatic re-evaluation (see #3652). Only
-    # automatic runs consume a round at queue time (manual runs never do,
-    # ISSUE-ENHANCEMENT-011), so only automatic runs may refund one.
-    def raise_parse_error!(agent_run, detail, delimiter_found: false)
+    # A round is refunded only when Paid demonstrably discarded a valid
+    # delimited payload — the stdout contained one that satisfies the
+    # structured-output contract, yet the parse path still failed. That is
+    # Paid's extraction bug, not the agent's, so it must not burn budget
+    # meant to bound repeated automatic re-evaluation (see #3652). Malformed
+    # JSON or missing keys inside the delimiters is an agent contract
+    # failure and consumes the round. Only automatic runs consume a round at
+    # queue time (manual runs never do, ISSUE-ENHANCEMENT-011), so only
+    # automatic runs may refund one.
+    def raise_parse_error!(agent_run, detail, discarded_valid_payload: false)
       if agent_run.issue
         IssueEnhancements::StopForManualReview.call(
           project: agent_run.project,
           issue: agent_run.issue,
           reason: "Paid could not validate the enhancement agent's structured output."
         )
-        refund_enhancement_round!(agent_run.issue) if delimiter_found && agent_run.automatic?
+        refund_enhancement_round!(agent_run.issue) if discarded_valid_payload && agent_run.automatic?
       end
       agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
       raise Temporalio::Error::ApplicationError.new(
@@ -244,11 +287,11 @@ module Activities
       end
     end
 
-    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail, delimiter_found: false)
+    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail, discarded_valid_payload: false)
       comment = paid_question_comment(project, agent_run, comments)
       return recover_paid_question_comment!(agent_run, project, issue, client, comment) if comment
 
-      raise_parse_error!(agent_run, detail, delimiter_found: delimiter_found)
+      raise_parse_error!(agent_run, detail, discarded_valid_payload: discarded_valid_payload)
     end
 
     def recover_paid_question_comment!(agent_run, project, issue, client, comment)

@@ -111,13 +111,17 @@
   over the true final one. Extraction SHALL decode each transcript event's
   own message text and select the last delimiter match found across the
   transcript, rather than depending on the runner-selected "final" message.
-  When extraction fails despite the raw output demonstrably containing a
-  delimited payload, the run SHALL still fail non-retryably and move the
-  issue to `manual_review` (ISSUE-ENHANCEMENT-002), but SHALL refund the
-  enhancement round consumed at queue time (ISSUE-ENHANCEMENT-011) — which
-  only automatic runs consume, so manual runs SHALL NOT refund a round — so a
-  Paid-side extraction defect does not burn round budget meant to bound
-  repeated automatic re-evaluation.
+  When the parse path fails even though the raw output demonstrably
+  contained a delimited payload that satisfies the structured-output
+  contract — i.e. Paid discarded a valid payload — the run SHALL still
+  fail non-retryably and move the issue to `manual_review`
+  (ISSUE-ENHANCEMENT-002), but SHALL refund the enhancement round consumed
+  at queue time (ISSUE-ENHANCEMENT-011) — which only automatic runs
+  consume, so manual runs SHALL NOT refund a round — so a Paid-side
+  extraction defect does not burn round budget meant to bound repeated
+  automatic re-evaluation. A delimited payload that is itself malformed
+  JSON or omits the required keys is an agent contract failure, not an
+  extraction defect, and SHALL consume the round.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/activities/enhance_issue_activity.rb#delimited_payload`,
