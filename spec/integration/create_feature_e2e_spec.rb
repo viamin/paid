@@ -137,6 +137,13 @@ RSpec.describe "CreateFeature E2E", type: :model do
       allow(Prompts::BuildForCreateFeature).to receive(:call).and_return("feature prompt")
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments}).to_return(status: 200, body: "{}")
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/labels}).to_return(status: 200, body: "[]")
+      # The needs-input path provisions the Paid-owned label catalog before
+      # applying the needs-input label (@spec GH-LABELS-001): the repo starts
+      # with no labels and every canonical label is created.
+      stub_request(:get, %r{api\.github\.com/repos/[^/]+/[^/]+/labels\?per_page=100})
+        .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+      stub_request(:post, %r{api\.github\.com/repos/[^/]+/[^/]+/labels})
+        .to_return(status: 201, body: "{}", headers: { "Content-Type" => "application/json" })
     end
 
     it "pauses when feature brief is sparse" do
