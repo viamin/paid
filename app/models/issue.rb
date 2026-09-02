@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
+  AUTO_PICK_ELIGIBLE_PAID_STATES = %w[new planning failed analyzed].freeze
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   # The first four reasons denote agent failure. `awaiting_approval` denotes
@@ -442,7 +443,7 @@ class Issue < ApplicationRecord
 
   # Compute lifecycle statuses for a collection of issues.
   # Returns a Hash of issue_id => :blocked | :in_progress | :eligible
-  def self.lifecycle_statuses(issues)
+  def self.lifecycle_statuses(issues) # @spec AUTO-PICK-QUEUE-005
     issues = issues.to_a
     return {} if issues.empty?
 
@@ -511,16 +512,53 @@ class Issue < ApplicationRecord
       .to_set
 
     in_progress_ids = active_run_ids | has_open_pr_ids
+    eligible_ids = auto_pick_eligible_paid_state_scope(where(id: issue_ids)).pluck(:id).to_set
 
     issues.each_with_object({}) do |issue, hash|
       hash[issue.id] = if blocked_ids.include?(issue.id)
         :blocked
       elsif in_progress_ids.include?(issue.id)
         :in_progress
-      else
+      elsif eligible_ids.include?(issue.id)
         :eligible
+      else
+        :blocked
       end
     end
+  end
+
+  AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
+    SELECT 1 FROM issues closed_prs
+    WHERE closed_prs.project_id = agent_runs.project_id
+      AND closed_prs.github_number = agent_runs.pull_request_number
+      AND closed_prs.is_pull_request = TRUE
+      AND closed_prs.github_state = 'closed'
+      AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
+  SQL
+
+  def self.auto_pick_eligible_paid_state_scope(base_scope) # @spec AUTO-PICK-QUEUE-005
+    scope = base_scope.where(paid_state: AUTO_PICK_ELIGIBLE_PAID_STATES)
+
+    scope.or(
+      base_scope.where(
+        paid_state: "completed",
+        id: recoverable_completed_auto_pick_issue_ids(base_scope)
+      )
+    )
+  end
+
+  def self.recoverable_completed_auto_pick_issue_ids(base_scope)
+    AgentRun.where(
+      status: "completed",
+      trigger_type: "automatic",
+      auto_pick: true
+    ).where.not(issue_id: nil)
+      .where.not(goal: "analyze_issue")
+      .where(issue_id: base_scope.select(:id))
+      .where(
+        "agent_runs.pull_request_number IS NULL OR EXISTS (#{AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})"
+      )
+      .select(:issue_id)
   end
 
   def self.open_pull_request_parent_issue_ids(project: nil, issue_ids: nil)

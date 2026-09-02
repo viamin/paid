@@ -619,6 +619,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    it "derives its eligible paid_state filter from the shared issue definition" do # @spec AUTO-PICK-QUEUE-005
+      recoverable_completed = create(:issue, project: project, paid_state: "completed")
+      create(:agent_run, :completed, :automatic, project: project, issue: recoverable_completed,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+      create(:issue, project: project, paid_state: "manual_review")
+      create(:issue, project: project, paid_state: "needs_input")
+      eligible = create(:issue, project: project, paid_state: "new")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(recoverable_completed.id, eligible.id)
+    end
+
     it "uses project skip labels before user, tenant, and defaults" do
       project.update!(auto_pick_skip_labels: %w[blocked])
       project.created_by.settings.update!(auto_pick_skip_labels: %w[user-skip])

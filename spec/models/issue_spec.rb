@@ -1939,12 +1939,20 @@ RSpec.describe Issue do
   describe ".lifecycle_statuses" do
     let(:project) { create(:project) }
 
-    it "returns :eligible for an issue with no dependencies or active runs" do
+    it "returns :eligible for an issue with no dependencies or active runs" do # @spec AUTO-PICK-QUEUE-005
       issue = create(:issue, project: project, github_state: "open")
 
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "does not report a manual_review issue as :eligible" do # @spec AUTO-PICK-QUEUE-005
+      issue = create(:issue, project: project, github_state: "open", paid_state: "manual_review")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
     end
 
     it "returns :blocked for an issue with an open local dependency" do
@@ -2092,13 +2100,29 @@ RSpec.describe Issue do
       expect(result[parent.id]).to eq(:eligible)
     end
 
-    it "returns :eligible for an issue with only completed agent runs" do
+    it "returns :eligible for a recoverable completed issue" do # @spec AUTO-PICK-QUEUE-005
       issue = create(:issue, project: project, github_state: "open")
-      create(:agent_run, issue: issue, project: project, status: "completed")
+      issue.update!(paid_state: "completed")
+      create(:agent_run, :completed, :automatic, issue: issue, project: project,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
 
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "matches auto-pick eligibility for issues that differ only by paid_state" do # @spec AUTO-PICK-QUEUE-005
+      recoverable_completed = create(:issue, project: project, github_state: "open", paid_state: "completed")
+      create(:agent_run, :completed, :automatic, issue: recoverable_completed, project: project,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
+      manual_review = create(:issue, project: project, github_state: "open", paid_state: "manual_review")
+      needs_input = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
+      eligible = create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      statuses = described_class.lifecycle_statuses([ recoverable_completed, manual_review, needs_input, eligible ])
+      eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).pluck(:id)
+
+      expect(statuses.select { |_, status| status == :eligible }.keys).to match_array(eligible_ids)
     end
 
     it "returns correct statuses for multiple issues" do
