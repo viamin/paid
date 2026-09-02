@@ -49,13 +49,14 @@ module RunnersHelper
   end
 
   def runner_model_options_by_service_type(runner_key:, service_types:, auth_type:, current_model_id:, free_model_policy:)
-    service_types.index_with do |service_type|
-      option_rows = Runners::ModelOptions.call(
-        runner_key: runner_key,
-        api_provider: service_type,
-        auth_type: auth_type
-      ).map { |entry| [ entry.label, entry.value, entry.kind.to_s ] }
+    option_rows_by_service_type = Runners::ModelOptions.call_by_provider(
+      runner_key: runner_key,
+      api_providers: service_types,
+      auth_type: auth_type
+    ).transform_values { |entries| entries.map { |entry| [ entry.label, entry.value, entry.kind.to_s ] } }
 
+    service_types.index_with do |service_type|
+      option_rows = option_rows_by_service_type.fetch(service_type, [])
       next option_rows if free_model_policy
 
       model_options_preserving_current(option_rows, current_model_id)

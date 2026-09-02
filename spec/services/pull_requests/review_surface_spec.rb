@@ -4,10 +4,23 @@ require "rails_helper"
 require "tmpdir"
 
 RSpec.describe PullRequests::ReviewSurface, :no_db do
-  let(:project) { instance_double(Project, lid_mode: nil) }
+  let(:project_class) do
+    Class.new do
+      def lid_mode; end
+    end
+  end
+  let(:agent_run_class) do
+    Class.new do
+      def project; end
+      def worktree_path; end
+      def base_commit_sha; end
+      def result_commit_sha; end
+    end
+  end
+  let(:project) { instance_double(project_class, lid_mode: nil) }
   let(:agent_run) do
     instance_double(
-      AgentRun,
+      agent_run_class,
       project: project,
       worktree_path: worktree_path,
       base_commit_sha: "base123",
@@ -18,7 +31,7 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
   let(:git_status) { instance_double(Process::Status, success?: true) }
 
   before do
-    allow(Open3).to receive(:capture2).and_return([ changed_files_output, git_status ])
+    allow(Open3).to receive(:capture3).and_return([ changed_files_output, "", git_status ])
   end
 
   after do
@@ -118,12 +131,21 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
     let(:changed_files_output) { "" }
 
     it "treats the run as having no diff and skips git" do # @spec TDD-PR-002
-      expect(Open3).not_to receive(:capture2)
-
       body = described_class.call(body: "## Summary\n\nTest PR", agent_run: agent_run)
 
-      expect(body).to include("## Summary")
-      expect(body).not_to include("## Test Outline")
+      expect(body).to eq("## Summary\n\nTest PR")
+      expect(Open3).not_to have_received(:capture3)
+    end
+  end
+
+  context "when git diff fails" do
+    let(:changed_files_output) { "" }
+    let(:git_status) { instance_double(Process::Status, success?: false) }
+
+    it "suppresses the git failure and leaves the body unchanged" do
+      body = described_class.call(body: "## Summary\n\nTest PR", agent_run: agent_run)
+
+      expect(body).to eq("## Summary\n\nTest PR")
     end
   end
 end

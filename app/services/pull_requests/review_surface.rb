@@ -270,7 +270,7 @@ module PullRequests
       return "" if agent_run.worktree_path.blank? || !Dir.exist?(agent_run.worktree_path)
       return "" if agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
 
-      stdout, status = Open3.capture2(
+      stdout, _stderr, status = Open3.capture3(
         "git",
         "-C",
         agent_run.worktree_path,

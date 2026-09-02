@@ -15,14 +15,14 @@
 
 ## Implementation Status
 
-RDR-065 is **partially implemented** as of 2026-08-28. Catalog coverage,
+RDR-065 is **implemented** as of 2026-08-29. Catalog coverage,
 `Runners::ModelOptions`, key-derived provider behavior, `opencode`
-`model_policy` validation/dispatch/rotation parity, and the
+`model_policy` validation/dispatch/rotation parity, the flagged catalog
+dropdown (Model Settings box with Free/Custom sentinels), and the
 `openrouter_free`/`openrouter_pareto` migration and legacy-path removal have
-all shipped with test coverage. The rollout-guard flag from this RDR
-(`runner_model_policy_form`) was never introduced — the `model_policy` work
-shipped directly rather than behind a flagged legacy/new-form split — so
-there is no flag left to flip or clean up.
+all shipped with test coverage. The rollout-guard flag
+(`runner_model_policy_form`) still defaults off; flipping it to default-on
+and cleaning up the legacy per-runner-key form remain open.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
@@ -30,8 +30,26 @@ there is no flag left to flip or clean up.
 | `Runners::ModelOptions` catalog/service-type compatibility filtering and sentinels | Implemented | `app/services/runners/model_options.rb`; `spec/services/runners/model_options_spec.rb`; `app/services/runners/default_tier_model_ids.rb` |
 | Key-derived `api_provider` and grouped API-key form input | Implemented | `app/models/runner.rb`; `app/views/runners/_form.html.erb`; `app/javascript/controllers/runner_form_controller.js`; `spec/requests/runners_spec.rb` |
 | `opencode`/`kilocode`/`pi`/`omp` `model_policy` validation, dispatch, and rotation parity | Implemented | `app/models/runner.rb`; `app/controllers/runners_controller.rb`; `app/services/free_models/rotation.rb`; `spec/models/runner_spec.rb`; `spec/requests/runners_spec.rb` |
-| Rollout guard `runner_model_policy_form` | Superseded — not built. `model_policy` shipped unflagged; no legacy/new-form split exists to gate or clean up. | n/a |
+| Rollout guard `runner_model_policy_form` defined and wired through `runner_model_policy_form_enabled?` | Implemented | `app/services/feature_flags.rb`; `app/controllers/runners_controller.rb` |
+| Flagged catalog dropdown (Model Settings box: catalog `<select>`, Free/Custom sentinels, key-driven re-render) for `opencode`/`kilocode`/`pi`/`omp` | Implemented | `app/views/runners/_form.html.erb`; `app/javascript/controllers/runner_form_controller.js`; `spec/requests/runners_spec.rb` |
+| Flag flipped to default-on and legacy per-runner-key form removed | Gap | `runner_model_policy_form` still defaults off; no telemetry-based cutover has run yet; tracked by [#3671](https://github.com/viamin/paid/issues/3671) |
 | `openrouter_free` / `openrouter_pareto` data migration to `opencode` + policy/model, RunnerState rekey, and legacy path removal | Implemented | `db/migrate/20260828192834_migrate_openrouter_free_pareto_runners_to_opencode.rb`; `lib/runner_support.rb`; `app/models/runner.rb`; `app/services/runners/pareto_execution_plan.rb` (retired); `spec/migrations/migrate_openrouter_free_pareto_runners_to_opencode_spec.rb` |
+
+### 2026-08-29 Form cutover
+
+The `runner_model_policy_form` flag now exists (default off) and gates a new
+`Runners::ModelOptions`-driven Model Settings box on the four direct-outbound
+runner-key blocks (`opencode`, `kilocode`, `pi`, `omp`) in
+`app/views/runners/_form.html.erb`. Flag-off requests render the pre-existing
+free-text/manual-entry per-runner-key form byte-for-byte unchanged
+(regression-tested). Flag-on requests get a single catalog-backed Model
+select (rows grouped by family), an OpenRouter Free sentinel, and a trailing
+"Custom Model ID" field that reveals a manual input — replacing the old
+"manual entry only when the catalog happens to be empty" heuristic.
+
+This closes the "Rollout guard and form cutover" gap from the 2026-08-27
+audit. Dispatch and the legacy pseudo-key migration are covered separately
+below, and the flag stays off by default until telemetry-based cutover runs.
 
 ### 2026-08-28 — #3671 closeout
 
@@ -478,7 +496,7 @@ The migration runs before the rollout guard is enabled in production:
 - **Default**: off
 - **Enablement surface**: per-tenant opt-in via `tenant_settings.features`; planned enablement for the development tenant, then a percentage-of-actors rollout once telemetry confirms parity with the legacy form.
 - **Rollback**: disable the flag; legacy form and legacy dispatch paths continue to render and execute unchanged. No data shape change is required to roll back.
-- **Implementation issue**: #3669 must add the flag definition to `app/services/feature_flags.rb` and wire every runtime decision through `FeatureFlags.enabled?(:runner_model_policy_form, project:)` or the account-equivalent gate selected during implementation.
+- **Implementation issue**: #3669 (done) added the flag definition to `app/services/feature_flags.rb` and wires the form-rendering decision through the `feature_enabled?(:runner_model_policy_form)` view helper, which falls back to `Current.account` when no `project:` is given — Runner records are account-scoped, not project-scoped.
 - **Cleanup criteria**: remove the flag once the new form has been the default for at least one billing period, the parity metrics (`broken_runner_models` occurrences, `runner_settings_invalid` failures, support tickets about model ids) match or improve vs. legacy, and the data migration (#3670) has been verified against a recent production snapshot.
 
 ## Alternatives Considered

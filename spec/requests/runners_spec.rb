@@ -137,7 +137,8 @@ RSpec.describe "Runners" do
       enabled_for_fallback: false,
       config: {
         runner_key => {
-          model: Runners::ModelOptions::FREE_POLICY_VALUE
+          model: Runners::ModelOptions::FREE_POLICY_VALUE,
+          model_policy: Runners::ModelOptions::FREE_POLICY_VALUE
         }
       }
     }
@@ -749,6 +750,32 @@ RSpec.describe "Runners" do
 
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
+    end
+
+    it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(runner_key: "opencode", api_key_id: api_key.id, model: "custom")
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.order(:created_at).last
+      expect(runner.config.dig("opencode", "model")).to eq("custom")
+      expect(runner.config.dig("opencode", "model_policy")).to be_nil
+    end
+
+    it "keeps a literal legacy OpenCode model id of free when the catalog form flag is off" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(runner_key: "opencode", api_key_id: api_key.id, model: "free")
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.order(:created_at).last
+      expect(runner.config.dig("opencode", "model")).to eq("free")
+      expect(runner.config.dig("opencode", "model_policy")).to be_nil
     end
 
     it "handles an empty run-runner list during settings reconciliation" do
@@ -1708,6 +1735,7 @@ RSpec.describe "Runners" do
       expect(select_tag).to include("disabled")
       expect(select_tag).to include("hidden")
     end
+
 
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do
       runner = user.runners.find_by!(runner_key: "claude")

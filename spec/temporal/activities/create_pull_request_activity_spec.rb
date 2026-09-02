@@ -41,6 +41,29 @@ RSpec.describe Activities::CreatePullRequestActivity do
     ]
   end
 
+  def stub_review_surface_git_diff(agent_run:, changed_files:)
+    success_status = instance_double(Process::Status, success?: true)
+
+    allow(Open3).to receive(:capture3).with(
+      "git",
+      "-C",
+      agent_run.worktree_path,
+      "diff",
+      "--unified=0",
+      agent_run.base_commit_sha,
+      agent_run.result_commit_sha
+    ).and_return([ "", "", success_status ])
+    allow(Open3).to receive(:capture3).with(
+      "git",
+      "-C",
+      agent_run.worktree_path,
+      "diff",
+      "--name-only",
+      agent_run.base_commit_sha,
+      agent_run.result_commit_sha
+    ).and_return([ Array(changed_files).join("\n").concat("\n"), "", success_status ])
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -377,10 +400,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         result_commit_sha: "abc123def456789012345678901234567890abcd",
         worktree_path: Rails.root.to_s
       )
-      allow(Open3).to receive(:capture2).and_return([
-        ".ephemeral-tests/lid_report_spec.rb\n",
-        instance_double(Process::Status, success?: true)
-      ])
+      stub_review_surface_git_diff(agent_run:, changed_files: ".ephemeral-tests/lid_report_spec.rb")
 
       captured_body = nil
       allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
