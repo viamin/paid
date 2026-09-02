@@ -142,6 +142,15 @@ search when an embedding provider and healthy Qdrant collection are available.
 Hybrid search merges both result sets and reranks them with version, activity,
 and link signals.
 
+When the vector half of semantic/hybrid search doesn't run to completion —
+Qdrant unconfigured or unhealthy, the project has no chunks with an
+`embedding_model` recorded yet, query-embedding generation fails, or the
+Qdrant call itself errors — `Knowledge::Search` reports that in `meta`
+(`vector_search_status`, `degraded: true`) instead of silently returning
+lexical-only results that look identical to a healthy hybrid search. A query
+that legitimately has zero vector matches is not degraded; only a vector
+search that could not run or complete is.
+
 ### Prompt context and attribution
 
 Prompt-building flows use two retrieval surfaces:
@@ -190,6 +199,11 @@ returns a bounded list of structured findings. Each finding carries a stable
 `code` (e.g. `stale_scope_path`, `orphaned_chunk`, `low_usage_type`,
 `chunk_missing_embedding`), a severity (`info`, `warning`, `error`), a
 `target_type`/`target_id` for traceability, and a short `detail` string.
+`embedding_coverage_critical` escalates `chunk_missing_embedding` from a
+per-chunk `warning` into a single project-level `error` finding once
+embedding coverage across active chunks is at or near zero, so a project
+where semantic search has structurally stopped contributing doesn't just
+read as one more warning among thousands of identical ones.
 The service is read-only — no `Knowledge*` model is mutated — and does not
 change `Knowledge::CollectorRunner`, `Knowledge::Search`, or
 `Knowledge::ContextBundle::Build` behavior. The report is exposed through a

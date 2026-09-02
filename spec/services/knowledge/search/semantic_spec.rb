@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "qdrant"
 
+# @spec KNOWLEDGE-010
 RSpec.describe Knowledge::Search::Semantic do
   include_context "without qdrant vector search"
 
@@ -31,14 +33,14 @@ RSpec.describe Knowledge::Search::Semantic do
   describe "#call" do
     context "with lexical search" do
       it "finds chunks via full-text search" do
-        results = described_class.call(project: project, query: "lists all users")
+        results = described_class.call(project: project, query: "lists all users")[:results]
 
         expect(results).not_to be_empty
         expect(results.first[:source]).to eq("semantic")
       end
 
       it "returns results with artifact info" do
-        results = described_class.call(project: project, query: "users route controller")
+        results = described_class.call(project: project, query: "users route controller")[:results]
 
         expect(results).not_to be_empty
         expect(results.first[:artifact_type]).to eq("route")
@@ -46,7 +48,7 @@ RSpec.describe Knowledge::Search::Semantic do
       end
 
       it "includes scope_tags and scoring fields" do
-        results = described_class.call(project: project, query: "lists all users")
+        results = described_class.call(project: project, query: "lists all users")[:results]
 
         expect(results.first).to have_key(:scope_tags)
         expect(results.first).to include(start_line: 12, end_line: 18)
@@ -71,7 +73,7 @@ RSpec.describe Knowledge::Search::Semantic do
           project: project,
           query: "lists all users",
           artifact_type: "route"
-        )
+        )[:results]
 
         expect(results.map { |r| r[:artifact_type] }).to all(eq("route"))
       end
@@ -79,14 +81,74 @@ RSpec.describe Knowledge::Search::Semantic do
 
     context "with vector search unavailable" do
       it "still returns lexical results" do
-        results = described_class.call(project: project, query: "lists all users")
+        results = described_class.call(project: project, query: "lists all users")[:results]
 
         expect(results).not_to be_empty
+      end
+
+      it "reports vector_search_status as not_configured" do
+        output = described_class.call(project: project, query: "lists all users")
+
+        expect(output[:vector_search_status]).to eq("not_configured")
+      end
+    end
+
+    context "with qdrant available but unhealthy" do
+      it "reports vector_search_status as unhealthy" do
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: false))
+
+        output = described_class.call(project: project, query: "lists all users")
+
+        expect(output[:vector_search_status]).to eq("unhealthy")
+      end
+    end
+
+    context "with qdrant healthy but the project has no embedded chunks" do
+      it "reports vector_search_status as no_embeddings without generating a query embedding" do
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new)
+
+        output = described_class.call(project: project, query: "lists all users")
+
+        expect(output[:vector_search_status]).to eq("no_embeddings")
+        expect(Knowledge::Embeddings::ProxyGenerator).not_to have_received(:new)
+      end
+    end
+
+    context "with embedded chunks but embedding generation fails" do
+      it "reports vector_search_status as embedding_failed" do
+        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [], close: true)
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
+
+        output = described_class.call(project: project, query: "test")
+
+        expect(output[:vector_search_status]).to eq("embedding_failed")
+      end
+    end
+
+    context "with vector search raising an error" do
+      it "reports vector_search_status as error and still returns lexical results" do
+        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        embedding = Knowledge::Embeddings::Generate::Result.new(vector: [ 0.1 ], token_count: 1)
+        proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embedding ], close: true)
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
+        qdrant_points = instance_double(Qdrant::Points)
+        allow(qdrant_points).to receive(:search).and_raise(StandardError, "boom")
+        allow(Paid.qdrant_client).to receive(:points).and_return(qdrant_points)
+
+        output = described_class.call(project: project, query: "lists all users")
+
+        expect(output[:vector_search_status]).to eq("error")
+        expect(output[:results]).not_to be_empty
       end
     end
 
     context "with query embeddings" do
       it "routes query embedding generation through the proxy-backed generator" do
+        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
         allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
         proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [], close: true)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).with(project: project, containerize: false).and_return(proxy_generator)
@@ -95,6 +157,20 @@ RSpec.describe Knowledge::Search::Semantic do
 
         expect(proxy_generator).to have_received(:call).with(texts: [ "test" ])
         expect(proxy_generator).to have_received(:close)
+      end
+
+      it "reports vector_search_status as ok when the search executes to completion" do
+        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        embedding = Knowledge::Embeddings::Generate::Result.new(vector: [ 0.1 ], token_count: 1)
+        proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embedding ], close: true)
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
+        qdrant_points = instance_double(Qdrant::Points, search: { "result" => [] })
+        allow(Paid.qdrant_client).to receive(:points).and_return(qdrant_points)
+
+        output = described_class.call(project: project, query: "test")
+
+        expect(output[:vector_search_status]).to eq("ok")
       end
     end
   end

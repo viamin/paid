@@ -121,6 +121,14 @@ RSpec.describe Knowledge::Search do
         expect(result[:meta][:semantic_count]).to eq(0)
       end
 
+      # @spec KNOWLEDGE-010
+      it "does not report degraded vector search since exact mode never runs it" do
+        result = described_class.call(project: project, query: "POST /api/users", mode: "exact")
+
+        expect(result[:meta][:vector_search_status]).to eq("not_applicable")
+        expect(result[:meta][:degraded]).to be(false)
+      end
+
       it "strips internal scoring fields from results" do
         result = described_class.call(project: project, query: "POST /api/users", mode: "exact")
 
@@ -174,6 +182,14 @@ RSpec.describe Knowledge::Search do
         expect(result[:meta][:semantic_count]).to be >= 1
         expect(result[:meta][:exact_count]).to eq(0)
       end
+
+      # @spec KNOWLEDGE-010
+      it "reports degraded vector search when Qdrant is unavailable" do
+        result = described_class.call(project: project, query: "users route controller", mode: "semantic")
+
+        expect(result[:meta][:vector_search_status]).to eq("not_configured")
+        expect(result[:meta][:degraded]).to be(true)
+      end
     end
 
     context "with hybrid mode" do
@@ -196,6 +212,23 @@ RSpec.describe Knowledge::Search do
 
         expect(result[:meta]).to have_key(:exact_count)
         expect(result[:meta]).to have_key(:semantic_count)
+      end
+
+      # @spec KNOWLEDGE-010
+      it "reports degraded vector search when the semantic half could not contribute" do
+        result = described_class.call(project: project, query: "POST /api/users", mode: "hybrid")
+
+        expect(result[:meta][:vector_search_status]).to eq("not_configured")
+        expect(result[:meta][:degraded]).to be(true)
+      end
+
+      it "does not report degraded when the vector search executes to completion" do
+        allow(Knowledge::Search::Semantic).to receive(:call).and_return({ results: [], vector_search_status: "ok" })
+
+        result = described_class.call(project: project, query: "POST /api/users", mode: "hybrid")
+
+        expect(result[:meta][:vector_search_status]).to eq("ok")
+        expect(result[:meta][:degraded]).to be(false)
       end
     end
 
@@ -243,7 +276,7 @@ RSpec.describe Knowledge::Search do
     end
 
     it "passes project search arguments to semantic search" do
-      allow(Knowledge::Search::Semantic).to receive(:call).and_return([])
+      allow(Knowledge::Search::Semantic).to receive(:call).and_return({ results: [], vector_search_status: "not_configured" })
 
       described_class.call(
         project: project,
