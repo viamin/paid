@@ -739,6 +739,23 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(issue.enhance_issue_rounds).to eq(2)
       end
 
+      # Manual runs never consume an enhancement round at queue time
+      # (ISSUE-ENHANCEMENT-011), so a failed manual extraction must not
+      # refund one either.
+      # @spec ISSUE-ENHANCEMENT-006, ISSUE-ENHANCEMENT-011
+      it "does not refund an enhancement round for an operator-triggered manual run" do
+        issue.update!(enhance_issue_rounds: 2)
+        agent_run.update!(trigger_type: "manual")
+        log_agent_stdout(delimiter_wrapped("not valid json at all {{{"), wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
       it "parses undelimited JSON as a backward-compatible fallback" do
         log_agent_stdout(structured_output, wrap: false)
 

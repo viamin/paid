@@ -114,7 +114,8 @@
   When extraction fails despite the raw output demonstrably containing a
   delimited payload, the run SHALL still fail non-retryably and move the
   issue to `manual_review` (ISSUE-ENHANCEMENT-002), but SHALL refund the
-  enhancement round consumed at queue time (ISSUE-ENHANCEMENT-011) so a
+  enhancement round consumed at queue time (ISSUE-ENHANCEMENT-011) — which
+  only automatic runs consume, so manual runs SHALL NOT refund a round — so a
   Paid-side extraction defect does not burn round budget meant to bound
   repeated automatic re-evaluation.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.

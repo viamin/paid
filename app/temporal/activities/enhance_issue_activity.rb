@@ -197,7 +197,9 @@ module Activities
     # When the raw stdout demonstrably contained a delimited payload but Paid
     # still failed to validate it, the failure is Paid's extraction bug, not
     # the agent's — refund the enhancement round so this doesn't burn budget
-    # meant to bound repeated automatic re-evaluation (see #3652).
+    # meant to bound repeated automatic re-evaluation (see #3652). Only
+    # automatic runs consume a round at queue time (manual runs never do,
+    # ISSUE-ENHANCEMENT-011), so only automatic runs may refund one.
     def raise_parse_error!(agent_run, detail, delimiter_found: false)
       if agent_run.issue
         IssueEnhancements::StopForManualReview.call(
@@ -205,7 +207,7 @@ module Activities
           issue: agent_run.issue,
           reason: "Paid could not validate the enhancement agent's structured output."
         )
-        refund_enhancement_round!(agent_run.issue) if delimiter_found
+        refund_enhancement_round!(agent_run.issue) if delimiter_found && agent_run.automatic?
       end
       agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
       raise Temporalio::Error::ApplicationError.new(
