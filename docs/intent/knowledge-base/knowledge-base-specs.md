@@ -272,3 +272,19 @@
   `/paid-input/texts.json`.
   *Code:* `app/services/knowledge/embedding_runner.rb`.
   *Test:* `spec/services/knowledge/embedding_runner_spec.rb`.
+
+- [x] **KNOWLEDGE-010** — When decision-record drafting (`Knowledge::Decisions::Draft`)
+  cannot produce a `DecisionRecord` because the LLM output was unparseable,
+  missing required fields, or record creation failed, the system SHALL treat
+  the run as a failure — distinct from a legitimate skip caused by a blank
+  change summary — and `Activities::DraftDecisionRecordActivity` SHALL report
+  `success: false` and mark the `draft_decision_record` `AgentRunPhase` as
+  `failed`, so pipeline health observability cannot silently report a failing
+  drafting path as `completed` (#3795). A legitimate skip SHALL still report
+  `success: true` with a `completed` phase. Best-effort semantics are
+  preserved: the failure is logged and does not propagate past the activity,
+  so the agent execution workflow is not broken.
+  *Code:* `app/services/knowledge/decisions/draft.rb`,
+  `app/temporal/activities/draft_decision_record_activity.rb`.
+  *Test:* `spec/services/knowledge/decisions/draft_spec.rb`,
+  `spec/temporal/activities/draft_decision_record_activity_spec.rb`.

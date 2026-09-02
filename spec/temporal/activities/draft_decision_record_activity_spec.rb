@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-010
 RSpec.describe Activities::DraftDecisionRecordActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
@@ -45,13 +46,24 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
       expect(AgentHarness).to have_received(:send_message)
     end
 
-    it "returns success with nil decision_record_id when LLM returns empty output" do
-      allow(llm_response).to receive(:output).and_return("")
+    it "returns success with nil decision_record_id when the agent produced no output to summarize" do
+      agent_run.agent_run_logs.destroy_all
 
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:success]).to be true
       expect(result[:decision_record_id]).to be_nil
+      expect(agent_run.agent_run_phases.find_by(phase_key: "draft_decision_record").status).to eq("completed")
+    end
+
+    it "returns failure when the LLM returns unparseable output" do
+      allow(llm_response).to receive(:output).and_return("")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:success]).to be false
+      expect(result[:decision_record_id]).to be_nil
+      expect(agent_run.agent_run_phases.find_by(phase_key: "draft_decision_record").status).to eq("failed")
     end
 
     it "returns existing record without calling LLM (idempotency)" do
@@ -71,13 +83,14 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
       expect(result[:error]).to eq("agent_run_id is required")
     end
 
-    it "returns success with nil record when AgentHarness errors (Draft rescues internally)" do
+    it "returns failure and marks the phase failed when the LLM path is exhausted (#3795)" do
       allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "LLM timeout")
 
       result = activity.execute(agent_run_id: agent_run.id)
 
-      expect(result[:success]).to be true
+      expect(result[:success]).to be false
       expect(result[:decision_record_id]).to be_nil
+      expect(agent_run.agent_run_phases.find_by(phase_key: "draft_decision_record").status).to eq("failed")
     end
 
     it "returns failure without raising when an unexpected error occurs" do

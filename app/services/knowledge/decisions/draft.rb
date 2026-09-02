@@ -20,10 +20,16 @@ module Knowledge
     # unchanged, because +TextTransport+ is Anthropic-only and the container
     # already isolates +cwd+/memory concerns.
     #
+    # @spec KNOWLEDGE-010
     # @example
     #   Knowledge::Decisions::Draft.call(agent_run: agent_run)
     class Draft
       include Llm::OutputNormalizer
+
+      # Raised when drafting could not produce a decision record for a reason
+      # other than a legitimate skip (blank change summary). Callers should
+      # treat this as a failed run, not a quiet no-op — see #3795.
+      DraftFailedError = Class.new(StandardError)
 
       TIMEOUT = 30
       DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -69,7 +75,7 @@ module Knowledge
 
         prompt = build_prompt(changes_summary)
         parsed = draft_decision_record(prompt)
-        return nil unless parsed
+        raise DraftFailedError, "LLM did not return a usable decision record" unless parsed
 
         record = create_decision_record(parsed)
         record_llm_output_metric(record) if record
@@ -81,7 +87,7 @@ module Knowledge
           error_class: e.class.name,
           error: e.message
         )
-        nil
+        raise DraftFailedError, e.message
       end
 
       private
