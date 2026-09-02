@@ -248,3 +248,27 @@
   `spec/services/knowledge/quality/checks/*_spec.rb`,
   `spec/requests/api/knowledge_quality_controller_spec.rb`,
   `spec/requests/knowledge/quality_spec.rb`.
+
+- [x] **KNOWLEDGE-CONTAINER-001** — When Paid runs a containerized LLM call
+  for embedding generation or decision drafting (`Knowledge::AnalysisRunner`),
+  the container SHALL be attached to the restricted `paid_agent` Docker
+  network (creating it first if missing) rather than Docker's unrelated
+  default `bridge` network, because the secrets proxy is only reachable by
+  its `paid-proxy` DNS alias on `paid_agent` (RDR-054). A container on any
+  other network cannot resolve or reach the proxy, so every `call_llm`
+  attempt fails before a provider is ever contacted. Network setup failures
+  SHALL raise `Knowledge::AnalysisRunner::ContainerError` rather than
+  propagating a raw `NetworkPolicy::Error`.
+  *Code:* `app/services/knowledge/analysis_runner.rb`.
+  *Test:* `spec/services/knowledge/analysis_runner_spec.rb`.
+
+- [x] **KNOWLEDGE-CONTAINER-002** — When Paid stages input for a containerized
+  embedding call (`Knowledge::EmbeddingRunner`), it SHALL transfer the input
+  by streaming a tar archive into the container over the Docker API socket
+  rather than bind-mounting a host directory created by the current process,
+  because that directory is not visible to the Docker daemon in DooD
+  deployments (the daemon runs outside this process's container), which
+  silently mounts an empty directory and fails every embedding call reading
+  `/paid-input/texts.json`.
+  *Code:* `app/services/knowledge/embedding_runner.rb`.
+  *Test:* `spec/services/knowledge/embedding_runner_spec.rb`.

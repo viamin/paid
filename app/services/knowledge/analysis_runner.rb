@@ -28,7 +28,10 @@ module Knowledge
       cpu_quota: 100_000,                # 1 CPU
       pids_limit: 100,
       timeout_seconds: 60,
-      network_mode: "bridge"             # needs proxy access
+      # The secrets proxy is only reachable by its `paid-proxy` DNS alias on
+      # the restricted paid_agent network (docker-compose.yml); Docker's
+      # literal default "bridge" network has no route to it (RDR-054).
+      network_mode: NetworkPolicy::NETWORK_NAME
     }.freeze
 
     # Default models per API service type, used when caller does not specify one.
@@ -96,12 +99,17 @@ module Knowledge
 
     private
 
+    # @spec KNOWLEDGE-CONTAINER-001
     def provision!
       log("provision.start")
+      NetworkPolicy.ensure_network!(backend: Containers.backend)
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
       log("provision.success", container_id: @container.id)
     rescue Docker::Error::DockerError => e
+      cleanup!
+      raise ContainerError, "Failed to provision analysis container: #{e.message}"
+    rescue NetworkPolicy::Error => e
       cleanup!
       raise ContainerError, "Failed to provision analysis container: #{e.message}"
     end
