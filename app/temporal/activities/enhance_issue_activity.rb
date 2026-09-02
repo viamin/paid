@@ -116,9 +116,9 @@ module Activities
       parsed = JSON.parse(strip_markdown_fence(extract_json_payload(raw)), symbolize_names: true)
       return parsed if parsed[:sufficient_context].in?([ true, false ]) && parsed[:comment_body].is_a?(String) && parsed[:comment_body].present?
 
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string")
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "sufficient_context must be boolean and comment_body must be a non-empty string", delimiter_found: delimited_payload(raw).present?)
     rescue JSON::ParserError => e
-      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message)
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message, delimiter_found: delimited_payload(raw).present?)
     end
 
     # Reads recent stdout through AgentRun's provider-aware output normalizer.
@@ -139,22 +139,73 @@ module Activities
       delimited_payload(raw) || raw.strip
     end
 
+    # Looks for our own delimited payload before falling back to a runner's
+    # generic output normalizer. Checks JSONL-wrapped agent messages first:
+    # structured runners (OpenCode/Codex) emit one JSON event per physical
+    # line, so the delimiter's newlines are escaped inside a string field and
+    # never match DELIMITED_OUTPUT_PATTERN's line anchors directly against the
+    # raw JSONL. Runner-side turn-selection logic can also pick an earlier
+    # progress message instead of the final one (#3786); scanning every
+    # agent_message event ourselves and keeping the last delimiter match
+    # sidesteps that without needing to replicate runner-specific turn
+    # semantics.
+    # @spec ISSUE-ENHANCEMENT-006
     def delimited_payload(raw)
+      jsonl_delimited_payload(raw) || plain_delimited_payload(raw)
+    end
+
+    def plain_delimited_payload(raw)
       payload = nil
       raw.scan(DELIMITED_OUTPUT_PATTERN) { payload = Regexp.last_match(1) }
       payload&.strip
     end
 
+    def jsonl_delimited_payload(raw)
+      payload = nil
+      raw.each_line do |line|
+        text = agent_message_text(line)
+        next unless text
+
+        match = plain_delimited_payload(text)
+        payload = match if match
+      end
+      payload
+    end
+
+    # Recognizes both a top-level agent_message event and a nested one
+    # wrapped in a completion envelope (e.g. `item.completed` / `response_item`).
+    def agent_message_text(line)
+      event = JSON.parse(line)
+      return unless event.is_a?(Hash)
+
+      agent_message_item_text(event) || agent_message_item_text(event["item"])
+    rescue JSON::ParserError
+      nil
+    end
+
+    def agent_message_item_text(item)
+      return unless item.is_a?(Hash) && item["type"] == "agent_message"
+
+      text = item["text"] || item["message"]
+      text if text.is_a?(String)
+    end
+
     # Fail loudly rather than posting garbled agent output as an enhancement
     # comment. A non-retryable error surfaces the problem for investigation
     # without marking the issue enhanced with unparseable content.
-    def raise_parse_error!(agent_run, detail)
+    #
+    # When the raw stdout demonstrably contained a delimited payload but Paid
+    # still failed to validate it, the failure is Paid's extraction bug, not
+    # the agent's — refund the enhancement round so this doesn't burn budget
+    # meant to bound repeated automatic re-evaluation (see #3652).
+    def raise_parse_error!(agent_run, detail, delimiter_found: false)
       if agent_run.issue
         IssueEnhancements::StopForManualReview.call(
           project: agent_run.project,
           issue: agent_run.issue,
           reason: "Paid could not validate the enhancement agent's structured output."
         )
+        refund_enhancement_round!(agent_run.issue) if delimiter_found
       end
       agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
       raise Temporalio::Error::ApplicationError.new(
@@ -164,11 +215,19 @@ module Activities
       )
     end
 
-    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail)
+    def refund_enhancement_round!(issue)
+      issue.with_lock do
+        next if issue.enhance_issue_rounds <= 0
+
+        issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds - 1)
+      end
+    end
+
+    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail, delimiter_found: false)
       comment = paid_question_comment(project, agent_run, comments)
       return recover_paid_question_comment!(agent_run, project, issue, client, comment) if comment
 
-      raise_parse_error!(agent_run, detail)
+      raise_parse_error!(agent_run, detail, delimiter_found: delimiter_found)
     end
 
     def recover_paid_question_comment!(agent_run, project, issue, client, comment)

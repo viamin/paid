@@ -104,9 +104,22 @@
   base prompt, and unrelated issue bodies SHALL NOT bypass that boundary. After
   validating the agent's delimited structured output, the workflow SHALL post
   the `<!-- paid:enhance-issue -->` comment and label state without committing,
-  pushing, or creating a pull request.
+  pushing, or creating a pull request. Structured runners (e.g. OpenCode,
+  Codex) MAY wrap the agent's final message inside a JSONL transcript, where
+  the delimiter's newlines are escaped within a JSON string field and the
+  runner's own turn-selection logic MAY prefer an earlier progress message
+  over the true final one. Extraction SHALL decode each transcript event's
+  own message text and select the last delimiter match found across the
+  transcript, rather than depending on the runner-selected "final" message.
+  When extraction fails despite the raw output demonstrably containing a
+  delimited payload, the run SHALL still fail non-retryably and move the
+  issue to `manual_review` (ISSUE-ENHANCEMENT-002), but SHALL refund the
+  enhancement round consumed at queue time (ISSUE-ENHANCEMENT-011) so a
+  Paid-side extraction defect does not burn round budget meant to bound
+  repeated automatic re-evaluation.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
+  `app/temporal/activities/enhance_issue_activity.rb#delimited_payload`,
   `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/controllers/api/github_proxy_controller.rb`,
   `app/services/containers/provision.rb#workspace_mount_mode`,

@@ -687,6 +687,58 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(issue.reload.paid_state).to eq("completed")
       end
 
+      # Modeled on agent run 5177 (viamin/yupyup#9, issue #3786): an
+      # OpenCode/Codex-style runner emits one agent_message JSON event per
+      # physical line, so the delimiter's newlines are escaped inside a
+      # string field and never match on raw JSONL text. A trailing
+      # completion event can also carry a stale last_agent_message snapshot
+      # that a runner's own turn-selection logic prefers over the true final
+      # message. Extraction must scan every agent_message event itself and
+      # keep the last delimiter match rather than trusting that selection.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "extracts the final delimited payload from an OpenCode/Codex JSONL transcript" do
+        narration = [
+          { type: "agent_message", text: "OK" },
+          { type: "agent_message", text: "I'm reading the repo instructions, checking whether CodeGraph..." },
+          { type: "agent_message", text: "The tests confirm the intended seam: models parse successfully..." }
+        ]
+        final_event = { type: "agent_message", text: delimiter_wrapped(structured_output) }
+        stale_completion_event = { type: "task_complete", last_agent_message: "The tests confirm the intended seam: models parse successfully..." }
+
+        log_agent_stdout((narration + [ final_event, stale_completion_event ]).map { |event| "#{event.to_json}\n" })
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "refunds the consumed enhancement round when a delimited payload fails to parse" do
+        issue.update!(enhance_issue_rounds: 2)
+        log_agent_stdout(delimiter_wrapped("not valid json at all {{{"), wrap: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(1)
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "does not refund an enhancement round when the agent produced no delimited output" do
+        issue.update!(enhance_issue_rounds: 2)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("EnhanceIssueUnparseableOutput") }
+
+        expect(issue.reload.paid_state).to eq("manual_review")
+        expect(issue.enhance_issue_rounds).to eq(2)
+      end
+
       it "parses undelimited JSON as a backward-compatible fallback" do
         log_agent_stdout(structured_output, wrap: false)
 
