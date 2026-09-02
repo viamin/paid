@@ -283,19 +283,20 @@ module Projects
     end
 
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
+    # @spec OPERATOR-INBOX-002C
     def unblock_escalation
       authorize @project, :run_agent?
 
       pr = resolve_pull_request_record
       unless pr
-        redirect_to dashboard_path, alert: "Please select a pull request."
+        redirect_to safe_return_target || dashboard_path, alert: "Please select a pull request."
         return
       end
 
       result = PullRequests::Unblock.call(pull_request: pr, actor: current_user)
       @project.broadcast_pull_requests_update if result.success?
 
-      redirect_to dashboard_path, **unblock_flash(result, pr)
+      redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
     def toggle_auto_continue_pause

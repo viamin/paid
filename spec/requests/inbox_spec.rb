@@ -245,6 +245,63 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Waiting for owner re-approval on the current HEAD commit")
   end
 
+  # @spec OPERATOR-INBOX-002C
+  it "lists escalated pull requests scoped to auto-pick projects" do
+    ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    create_escalated_pr(title: "Escalated PR", github_number: 500)
+    create_escalated_pr(title: "Not gated", github_number: 501, project: ungated_project)
+
+    get inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND)
+
+    expect(response.body).to include("Blocked PRs", "Escalated PR")
+    expect(response.body).not_to include("Not gated")
+  end
+
+  # @spec OPERATOR-INBOX-002C
+  it "renders escalated-pr detail with counters and the inbox-scoped unblock action" do
+    escalated = create_escalated_pr(
+      title: "Escalated PR",
+      github_number: 502,
+      draft_review_count: 12,
+      pr_followup_count: 8
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ESCALATED_PR_KIND, escalated),
+      kind: Inbox::Queue::ESCALATED_PR_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Failure streak", "Draft rounds", "Follow-up runs", "Unblock")
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(
+      %(form[action="#{unblock_escalation_project_agent_runs_path(project, pull_request_id: escalated.id)}"])
+    )
+
+    expect(form).to be_present
+    expect(form.at_css('input[name="return_to"]')["value"]).to eq(
+      inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND)
+    )
+  end
+
+  # @spec OPERATOR-INBOX-002C
+  it "directs an awaiting_approval escalation to GitHub re-approval instead of Unblock" do
+    escalated = create_escalated_pr(
+      title: "Awaiting approval PR",
+      github_number: 503,
+      reason: Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ESCALATED_PR_KIND, escalated),
+      kind: Inbox::Queue::ESCALATED_PR_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Re-approve on GitHub", "Awaiting approval")
+    expect(response.body).not_to include(">Unblock<")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
@@ -366,6 +423,16 @@ RSpec.describe "Inbox" do
 
       expect(badge_count).to eq(queue_size)
     end
+
+    # @spec OPERATOR-INBOX-002C
+    it "includes escalated pull requests in the count badge" do
+      create_escalated_pr(github_number: 504)
+
+      get inbox_count_path
+      badge_count = badge_text(Nokogiri::HTML(response.body), "inbox_nav_badge_desktop").to_i
+
+      expect(badge_count).to eq(1)
+    end
   end
 
   def create_merge_approval_pr(title: "Approval blocked PR", github_number: 123, snapshot: stale_approval_snapshot)
@@ -379,6 +446,20 @@ RSpec.describe "Inbox" do
       awaiting_approval_since: 2.days.ago,
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: snapshot
+    )
+  end
+
+  def create_escalated_pr(title: "Escalated PR", github_number: 505, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK, **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: title,
+      github_number: github_number,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: reason,
+      labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+      **attrs
     )
   end
 
