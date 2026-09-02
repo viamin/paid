@@ -22,11 +22,13 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
       delete: true
     )
   end
+  let(:mock_network) { instance_double(Docker::Network, info: {}) }
   let(:backend) do
     instance_double(
       Containers::Backends::Base,
       remote?: false,
       ping: "OK",
+      get_network: mock_network,
       create_container: mock_container,
       start_container: true,
       stop_container: true,
@@ -84,8 +86,8 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
       expect(described_class::CONTAINER_DEFAULTS[:timeout_seconds]).to eq(60)
     end
 
-    it "uses bridge network mode" do
-      expect(described_class::CONTAINER_DEFAULTS[:network_mode]).to eq("bridge")
+    it "uses the restricted paid_agent network so it can reach the secrets proxy" do
+      expect(described_class::CONTAINER_DEFAULTS[:network_mode]).to eq(NetworkPolicy::NETWORK_NAME)
     end
   end
 
@@ -124,6 +126,28 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
         runner.with_container { |_r| }
       }.to raise_error(described_class::ContainerError, /Failed to provision/)
     end
+
+    # @spec KNOWLEDGE-CONTAINER-001
+    it "ensures the restricted paid_agent network exists before creating the container" do
+      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+
+      runner.with_container { |_r| }
+
+      expect(backend).to have_received(:get_network).with(NetworkPolicy::NETWORK_NAME)
+    end
+
+    # @spec KNOWLEDGE-CONTAINER-001
+    it "raises ContainerError when the agent network cannot be ensured" do
+      allow(backend).to receive(:get_network).and_raise(Docker::Error::NotFoundError, "not found")
+      allow(backend).to receive(:create_network).and_raise(Docker::Error::DockerError, "permission denied")
+
+      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+
+      expect {
+        runner.with_container { |_r| }
+      }.to raise_error(described_class::ContainerError, /Failed to provision/)
+      expect(backend).not_to have_received(:create_container)
+    end
   end
 
   describe "#call_llm" do
@@ -133,6 +157,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
         Containers::Backends::Base,
         identifier: "worker-1",
         remote?: true,
+        get_network: mock_network,
         create_container: mock_container,
         start_container: true,
         stop_container: true,
@@ -262,7 +287,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
         expect(config["User"]).to eq("agent")
         expect(config["Labels"]["paid.resource"]).to eq("analysis_container")
         expect(config["Labels"]["paid.knowledge_run_id"]).to eq("99")
-        expect(config["HostConfig"]["NetworkMode"]).to eq("bridge")
+        expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
         expect(config["HostConfig"]["Memory"]).to eq(256 * 1024 * 1024)
         expect(config["HostConfig"]["PidsLimit"]).to eq(100)
       end
