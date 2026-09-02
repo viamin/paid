@@ -195,8 +195,6 @@ RSpec.describe Prompts::BuildForCreateFeature do
 
   describe "DB-prompt routing" do
     it "uses the DB prompt when one is seeded for coding.create_feature_prompt" do
-      Prompt.unscoped.where(slug: Prompts::BuildForCreateFeature::PROMPT_SLUG).destroy_all
-
       prompt = create(
         :prompt,
         slug: Prompts::BuildForCreateFeature::PROMPT_SLUG,
