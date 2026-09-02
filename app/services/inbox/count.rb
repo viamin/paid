@@ -30,7 +30,8 @@ module Inbox
     attr_reader :user
 
     def compute_count
-      needs_input_count + open_plan_review_count + merge_approval_count + action_required_count + escalated_pr_count
+      needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
+        escalated_pr_count + manual_review_count
     end
 
     def needs_input_count
@@ -92,6 +93,16 @@ module Inbox
       return 0 if project_ids.empty?
 
       Issue.where(project_id: project_ids, is_pull_request: true, github_state: "open", pr_review_phase: "escalated").count
+    end
+
+    # A direct indexed count, unlike merge_approval_count: manual_review is a
+    # paid_state value, not a signal snapshot that needs a Ruby-side check.
+    # @spec OPERATOR-INBOX-002D
+    def manual_review_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      Issue.where(project_id: project_ids, paid_state: "manual_review", github_state: "open").count
     end
 
     def gated_project_ids

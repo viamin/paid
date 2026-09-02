@@ -51,6 +51,15 @@
                   <%= bd.completed %> completed
                 </span>
               <% end %>
+              <% if bd.manual_review.positive? %>
+                <%= link_to inbox_path(project_id: bd.project.id, kind: Inbox::Queue::MANUAL_REVIEW_KIND),
+                      class: "inline-flex items-center gap-1 text-purple-700 hover:text-purple-800",
+                      data: { turbo_frame: "_top" },
+                      title: "Issues Paid stopped automating and parked for human review" do %>
+                  <span class="h-1.5 w-1.5 rounded-full bg-purple-500"></span>
+                  <%= bd.manual_review %> manual review
+                <% end %>
+              <% end %>
               <% if bd.other_excluded.positive? %>
                 <span class="inline-flex items-center gap-1 text-gray-600" title="Blocked by dependencies, tracker logic, retry limits, or other filters">
                   <span class="h-1.5 w-1.5 rounded-full bg-gray-400"></span>

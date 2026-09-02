@@ -61,6 +61,29 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002D** — When an open issue's `paid_state` is
+  `manual_review` and its project is in the operator's auto-pick-gated scope
+  (`INBOX-FOUNDATION-006`, the same gate every other inbox kind uses), the
+  system SHALL expose that issue as a `manual_review` inbox entry showing why
+  automation stopped (`manual_review_reason`) and how long it has been stopped
+  (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
+  `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
+  `enhance_issue` run as its clearing action, since automatic picking excludes
+  `manual_review` and only an explicit operator-triggered run resumes work
+  (`ISSUE-ENHANCEMENT-011`). The entry SHALL clear when the issue leaves
+  `manual_review` or its underlying GitHub issue closes.
+  `Dashboard::EligibilityBreakdown` SHALL report `manual_review` as its own
+  named bucket instead of folding it into the unnamed `other_excluded`
+  remainder, and `Inbox::Count`'s cached badge SHALL invalidate on transitions
+  into and out of `manual_review` via `Dashboard::CacheVersion`'s `INBOX_SCOPE`.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/dashboard/eligibility_breakdown_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

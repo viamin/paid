@@ -39,6 +39,14 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(5)
     end
 
+    # @spec OPERATOR-INBOX-002D
+    it "counts open manual_review issues" do
+      create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      create(:issue, :closed, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     it "excludes closed issues and issues on non-gated projects" do
       create(:issue, :needs_input, project: project)
       create(:issue, :closed, :needs_input, project: project)
@@ -79,6 +87,22 @@ RSpec.describe Inbox::Count do
 
       expect(first).to eq(0)
       expect(refreshed).to eq(1)
+    end
+
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-012
+    it "bumps the cache automatically when an issue transitions into and out of manual_review" do
+      issue = create(:issue, project: project)
+      first = described_class.call(user: user)
+
+      issue.update!(paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      after_park = described_class.call(user: user)
+
+      issue.update!(paid_state: "completed")
+      after_clear = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_park).to eq(1)
+      expect(after_clear).to eq(0)
     end
 
     it "refreshes the cached count when a needs_input issue closes and reopens on GitHub" do

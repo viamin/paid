@@ -2395,6 +2395,95 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
+    let(:parked_issue) do
+      create(:issue,
+        project: project,
+        github_number: 89,
+        title: "Fix flaky specs",
+        paid_state: "manual_review",
+        manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+    end
+
+    context "when not authenticated" do
+      # @spec OPERATOR-INBOX-002D
+      it "redirects to the sign in page" do
+        post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec OPERATOR-INBOX-002D
+      it "refuses to queue a run" do
+        post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+
+        expect(response).not_to have_http_status(:ok)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "queues a manual enhance_issue run for the parked issue" do
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.issue).to eq(parked_issue)
+        expect(agent_run.goal).to eq("enhance_issue")
+        expect(agent_run.trigger_type).to eq("manual")
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "refuses when no issue is selected" do
+        post resume_manual_review_project_agent_runs_path(project), params: {}
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to be_present
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "refuses an issue that is not in manual_review" do
+        other_issue = create(:issue, project: project, paid_state: "new")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: other_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "redirects to the project page on success regardless of return_to" do
+        post resume_manual_review_project_agent_runs_path(project),
+          params: {
+            issue_id: parked_issue.id,
+            return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+          }
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "redirects back to the inbox on failure when return_to points there" do
+        post resume_manual_review_project_agent_runs_path(project),
+          params: { return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND) }
+
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/toggle_auto_continue_pause" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

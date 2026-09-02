@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_01_083509) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_02_071054) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1571,6 +1571,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_01_083509) do
     t.datetime "issue_analysis_next_attempt_at", comment: "When automatic analyze_issue retries become eligible again after provider exhaustion."
     t.jsonb "labels", default: [], null: false
     t.datetime "last_pr_scan_at"
+    t.text "manual_review_reason", comment: "Why automation stopped and parked this issue in manual_review, surfaced in the operator inbox."
+    t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"

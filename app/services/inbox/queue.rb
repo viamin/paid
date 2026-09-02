@@ -7,12 +7,14 @@ module Inbox
     MERGE_APPROVAL_KIND = "merge_approval"
     ACTION_REQUIRED_KIND = "action_required"
     ESCALATED_PR_KIND = "escalated_pr"
+    MANUAL_REVIEW_KIND = "manual_review"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
       MERGE_APPROVAL_KIND,
       ACTION_REQUIRED_KIND,
-      ESCALATED_PR_KIND
+      ESCALATED_PR_KIND,
+      MANUAL_REVIEW_KIND
     ].freeze
 
     Entry = Struct.new(
@@ -53,13 +55,17 @@ module Inbox
         kind == ESCALATED_PR_KIND
       end
 
+      def manual_review?
+        kind == MANUAL_REVIEW_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
 
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
-        return summary_text if merge_approval? || action_required? || escalated_pr?
+        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review?
 
         "#{tasks.size} proposed tasks"
       end
@@ -75,7 +81,7 @@ module Inbox
       @kind = kind.to_s.presence
     end
 
-    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C
+    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D
     def call
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
@@ -83,6 +89,7 @@ module Inbox
       entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
       entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
       entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
+      entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
       sort_entries(entries)
     end
 
@@ -296,6 +303,45 @@ module Inbox
         title_text: nil,
         action_url: nil
       )
+    end
+
+    # Only an explicit operator-triggered run clears manual_review
+    # (ISSUE-ENHANCEMENT-011), so this lane exists purely to surface the state
+    # and offer that action — it derives from `paid_state` directly, the same
+    # way clarifying_questions and escalated_pr do, rather than a separate
+    # notification.
+    # @spec OPERATOR-INBOX-002D
+    def manual_review_entries
+      ordered_manual_review_issues.map do |issue|
+        Entry.new(
+          id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
+          kind: MANUAL_REVIEW_KIND,
+          project: issue.project,
+          issue: issue,
+          record: issue,
+          waiting_since: issue.manual_review_started_at || issue.updated_at,
+          questions: [],
+          tasks: [],
+          summary_text: issue.manual_review_reason.presence || "Manual review required.",
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    # NULLS LAST mirrors ordered_clarifying_issues: legacy rows entering
+    # manual_review before manual_review_started_at existed sort to the end
+    # rather than pretending to have been waiting forever.
+    def ordered_manual_review_issues
+      ids = scoped_projects.map(&:id)
+      return Issue.none if ids.empty?
+
+      Issue
+        .joins(:project)
+        .includes(:project)
+        .where(project_id: ids, paid_state: "manual_review", github_state: "open")
+        .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
+        .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
     end
 
     def visible_blocking_notifications

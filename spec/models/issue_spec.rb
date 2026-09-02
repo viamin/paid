@@ -1553,6 +1553,55 @@ RSpec.describe Issue do
     end
   end
 
+  # @spec ISSUE-ENHANCEMENT-012
+  describe "#sync_manual_review_started_at" do
+    let(:project) { create(:project) }
+
+    it "stamps manual_review_started_at when paid_state transitions into \"manual_review\"" do
+      issue = create(:issue, project: project, paid_state: "new")
+      expect(issue.manual_review_started_at).to be_nil
+
+      freeze_time = Time.current
+      travel_to(freeze_time) do
+        issue.update!(paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      end
+
+      expect(issue.reload.manual_review_started_at).to be_within(1.second).of(freeze_time)
+    end
+
+    it "preserves the original timestamp when paid_state stays \"manual_review\"" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      original = issue.manual_review_started_at
+      expect(original).to be_present
+
+      travel_to(1.hour.from_now) do
+        issue.update!(labels: issue.labels | [ "another-label" ])
+        issue.update!(paid_state: "manual_review")
+      end
+
+      expect(issue.reload.manual_review_started_at).to be_within(1.second).of(original)
+    end
+
+    it "clears the timestamp and reason when leaving \"manual_review\" for any other state" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+      expect(issue.manual_review_started_at).to be_present
+
+      issue.update!(paid_state: "completed")
+
+      expect(issue.reload.manual_review_started_at).to be_nil
+      expect(issue.manual_review_reason).to be_nil
+    end
+
+    it "is a no-op when paid_state is unchanged on a write that does not touch it" do
+      issue = create(:issue, project: project, paid_state: "completed")
+      expect(issue.manual_review_started_at).to be_nil
+
+      issue.update!(title: "Refined title")
+
+      expect(issue.reload.manual_review_started_at).to be_nil
+    end
+  end
+
   # @spec OPERATOR-INBOX-010
   describe "inbox count cache invalidation" do
     let(:account) { create(:account) }
@@ -1597,6 +1646,37 @@ RSpec.describe Issue do
       issue.update!(github_state: "closed")
 
       expect(Dashboard::CacheVersion).not_to have_received(:bump)
+    end
+
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-012
+    it "bumps the inbox cache when an issue transitions into manual_review" do
+      issue = create(:issue, project: project, paid_state: "new")
+
+      issue.update!(paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+    end
+
+    it "bumps the inbox cache when an issue leaves manual_review" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+      issue.update!(paid_state: "completed")
+
+      # Once on creation (entering manual_review) and once on the transition out.
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
+    end
+
+    it "bumps the inbox cache when a manual_review issue closes on GitHub" do
+      issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.", github_state: "open")
+
+      issue.update!(github_state: "closed")
+
+      expect(Dashboard::CacheVersion).to have_received(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+        .twice
     end
   end
 
