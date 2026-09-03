@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 module Activities
+  # Legacy activity retained for pre-September 3, 2026
+  # ParallelAgentExecutionWorkflow histories until the
+  # parallel-agent-execution-remove-pr-aggregation-v1 patch guard sunsets.
   # Creates a single aggregated PR from the feature branch that contains
   # merged changes from multiple sub-task branches.
   #

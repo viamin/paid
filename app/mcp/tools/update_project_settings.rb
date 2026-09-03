@@ -17,7 +17,6 @@ module Tools
       auto_add_labels_enabled
       auto_enhance_enabled
       knowledge_evolution_enabled
-      pr_aggregation_enabled
       inherit_priority_labels
       allow_bot_authored_pr_auto_merge
       auto_merge_mode

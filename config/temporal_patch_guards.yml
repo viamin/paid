@@ -21,3 +21,6 @@ workflows:
       introduced_on: "2026-07-19"
     create-feature-lid-chaining-v1:
       introduced_on: "2026-08-11"
+  Workflows::ParallelAgentExecutionWorkflow:
+    parallel-agent-execution-remove-pr-aggregation-v1:
+      introduced_on: "2026-09-03"
