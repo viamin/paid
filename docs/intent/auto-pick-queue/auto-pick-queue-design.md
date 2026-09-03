@@ -15,6 +15,11 @@ project toggle is the operator control for that lifecycle: enabling it seeds
 eligible work, and disabling it stops future automatic picks and drains queued
 automatic picks.
 
+The additive exception is tracked under
+`docs/intent/automation-activation-labels/`: when the project toggle is off,
+an issue-scoped activation label may still enable exactly one issue without
+changing the background queue semantics for every other issue.
+
 ## Disable Semantics
 
 Queued Auto-Pick runs are cancelled, not deleted, when Auto-Pick is disabled.

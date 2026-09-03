@@ -2,6 +2,7 @@
 
 class UserSetting < ApplicationRecord
   include AutoPickSkipLabels
+  include FeatureActivationLabels
   has_logidze
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "default_agent_provider" => "default_agent_runner",

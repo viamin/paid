@@ -31,7 +31,7 @@ class DependabotAutoMergeJob < ApplicationJob
 
   def perform(project_id, pr_number: nil)
     project = Project.find_by(id: project_id)
-    return unless project&.auto_merge_dependabot?
+    return unless project
 
     client = project.client
 
@@ -47,6 +47,7 @@ class DependabotAutoMergeJob < ApplicationJob
   def evaluate_single_pr(client, project, pr_number)
     pr_data = fetch_pr(client, project, pr_number)
     return unless pr_data
+    return unless auto_merge_enabled_for?(project, pr_number)
 
     return if skip_auto_merge_label?(project, pr_data)
     return if skip_merge_permission_cooldown?(project, pr_data)
@@ -63,6 +64,7 @@ class DependabotAutoMergeJob < ApplicationJob
       pr_num = pr_number_from(pr_summary)
       pr_data = fetch_pr(client, project, pr_num)
       next unless pr_data
+      next unless auto_merge_enabled_for?(project, pr_num)
 
       next if skip_auto_merge_label?(project, pr_data)
       next if skip_merge_permission_cooldown?(project, pr_data)
@@ -247,6 +249,16 @@ class DependabotAutoMergeJob < ApplicationJob
       message: "dependabot_auto_merge.merge_failed_expected",
       credential_mode: AutoMergeAttempt.primary_credential_mode(project)
     )
+  end
+
+  # @spec AUTO-MERGE-008
+  def auto_merge_enabled_for?(project, pr_number)
+    return true if project.auto_merge_dependabot?
+
+    issue = pull_request_issue(project, pr_number)
+    return false unless issue
+
+    Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
   end
 
   def handle_expected_merge_failure(project, pr_number, error, message:, credential_mode:)

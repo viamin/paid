@@ -277,6 +277,25 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
+    context "when auto-pick is off but a trusted paid-in-full label is present" do
+      let(:project) { create(:project, auto_pick_enabled: false, auto_enhance_enabled: false, label_mappings: {}) }
+      let(:issue) do
+        create(:issue, project: project, labels: [ project.feature_activation_label_for("paid_in_full") ], paid_state: "new")
+      end
+
+      before do
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(project, issue, project.feature_activation_label_for("paid_in_full")).and_return(true)
+      end
+
+      it "returns execute_agent action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+        expect(result[:decisions]).to eq([ { type: "queue_analyze_issue_run", issue_id: issue.id } ])
+      end
+    end
+
     context "when automation_on_label_enabled but issue lacks the automation label" do
       let(:project) do
         create(:project, label_mappings: {}, automation_on_label_enabled: true, automation_label_name: "my-auto")

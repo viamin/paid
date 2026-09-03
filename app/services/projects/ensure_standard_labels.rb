@@ -11,9 +11,10 @@ module Projects
   # @spec GH-LABELS-001 @spec GH-LABELS-002 @spec GH-LABELS-004 @spec GH-LABELS-007 @spec GH-LABELS-008
   #
   # Each definition in {LABEL_DEFINITIONS} carries a `kind` that distinguishes
-  # three categories of GitHub label (@spec GH-LABELS-003):
-  # - `:control`      — applying or removing the label changes automation.
-  # - `:status`       — applied by Paid as an output/status marker.
+  # four categories of GitHub label (@spec GH-LABELS-003):
+  # - `:control`       — applying or removing the label subtracts automation.
+  # - `:activation`    — applying the label activates a disabled feature for one item.
+  # - `:status`        — applied by Paid as an output/status marker.
   # - `:informational` — descriptive taxonomy with no automation effect.
   #
   # Standard labels include:
@@ -49,9 +50,18 @@ module Projects
   class EnsureStandardLabels
     LABEL_DEFINITIONS = {
       generated: { color: "0e8a16", description: "Created by Paid", kind: :status },
-      automation: { color: "1d76db", description: "Triggers Paid automation for this issue; remove to opt out.", kind: :control },
+      automation: { color: "1d76db", description: "Triggers Paid automation for this issue; remove to opt out.", kind: :activation },
       enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again", kind: :status },
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue", kind: :status },
+      paid_in_full: { color: "0052cc", description: "Activates Paid through PR for this issue; auto-merge still requires PR approval.", kind: :activation },
+      auto_enhance: { color: "0052cc", description: "Activates issue enhancement for this item when the project setting is off.", kind: :activation },
+      auto_merge_activation: { color: "0052cc", description: "Activates Paid auto-merge for this pull request when the project setting is off.", kind: :activation },
+      auto_scan_prs_activation: { color: "0052cc", description: "Activates Paid PR scanning for this pull request when the project setting is off.", kind: :activation },
+      auto_scan_security_activation: { color: "0052cc", description: "Activates Paid security scanning for this pull request when the project setting is off.", kind: :activation },
+      auto_fix_merge_conflicts_activation: { color: "0052cc", description: "Activates Paid merge-conflict fixing for this pull request when the project setting is off.", kind: :activation },
+      auto_release_activation: { color: "0052cc", description: "Activates Paid auto-release for this pull request when the project setting is off.", kind: :activation },
+      tdd_strict_activation: { color: "0052cc", description: "Activates strict TDD for this issue when the project setting is off.", kind: :activation },
+      tdd_auto_activation: { color: "0052cc", description: "Activates non-strict TDD for this issue when the project setting is off.", kind: :activation },
       recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed", kind: :status },
       paused: { color: "5319e7", description: "Pauses Paid automation on this issue; remove to resume.", kind: :control },
       escalated: { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume.", kind: :control },
@@ -193,6 +203,7 @@ module Projects
         *recommend_close_label,
         *needs_input_stage_label,
         *fixed_control_labels,
+        *activation_label_definitions,
         *tdd_labels,
         *auto_pick_skip_label_definitions,
         *priority_label_definitions
@@ -278,6 +289,26 @@ module Projects
         definition = LABEL_DEFINITIONS.fetch(key)
         { name: definition[:name], color: definition[:color], description: definition[:description],
           category: "TDD test-review label: #{definition[:name]}" }
+      end
+    end
+
+    def activation_label_definitions
+      {
+        "paid_in_full" => :paid_in_full,
+        "auto_pick" => :automation,
+        "auto_enhance" => :auto_enhance,
+        "auto_merge" => :auto_merge_activation,
+        "auto_scan_prs" => :auto_scan_prs_activation,
+        "auto_scan_security" => :auto_scan_security_activation,
+        "auto_fix_merge_conflicts" => :auto_fix_merge_conflicts_activation,
+        "auto_release" => :auto_release_activation,
+        "tdd_strict" => :tdd_strict_activation,
+        "tdd_auto" => :tdd_auto_activation
+      }.filter_map do |feature, definition_key|
+        name = project.feature_activation_label_for(feature)
+        next unless name.present?
+
+        label_entry(name, definition_key, category: "feature_activation_label[#{feature}]")
       end
     end
 

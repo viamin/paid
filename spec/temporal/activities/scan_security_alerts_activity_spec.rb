@@ -35,6 +35,21 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when auto_scan_security is disabled but a PR activation is present" do
+      before do
+        project.update!(auto_scan_security: false)
+        allow(Automation::FeatureActivation).to receive(:any_pull_request_feature_enabled?)
+          .with(project:, feature: "auto_scan_security").and_return(true)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+      end
+
+      it "still scans" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:code_scanning_alerts)
+      end
+    end
+
     context "with interval gating" do
       before { allow(github_client).to receive(:code_scanning_alerts).and_return([]) }
 

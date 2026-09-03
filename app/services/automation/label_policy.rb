@@ -96,11 +96,7 @@ module Automation
       plan_label = project.label_for_stage(:plan)
       return { action: "start_planning", label: plan_label } if plan_label && record.has_label?(plan_label)
 
-      if project.automation_on_label_enabled? &&
-          !record.is_pull_request? &&
-          record.has_label?(project.automation_label_name)
-        return { action: "queue_create_pr_run", label: project.automation_label_name }
-      end
+      return activation_trigger(project, record) unless record.is_pull_request?
 
       nil
     end
@@ -117,6 +113,20 @@ module Automation
         label: label
       )
       false
+    end
+
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-006
+    def activation_trigger(project, record)
+      activation_label = FeatureActivation.issue_auto_pick_trigger(project:, issue: record)
+      return nil unless activation_label
+
+      action = if FeatureActivation.issue_auto_enhance_enabled?(project:, issue: record)
+        "queue_analyze_issue_run"
+      else
+        "queue_create_pr_run"
+      end
+
+      { action: action, label: activation_label, trust_label_only: true }
     end
 
     def blocked_by_dependencies?(project, record)
@@ -198,7 +208,11 @@ module Automation
 
       trigger = triggering_label(project, record)
       return Result.noop unless trigger
-      return Result.noop unless authorized_for_trigger?(project, record, trigger[:label])
+      if trigger[:trust_label_only]
+        return Result.noop unless trusted_user_added_label?(project, record, trigger[:label])
+      else
+        return Result.noop unless authorized_for_trigger?(project, record, trigger[:label])
+      end
       return Result.noop if blocked_by_dependencies?(project, record)
 
       decision = case trigger[:action]
@@ -207,6 +221,8 @@ module Automation
           issue_id: record.id,
           source_pull_request_number: record.is_pull_request? ? record.github_number : nil
         )
+      when "queue_analyze_issue_run"
+        Decision.queue_analyze_issue_run(issue_id: record.id)
       when "start_planning"
         Decision.start_planning(issue_id: record.id)
       else

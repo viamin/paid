@@ -31,6 +31,7 @@ module Automation
 
       # @param context [Automation::Context]
       # @return [Automation::Result]
+      # @spec ISSUE-ENHANCEMENT-013
       def evaluate(context)
         project = context.project
         return noop_result unless auto_pick_enabled?(project)
@@ -39,7 +40,7 @@ module Automation
         issue = @candidate_source.next_candidate(project)
         return noop_result unless issue
 
-        decision = if project.auto_enhance_enabled?
+        decision = if FeatureActivation.issue_auto_enhance_enabled?(project:, issue:)
           Decision.queue_analyze_issue_run(issue_id: issue.id)
         else
           Decision.queue_create_pr_run(issue_id: issue.id)

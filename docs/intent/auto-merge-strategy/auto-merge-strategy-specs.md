@@ -125,3 +125,15 @@
   `spec/services/automation/strategies/auto_review_spec.rb`,
   `spec/temporal/activities/record_owner_review_request_activity_spec.rb`,
   `spec/temporal/workflows/git_hub_poll_workflow_spec.rb`.
+
+- [x] **AUTO-MERGE-008** — When project-level auto-merge is off, a trusted
+  pull-request activation label (`paid-auto-merge`) SHALL enable auto-merge for
+  that pull request only. `paid-in-full` alone SHALL NOT grant merge authority;
+  it must be paired with the PR activation label or the normal project-level
+  auto-merge setting.
+  *Code:* `app/services/automation/feature_activation.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`,
+  `app/jobs/dependabot_auto_merge_job.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/jobs/dependabot_auto_merge_job_spec.rb`.

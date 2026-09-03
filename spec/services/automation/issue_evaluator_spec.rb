@@ -57,5 +57,16 @@ RSpec.describe Automation::IssueEvaluator do
         )
       end
     end
+
+    it "queues analyze_issue for a trusted paid-in-full issue when auto-pick and auto-enhance are off" do
+      project = create(:project, auto_pick_enabled: false, auto_enhance_enabled: false, label_mappings: {})
+      issue = create(:issue, project: project, labels: [ project.feature_activation_label_for("paid_in_full") ], paid_state: "new")
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+        .with(project, issue, project.feature_activation_label_for("paid_in_full")).and_return(true)
+
+      result = described_class.new(record: issue).call
+
+      expect(result.to_h).to eq(decisions: [ { type: "queue_analyze_issue_run", issue_id: issue.id } ])
+    end
   end
 end
