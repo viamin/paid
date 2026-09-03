@@ -237,6 +237,7 @@ RSpec.describe "Runners" do
           runner_key: "opencode",
           auth_type: "api_key",
           provider_api_key: api_key,
+          enabled_for_chat: false,
           config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )
@@ -1357,6 +1358,7 @@ RSpec.describe "Runners" do
         runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key: api_key,
+        enabled_for_chat: false,
         config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
         tier_model_ids: { "high" => "high-free", "mid" => "mid-free", "low" => "low-free" }
       )
