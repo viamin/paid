@@ -14,5 +14,9 @@ FactoryBot.define do
     trait :redaction_scanned do
       redaction_scanned_at { Time.current }
     end
+
+    trait :embedded do
+      embedding_model { "text-embedding-3-large" }
+    end
   end
 end

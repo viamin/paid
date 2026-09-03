@@ -5,6 +5,7 @@ module Knowledge
     # @spec KNOWLEDGE-003
     # @spec KNOWLEDGE-005
     # @spec KNOWLEDGE-CURATED-002
+    # @spec KNOWLEDGE-011
     MODES = %w[exact semantic hybrid].freeze
     DEFAULT_MODE = "hybrid"
     DEFAULT_LIMIT = 20
@@ -51,11 +52,16 @@ module Knowledge
         )
         { results: exact_results, exact_count: exact_results.size, semantic_count: 0 }
       when "semantic"
-        semantic_results = Search::Semantic.call(
+        semantic_output = Search::Semantic.call(
           project: project, query: query,
           artifact_type: artifact_type, limit: limit
         )
-        { results: semantic_results, exact_count: 0, semantic_count: semantic_results.size }
+        {
+          results: semantic_output[:results],
+          exact_count: 0,
+          semantic_count: semantic_output[:results].size,
+          vector_search_status: semantic_output[:vector_search_status]
+        }
       when "hybrid"
         Search::Hybrid.call(
           project: project, query: query,
@@ -65,12 +71,16 @@ module Knowledge
     end
 
     def build_meta(search_output, elapsed)
+      vector_search_status = search_output[:vector_search_status]
+
       {
         mode: mode,
         total: search_output[:results].first(limit).size,
         took_ms: elapsed,
         exact_count: search_output[:exact_count],
-        semantic_count: search_output[:semantic_count]
+        semantic_count: search_output[:semantic_count],
+        vector_search_status: vector_search_status || "not_applicable",
+        degraded: vector_search_status.present? && vector_search_status != "ok"
       }
     end
 

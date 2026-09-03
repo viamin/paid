@@ -29,6 +29,23 @@ module Knowledge
         new(project: project, client: client).rebuild_schema!
       end
 
+      # True when the project's Qdrant collection exists and contains at
+      # least one *searchable* (`status: active`) point. Catches the failure
+      # mode where PostgreSQL chunks still carry an `embedding_model` value
+      # (so a PG-side existence check would look healthy) but the collection
+      # was dropped, never populated, or recreated by `rebuild_schema!`
+      # without re-upserting points — in those states a vector search would
+      # silently return zero hits even though the rest of the pipeline
+      # reports success. Probing for `status: active` points (rather than the
+      # collection's total `vectors_count`) also catches the case where every
+      # point has been flipped to `stale` in Postgres without being deleted
+      # from Qdrant: `Semantic#search_qdrant` filters hits to `status:
+      # active`, so a collection with only stale points contributes nothing
+      # to search even though `vectors_count` is positive.
+      def self.collection_populated?(project, client: Paid.qdrant_client)
+        new(project: project, client: client).collection_populated?
+      end
+
       def ensure_collection!
         existing_collection = collection_exists?
 
@@ -48,6 +65,33 @@ module Knowledge
         return unless collection_exists?
 
         client.collections.delete(collection_name: collection_name)
+      end
+
+      # Uses a limit-1 scroll, not `points.count`: this gate runs before
+      # every semantic/hybrid search, and an `exact: true` count makes Qdrant
+      # visit the full active set — O(n) on collections with hundreds of
+      # thousands of points. A filtered limit-1 scroll rides the `status`
+      # payload index and stops at the first match, so it stays constant-cost
+      # regardless of collection size. (`exact: false` counts come from
+      # cardinality estimators and can misreport near-empty collections,
+      # which would reintroduce this exact bug as flakiness.)
+      def collection_populated?(name = collection_name)
+        result = client.points.scroll(
+          collection_name: name,
+          limit: 1,
+          filter: { must: [ { key: "status", match: { value: "active" } } ] },
+          with_payload: false
+        )
+        result.dig("result", "points").to_a.any?
+      rescue ::Qdrant::Error => e
+        raise unless e.message.match?(/not found/i)
+
+        Rails.logger.debug(
+          message: "knowledge.qdrant.collection_not_found",
+          collection: name,
+          error: e.message
+        )
+        false
       end
 
       # Drops and recreates the Qdrant collection structure (schema + indexes).

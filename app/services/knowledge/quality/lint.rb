@@ -28,6 +28,7 @@ module Knowledge
         Knowledge::Quality::Checks::EmptyArtifact,
         Knowledge::Quality::Checks::FullyRedactedArtifact,
         Knowledge::Quality::Checks::ChunkMissingEmbedding,
+        Knowledge::Quality::Checks::EmbeddingCoverageCritical,
         Knowledge::Quality::Checks::ChunkMissingRedactionScan,
         Knowledge::Quality::Checks::LowUsageType,
         Knowledge::Quality::Checks::NeverRunCollector,

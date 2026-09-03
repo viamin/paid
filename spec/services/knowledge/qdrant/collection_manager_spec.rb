@@ -245,6 +245,62 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
     end
   end
 
+  describe "#collection_populated?" do
+    let(:active_status_filter) { { must: [ { key: "status", match: { value: "active" } } ] } }
+
+    it "returns true when the probe finds an active point" do
+      allow(points).to receive(:scroll)
+        .with(collection_name: collection_name, limit: 1, filter: active_status_filter, with_payload: false)
+        .and_return({ "result" => { "points" => [ { "id" => "chunk-1" } ] } })
+
+      expect(manager.collection_populated?).to be(true)
+    end
+
+    # No active points covers both an empty/rebuilt collection and a
+    # collection whose points were all flipped to `stale` in Postgres
+    # without being deleted from Qdrant — both leave the probe with zero
+    # matching points, which is what this method gates on.
+    it "returns false when the probe finds no active points" do
+      allow(points).to receive(:scroll)
+        .with(collection_name: collection_name, limit: 1, filter: active_status_filter, with_payload: false)
+        .and_return({ "result" => { "points" => [] } })
+
+      expect(manager.collection_populated?).to be(false)
+    end
+
+    it "returns false when the collection is missing (not found)" do
+      allow(points).to receive(:scroll)
+        .with(collection_name: collection_name, limit: 1, filter: active_status_filter, with_payload: false)
+        .and_raise(Qdrant::Error.new("Not found: collection 'foo' doesn't exist"))
+
+      expect(manager.collection_populated?).to be(false)
+    end
+
+    it "re-raises non-not-found Qdrant errors so callers can classify them as :error" do
+      allow(points).to receive(:scroll)
+        .with(collection_name: collection_name, limit: 1, filter: active_status_filter, with_payload: false)
+        .and_raise(Qdrant::Error.new("Unauthorized: invalid API key"))
+
+      expect { manager.collection_populated? }.to raise_error(Qdrant::Error, /Unauthorized/)
+    end
+
+    it "treats a missing points field as zero points" do
+      allow(points).to receive(:scroll)
+        .with(collection_name: collection_name, limit: 1, filter: active_status_filter, with_payload: false)
+        .and_return({ "result" => {} })
+
+      expect(manager.collection_populated?).to be(false)
+    end
+
+    it "is exposed as a class-level shortcut" do
+      allow(points).to receive(:scroll)
+        .with(collection_name: collection_name, limit: 1, filter: active_status_filter, with_payload: false)
+        .and_return({ "result" => { "points" => [ { "id" => "chunk-1" } ] } })
+
+      expect(described_class.collection_populated?(project, client: qdrant_client)).to be(true)
+    end
+  end
+
   def expect_legacy_collection_migrated
     expect(collections).to have_received(:create_index).with(
       collection_name: legacy_collection_name,

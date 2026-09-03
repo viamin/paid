@@ -23,7 +23,10 @@ module Knowledge
         lexical_results = lexical_search
         vector_results = vector_search
 
-        merge_results(lexical_results, vector_results)
+        {
+          results: merge_results(lexical_results, vector_results),
+          vector_search_status: @vector_search_status
+        }
       end
 
       private
@@ -44,24 +47,47 @@ module Knowledge
           .map { |chunk| format_chunk_result(chunk, score: chunk.relevance_rank&.to_f) }
       end
 
+      # @spec KNOWLEDGE-011
       def vector_search
-        return [] unless qdrant_available?
-        return [] unless qdrant_healthy?
+        return no_vector_search(:not_configured) unless qdrant_available?
+        return no_vector_search(:unhealthy) unless qdrant_healthy?
+        return no_vector_search(:no_embeddings) unless embedded_chunks_exist?
+        # PG carries `embedding_model` on chunks but the Qdrant index can still
+        # be empty (collection dropped, never populated, or recreated by
+        # `rebuild_schema!` without re-upserting points). Search against an
+        # empty index returns zero hits, which is indistinguishable from a
+        # healthy search reporting "no matches" — both surface as ok. Gate
+        # on the actual index state so the request reads as degraded instead.
+        return no_vector_search(:no_index) unless qdrant_collection_populated?
 
         embedding = generate_query_embedding
-        return [] if embedding.nil?
+        return no_vector_search(:embedding_failed) if embedding.nil?
 
-        qdrant_results = search_qdrant(embedding)
-        return [] if qdrant_results.empty?
-
-        hydrate_qdrant_results(qdrant_results)
+        @vector_search_status = "ok"
+        hydrate_qdrant_results(search_qdrant(embedding))
       rescue StandardError => e
         Rails.logger.warn(
           message: "knowledge.search.vector_search_failed",
           project_id: project.id,
           error: e.message
         )
+        no_vector_search(:error)
+      end
+
+      # Distinguishes "this query has no vector matches" (status ok, zero
+      # hits) from "the vector half structurally cannot contribute" (any
+      # other status) — the latter is what should read as degraded in meta.
+      def no_vector_search(status)
+        @vector_search_status = status.to_s
         []
+      end
+
+      def embedded_chunks_exist?
+        KnowledgeChunk.embeddable.for_project(project).exists?
+      end
+
+      def qdrant_collection_populated?
+        Knowledge::Qdrant::CollectionManager.collection_populated?(project)
       end
 
       def search_qdrant(embedding)

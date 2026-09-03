@@ -33,6 +33,32 @@
   `app/services/knowledge/search/reranker.rb`.
   *Test:* `spec/services/knowledge/search_spec.rb`.
 
+- [x] **KNOWLEDGE-011** — When knowledge search executes in `semantic` or
+  `hybrid` mode, the system SHALL report in `meta` whether the vector-search
+  half of retrieval ran to completion (`vector_search_status: "ok"`) or
+  contributed nothing because it was skipped or failed (`not_configured`,
+  `unhealthy`, `no_embeddings`, `no_index`, `embedding_failed`, or `error`),
+  SHALL set `degraded: true` whenever the status is not `"ok"`, SHALL check
+  project-wide embedding coverage before spending an embedding-generation
+  call, so a project with zero embedded chunks short-circuits to
+  `no_embeddings` instead of querying an embedding provider on every search,
+  and SHALL verify the Qdrant collection actually contains vectors
+  (not just that PostgreSQL chunks have an `embedding_model`) so a project
+  whose index was dropped, never populated, or recreated by
+  `rebuild_schema!` without re-upserting points short-circuits to `no_index`
+  rather than silently returning zero vector hits that look identical to a
+  healthy search. Exact-mode search, which never runs vector search, reports
+  `vector_search_status: "not_applicable"` and `degraded: false`. This lets
+  callers distinguish "no matches for this query" (status `ok`, zero hits)
+  from "no vector index available for this project" (any other status),
+  instead of both looking identical to a healthy hybrid search.
+  *Code:* `app/services/knowledge/search.rb`,
+  `app/services/knowledge/search/semantic.rb`,
+  `app/services/knowledge/search/hybrid.rb`.
+  *Test:* `spec/services/knowledge/search_spec.rb`,
+  `spec/services/knowledge/search/semantic_spec.rb`,
+  `spec/services/knowledge/search/hybrid_spec.rb`.
+
 - [x] **KNOWLEDGE-004** — When Paid builds a knowledge context bundle for a
   prompt, the system SHALL assemble prioritized knowledge sections within a
   token budget from active project knowledge and durable decision artifacts.
@@ -288,6 +314,20 @@
   `spec/services/knowledge/quality/checks/*_spec.rb`,
   `spec/requests/api/knowledge_quality_controller_spec.rb`,
   `spec/requests/knowledge/quality_spec.rb`.
+
+- [x] **KNOWLEDGE-LINT-002** — When a project has at least
+  `EmbeddingCoverageCritical::MIN_ACTIVE_CHUNKS` active chunks and the
+  fraction with an `embedding_model` recorded is at or below
+  `EmbeddingCoverageCritical::NEAR_ZERO_THRESHOLD`, the knowledge lint report
+  SHALL contribute a single project-level `embedding_coverage_critical`
+  finding at `error` severity, distinct from and in addition to the
+  per-chunk `chunk_missing_embedding` `warning` findings, so an operator or
+  automated check scanning findings by severity does not have to notice that
+  every one of up to `MAX_FINDINGS_PER_CHECK` identical warnings is the same
+  underlying problem.
+  *Code:* `app/services/knowledge/quality/checks/embedding_coverage_critical.rb`,
+  `app/services/knowledge/quality/lint.rb`.
+  *Test:* `spec/services/knowledge/quality/checks/embedding_coverage_critical_spec.rb`.
 
 - [x] **KNOWLEDGE-CONTAINER-001** — When Paid runs a containerized LLM call
   for embedding generation or decision drafting (`Knowledge::AnalysisRunner`),

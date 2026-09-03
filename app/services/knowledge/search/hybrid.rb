@@ -23,10 +23,11 @@ module Knowledge
           project: project, query: query,
           artifact_type: artifact_type, limit: limit
         )
-        semantic_results = Semantic.call(
+        semantic_output = Semantic.call(
           project: project, query: query,
           artifact_type: artifact_type, limit: limit
         )
+        semantic_results = semantic_output[:results]
 
         merged = deduplicate(exact_results, semantic_results)
         ranked = Reranker.call(results: merged, target_sha: version)
@@ -34,7 +35,8 @@ module Knowledge
         {
           results: ranked.first(limit),
           exact_count: exact_results.size,
-          semantic_count: semantic_results.size
+          semantic_count: semantic_results.size,
+          vector_search_status: semantic_output[:vector_search_status]
         }
       end
 
