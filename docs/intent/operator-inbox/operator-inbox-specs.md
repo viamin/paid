@@ -91,8 +91,19 @@
   *Code:* `app/controllers/inbox_controller.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,
-  `app/views/dashboard/_inbox_detail.html.erb`.
-  *Test:* `spec/requests/inbox_spec.rb`.
+  `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_master_detail_controller.js`.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/system/dashboard_inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-003A** — The mobile master-detail Stimulus controller's
+  value-change callback runs before Stimulus calls `connect()`, so any state
+  it reads (e.g. the responsive media query) SHALL be initialized in
+  `initialize()`, not `connect()`, and `disconnect()` SHALL tolerate that
+  state never having been set up. An uncaught error in one controller's
+  lifecycle otherwise leaves Stimulus unable to finish starting up other
+  controllers on the same page, including the global chat-popup button.
+  *Code:* `app/javascript/controllers/inbox_master_detail_controller.js`.
+  *Test:* `spec/system/inbox_chat_popup_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
