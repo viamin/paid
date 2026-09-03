@@ -58,6 +58,8 @@ module Configuration
 
       def build_changes(targets)
         targets.filter_map do |key, target_value|
+          next unless Settings.known_key?(key)
+
           descriptor = Settings.fetch(key)
           current = Settings.read(context, key)
           next if current == target_value

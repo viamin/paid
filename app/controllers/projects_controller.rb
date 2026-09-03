@@ -576,7 +576,7 @@ class ProjectsController < ApplicationController
       :generated_label_name, :automation_label_name,
       :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
       :max_enhance_issue_reevaluation_rounds,
-      :auto_add_labels_enabled, :automation_on_label_enabled, :pr_aggregation_enabled,
+      :auto_add_labels_enabled, :automation_on_label_enabled,
       :inherit_priority_labels,
       :auto_enhance_enabled,
       :knowledge_evolution_enabled,

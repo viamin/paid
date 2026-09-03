@@ -84,12 +84,12 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
       expect(result[:available_slots]).to eq(2)
     end
 
-    it "includes pr_aggregation_enabled from project setting" do
-      project = create(:project, pr_aggregation_enabled: true)
+    it "does not expose removed PR aggregation state" do
+      project = create(:project)
 
       result = activity.execute({ project_id: project.id })
 
-      expect(result[:pr_aggregation_enabled]).to be true
+      expect(result).not_to have_key(:pr_aggregation_enabled)
     end
 
     it "does not count unclaimed queued runs as active" do
