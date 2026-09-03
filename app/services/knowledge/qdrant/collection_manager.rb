@@ -29,13 +29,19 @@ module Knowledge
         new(project: project, client: client).rebuild_schema!
       end
 
-      # True when the project's Qdrant collection exists and contains at least
-      # one vector. Catches the failure mode where PostgreSQL chunks still
-      # carry an `embedding_model` value (so a PG-side existence check would
-      # look healthy) but the collection was dropped, never populated, or
-      # recreated by `rebuild_schema!` without re-upserting points — in those
-      # states a vector search would silently return zero hits even though
-      # the rest of the pipeline reports success.
+      # True when the project's Qdrant collection exists and contains at
+      # least one *searchable* (`status: active`) point. Catches the failure
+      # mode where PostgreSQL chunks still carry an `embedding_model` value
+      # (so a PG-side existence check would look healthy) but the collection
+      # was dropped, never populated, or recreated by `rebuild_schema!`
+      # without re-upserting points — in those states a vector search would
+      # silently return zero hits even though the rest of the pipeline
+      # reports success. Counting by `status: active` (rather than the
+      # collection's total `vectors_count`) also catches the case where every
+      # point has been flipped to `stale` in Postgres without being deleted
+      # from Qdrant: `Semantic#search_qdrant` filters hits to `status:
+      # active`, so a collection with only stale points contributes nothing
+      # to search even though `vectors_count` is positive.
       def self.collection_populated?(project, client: Paid.qdrant_client)
         new(project: project, client: client).collection_populated?
       end
@@ -62,8 +68,12 @@ module Knowledge
       end
 
       def collection_populated?(name = collection_name)
-        result = client.collections.get(collection_name: name)
-        result.dig("result", "vectors_count").to_i.positive?
+        result = client.points.count(
+          collection_name: name,
+          filter: { must: [ { key: "status", match: { value: "active" } } ] },
+          exact: true
+        )
+        result.dig("result", "count").to_i.positive?
       rescue ::Qdrant::Error => e
         raise unless e.message.match?(/not found/i)
 

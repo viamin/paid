@@ -246,50 +246,56 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
   end
 
   describe "#collection_populated?" do
-    it "returns true when the collection reports a positive vectors_count" do
-      allow(collections).to receive(:get)
-        .with(collection_name: collection_name)
-        .and_return({ "result" => { "status" => "green", "vectors_count" => 42 } })
+    let(:active_status_filter) { { must: [ { key: "status", match: { value: "active" } } ] } }
+
+    it "returns true when the collection reports a positive active-point count" do
+      allow(points).to receive(:count)
+        .with(collection_name: collection_name, filter: active_status_filter, exact: true)
+        .and_return({ "result" => { "count" => 42 } })
 
       expect(manager.collection_populated?).to be(true)
     end
 
-    it "returns false when the collection reports zero vectors (post-rebuild_schema!)" do
-      allow(collections).to receive(:get)
-        .with(collection_name: collection_name)
-        .and_return({ "result" => { "status" => "green", "vectors_count" => 0 } })
+    # Zero active points covers both an empty/rebuilt collection and a
+    # collection whose points were all flipped to `stale` in Postgres
+    # without being deleted from Qdrant — both leave the active-point
+    # count at zero, which is what this method gates on.
+    it "returns false when the collection reports zero active points" do
+      allow(points).to receive(:count)
+        .with(collection_name: collection_name, filter: active_status_filter, exact: true)
+        .and_return({ "result" => { "count" => 0 } })
 
       expect(manager.collection_populated?).to be(false)
     end
 
     it "returns false when the collection is missing (not found)" do
-      allow(collections).to receive(:get)
-        .with(collection_name: collection_name)
+      allow(points).to receive(:count)
+        .with(collection_name: collection_name, filter: active_status_filter, exact: true)
         .and_raise(Qdrant::Error.new("Not found: collection 'foo' doesn't exist"))
 
       expect(manager.collection_populated?).to be(false)
     end
 
     it "re-raises non-not-found Qdrant errors so callers can classify them as :error" do
-      allow(collections).to receive(:get)
-        .with(collection_name: collection_name)
+      allow(points).to receive(:count)
+        .with(collection_name: collection_name, filter: active_status_filter, exact: true)
         .and_raise(Qdrant::Error.new("Unauthorized: invalid API key"))
 
       expect { manager.collection_populated? }.to raise_error(Qdrant::Error, /Unauthorized/)
     end
 
-    it "treats a missing vectors_count field as zero vectors" do
-      allow(collections).to receive(:get)
-        .with(collection_name: collection_name)
-        .and_return({ "result" => { "status" => "green" } })
+    it "treats a missing count field as zero points" do
+      allow(points).to receive(:count)
+        .with(collection_name: collection_name, filter: active_status_filter, exact: true)
+        .and_return({ "result" => {} })
 
       expect(manager.collection_populated?).to be(false)
     end
 
     it "is exposed as a class-level shortcut" do
-      allow(collections).to receive(:get)
-        .with(collection_name: collection_name)
-        .and_return({ "result" => { "vectors_count" => 7 } })
+      allow(points).to receive(:count)
+        .with(collection_name: collection_name, filter: active_status_filter, exact: true)
+        .and_return({ "result" => { "count" => 7 } })
 
       expect(described_class.collection_populated?(project, client: qdrant_client)).to be(true)
     end
