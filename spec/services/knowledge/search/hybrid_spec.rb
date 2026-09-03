@@ -90,13 +90,21 @@ RSpec.describe Knowledge::Search::Hybrid do
     end
 
     it "passes search arguments through to Semantic" do
-      allow(Knowledge::Search::Semantic).to receive(:call).and_return([])
+      allow(Knowledge::Search::Semantic).to receive(:call).and_return({ results: [], vector_search_status: "not_configured" })
 
       described_class.call(project: project, query: "test")
 
       expect(Knowledge::Search::Semantic).to have_received(:call).with(
         hash_including(project: project, query: "test")
       )
+    end
+
+    it "surfaces the semantic search's vector_search_status" do
+      allow(Knowledge::Search::Semantic).to receive(:call).and_return({ results: [], vector_search_status: "no_embeddings" })
+
+      output = described_class.call(project: project, query: "test")
+
+      expect(output[:vector_search_status]).to eq("no_embeddings")
     end
   end
 end

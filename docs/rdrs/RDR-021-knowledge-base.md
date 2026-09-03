@@ -198,7 +198,7 @@ Collectors may produce identical artifacts across runs (e.g., unchanged files). 
 ### Risks and Mitigations
 
 - **Risk**: Qdrant availability affects search quality
-  **Mitigation**: Exact search falls back to PostgreSQL trigram matching. Semantic search degrades gracefully.
+  **Mitigation**: Exact search falls back to PostgreSQL trigram matching. Semantic search degrades gracefully — and now reports the degradation (`vector_search_status`, `degraded` in `Knowledge::Search`'s `meta`) instead of returning lexical-only results indistinguishable from a healthy hybrid search (issue #3794).
 
 - **Risk**: Embedding costs scale with codebase size
   **Mitigation**: Content-hash deduplication, incremental updates, batch processing. Monitor via audit events.
