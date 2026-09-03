@@ -637,7 +637,7 @@ module Activities
       # ready and now has a real conflict the owner expects automation to fix.
       if issue.pr_review_phase == "restarted"
         pr_data ||= fetch_pr_data(client, project, issue)
-        all_triggers.concat(check_merge_conflicts(project, pr_data))
+        all_triggers.concat(check_merge_conflicts(project, issue, pr_data))
       end
 
       # Only fetch conversation comments if still no triggers.
@@ -951,7 +951,7 @@ module Activities
 
       checks = fetch_check_runs(client, project, pr_data)
       ci_triggers = ci_failure_triggers(checks || [])
-      conflict_triggers = check_merge_conflicts(project, pr_data)
+      conflict_triggers = check_merge_conflicts(project, issue, pr_data)
       triggers = ci_triggers + conflict_triggers
 
       if triggers.any?
@@ -1075,7 +1075,7 @@ module Activities
     # the more expensive review-thread / comment-fetch path.
     def cheap_ready_triggers(project, issue, pr_data:, checks:)
       ci_failure_triggers(checks || []) +
-        check_merge_conflicts(project, pr_data) +
+        check_merge_conflicts(project, issue, pr_data) +
         check_actionable_labels(project, issue)
     end
 
@@ -1379,7 +1379,7 @@ module Activities
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
-      triggers.concat(check_merge_conflicts(project, pr_data))
+      triggers.concat(check_merge_conflicts(project, issue, pr_data))
       triggers.concat(page_load_regression_triggers(project, issue))
       triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
 
@@ -1700,7 +1700,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return :skipped if pr_data.nil?
 
-      triggers = check_merge_conflicts(project, pr_data)
+      triggers = check_merge_conflicts(project, issue, pr_data)
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -2137,7 +2137,7 @@ module Activities
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
         check_conversation_comments(client, project, issue, focused_run).empty? &&
         check_actionable_labels(project, issue).empty? &&
-        check_merge_conflicts(project, pr_data).empty?
+        check_merge_conflicts(project, issue, pr_data).empty?
 
       {
         "focus_resolved" => resolved ? 1.0 : 0.0,
@@ -2978,7 +2978,7 @@ module Activities
       [ { type: "actionable_labels", details: matching } ]
     end
 
-    def check_merge_conflicts(project, pr_data)
+    def check_merge_conflicts(project, issue, pr_data)
       return [] unless Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_fix_merge_conflicts")
       return [] unless pr_data
       return [] if pr_data.mergeable.nil? || pr_data.mergeable

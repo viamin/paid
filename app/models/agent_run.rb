@@ -1719,9 +1719,13 @@ class AgentRun < ApplicationRecord
   private :assign_default_tdd_phase
 
   # @spec AUTOMATION-ACTIVATION-005
+  # Label-based overrides only apply when an issue or parent issue is present;
+  # issue-less runs (e.g. manual create_pr runs with a custom prompt) keep the
+  # project-level TDD default.
   def effective_tdd_mode
+    return "off" unless project
+
     issue_record = issue || source_pull_request_record&.parent_issue
-    return "off" unless project && issue_record
 
     Automation::FeatureActivation.issue_tdd_mode(project:, issue: issue_record)
   end

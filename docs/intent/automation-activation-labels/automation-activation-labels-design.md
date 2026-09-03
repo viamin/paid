@@ -56,6 +56,10 @@ The activation resolver is mechanical and shared:
 4. Trusted label application is required. Activation labels that cause Paid to
    spend money are honored only when `Automation::LabelPolicy` confirms that a
    project-trusted GitHub user applied the activating label.
+5. Item-less runs keep project defaults. Label-based overrides apply only when
+   an issue or parent issue is present; runs without either (e.g. manual
+   `create_pr` runs with a custom prompt) keep the project-level setting, so a
+   strict/non-strict project TDD mode still governs them.
 
 # Catchall behavior
 

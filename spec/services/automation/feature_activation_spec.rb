@@ -49,6 +49,18 @@ RSpec.describe Automation::FeatureActivation do
 
       expect(described_class.issue_tdd_mode(project:, issue:)).to eq("non_strict")
     end
+
+    # @spec AUTOMATION-ACTIVATION-005
+    it "preserves the project-level mode for issue-less runs" do
+      project.update!(tdd_mode: "strict")
+
+      expect(described_class.issue_tdd_mode(project:, issue: nil)).to eq("strict")
+    end
+
+    # @spec AUTOMATION-ACTIVATION-005
+    it "returns off for issue-less runs on label-driven projects" do
+      expect(described_class.issue_tdd_mode(project:, issue: nil)).to eq("off")
+    end
   end
 
   describe ".pull_request_feature_enabled?" do
