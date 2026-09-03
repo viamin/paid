@@ -5,6 +5,8 @@ module Activities
   #
   # Best-effort: failures are logged but do not raise, so they
   # don't break the agent execution workflow.
+  #
+  # @spec KNOWLEDGE-010
   class DraftDecisionRecordActivity < BaseActivity
     activity_name "DraftDecisionRecord"
 
@@ -60,6 +62,9 @@ module Activities
 
           { agent_run_id: agent_run_id, decision_record_id: record.id, success: true }
         else
+          # Draft.call only returns nil for a legitimate skip (blank change
+          # summary) — genuine drafting failures raise DraftFailedError and
+          # are handled by the rescue below, marking the phase failed (#3795).
           logger.info(
             message: "knowledge.decisions.draft_skipped",
             agent_run_id: agent_run_id
