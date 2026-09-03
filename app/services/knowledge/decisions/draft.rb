@@ -214,6 +214,7 @@ module Knowledge
 
       def send_to_llm_in_process(prompt)
         success = false
+        last_error = nil
         setting = effective_user_setting
 
         result = if setting
@@ -226,19 +227,24 @@ module Knowledge
           )
 
           executor.execute do |provider|
-            response = AgentHarness.send_message(prompt, **llm_request_options(provider))
-            parsed = parse_response(response)
-            unless parsed
-              current_knowledge_run.mark_provider_attempt_outcome(
-                provider: provider,
-                outcome: "unparseable_response"
-              )
-              raise AgentHarness::ProviderError.new(
-                "Runner #{provider} returned unparseable response"
-              )
+            begin
+              response = AgentHarness.send_message(prompt, **llm_request_options(provider))
+              parsed = parse_response(response)
+              unless parsed
+                current_knowledge_run.mark_provider_attempt_outcome(
+                  provider: provider,
+                  outcome: "unparseable_response"
+                )
+                raise AgentHarness::ProviderError.new(
+                  "Runner #{provider} returned unparseable response"
+                )
+              end
+              current_knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
+              parsed
+            rescue AgentHarness::Error => e
+              last_error = e
+              raise
             end
-            current_knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
-            parsed
           end
         else
           send_to_llm_in_process_without_executor(prompt)
@@ -255,8 +261,8 @@ module Knowledge
         )
         current_knowledge_run&.fail!(
           reason: "all_providers_exhausted",
-          error_class: e.class.name,
-          error_message: e.message
+          error_class: last_error&.class&.name || e.class.name,
+          error_message: last_error&.message || e.message
         )
         nil
       ensure
