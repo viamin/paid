@@ -36,7 +36,7 @@ module Knowledge
       # was dropped, never populated, or recreated by `rebuild_schema!`
       # without re-upserting points — in those states a vector search would
       # silently return zero hits even though the rest of the pipeline
-      # reports success. Counting by `status: active` (rather than the
+      # reports success. Probing for `status: active` points (rather than the
       # collection's total `vectors_count`) also catches the case where every
       # point has been flipped to `stale` in Postgres without being deleted
       # from Qdrant: `Semantic#search_qdrant` filters hits to `status:
@@ -67,13 +67,22 @@ module Knowledge
         client.collections.delete(collection_name: collection_name)
       end
 
+      # Uses a limit-1 scroll, not `points.count`: this gate runs before
+      # every semantic/hybrid search, and an `exact: true` count makes Qdrant
+      # visit the full active set — O(n) on collections with hundreds of
+      # thousands of points. A filtered limit-1 scroll rides the `status`
+      # payload index and stops at the first match, so it stays constant-cost
+      # regardless of collection size. (`exact: false` counts come from
+      # cardinality estimators and can misreport near-empty collections,
+      # which would reintroduce this exact bug as flakiness.)
       def collection_populated?(name = collection_name)
-        result = client.points.count(
+        result = client.points.scroll(
           collection_name: name,
+          limit: 1,
           filter: { must: [ { key: "status", match: { value: "active" } } ] },
-          exact: true
+          with_payload: false
         )
-        result.dig("result", "count").to_i.positive?
+        result.dig("result", "points").to_a.any?
       rescue ::Qdrant::Error => e
         raise unless e.message.match?(/not found/i)
 

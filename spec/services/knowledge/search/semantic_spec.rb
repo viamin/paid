@@ -121,27 +121,13 @@ RSpec.describe Knowledge::Search::Semantic do
       # collection without re-upserting points. Without the index check the
       # search would proceed, return zero hits, and report ok (silent
       # lexical-only fallback).
+      # "No active points" covers both a never-populated/rebuilt collection
+      # and one whose points were all flipped to `stale` in Postgres without
+      # being deleted from Qdrant — the probe gates on the same state either
+      # way.
       it "reports vector_search_status as no_index without generating a query embedding" do
         create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        qdrant_client = instance_double(QdrantClient, healthy?: true)
-        qdrant_points = instance_double(Qdrant::Points)
-        allow(qdrant_points).to receive(:count)
-          .with(collection_name: "account_#{project.account_id}_project_#{project.id}",
-            filter: active_status_filter, exact: true)
-          .and_return({ "result" => { "count" => 0 } })
-        allow(qdrant_client).to receive(:points).and_return(qdrant_points)
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: qdrant_client)
-        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new)
-
-        output = described_class.call(project: project, query: "lists all users")
-
-        expect(output[:vector_search_status]).to eq("no_index")
-        expect(Knowledge::Embeddings::ProxyGenerator).not_to have_received(:new)
-      end
-
-      it "reports vector_search_status as no_index when every point has been flipped to stale" do
-        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        stub_populated_qdrant_collection(project, active_count: 0)
+        stub_empty_qdrant_collection(project)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new)
 
         output = described_class.call(project: project, query: "lists all users")
@@ -152,14 +138,9 @@ RSpec.describe Knowledge::Search::Semantic do
 
       it "reports vector_search_status as no_index when the qdrant collection is missing" do
         create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        qdrant_client = instance_double(QdrantClient, healthy?: true)
-        qdrant_points = instance_double(Qdrant::Points)
-        allow(qdrant_points).to receive(:count)
-          .with(collection_name: "account_#{project.account_id}_project_#{project.id}",
-            filter: active_status_filter, exact: true)
+        qdrant_client = stub_populated_qdrant_collection(project)
+        allow(qdrant_client.points).to receive(:scroll)
           .and_raise(Qdrant::Error.new("Not found: collection 'foo' doesn't exist"))
-        allow(qdrant_client).to receive(:points).and_return(qdrant_points)
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: qdrant_client)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new)
 
         output = described_class.call(project: project, query: "lists all users")
@@ -233,14 +214,22 @@ RSpec.describe Knowledge::Search::Semantic do
   # Stubs `Paid.qdrant_*` so `qdrant_healthy?` and the populated-collection
   # gate both pass through to the embedding/search steps. Returns the stubbed
   # client so tests can layer additional stubs (e.g. `points.search`) on
-  # `qdrant_client.points`, which already has `count` stubbed here.
-  def stub_populated_qdrant_collection(project, active_count: 5)
+  # `qdrant_client.points`, which already has `scroll` stubbed here.
+  def stub_populated_qdrant_collection(project)
+    stub_qdrant_collection_probe(project, points: [ { "id" => "active-point" } ])
+  end
+
+  def stub_empty_qdrant_collection(project)
+    stub_qdrant_collection_probe(project, points: [])
+  end
+
+  def stub_qdrant_collection_probe(project, points:)
     qdrant_client = instance_double(QdrantClient, healthy?: true)
     qdrant_points = instance_double(Qdrant::Points)
-    allow(qdrant_points).to receive(:count)
+    allow(qdrant_points).to receive(:scroll)
       .with(collection_name: "account_#{project.account_id}_project_#{project.id}",
-        filter: active_status_filter, exact: true)
-      .and_return({ "result" => { "count" => active_count } })
+        limit: 1, filter: active_status_filter, with_payload: false)
+      .and_return({ "result" => { "points" => points } })
     allow(qdrant_client).to receive(:points).and_return(qdrant_points)
     allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: qdrant_client)
     qdrant_client
