@@ -61,9 +61,10 @@
 - [x] **GH-LABELS-003** — Every canonical label definition SHALL carry a
   description that states the consequence of applying or removing the label
   in plain language, fit within GitHub's 100-character label description
-  limit, and be tagged with exactly one `kind` (`:control`, `:status`, or
-  `:informational`) reflecting whether applying/removing it changes
-  automation, marks Paid-applied output, or is purely informational.
+  limit, and be tagged with exactly one `kind` (`:control`, `:activation`,
+  `:status`, or `:informational`) reflecting whether applying/removing it
+  subtracts automation, activates a disabled feature for one item, marks
+  Paid-applied output, or is purely informational.
   *Code:* `app/services/projects/ensure_standard_labels.rb::LABEL_DEFINITIONS`.
   *Test:* `spec/services/projects/ensure_standard_labels_spec.rb`.
 

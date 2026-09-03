@@ -2,6 +2,7 @@
 
 class TenantSetting < ApplicationRecord
   include AutoPickSkipLabels
+  include FeatureActivationLabels
   include PreferredDockerHostIdentifierValidation
   has_logidze
   PG_INT_MAX = 2_147_483_647

@@ -184,3 +184,13 @@
   *Code:* `app/models/issue.rb#sync_manual_review_started_at`,
   `app/services/issue_enhancements/stop_for_manual_review.rb`,
   `app/temporal/activities/enhance_issue_activity.rb`.
+
+- [x] **ISSUE-ENHANCEMENT-013** — When project-level issue enhancement is off,
+  a trusted issue-scoped activation label (`paid-enhance` or `paid-in-full`)
+  SHALL switch that issue's auto-pick path from `create_pr` to
+  `analyze_issue`, while unlabeled issues continue to bypass enhancement.
+  *Tests:* `spec/services/automation/issue_evaluator_spec.rb`,
+  `spec/services/issues/auto_pick_spec.rb`.
+  *Code:* `app/services/automation/feature_activation.rb`,
+  `app/services/automation/label_policy.rb`,
+  `app/services/automation/strategies/auto_pick.rb`.

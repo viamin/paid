@@ -1712,11 +1712,20 @@ class AgentRun < ApplicationRecord
   def assign_default_tdd_phase
     return if tdd_phase.present?
     return unless create_pr_goal?
-    return unless project&.tdd_mode.in?(%w[strict non_strict])
+    return unless effective_tdd_mode.in?(%w[strict non_strict])
 
     self.tdd_phase = inferred_tdd_phase
   end
   private :assign_default_tdd_phase
+
+  # @spec AUTOMATION-ACTIVATION-005
+  def effective_tdd_mode
+    issue_record = issue || source_pull_request_record&.parent_issue
+    return "off" unless project && issue_record
+
+    Automation::FeatureActivation.issue_tdd_mode(project:, issue: issue_record)
+  end
+  private :effective_tdd_mode
 
   def inferred_tdd_phase
     return "test_writing" if source_pull_request_number.blank?

@@ -118,7 +118,9 @@ module Activities
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
       return { prs_to_trigger: [], automation_results: [], project_missing: true } unless project
-      return { prs_to_trigger: [], automation_results: [] } unless project.auto_scan_prs
+      unless pr_scanning_enabled?(project)
+        return { prs_to_trigger: [], automation_results: [] }
+      end
       return { prs_to_trigger: [], automation_results: [] } if project.account.tenant_setting&.auto_continue? == false
 
       client = if project.respond_to?(:client)
@@ -213,6 +215,14 @@ module Activities
     end
 
     private
+
+    def pr_scanning_enabled?(project)
+      return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")
+      return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_merge")
+      return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_fix_merge_conflicts")
+
+      false
+    end
 
     def collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle:)
       scan_outcome = Automation::StrategyCoordinator.new(project: issue.project)
@@ -312,7 +322,7 @@ module Activities
         .auto_continue_active
         .where(github_state: "open")
 
-      labeled_prs = automation_labeled_prs(project, candidate_prs)
+      labeled_prs = activation_scannable_prs(project, candidate_prs)
       dependabot_prs = if project.auto_merge_dependabot?
         dependabot_auto_merge_prs(candidate_prs)
       else
@@ -335,8 +345,19 @@ module Activities
       trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
     end
 
-    def automation_labeled_prs(project, candidate_prs)
-      candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008
+    def activation_scannable_prs(project, candidate_prs)
+      labels = [
+        project.feature_activation_label_for("auto_scan_prs"),
+        project.feature_activation_label_for("auto_merge"),
+        project.feature_activation_label_for("auto_fix_merge_conflicts")
+      ].compact.uniq
+      return candidate_prs if project.auto_scan_prs
+      return candidate_prs.none if labels.empty?
+
+      labels.reduce(candidate_prs.none) do |scope, label|
+        scope.or(candidate_prs.where("labels @> ?", [ label ].to_json))
+      end.or(candidate_prs.where(parent_issue_id: catchall_parent_issue_ids(project)))
     end
 
     def dependabot_auto_merge_prs(candidate_prs)
@@ -346,7 +367,8 @@ module Activities
     def authorized_for_automation_scan?(project, issue)
       return true if project.trusted_github_author?(issue.github_creator_login)
       return true if dependency_update_bot_author?(issue.github_creator_login)
-      return true if trusted_user_added_label?(project, issue, project.automation_label_name)
+      return true if trusted_pr_activation?(project, issue)
+      return true if trusted_issue_catchall_for_pr?(project, issue)
 
       Rails.logger.warn(
         message: "pr_scanner.untrusted_pr_blocked",
@@ -354,9 +376,35 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         creator: issue.github_creator_login,
-        label: project.automation_label_name
+        label: project.feature_activation_label_for("auto_scan_prs")
       )
       false
+    end
+
+    # @spec AUTOMATION-ACTIVATION-006
+    def trusted_pr_activation?(project, issue)
+      %w[auto_scan_prs auto_merge auto_fix_merge_conflicts].any? do |feature|
+        label = project.feature_activation_label_for(feature)
+        label.present? && issue.has_label?(label) && trusted_user_added_label?(project, issue, label)
+      end
+    end
+
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-006
+    def trusted_issue_catchall_for_pr?(project, issue)
+      parent_issue = issue.parent_issue
+      return false unless parent_issue
+
+      label = project.feature_activation_label_for("paid_in_full")
+      label.present? && parent_issue.has_label?(label) && trusted_user_added_label?(project, parent_issue, label)
+    end
+
+    def catchall_parent_issue_ids(project)
+      label = project.feature_activation_label_for("paid_in_full")
+      return project.issues.none.select(:id) unless label.present?
+
+      project.issues.where(is_pull_request: false).select do |issue|
+        issue.has_label?(label) && trusted_user_added_label?(project, issue, label)
+      end.map(&:id)
     end
 
     def trusted_creator_logins_for(project)
@@ -671,7 +719,8 @@ module Activities
     end
 
     def scan_tdd_draft_pr(project, client, issue, pr_data: nil)
-      return :not_applicable unless project.tdd_mode.in?(%w[strict non_strict])
+      tdd_mode = Automation::FeatureActivation.issue_tdd_mode(project:, issue: issue.parent_issue || issue)
+      return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
       if issue.has_label?(TDD_TESTS_APPROVED_LABEL) &&
@@ -687,7 +736,7 @@ module Activities
         type: "tdd_test_changes_requested",
         details: "Test review requested changes before implementation") if issue.has_label?(TDD_TEST_CHANGES_REQUESTED_LABEL)
 
-      return nil if project.tdd_mode == "strict"
+      return nil if tdd_mode == "strict"
 
       scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: pr_data)
     end
@@ -1638,7 +1687,7 @@ module Activities
     # held for its owner — the runaway loop the escalated phase now prevents.
     # @spec PR-ESCALATION-001
     def merge_conflict_rescan_needed?(project, issue)
-      project.auto_fix_merge_conflicts &&
+      Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_fix_merge_conflicts") &&
         issue.pr_review_phase == "ready" &&
         !followup_limit_reached?(project, issue) &&
         !total_followup_limit_reached?(project, issue)
@@ -2930,7 +2979,7 @@ module Activities
     end
 
     def check_merge_conflicts(project, pr_data)
-      return [] unless project.auto_fix_merge_conflicts
+      return [] unless Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_fix_merge_conflicts")
       return [] unless pr_data
       return [] if pr_data.mergeable.nil? || pr_data.mergeable
 

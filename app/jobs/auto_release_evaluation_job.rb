@@ -26,12 +26,13 @@ class AutoReleaseEvaluationJob < ApplicationJob
 
   def perform(project_id, pr_number: nil)
     project = Project.find_by(id: project_id)
-    return unless project&.auto_release_enabled?
+    return unless project
 
     client = project.client
 
     release_pr = find_release_pr(client, project, pr_number)
     return unless release_pr
+    return unless auto_release_enabled_for?(project, release_pr.number)
 
     previous_version = fetch_previous_version(client, project)
     return unless previous_version
@@ -213,6 +214,16 @@ class AutoReleaseEvaluationJob < ApplicationJob
       pr_number: result.pr_number,
       error: e.message
     )
+  end
+
+  # @spec AUTOMATION-ACTIVATION-003
+  def auto_release_enabled_for?(project, pr_number)
+    return true if project.auto_release_enabled?
+
+    issue = pull_request_issue(project, pr_number)
+    return false unless issue
+
+    Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_release")
   end
 
   def pull_request_issue(project, pr_number)

@@ -1999,6 +1999,48 @@ RSpec.describe Project do
       end
     end
 
+    describe "#effective_feature_activation_labels" do
+      it "uses project labels before user, tenant, and defaults" do
+        project = create(:project, feature_activation_labels: { "auto_pick" => "project-auto" })
+        project.created_by.settings.update!(feature_activation_labels: { "auto_pick" => "user-auto" })
+        project.account.tenant_setting!.update!(feature_activation_labels: { "auto_pick" => "tenant-auto" })
+
+        expect(project.effective_feature_activation_labels).to eq({ "auto_pick" => "project-auto" })
+        expect(project.feature_activation_label_for("auto_pick")).to eq("project-auto")
+      end
+
+      it "falls back to user labels when the project does not override them" do
+        project = create(:project, feature_activation_labels: nil)
+        project.created_by.settings.update!(feature_activation_labels: { "auto_pick" => "user-auto" })
+        project.account.tenant_setting!.update!(feature_activation_labels: { "auto_pick" => "tenant-auto" })
+
+        expect(project.effective_feature_activation_labels).to eq({ "auto_pick" => "user-auto" })
+      end
+
+      it "falls back to tenant labels when the project and user do not override them" do
+        project = create(:project, feature_activation_labels: nil)
+        project.created_by.settings.update!(feature_activation_labels: nil)
+        project.account.tenant_setting!.update!(feature_activation_labels: { "auto_pick" => "tenant-auto" })
+
+        expect(project.effective_feature_activation_labels).to eq({ "auto_pick" => "tenant-auto" })
+      end
+
+      it "falls back to built-in defaults when no override exists" do
+        project = create(:project, feature_activation_labels: nil)
+        project.created_by.settings.update!(feature_activation_labels: nil)
+        project.account.tenant_setting!.update!(feature_activation_labels: nil)
+
+        expect(project.effective_feature_activation_labels).to eq(FeatureActivationLabels::DEFAULTS)
+      end
+
+      it "allows a project override to disable activation labels entirely" do
+        project = create(:project, feature_activation_labels: {})
+        project.created_by.settings.update!(feature_activation_labels: { "auto_pick" => "user-auto" })
+
+        expect(project.effective_feature_activation_labels).to eq({})
+      end
+    end
+
     describe "#effective_screenshot_settings" do
       it "returns defaults when screenshot_settings is empty" do
         project = build(:project, screenshot_settings: {})

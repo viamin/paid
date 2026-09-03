@@ -195,6 +195,7 @@ class Project < ApplicationRecord
 
   include TenantScoped
   include AutoPickSkipLabels
+  include FeatureActivationLabels
 
   belongs_to :github_token, counter_cache: true, optional: true
   belongs_to :github_installation, optional: true
@@ -465,6 +466,23 @@ class Project < ApplicationRecord
     return tenant_labels unless tenant_labels.nil?
 
     AutoPickSkipLabels::DEFAULTS
+  end
+
+  def effective_feature_activation_labels
+    return feature_activation_labels unless feature_activation_labels.nil?
+
+    owner_labels = effective_owner&.user_setting&.feature_activation_labels
+    return owner_labels unless owner_labels.nil?
+
+    tenant_labels = account&.tenant_setting&.feature_activation_labels
+    return tenant_labels unless tenant_labels.nil?
+
+    FeatureActivationLabels::DEFAULTS
+  end
+
+  # @spec AUTOMATION-ACTIVATION-001
+  def feature_activation_label_for(feature)
+    effective_feature_activation_labels[feature.to_s]
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.
