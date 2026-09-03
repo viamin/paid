@@ -147,10 +147,15 @@ module Knowledge
             parsed = parse_text_output(output)
             if parsed
               knowledge_run.update!(final_provider: provider)
+              knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
               success = true
               return parsed
             end
 
+            knowledge_run.mark_provider_attempt_outcome(
+              provider: provider,
+              outcome: "unparseable_response"
+            )
             log_provider_switch(
               from_provider: provider,
               to_provider: providers[index + 1],
@@ -158,6 +163,12 @@ module Knowledge
               knowledge_run: knowledge_run
             )
           rescue Knowledge::AnalysisRunner::Error => e
+            knowledge_run.mark_provider_attempt_outcome(
+              provider: provider,
+              outcome: "container_provider_error",
+              error_class: e.class.name,
+              error_message: e.message
+            )
             Rails.logger.warn(
               message: "knowledge.decisions.draft_container_provider_failed",
               agent_run_id: agent_run.id,
@@ -185,6 +196,15 @@ module Knowledge
           error_class: e.class.name,
           error: e.message
         )
+        knowledge_run.fail!(
+          reason: "container_error",
+          error_class: e.class.name,
+          error_message: e.message
+        )
+        # The in-process fallback represents a separate attempt — clear the
+        # containerized run reference so it gets its own KnowledgeRun instead
+        # of silently overwriting a failed one.
+        @current_knowledge_run = nil
         fallback_result = send_to_llm_in_process(prompt)
         success = fallback_result.present?
         fallback_result
@@ -209,10 +229,15 @@ module Knowledge
             response = AgentHarness.send_message(prompt, **llm_request_options(provider))
             parsed = parse_response(response)
             unless parsed
+              current_knowledge_run.mark_provider_attempt_outcome(
+                provider: provider,
+                outcome: "unparseable_response"
+              )
               raise AgentHarness::ProviderError.new(
                 "Runner #{provider} returned unparseable response"
               )
             end
+            current_knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
             parsed
           end
         else
@@ -228,14 +253,19 @@ module Knowledge
           knowledge_run_id: current_knowledge_run&.id,
           error: e.message
         )
+        current_knowledge_run&.fail!(
+          reason: "all_providers_exhausted",
+          error_message: e.message
+        )
         nil
       ensure
-        finalize_knowledge_run!(current_knowledge_run, success: success) unless Knowledge::AnalysisRunner.available?
+        finalize_knowledge_run!(current_knowledge_run, success: success)
       end
 
       def send_to_llm_in_process_without_executor(prompt)
         create_knowledge_run! unless current_knowledge_run
         providers = chat_providers
+        last_error = nil
 
         providers.each_with_index do |provider, index|
           current_knowledge_run.record_provider_attempt(provider)
@@ -247,16 +277,38 @@ module Knowledge
           parsed = parse_response(response)
           if parsed
             current_knowledge_run.update!(final_provider: provider)
+            current_knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
             return parsed
           end
 
+          # parse_response returns nil for both a failed response (success?=false)
+          # and a successful response whose output is unparseable. Use the
+          # response itself to disambiguate so the persisted outcome reflects
+          # the actual reason this attempt ended in failure.
+          outcome = if response.respond_to?(:success?) && !response.success?
+            "invalid_response"
+          else
+            "unparseable_response"
+          end
+
+          current_knowledge_run.mark_provider_attempt_outcome(
+            provider: provider,
+            outcome: outcome
+          )
           log_provider_switch(
             from_provider: provider,
             to_provider: providers[index + 1],
-            reason: "invalid_response",
+            reason: outcome,
             knowledge_run: current_knowledge_run
           )
         rescue AgentHarness::Error => e
+          last_error = e
+          current_knowledge_run.mark_provider_attempt_outcome(
+            provider: provider,
+            outcome: "provider_error",
+            error_class: e.class.name,
+            error_message: e.message
+          )
           Rails.logger.warn(
             message: "knowledge.decisions.draft_provider_failed",
             agent_run_id: agent_run.id,
@@ -274,7 +326,11 @@ module Knowledge
           )
         end
 
-        log_all_providers_unavailable(current_knowledge_run, reason: "in_process_providers_failed")
+        log_all_providers_unavailable(
+          current_knowledge_run,
+          reason: "in_process_providers_failed",
+          error: last_error
+        )
         nil
       end
 
@@ -362,6 +418,7 @@ module Knowledge
 
       def finalize_knowledge_run!(knowledge_run, success:)
         return unless knowledge_run&.persisted?
+        return if knowledge_run.status == "failed"
 
         success ? knowledge_run.complete! : knowledge_run.fail!
       rescue ActiveRecord::RecordInvalid => e
@@ -390,7 +447,15 @@ module Knowledge
         Rails.logger.warn(payload)
       end
 
-      def log_all_providers_unavailable(knowledge_run, reason:, providers: nil)
+      def log_all_providers_unavailable(knowledge_run, reason:, providers: nil, error: nil)
+        if knowledge_run&.persisted? && knowledge_run.active?
+          knowledge_run.fail!(
+            reason: reason,
+            error_class: error&.class&.name,
+            error_message: error&.message
+          )
+        end
+
         Rails.logger.warn(
           message: "knowledge.providers_unavailable",
           operation: "decision_drafting",

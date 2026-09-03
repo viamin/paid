@@ -328,3 +328,29 @@
   `app/temporal/activities/draft_decision_record_activity.rb`.
   *Test:* `spec/services/knowledge/decisions/draft_spec.rb`,
   `spec/temporal/activities/draft_decision_record_activity_spec.rb`.
+
+- [x] **KNOWLEDGE-011** — When a `KnowledgeRun` fails, the system SHALL persist
+  a structured `failure_reason` (one of `KnowledgeRun::FAILURE_REASONS`),
+  the terminating error's `error_class` and `error_message` when one was
+  raised, and a `completed_at` stamp so the run can be aggregated by reason
+  and time without log archaeology (#3796). Per-attempt outcomes SHALL be
+  recorded on each entry in `provider_attempts` (`outcome`, `error_class`,
+  `error_message`) so a failed run is no longer a row of timestamps with
+  only `final_provider = nil` to distinguish it from a successful one.
+  Callers that already compute a `reason:` (`Knowledge::Decisions::Draft`,
+  `Knowledge::Embeddings::ProxyGenerator`, the provider/runner executors)
+  SHALL route that reason into the persisted record rather than only
+  logging it. `Knowledge::Decisions::Draft` SHALL keep the
+  containerized-path run distinct from the in-process fallback's run when
+  the container itself fails, so the container-error reason is preserved
+  instead of being overwritten by the fallback's success.
+  *Code:* `app/models/knowledge_run.rb`,
+  `app/services/knowledge/decisions/draft.rb`,
+  `app/services/knowledge/embeddings/proxy_generator.rb`,
+  `app/services/knowledge/runner_executor.rb`,
+  `db/migrate/20260903010526_add_failure_reason_to_knowledge_runs.rb`.
+  *Test:* `spec/models/knowledge_run_spec.rb`,
+  `spec/services/knowledge/decisions/draft_spec.rb`,
+  `spec/services/knowledge/embeddings/proxy_generator_spec.rb`,
+  `spec/services/knowledge/runner_executor_spec.rb`,
+  `spec/services/knowledge/provider_executor_spec.rb`.
