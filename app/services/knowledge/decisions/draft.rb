@@ -255,6 +255,7 @@ module Knowledge
         )
         current_knowledge_run&.fail!(
           reason: "all_providers_exhausted",
+          error_class: e.class.name,
           error_message: e.message
         )
         nil

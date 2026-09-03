@@ -109,7 +109,7 @@ class KnowledgeRun < ApplicationRecord
     index = attempts.rindex { |attempt| attempt.is_a?(Hash) && attempt["provider"] == provider }
     return if index.nil?
 
-    attempts[index]["outcome"] = outcome
+    attempts[index]["outcome"] ||= outcome
     attempts[index]["error_class"] = error_class if error_class
     attempts[index]["error_message"] = error_message if error_message
     update!(provider_attempts: attempts)

@@ -519,6 +519,26 @@ RSpec.describe Knowledge::Decisions::Draft do
     end
 
     # @spec KNOWLEDGE-011
+    it "preserves unparseable_response when the executor raises ProviderError for the same attempt" do
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(AgentHarness).to receive(:send_message).and_return(
+        instance_double(AgentHarness::Response, success?: true, output: "not json")
+      )
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.provider_attempts.last).to include(
+        "provider" => "claude",
+        "outcome" => "unparseable_response",
+        "error_class" => "AgentHarness::ProviderError",
+        "error_message" => "Runner claude returned unparseable response"
+      )
+      expect(run.failure_reason).to eq("all_providers_exhausted")
+    end
+
+    # @spec KNOWLEDGE-011
     it "persists all_providers_exhausted when the executor path exhausts all runners" do
       allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
       allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
@@ -529,6 +549,7 @@ RSpec.describe Knowledge::Decisions::Draft do
       run = KnowledgeRun.last
       expect(run.status).to eq("failed")
       expect(run.failure_reason).to eq("all_providers_exhausted")
+      expect(run.error_class).to eq("AgentHarness::Error")
       expect(run.error_message).to include("timeout")
     end
   end

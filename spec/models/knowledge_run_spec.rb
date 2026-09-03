@@ -227,6 +227,30 @@ RSpec.describe KnowledgeRun do
       )
     end
 
+    it "keeps the first recorded outcome when later annotations add error details" do
+      knowledge_run = create(:knowledge_run, :running)
+      knowledge_run.record_provider_attempt("claude")
+
+      knowledge_run.mark_provider_attempt_outcome(
+        provider: "claude",
+        outcome: "unparseable_response"
+      )
+      knowledge_run.mark_provider_attempt_outcome(
+        provider: "claude",
+        outcome: "provider_error",
+        error_class: "AgentHarness::ProviderError",
+        error_message: "Runner claude returned unparseable response"
+      )
+
+      attempt = knowledge_run.reload.provider_attempts.last
+      expect(attempt).to include(
+        "provider" => "claude",
+        "outcome" => "unparseable_response",
+        "error_class" => "AgentHarness::ProviderError",
+        "error_message" => "Runner claude returned unparseable response"
+      )
+    end
+
     it "is queryable by failure_reason so the dashboard can group failures" do
       create(:knowledge_run, :failed,
         project: create(:project),
