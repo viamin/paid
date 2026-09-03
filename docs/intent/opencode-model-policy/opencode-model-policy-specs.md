@@ -29,8 +29,8 @@
   counterparts that skip the generic compatibility check, SHALL key off this
   predicate.
 - [x] **MODEL-POLICY-011** — When a free-policy direct-outbound runner in
-  `opencode`, `kilocode`, `pi`, or `omp` is enabled for agent runs,
-  fallback, or chat, the system SHALL dispatch it through an OpenRouter-aware
+  `opencode`, `kilocode`, `pi`, or `omp` is enabled for agent runs or
+  fallback, the system SHALL dispatch it through an OpenRouter-aware
   runtime that carries the runner's OpenRouter credential plus
   data-classification routing metadata. Pi/OMP/KiloCode SHALL preserve their
   runner-specific runtime metadata/env shape while adding that routing data.
@@ -69,12 +69,11 @@
   `model_policy` under the `opencode` config block so the free policy can be
   set through the runner create/update form.
 
-## Deferred
-
 - [x] **MODEL-POLICY-009** — Runtime dispatch
   (`agent_harness_runner_runtime`/`requires_direct_outbound?`) and free-model
   rotation (`FreeModels::Rotation`) SHALL recognize `model_policy == "free"`
-  on `opencode`, `kilocode`, `pi`, and `omp` runners.
+  on `opencode`, `kilocode`, `pi`, and `omp` runners, including rate-limit
+  recovery snapshots keyed by the runner's routing identifier.
 - [x] **MODEL-POLICY-010** — `Runner.single_instance_runner_key?` (the "Add
   Runner" UI-list helper) SHALL be removed rather than re-scoped: no runner
   key is single-instance at the coarse, credential-agnostic granularity it
@@ -83,3 +82,13 @@
   OpenRouter credential) is enforced by MODEL-POLICY-007, independent of what
   the "Add Runner" list shows. Landed with the `openrouter_free` ->
   `opencode` migration (RDR-065, #3671).
+- [x] **MODEL-POLICY-013** — A free-policy `opencode` runner (`model_policy
+  == "free"`) SHALL fail validation with an error on `:enabled_for_chat` if
+  `enabled_for_chat` is true, on create, update, or any other save path.
+  Chat dispatch does not yet resolve a free-tier model for policy-based free
+  runners, so this validation is the enforcement point that prevents a
+  free-policy runner from silently falling through to a paid default model
+  in chat — regardless of the `enabled_for_chat` column's `true` DB default
+  or a save that bypasses `RunnersController`. The legacy `openrouter_free`
+  runner key is unaffected. Deferred: relax once chat dispatch resolves a
+  free-tier model for policy-based free runners.

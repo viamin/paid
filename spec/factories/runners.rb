@@ -22,6 +22,15 @@ FactoryBot.define do
       fallback_role { "rate_limit_fallback" }
     end
 
-    after(:build) { |runner| KnownDirectOutboundModels.seed_from_direct_outbound_config(runner) }
+    after(:build) do |runner|
+      if runner.runner_key == "opencode" &&
+          runner.config.is_a?(Hash) &&
+          runner.config.dig("opencode", "model_policy") == "free" &&
+          runner.enabled_for_chat?
+        runner.enabled_for_chat = false
+      end
+
+      KnownDirectOutboundModels.seed_from_direct_outbound_config(runner)
+    end
   end
 end

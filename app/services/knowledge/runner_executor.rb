@@ -130,9 +130,9 @@ module Knowledge
     end
 
     # Returns the free-policy Runner record for the current user when the
-    # runner-name passed in corresponds to an OpenRouter-backed free-policy
-    # runner. The Runner record is what FreeModels::Rotation needs in order to
-    # update tier_model_ids and read the RunnerState.
+    # runner identifier points at one. The Runner record is what
+    # FreeModels::Rotation needs in order to update tier_model_ids and read
+    # the RunnerState.
     #
     # Memoized per runner-name. In the retry path this is invoked several
     # times for the same name (record_rate_limit -> free_model_id_for,
@@ -145,10 +145,8 @@ module Knowledge
       key = runner_name.to_s
       return @rotation_runner_records[key] if @rotation_runner_records.key?(key)
 
-      @rotation_runner_records[key] =
-        @user_setting.user.runners.kept_only
-          .where(runner_key: key)
-          .find { |runner| runner.free_model_policy? && runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER }
+      record = Runner.for_identifier(@user_setting.user, key)
+      @rotation_runner_records[key] = record&.free_model_policy? ? record : nil
     end
 
     def rotation_runner?(runner)

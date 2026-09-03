@@ -199,6 +199,7 @@ class Runner < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :free_model_policy_runner_must_be_unique_per_credential
   validate :direct_outbound_model_policy_must_be_valid
+  validate :opencode_free_policy_chat_must_be_disabled
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
@@ -505,7 +506,10 @@ class Runner < ApplicationRecord
   end
 
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound?
+    opencode_direct_outbound? || opencode_free_policy_direct_outbound? ||
+      kilocode_direct_outbound? || kilocode_free_model_policy_runtime? ||
+      pi_direct_outbound? || pi_free_model_policy_runtime? ||
+      omp_direct_outbound? || omp_free_model_policy_runtime?
   end
 
   def opencode_required_api_service_type
@@ -643,6 +647,7 @@ class Runner < ApplicationRecord
 
     nil
   end
+  public :agent_harness_runner_runtime
 
   def agent_harness_runtime?
     direct_outbound_free_policy? || opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime?
@@ -961,16 +966,17 @@ class Runner < ApplicationRecord
   # When the user explicitly changes tier_model_ids on a free-policy runner,
   # drop any free-model rotation recovery snapshot so a later successful run
   # does not revert their edit back to the pre-rotation mapping. System
-  # rotations set +rotating_tier_models+ to skip this. The snapshot lives on
-  # the RunnerState row keyed by the runner's routing-key state_key (matching
-  # FreeModels::Rotation), so the lookup uses the same key that wrote it.
+  # rotations set +rotating_tier_models+ to skip this.
+  # The snapshot lives on the RunnerState row keyed by
+  # free_model_rotation_state_key — the runner's routing key for
+  # policy-based free runners — matching FreeModels::Rotation.
   # Only relevant when editing an existing runner — creating a runner must
   # not wipe a pre-existing recovery snapshot.
   # @spec MODEL-POLICY-012
   def clear_free_model_rotation_snapshot
     return if new_record?
-    return unless free_model_policy?
-    return unless required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER
+    state_key = free_model_rotation_state_key
+    return if state_key.blank?
     return unless will_save_change_to_tier_model_ids?
     return unless user
 
@@ -1254,6 +1260,24 @@ class Runner < ApplicationRecord
     return if direct_outbound_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
 
     errors.add(:config, "#{direct_outbound_runner_label} free model policy requires the OpenRouter API provider")
+  end
+
+  # Chat dispatch (ChatSessions::BuildLlmClient, Containers::ChatSessionManager)
+  # does not resolve a free-tier model for policy-based free runners the way
+  # Temporal's RunAgentActivity#selected_runner_runtime does for agent runs —
+  # only the legacy openrouter_free runner has that support today. Without
+  # this guard, the enabled_for_chat column's DB default of true (or an
+  # update outside RunnersController#apply_new_runner_defaults, which only
+  # runs on create) would silently enable chat dispatch to a paid fallback
+  # model instead of the free tier. Drop once chat-side free-model
+  # resolution lands for policy-based free runners.
+  # @spec MODEL-POLICY-013
+  def opencode_free_policy_chat_must_be_disabled
+    return unless runner_key == "opencode"
+    return unless opencode_model_policy == "free"
+    return unless enabled_for_chat?
+
+    errors.add(:enabled_for_chat, "cannot be enabled until chat dispatch resolves a free-tier model for free-policy runners")
   end
 
   # @spec MODEL-POLICY-002 MODEL-POLICY-003
@@ -1681,12 +1705,38 @@ class Runner < ApplicationRecord
   end
   public :required_api_service_type
 
+  def free_model_rotation_state_key
+    return routing_key if free_model_policy?
+
+    nil
+  end
+  public :free_model_rotation_state_key
+
   def opencode_direct_outbound?
     runner_key == "opencode" &&
       api_key? &&
       OPENCODE_API_PROVIDER_KEYS.include?(opencode_api_provider) &&
       opencode_model_id.present?
   end
+
+  def opencode_free_policy_direct_outbound?
+    runner_key == "opencode" &&
+      api_key? &&
+      opencode_model_policy == "free" &&
+      required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
+  def openrouter_provider_routed?
+    required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER &&
+      (
+        opencode_direct_outbound? ||
+        opencode_free_policy_direct_outbound? ||
+        kilocode_free_model_policy_runtime? ||
+        pi_free_model_policy_runtime? ||
+        omp_free_model_policy_runtime?
+      )
+  end
+  public :openrouter_provider_routed?
 
   def kilocode_direct_outbound?
     runner_key == "kilocode" &&
