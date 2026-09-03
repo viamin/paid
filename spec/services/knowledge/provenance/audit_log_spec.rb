@@ -60,6 +60,40 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       expect(KnowledgeAuditEvent.last.actor_id).to eq("42")
     end
 
+    # @spec KNOWLEDGE-URI-003
+    it "auto-attaches a knowledge uri for chunk-targeted events" do
+      described_class.record(
+        event: :chunk_embedded,
+        project: project,
+        target: { type: "KnowledgeChunk", id: "chunk-uuid-1" }
+      )
+
+      expect(KnowledgeAuditEvent.last.details["uri"]).to eq(
+        Knowledge::Uri.build_chunk(project_id: project.id, chunk_id: "chunk-uuid-1")
+      )
+    end
+
+    it "does not override an explicitly provided uri" do
+      described_class.record(
+        event: :chunk_embedded,
+        project: project,
+        target: { type: "KnowledgeChunk", id: "chunk-uuid-1" },
+        details: { uri: "paidkb://project/1/chunk/explicit" }
+      )
+
+      expect(KnowledgeAuditEvent.last.details["uri"]).to eq("paidkb://project/1/chunk/explicit")
+    end
+
+    it "does not attach a uri for non-chunk targets" do
+      described_class.record(
+        event: :artifact_created,
+        project: project,
+        target: { type: "KnowledgeArtifact", id: "789" }
+      )
+
+      expect(KnowledgeAuditEvent.last.details).not_to have_key("uri")
+    end
+
     it "allows nil optional fields" do
       described_class.record(event: :artifact_created, project: project)
 
@@ -141,6 +175,20 @@ RSpec.describe Knowledge::Provenance::AuditLog do
 
       expect { described_class.record_batch(events) }
         .to change(KnowledgeAuditEvent, :count).by(2)
+    end
+
+    # @spec KNOWLEDGE-URI-003
+    it "auto-attaches a knowledge uri to each chunk-targeted event" do
+      events = [
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } }
+      ]
+
+      described_class.record_batch(events)
+
+      expect(KnowledgeAuditEvent.last.details["uri"]).to eq(
+        Knowledge::Uri.build_chunk(project_id: project.id, chunk_id: "1")
+      )
     end
 
     it "logs a batch summary" do

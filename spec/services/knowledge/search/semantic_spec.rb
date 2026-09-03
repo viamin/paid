@@ -54,6 +54,14 @@ RSpec.describe Knowledge::Search::Semantic do
         expect(results.first).to have_key(:created_at)
       end
 
+      # @spec KNOWLEDGE-URI-003
+      it "includes stable knowledge uris for the chunk and its artifact" do
+        results = described_class.call(project: project, query: "lists all users")
+
+        expect(results.first[:uri]).to eq(route_artifact.knowledge_chunks.first.knowledge_uri)
+        expect(results.first[:artifact_uri]).to eq(route_artifact.knowledge_uri)
+      end
+
       it "filters by artifact_type" do
         dep_artifact = create(:knowledge_artifact,
           project: project,

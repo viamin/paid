@@ -140,4 +140,13 @@ RSpec.describe KnowledgeChunk do
       expect(chunk.redaction_scanned?).to be false
     end
   end
+
+  # @spec KNOWLEDGE-URI-001
+  describe "#knowledge_uri" do
+    it "builds a paidkb chunk uri from the project id and chunk uuid" do
+      chunk = create(:knowledge_chunk)
+
+      expect(chunk.knowledge_uri).to eq(Knowledge::Uri.build_chunk(project_id: chunk.project_id, chunk_id: chunk.id))
+    end
+  end
 end
