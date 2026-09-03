@@ -16,6 +16,8 @@ RSpec.describe KnowledgeRun do
     it { is_expected.to validate_inclusion_of(:token_limit_status).in_array(described_class::TOKEN_LIMIT_STATUSES).allow_nil }
     it { is_expected.to validate_numericality_of(:total_tokens).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:max_tokens).only_integer.is_greater_than(0).allow_nil }
+    it { is_expected.to validate_inclusion_of(:failure_reason).in_array(described_class::FAILURE_REASONS).allow_nil }
+    it { is_expected.to validate_length_of(:error_class).is_at_most(150) }
   end
 
   describe "#active?" do
@@ -138,6 +140,7 @@ RSpec.describe KnowledgeRun do
       knowledge_run.complete!
 
       expect(knowledge_run.reload.status).to eq("completed")
+      expect(knowledge_run.reload.completed_at).to be_present
     end
 
     it "marks active runs as failed" do
@@ -146,6 +149,134 @@ RSpec.describe KnowledgeRun do
       knowledge_run.fail!
 
       expect(knowledge_run.reload.status).to eq("failed")
+      expect(knowledge_run.reload.completed_at).to be_present
+    end
+
+    it "is a no-op on already-finished runs" do
+      knowledge_run = create(:knowledge_run, :completed, completed_at: 2.minutes.ago)
+      original_completed_at = knowledge_run.completed_at
+
+      knowledge_run.complete!
+      knowledge_run.fail!(reason: "containerized_providers_failed")
+
+      expect(knowledge_run.reload.status).to eq("completed")
+      expect(knowledge_run.completed_at).to be_within(1.second).of(original_completed_at)
+      expect(knowledge_run.failure_reason).to be_nil
+    end
+  end
+
+  # @spec KNOWLEDGE-011
+  describe "failure diagnostics" do
+    it "persists reason, error_class, and error_message on fail!" do
+      knowledge_run = create(:knowledge_run, :running)
+
+      knowledge_run.fail!(
+        reason: "containerized_providers_failed",
+        error_class: "AgentHarness::ProviderError",
+        error_message: "proxy returned 502"
+      )
+
+      knowledge_run.reload
+      expect(knowledge_run.status).to eq("failed")
+      expect(knowledge_run.failure_reason).to eq("containerized_providers_failed")
+      expect(knowledge_run.error_class).to eq("AgentHarness::ProviderError")
+      expect(knowledge_run.error_message).to eq("proxy returned 502")
+      expect(knowledge_run.completed_at).to be_present
+    end
+
+    it "accepts a structured attempt entry on record_provider_attempt" do
+      knowledge_run = create(:knowledge_run, :running)
+
+      knowledge_run.record_provider_attempt(
+        "claude",
+        outcome: "container_provider_error",
+        error_class: "Knowledge::AnalysisRunner::ContainerError",
+        error_message: "container exited 137"
+      )
+
+      entry = knowledge_run.reload.provider_attempts.last
+      expect(entry).to include(
+        "provider" => "claude",
+        "outcome" => "container_provider_error",
+        "error_class" => "Knowledge::AnalysisRunner::ContainerError",
+        "error_message" => "container exited 137"
+      )
+      expect(entry["attempted_at"]).to match(/\A.+\z/)
+    end
+
+    it "annotates the most-recent attempt with mark_provider_attempt_outcome" do
+      knowledge_run = create(:knowledge_run, :running)
+      knowledge_run.record_provider_attempt("claude")
+      knowledge_run.record_provider_attempt("openai")
+
+      knowledge_run.mark_provider_attempt_outcome(
+        provider: "openai",
+        outcome: "provider_error",
+        error_class: "AgentHarness::Error",
+        error_message: "rate limit"
+      )
+
+      attempts = knowledge_run.reload.provider_attempts
+      expect(attempts.first).to include("provider" => "claude")
+      expect(attempts.first["outcome"]).to be_nil
+      expect(attempts.last).to include(
+        "provider" => "openai",
+        "outcome" => "provider_error",
+        "error_class" => "AgentHarness::Error",
+        "error_message" => "rate limit"
+      )
+    end
+
+    it "keeps the first recorded outcome when later annotations add error details" do
+      knowledge_run = create(:knowledge_run, :running)
+      knowledge_run.record_provider_attempt("claude")
+
+      knowledge_run.mark_provider_attempt_outcome(
+        provider: "claude",
+        outcome: "unparseable_response"
+      )
+      knowledge_run.mark_provider_attempt_outcome(
+        provider: "claude",
+        outcome: "provider_error",
+        error_class: "AgentHarness::ProviderError",
+        error_message: "Runner claude returned unparseable response"
+      )
+
+      attempt = knowledge_run.reload.provider_attempts.last
+      expect(attempt).to include(
+        "provider" => "claude",
+        "outcome" => "unparseable_response",
+        "error_class" => "AgentHarness::ProviderError",
+        "error_message" => "Runner claude returned unparseable response"
+      )
+    end
+
+    it "is queryable by failure_reason so the dashboard can group failures" do
+      create(:knowledge_run, :failed,
+        project: create(:project),
+        failure_reason: "containerized_providers_failed")
+      create(:knowledge_run, :failed,
+        project: create(:project),
+        failure_reason: "in_process_providers_failed")
+      create(:knowledge_run, :failed,
+        project: create(:project),
+        failure_reason: "containerized_providers_failed")
+
+      reasons = described_class.where(status: "failed")
+        .group(:failure_reason)
+        .count
+
+      expect(reasons).to eq(
+        "containerized_providers_failed" => 2,
+        "in_process_providers_failed" => 1
+      )
+    end
+
+    it "rejects failure reasons outside FAILURE_REASONS" do
+      knowledge_run = build(:knowledge_run, failure_reason: "totally_made_up")
+
+      expect(knowledge_run).not_to be_valid
+      expect(knowledge_run.errors[:failure_reason]).to be_present
     end
   end
 end

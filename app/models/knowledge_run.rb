@@ -13,6 +13,26 @@ class KnowledgeRun < ApplicationRecord
   TOKEN_LIMIT_STATUSES = AgentRun::TOKEN_LIMIT_STATUSES
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000
 
+  # @spec KNOWLEDGE-011
+  # Structured categories used when persisting a run's failure. Mirrors the
+  # `reason:` values callers already compute (see Knowledge::Decisions::Draft
+  # and the provider/runner executors) so a future regression is a query
+  # against `failure_reason` rather than log archaeology.
+  FAILURE_REASONS = %w[
+    no_supported_container_providers
+    containerized_providers_failed
+    in_process_providers_failed
+    container_provider_error
+    all_providers_exhausted
+    no_available_providers
+    provider_error
+    unparseable_response
+    invalid_response
+    record_invalid
+    container_error
+    unhandled_error
+  ].freeze
+
   belongs_to :project
   has_many :token_usages, dependent: :destroy
 
@@ -24,6 +44,8 @@ class KnowledgeRun < ApplicationRecord
   validates :final_provider, length: { maximum: 50 }
   validates :max_tokens, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :total_tokens, numericality: { greater_than_or_equal_to: 0 }
+  validates :failure_reason, inclusion: { in: FAILURE_REASONS }, allow_nil: true
+  validates :error_class, length: { maximum: 150 }, allow_nil: true
 
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
@@ -61,15 +83,46 @@ class KnowledgeRun < ApplicationRecord
 
   alias_method :effective_runner, :effective_provider
 
-  def record_provider_attempt(provider)
+  # @spec KNOWLEDGE-011
+  # Append a per-attempt entry to `provider_attempts`. Optional outcome kwargs
+  # capture why the attempt was recorded the way it was so an empty `attempted_at`
+  # row stops being the only signal a failure happened.
+  def record_provider_attempt(provider, outcome: nil, error_class: nil, error_message: nil)
     attempt = {
       "provider" => provider,
-      "attempted_at" => Time.current.iso8601
-    }
+      "attempted_at" => Time.current.iso8601,
+      "outcome" => outcome
+    }.compact
+    attempt["error_class"] = error_class if error_class
+    attempt["error_message"] = error_message if error_message
     update!(provider_attempts: provider_attempts + [ attempt ])
   end
 
   alias_method :record_runner_attempt, :record_provider_attempt
+
+  # @spec KNOWLEDGE-011
+  # Annotate the most-recent attempt for `provider` with an outcome. Callers
+  # typically pair this with `record_provider_attempt` so a single attempt
+  # entry carries both when it started and how it ended.
+  def mark_provider_attempt_outcome(provider:, outcome:, error_class: nil, error_message: nil)
+    attempts = Array(provider_attempts).map(&:dup)
+    index = attempts.rindex { |attempt| attempt.is_a?(Hash) && attempt["provider"] == provider }
+    return if index.nil?
+
+    attempts[index]["outcome"] ||= outcome
+    attempts[index]["error_class"] = error_class if error_class
+    attempts[index]["error_message"] = error_message if error_message
+    update!(provider_attempts: attempts)
+  end
+
+  def mark_runner_attempt_outcome(runner:, outcome:, error_class: nil, error_message: nil)
+    mark_provider_attempt_outcome(
+      provider: runner,
+      outcome: outcome,
+      error_class: error_class,
+      error_message: error_message
+    )
+  end
 
   def ensure_proxy_token!
     return proxy_token if proxy_token.present?
@@ -87,11 +140,22 @@ class KnowledgeRun < ApplicationRecord
   end
 
   def complete!
-    update!(status: "completed") if active?
+    return unless active?
+
+    update!(status: "completed", completed_at: Time.current)
   end
 
-  def fail!
-    update!(status: "failed") if active?
+  # @spec KNOWLEDGE-011
+  # Persist the structured failure context callers already compute so future
+  # regressions are a query, not an investigation.
+  def fail!(reason: nil, error_class: nil, error_message: nil)
+    return unless active?
+
+    attributes = { status: "failed", completed_at: Time.current }
+    attributes[:failure_reason] = reason if reason
+    attributes[:error_class] = error_class if error_class
+    attributes[:error_message] = error_message if error_message
+    update!(attributes)
   end
 
   private
