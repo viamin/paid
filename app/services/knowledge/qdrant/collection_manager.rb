@@ -29,6 +29,17 @@ module Knowledge
         new(project: project, client: client).rebuild_schema!
       end
 
+      # True when the project's Qdrant collection exists and contains at least
+      # one vector. Catches the failure mode where PostgreSQL chunks still
+      # carry an `embedding_model` value (so a PG-side existence check would
+      # look healthy) but the collection was dropped, never populated, or
+      # recreated by `rebuild_schema!` without re-upserting points — in those
+      # states a vector search would silently return zero hits even though
+      # the rest of the pipeline reports success.
+      def self.collection_populated?(project, client: Paid.qdrant_client)
+        new(project: project, client: client).collection_populated?
+      end
+
       def ensure_collection!
         existing_collection = collection_exists?
 
@@ -48,6 +59,20 @@ module Knowledge
         return unless collection_exists?
 
         client.collections.delete(collection_name: collection_name)
+      end
+
+      def collection_populated?(name = collection_name)
+        result = client.collections.get(collection_name: name)
+        result.dig("result", "vectors_count").to_i.positive?
+      rescue ::Qdrant::Error => e
+        raise unless e.message.match?(/not found/i)
+
+        Rails.logger.debug(
+          message: "knowledge.qdrant.collection_not_found",
+          collection: name,
+          error: e.message
+        )
+        false
       end
 
       # Drops and recreates the Qdrant collection structure (schema + indexes).

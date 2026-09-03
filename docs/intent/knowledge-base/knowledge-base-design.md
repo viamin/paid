@@ -144,7 +144,10 @@ and link signals.
 
 When the vector half of semantic/hybrid search doesn't run to completion —
 Qdrant unconfigured or unhealthy, the project has no chunks with an
-`embedding_model` recorded yet, query-embedding generation fails, or the
+`embedding_model` recorded yet, the Qdrant collection is missing or empty
+(`no_index`, which catches the post-`rebuild_schema!` case where PostgreSQL
+chunks still carry an `embedding_model` but the collection was recreated
+without re-upserting points), query-embedding generation fails, or the
 Qdrant call itself errors — `Knowledge::Search` reports that in `meta`
 (`vector_search_status`, `degraded: true`) instead of silently returning
 lexical-only results that look identical to a healthy hybrid search. A query

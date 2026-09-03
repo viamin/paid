@@ -245,6 +245,56 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
     end
   end
 
+  describe "#collection_populated?" do
+    it "returns true when the collection reports a positive vectors_count" do
+      allow(collections).to receive(:get)
+        .with(collection_name: collection_name)
+        .and_return({ "result" => { "status" => "green", "vectors_count" => 42 } })
+
+      expect(manager.collection_populated?).to be(true)
+    end
+
+    it "returns false when the collection reports zero vectors (post-rebuild_schema!)" do
+      allow(collections).to receive(:get)
+        .with(collection_name: collection_name)
+        .and_return({ "result" => { "status" => "green", "vectors_count" => 0 } })
+
+      expect(manager.collection_populated?).to be(false)
+    end
+
+    it "returns false when the collection is missing (not found)" do
+      allow(collections).to receive(:get)
+        .with(collection_name: collection_name)
+        .and_raise(Qdrant::Error.new("Not found: collection 'foo' doesn't exist"))
+
+      expect(manager.collection_populated?).to be(false)
+    end
+
+    it "re-raises non-not-found Qdrant errors so callers can classify them as :error" do
+      allow(collections).to receive(:get)
+        .with(collection_name: collection_name)
+        .and_raise(Qdrant::Error.new("Unauthorized: invalid API key"))
+
+      expect { manager.collection_populated? }.to raise_error(Qdrant::Error, /Unauthorized/)
+    end
+
+    it "treats a missing vectors_count field as zero vectors" do
+      allow(collections).to receive(:get)
+        .with(collection_name: collection_name)
+        .and_return({ "result" => { "status" => "green" } })
+
+      expect(manager.collection_populated?).to be(false)
+    end
+
+    it "is exposed as a class-level shortcut" do
+      allow(collections).to receive(:get)
+        .with(collection_name: collection_name)
+        .and_return({ "result" => { "vectors_count" => 7 } })
+
+      expect(described_class.collection_populated?(project, client: qdrant_client)).to be(true)
+    end
+  end
+
   def expect_legacy_collection_migrated
     expect(collections).to have_received(:create_index).with(
       collection_name: legacy_collection_name,

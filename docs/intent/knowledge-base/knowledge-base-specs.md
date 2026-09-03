@@ -37,12 +37,17 @@
   `hybrid` mode, the system SHALL report in `meta` whether the vector-search
   half of retrieval ran to completion (`vector_search_status: "ok"`) or
   contributed nothing because it was skipped or failed (`not_configured`,
-  `unhealthy`, `no_embeddings`, `embedding_failed`, or `error`), SHALL set
-  `degraded: true` whenever the status is not `"ok"`, and SHALL check
+  `unhealthy`, `no_embeddings`, `no_index`, `embedding_failed`, or `error`),
+  SHALL set `degraded: true` whenever the status is not `"ok"`, SHALL check
   project-wide embedding coverage before spending an embedding-generation
   call, so a project with zero embedded chunks short-circuits to
-  `no_embeddings` instead of querying an embedding provider on every search.
-  Exact-mode search, which never runs vector search, reports
+  `no_embeddings` instead of querying an embedding provider on every search,
+  and SHALL verify the Qdrant collection actually contains vectors
+  (not just that PostgreSQL chunks have an `embedding_model`) so a project
+  whose index was dropped, never populated, or recreated by
+  `rebuild_schema!` without re-upserting points short-circuits to `no_index`
+  rather than silently returning zero vector hits that look identical to a
+  healthy search. Exact-mode search, which never runs vector search, reports
   `vector_search_status: "not_applicable"` and `degraded: false`. This lets
   callers distinguish "no matches for this query" (status `ok`, zero hits)
   from "no vector index available for this project" (any other status),

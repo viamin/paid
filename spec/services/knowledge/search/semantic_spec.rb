@@ -115,10 +115,51 @@ RSpec.describe Knowledge::Search::Semantic do
       end
     end
 
+    context "with embedded chunks but the qdrant collection is empty" do
+      # PG tracks `embedding_model` on chunks, but the Qdrant index can be
+      # out of sync — e.g. after `rebuild_schema!` drops and recreates the
+      # collection without re-upserting points. Without the index check the
+      # search would proceed, return zero hits, and report ok (silent
+      # lexical-only fallback).
+      it "reports vector_search_status as no_index without generating a query embedding" do
+        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
+        qdrant_client = instance_double(QdrantClient, healthy?: true)
+        qdrant_collections = instance_double(Qdrant::Collections)
+        allow(qdrant_collections).to receive(:get)
+          .with(collection_name: "account_#{project.account_id}_project_#{project.id}")
+          .and_return({ "result" => { "vectors_count" => 0 } })
+        allow(qdrant_client).to receive(:collections).and_return(qdrant_collections)
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: qdrant_client)
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new)
+
+        output = described_class.call(project: project, query: "lists all users")
+
+        expect(output[:vector_search_status]).to eq("no_index")
+        expect(Knowledge::Embeddings::ProxyGenerator).not_to have_received(:new)
+      end
+
+      it "reports vector_search_status as no_index when the qdrant collection is missing" do
+        create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
+        qdrant_client = instance_double(QdrantClient, healthy?: true)
+        qdrant_collections = instance_double(Qdrant::Collections)
+        allow(qdrant_collections).to receive(:get)
+          .with(collection_name: "account_#{project.account_id}_project_#{project.id}")
+          .and_raise(Qdrant::Error.new("Not found: collection 'foo' doesn't exist"))
+        allow(qdrant_client).to receive(:collections).and_return(qdrant_collections)
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: qdrant_client)
+        allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new)
+
+        output = described_class.call(project: project, query: "lists all users")
+
+        expect(output[:vector_search_status]).to eq("no_index")
+        expect(Knowledge::Embeddings::ProxyGenerator).not_to have_received(:new)
+      end
+    end
+
     context "with embedded chunks but embedding generation fails" do
       it "reports vector_search_status as embedding_failed" do
         create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        stub_populated_qdrant_collection(project)
         proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [], close: true)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
 
@@ -131,13 +172,13 @@ RSpec.describe Knowledge::Search::Semantic do
     context "with vector search raising an error" do
       it "reports vector_search_status as error and still returns lexical results" do
         create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        qdrant_client = stub_populated_qdrant_collection(project)
         embedding = Knowledge::Embeddings::Generate::Result.new(vector: [ 0.1 ], token_count: 1)
         proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embedding ], close: true)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
         qdrant_points = instance_double(Qdrant::Points)
         allow(qdrant_points).to receive(:search).and_raise(StandardError, "boom")
-        allow(Paid.qdrant_client).to receive(:points).and_return(qdrant_points)
+        allow(qdrant_client).to receive(:points).and_return(qdrant_points)
 
         output = described_class.call(project: project, query: "lists all users")
 
@@ -149,7 +190,7 @@ RSpec.describe Knowledge::Search::Semantic do
     context "with query embeddings" do
       it "routes query embedding generation through the proxy-backed generator" do
         create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        stub_populated_qdrant_collection(project)
         proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [], close: true)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).with(project: project, containerize: false).and_return(proxy_generator)
 
@@ -161,17 +202,31 @@ RSpec.describe Knowledge::Search::Semantic do
 
       it "reports vector_search_status as ok when the search executes to completion" do
         create(:knowledge_chunk, :embedded, knowledge_artifact: route_artifact, project: project)
-        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        qdrant_client = stub_populated_qdrant_collection(project)
         embedding = Knowledge::Embeddings::Generate::Result.new(vector: [ 0.1 ], token_count: 1)
         proxy_generator = instance_double(Knowledge::Embeddings::ProxyGenerator, call: [ embedding ], close: true)
         allow(Knowledge::Embeddings::ProxyGenerator).to receive(:new).and_return(proxy_generator)
         qdrant_points = instance_double(Qdrant::Points, search: { "result" => [] })
-        allow(Paid.qdrant_client).to receive(:points).and_return(qdrant_points)
+        allow(qdrant_client).to receive(:points).and_return(qdrant_points)
 
         output = described_class.call(project: project, query: "test")
 
         expect(output[:vector_search_status]).to eq("ok")
       end
     end
+  end
+
+  # Stubs `Paid.qdrant_*` so `qdrant_healthy?` and the populated-collection
+  # gate both pass through to the embedding/search steps. Returns the stubbed
+  # client so tests can layer additional stubs (e.g. `points.search`) on it.
+  def stub_populated_qdrant_collection(project, vectors_count: 5)
+    qdrant_client = instance_double(QdrantClient, healthy?: true)
+    qdrant_collections = instance_double(Qdrant::Collections)
+    allow(qdrant_collections).to receive(:get)
+      .with(collection_name: "account_#{project.account_id}_project_#{project.id}")
+      .and_return({ "result" => { "vectors_count" => vectors_count } })
+    allow(qdrant_client).to receive(:collections).and_return(qdrant_collections)
+    allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: qdrant_client)
+    qdrant_client
   end
 end

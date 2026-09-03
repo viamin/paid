@@ -52,6 +52,13 @@ module Knowledge
         return no_vector_search(:not_configured) unless qdrant_available?
         return no_vector_search(:unhealthy) unless qdrant_healthy?
         return no_vector_search(:no_embeddings) unless embedded_chunks_exist?
+        # PG carries `embedding_model` on chunks but the Qdrant index can still
+        # be empty (collection dropped, never populated, or recreated by
+        # `rebuild_schema!` without re-upserting points). Search against an
+        # empty index returns zero hits, which is indistinguishable from a
+        # healthy search reporting "no matches" — both surface as ok. Gate
+        # on the actual index state so the request reads as degraded instead.
+        return no_vector_search(:no_index) unless qdrant_collection_populated?
 
         embedding = generate_query_embedding
         return no_vector_search(:embedding_failed) if embedding.nil?
@@ -77,6 +84,10 @@ module Knowledge
 
       def embedded_chunks_exist?
         KnowledgeChunk.embeddable.for_project(project).exists?
+      end
+
+      def qdrant_collection_populated?
+        Knowledge::Qdrant::CollectionManager.collection_populated?(project)
       end
 
       def search_qdrant(embedding)
