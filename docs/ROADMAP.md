@@ -434,7 +434,7 @@ Deliverables:
 
 **Objective**: Multiple agents work on different parts of a feature simultaneously.
 
-**Status**: Complete — `PlanningWorkflow` decomposes features into sub-tasks; `ParallelAgentExecutionWorkflow` runs multiple agents concurrently with capacity checks, batch execution, and deadline enforcement. Conflict detection/resolution and aggregated PR creation included.
+**Status**: Complete — `PlanningWorkflow` decomposes features into sub-tasks; `ParallelAgentExecutionWorkflow` runs multiple agents concurrently with capacity checks, batch execution, and deadline enforcement. Conflict detection/resolution included.
 
 Tasks:
 

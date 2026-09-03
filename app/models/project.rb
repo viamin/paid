@@ -2,6 +2,7 @@
 
 class Project < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
+  self.ignored_columns += [ "pr_aggregation_enabled" ]
 
   EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
     "linear" => "Linear Issues",
@@ -157,8 +158,6 @@ class Project < ApplicationRecord
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
     { label: "Auto-Fix Merge Conflicts", attribute: :auto_fix_merge_conflicts,
      description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts against the base branch." }.freeze,
-    { label: "Aggregate PRs", attribute: :pr_aggregation_enabled,
-     description: "When a feature is decomposed into sub-tasks, aggregate all agent changes into a single PR instead of individual PRs per sub-task." }.freeze,
     { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
      description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze,
     { label: "Auto-enhance before PR", attribute: :auto_enhance_enabled,

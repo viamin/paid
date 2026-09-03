@@ -82,6 +82,20 @@ RSpec.describe Configuration::Profiles::Rollback do
         .to raise_error(ArgumentError, /no recorded previous_values/)
     end
 
+    it "ignores removed legacy settings in previous_values" do
+      apply_profile
+      applied_event = latest_applied_event
+      metadata = applied_event.metadata.deep_dup
+      metadata["previous_values"]["pr_aggregation_enabled"] = false
+      metadata["applied_values"]["pr_aggregation_enabled"] = true
+      metadata["changed_fields"] << "pr_aggregation_enabled"
+      applied_event.update!(metadata:)
+
+      expect {
+        described_class.call(applied_event, actor: owner)
+      }.not_to raise_error
+    end
+
     it "raises when the subject is not a Project" do
       apply_profile
       applied_event = latest_applied_event
