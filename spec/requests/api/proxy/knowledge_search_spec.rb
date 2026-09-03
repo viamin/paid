@@ -33,6 +33,16 @@ RSpec.describe "Api::Proxy::KnowledgeSearch" do
       expect(result.fetch("content")).to include("prey updated timestamp")
     end
 
+    it "includes stable Paid KB URIs for the artifact and chunk" do
+      chunk = create_chunk(identifier: "Hunt#last_active", content: "Hunt last active uses prey updated timestamp")
+
+      get "/api/proxy/knowledge/search", params: { q: "last active" }, headers: headers
+
+      result = response.parsed_body.fetch("results").first
+      expect(result.fetch("artifact_uri")).to eq(chunk.knowledge_artifact.knowledge_uri)
+      expect(result.fetch("uri")).to eq(chunk.knowledge_uri)
+    end
+
     it "defaults to five results" do
       6.times { |index| create_chunk(identifier: "Result #{index}", content: "sortable dashboard column #{index}") }
 

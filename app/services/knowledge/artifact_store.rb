@@ -162,7 +162,7 @@ module Knowledge
             event: :artifact_staled,
             actor: { type: "collector", id: collector_run.id },
             target: { type: "KnowledgeArtifact", id: artifact_id },
-            details: { identifier: data[:identifier] }
+            details: { identifier: data[:identifier], uri: staled_artifact_uri(data) }
           }
         end
         Knowledge::Provenance::AuditLog.record_batch(audit_events)
@@ -190,10 +190,19 @@ module Knowledge
         project: project,
         actor: { type: "collector", id: collector_run.id },
         target: { type: "KnowledgeArtifact", id: artifact.id },
-        details: { artifact_type: data[:artifact_type], identifier: data[:identifier] }
+        details: { artifact_type: data[:artifact_type], identifier: data[:identifier], uri: artifact.knowledge_uri }
       )
 
       artifact
+    end
+
+    def staled_artifact_uri(data)
+      Knowledge::Uri.build_artifact(
+        project_id: project.id,
+        artifact_type: data[:artifact_type],
+        scope_path: data[:scope_path],
+        identifier: data[:identifier]
+      )
     end
 
     def create_chunks(artifact, chunks_data)

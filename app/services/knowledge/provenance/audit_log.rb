@@ -19,7 +19,7 @@ module Knowledge
             actor_id: actor_id,
             target_type: target_type,
             target_id: target_id,
-            details: details
+            details: with_target_uri(details, project: project, target_type: target_type, target_id: target_id)
           }
 
           audit_event = begin
@@ -78,7 +78,7 @@ module Knowledge
               actor_id: actor_id,
               target_type: target_type,
               target_id: target_id,
-              details: e[:details] || {},
+              details: with_target_uri(e[:details] || {}, project: e[:project], target_type: target_type, target_id: target_id),
               created_at: now
             }
           end
@@ -106,7 +106,7 @@ module Knowledge
                   actor_id: actor_id,
                   target_type: target_type,
                   target_id: target_id,
-                  details: event[:details] || {}
+                  details: with_target_uri(event[:details] || {}, project: event[:project], target_type: target_type, target_id: target_id)
                 )
                 if record.errors.any?
                   Rails.logger.error(
@@ -156,6 +156,19 @@ module Knowledge
           return [ nil, nil ] unless hash
 
           [ hash[:type], hash[:id]&.to_s ]
+        end
+
+        # Auto-attach a stable knowledge URI for chunk-targeted events. Chunk
+        # URIs need only the project id and chunk id — both already available
+        # here — so every call site gets a citable handle for free. Artifact
+        # URIs need scope_path/identifier that isn't in the generic target
+        # pair; callers that want one pass details[:uri] explicitly.
+        # @spec KNOWLEDGE-URI-003
+        def with_target_uri(details, project:, target_type:, target_id:)
+          return details unless target_type == "KnowledgeChunk" && target_id.present?
+          return details if details.key?(:uri) || details.key?("uri")
+
+          details.merge(uri: Knowledge::Uri.build_chunk(project_id: project.id, chunk_id: target_id))
         end
       end
     end

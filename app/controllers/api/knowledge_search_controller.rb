@@ -18,6 +18,10 @@ module Api
       render json: { error: "Forbidden" }, status: :forbidden
     end
 
+    rescue_from Knowledge::Uri::InvalidUriError do |e|
+      render json: { error: e.message }, status: :bad_request
+    end
+
     # GET /api/knowledge/search?project_id=X&q=...&mode=exact|semantic|hybrid&type=route&version=abc123&limit=20
     def search
       @project = TenantContext.with_system_access { Project.find(params[:project_id]) }
@@ -42,7 +46,38 @@ module Api
       render json: result
     end
 
+    # GET /api/knowledge/resolve?uri=paidkb://project/123/chunk/<uuid>
+    #
+    # @spec KNOWLEDGE-URI-002
+    def resolve
+      parsed = Knowledge::Uri.parse(params[:uri].to_s)
+      @project = TenantContext.with_system_access { Project.find(parsed.project_id) }
+      authorize @project, :search?, policy_class: KnowledgeSearchPolicy
+
+      record = Knowledge::Uri::Resolver.call(parsed, project: @project)
+      return render json: { error: "Not found" }, status: :not_found unless record
+
+      render json: serialize_resolved(record, parsed:)
+    end
+
     private
+
+    def serialize_resolved(record, parsed:)
+      case record
+      when KnowledgeChunk
+        {
+          kind: "chunk", uri: record.knowledge_uri, chunk_id: record.id,
+          artifact_id: record.knowledge_artifact_id, artifact_type: record.knowledge_artifact.artifact_type,
+          content: record.content, status: record.status
+        }
+      when KnowledgeArtifact
+        {
+          kind: "artifact", uri: record.knowledge_uri(commit_sha: parsed.commit_sha), artifact_id: record.id,
+          artifact_type: record.artifact_type, identifier: record.identifier,
+          scope_path: record.scope_path, status: record.status
+        }
+      end
+    end
 
     # Override Devise redirect to return JSON 401 for this API endpoint.
     def authenticate_user!

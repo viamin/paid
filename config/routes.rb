@@ -364,6 +364,7 @@ Rails.application.routes.draw do
     get "proxy/git-credentials", to: "git_credentials#show"
 
     get "knowledge/search", to: "knowledge_search#search"
+    get "knowledge/resolve", to: "knowledge_search#resolve"
     get "knowledge/map", to: "knowledge_map#show"
     get "knowledge/quality", to: "knowledge_quality#show"
     get "knowledge/audit", to: "knowledge_audit#index"
