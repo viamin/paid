@@ -5,7 +5,7 @@ module Knowledge
     # @spec KNOWLEDGE-003
     # @spec KNOWLEDGE-005
     # @spec KNOWLEDGE-CURATED-002
-    # @spec KNOWLEDGE-010
+    # @spec KNOWLEDGE-011
     MODES = %w[exact semantic hybrid].freeze
     DEFAULT_MODE = "hybrid"
     DEFAULT_LIMIT = 20

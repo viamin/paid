@@ -69,7 +69,9 @@ module Api
             artifact_type: result[:artifact_type],
             content: result[:content].to_s.truncate(CONTENT_LIMIT),
             scope_path: result[:scope_path],
-            score: result[:score]
+            score: result[:score],
+            uri: result[:uri],
+            artifact_uri: result[:artifact_uri]
           }
         end
       end

@@ -55,6 +55,11 @@
                 </code>
               </div>
             <% end %>
+            <% if result[:uri].present? %>
+              <div class="mt-1 text-xs text-gray-400">
+                <code><%= result[:uri] %></code>
+              </div>
+            <% end %>
           </div>
         </div>
       <% end %>

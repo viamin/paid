@@ -121,7 +121,7 @@ RSpec.describe Knowledge::Search do
         expect(result[:meta][:semantic_count]).to eq(0)
       end
 
-      # @spec KNOWLEDGE-010
+      # @spec KNOWLEDGE-011
       it "does not report degraded vector search since exact mode never runs it" do
         result = described_class.call(project: project, query: "POST /api/users", mode: "exact")
 
@@ -183,7 +183,7 @@ RSpec.describe Knowledge::Search do
         expect(result[:meta][:exact_count]).to eq(0)
       end
 
-      # @spec KNOWLEDGE-010
+      # @spec KNOWLEDGE-011
       it "reports degraded vector search when Qdrant is unavailable" do
         result = described_class.call(project: project, query: "users route controller", mode: "semantic")
 
@@ -214,7 +214,7 @@ RSpec.describe Knowledge::Search do
         expect(result[:meta]).to have_key(:semantic_count)
       end
 
-      # @spec KNOWLEDGE-010
+      # @spec KNOWLEDGE-011
       it "reports degraded vector search when the semantic half could not contribute" do
         result = described_class.call(project: project, query: "POST /api/users", mode: "hybrid")
 

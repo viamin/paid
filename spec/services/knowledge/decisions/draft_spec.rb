@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-010
 RSpec.describe Knowledge::Decisions::Draft do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
@@ -87,16 +88,16 @@ RSpec.describe Knowledge::Decisions::Draft do
       expect(result).to be_nil
     end
 
-    it "returns nil when LLM returns unparseable response" do
+    it "raises DraftFailedError when LLM returns unparseable response" do
       allow(llm_response).to receive(:output).and_return("not json")
-      result = described_class.call(agent_run: agent_run)
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
     end
 
-    it "returns nil when LLM response indicates failure" do
+    it "raises DraftFailedError when LLM response indicates failure" do
       allow(llm_response).to receive(:success?).and_return(false)
-      result = described_class.call(agent_run: agent_run)
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
     end
 
     it "calls AgentHarness with correct parameters" do
@@ -194,22 +195,22 @@ RSpec.describe Knowledge::Decisions::Draft do
       )
     end
 
-    it "returns nil when LLM response is missing required fields" do
+    it "raises DraftFailedError when LLM response is missing required fields" do
       incomplete = { title: "Missing fields", tags: %w[test] }.to_json
       allow(llm_response).to receive(:output).and_return(incomplete)
 
-      result = described_class.call(agent_run: agent_run)
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
     end
 
-    it "returns nil and logs when AgentHarness raises an error" do
+    it "raises DraftFailedError and logs when AgentHarness raises an error" do
       allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
 
-      result = described_class.call(agent_run: agent_run)
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
     end
 
-    it "returns nil and logs when record creation raises RecordInvalid" do
+    it "raises DraftFailedError and logs when record creation raises RecordInvalid" do
       # Title exceeding max length after truncation would still pass, so use a
       # different approach: temporarily make the project association invalid to
       # trigger RecordInvalid from create!
@@ -217,8 +218,8 @@ RSpec.describe Knowledge::Decisions::Draft do
       allow(llm_response).to receive(:output).and_return(json)
       allow(agent_run).to receive(:project).and_return(nil)
 
-      result = described_class.call(agent_run: agent_run)
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
     end
   end
 
@@ -319,13 +320,12 @@ RSpec.describe Knowledge::Decisions::Draft do
       expect(kr.status).to eq("completed")
     end
 
-    it "returns nil when all containerized providers fail" do
+    it "raises DraftFailedError when all containerized providers fail" do
       allow(mock_runner).to receive(:call_llm)
         .and_raise(Knowledge::AnalysisRunner::ContainerError, "proxy error")
 
-      result = described_class.call(agent_run: agent_run)
-
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
     end
 
     it "logs unavailable providers when only non-container providers are configured" do
@@ -334,9 +334,8 @@ RSpec.describe Knowledge::Decisions::Draft do
       allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("codex").and_return(false)
       project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [ "codex" ])
 
-      result = described_class.call(agent_run: agent_run)
-
-      expect(result).to be_nil
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
       expect(Rails.logger).to have_received(:warn).with(hash_including(
         message: "knowledge.providers_unavailable",
         operation: "decision_drafting",
@@ -373,7 +372,8 @@ RSpec.describe Knowledge::Decisions::Draft do
       allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
       allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
 
-      described_class.call(agent_run: agent_run)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
 
       expect(KnowledgeRun.last.status).to eq("failed")
     end

@@ -154,4 +154,34 @@ RSpec.describe KnowledgeArtifact do
       expect(Rails.cache.read(described_class.okf_export_available_cache_key(project_id))).to be_nil
     end
   end
+
+  # @spec KNOWLEDGE-URI-001
+  describe "#knowledge_uri" do
+    let(:project) { create(:project) }
+    let(:project_version) { create(:project_version, project: project, commit_sha: "a" * 40) }
+    let(:collector_run) { create(:collector_run, project_version: project_version) }
+    let(:artifact) do
+      create(:knowledge_artifact, project: project, collector_run: collector_run,
+        artifact_type: "route", scope_path: "config/routes.rb", identifier: "GET /x")
+    end
+
+    it "builds the active-view uri" do
+      expect(artifact.knowledge_uri).to eq(Knowledge::Uri.for_artifact(artifact))
+    end
+
+    it "accepts a commit_sha to build a version-pinned uri" do
+      expect(artifact.knowledge_uri(commit_sha: "a" * 40)).to eq(Knowledge::Uri.for_artifact(artifact, commit_sha: "a" * 40))
+    end
+  end
+
+  describe "#versioned_knowledge_uri" do
+    let(:project) { create(:project) }
+    let(:project_version) { create(:project_version, project: project, commit_sha: "a" * 40) }
+    let(:collector_run) { create(:collector_run, project_version: project_version) }
+    let(:artifact) { create(:knowledge_artifact, project: project, collector_run: collector_run) }
+
+    it "pins the uri to the collector run's project version commit" do
+      expect(artifact.versioned_knowledge_uri).to eq(artifact.knowledge_uri(commit_sha: "a" * 40))
+    end
+  end
 end

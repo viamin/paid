@@ -47,7 +47,7 @@ module Knowledge
           .map { |chunk| format_chunk_result(chunk, score: chunk.relevance_rank&.to_f) }
       end
 
-      # @spec KNOWLEDGE-010
+      # @spec KNOWLEDGE-011
       def vector_search
         return no_vector_search(:not_configured) unless qdrant_available?
         return no_vector_search(:unhealthy) unless qdrant_healthy?
@@ -161,6 +161,8 @@ module Knowledge
           content: chunk.content,
           score: score,
           source: "semantic",
+          uri: chunk.knowledge_uri,
+          artifact_uri: artifact.knowledge_uri,
           project_version: version_info(version),
           scope_tags: chunk.scope_tags || [],
           start_line: start_line_for(artifact),

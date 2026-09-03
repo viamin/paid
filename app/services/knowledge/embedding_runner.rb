@@ -1,16 +1,24 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "fileutils"
 require "json"
 require "securerandom"
-require "tmpdir"
+require "rubygems/package"
+require "stringio"
 
 module Knowledge
   class EmbeddingRunner
     class Error < StandardError; end
     class ContainerError < Error; end
     class TimeoutError < ContainerError; end
+
+    # Input is streamed into the container as a tar archive (see
+    # #stream_input_to_container!) rather than bind-mounted from a host temp
+    # dir: a temp dir created by this process is not visible to the Docker
+    # daemon in DooD deployments (the daemon runs outside this container), so
+    # a host bind mount here silently mounts an empty directory and every run
+    # fails reading /paid-input/texts.json (RDR-054).
+    INPUT_TMPFS_SIZE = 8 * 1024 * 1024
 
     CONTAINER_DEFAULTS = {
       # Embedding runs never need the project's own runtime — always the base
@@ -28,21 +36,17 @@ module Knowledge
       @project = project
       @knowledge_run = knowledge_run
       @container = nil
-      @input_dir = nil
     end
 
     def self.available?
-      backend = Containers.backend
-      return false unless backend.supports_host_paths?
-
-      backend.ping == "OK"
+      Containers.backend.ping == "OK"
     rescue Excon::Error, Docker::Error::DockerError
       false
     end
 
     def generate(texts:, provider:, model:, dimensions:, timeout: CONTAINER_DEFAULTS[:timeout_seconds])
       ensure_container!
-      write_input_file(texts)
+      stream_input_to_container!(texts)
 
       result = execute(
         [ "ruby", "-e", script ],
@@ -55,26 +59,19 @@ module Knowledge
       # After any failure the container may be in a bad state.
       # Reset so the next provider attempt reprovisions a fresh container.
       cleanup_container!
-      cleanup_input_dir!
       raise
     end
 
     def cleanup!
       cleanup_container!
-      cleanup_input_dir!
     end
 
     private
 
     def ensure_container!
       return if @container
-      unless Containers.backend.supports_host_paths?
-        raise ContainerError, "Embedding containers require a backend with host path support"
-      end
 
-      cleanup_input_dir!
       ExecutionRunners::LocalDockerRunner.ensure_agent_network!(backend: Containers.backend)
-      @input_dir = Dir.mktmpdir("paid-embedding-runner-")
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
       apply_network_restrictions!
@@ -101,17 +98,30 @@ module Knowledge
       @container = nil
     end
 
-    def cleanup_input_dir!
-      return unless @input_dir
+    # Streams texts.json into the container's /paid-input tmpfs mount as a
+    # tar archive over the Docker API socket, so no host filesystem path
+    # ever needs to be visible to the Docker daemon.
+    # @spec KNOWLEDGE-CONTAINER-002
+    def stream_input_to_container!(texts)
+      data = build_input_tar(texts)
+      offset = 0
 
-      FileUtils.remove_entry(@input_dir)
-      @input_dir = nil
-    rescue SystemCallError
-      nil
+      @container.archive_in_stream("/paid-input") do
+        chunk = data.byteslice(offset, 8192).to_s
+        offset += chunk.bytesize
+        chunk
+      end
+    rescue Docker::Error::DockerError => e
+      raise ContainerError, "Failed to stage embedding input: #{e.message}"
     end
 
-    def write_input_file(texts)
-      File.write(File.join(@input_dir, "texts.json"), JSON.generate(texts))
+    def build_input_tar(texts)
+      json = JSON.generate(texts)
+      tar_io = StringIO.new
+      Gem::Package::TarWriter.new(tar_io) do |tar|
+        tar.add_file_simple("texts.json", 0o644, json.bytesize) { |io| io.write(json) }
+      end
+      tar_io.string
     end
 
     def execute(cmd, timeout:, env:)
@@ -315,10 +325,10 @@ module Knowledge
           "CpuQuota" => CONTAINER_DEFAULTS[:cpu_quota],
           "PidsLimit" => CONTAINER_DEFAULTS[:pids_limit],
           "Tmpfs" => {
-            "/tmp" => "size=#{64 * 1024 * 1024},mode=1777"
+            "/tmp" => "size=#{64 * 1024 * 1024},mode=1777",
+            "/paid-input" => "size=#{INPUT_TMPFS_SIZE},mode=1777"
           },
-          "NetworkMode" => NetworkPolicy::NETWORK_NAME,
-          "Binds" => [ "#{@input_dir}:/paid-input:ro" ]
+          "NetworkMode" => NetworkPolicy::NETWORK_NAME
         },
         "Env" => [
           "HOME=/home/agent",

@@ -50,6 +50,20 @@ class KnowledgeArtifact < ApplicationRecord
     self.class.curated_type?(artifact_type)
   end
 
+  # @spec KNOWLEDGE-URI-001
+  def knowledge_uri(commit_sha: nil)
+    Knowledge::Uri.for_artifact(self, commit_sha: commit_sha)
+  end
+
+  # Version-pinned handle for the commit this artifact was collected at, or
+  # nil when the collector run isn't linked to a project version yet.
+  def versioned_knowledge_uri
+    commit_sha = collector_run&.project_version&.commit_sha
+    return nil if commit_sha.blank?
+
+    knowledge_uri(commit_sha: commit_sha)
+  end
+
   def self.artifact_counts_cache_key(project_id)
     "project_artifact_counts/#{project_id}"
   end

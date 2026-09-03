@@ -152,4 +152,80 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       end
     end
   end
+
+  describe "GET /api/knowledge/resolve" do
+    # @spec KNOWLEDGE-URI-002
+    it "resolves a chunk URI" do
+      uri = chunk.knowledge_uri
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["kind"]).to eq("chunk")
+      expect(body["uri"]).to eq(uri)
+      expect(body["chunk_id"]).to eq(chunk.id)
+    end
+
+    it "resolves an artifact URI" do
+      uri = artifact.knowledge_uri
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["kind"]).to eq("artifact")
+      expect(body["uri"]).to eq(uri)
+      expect(body["artifact_id"]).to eq(artifact.id)
+    end
+
+    # @spec KNOWLEDGE-URI-002
+    it "preserves a commit-pinned artifact uri in the response" do
+      project_version.update!(commit_sha: "abc123def456")
+      artifact.update!(status: "stale")
+      uri = artifact.versioned_knowledge_uri
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["kind"]).to eq("artifact")
+      expect(body["uri"]).to eq(uri)
+      expect(body["artifact_id"]).to eq(artifact.id)
+    end
+
+    it "returns 404 when the referenced chunk does not exist" do
+      uri = Knowledge::Uri.build_chunk(project_id: project.id, chunk_id: SecureRandom.uuid)
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "returns 400 for a malformed uri" do
+      get "/api/knowledge/resolve", params: { uri: "not-a-knowledge-uri" }
+
+      expect(response).to have_http_status(:bad_request)
+    end
+
+    it "returns 403 JSON for other accounts' projects" do
+      other_account = create(:account)
+      other_token = create(:github_token, account: other_account)
+      other_project = create(:project, account: other_account, github_token: other_token)
+      uri = Knowledge::Uri.build_chunk(project_id: other_project.id, chunk_id: SecureRandom.uuid)
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "returns 401 JSON for unauthenticated requests" do
+      sign_out user
+      uri = chunk.knowledge_uri
+
+      get "/api/knowledge/resolve", params: { uri: uri }
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
 end

@@ -33,7 +33,7 @@
   `app/services/knowledge/search/reranker.rb`.
   *Test:* `spec/services/knowledge/search_spec.rb`.
 
-- [x] **KNOWLEDGE-010** — When knowledge search executes in `semantic` or
+- [x] **KNOWLEDGE-011** — When knowledge search executes in `semantic` or
   `hybrid` mode, the system SHALL report in `meta` whether the vector-search
   half of retrieval ran to completion (`vector_search_status: "ok"`) or
   contributed nothing because it was skipped or failed (`not_configured`,
@@ -245,6 +245,46 @@
   `spec/services/knowledge/runner_selector_spec.rb`,
   `spec/services/knowledge/provider_selector_spec.rb`.
 
+- [x] **KNOWLEDGE-URI-001** — When Paid generates a handle for an active
+  knowledge artifact or chunk, the system SHALL build a canonical
+  `paidkb://project/<project_id>/...` URI using percent-encoded scope/
+  identifier segments, and SHALL additionally support a version-pinned
+  variant that inserts a `commit/<sha>` segment without changing the
+  active-view grammar. Parsing an arbitrary string back into a URI SHALL
+  raise `Knowledge::Uri::InvalidUriError` for anything that isn't a
+  well-formed `paidkb://` URI.
+  *Code:* `app/services/knowledge/uri.rb`, `app/models/knowledge_artifact.rb`,
+  `app/models/knowledge_chunk.rb`.
+  *Test:* `spec/services/knowledge/uri_spec.rb`.
+
+- [x] **KNOWLEDGE-URI-002** — When Paid resolves a knowledge URI, the system
+  SHALL look up the referenced chunk or artifact (active-view, or pinned to
+  the project version matching a `commit/<sha>` segment) scoped to the
+  project the caller already authorized, and SHALL raise
+  `Knowledge::Uri::Resolver::ProjectMismatchError` rather than resolve when
+  the URI's embedded project id does not match that project.
+  *Code:* `app/services/knowledge/uri/resolver.rb`,
+  `app/controllers/api/knowledge_search_controller.rb`.
+  *Test:* `spec/services/knowledge/uri/resolver_spec.rb`,
+  `spec/requests/api/knowledge_search_spec.rb`.
+
+- [x] **KNOWLEDGE-URI-003** — When Paid returns knowledge search results,
+  renders knowledge browse/artifact views, builds a context bundle, or
+  records a chunk-targeted knowledge audit event, the system SHALL include
+  the stable knowledge URI for the cited chunk/artifact alongside its
+  existing database-id fields.
+  *Code:* `app/services/knowledge/search/exact.rb`,
+  `app/services/knowledge/search/semantic.rb`,
+  `app/services/knowledge/context_bundle/build.rb`,
+  `app/services/knowledge/provenance/audit_log.rb`,
+  `app/views/knowledge/search/_results.html.erb`,
+  `app/views/knowledge/browse/show.html.erb`,
+  `app/views/knowledge/artifacts/show.html.erb`.
+  *Test:* `spec/services/knowledge/search/exact_spec.rb`,
+  `spec/services/knowledge/search/semantic_spec.rb`,
+  `spec/services/knowledge/context_bundle/build_spec.rb`,
+  `spec/services/knowledge/provenance/audit_log_spec.rb`.
+
 - [x] **KNOWLEDGE-LINT-001** — When a project requests a knowledge quality
   report, the system SHALL run read-only lint/drift checks against the
   project's artifacts, chunks, links, and usage telemetry, SHALL return a
@@ -288,3 +328,43 @@
   *Code:* `app/services/knowledge/quality/checks/embedding_coverage_critical.rb`,
   `app/services/knowledge/quality/lint.rb`.
   *Test:* `spec/services/knowledge/quality/checks/embedding_coverage_critical_spec.rb`.
+
+- [x] **KNOWLEDGE-CONTAINER-001** — When Paid runs a containerized LLM call
+  for embedding generation or decision drafting (`Knowledge::AnalysisRunner`),
+  the container SHALL be attached to the restricted `paid_agent` Docker
+  network (creating it first if missing) rather than Docker's unrelated
+  default `bridge` network, because the secrets proxy is only reachable by
+  its `paid-proxy` DNS alias on `paid_agent` (RDR-054). A container on any
+  other network cannot resolve or reach the proxy, so every `call_llm`
+  attempt fails before a provider is ever contacted. Network setup failures
+  SHALL raise `Knowledge::AnalysisRunner::ContainerError` rather than
+  propagating a raw `NetworkPolicy::Error`.
+  *Code:* `app/services/knowledge/analysis_runner.rb`.
+  *Test:* `spec/services/knowledge/analysis_runner_spec.rb`.
+
+- [x] **KNOWLEDGE-CONTAINER-002** — When Paid stages input for a containerized
+  embedding call (`Knowledge::EmbeddingRunner`), it SHALL transfer the input
+  by streaming a tar archive into the container over the Docker API socket
+  rather than bind-mounting a host directory created by the current process,
+  because that directory is not visible to the Docker daemon in DooD
+  deployments (the daemon runs outside this process's container), which
+  silently mounts an empty directory and fails every embedding call reading
+  `/paid-input/texts.json`.
+  *Code:* `app/services/knowledge/embedding_runner.rb`.
+  *Test:* `spec/services/knowledge/embedding_runner_spec.rb`.
+
+- [x] **KNOWLEDGE-010** — When decision-record drafting (`Knowledge::Decisions::Draft`)
+  cannot produce a `DecisionRecord` because the LLM output was unparseable,
+  missing required fields, or record creation failed, the system SHALL treat
+  the run as a failure — distinct from a legitimate skip caused by a blank
+  change summary — and `Activities::DraftDecisionRecordActivity` SHALL report
+  `success: false` and mark the `draft_decision_record` `AgentRunPhase` as
+  `failed`, so pipeline health observability cannot silently report a failing
+  drafting path as `completed` (#3795). A legitimate skip SHALL still report
+  `success: true` with a `completed` phase. Best-effort semantics are
+  preserved: the failure is logged and does not propagate past the activity,
+  so the agent execution workflow is not broken.
+  *Code:* `app/services/knowledge/decisions/draft.rb`,
+  `app/temporal/activities/draft_decision_record_activity.rb`.
+  *Test:* `spec/services/knowledge/decisions/draft_spec.rb`,
+  `spec/temporal/activities/draft_decision_record_activity_spec.rb`.
