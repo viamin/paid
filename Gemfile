@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.1.15"
+gem "avo", "4.1.16"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -71,7 +71,7 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-gem "agent-harness", "0.36.8"
+gem "agent-harness", "0.36.12"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 gem "ruby_llm", "~> 1.16"
