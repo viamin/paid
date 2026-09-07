@@ -480,6 +480,31 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
         pull_request_number: 99
       )
     end
+
+    it "honors pr_aggregation_enabled from the capacity payload on legacy histories without explicit aggregate_pr" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30)
+        .and_return(full_capacity_result.merge(pr_aggregation_enabled: true))
+      stub_successful_futures(count: 2)
+      stub_legacy_pr_aggregation(
+        aggregate_result: {
+          feature_branch: "feature/aggregated-test",
+          merged_branches: [ "branch-1", "branch-2" ],
+          failed_merges: []
+        },
+        pr_result: {
+          pull_request_url: "https://github.com/test/repo/pull/100",
+          pull_request_number: 100
+        }
+      )
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:aggregated_pr]).to eq(
+        pull_request_url: "https://github.com/test/repo/pull/100",
+        pull_request_number: 100
+      )
+    end
   end
 
   private
