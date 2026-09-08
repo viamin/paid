@@ -85,21 +85,11 @@ module Workflows
         project_id: project_id
       )
 
-      # Step 4: Optionally aggregate branches into a single PR.
-      # Default to the project-level setting (returned by the capacity check)
-      # when the caller does not explicitly pass aggregate_pr.
-      aggregate = if input.key?(:aggregate_pr)
-        input[:aggregate_pr]
-      else
-        capacity.fetch(:pr_aggregation_enabled, false)
-      end
-      parent_issue_id = input[:parent_issue_id]
-
       aggregated_pr = nil
-      if aggregate && results.any? { |r| r[:success] }
+      if legacy_pr_aggregation_enabled?(input, capacity) && results.any? { |r| r[:success] }
         aggregated_pr = aggregate_branches_and_create_pr(
           project_id: project_id,
-          parent_issue_id: parent_issue_id,
+          parent_issue_id: input[:parent_issue_id],
           results: results,
           parent_wf_id: parent_wf_id
         )
@@ -410,9 +400,27 @@ module Workflows
       end
     end
 
+    # New histories created on or after September 3, 2026 skip PR aggregation.
+    # Older histories still need the legacy branch to remain deterministic until
+    # the patch guard sunsets — that means honoring both the caller's explicit
+    # `aggregate_pr` input AND the previously recorded
+    # `CheckProjectRunCapacityActivity#pr_aggregation_enabled` payload, because
+    # pre-guard executions defaulted to the project-level setting when the
+    # caller omitted the explicit flag.
+    def legacy_pr_aggregation_enabled?(input, capacity)
+      return false if pr_aggregation_removed_for_current_history?
+
+      return input[:aggregate_pr] if input.key?(:aggregate_pr)
+
+      capacity.fetch(:pr_aggregation_enabled, false)
+    end
+
+    def pr_aggregation_removed_for_current_history?
+      Temporalio::Workflow.patched("parallel-agent-execution-remove-pr-aggregation-v1")
+    end
+
     # Aggregates branches from completed sub-tasks into a single feature branch
-    # and creates a combined PR. Called when aggregate_pr is true and at least
-    # one sub-task succeeded.
+    # and creates a combined PR for pre-September 3, 2026 histories only.
     def aggregate_branches_and_create_pr(project_id:, parent_issue_id:, results:, parent_wf_id:)
       timestamp = Temporalio::Workflow.now.to_i
       safe_id = parent_wf_id.to_s.parameterize[0, 60]

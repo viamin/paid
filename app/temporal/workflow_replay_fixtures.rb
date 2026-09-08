@@ -95,8 +95,7 @@ module WorkflowReplayFixtures
               project_active_count: 3,
               max_parallel_per_project: 3,
               user_active_count: 3,
-              max_concurrent_runs: 10,
-              pr_aggregation_enabled: false
+              max_concurrent_runs: 10
             }
           else
             {
@@ -105,8 +104,7 @@ module WorkflowReplayFixtures
               project_active_count: 0,
               max_parallel_per_project: 5,
               user_active_count: 0,
-              max_concurrent_runs: 10,
-              pr_aggregation_enabled: false
+              max_concurrent_runs: 10
             }
           end
         end,

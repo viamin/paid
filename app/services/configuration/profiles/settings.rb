@@ -57,13 +57,13 @@ module Configuration
         /\Aauto_/,
         /_enabled\z/,
         "automation_on_label_enabled",
-        "pr_aggregation_enabled",
         "allow_bot_authored_pr_auto_merge",
         "merge_method"
       ].freeze
       EXCLUDED_ATTRIBUTE_COLUMNS = {
         "auto_pick_skip_labels" => "label override, not an automation toggle",
-        "git_push_pat_fallback_enabled" => "credential fallback, not an automation toggle"
+        "git_push_pat_fallback_enabled" => "credential fallback, not an automation toggle",
+        "pr_aggregation_enabled" => "feature removed, column retained for one compatibility release; see db/migrate/20260903034209_remove_pr_aggregation_enabled_from_projects and #3815"
       }.freeze
 
       def enum(values)
@@ -146,13 +146,6 @@ module Configuration
           kind: :boolean_attribute, column: "auto_add_labels_enabled",
           read: ->(project) { project.auto_add_labels_enabled },
           write: ->(project, value) { project.auto_add_labels_enabled = value },
-          coerce: BOOLEAN
-        ),
-        "pr_aggregation_enabled" => Descriptor.new(
-          key: "pr_aggregation_enabled", attribute: "pr_aggregation_enabled", label: "Aggregate decomposed PRs",
-          kind: :boolean_attribute, column: "pr_aggregation_enabled",
-          read: ->(project) { project.pr_aggregation_enabled },
-          write: ->(project, value) { project.pr_aggregation_enabled = value },
           coerce: BOOLEAN
         ),
         "auto_scan_security" => Descriptor.new(
@@ -263,6 +256,10 @@ module Configuration
         DESCRIPTORS.fetch(key.to_s)
       rescue KeyError
         raise ArgumentError, "Unsupported configuration profile setting: #{key.inspect}"
+      end
+
+      def known_key?(key)
+        DESCRIPTORS.key?(key.to_s)
       end
 
       def read(context, key)
