@@ -6,9 +6,9 @@
     "@eslint/js": "10.0.1",
     "@herb-tools/linter": "^0.10.3",
     "esbuild": "0.28.2",
-    "eslint": "10.9.1",
+    "eslint": "10.10.0",
     "markdownlint-cli": "0.49.1",
-    "playwright": "1.62.1"
+    "playwright": "1.63.0"
   },
   "scripts": {
     "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --outdir=app/assets/builds --public-path=/assets",
