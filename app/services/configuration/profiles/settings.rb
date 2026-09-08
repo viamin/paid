@@ -62,8 +62,7 @@ module Configuration
       ].freeze
       EXCLUDED_ATTRIBUTE_COLUMNS = {
         "auto_pick_skip_labels" => "label override, not an automation toggle",
-        "git_push_pat_fallback_enabled" => "credential fallback, not an automation toggle",
-        "pr_aggregation_enabled" => "feature removed, column retained for one compatibility release; see db/migrate/20260903034209_remove_pr_aggregation_enabled_from_projects and #3815"
+        "git_push_pat_fallback_enabled" => "credential fallback, not an automation toggle"
       }.freeze
 
       def enum(values)
