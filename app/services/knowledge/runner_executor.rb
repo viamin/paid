@@ -41,12 +41,14 @@ module Knowledge
             rotation_attempts += 1
             retry
           end
+          mark_attempt_outcome(runner, "rate_limited", error: e)
           log_runner_failure(runner, "rate_limited", e)
           log_runner_switch(runner, runners[index + 1], "rate_limited", e)
           last_error = e
           next
         rescue AgentHarness::Error => e
           record_failure(runner, e)
+          mark_attempt_outcome(runner, "runner_error", error: e)
           log_runner_failure(runner, "runner_error", e)
           log_runner_switch(runner, runners[index + 1], "runner_error", e)
           last_error = e
@@ -65,10 +67,20 @@ module Knowledge
     end
 
     def record_success(runner)
+      @knowledge_run&.mark_runner_attempt_outcome(runner: runner, outcome: "success")
       @knowledge_run&.update!(final_runner: runner)
       state = runner_state_for(runner)
       fully_recovered = state&.record_success!
       restore_preferred_tier_model_ids(runner) if fully_recovered
+    end
+
+    def mark_attempt_outcome(runner, outcome, error: nil)
+      @knowledge_run&.mark_runner_attempt_outcome(
+        runner: runner,
+        outcome: outcome,
+        error_class: error&.class&.name,
+        error_message: error&.message
+      )
     end
 
     # After a full recovery (per-model rate-limit windows cleared), restore

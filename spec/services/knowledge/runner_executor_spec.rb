@@ -119,6 +119,24 @@ RSpec.describe Knowledge::RunnerExecutor do
         expect(knowledge_run.runner_attempts.size).to eq(2)
         expect(knowledge_run.final_runner).to eq("openai")
       end
+
+      # @spec KNOWLEDGE-011
+      it "annotates per-runner outcomes so provider_attempts records why each attempt ended" do
+        executor = described_class.new(
+          user_setting: user_setting,
+          operation: :chat,
+          knowledge_run: knowledge_run
+        )
+
+        executor.execute do |runner|
+          raise AgentHarness::RateLimitError, "rate limited" if runner == "claude"
+          "ok"
+        end
+
+        attempts = knowledge_run.reload.runner_attempts
+        expect(attempts.first).to include("runner" => "claude", "outcome" => "rate_limited")
+        expect(attempts.last).to include("runner" => "openai", "outcome" => "success")
+      end
     end
 
     context "with RunnerState updates" do
