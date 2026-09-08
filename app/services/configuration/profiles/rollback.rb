@@ -62,6 +62,8 @@ module Configuration
       def build_reverse_changes(project, previous_values)
         context = Context.build(project:, actor: actor)
         previous_values.filter_map do |key, previous_value|
+          next unless Settings.known_key?(key)
+
           descriptor = Settings.fetch(key)
           current = Settings.read(context, key)
           next if current == previous_value

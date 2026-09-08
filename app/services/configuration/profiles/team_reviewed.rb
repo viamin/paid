@@ -21,7 +21,6 @@ module Configuration
           "auto_release_granularity" => "off",
           "auto_enhance_enabled" => true,
           "auto_add_labels_enabled" => true,
-          "pr_aggregation_enabled" => true,
           "auto_scan_security" => true,
           "knowledge_evolution_enabled" => true,
           "allow_bot_authored_pr_auto_merge" => false,

@@ -34,6 +34,12 @@ RSpec.describe ConfigurationProfiles::Planner do
       plan = described_class.for_values(project, { "not_a_field" => true }, label: "custom", source: :custom)
       expect(plan).to be_empty
     end
+
+    it "ignores removed legacy profile keys" do
+      plan = described_class.for_values(project, { "pr_aggregation_enabled" => true }, label: "custom", source: :custom)
+
+      expect(plan).to be_empty
+    end
   end
 
   describe ".call dispatch" do

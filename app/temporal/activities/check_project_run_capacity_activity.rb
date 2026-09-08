@@ -51,8 +51,7 @@ module Activities
         max_concurrent_runs: admission[:effective_max_concurrent_runs],
         effective_max_concurrent_runs: admission[:effective_max_concurrent_runs],
         reason: admission[:reason],
-        available_memory_bytes: admission[:available_memory_bytes],
-        pr_aggregation_enabled: project.pr_aggregation_enabled?
+        available_memory_bytes: admission[:available_memory_bytes]
       }
     end
   end
