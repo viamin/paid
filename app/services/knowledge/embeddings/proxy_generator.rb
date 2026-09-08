@@ -16,6 +16,7 @@ module Knowledge
         @attempted_providers = existing_attempted_providers
         @failed = false
         @successful = false
+        @last_error = nil
       end
 
       def call(texts:)
@@ -43,6 +44,7 @@ module Knowledge
           return results
         rescue Knowledge::EmbeddingRunner::Error, EmbeddingError => e
           last_error = e
+          mark_attempt_error!(config.runner, e)
           Rails.logger.warn(
             message: "knowledge.embeddings.provider_failed",
             project_id: project.id,
@@ -54,6 +56,7 @@ module Knowledge
         end
 
         @failed = true
+        @last_error = last_error
         raise EmbeddingError,
           "Embedding generation failed for providers #{attempted_providers.join(', ')}: #{last_error&.message}"
       end
@@ -137,9 +140,19 @@ module Knowledge
 
       def mark_success!(provider)
         @successful = true
+        knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
         return if knowledge_run.final_provider == provider
 
         knowledge_run.update!(final_provider: provider)
+      end
+
+      def mark_attempt_error!(provider, error)
+        knowledge_run.mark_provider_attempt_outcome(
+          provider: provider,
+          outcome: "provider_error",
+          error_class: error.class.name,
+          error_message: error.message
+        )
       end
 
       def knowledge_run
@@ -159,20 +172,23 @@ module Knowledge
         return unless @knowledge_run&.persisted?
         return unless @knowledge_run.active?
 
-        @knowledge_run.update!(status: final_status)
+        if @failed
+          @knowledge_run.fail!(
+            reason: "all_providers_exhausted",
+            error_class: @last_error&.class&.name,
+            error_message: @last_error&.message
+          )
+        elsif @successful
+          @knowledge_run.complete!
+        else
+          @knowledge_run.fail!(reason: "all_providers_exhausted")
+        end
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.warn(
           message: "knowledge.embeddings.knowledge_run_finalize_failed",
           knowledge_run_id: @knowledge_run.id,
           error: e.message
         )
-      end
-
-      def final_status
-        return "failed" if @failed
-        return "completed" if @successful
-
-        "failed"
       end
 
       def existing_attempted_providers

@@ -119,6 +119,24 @@ RSpec.describe Knowledge::ProviderExecutor do
         expect(knowledge_run.provider_attempts.size).to eq(2)
         expect(knowledge_run.final_provider).to eq("openai")
       end
+
+      # @spec KNOWLEDGE-011
+      it "annotates per-provider outcomes so the terminating error survives log retention" do
+        executor = described_class.new(
+          user_setting: user_setting,
+          operation: :chat,
+          knowledge_run: knowledge_run
+        )
+
+        executor.execute do |provider|
+          raise AgentHarness::Error, "primary failed" if provider == "claude"
+          "ok"
+        end
+
+        attempts = knowledge_run.reload.provider_attempts
+        expect(attempts.first).to include("provider" => "claude", "outcome" => "runner_error")
+        expect(attempts.last).to include("provider" => "openai", "outcome" => "success")
+      end
     end
 
     context "with runner state updates" do

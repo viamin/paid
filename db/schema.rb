@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_02_071054) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_03_010526) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1710,7 +1710,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_071054) do
   end
 
   create_table "knowledge_runs", force: :cascade do |t|
+    t.datetime "completed_at", comment: "When the run finished (completed or failed). Distinct from updated_at, which is touched by unrelated writes."
     t.datetime "created_at", null: false
+    t.string "error_class", limit: 150, comment: "Ruby class name of the terminating error for a failed run, when one was raised (e.g. 'AgentHarness::ProviderError')."
+    t.text "error_message", comment: "Human-readable message of the terminating error for a failed run."
+    t.string "failure_reason", limit: 100, comment: "Structured reason a failed run ended in failure (e.g. 'in_process_providers_failed', 'containerized_providers_failed', 'no_supported_container_providers'). Nullable on successful runs."
     t.string "final_provider", limit: 50
     t.integer "max_tokens"
     t.string "operation_type", limit: 50, null: false
@@ -1721,7 +1725,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_071054) do
     t.string "token_limit_status", limit: 50
     t.integer "total_tokens", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.index ["project_id", "status"], name: "index_knowledge_runs_on_project_id_and_status"
+    t.index ["operation_type", "status", "failure_reason"], name: "index_knowledge_runs_on_failure_diagnostics"
+    t.index ["project_id", "status", "completed_at"], name: "index_knowledge_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_knowledge_runs_on_project_id"
     t.index ["proxy_token"], name: "index_knowledge_runs_on_proxy_token", unique: true
   end

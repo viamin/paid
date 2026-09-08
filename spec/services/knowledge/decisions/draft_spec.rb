@@ -344,6 +344,85 @@ RSpec.describe Knowledge::Decisions::Draft do
       ))
       expect(KnowledgeRun.last.status).to eq("failed")
     end
+
+    # @spec KNOWLEDGE-011
+    it "persists the failure_reason on the KnowledgeRun when no container provider is supported" do
+      allow(Rails.logger).to receive(:warn)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("cursor").and_return(false)
+      allow(Knowledge::AnalysisRunner).to receive(:supported_provider?).with("codex").and_return(false)
+      project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [ "codex" ])
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.failure_reason).to eq("no_supported_container_providers")
+      expect(run.status).to eq("failed")
+      expect(run.completed_at).to be_present
+    end
+
+    # @spec KNOWLEDGE-011
+    it "annotates per-attempt outcomes for container provider failures" do
+      allow(mock_runner).to receive(:call_llm)
+        .and_raise(Knowledge::AnalysisRunner::ContainerError, "proxy timeout")
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.failure_reason).to eq("containerized_providers_failed")
+      expect(run.provider_attempts.last).to include(
+        "provider" => "claude",
+        "outcome" => "container_provider_error",
+        "error_class" => "Knowledge::AnalysisRunner::ContainerError",
+        "error_message" => "proxy timeout"
+      )
+    end
+
+    # @spec KNOWLEDGE-011
+    it "persists container_error reason on the original run when falling back to in-process" do
+      allow(mock_runner).to receive(:with_container)
+        .and_raise(Knowledge::AnalysisRunner::ContainerError, "provision failed")
+
+      described_class.call(agent_run: agent_run)
+
+      failed_runs = KnowledgeRun.where(status: "failed")
+      expect(failed_runs.size).to eq(1)
+      expect(failed_runs.first.failure_reason).to eq("container_error")
+      expect(failed_runs.first.error_class).to eq("Knowledge::AnalysisRunner::ContainerError")
+      expect(failed_runs.first.error_message).to eq("provision failed")
+
+      expect(KnowledgeRun.last.status).to eq("completed")
+    end
+
+    # @spec KNOWLEDGE-011
+    it "annotates an attempt as success when a container provider returns parseable output" do
+      allow(mock_runner).to receive(:call_llm).and_return(llm_json)
+
+      described_class.call(agent_run: agent_run)
+
+      run = KnowledgeRun.last
+      expect(run.provider_attempts.last).to include(
+        "provider" => "claude",
+        "outcome" => "success"
+      )
+      expect(run.status).to eq("completed")
+    end
+
+    # @spec KNOWLEDGE-011
+    it "annotates unparseable container output as unparseable_response" do
+      allow(mock_runner).to receive(:call_llm).and_return("not json")
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.provider_attempts.last).to include(
+        "provider" => "claude",
+        "outcome" => "unparseable_response"
+      )
+      expect(run.failure_reason).to eq("containerized_providers_failed")
+    end
   end
 
   describe "in-process fallback" do
@@ -396,6 +475,82 @@ RSpec.describe Knowledge::Decisions::Draft do
         to_provider: "claude",
         knowledge_run_id: KnowledgeRun.last.id
       ))
+    end
+
+    # @spec KNOWLEDGE-011
+    it "annotates unparseable responses from in-process providers as unparseable_response" do
+      draft = described_class.new(agent_run: agent_run)
+
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(draft).to receive_messages(effective_user_setting: nil, chat_providers: %w[cursor])
+      failed_response = instance_double(AgentHarness::Response, success?: true, output: "not json")
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response)
+
+      expect { draft.call }.to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.provider_attempts.last).to include(
+        "provider" => "cursor",
+        "outcome" => "unparseable_response"
+      )
+      expect(run.failure_reason).to eq("in_process_providers_failed")
+    end
+
+    # @spec KNOWLEDGE-011
+    it "annotates AgentHarness errors on in-process providers with class and message" do
+      draft = described_class.new(agent_run: agent_run)
+
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(draft).to receive_messages(effective_user_setting: nil, chat_providers: %w[cursor])
+      allow(AgentHarness).to receive(:send_message)
+        .and_raise(AgentHarness::ProviderError, "proxy 502")
+
+      expect { draft.call }.to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.provider_attempts.last).to include(
+        "provider" => "cursor",
+        "outcome" => "provider_error",
+        "error_class" => "AgentHarness::ProviderError",
+        "error_message" => "proxy 502"
+      )
+      expect(run.failure_reason).to eq("in_process_providers_failed")
+      expect(run.error_class).to eq("AgentHarness::ProviderError")
+    end
+
+    # @spec KNOWLEDGE-011
+    it "preserves unparseable_response when the executor raises ProviderError for the same attempt" do
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(AgentHarness).to receive(:send_message).and_return(
+        instance_double(AgentHarness::Response, success?: true, output: "not json")
+      )
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.provider_attempts.last).to include(
+        "provider" => "claude",
+        "outcome" => "unparseable_response",
+        "error_class" => "AgentHarness::ProviderError",
+        "error_message" => "Runner claude returned unparseable response"
+      )
+      expect(run.failure_reason).to eq("all_providers_exhausted")
+    end
+
+    # @spec KNOWLEDGE-011
+    it "persists all_providers_exhausted when the executor path exhausts all runners" do
+      allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+
+      run = KnowledgeRun.last
+      expect(run.status).to eq("failed")
+      expect(run.failure_reason).to eq("all_providers_exhausted")
+      expect(run.error_class).to eq("AgentHarness::Error")
+      expect(run.error_message).to include("timeout")
     end
   end
 end

@@ -21,6 +21,16 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
     )
   end
 
+  def stub_provider_failover
+    calls = 0
+    allow(Knowledge::Embeddings::Generate).to receive(:call) do
+      calls += 1
+      raise Knowledge::Embeddings::EmbeddingError, "primary failed" if calls == 1
+
+      [ result ]
+    end
+  end
+
   describe "#call" do
     it "calls the proxy-backed generator with knowledge-run credentials" do
       allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
@@ -155,6 +165,44 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
 
       generator.close
       expect(knowledge_run.reload.status).to eq("failed")
+    end
+
+    # @spec KNOWLEDGE-011
+    it "annotates each attempt with its outcome so provider_attempts stops being just timestamps" do
+      stub_provider_failover
+
+      generator.call(texts: [ "hello" ])
+      generator.close
+
+      attempts = knowledge_run.reload.provider_attempts
+      expect(attempts).to contain_exactly(
+        hash_including(
+          "provider" => "openrouter",
+          "outcome" => "provider_error",
+          "error_class" => "Knowledge::Embeddings::EmbeddingError",
+          "error_message" => "primary failed"
+        ),
+        hash_including("provider" => "openai", "outcome" => "success")
+      )
+    end
+
+    # @spec KNOWLEDGE-011
+    it "persists the structured failure reason when every provider fails" do
+      allow(Knowledge::Embeddings::Generate).to receive(:call)
+        .and_raise(Knowledge::Embeddings::EmbeddingError, "no providers available")
+
+      expect {
+        generator.call(texts: [ "hello" ])
+      }.to raise_error(Knowledge::Embeddings::EmbeddingError)
+
+      generator.close
+
+      knowledge_run.reload
+      expect(knowledge_run.status).to eq("failed")
+      expect(knowledge_run.failure_reason).to eq("all_providers_exhausted")
+      expect(knowledge_run.error_class).to eq("Knowledge::Embeddings::EmbeddingError")
+      expect(knowledge_run.error_message).to eq("no providers available")
+      expect(knowledge_run.completed_at).to be_present
     end
 
     it "uses the project token guardrail for embedding knowledge runs it creates" do
