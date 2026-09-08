@@ -417,8 +417,6 @@ module Workflows
 
     def pr_aggregation_removed_for_current_history?
       Temporalio::Workflow.patched("parallel-agent-execution-remove-pr-aggregation-v1")
-    rescue Temporalio::Error
-      false
     end
 
     # Aggregates branches from completed sub-tasks into a single feature branch

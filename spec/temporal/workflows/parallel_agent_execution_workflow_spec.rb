@@ -447,11 +447,6 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "skips aggregation for new histories even when aggregate_pr is true" do
       stub_full_capacity
       stub_successful_futures(count: 2)
-      allow(Temporalio::Workflow).to receive(:patched) do |guard_name|
-        next true if guard_name == "parallel-agent-execution-remove-pr-aggregation-v1"
-
-        true
-      end
 
       result = workflow.execute(two_task_input.merge(aggregate_pr: true))
 
@@ -511,7 +506,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
   def stub_temporal_workflow
     workflow_info = Struct.new(:workflow_id).new("test-parallel-wf")
-    allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info)
+    allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info, patched: true)
   end
 
   def stub_no_conflicts
