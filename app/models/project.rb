@@ -2,7 +2,6 @@
 
 class Project < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
-  self.ignored_columns += [ "pr_aggregation_enabled" ]
 
   EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
     "linear" => "Linear Issues",

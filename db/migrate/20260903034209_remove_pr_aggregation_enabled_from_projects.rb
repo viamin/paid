@@ -2,12 +2,10 @@
 
 class RemovePrAggregationEnabledFromProjects < ActiveRecord::Migration[8.1]
   def up
-    # Compatibility release: older web/job processes still write
+    # Compatibility release: older web/job processes still read/write
     # `projects.pr_aggregation_enabled` during a normal migrate-before-restart
-    # deploy, and a rollback needs the persisted value intact. The column
-    # is already ignored by the current model (see `Project.ignored_columns`),
-    # so this release is a no-op; drop the column in a later cleanup
-    # release. See DropLanguageProfileFromProjects for the same pattern.
+    # deploy, and a rollback needs the persisted value intact. Keep the
+    # column until a later cleanup release can remove it safely.
   end
 
   def down
