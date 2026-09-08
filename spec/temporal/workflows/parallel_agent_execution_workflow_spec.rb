@@ -500,6 +500,71 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
         pull_request_number: 100
       )
     end
+
+    it "skips aggregation when no sub-tasks succeeded on legacy histories" do
+      stub_full_capacity
+      stub_all_failing_futures
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: true))
+
+      expect(result[:aggregated_pr]).to be_nil
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+    end
+
+    it "skips PR creation when no branches were merged on legacy histories" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_legacy_pr_aggregation(
+        aggregate_result: {
+          feature_branch: "feature/aggregated-empty",
+          merged_branches: [],
+          failed_merges: [ "branch-1", "branch-2" ]
+        },
+        pr_result: nil
+      )
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: true))
+
+      expect(result[:aggregated_pr]).to be_nil
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateAggregatedPullRequestActivity, anything, timeout: 60)
+    end
+
+    it "returns nil and preserves success when aggregation fails on legacy histories" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      allow(Temporalio::Workflow).to receive(:patched) do |guard_name|
+        next false if guard_name == "parallel-agent-execution-remove-pr-aggregation-v1"
+
+        true
+      end
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+        .and_raise(StandardError, "GitHub API error")
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: true))
+
+      expect(result[:aggregated_pr]).to be_nil
+      expect(result[:success]).to be true
+    end
+
+    it "re-raises cancellation errors during aggregation on legacy histories" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      allow(Temporalio::Workflow).to receive(:patched) do |guard_name|
+        next false if guard_name == "parallel-agent-execution-remove-pr-aggregation-v1"
+
+        true
+      end
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+        .and_raise(Temporalio::Error::CanceledError, "workflow cancelled")
+
+      expect {
+        workflow.execute(two_task_input.merge(aggregate_pr: true))
+      }.to raise_error(Temporalio::Error::CanceledError)
+    end
   end
 
   private
@@ -614,6 +679,15 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
     all_done = Struct.new(:wait).new(nil)
     allow(Temporalio::Workflow::Future).to receive(:try_all_of).and_return(all_done)
+  end
+
+  def stub_all_failing_futures
+    error = StandardError.new("Agent execution failed")
+    failure = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
+      .new("done?": true, "failure?": true, failure: error, result: nil)
+    all_done = Struct.new(:wait).new(nil)
+
+    allow(Temporalio::Workflow::Future).to receive_messages(new: failure, try_all_of: all_done)
   end
 
   def stub_dependency_failure_sequence

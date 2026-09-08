@@ -443,7 +443,6 @@ Tasks:
 - [x] Parallel AgentExecutionWorkflow invocation (#696)
 - [x] Coordination between related agents (#697)
 - [x] Conflict detection and resolution (#698)
-- [x] Aggregated PR creation option (#699)
 
 Deliverables:
 
