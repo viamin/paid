@@ -2,19 +2,27 @@ import { Controller } from "@hotwired/stimulus"
 
 // Keeps the inbox list/detail panes in sync with the current mobile
 // master-detail state while leaving desktop split-pane rendering intact.
+// @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-003A
 export default class extends Controller {
   static targets = ["list", "detailSection", "row"]
   static values = { detailOpen: Boolean }
 
-  connect() {
+  // @spec OPERATOR-INBOX-003A
+  initialize() {
+    // Stimulus can invoke value-change callbacks (detailOpenValueChanged)
+    // before connect() runs, so the media query must exist from the moment
+    // the controller is instantiated, not just once connected.
     this.mediaQuery = window.matchMedia("(min-width: 1024px)")
     this.boundResetOnDesktop = this.resetOnDesktop.bind(this)
+  }
+
+  connect() {
     this.mediaQuery.addEventListener("change", this.boundResetOnDesktop)
     this.syncPaneVisibility()
   }
 
   disconnect() {
-    this.mediaQuery.removeEventListener("change", this.boundResetOnDesktop)
+    this.mediaQuery?.removeEventListener("change", this.boundResetOnDesktop)
   }
 
   detailOpenValueChanged() {
