@@ -415,6 +415,22 @@ module Models
         tier: "low"
       },
       {
+        model_id: "gpt-6-astra",
+        display_name: "GPT-6 Astra",
+        provider: "openai",
+        family: "gpt-6",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.50,
+        output_cost_per_million: 12.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.2,
+        tier: "mid"
+      },
+      {
         model_id: "glm-5.2",
         display_name: "GLM-5.2",
         provider: "zai_coding",
@@ -545,6 +561,22 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 8.4,
+        tier: "mid"
+      },
+      {
+        model_id: "gemini-3.8-flash",
+        display_name: "Gemini 3.8 Flash",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.30,
+        output_cost_per_million: 1.50,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.5,
         tier: "mid"
       },
       # Catalog completeness for the custom Anthropic-compatible MiniMax
