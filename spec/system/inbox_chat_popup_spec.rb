@@ -17,7 +17,13 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
 
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account:, password: "password123") }
-  let(:project) { create(:project, account:, created_by: user, owner: "acme", repo: "alpha") }
+  # The inbox queue only surfaces needs-input entries from auto-pick eligible
+  # projects, so the project must opt in or the page renders the empty state
+  # without the master-detail pane targets this spec exercises.
+  let(:project) do
+    create(:project, account:, created_by: user, owner: "acme", repo: "alpha",
+      auto_pick_enabled: true, active: true)
+  end
 
   before do
     skip "Chromium is not available for Cuprite" unless chromium_path
@@ -70,22 +76,25 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
 
     page.current_window.resize_to(375, 812)
 
-    expect(list).to be_visible
-    expect(detail_section).to_not be_visible
+    # The resize pane swap runs in the controller's async media-query change
+    # handler, so use waiting matchers instead of one-shot visibility checks.
+    expect(page).to have_css("[data-inbox-master-detail-target='list']", visible: :visible)
+    expect(page).to have_css("[data-inbox-master-detail-target='detailSection']", visible: :hidden)
 
     page.find("[data-inbox-master-detail-target='row']", match: :first).click
 
     expect(page).to have_content("Back to queue")
     list = page.find("[data-inbox-master-detail-target='list']", visible: :all)
     detail_section = page.find("[data-inbox-master-detail-target='detailSection']", visible: :all)
-    expect(list).to_not be_visible
+    expect(list).not_to be_visible
     expect(detail_section).to be_visible
 
     click_link "Back to queue"
 
-    list = page.find("[data-inbox-master-detail-target='list']", visible: :all)
-    detail_section = page.find("[data-inbox-master-detail-target='detailSection']", visible: :all)
-    expect(list).to be_visible
-    expect(detail_section).to_not be_visible
+    # Turbo first paints its cached snapshot of the index page — captured with
+    # detail-open=true baked in when the row was clicked — before the fresh
+    # render replaces it, so wait for the pane visibility to settle.
+    expect(page).to have_css("[data-inbox-master-detail-target='list']", visible: :visible)
+    expect(page).to have_css("[data-inbox-master-detail-target='detailSection']", visible: :hidden)
   end
 end
