@@ -91,8 +91,18 @@
   *Code:* `app/controllers/inbox_controller.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,
-  `app/views/dashboard/_inbox_detail.html.erb`.
-  *Test:* `spec/requests/inbox_spec.rb`.
+  `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_master_detail_controller.js`.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/system/dashboard_inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-003A** — While the inbox page initializes, the inbox
+  master-detail controller SHALL complete its Stimulus lifecycle without
+  raising — including when Stimulus invokes its value-change callback before
+  `connect()` and when `disconnect()` runs after an interrupted setup — so
+  other controllers on the page, such as the global chat-popup button,
+  still become interactive.
+  *Code:* `app/javascript/controllers/inbox_master_detail_controller.js`.
+  *Test:* `spec/system/inbox_chat_popup_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
