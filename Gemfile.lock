@@ -127,7 +127,7 @@ GEM
       adamantium (~> 0.2)
       equalizer (~> 0.0.11)
     ast (2.4.3)
-    avo (4.2.0)
+    avo (4.2.1)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -575,8 +575,8 @@ GEM
       rspec-mocks (>= 3.13.0, < 5.0.0)
       rspec-support (>= 3.13.0, < 5.0.0)
     rspec-support (3.13.7)
-    rubocop (1.89.0)
-      json (~> 2.3)
+    rubocop (1.90.0)
+      json (>= 2.3)
       language_server-protocol (~> 3.17.0.2)
       lint_roller (~> 1.1.0)
       parallel (>= 1.10)
@@ -737,7 +737,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness (= 0.36.13)
-  avo (= 4.2.0)
+  avo (= 4.2.1)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -766,6 +766,7 @@ DEPENDENCIES
   good_job (~> 4.19)
   herb
   jsbundling-rails
+  json (~> 2.3, < 3.0)
   kamal
   logidze
   mutant!
@@ -827,7 +828,7 @@ CHECKSUMS
   agent-harness (0.36.13) sha256=a0eea75bc29d993f031d6186a3d766e7c6249d0ea4531c416f2f8deb71e4ad79
   anima (0.3.2) sha256=467f775e5c7721f1ac19c0efcef2ca56489b9673809371b12514a77e11cbfc00
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.2.0) sha256=b51f5f2f4d3b619f46752d323f382f72adc83220acdaffccb541e37b68d91ad3
+  avo (4.2.1) sha256=1e1f2a6851590b5bb03bbd7f76175f58ba3b77ebab53e3376c32560c0a1334eb
   avo-icons (0.2.1) sha256=1ceb00725ca6149f754ac9d8651398be03d67ceb6bd22eab98a5394d10210e10
   aws-eventstream (1.4.0) sha256=116bf85c436200d1060811e6f5d2d40c88f65448f2125bc77ffce5121e6e183b
   aws-partitions (1.1281.0) sha256=97fcc7d6a068ab790a1efcd8c6587c08fb108b4bed7ff1409cb47e0d642782ec
@@ -1014,7 +1015,7 @@ CHECKSUMS
   rspec-mocks (3.13.8) sha256=086ad3d3d17533f4237643de0b5c42f04b66348c28bf6b9c2d3f4a3b01af1d47
   rspec-rails (8.0.4) sha256=06235692fc0892683d3d34977e081db867434b3a24ae0dd0c6f3516bad4e22df
   rspec-support (3.13.7) sha256=0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c
-  rubocop (1.89.0) sha256=4dee8e3ee9c45e474834efd9e8d6fd031e8331c8dacdff0de4ad65ae0a6faae7
+  rubocop (1.90.0) sha256=9eb4c065b5c5154e4ef554c547972f3905a9eb6b53e657e580b6796b54bf8242
   rubocop-ast (1.50.0) sha256=b9ca88300da0803ee222ad20cdb30494c0a784eed06fdc35d254b06d662788db
   rubocop-performance (1.27.0) sha256=eeeb1374d062a368ee1c787b70eb0b0cc4b184cb1f8565f424760946146d61ce
   rubocop-rails (2.37.0) sha256=6e1645add5060e0328f8ddda0d820f55697c591394398bf14bb9dccb62f14b7e
