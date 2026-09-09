@@ -30,7 +30,14 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.2.0"
+gem "avo", "4.2.1"
+
+# Pin json to 2.x. json 3.0.0 changed JSON.parse/json options to
+# keyword-only arguments, which is incompatible with Rails 8.1.x's
+# ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25) and
+# any code that calls JSON.parse(json, hash) positionally. Lift the pin
+# once Rails 8.2+ adopts the keyword-only signature throughout.
+gem "json", "~> 2.3", "< 3.0"
 
 # Soft-delete for low-volume reference records
 gem "discard"
