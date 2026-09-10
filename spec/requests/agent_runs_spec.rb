@@ -2441,7 +2441,7 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.issue).to eq(parked_issue)
         expect(agent_run.goal).to eq("enhance_issue")
         expect(agent_run.trigger_type).to eq("manual")
-        expect(response).to redirect_to(project_path(project))
+        expect(response).to redirect_to(dashboard_path)
       end
 
       # @spec OPERATOR-INBOX-002D
@@ -2464,14 +2464,30 @@ RSpec.describe "AgentRuns" do
       end
 
       # @spec OPERATOR-INBOX-002D
-      it "redirects to the project page on success regardless of return_to" do
+      it "redirects back to the inbox on success when return_to points there" do
         post resume_manual_review_project_agent_runs_path(project),
           params: {
             issue_id: parked_issue.id,
             return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
           }
 
-        expect(response).to redirect_to(project_path(project))
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "falls back to the dashboard on success when no return_to is supplied" do
+        post resume_manual_review_project_agent_runs_path(project),
+          params: { issue_id: parked_issue.id }
+
+        expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "ignores an external return_to and falls back to the dashboard on success" do
+        post resume_manual_review_project_agent_runs_path(project),
+          params: { issue_id: parked_issue.id, return_to: "https://evil.example.com" }
+
+        expect(response).to redirect_to(dashboard_path)
       end
 
       # @spec OPERATOR-INBOX-002D

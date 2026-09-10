@@ -316,6 +316,7 @@ module Projects
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
+        success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
         goal: "enhance_issue",
         priority_tier: nil
@@ -1223,7 +1224,7 @@ module Projects
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
 
-    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:)
+    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project))
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
@@ -1271,7 +1272,7 @@ module Projects
       else
         "#{issues.size} agent runs queued for issue enhancement."
       end
-      redirect_to project_path(@project), notice: notice
+      redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue InvalidDockerHostSelectionError => e
