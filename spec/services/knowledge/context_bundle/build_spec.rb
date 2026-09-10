@@ -478,6 +478,25 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:artifact_type_counts]).to include("schema" => 1)
       end
 
+      # @spec KNOWLEDGE-004
+      it "partially includes the schema section when it exceeds the budget" do
+        long_columns = (1..60).map { |i| "column#{i} text" }.join(", ")
+        8.times do |i|
+          create(:knowledge_artifact,
+            project: project, collector_run: collector_run,
+            artifact_type: "schema", identifier: "table_#{i}",
+            content: "table_#{i} (#{long_columns})", status: "active")
+        end
+
+        result = described_class.call(issue: issue, project: project, section_order: %i[schema], token_budget: 500)
+
+        expect(result[:sections]).to include(:schema)
+        kept = result[:artifact_type_counts]["schema"]
+        expect(kept).to be > 0
+        expect(kept).to be < 8
+        expect(result[:total_tokens]).to be <= 500
+      end
+
       it "preloads active ordered chunks for schema artifacts" do
         artifacts = described_class.new(issue: issue, project: project).send(:active_artifacts, "schema")
 
@@ -829,7 +848,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       # Budgets both on and between record boundaries: a cut landing inside a
       # record must drop the whole record, never keep its heading without the
       # Decision substance.
-      [250, 300, 325, 400].each do |budget|
+      [ 250, 300, 325, 400 ].each do |budget|
         result = described_class.call(issue: issue, project: project, token_budget: budget)
 
         aggregate_failures "budget #{budget}" do

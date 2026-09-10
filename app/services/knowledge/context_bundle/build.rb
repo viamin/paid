@@ -223,6 +223,11 @@ module Knowledge
         artifact_section(name: :symbols, heading: "Related Code", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      # Renders each table as a `####` block so truncation under budget
+      # pressure keeps whole tables (item-aware `truncate_section`) instead
+      # of dropping the section all-or-nothing.
+      #
+      # @spec KNOWLEDGE-004
       def build_schema_section
         artifacts = active_artifacts("schema")
         return nil if artifacts.empty?
@@ -231,10 +236,10 @@ module Knowledge
           parts = [ a.content.presence || a.identifier ]
           context_chunk = a.active_ordered_chunks.find { |c| c.chunk_type == "context" }
           parts << context_chunk.content if context_chunk&.content.present?
-          parts.join("\n")
+          "#### #{a.identifier}\n#{parts.join("\n")}"
         end
 
-        artifact_section(name: :schema, heading: "Data Model", content: lines.join("\n\n"), artifacts: artifacts)
+        artifact_section(name: :schema, heading: "Data Model", content: lines.join("\n\n"), artifacts: artifacts, item_marker: "#### ")
       end
 
       def build_hotspots_section
