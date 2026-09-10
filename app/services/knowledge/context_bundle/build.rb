@@ -18,6 +18,7 @@ module Knowledge
     class Build
       # @spec KNOWLEDGE-004
       # @spec KNOWLEDGE-005
+      # @spec KNOWLEDGE-013
       DEFAULT_TOKEN_BUDGET = 4000
 
       # Section builders in priority order. Curated sources (maintainer
@@ -254,6 +255,13 @@ module Knowledge
         artifact_section(name: :hotspots, heading: "Hotspot Warning", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      # Renders each record as a `####` block carrying its substance — not a
+      # title-only bullet — so a consuming agent can act on the record and
+      # notice contradictions between adjacent active records. The multi-line
+      # blocks truncate atomically per record under budget pressure via
+      # `item_marker` rollback.
+      #
+      # @spec KNOWLEDGE-013
       def build_decisions_section
         records = DecisionRecord.for_project(project)
                                 .where(status: %w[active draft])
@@ -262,11 +270,7 @@ module Knowledge
                                 .to_a
         return nil if records.empty?
 
-        lines = records.map do |dr|
-          status_label = dr.status == "active" ? "active" : "draft"
-          date = dr.created_at.strftime("%Y-%m-%d")
-          "- DR: \"#{dr.title}\" (#{status_label}, #{date})"
-        end
+        lines = records.flat_map { |dr| decision_lines(dr) }
 
         {
           name: :decisions,
@@ -275,10 +279,23 @@ module Knowledge
           artifact_type: section_artifact_type(:decisions),
           artifact_count: records.size,
           chunk_count: 0,
-          token_count: estimate_tokens("### Recent Decisions\n#{lines.join("\n")}")
+          token_count: estimate_tokens("### Recent Decisions\n#{lines.join("\n")}"),
+          item_marker: "#### "
         }
       end
 
+      def decision_lines(dr)
+        status_label = dr.status == "active" ? "active" : "draft"
+        date = dr.created_at.strftime("%Y-%m-%d")
+        block = [ "#### \"#{dr.title}\" (#{status_label}, #{date})" ]
+        block << "Summary: #{dr.summary.to_s.tr("\n", " ").truncate(200)}"
+        block << "Context: #{dr.context.to_s.tr("\n", " ").truncate(200)}" if dr.context.present?
+        block << "Decision: #{dr.decision.to_s.tr("\n", " ").truncate(400)}"
+        block << "Consequences: #{dr.consequences.to_s.tr("\n", " ").truncate(300)}" if dr.consequences.present?
+        block
+      end
+
+      # @spec KNOWLEDGE-013
       def build_change_intents_section
         # @spec CHANGE-INTENT-003
         records = ChangeIntent.for_project(project)
@@ -288,10 +305,7 @@ module Knowledge
                               .to_a
         return nil if records.empty?
 
-        lines = records.map do |record|
-          date = record.created_at.strftime("%Y-%m-%d")
-          "- CIR: \"#{record.title}\" (#{record.status}, #{date})"
-        end
+        lines = records.flat_map { |record| change_intent_lines(record) }
 
         {
           name: :change_intents,
@@ -300,8 +314,19 @@ module Knowledge
           artifact_type: section_artifact_type(:change_intents),
           artifact_count: records.size,
           chunk_count: 0,
-          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}")
+          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}"),
+          item_marker: "#### "
         }
+      end
+
+      def change_intent_lines(record)
+        date = record.created_at.strftime("%Y-%m-%d")
+        block = [ "#### \"#{record.title}\" (#{record.status}, #{date})" ]
+        block << "Intent: #{record.intent.to_s.tr("\n", " ").truncate(200)}"
+        block << "Behavior: #{record.behavior.to_s.tr("\n", " ").truncate(150)}" if record.behavior.present?
+        block << "Constraints: #{record.constraints.to_s.tr("\n", " ").truncate(200)}" if record.constraints.present?
+        block << "Decisions made: #{record.decisions_made.to_s.tr("\n", " ").truncate(200)}" if record.decisions_made.present?
+        block
       end
 
       # @spec SESSION-SUMMARY-005

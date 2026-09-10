@@ -21,6 +21,7 @@ module Knowledge
     # already isolates +cwd+/memory concerns.
     #
     # @spec KNOWLEDGE-010
+    # @spec KNOWLEDGE-012
     # @example
     #   Knowledge::Decisions::Draft.call(agent_run: agent_run)
     class Draft
@@ -34,6 +35,11 @@ module Knowledge
       TIMEOUT = 30
       DEFAULT_MODEL = "claude-sonnet-4-6"
       DEFAULT_PROVIDER = "claude"
+
+      # How many existing decision records are offered to the drafting LLM as
+      # supersession candidates. Bounded so the prompt stays small on projects
+      # with a large corpus.
+      SUPERSEDE_CANDIDATE_LIMIT = 20
 
       PROMPT_SLUG = "knowledge.draft_decision"
 
@@ -50,6 +56,9 @@ module Knowledge
         - decision: What was decided and implemented
         - consequences: Expected outcomes and trade-offs
         - tags: Array of relevant tags (e.g., ["auth", "api", "performance"])
+        - supersedes_ids: Array of IDs from "Existing Decision Records" that this
+          decision directly REPLACES. Include an ID only when the new decision
+          contradicts or supersedes that earlier record. Use [] when none.
 
         Respond with ONLY valid JSON, no markdown fences or extra text.
 
@@ -57,6 +66,9 @@ module Knowledge
         Issue: {{issue_title}}
         PR Changes Summary:
         {{changes_summary}}
+
+        ## Existing Decision Records
+        {{existing_decisions}}
       PROMPT
 
       attr_reader :agent_run
@@ -78,7 +90,10 @@ module Knowledge
         raise DraftFailedError, "LLM did not return a usable decision record" unless parsed
 
         record = create_decision_record(parsed)
-        record_llm_output_metric(record) if record
+        if record
+          apply_supersessions(record, parsed)
+          record_llm_output_metric(record)
+        end
         record
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.error(
@@ -95,7 +110,8 @@ module Knowledge
       def build_prompt(changes_summary)
         vars = {
           issue_title: agent_run.issue&.title || "N/A",
-          changes_summary: changes_summary.truncate(10_000)
+          changes_summary: changes_summary.truncate(10_000),
+          existing_decisions: existing_decisions_section
         }
 
         Prompts::Render.call(
@@ -104,6 +120,55 @@ module Knowledge
           variables: vars,
           fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
         )
+      end
+
+      # @spec KNOWLEDGE-012
+      def supersedeable_scope
+        DecisionRecord.for_project(agent_run.project).where(status: %w[active draft])
+      end
+
+      def existing_decisions_section
+        candidates = supersedeable_scope.order(created_at: :desc)
+                                        .limit(SUPERSEDE_CANDIDATE_LIMIT)
+                                        .pluck(:id, :title, :decision)
+        return "(none)" if candidates.empty?
+
+        candidates.map do |id, title, decision|
+          "[#{id}] #{title} — #{decision.to_s.tr("\n", " ").truncate(400)}"
+        end.join("\n")
+      end
+
+      # Whether a new record replaces an existing one is a semantic judgment,
+      # so the drafting LLM makes it (ZFC); retiring the referenced records is
+      # mechanical and stays here. LLM references are untrusted input: anything
+      # that does not resolve to a same-project active/draft record is logged
+      # and skipped so a hallucinated id cannot fail the draft.
+      #
+      # @spec KNOWLEDGE-012
+      def apply_supersessions(record, parsed)
+        Array(parsed[:supersedes_ids]).map { |value| value.to_s.to_i }.uniq.each do |referenced_id|
+          original = supersedeable_scope.where.not(id: record.id).find_by(id: referenced_id)
+          if original.nil?
+            Rails.logger.warn(
+              message: "knowledge.decisions.supersede_reference_unresolved",
+              agent_run_id: agent_run.id,
+              decision_record_id: record.id,
+              referenced_id: referenced_id
+            )
+            next
+          end
+
+          Knowledge::Decisions::Supersede.call(original: original, superseding: record)
+        rescue ArgumentError => e
+          Rails.logger.warn(
+            message: "knowledge.decisions.supersede_skipped",
+            agent_run_id: agent_run.id,
+            decision_record_id: record.id,
+            referenced_id: referenced_id,
+            error_class: e.class.name,
+            error: e.message
+          )
+        end
       end
 
       def send_to_llm(prompt)
