@@ -93,9 +93,9 @@ class ApplicationJob < ActiveJob::Base
     TenantContext.with_system_access(&block)
   end
 
-  def with_fresh_label_events(&block)
+  def with_fresh_label_events
     Automation::LabelPolicy.clear_label_event_cache!
-    block.call
+    yield
   end
 
   def with_perform_timeout(&block)

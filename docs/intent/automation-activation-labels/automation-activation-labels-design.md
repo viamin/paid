@@ -3,14 +3,14 @@
 > parent: docs/high-level-design.md
 > prefix: AUTOMATION-ACTIVATION
 
-# Purpose
+## Purpose
 
 Paid already has per-item subtractive control labels (`paid-paused`,
 `paid-skip-auto-merge`, auto-pick skip labels). This segment adds the
 additive counterpart: activation labels that turn a feature on for one issue or
 pull request when the project-level setting is otherwise off.
 
-# Activation model
+## Activation model
 
 Activation labels are stored as configurable names in one JSONB map,
 `feature_activation_labels`, on `projects`, `user_settings`, and
@@ -24,7 +24,7 @@ Activation labels are stored as configurable names in one JSONB map,
 `nil` means inherit. An empty hash is an explicit override that disables the
 built-in activation-label defaults at that level.
 
-# Canonical features
+## Canonical features
 
 The built-in map provides these defaults:
 
@@ -47,7 +47,7 @@ activation label resolves to `automation_label_name`, the label is provisioned
 once under the automation-label definition rather than twice (which would trip
 the cross-category collision guard).
 
-# Precedence
+## Precedence
 
 The activation resolver is mechanical and shared:
 
@@ -75,7 +75,7 @@ The activation resolver is mechanical and shared:
    re-armed by an activation label. That setting deliberately has no activation
    label of its own.
 
-# Catchall behavior
+## Catchall behavior
 
 `paid-in-full` applies to issues and activates the issue-to-PR path:
 
