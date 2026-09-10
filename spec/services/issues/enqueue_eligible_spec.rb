@@ -20,6 +20,8 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   def project_class
     @project_class ||= Struct.new(:id, :auto_pick_enabled?) do
       def auto_enhance_enabled? = false
+      def effective_auto_pick_skip_labels = []
+      def feature_activation_label_for(_feature) = nil
       def model_preferences
         @model_preferences ||= {}
       end
@@ -27,7 +29,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   def issue_class
-    @issue_class ||= Struct.new(:id, :github_number)
+    @issue_class ||= Struct.new(:id, :github_number, :labels)
   end
 
   def run_class
@@ -36,8 +38,11 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     end
   end
 
-  let(:project) { instance_double(project_class, id: 7, auto_enhance_enabled?: false) }
-  let(:issue) { instance_double(issue_class, id: 11, github_number: 42) }
+  let(:project) do
+    instance_double(project_class, id: 7, auto_enhance_enabled?: false,
+      effective_auto_pick_skip_labels: [], feature_activation_label_for: nil)
+  end
+  let(:issue) { instance_double(issue_class, id: 11, github_number: 42, labels: []) }
   let(:eligible_scope) { instance_double(ActiveRecord::Relation) }
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
   let(:create_pr_blocking_runs) { instance_double(ActiveRecord::Relation) }
@@ -89,6 +94,24 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
   it "uses analyze_issue as the seeded goal when auto_enhance is enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
+    run = build_run(id: 99, previously_new_record: true)
+    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")
+      block.call(run)
+      run
+    end
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(analyze_issue_blocking_runs).to have_received(:find_or_create_by!).with(
+      project: project, issue: issue, goal: "analyze_issue"
+    )
+  end
+
+  it "uses analyze_issue as the seeded goal when the issue has enhancement activation" do
+    allow(Automation::FeatureActivation).to receive(:issue_auto_enhance_enabled?)
+      .with(project:, issue:).and_return(true)
     run = build_run(id: 99, previously_new_record: true)
     allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
       expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")

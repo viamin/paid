@@ -31,7 +31,7 @@ class DependabotAutoMergeJob < ApplicationJob
 
   def perform(project_id, pr_number: nil)
     project = Project.find_by(id: project_id)
-    return unless project&.auto_merge_dependabot?
+    return unless project
 
     client = project.client
 
@@ -45,6 +45,11 @@ class DependabotAutoMergeJob < ApplicationJob
   private
 
   def evaluate_single_pr(client, project, pr_number)
+    # Activation needs only the local Issue record, so it is checked before
+    # the GitHub fetch — auto-merge-off projects previously exited with zero
+    # API calls and must keep doing so.
+    return unless auto_merge_enabled_for?(project, pr_number)
+
     pr_data = fetch_pr(client, project, pr_number)
     return unless pr_data
 
@@ -56,11 +61,20 @@ class DependabotAutoMergeJob < ApplicationJob
   end
 
   def evaluate_all_prs(client, project)
+    # Dependabot bulk evaluation only makes sense with dependabot auto-merge
+    # on, or with per-PR activation labels that could authorize individual
+    # PRs; otherwise the poll cycle would list every PR for a project that
+    # cannot merge any of them.
+    return unless project.auto_merge_dependabot? ||
+      Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_merge")
+
     candidates = find_dependabot_candidates(client, project)
     return if candidates.empty?
 
     candidates.each do |pr_summary|
       pr_num = pr_number_from(pr_summary)
+      next unless auto_merge_enabled_for?(project, pr_num)
+
       pr_data = fetch_pr(client, project, pr_num)
       next unless pr_data
 
@@ -247,6 +261,16 @@ class DependabotAutoMergeJob < ApplicationJob
       message: "dependabot_auto_merge.merge_failed_expected",
       credential_mode: AutoMergeAttempt.primary_credential_mode(project)
     )
+  end
+
+  # @spec AUTO-MERGE-008
+  def auto_merge_enabled_for?(project, pr_number)
+    return true if project.auto_merge_dependabot?
+
+    issue = pull_request_issue(project, pr_number)
+    return false unless issue
+
+    Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
   end
 
   def handle_expected_merge_failure(project, pr_number, error, message:, credential_mode:)

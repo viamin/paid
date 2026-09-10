@@ -19,6 +19,14 @@ module Activities
       def execute(input)
         normalized_input = input.is_a?(Hash) ? input.deep_symbolize_keys : input
 
+        # Each activity task is a fresh unit of work. Temporal workers build
+        # activity instances once at boot and invoke execute on the same
+        # instance for every task, so the process-global label-event memo
+        # behind Automation::LabelPolicy must be dropped at the task boundary
+        # — otherwise a later task would observe the previous task's cached
+        # label history instead of fresh GitHub state.
+        Automation::LabelPolicy.clear_label_event_cache!
+
         with_rails_executor do
           with_connection_cleanup do
             with_tenant_context(normalized_input) do

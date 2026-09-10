@@ -2378,6 +2378,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_080512) do
     t.string "default_branch", default: "main", null: false
     t.string "enhance_issue_enhanced_label_name", default: "paid-enhanced", null: false
     t.string "enhance_issue_needs_input_label_name", default: "paid-needs-input", null: false
+    t.jsonb "feature_activation_labels", comment: "Optional project-level override for per-item activation labels. Null means inherit user, tenant, or built-in defaults."
     t.jsonb "fitness_settings", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "git_push_fallback_token_id", comment: "Optional PAT (selected in project settings) used as the git push credential when git_push_pat_fallback_enabled is set and the GitHub App installation token is rejected for a missing permission (e.g. a push under .github/workflows/). The App stays the default for all other operations."
@@ -3163,6 +3164,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_080512) do
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
     t.string "docker_host_fallback_behavior", default: "disabled", null: false, comment: "Fallback behavior when the preferred Docker host is unavailable: disabled or first_healthy."
+    t.jsonb "feature_activation_labels", comment: "Optional tenant-level override for per-item activation labels. Null means use built-in defaults."
     t.jsonb "features", default: {}, null: false
     t.jsonb "guardrails", default: {}, null: false
     t.jsonb "log_data"
@@ -3251,6 +3253,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_080512) do
     t.boolean "default_project_active", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_runners", default: [], null: false
+    t.jsonb "feature_activation_labels", comment: "Optional user-level override for per-item activation labels. Null means inherit tenant or built-in defaults."
     t.integer "git_clone_timeout_seconds", default: 600, null: false
     t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "git_unshallow_timeout_seconds", default: 1800, null: false
