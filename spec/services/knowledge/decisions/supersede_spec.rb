@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-012
 RSpec.describe Knowledge::Decisions::Supersede do
   let(:project) { create(:project) }
   let(:original) { create(:decision_record, project: project) }

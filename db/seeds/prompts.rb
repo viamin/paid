@@ -612,7 +612,7 @@ upsert_global_prompt.call(
 upsert_global_prompt.call(
   slug: "knowledge.draft_decision",
   name: "Decision Record Drafting",
-  description: "Drafts an ADR-lite decision record (title, summary, context, decision, consequences, tags) from a completed agent run's PR changes.",
+  description: "Drafts an ADR-lite decision record (title, summary, context, decision, consequences, tags, supersedes_ids) from a completed agent run's PR changes, retiring existing records the new decision replaces.",
   category: "review",
   template: <<~'TEMPLATE',
     You are drafting a Decision Record (ADR-lite) for a code change.
@@ -625,6 +625,9 @@ upsert_global_prompt.call(
     - decision: What was decided and implemented
     - consequences: Expected outcomes and trade-offs
     - tags: Array of relevant tags (e.g., ["auth", "api", "performance"])
+    - supersedes_ids: Array of IDs from "Existing Decision Records" that this
+      decision directly REPLACES. Include an ID only when the new decision
+      contradicts or supersedes that earlier record. Use [] when none.
 
     Respond with ONLY valid JSON, no markdown fences or extra text.
 
@@ -632,10 +635,14 @@ upsert_global_prompt.call(
     Issue: {{issue_title}}
     PR Changes Summary:
     {{changes_summary}}
+
+    ## Existing Decision Records
+    {{existing_decisions}}
   TEMPLATE
   variables: [
     var.call("issue_title", "Linked issue title or 'N/A'"),
-    var.call("changes_summary", "Truncated PR changes summary")
+    var.call("changes_summary", "Truncated PR changes summary"),
+    var.call("existing_decisions", "Existing active/draft decision records as [id] title — decision lines, or '(none)'")
   ]
 )
 

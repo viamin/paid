@@ -341,6 +341,59 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to include("Use Devise for authentication")
         expect(result[:content]).to include("active")
       end
+
+      # @spec KNOWLEDGE-013
+      it "renders decision substance, not titles alone" do
+        create(:decision_record,
+          project: project,
+          title: "Move queue fairness to Redis",
+          summary: "Queue fairness moves off the primary database.",
+          context: "Advisory locks coupled queue fairness to Postgres.",
+          decision: "Enforce queue fairness through Redis.",
+          consequences: "Adds a Redis dependency for queueing.",
+          status: "active")
+
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:content]).to include("Queue fairness moves off the primary database.")
+        expect(result[:content]).to include("Advisory locks coupled queue fairness to Postgres.")
+        expect(result[:content]).to include("Enforce queue fairness through Redis.")
+        expect(result[:content]).to include("Adds a Redis dependency for queueing.")
+      end
+
+      # @spec KNOWLEDGE-013
+      it "renders contradictory active decisions with both decisions visible" do
+        create(:decision_record,
+          project: project,
+          title: "Use Postgres advisory locks for queue fairness",
+          summary: "Keep queue fairness in the primary database.",
+          decision: "Enforce queue fairness with Postgres advisory locks.",
+          status: "active")
+        create(:decision_record,
+          project: project,
+          title: "Move queue fairness to Redis",
+          summary: "Queue fairness moves off the primary database.",
+          decision: "Enforce queue fairness through Redis.",
+          status: "active")
+
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:content]).to include("Enforce queue fairness with Postgres advisory locks.")
+        expect(result[:content]).to include("Enforce queue fairness through Redis.")
+      end
+
+      # @spec KNOWLEDGE-013
+      it "excludes superseded records from the decisions section" do
+        create(:decision_record,
+          project: project,
+          title: "Superseded approach",
+          decision: "An approach that has been replaced.",
+          status: "superseded")
+
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:content]).not_to include("Superseded approach")
+      end
     end
 
     context "with change intents" do
@@ -359,6 +412,15 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to include("Recent Change Intents")
         expect(result[:content]).to include("Prefer sliding window over token bucket")
         expect(result[:content]).to include("active")
+      end
+
+      # @spec KNOWLEDGE-013
+      it "renders change intent substance, not titles alone" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:content]).to include("Smooth request limiting for public API endpoints.")
+        expect(result[:content]).to include("Use Redis and match the auth middleware layout.")
+        expect(result[:content]).to include("Rejected token bucket because it was harder to reason about for support.")
       end
     end
 
@@ -414,6 +476,25 @@ RSpec.describe Knowledge::ContextBundle::Build do
         result = described_class.call(issue: issue, project: project, agent_run_id: agent_run.id)
 
         expect(result[:artifact_type_counts]).to include("schema" => 1)
+      end
+
+      # @spec KNOWLEDGE-004
+      it "partially includes the schema section when it exceeds the budget" do
+        long_columns = (1..60).map { |i| "column#{i} text" }.join(", ")
+        8.times do |i|
+          create(:knowledge_artifact,
+            project: project, collector_run: collector_run,
+            artifact_type: "schema", identifier: "table_#{i}",
+            content: "table_#{i} (#{long_columns})", status: "active")
+        end
+
+        result = described_class.call(issue: issue, project: project, section_order: %i[schema], token_budget: 500)
+
+        expect(result[:sections]).to include(:schema)
+        kept = result[:artifact_type_counts]["schema"]
+        expect(kept).to be > 0
+        expect(kept).to be < 8
+        expect(result[:total_tokens]).to be <= 500
       end
 
       it "preloads active ordered chunks for schema artifacts" do
@@ -742,7 +823,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
   describe "truncation skips oversized sections" do
     it "includes a later smaller section when an earlier section is too large" do
       # Create a single route with many words so even one line exceeds the budget
-      long_content = (1..60).map { |i| "word#{i}" }.join(" ")
+      long_content = (1..300).map { |i| "word#{i}" }.join(" ")
       create(:knowledge_artifact,
         project: project, collector_run: collector_run,
         artifact_type: "route",
@@ -751,12 +832,31 @@ RSpec.describe Knowledge::ContextBundle::Build do
         status: "active")
       create(:decision_record, project: project, title: "Use JWT", status: "active")
 
-      # Budget too small for routes (single very long line) but enough for decisions
-      result = described_class.call(issue: issue, project: project, token_budget: 100)
+      # Budget large enough for the decisions section (substance included) but
+      # too small for the oversized route line
+      result = described_class.call(issue: issue, project: project, token_budget: 400)
 
       # Without the fix, the bundle would break on the oversized route and miss decisions
       expect(result[:sections]).to include(:decisions)
       expect(result[:sections]).not_to include(:routes)
+    end
+
+    # @spec KNOWLEDGE-013
+    it "never renders a decision heading without its body under budget pressure" do
+      create_list(:decision_record, 5, project: project, status: "active")
+
+      # Budgets both on and between record boundaries: a cut landing inside a
+      # record must drop the whole record, never keep its heading without the
+      # Decision substance.
+      [ 250, 300, 325, 400 ].each do |budget|
+        result = described_class.call(issue: issue, project: project, token_budget: budget)
+
+        aggregate_failures "budget #{budget}" do
+          expect(result[:sections]).to include(:decisions)
+          expect(result[:content]).to match(/^Decision: /)
+          expect(result[:content].scan(/^#### /).count).to eq(result[:content].scan(/^Decision: /).count)
+        end
+      end
     end
   end
 
