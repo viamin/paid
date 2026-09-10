@@ -279,9 +279,8 @@ RSpec.describe "Inbox" do
     )
 
     expect(form).to be_present
-    expect(form.at_css('input[name="return_to"]')["value"]).to eq(
-      inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND)
-    )
+    expect(form["data-turbo-frame"]).to eq("_top")
+    expect(form.at_css('input[name="return_to"]')["value"]).to eq(inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND))
   end
 
   # @spec OPERATOR-INBOX-002C
@@ -335,6 +334,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(form).to be_present
+    expect(form["data-turbo-frame"]).to eq("_top")
     expect(form.at_css('input[name="return_to"]')["value"]).to eq(
       inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
     )
