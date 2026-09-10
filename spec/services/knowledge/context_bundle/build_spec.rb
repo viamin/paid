@@ -826,11 +826,18 @@ RSpec.describe Knowledge::ContextBundle::Build do
     it "never renders a decision heading without its body under budget pressure" do
       create_list(:decision_record, 5, project: project, status: "active")
 
-      result = described_class.call(issue: issue, project: project, token_budget: 300)
+      # Budgets both on and between record boundaries: a cut landing inside a
+      # record must drop the whole record, never keep its heading without the
+      # Decision substance.
+      [250, 300, 325, 400].each do |budget|
+        result = described_class.call(issue: issue, project: project, token_budget: budget)
 
-      expect(result[:sections]).to include(:decisions)
-      expect(result[:content]).to match(/^Decision: /)
-      expect(result[:content].scan(/^#### /).count).to eq(result[:content].scan(/^Decision: /).count)
+        aggregate_failures "budget #{budget}" do
+          expect(result[:sections]).to include(:decisions)
+          expect(result[:content]).to match(/^Decision: /)
+          expect(result[:content].scan(/^#### /).count).to eq(result[:content].scan(/^Decision: /).count)
+        end
+      end
     end
   end
 

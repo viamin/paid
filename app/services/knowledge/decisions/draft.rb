@@ -142,12 +142,18 @@ module Knowledge
       # so the drafting LLM makes it (ZFC); retiring the referenced records is
       # mechanical and stays here. LLM references are untrusted input: anything
       # that does not resolve to a same-project active/draft record is logged
-      # and skipped so a hallucinated id cannot fail the draft.
+      # and skipped so a hallucinated id cannot fail the draft. References are
+      # resolved in one batched query so a hallucinated id array cannot
+      # amplify into one query per id.
       #
       # @spec KNOWLEDGE-012
       def apply_supersessions(record, parsed)
-        Array(parsed[:supersedes_ids]).map { |value| value.to_s.to_i }.uniq.each do |referenced_id|
-          original = supersedeable_scope.where.not(id: record.id).find_by(id: referenced_id)
+        referenced_ids = Array(parsed[:supersedes_ids]).map { |value| value.to_s.to_i }.uniq
+        return if referenced_ids.empty?
+
+        resolvable = supersedeable_scope.where.not(id: record.id).where(id: referenced_ids).index_by(&:id)
+        referenced_ids.each do |referenced_id|
+          original = resolvable[referenced_id]
           if original.nil?
             Rails.logger.warn(
               message: "knowledge.decisions.supersede_reference_unresolved",
