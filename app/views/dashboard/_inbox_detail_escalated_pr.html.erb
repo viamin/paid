@@ -55,7 +55,7 @@
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
-            form: { data: { turbo_confirm: unblock_confirmation_text(entry.record) } } %>
+            form: { data: { turbo_confirm: unblock_confirmation_text(entry.record), turbo_frame: "_top" } } %>
     <% end %>
   </div>
 </div>
