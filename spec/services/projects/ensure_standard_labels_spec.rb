@@ -12,9 +12,13 @@ RSpec.describe Projects::EnsureStandardLabels do
                :generated_label_name, :automation_label_name,
                :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
                :effective_priority_labels, :effective_auto_pick_skip_labels,
-               :label_mappings, keyword_init: true) do
+               :effective_feature_activation_labels, :label_mappings, keyword_init: true) do
       def label_for_stage(stage)
         (label_mappings || {})[stage.to_s]
+      end
+
+      def feature_activation_label_for(feature)
+        (effective_feature_activation_labels || {})[feature.to_s]
       end
     end
   end
@@ -31,18 +35,22 @@ RSpec.describe Projects::EnsureStandardLabels do
       enhance_issue_enhanced_label_name: "paid-enhanced",
       effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
       effective_auto_pick_skip_labels: AutoPickSkipLabels::DEFAULTS,
+      effective_feature_activation_labels: FeatureActivationLabels::DEFAULTS,
       label_mappings: {}
     )
   end
 
   # The full canonical set provisioned for the default project stub above:
-  # 4 configurable + recommend_close + 9 fixed control/status labels + 3 TDD
-  # labels + 6 default auto-pick skip labels + 3 priority tiers. (The
+  # 4 configurable + recommend_close + 9 fixed control/status labels + 10
+  # activation labels + 3 TDD labels + 6 default auto-pick skip labels + 3
+  # priority tiers. (The
   # needs_input stage mapping defaults to the same name as
   # enhance_issue_needs_input_label_name, so it is not a distinct entry here.)
   def all_label_names
     %w[
       paid-generated paid-automation paid-needs-input paid-enhanced paid-recommend-close
+      paid-in-full paid-enhance paid-auto-merge paid-scan paid-scan-security paid-fix-conflicts
+      paid-auto-release paid-tdd-strict paid-tdd-auto
       paid-paused paid-escalated paid-dismiss-escalation paid-skip-auto-merge
       paid-auto-merged paid-auto-merged-dependabot paid-auto-released paid-ready model-health
       paid-tests-ready-for-review paid-tests-approved paid-test-changes-requested
@@ -61,6 +69,15 @@ RSpec.describe Projects::EnsureStandardLabels do
       "paid-automation" => { color: "1d76db", description: "Triggers Paid automation for this issue; remove to opt out." },
       "paid-needs-input" => { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
       "paid-enhanced" => { color: "0e8a16", description: "Paid has added implementation context to this issue" },
+      "paid-in-full" => { color: "0052cc", description: "Activates Paid through PR for this issue; auto-merge still requires PR approval." },
+      "paid-enhance" => { color: "0052cc", description: "Activates issue enhancement for this item when the project setting is off." },
+      "paid-auto-merge" => { color: "0052cc", description: "Activates Paid auto-merge for this pull request when the project setting is off." },
+      "paid-scan" => { color: "0052cc", description: "Activates Paid PR scanning for this pull request when the project setting is off." },
+      "paid-scan-security" => { color: "0052cc", description: "Activates Paid security scanning for this pull request when the project setting is off." },
+      "paid-fix-conflicts" => { color: "0052cc", description: "Activates Paid merge-conflict fixing for this pull request when the project setting is off." },
+      "paid-auto-release" => { color: "0052cc", description: "Activates Paid auto-release for this pull request when the project setting is off." },
+      "paid-tdd-strict" => { color: "0052cc", description: "Activates strict TDD for this issue when the project setting is off." },
+      "paid-tdd-auto" => { color: "0052cc", description: "Activates non-strict TDD for this issue when the project setting is off." },
       "paid-recommend-close" => { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
       "paid-paused" => { color: "5319e7", description: "Pauses Paid automation on this issue; remove to resume." },
       "paid-escalated" => { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume." },
@@ -110,6 +127,79 @@ RSpec.describe Projects::EnsureStandardLabels do
             "test-owner/test-repo", name: name, **attrs
           )
         end
+      end
+    end
+
+    # @spec AUTOMATION-ACTIVATION-002
+    context "with configured activation label names" do
+      let(:configured_project) do
+        project_class.new(
+          id: 1,
+          full_name: "test-owner/test-repo",
+          owner: "test-owner",
+          repo: "test-repo",
+          github_token: github_token_stub,
+          generated_label_name: "paid-generated",
+          automation_label_name: "paid-automation",
+          enhance_issue_needs_input_label_name: "paid-needs-input",
+          enhance_issue_enhanced_label_name: "paid-enhanced",
+          effective_priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" },
+          effective_auto_pick_skip_labels: [],
+          effective_feature_activation_labels: { "auto_scan_prs" => "scan-this-pr", "auto_pick" => "queue-paid" },
+          label_mappings: {}
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+      end
+
+      it "provisions the activation labels by configured name" do
+        described_class.call(project: configured_project)
+
+        expect(github_client).to have_received(:create_label).with(
+          "test-owner/test-repo",
+          name: "scan-this-pr", color: "0052cc",
+          description: "Activates Paid PR scanning for this pull request when the project setting is off."
+        )
+        expect(github_client).to have_received(:create_label).with(
+          "test-owner/test-repo",
+          name: "queue-paid", color: "1d76db",
+          description: "Triggers Paid automation for this issue; remove to opt out."
+        )
+      end
+
+      it "reconciles drift on an existing activation label by configured name" do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo")
+          .and_return([ make_label("scan-this-pr", color: "000000",
+            description: "Activates Paid PR scanning for this pull request when the project setting is off.") ])
+        allow(github_client).to receive(:update_label)
+
+        described_class.call(project: configured_project)
+
+        expect(github_client).to have_received(:update_label).with(
+          "test-owner/test-repo", "scan-this-pr",
+          color: "0052cc",
+          description: "Activates Paid PR scanning for this pull request when the project setting is off."
+        )
+      end
+    end
+
+    # The default auto-pick activation label resolves to automation_label_name,
+    # which configurable_labels already provisions — the shared name must be
+    # claimed once, not reported as a cross-category collision.
+    context "when the auto-pick activation label defaults to the automation label name" do
+      before do
+        allow(github_client).to receive(:labels).with("test-owner/test-repo").and_return([])
+        allow(github_client).to receive(:create_label)
+      end
+
+      it "provisions the automation label exactly once with no collision error" do
+        result = described_class.call(project: project)
+
+        expect(result.created.count { |name| name == "paid-automation" }).to eq(1)
+        expect(result.errors).to be_empty
       end
     end
 
@@ -640,9 +730,9 @@ RSpec.describe Projects::EnsureStandardLabels do
       expect(described_class::AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION.length).to be <= 100
     end
 
-    it "tags every top-level definition with a control/status/informational kind" do
+    it "tags every top-level definition with a control/activation/status/informational kind" do
       described_class::LABEL_DEFINITIONS.except(:priority).each_value do |definition|
-        expect(definition[:kind]).to be_in(%i[control status informational])
+        expect(definition[:kind]).to be_in(%i[control activation status informational])
       end
     end
   end

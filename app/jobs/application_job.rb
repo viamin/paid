@@ -33,6 +33,13 @@ class ApplicationJob < ActiveJob::Base
     end
   end
 
+  # Each job perform is a fresh unit of work: GoodJob runs repeated performs
+  # on threads inside a shared process, so the process-global label-event
+  # memo behind Automation::LabelPolicy must be dropped at the perform
+  # boundary — a new perform must re-read label history from GitHub rather
+  # than observe a prior perform's cached events.
+  around_perform :with_fresh_label_events
+
   around_perform :with_tenant_context
 
   # IMPORTANT: must remain the last around_perform registration in this class.
@@ -84,6 +91,11 @@ class ApplicationJob < ActiveJob::Base
     return TenantContext.with(account, &block) if account
 
     TenantContext.with_system_access(&block)
+  end
+
+  def with_fresh_label_events
+    Automation::LabelPolicy.clear_label_event_cache!
+    yield
   end
 
   def with_perform_timeout(&block)

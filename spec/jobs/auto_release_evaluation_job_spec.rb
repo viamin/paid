@@ -76,6 +76,16 @@ RSpec.describe AutoReleaseEvaluationJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    it "merges when project auto-release is off but the PR has trusted activation" do
+      project.update!(auto_release_granularity: "off")
+      allow(Automation::FeatureActivation).to receive(:pull_request_feature_enabled?)
+        .with(project:, pull_request: issue, feature: "auto_release").and_return(true)
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request)
+    end
+
     it "skips when bump type exceeds granularity (minor bump with patch_only)" do
       project.update!(auto_release_granularity: "patch_only")
 

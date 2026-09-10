@@ -25,7 +25,7 @@ module Activities
       pr_number = input[:pr_number]
       issue = Issue.find(input[:issue_id])
 
-      unless project.auto_merge_enabled?
+      unless auto_merge_enabled_for?(project, issue)
         logger.info(
           message: "pr_review.auto_merge_disabled",
           project_id: project.id,
@@ -139,6 +139,14 @@ module Activities
     end
 
     private
+
+    # @spec AUTO-MERGE-008 — a trusted PR activation label (paid-auto-merge)
+    # enables auto-merge for that pull request even when the project-level
+    # setting is off; paid-in-full alone does not.
+    def auto_merge_enabled_for?(project, issue)
+      project.auto_merge_enabled? ||
+        Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
+    end
 
     def attempt_merge(provider, project, issue, repo, pr_number)
       config = Automation::Configuration::AutoMerge.from_project(project)

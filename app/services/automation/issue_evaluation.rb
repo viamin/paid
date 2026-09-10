@@ -31,12 +31,15 @@ module Automation
 
     attr_reader :project, :issue, :logger
 
+    # @spec AUTOMATION-ACTIVATION-003
     def update_paid_state!(result)
       first_decision = result.decisions.reject { |decision| decision.type == "noop" }.first
       return unless first_decision
 
       new_state = case first_decision.type
       when "queue_create_pr_run"
+        "in_progress"
+      when "queue_analyze_issue_run"
         "in_progress"
       when "start_planning"
         "planning"
@@ -59,11 +62,14 @@ module Automation
       serialized
     end
 
+    # @spec AUTOMATION-ACTIVATION-003
     def action_for(result)
       first_decision = result.decisions.reject { |decision| decision.type == "noop" }.first
 
       case first_decision&.type
       when "queue_create_pr_run"
+        "execute_agent"
+      when "queue_analyze_issue_run"
         "execute_agent"
       when "start_planning"
         "start_planning"

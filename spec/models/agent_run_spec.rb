@@ -657,6 +657,34 @@ RSpec.describe AgentRun do
           expect(run.tdd_phase).to eq("test_writing")
         end
 
+        # @spec AUTOMATION-ACTIVATION-005
+        it "keeps the project TDD default for manual create_pr runs without an issue" do
+          run = create(:agent_run, :with_custom_prompt, project: project)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        # @spec AUTOMATION-ACTIVATION-005
+        it "governs a run whose issue carries a trusted TDD activation label" do
+          label_project = create(:project, tdd_mode: "off")
+          issue = create(:issue, project: label_project,
+            labels: [ label_project.feature_activation_label_for("tdd_auto") ])
+          allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+          run = create(:agent_run, project: label_project, issue: issue)
+
+          expect(run.tdd_phase).to eq("test_writing")
+        end
+
+        # @spec AUTOMATION-ACTIVATION-005
+        it "leaves issue-less runs ungoverned when the project relies on label activation" do
+          label_project = create(:project, tdd_mode: "off")
+
+          run = create(:agent_run, :with_custom_prompt, project: label_project)
+
+          expect(run.tdd_phase).to be_nil
+        end
+
         it "defaults PR follow-up runs awaiting test review to test_writing" do
           create(:issue, :pull_request,
             project: project,

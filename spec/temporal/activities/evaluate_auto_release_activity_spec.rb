@@ -36,6 +36,16 @@ RSpec.describe Activities::EvaluateAutoReleaseActivity do
       expect(result).to eq(evaluated: false, reason: "disabled")
     end
 
+    it "enqueues when auto-release is disabled but a PR activation is present" do
+      project.update!(auto_release_granularity: "off")
+      allow(Automation::FeatureActivation).to receive(:any_pull_request_feature_enabled?)
+        .with(project:, feature: "auto_release").and_return(true)
+
+      expect {
+        activity.execute(project_id: project.id)
+      }.to have_enqueued_job(AutoReleaseEvaluationJob).with(project.id)
+    end
+
     it "returns project_missing when project not found" do
       result = activity.execute(project_id: -1)
 

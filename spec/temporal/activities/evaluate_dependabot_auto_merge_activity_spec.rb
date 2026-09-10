@@ -36,6 +36,18 @@ RSpec.describe Activities::EvaluateDependabotAutoMergeActivity do
       expect(result).to eq(evaluated: false, reason: "disabled")
     end
 
+    # @spec AUTO-MERGE-008
+    it "enqueues when dependabot auto-merge is off but a PR activation is present" do
+      project.update!(auto_merge_mode: "off")
+      create(:issue, :pull_request, project: project, github_state: "open",
+        labels: [ project.feature_activation_label_for("auto_merge") ])
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+      expect {
+        activity.execute(project_id: project.id)
+      }.to have_enqueued_job(DependabotAutoMergeJob).with(project.id)
+    end
+
     it "returns project_missing when project not found" do
       result = activity.execute(project_id: -1)
 

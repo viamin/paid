@@ -49,6 +49,8 @@ RSpec.describe Automation::IssueEvaluator do
           labels: [ "my-auto" ],
           paid_state: "new",
           is_pull_request: false)
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(automation_project, issue, "my-auto").and_return(true)
 
         result = described_class.new(record: issue).call
 
@@ -56,6 +58,59 @@ RSpec.describe Automation::IssueEvaluator do
           decisions: [ { type: "queue_create_pr_run", issue_id: issue.id } ]
         )
       end
+    end
+
+    it "queues analyze_issue for a trusted paid-in-full issue when auto-pick and auto-enhance are off" do
+      project = create(:project, auto_pick_enabled: false, auto_enhance_enabled: false, label_mappings: {})
+      issue = create(:issue, project: project, labels: [ project.feature_activation_label_for("paid_in_full") ], paid_state: "new")
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+        .with(project, issue, project.feature_activation_label_for("paid_in_full")).and_return(true)
+
+      result = described_class.new(record: issue).call
+
+      expect(result.to_h).to eq(decisions: [ { type: "queue_analyze_issue_run", issue_id: issue.id } ])
+    end
+
+    # @spec AUTOMATION-ACTIVATION-003
+    it "ignores activation labels when automation_on_label_enabled is off" do
+      project = create(:project,
+        auto_pick_enabled: false,
+        auto_enhance_enabled: false,
+        label_mappings: {},
+        automation_on_label_enabled: false)
+      issue = create(:issue, project: project,
+        labels: [ project.feature_activation_label_for("paid_in_full") ], paid_state: "new")
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+      result = described_class.new(record: issue).call
+
+      expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
+    end
+
+    # @spec AUTOMATION-ACTIVATION-004
+    it "lets a skip label beat a trusted activation label" do
+      project = create(:project, auto_pick_enabled: false, auto_enhance_enabled: false, label_mappings: {})
+      issue = create(:issue, project: project,
+        labels: [ "planning", project.feature_activation_label_for("paid_in_full") ], paid_state: "new")
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+      result = described_class.new(record: issue).call
+
+      expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
+    end
+
+    # @spec AUTOMATION-ACTIVATION-006
+    it "ignores an activation label added by an untrusted actor even when the creator is trusted" do
+      project = create(:project, auto_pick_enabled: false, auto_enhance_enabled: false, label_mappings: {})
+      issue = create(:issue, project: project,
+        labels: [ project.feature_activation_label_for("paid_in_full") ],
+        github_creator_login: "viamin",
+        paid_state: "new")
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(false)
+
+      result = described_class.new(record: issue).call
+
+      expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
     end
   end
 end

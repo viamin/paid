@@ -95,6 +95,33 @@ RSpec.describe ApplicationJob do # @spec EXCEPTION-NOTIFY-003
     end
   end
 
+  describe "label-event cache freshness" do
+    it "drops cached label events at the perform boundary" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      github_client = instance_double(GithubClient)
+      allow(project).to receive(:client).and_return(github_client)
+      allow(github_client).to receive(:issue_events).and_return([])
+
+      # Within one unit of work the raw events are fetched once and shared.
+      Automation::LabelPolicy.label_events_for(project, issue)
+      Automation::LabelPolicy.label_events_for(project, issue)
+      expect(github_client).to have_received(:issue_events).once
+
+      job_class = Class.new(described_class) do
+        def perform
+        end
+      end
+      stub_const("FreshLabelEventsJob", job_class)
+      job_class.new.perform_now
+
+      # A new perform must re-read label history, not observe the prior
+      # pass's cached events (GoodJob repeats performs on shared threads).
+      Automation::LabelPolicy.label_events_for(project, issue)
+      expect(github_client).to have_received(:issue_events).twice
+    end
+  end
+
   describe "rescue_from terminal-failure hook" do
     let(:account) { create(:account) }
 

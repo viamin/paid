@@ -43,6 +43,12 @@ contract for every GitHub label with a Paid behavioral consequence. Its
   (`paid-automation`, `paid-paused`, `paid-escalated`,
   `paid-skip-auto-merge`, the three TDD gate labels, the auto-pick skip
   labels).
+- `:activation` — the label turns one feature on for one issue or pull
+  request when the project-level setting is otherwise off
+  (`paid-in-full`, `paid-enhance`, `paid-auto-merge`, `paid-scan`,
+  `paid-scan-security`, `paid-fix-conflicts`, `paid-auto-release`,
+  `paid-tdd-strict`, `paid-tdd-auto`, and the reused issue-scoped
+  `paid-automation` activation).
 - `:status` — applied by Paid as an output/status marker with no further
   automation effect (`paid-generated`, `paid-enhanced`,
   `paid-needs-input`, `paid-recommend-close`, `paid-dismiss-escalation`,
@@ -62,9 +68,11 @@ every one of them rather than re-declaring the literal:
 
 - **Project-configurable columns** — `generated_label_name`,
   `automation_label_name`, `enhance_issue_*_label_name`, `label_mappings`
-  (`recommend_close`, `needs_input`), `priority_labels` (P1/P2/P3), and
+  (`recommend_close`, `needs_input`), `priority_labels` (P1/P2/P3),
   `effective_auto_pick_skip_labels` (project → user → tenant → the
-  `AutoPickSkipLabels::DEFAULTS` fallback). Reconciling these labels by their
+  `AutoPickSkipLabels::DEFAULTS` fallback), and
+  `effective_feature_activation_labels` (project → user → tenant → the
+  built-in activation-label defaults). Reconciling these labels by their
   *configured* name — not a hard-coded one — is what keeps custom label
   names working without Paid creating or touching a differently-named label
   the project didn't ask for. The `needs_input` stage mapping
