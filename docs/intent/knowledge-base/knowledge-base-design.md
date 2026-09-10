@@ -111,7 +111,12 @@ schema — Postgres/Qdrant remain the runtime retrieval engine:
   places every curated section (business context, imported documents, OKF,
   decisions, change intents) before every derived section (routes, symbols,
   schema, hotspots, stats), so curated knowledge is never pushed out of a
-  token-constrained bundle by codebase-derived context.
+  token-constrained bundle by codebase-derived context. Within the decisions
+  and change-intents sections, each record renders as a `####` block carrying
+  its substance (decisions: summary, decision, consequences; change intents:
+  intent, constraints, decisions made) rather than a title-only bullet, so
+  the record is actionable in the prompt and contradictions between active
+  records are visible (#3797).
 
 ### OKF bundle export
 
@@ -133,6 +138,22 @@ i.e. fully redacted — are skipped rather than falling back to raw,
 unscrubbed content. `Knowledge::Okf::Frontmatter` is shared between the OKF
 collector (parse) and the exporter (render), so every exported file
 round-trips through the same parser the collector uses to ingest a bundle.
+
+### Decision record reconciliation
+
+Decision records are drafted directly as `active` (no human review gate —
+unlike `ChangeIntent`), so without retirement the corpus accumulates
+monotonically. Supersession is therefore produced automatically at draft
+time (#3797): `Knowledge::Decisions::Draft` shows the project's existing
+active/draft decision records (bounded to the 20 most recent, id + title +
+decision) to the drafting LLM and asks it to return `supersedes_ids` for any
+existing record the new decision directly replaces. Judging replacement is
+semantic, so it belongs to the LLM (ZFC); retiring the referenced records is
+mechanical, so it stays in code (`Knowledge::Decisions::Supersede`: status
+`superseded`, `superseded_by`, `reverts` link). References resolve only
+against active/draft records in the same project; unresolvable or invalid
+references are logged and skipped so a hallucinated id cannot fail an
+otherwise successful draft.
 
 ### Search and retrieval
 

@@ -18,6 +18,7 @@ module Knowledge
     class Build
       # @spec KNOWLEDGE-004
       # @spec KNOWLEDGE-005
+      # @spec KNOWLEDGE-013
       DEFAULT_TOKEN_BUDGET = 4000
 
       # Section builders in priority order. Curated sources (maintainer
@@ -205,7 +206,8 @@ module Knowledge
           heading: "Imported Documents",
           content: lines.join("\n\n"),
           artifacts: artifacts,
-          chunk_count: total_chunks
+          chunk_count: total_chunks,
+          item_marker: "#### "
         )
       end
 
@@ -221,6 +223,11 @@ module Knowledge
         artifact_section(name: :symbols, heading: "Related Code", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      # Renders each table as a `####` block so truncation under budget
+      # pressure keeps whole tables (item-aware `truncate_section`) instead
+      # of dropping the section all-or-nothing.
+      #
+      # @spec KNOWLEDGE-004
       def build_schema_section
         artifacts = active_artifacts("schema")
         return nil if artifacts.empty?
@@ -229,10 +236,10 @@ module Knowledge
           parts = [ a.content.presence || a.identifier ]
           context_chunk = a.active_ordered_chunks.find { |c| c.chunk_type == "context" }
           parts << context_chunk.content if context_chunk&.content.present?
-          parts.join("\n")
+          "#### #{a.identifier}\n#{parts.join("\n")}"
         end
 
-        artifact_section(name: :schema, heading: "Data Model", content: lines.join("\n\n"), artifacts: artifacts)
+        artifact_section(name: :schema, heading: "Data Model", content: lines.join("\n\n"), artifacts: artifacts, item_marker: "#### ")
       end
 
       def build_hotspots_section
@@ -254,6 +261,13 @@ module Knowledge
         artifact_section(name: :hotspots, heading: "Hotspot Warning", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      # Renders each record as a `####` block carrying its substance — not a
+      # title-only bullet — so a consuming agent can act on the record and
+      # notice contradictions between adjacent active records. The multi-line
+      # blocks truncate atomically per record under budget pressure via the
+      # item-aware `truncate_section`.
+      #
+      # @spec KNOWLEDGE-013
       def build_decisions_section
         records = DecisionRecord.for_project(project)
                                 .where(status: %w[active draft])
@@ -262,11 +276,7 @@ module Knowledge
                                 .to_a
         return nil if records.empty?
 
-        lines = records.map do |dr|
-          status_label = dr.status == "active" ? "active" : "draft"
-          date = dr.created_at.strftime("%Y-%m-%d")
-          "- DR: \"#{dr.title}\" (#{status_label}, #{date})"
-        end
+        lines = records.flat_map { |dr| decision_lines(dr) }
 
         {
           name: :decisions,
@@ -275,10 +285,23 @@ module Knowledge
           artifact_type: section_artifact_type(:decisions),
           artifact_count: records.size,
           chunk_count: 0,
-          token_count: estimate_tokens("### Recent Decisions\n#{lines.join("\n")}")
+          token_count: estimate_tokens("### Recent Decisions\n#{lines.join("\n")}"),
+          item_marker: "#### "
         }
       end
 
+      def decision_lines(dr)
+        status_label = dr.status == "active" ? "active" : "draft"
+        date = dr.created_at.strftime("%Y-%m-%d")
+        block = [ "#### \"#{dr.title}\" (#{status_label}, #{date})" ]
+        block << "Summary: #{dr.summary.to_s.tr("\n", " ").truncate(200)}"
+        block << "Context: #{dr.context.to_s.tr("\n", " ").truncate(200)}" if dr.context.present?
+        block << "Decision: #{dr.decision.to_s.tr("\n", " ").truncate(400)}"
+        block << "Consequences: #{dr.consequences.to_s.tr("\n", " ").truncate(300)}" if dr.consequences.present?
+        block
+      end
+
+      # @spec KNOWLEDGE-013
       def build_change_intents_section
         # @spec CHANGE-INTENT-003
         records = ChangeIntent.for_project(project)
@@ -288,10 +311,7 @@ module Knowledge
                               .to_a
         return nil if records.empty?
 
-        lines = records.map do |record|
-          date = record.created_at.strftime("%Y-%m-%d")
-          "- CIR: \"#{record.title}\" (#{record.status}, #{date})"
-        end
+        lines = records.flat_map { |record| change_intent_lines(record) }
 
         {
           name: :change_intents,
@@ -300,8 +320,19 @@ module Knowledge
           artifact_type: section_artifact_type(:change_intents),
           artifact_count: records.size,
           chunk_count: 0,
-          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}")
+          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}"),
+          item_marker: "#### "
         }
+      end
+
+      def change_intent_lines(record)
+        date = record.created_at.strftime("%Y-%m-%d")
+        block = [ "#### \"#{record.title}\" (#{record.status}, #{date})" ]
+        block << "Intent: #{record.intent.to_s.tr("\n", " ").truncate(200)}"
+        block << "Behavior: #{record.behavior.to_s.tr("\n", " ").truncate(150)}" if record.behavior.present?
+        block << "Constraints: #{record.constraints.to_s.tr("\n", " ").truncate(200)}" if record.constraints.present?
+        block << "Decisions made: #{record.decisions_made.to_s.tr("\n", " ").truncate(200)}" if record.decisions_made.present?
+        block
       end
 
       # @spec SESSION-SUMMARY-005
@@ -481,29 +512,28 @@ module Knowledge
         PromptAssembly::Section.quarantine(parts.join("\n\n"))
       end
 
+      # Truncates a section by whole items so a multi-line record (e.g. a
+      # decision with its Decision: substance) is either fully present or
+      # fully dropped — a cut landing between a record's lines would
+      # otherwise render its heading without its body, the title-only
+      # output KNOWLEDGE-013 forbids.
       def truncate_section(section, budget)
-        lines = section[:content].split("\n")
-        truncated_lines = []
+        marker = section[:item_marker] || "- "
         tokens_used = estimate_tokens("### #{section[:heading]}\n")
+        truncated_lines = []
 
-        lines.each do |line|
-          line_tokens = estimate_tokens(line)
-          break if tokens_used + line_tokens > budget
+        section_items(section[:content], marker).each do |item_lines|
+          item_tokens = estimate_tokens(item_lines.join("\n"))
+          break if tokens_used + item_tokens > budget
 
-          truncated_lines << line
-          tokens_used += line_tokens
+          truncated_lines.concat(item_lines)
+          tokens_used += item_tokens
         end
 
         return nil if truncated_lines.empty?
 
-        # Roll back trailing item fragments so we don't count an artifact
-        # without its body (or vice versa) when sections like :okf render
-        # each item as a `#### heading\nbody` block.
-        truncated_lines = roll_back_partial_item(truncated_lines, section[:item_marker] || "- ")
-        return nil if truncated_lines.empty?
-
         truncated_content = truncated_lines.join("\n")
-        item_count = truncated_lines.count { |l| l.start_with?(section[:item_marker] || "- ") }
+        item_count = truncated_lines.count { |line| line.start_with?(marker) }
 
         {
           name: section[:name],
@@ -513,32 +543,21 @@ module Knowledge
           artifact_count: item_count,
           chunk_count: [ section[:chunk_count].to_i, item_count ].min,
           token_count: estimate_tokens("### #{section[:heading]}\n#{truncated_content}"),
-          item_marker: section[:item_marker],
+          item_marker: marker,
           citations: truncated_citations(section, item_count)
         }
       end
 
-      def truncated_citations(section, item_count)
-        Array(section[:citations]).first(item_count)
+      # Groups rendered lines into whole items: an item starts at a marker
+      # line (`#### ` record block or `- ` bullet) and carries every line
+      # until the next marker. Separator blank lines stay attached to the
+      # item before them so the joined output keeps its spacing.
+      def section_items(content, marker)
+        content.split("\n").slice_before { |line| line.start_with?(marker) }
       end
 
-      # Drop a trailing incomplete item so the truncated section reports
-      # only items whose body survived the budget. Sections whose items
-      # are single "- " bullets already truncate atomically and skip this.
-      def roll_back_partial_item(truncated_lines, item_marker)
-        return truncated_lines if item_marker == "- "
-
-        item_indices = truncated_lines
-          .each_with_index
-          .select { |line, _| line.start_with?(item_marker) }
-          .map { |_, idx| idx }
-        return truncated_lines if item_indices.empty?
-
-        last_item_idx = item_indices.last
-        body_after = truncated_lines[(last_item_idx + 1)..] || []
-        return truncated_lines if body_after.any? { |line| line.strip.present? }
-
-        truncated_lines[0...last_item_idx]
+      def truncated_citations(section, item_count)
+        Array(section[:citations]).first(item_count)
       end
 
       # Fast token approximation: ~0.75 tokens per word (per issue spec)

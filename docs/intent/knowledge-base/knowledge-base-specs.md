@@ -394,3 +394,30 @@
   `spec/services/knowledge/embeddings/proxy_generator_spec.rb`,
   `spec/services/knowledge/runner_executor_spec.rb`,
   `spec/services/knowledge/provider_executor_spec.rb`.
+
+- [x] **KNOWLEDGE-012** — When decision-record drafting (`Knowledge::Decisions::Draft`)
+  runs for a project that already has active or draft decision records, the
+  drafting prompt SHALL present those existing records (id, title, decision,
+  bounded to the most recent 20) so the drafting LLM can judge whether the
+  new record replaces any of them, and when the LLM returns `supersedes_ids`,
+  the system SHALL retire each referenced record through
+  `Knowledge::Decisions::Supersede` (status `superseded`, `superseded_by`
+  set, `reverts` link recorded) rather than letting contradictory records
+  accumulate. References SHALL resolve only against active/draft records in
+  the same project; unresolvable or invalid references SHALL be logged and
+  skipped without failing the draft (#3797).
+  *Code:* `app/services/knowledge/decisions/draft.rb`,
+  `app/services/knowledge/decisions/supersede.rb`,
+  `db/seeds/prompts.rb`.
+  *Test:* `spec/services/knowledge/decisions/draft_spec.rb`,
+  `spec/services/knowledge/decisions/supersede_spec.rb`.
+
+- [x] **KNOWLEDGE-013** — When a knowledge context bundle includes decision
+  records or change intent records, each rendered record SHALL carry its
+  substance — decisions: summary, decision, and consequences; change
+  intents: intent, constraints, and decisions made — rather than a title
+  alone, within the existing token budget, so a consuming agent can act on
+  the records and notice contradictions between active records instead of
+  seeing a recency-ordered title list (#3797).
+  *Code:* `app/services/knowledge/context_bundle/build.rb`.
+  *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.

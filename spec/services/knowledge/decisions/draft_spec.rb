@@ -223,6 +223,101 @@ RSpec.describe Knowledge::Decisions::Draft do
     end
   end
 
+  describe "decision supersession" do
+    let(:existing) do
+      create(:decision_record, :without_agent_run,
+        project: project,
+        title: "Use Postgres advisory locks for queue fairness",
+        decision: "Queue fairness is enforced with Postgres advisory locks.")
+    end
+
+    def superseding_json(supersedes_ids)
+      {
+        title: "Move queue fairness to Redis",
+        summary: "Decided to move queue fairness to Redis.",
+        context: "Advisory locks coupled queue fairness to the primary database.",
+        decision: "Queue fairness moves to Redis.",
+        consequences: "Adds a Redis dependency for queueing.",
+        tags: %w[queue redis],
+        supersedes_ids: supersedes_ids
+      }.to_json
+    end
+
+    # @spec KNOWLEDGE-012
+    it "presents existing active decision records to the drafting LLM" do
+      existing
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("[#{existing.id}] Use Postgres advisory locks for queue fairness"),
+        kind_of(Hash)
+      )
+    end
+
+    # @spec KNOWLEDGE-012
+    it "excludes superseded records and other projects' records from the prompt" do
+      existing
+      create(:decision_record, :without_agent_run, project: project, status: "superseded",
+        title: "Run everything through the primary database")
+      create(:decision_record, :without_agent_run, title: "Use SQLite everywhere")
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message) do |prompt, **_opts|
+        expect(prompt).to include("[#{existing.id}] Use Postgres advisory locks for queue fairness")
+        expect(prompt).not_to include("Run everything through the primary database")
+        expect(prompt).not_to include("Use SQLite everywhere")
+      end
+    end
+
+    # @spec KNOWLEDGE-012
+    it "supersedes referenced records when the LLM returns supersedes_ids" do
+      allow(llm_response).to receive(:output).and_return(superseding_json([ existing.id ]))
+
+      record = described_class.call(agent_run: agent_run)
+
+      existing.reload
+      expect(existing.status).to eq("superseded")
+      expect(existing.superseded_by_id).to eq(record.id)
+      expect(record.decision_record_links.find_by(link_type: "reverts")).to be_present
+    end
+
+    # @spec KNOWLEDGE-012
+    it "keeps the draft successful when supersedes references are unresolvable" do
+      existing
+      allow(llm_response).to receive(:output).and_return(superseding_json([ 999_999 ]))
+
+      record = nil
+      expect { record = described_class.call(agent_run: agent_run) }.not_to raise_error
+
+      expect(record).to be_persisted
+      expect(record.status).to eq("active")
+      expect(existing.reload.status).to eq("active")
+    end
+
+    # @spec KNOWLEDGE-012
+    it "does not supersede records belonging to another project" do
+      other = create(:decision_record, :without_agent_run, title: "Use SQLite everywhere")
+      allow(llm_response).to receive(:output).and_return(superseding_json([ other.id ]))
+
+      described_class.call(agent_run: agent_run)
+
+      expect(other.reload.status).to eq("active")
+    end
+
+    # @spec KNOWLEDGE-012
+    it "marks the prompt as having no existing records when the corpus is empty" do
+      allow(llm_response).to receive(:output).and_return(superseding_json([]))
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("(none)"),
+        kind_of(Hash)
+      )
+    end
+  end
+
   describe "containerized execution" do
     let(:mock_runner) do
       instance_double(Knowledge::AnalysisRunner)
