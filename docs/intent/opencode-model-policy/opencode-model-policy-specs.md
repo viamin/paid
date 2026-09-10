@@ -89,6 +89,10 @@
   runners, so this validation is the enforcement point that prevents a
   free-policy runner from silently falling through to a paid default model
   in chat — regardless of the `enabled_for_chat` column's `true` DB default
-  or a save that bypasses `RunnersController`. The legacy `openrouter_free`
-  runner key is unaffected. Deferred: relax once chat dispatch resolves a
+  or a save that bypasses `RunnersController`. The validation only fires for
+  `runner_key == "opencode"`, so the other direct-outbound runner keys
+  (`kilocode`, `pi`, `omp`) and the legacy `openrouter_free` runner key (no
+  longer in `RunnerSupport::APP_RUNNER_KEYS` after the
+  `migrate_openrouter_free_pareto_runners_to_opencode` migration) are
+  unaffected by construction. Deferred: relax once chat dispatch resolves a
   free-tier model for policy-based free runners.

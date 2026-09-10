@@ -1319,10 +1319,13 @@ class Runner < ApplicationRecord
       return
     end
 
-    # Direct-outbound runners must map ALL tiers to the configured model.
-    # Partial mappings would let unmapped tiers fall back to the global
-    # LlmModel pool, reintroducing the wrong-model selection this PR fixes.
-    if requires_direct_outbound? && !will_save_change_to_config?
+    # Specific-policy direct-outbound runners must map ALL tiers to the
+    # configured model. Partial mappings would let unmapped tiers fall back
+    # to the global LlmModel pool, reintroducing the wrong-model selection
+    # this PR fixes. Free-policy runners route each tier to an
+    # independently-picked free model, so a partial mapping is valid and
+    # free_policy_default_model_id walks tiers from high to low to find one.
+    if requires_direct_outbound? && !free_model_policy? && !will_save_change_to_config?
       missing_tiers = LlmModel::TIERS.select { |t| tier_model_ids[t].blank? }
       if missing_tiers.any?
         errors.add(:tier_model_ids, "must map all tiers for direct-outbound runners (missing: #{missing_tiers.join(', ')})")

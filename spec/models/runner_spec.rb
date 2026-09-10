@@ -871,27 +871,6 @@ RSpec.describe Runner do
         )
       end
 
-      # @spec MODEL-POLICY-013
-      it "does not gate the legacy openrouter_free runner's chat flag" do
-        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
-        runner.auth_type = "api_key"
-        runner.provider_api_key = api_key
-        runner.runner_key = "openrouter_free"
-        runner.enabled_for_chat = true
-
-        expect(runner).to be_valid
-      end
-
-      it "does not gate the legacy openrouter_free runner" do
-        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
-        runner.auth_type = "api_key"
-        runner.provider_api_key = api_key
-        runner.runner_key = "openrouter_free"
-
-        expect(runner).to be_valid
-        expect(runner.errors[:base]).to be_empty
-      end
-
       it "rejects the free policy on a non-openrouter API provider" do
         api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
         runner.auth_type = "api_key"
