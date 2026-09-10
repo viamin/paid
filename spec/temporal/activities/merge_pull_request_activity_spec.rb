@@ -41,6 +41,52 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(issue.reload.pr_review_phase).to eq("ready")
       end
+
+      # @spec AUTO-MERGE-008
+      it "skips a PR whose only activation is paid-in-full" do
+        issue.update!(labels: [ project.feature_activation_label_for("paid_in_full") ])
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+      end
+    end
+
+    context "when auto_merge is off but the PR has a trusted paid-auto-merge activation label" do
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+
+      before do
+        project.update!(auto_merge_mode: "off")
+        issue.update!(labels: [ project.feature_activation_label_for("auto_merge") ])
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(project, issue, project.feature_activation_label_for("auto_merge")).and_return(true)
+        allow(provider).to receive(:fetch_pull_request)
+          .with(repo: project.full_name, number: 42)
+          .and_return(pr_data)
+        allow(provider).to receive(:merge_pull_request)
+          .and_return(Automation::Providers::Data::MergeResult.new(merged: true, sha: "def456", message: "Merged"))
+        allow(provider).to receive(:add_labels)
+        allow(provider).to receive(:add_comment)
+      end
+
+      # @spec AUTO-MERGE-008
+      it "merges the activated PR" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(provider).to have_received(:merge_pull_request)
+          .with(repo: project.full_name, number: 42, method: :squash)
+        expect(issue.reload.pr_review_phase).to eq("merged")
+      end
     end
 
     context "when issue has the paid-skip-auto-merge label" do

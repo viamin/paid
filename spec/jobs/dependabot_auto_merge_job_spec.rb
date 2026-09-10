@@ -80,6 +80,52 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    it "makes no GitHub API calls when auto-merge is off and no PR is activated" do
+      project.update!(auto_merge_mode: "off")
+      issue
+
+      described_class.perform_now(project.id, pr_number: 42)
+
+      expect(client).not_to have_received(:pull_request)
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    context "when auto-merge is off but the Dependabot PR has a trusted activation label" do
+      it "merges the labeled PR only" do
+        project.update!(auto_merge_mode: "off")
+        issue.update!(labels: [ project.feature_activation_label_for("auto_merge") ])
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(project, issue, project.feature_activation_label_for("auto_merge")).and_return(true)
+
+        described_class.perform_now(project.id)
+
+        expect(client).to have_received(:merge_pull_request).with(
+          project.full_name, 42, merge_method: project.merge_method
+        )
+      end
+
+      # @spec AUTO-MERGE-008
+      it "does not merge unlabeled Dependabot PRs" do
+        project.update!(auto_merge_mode: "off")
+        issue
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:merge_pull_request)
+      end
+
+      # @spec AUTO-MERGE-008
+      it "does not let paid-in-full alone authorize the merge" do
+        project.update!(auto_merge_mode: "off")
+        issue.update!(labels: [ project.feature_activation_label_for("paid_in_full") ])
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+        described_class.perform_now(project.id)
+
+        expect(client).not_to have_received(:merge_pull_request)
+      end
+    end
+
     it "skips when CI checks are not green" do
       issue
       allow(client).to receive(:check_runs_for_ref).and_return(

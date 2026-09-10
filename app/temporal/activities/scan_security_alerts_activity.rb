@@ -23,11 +23,14 @@ module Activities
     # original no-backoff design was written to avoid.
     PERMISSION_ERROR_BACKOFF = 1.hour
 
+    # @spec AUTOMATION-ACTIVATION-003
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
       return { alerts_to_fix: [], project_missing: true } unless project
-      return { alerts_to_fix: [] } unless project.auto_scan_security
+      unless Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_security")
+        return { alerts_to_fix: [] }
+      end
 
       with_periodic_heartbeat("scan_security_alerts", project_id: project_id) do
         scan_code_scanning_alerts(project)

@@ -95,6 +95,10 @@ RSpec.configure do |config|
   config.after do
     ProviderSupport.reset_supported_provider_keys!
     RunnerSupport.reset_supported_runner_keys!
+    # The label-trust events cache is process-global with a TTL; transaction
+    # rollbacks recycle record ids, so a stale entry from a prior example
+    # could satisfy (or fail) a trust check in the next one.
+    Automation::LabelPolicy.clear_label_event_cache!
     # The ActiveJob TestAdapter accumulates enqueued/performed jobs across the
     # whole run (it is process-global and never auto-cleared). Specs that assert
     # against the global queue (e.g. expect(...).not_to include(SomeJob)) flake

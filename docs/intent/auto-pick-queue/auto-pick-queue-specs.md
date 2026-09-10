@@ -51,3 +51,13 @@
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/models/issue.rb`,
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
+- [x] **AUTO-PICK-QUEUE-006** — When Auto-Pick is disabled at the project
+  level, a trusted issue-scoped activation label (`paid-automation` or
+  `paid-in-full`) MAY still queue work for exactly that issue through the
+  explicit label-evaluation path, while every unlabeled issue remains outside
+  the queue.
+  *Tests:* `spec/services/automation/issue_evaluator_spec.rb`,
+  `spec/temporal/activities/detect_labels_activity_spec.rb`.
+  *Code:* `app/services/automation/feature_activation.rb`,
+  `app/services/automation/label_policy.rb`.

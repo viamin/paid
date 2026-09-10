@@ -87,7 +87,7 @@ module Automation
       # @return [Automation::Result]
       def evaluate(context)
         config = Configuration::AutoMerge.from_project(context.project)
-        return noop_result unless config.enabled?
+        return noop_result unless config.enabled? || pr_activated?(context)
 
         signals = context.metadata_fetch(SIGNALS_KEY)
         return noop_result if signals.nil?
@@ -109,6 +109,18 @@ module Automation
       end
 
       private
+
+      # @spec AUTO-MERGE-008 — a trusted PR activation label (paid-auto-merge)
+      # enables auto-merge for that pull request even when the project-level
+      # setting is off.
+      def pr_activated?(context)
+        record = context.record
+        return false unless record.respond_to?(:is_pull_request?)
+
+        Automation::FeatureActivation.pull_request_feature_enabled?(
+          project: context.project, pull_request: record, feature: "auto_merge"
+        )
+      end
 
       def skip_auto_merge_blockers(signals, owner_reviewer_login:)
         return [] unless signals.skip_auto_merge?

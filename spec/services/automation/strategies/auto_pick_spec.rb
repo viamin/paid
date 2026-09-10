@@ -16,7 +16,7 @@ RSpec.describe Automation::Strategies::AutoPick do
 
   describe "#evaluate" do
     it "returns a queue_create_pr_run decision when a candidate is available" do
-      issue = instance_double(Issue, id: 42)
+      issue = instance_double(Issue, id: 42, labels: [], has_label?: false)
       allow(candidate_source).to receive(:next_candidate).with(project).and_return(issue)
 
       result = strategy.evaluate(build_context)
@@ -37,6 +37,17 @@ RSpec.describe Automation::Strategies::AutoPick do
       expect(result.decisions.size).to eq(1)
       expect(result.decisions.first.type).to eq("queue_analyze_issue_run")
       expect(result.decisions.first.payload[:issue_id]).to eq(42)
+    end
+
+    it "returns a queue_analyze_issue_run decision when the candidate issue has trusted enhancement activation" do
+      issue = instance_double(Issue, id: 42, labels: [ "paid-enhance" ])
+      allow(candidate_source).to receive(:next_candidate).with(project).and_return(issue)
+      allow(Automation::FeatureActivation).to receive(:issue_auto_enhance_enabled?)
+        .with(project:, issue:).and_return(true)
+
+      result = strategy.evaluate(build_context)
+
+      expect(result.decisions.first.type).to eq("queue_analyze_issue_run")
     end
 
     it "returns a noop result when auto-pick is disabled on the project" do

@@ -162,6 +162,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  # @spec AUTO-MERGE-008
+  describe "#auto_merge_active?" do
+    let(:merge_off_project) { create(:project, auto_merge_mode: "off") }
+    let(:pull_request) do
+      create(:issue, :pull_request, project: merge_off_project, github_number: 42, paid_state: "completed")
+    end
+
+    it "activates for a trusted paid-auto-merge label while the project setting is off" do
+      pull_request.update!(labels: [ merge_off_project.feature_activation_label_for("auto_merge") ])
+      stub_automation_label_events!(issue_number: 42, proj: merge_off_project,
+        label_name: merge_off_project.feature_activation_label_for("auto_merge"))
+
+      expect(activity.send(:auto_merge_active?, merge_off_project, pull_request)).to be(true)
+    end
+
+    it "stays inactive when the label was added by an untrusted actor" do
+      pull_request.update!(labels: [ merge_off_project.feature_activation_label_for("auto_merge") ])
+      stub_automation_label_events!(issue_number: 42, proj: merge_off_project, actor_login: "attacker",
+        label_name: merge_off_project.feature_activation_label_for("auto_merge"))
+
+      expect(activity.send(:auto_merge_active?, merge_off_project, pull_request)).to be(false)
+    end
+
+    it "does not let paid-in-full alone activate auto-merge" do
+      pull_request.update!(labels: [ merge_off_project.feature_activation_label_for("paid_in_full") ])
+      stub_automation_label_events!(issue_number: 42, proj: merge_off_project,
+        label_name: merge_off_project.feature_activation_label_for("paid_in_full"))
+
+      expect(activity.send(:auto_merge_active?, merge_off_project, pull_request)).to be(false)
+    end
+
+    it "stays inactive for unlabeled PRs while the project setting is off" do
+      expect(activity.send(:auto_merge_active?, merge_off_project, pull_request)).to be(false)
+    end
+  end
+
   describe "bot author classification" do
     before do
       allow(project).to receive(:github_author_login).and_return("paid-agents[bot]")
@@ -860,6 +896,132 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    # @spec AUTOMATION-ACTIVATION-003
+    context "when auto_scan_prs is on" do
+      before do
+        allow(github_client).to receive(:pull_request)
+      end
+
+      it "does not widen the scan set beyond automation-labeled PRs" do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 43,
+          github_creator_login: "viamin",
+          labels: [ project.feature_activation_label_for("auto_scan_prs") ],
+          paid_state: "completed")
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:pull_request)
+      end
+    end
+
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-006 @spec AUTO-MERGE-008
+    context "when auto_scan_prs is off" do
+      let(:scan_off_project) do
+        create(:project,
+          auto_scan_prs: false,
+          max_pr_followup_runs: 3,
+          pr_action_labels: [],
+          auto_fix_merge_conflicts: false)
+      end
+
+      before do
+        allow(github_client).to receive(:pull_request)
+        allow(github_client).to receive_messages(
+          check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],
+          commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))),
+          review_threads: [],
+          pull_request_reviews: [],
+          issue_comments: [],
+          recent_issue_comments: []
+        )
+      end
+
+      it "scans a trusted PR carrying an activation label" do
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          labels: [ project.feature_activation_label_for("auto_scan_prs") ],
+          paid_state: "completed")
+        stub_automation_label_events!(issue_number: 42, proj: scan_off_project,
+          label_name: scan_off_project.feature_activation_label_for("auto_scan_prs"))
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).to have_received(:pull_request).with(scan_off_project.full_name, 42)
+      end
+
+      # @spec AUTOMATION-ACTIVATION-006
+      it "does not scan when an untrusted actor added the activation label" do
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          labels: [ scan_off_project.feature_activation_label_for("auto_scan_prs") ],
+          paid_state: "completed")
+        stub_automation_label_events!(issue_number: 42, proj: scan_off_project, actor_login: "attacker",
+          label_name: scan_off_project.feature_activation_label_for("auto_scan_prs"))
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).not_to have_received(:pull_request)
+      end
+
+      # @spec AUTOMATION-ACTIVATION-003
+      it "scans a PR whose parent issue has a trusted paid-in-full catchall" do
+        parent = create(:issue, project: scan_off_project, github_number: 7,
+          labels: [ scan_off_project.feature_activation_label_for("paid_in_full") ])
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          parent_issue: parent,
+          labels: [],
+          paid_state: "completed")
+        stub_automation_label_events!(issue_number: 7, proj: scan_off_project,
+          label_name: scan_off_project.feature_activation_label_for("paid_in_full"))
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).to have_received(:pull_request).with(scan_off_project.full_name, 42)
+      end
+
+      # @spec AUTOMATION-ACTIVATION-006
+      it "does not scan a catchall-parent PR when the catchall was added by an untrusted actor" do
+        parent = create(:issue, project: scan_off_project, github_number: 7,
+          labels: [ scan_off_project.feature_activation_label_for("paid_in_full") ])
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          parent_issue: parent,
+          labels: [],
+          paid_state: "completed")
+        stub_automation_label_events!(issue_number: 7, proj: scan_off_project, actor_login: "attacker",
+          label_name: scan_off_project.feature_activation_label_for("paid_in_full"))
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).not_to have_received(:pull_request)
+      end
+
+      it "does not scan unlabeled PRs without a catchall parent" do
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          labels: [],
+          paid_state: "completed")
+
+        result = activity.execute(project_id: scan_off_project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(github_client).not_to have_received(:pull_request)
       end
     end
 

@@ -76,8 +76,9 @@ module Issues
         .exists?
     end
 
+    # @spec ISSUE-ENHANCEMENT-013
     def seeded_goal
-      project.auto_enhance_enabled? ? "analyze_issue" : "create_pr"
+      Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue:) ? "analyze_issue" : "create_pr"
     end
 
     def blocking_runs(goal)

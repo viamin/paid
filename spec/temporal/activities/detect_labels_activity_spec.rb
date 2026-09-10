@@ -223,6 +223,14 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
       let(:issue) { create(:issue, project: project, labels: [ "my-auto" ], paid_state: "new") }
 
+      before do
+        # The automation label is the auto-pick activation label, so trigger
+        # authorization replays its label events; a label applied by the
+        # trusted creator is trusted.
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(project, issue, "my-auto").and_return(true)
+      end
+
       it "returns execute_agent action" do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
@@ -271,6 +279,52 @@ RSpec.describe Activities::DetectLabelsActivity do
       let(:issue) { create(:issue, project: project, labels: [ "my-auto" ], paid_state: "new") }
 
       it "returns none action even with matching automation label" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+    end
+
+    context "when auto-pick is off but a trusted paid-in-full label is present" do
+      let(:project) { create(:project, auto_pick_enabled: false, auto_enhance_enabled: false, label_mappings: {}) }
+      let(:issue) do
+        create(:issue, project: project, labels: [ project.feature_activation_label_for("paid_in_full") ], paid_state: "new")
+      end
+
+      before do
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(project, issue, project.feature_activation_label_for("paid_in_full")).and_return(true)
+      end
+
+      it "returns execute_agent action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+        expect(result[:decisions]).to eq([ { type: "queue_analyze_issue_run", issue_id: issue.id } ])
+      end
+
+      # @spec AUTOMATION-ACTIVATION-003
+      it "returns none when automation_on_label_enabled is off" do
+        project.update!(automation_on_label_enabled: false)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+
+      # @spec AUTOMATION-ACTIVATION-004
+      it "returns none when a skip label is also present" do
+        issue.update!(labels: issue.labels + [ "planning" ])
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+
+      # @spec AUTOMATION-ACTIVATION-006
+      it "returns none when no trusted user added the activation label" do
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(false)
+
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         expect(result[:action]).to eq("none")
@@ -470,6 +524,8 @@ RSpec.describe Activities::DetectLabelsActivity do
           labels: [ automation_project.automation_label_name ],
           paid_state: "new",
           is_pull_request: false)
+        allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+          .with(automation_project, issue, automation_project.automation_label_name).and_return(true)
 
         result = activity.execute(project_id: automation_project.id, issue_id: issue.id)
 
