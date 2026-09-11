@@ -142,7 +142,7 @@ RSpec.describe Runners::HarnessExecutionPlan do
       Class.new do
         def runner_key; end
 
-        def agent_harness_runner_runtime; end
+        def agent_harness_runner_runtime(project: nil); end
       end
     end
 
@@ -231,7 +231,7 @@ RSpec.describe Runners::HarnessExecutionPlan do
     end
 
     it "constructs the harness runner with external sandboxing enabled", :no_db do
-      runner = instance_double(runner_double_class, runner_key: "claude", agent_harness_runner_runtime: nil)
+      runner = instance_double(runner_double_class, runner_key: "claude")
       harness_runner = instance_double(
         AgentHarness::Providers::Anthropic,
         plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
@@ -249,8 +249,31 @@ RSpec.describe Runners::HarnessExecutionPlan do
         expect(config.externally_sandboxed).to be(true)
         harness_runner
       end
+      allow(runner).to receive(:agent_harness_runner_runtime).with(project: nil).and_return(nil)
 
       described_class.call(runner: runner, prompt: "ping")
+    end
+
+    it "passes project context into runner runtime resolution", :no_db do
+      project = instance_double(Project)
+      runtime = instance_double(AgentHarness::ProviderRuntime)
+      runner = instance_double(runner_double_class, runner_key: "claude")
+      harness_runner = instance_double(
+        AgentHarness::Providers::Anthropic,
+        plan_execution: { command: %w[claude ping], env: {}, preparation: nil }
+      )
+      provider_class = class_double(AgentHarness::Providers::Anthropic)
+
+      allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(provider_class)
+      allow(AgentHarness).to receive(:build_config).with(:claude).and_return(
+        AgentHarness::ProviderConfig.new(:claude)
+      )
+      allow(provider_class).to receive(:new).with(config: kind_of(AgentHarness::ProviderConfig)).and_return(harness_runner)
+      allow(runner).to receive(:agent_harness_runner_runtime).with(project: project).and_return(runtime)
+
+      described_class.call(runner: runner, prompt: "ping", project: project)
+
+      expect(harness_runner).to have_received(:plan_execution).with(prompt: "ping", provider_runtime: runtime)
     end
   end
 end

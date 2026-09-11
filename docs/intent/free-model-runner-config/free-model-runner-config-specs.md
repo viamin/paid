@@ -14,8 +14,10 @@
 - [x] **FREE-MODEL-RUNNER-002** — When a new runner is initialized or created
   with `model_policy: "free"` and no explicit values, the system SHALL
   pre-populate `tier_model_ids` from `FreeModels::DefaultTierModels`, set
-  `fallback_role: "rate_limit_fallback"`, and default the agent-run, chat, and
-  fallback enabled flags to `true`.
+  `fallback_role: "rate_limit_fallback"`, default the agent-run and fallback
+  enabled flags to `true`, and default `enabled_for_chat` to `false` (chat
+  dispatch cannot resolve a free-tier model for policy-based free runners —
+  MODEL-POLICY-013 rejects chat-enabled free-policy runners outright).
 - [x] **FREE-MODEL-RUNNER-003** — When the user explicitly supplies
   `fallback_role`, `tier_model_ids`, or enabled flags for a new free-policy
   runner, the system SHALL preserve those submitted values instead of

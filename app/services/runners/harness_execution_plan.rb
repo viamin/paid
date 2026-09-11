@@ -5,11 +5,12 @@ module Runners
   class HarnessExecutionPlan
     Result = Struct.new(:command, :env, :preparation, keyword_init: true)
 
-    def initialize(runner:, prompt:, options: {}, provider_runtime: nil)
+    def initialize(runner:, prompt:, options: {}, provider_runtime: nil, project: nil)
       @runner = runner
       @prompt = prompt
       @options = options
       @explicit_provider_runtime = provider_runtime
+      @project = project
     end
 
     def self.call(...)
@@ -70,7 +71,7 @@ module Runners
     end
 
     def runner_runtime
-      @explicit_provider_runtime || @runner.agent_harness_runner_runtime
+      @explicit_provider_runtime || @runner.agent_harness_runner_runtime(project: @project)
     end
   end
 end

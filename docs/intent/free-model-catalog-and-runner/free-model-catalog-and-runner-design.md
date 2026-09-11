@@ -37,15 +37,17 @@ Retention enabled while the audit trail incorrectly reports only
 | `confidential` | `{ data_collection: "deny" }` |
 | `restricted` | `{ data_collection: "deny", zdr: true }` |
 
-Any component that needs to express OpenRouter routing for free-model work
-must use this shared mapping rather than re-encoding part of it locally.
+Any component that needs to express OpenRouter routing for OpenRouter-routed
+work must use this shared mapping rather than re-encoding part of it locally.
 
 ## Enforcement Points
 
 ### Execution plan
 
 `Runners::FreeModelExecutionPlan` builds the direct-outbound runtime for any
-free-policy runner. The plan includes:
+free-policy runner. OpenRouter-backed specific-model direct-outbound runs
+reuse the same routing mapping when they build their runtime. The plan or
+runtime includes:
 
 - the selected model id,
 - the OpenRouter base URL,
@@ -59,7 +61,8 @@ free-policy runner. The plan includes:
 1. warn when a sensitive project (`confidential` or `restricted`) selects a
    free model with possible training risk outside an OpenRouter-routed path;
 2. record the effective OpenRouter routing policy in the orchestration
-   decision context whenever the selected path is OpenRouter-routed.
+   decision context whenever the selected path is OpenRouter-routed,
+   including specific OpenRouter-backed `opencode` runs.
 
 For `restricted` projects, that recorded context must include `provider_zdr:
 true` in addition to `provider_data_collection: "deny"`.

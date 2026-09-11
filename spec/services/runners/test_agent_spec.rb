@@ -50,6 +50,8 @@ RSpec.describe Runners::TestAgent do
   def stub_container_smoke_test(harness_result)
     stub_insert_all
     allow(test_run).to receive(:with_container).and_yield(test_run)
+    allow(RunnerSupport).to receive(:subscription_auth_unset_vars_for).and_call_original
+    allow(RunnerSupport).to receive(:subscription_auth_unset_vars_for).with(provider.runner_key).and_return(%w[PAID_PROXY_TOKEN])
     allow(AgentHarness).to receive(:check_provider).and_return(harness_result)
   end
 
@@ -695,7 +697,7 @@ RSpec.describe Runners::TestAgent do
           :opencode,
           timeout: 60,
           executor: an_instance_of(Containers::HarnessExecutor),
-          provider_runtime: nil
+          provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
         )
       end
     end
@@ -877,6 +879,50 @@ RSpec.describe Runners::TestAgent do
       end
 
       it "passes the OpenRouter runtime (not the bare opencode default) to the harness check" do
+        described_class.call(runner: provider)
+
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :opencode,
+          timeout: 60,
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: have_attributes(
+            model: "deepseek/deepseek-v4-flash:free",
+            env: hash_including(
+              "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+              "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+            )
+          )
+        )
+      end
+    end
+
+    context "when direct-outbound opencode free policy is tested" do
+      let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
+      let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free") }
+      let(:runner_record) do
+        create(
+          :runner,
+          user: user,
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          enabled_for_chat: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } },
+          tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+        )
+      end
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "opencode")
+        stub_container_smoke_test(
+          name: :opencode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "passes the OpenRouter free-model runtime to the harness check" do
         described_class.call(runner: provider)
 
         expect(AgentHarness).to have_received(:check_provider).with(
@@ -1337,11 +1383,19 @@ RSpec.describe Runners::TestAgent do
     end
 
     def call_with_message(message)
-      stub_container_smoke_test(
-        name: :claude, status: "error", message: message,
-        latency_ms: 10, error_category: nil, check: :smoke_test
-      )
-      described_class.call(runner: provider)
+      service = described_class.new(runner: provider)
+      result = service.send(:process_harness_result, {
+        name: :claude,
+        status: "error",
+        message: message,
+        latency_ms: 10,
+        error_category: nil,
+        check: :smoke_test
+      })
+      allow(service).to receive(:validate!)
+      allow(service).to receive(:execute_container_smoke_test).and_return(result)
+      allow(service).to receive(:update_runner_state!)
+      service.call
     end
 
     it "does not misclassify 'unexpected token' JSON parse errors as authentication" do

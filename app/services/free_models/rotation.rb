@@ -44,7 +44,7 @@ module FreeModels
     end
 
     def call
-      return exhausted_result unless free_policy_runner?
+      return exhausted_result unless free_model_policy_runner?
 
       previous_model_id = effective_current_model_id
       runner_state = find_runner_state
@@ -81,8 +81,8 @@ module FreeModels
 
     attr_reader :runner, :user, :project
 
-    def free_policy_runner?
-      runner&.free_model_policy? && runner&.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
+    def free_model_policy_runner?
+      runner&.free_model_policy?
     end
 
     # @spec MODEL-POLICY-012
@@ -225,7 +225,6 @@ module FreeModels
     # still cleared so a stale mapping is not retried.
     def self.restore_preferred!(runner:, user:)
       return false unless runner.free_model_policy?
-      return false unless runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
       return false unless user
 
       state = user.runner_states.find_by(runner_name: runner.state_key)

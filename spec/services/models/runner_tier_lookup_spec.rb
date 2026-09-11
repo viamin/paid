@@ -158,7 +158,8 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
         Models::RunnerTierLookupSpec::RunnerLike,
         runner_key: "pi",
         tier_model_ids: {},
-        direct_outbound_llm_model_provider: "minimax"
+        direct_outbound_llm_model_provider: "minimax",
+        free_model_policy?: false
       )
       dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
         runner: runner, project: unrestricted_project))
