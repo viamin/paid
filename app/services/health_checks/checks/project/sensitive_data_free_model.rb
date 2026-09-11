@@ -76,12 +76,18 @@ module HealthChecks
         # (RDR-065 #3671 migrated the underlying Runner rows to "opencode",
         # but does not rewrite this project-level free-text preference).
         def preferred_agent_type_openrouter?
-          %w[openrouter_free openrouter_pareto].include?(model_preferences["preferred_agent_type"])
+          legacy_openrouter_runner_key?(model_preferences["preferred_agent_type"])
         end
 
         def create_pr_runner_openrouter?
           runner = create_pr_runner
-          runner&.free_model_policy? && runner.required_api_service_type == "openrouter"
+          return legacy_openrouter_runner_key?(create_pr_runner_key) unless runner
+
+          runner.openrouter_provider_routed?
+        end
+
+        def legacy_openrouter_runner_key?(value)
+          %w[openrouter_free openrouter_pareto].include?(value)
         end
 
         # Health checks run without an AgentRun, so mirror the runtime
@@ -128,10 +134,16 @@ module HealthChecks
             runner_key: runner.runner_key,
             model_id: model.model_id,
             auth_type: runner.auth_type,
-            provider_runtime: runner.agent_harness_runner_runtime
+            provider_runtime: compatible_runner_runtime(runner)
           )
 
           !result&.unsupported?
+        end
+
+        def compatible_runner_runtime(runner)
+          runner.agent_harness_runner_runtime(project: subject)
+        rescue ArgumentError
+          nil
         end
       end
     end

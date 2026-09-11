@@ -739,13 +739,20 @@ class RunnersController < ApplicationController
     return unless runner.new_record? && runner.free_model_policy?
 
     submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
+    chat_param_submitted = submitted_runner_params.key?("enabled_for_chat") || submitted_runner_params.key?(:enabled_for_chat)
 
     runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?
     runner.auth_type = "api_key"
     # @spec FREE-MODEL-RUNNER-002
     # @spec FREE-MODEL-RUNNER-003
     runner.enabled_for_agent_runs = true if runner.enabled_for_agent_runs.nil?
-    runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
+    # Chat dispatch does not resolve a free-tier model for policy-based free
+    # runners yet (see Runner#opencode_free_policy_chat_must_be_disabled,
+    # which actually enforces this — it also covers update and rows created
+    # outside this controller). This default is only a UX convenience so a
+    # create submitted without an explicit chat choice doesn't fail
+    # validation against the enabled_for_chat column's true DB default.
+    runner.enabled_for_chat = false unless chat_param_submitted
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
   end

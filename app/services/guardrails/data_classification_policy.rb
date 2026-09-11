@@ -84,21 +84,18 @@ module Guardrails
     end
 
     def openrouter_routed?
-      # Free-policy direct-outbound runners always send requests through
-      # OpenRouter with data_collection/zdr set (see
-      # Runners::FreeModelExecutionPlan), regardless of the selected model's
-      # catalog_source — so treat them as OpenRouter-routed even for plain
-      # DeepSeek/Qwen/etc rows.
-      free_policy_openrouter_runner? || model&.catalog_source == "openrouter_sync"
-    end
-
-    def free_policy_openrouter_runner?
-      runner = agent_run.runner
-      runner&.free_model_policy? && runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
+      runner_openrouter_routed? || model&.catalog_source == "openrouter_sync"
     end
 
     def runner_key
       agent_run.runner&.runner_key || agent_run.effective_runner
+    end
+
+    def runner_openrouter_routed?
+      runner = agent_run.runner
+      return %w[openrouter_free openrouter_pareto].include?(runner_key) unless runner
+
+      runner.openrouter_provider_routed?
     end
 
     def routing_params

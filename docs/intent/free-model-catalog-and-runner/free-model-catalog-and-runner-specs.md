@@ -5,16 +5,17 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r FREE-MODEL-001`).
 
-- [x] **FREE-MODEL-001** — When a free-policy runner builds an
-  execution plan, the system SHALL derive `provider_routing` from the
-  project's `data_classification`, mapping `restricted` to
-  `{ data_collection: "deny", zdr: true }`.
+- [x] **FREE-MODEL-001** — When an OpenRouter-routed free-policy execution
+  plan or specific-model direct-outbound runtime is built, the system SHALL
+  derive `provider_routing` from the project's `data_classification`,
+  mapping `restricted` to `{ data_collection: "deny", zdr: true }`.
   *Code:* `Runners::FreeModelExecutionPlan`.
 
 - [x] **FREE-MODEL-002** — When a selected free-model path is OpenRouter-routed,
   the data-classification guardrail SHALL record the effective provider-routing
   policy in the orchestration decision context, including `provider_zdr: true`
-  for `restricted` projects.
+  for `restricted` projects. Any specific-model OpenRouter path SHALL record
+  the same routing metadata.
   *Code:* `Guardrails::DataClassificationPolicy`.
 
 - [x] **FREE-MODEL-003** — When a `confidential` or `restricted` project

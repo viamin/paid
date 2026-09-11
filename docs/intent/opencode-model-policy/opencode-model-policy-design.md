@@ -27,9 +27,22 @@ free-tier picker). D3 keeps `openrouter/pareto-code` a plain catalog row
 rather than a third policy value.
 
 This segment covers the `Runner` model config surface, validations, display
-naming, runtime dispatch, and OpenRouter routing metadata for
-`model_policy`. It also widens `FreeModels::Rotation` to recognize any
-`free_model_policy?` runner whose resolved provider is OpenRouter.
+naming, runtime dispatch, OpenRouter routing metadata, and free-model
+rotation for `model_policy`. A direct-outbound runner with
+`model_policy == "free"` now executes through the same OpenRouter free-model
+execution plan and rotation flow as the legacy `openrouter_free` runner,
+keyed by the runner's routing identifier so policy-based rows preserve their
+own recovery state independent of other free-policy runners. It also widens
+`FreeModels::Rotation` to recognize any `free_model_policy?` runner whose
+resolved provider is OpenRouter. The legacy `openrouter_free` runner key and
+its dedicated form section (`free-model-runner-config`) remain fully
+functional pending a later migration issue that moves existing rows onto the
+new config shape.
+naming, runtime dispatch, OpenRouter routing metadata, and free-model
+rotation for `model_policy`. A direct-outbound runner with
+`model_policy == "free"` executes through the same OpenRouter free-model
+execution plan and rotation flow, with recovery state keyed by the runner's
+routing identifier so distinct free-policy runners do not collide.
 
 ## Design
 
@@ -84,6 +97,18 @@ the runner key/provider.
   currently interpret `metadata[:config]` for OpenRouter routing, so
   data-classification routing on those paths remains an upstream gap rather
   than an app-side omission.
+- Chat is different: chat dispatch (`ChatSessions::BuildLlmClient`,
+  `Containers::ChatSessionManager`) does not yet resolve a free-tier model
+  for policy-based free runners — only the legacy `openrouter_free` runner
+  has that support today. `Runner#opencode_free_policy_chat_must_be_disabled`
+  rejects `enabled_for_chat: true` on any free-policy `opencode` runner
+  (create, update, or a row written outside `RunnersController`), so it
+  cannot end up chat-enabled and silently fall through to a paid default
+  model. `RunnersController#apply_new_runner_defaults` additionally defaults
+  `enabled_for_chat` to `false` on create as a UX convenience, but the model
+  validation is what actually enforces the gate. This will be relaxed once
+  chat-side free-model resolution lands for policy-based free runners.
+  (`MODEL-POLICY-013`)
 
 ### Defaults and display
 

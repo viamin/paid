@@ -171,5 +171,77 @@ RSpec.describe Guardrails::DataClassificationPolicy do
         )
       end
     end
+
+    context "when the run uses an opencode runner backed by OpenRouter" do
+      let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let(:openrouter_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: openrouter_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/pareto-code" } }
+        )
+      end
+
+      before { agent_run.update!(runner: openrouter_runner) }
+
+      it "records routing metadata for confidential projects using a specific OpenRouter model" do
+        result = described_class.call(agent_run: agent_run, selection: selection)
+
+        expect(result).not_to be_warning
+        expect(result.provider_data_collection).to eq("deny")
+        expect(result.provider_zdr).to be_nil
+      end
+    end
+
+    context "when the run uses an opencode subscription runner" do
+      let(:subscription_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "opencode",
+          auth_type: "subscription"
+        )
+      end
+
+      before { agent_run.update!(runner: subscription_runner) }
+
+      # @spec FREE-MODEL-003
+      it "still warns because subscription auth does not attach OpenRouter provider routing" do
+        result = described_class.call(agent_run: agent_run, selection: selection)
+
+        expect(result).to be_warning
+        expect(result.provider_data_collection).to be_nil
+        expect(result.provider_zdr).to be_nil
+        expect_warning_log_for(agent_run)
+      end
+    end
+
+    context "when the run uses a pi runner backed by an OpenRouter API key" do
+      let(:openrouter_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
+      let(:pi_runner) do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: openrouter_key
+        )
+      end
+
+      before { agent_run.update!(runner: pi_runner) }
+
+      # @spec FREE-MODEL-003
+      it "still warns because pi does not attach OpenRouter provider routing" do
+        result = described_class.call(agent_run: agent_run, selection: selection)
+
+        expect(result).to be_warning
+        expect(result.provider_data_collection).to be_nil
+        expect(result.provider_zdr).to be_nil
+        expect_warning_log_for(agent_run)
+      end
+    end
   end
 end

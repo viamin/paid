@@ -426,6 +426,7 @@ RSpec.describe Models::Select do
           runner_key: runner_key,
           auth_type: "api_key",
           provider_api_key: openrouter_key,
+          enabled_for_chat: false,
           config: { runner_key => { "api_provider" => "openrouter", "model_policy" => "free" } },
           tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )

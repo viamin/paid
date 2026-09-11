@@ -192,7 +192,8 @@ module Containers
         Runners::HarnessExecutionPlan.call(
           runner: chat_session.runner,
           prompt: prompt,
-          options: options
+          options: options,
+          project: chat_session.project
         )
       else
         Runners::HarnessExecutionPlan.for_runner_key(

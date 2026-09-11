@@ -96,7 +96,8 @@ RSpec.describe Containers::ChatSessionManager do
       expect(Runners::HarnessExecutionPlan).to receive(:call).with(
         runner: runner,
         prompt: "Fix the bug",
-        options: {}
+        options: {},
+        project: project
       )
 
       manager.execute_agent_command(prompt: "Fix the bug")
