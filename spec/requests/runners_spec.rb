@@ -892,7 +892,10 @@ RSpec.describe "Runners" do
       )
       expect(runner.fallback_role).to eq("rate_limit_fallback")
       expect(runner.enabled_for_agent_runs).to be(true)
-      expect(runner.enabled_for_chat).to be(true)
+      # Chat dispatch does not resolve a free-tier model for policy-based
+      # free runners, so it is not defaulted on and cannot be enabled
+      # (MODEL-POLICY-013).
+      expect(runner.enabled_for_chat).to be(false)
       expect(runner.enabled_for_fallback).to be(true)
     end
 
