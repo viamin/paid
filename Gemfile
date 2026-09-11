@@ -37,7 +37,7 @@ gem "avo", "4.2.1"
 # ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25) and
 # any code that calls JSON.parse(json, hash) positionally. Lift the pin
 # once Rails 8.2+ adopts the keyword-only signature throughout.
-gem "json", "~> 2.3", "< 3.0"
+gem "json", "~> 3.0"
 
 # Soft-delete for low-volume reference records
 gem "discard"
