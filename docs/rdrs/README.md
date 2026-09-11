@@ -73,7 +73,7 @@ remaining gap issues.
 | [RDR-005](RDR-005-git-worktree-management.md) | Git Worktree Management | Superseded | High |
 | [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Implemented | High |
 | [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Managed Auth Lifecycle | Implemented | P1 |
-| [RDR-055](RDR-055-agent-container-egress-allowlisting.md) | Agent Container Egress Allowlisting | Partially Implemented | P1 |
+| [RDR-055](RDR-055-agent-container-egress-allowlisting.md) | Agent Container Egress Allowlisting | Implemented | P1 |
 | [RDR-058](RDR-058-execution-authority-network-and-isolation.md) | Execution Authority, Network Policy, and Isolation | Implemented | P1 |
 
 ### Agent System
