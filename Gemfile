@@ -78,7 +78,7 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-gem "agent-harness", "0.36.13"
+gem "agent-harness", "0.36.17"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 gem "ruby_llm", "~> 1.16"
