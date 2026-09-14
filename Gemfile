@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.2.1"
+gem "avo", "4.2.3"
 
 # Pin json to 2.x. json 3.0.0 changed JSON.parse/json options to
 # keyword-only arguments, which is incompatible with Rails 8.1.x's
