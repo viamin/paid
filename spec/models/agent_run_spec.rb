@@ -1958,6 +1958,7 @@ RSpec.describe AgentRun do
         expect(prompt).to include("Treat named plan docs as authored intent")
       end
 
+      # @spec ISSUE-ENHANCEMENT-001
       it "builds the enhance_issue prompt with simplified-technical-English style rules (#3840)" do
         project = create(:project, allowed_github_usernames: [ "viamin" ])
         issue = create(:issue, project: project, github_number: 7, github_creator_login: "viamin")

@@ -16,9 +16,9 @@
   clauses or stacked jargon, while keeping technical meaning precise (#3840).
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`,
   `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`,
+  `spec/models/agent_run_spec.rb#prompt_for_goal`,
   `spec/migrations/sync_enhance_issue_prompt_simplified_english_spec.rb`.
-  *Code:* `app/temporal/activities/enhance_issue_activity.rb#prompt_for`,
-  `app/models/agent_run.rb#prompt_for_enhance_issue`,
+  *Code:* `app/models/agent_run.rb#prompt_for_enhance_issue`,
   `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
   `db/seeds/prompts.rb`,
   `db/migrate/20260916153929_sync_enhance_issue_prompt_simplified_english.rb`.

@@ -905,6 +905,7 @@ upsert_global_prompt.call(
 # ----------------------------------------------------------------------------
 # goal.enhance_issue — Augment a base prompt for the enhance-issue goal
 # Used by: Activities::RunAgentActivity#augment_prompt_for_enhance_issue_goal
+# @spec ISSUE-ENHANCEMENT-001
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
   slug: "goal.enhance_issue",

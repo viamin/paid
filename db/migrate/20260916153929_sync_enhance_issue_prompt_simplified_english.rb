@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec ISSUE-ENHANCEMENT-001
 class SyncEnhanceIssuePromptSimplifiedEnglish < ActiveRecord::Migration[8.1]
   CHANGE_NOTES = "Require simplified technical English in enhance_issue comments and clarifying questions"
   PROMPT_SLUG = "goal.enhance_issue"

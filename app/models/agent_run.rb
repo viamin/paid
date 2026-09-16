@@ -3591,6 +3591,7 @@ class AgentRun < ApplicationRecord
     end
   end
 
+  # @spec ISSUE-ENHANCEMENT-001
   def prompt_for_enhance_issue
     return nil unless issue
 

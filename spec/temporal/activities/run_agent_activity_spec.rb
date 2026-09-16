@@ -1219,7 +1219,7 @@ RSpec.describe Activities::RunAgentActivity do
       allow(Prompt).to receive(:resolve).and_return(nil)
     end
 
-    it "includes knowledge context when artifacts are available", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-008
+    it "includes knowledge context when artifacts are available", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-001, ISSUE-ENHANCEMENT-008
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
         .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)

@@ -13,6 +13,7 @@ RSpec.describe SyncEnhanceIssuePromptSimplifiedEnglish, :aggregate_failures do
     end
   end
 
+  # @spec ISSUE-ENHANCEMENT-001
   it "promotes the simplified-technical-English template for an existing global prompt" do
     prompt = create(:prompt, :global, slug: described_class::PROMPT_SLUG, name: "Goal: Enhance Issue")
     previous_version = prompt.create_version!(
