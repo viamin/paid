@@ -228,7 +228,9 @@ class ChatControllerNodeHarness
 
     // A rejected send (e.g. a token-limit error) must not silently discard the
     // user's typed text — chat-input#send already cleared the textarea
-    // optimistically, so handleError has to put it back.
+    // optimistically, so handleError has to put it back. Only the token-limit
+    // rejection carries limit_type: it fires before persist_user_message, so
+    // the input's text was never persisted/rendered elsewhere.
     function testHandleErrorRestoresPendingContentIntoInput() {
       withWindowEvent(() => {
         let restoredValue = null;
@@ -247,7 +249,10 @@ class ChatControllerNodeHarness
           removePendingAssistantMessage: () => {}
         });
 
-        controller.handleError({ message: "Chat token limit reached (session): 5000000 tokens" });
+        controller.handleError({
+          message: "Chat token limit reached (session): 5000000 tokens",
+          limit_type: "session"
+        });
 
         if (restoredValue !== "Draft message") {
           throw new Error(`Expected input value to be restored, got '${restoredValue}'`);
@@ -278,10 +283,42 @@ class ChatControllerNodeHarness
           removePendingAssistantMessage: () => {}
         });
 
-        controller.handleError({ message: "boom" });
+        controller.handleError({ message: "boom", limit_type: "session" });
 
         if (restoredValue !== "unchanged") {
           throw new Error("Expected no restoration when there is no pending content");
+        }
+      });
+    }
+
+    // Mid-loop failures (provider fallback exhaustion, rate limits, unexpected
+    // errors) fire after persist_user_message already broadcast the user's
+    // message via message_created — restoring here would duplicate it in the
+    // input. These errors never carry limit_type, so they must not restore.
+    function testHandleErrorDoesNotRestoreWithoutLimitType() {
+      withWindowEvent(() => {
+        let restoredValue = "unchanged";
+        const { controller } = makeController({
+          pendingContent: "Already rendered as a message",
+          hasInputTarget: true,
+          inputTarget: {
+            set value(v) { restoredValue = v; },
+            get value() { return restoredValue; },
+            dispatchEvent: () => { throw new Error("Expected no dispatch when the error lacks limit_type"); }
+          },
+          setBusy: () => {},
+          toggleTyping: () => {},
+          setStatus: () => {},
+          removePendingAssistantMessage: () => {}
+        });
+
+        controller.handleError({ message: "Provider unavailable" });
+
+        if (restoredValue !== "unchanged") {
+          throw new Error("Expected no restoration for an error without limit_type");
+        }
+        if (controller.pendingContent !== "Already rendered as a message") {
+          throw new Error("Expected pendingContent to be left untouched when restoration is skipped");
         }
       });
     }
@@ -788,6 +825,7 @@ class ChatControllerNodeHarness
       testSendMessageTracksPendingContentForRestoration();
       testHandleErrorRestoresPendingContentIntoInput();
       testHandleErrorNoOpsWithoutPendingContent();
+      testHandleErrorDoesNotRestoreWithoutLimitType();
       testMessageCompleteClearsPendingContent();
       testToolConfirmationClearsPendingContent();
       testToolEventsDoNotResetStreamingBeforeComplete();

@@ -245,7 +245,12 @@ export default class extends Controller {
     this.currentStreamId = null
     this.setBusy(false)
     this.toggleTyping(false)
-    this.restorePendingContent()
+    // Only a token-limit rejection (carrying limit_type) happens before
+    // persist_user_message — every other error path (provider fallback
+    // exhaustion, rate limits, unexpected errors) fires after the user
+    // message was already persisted and rendered via its own
+    // message_created broadcast, so restoring here would duplicate it.
+    if (data.limit_type) this.restorePendingContent()
     this.setStatus(data.message || "An unexpected error occurred")
   }
 
