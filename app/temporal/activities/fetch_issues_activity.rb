@@ -419,8 +419,9 @@ module Activities
         # indicated the issue is actionable. Reset the enhancement round
         # counter so a later regression doesn't inherit an exhausted automatic
         # budget (#3842).
+        rounds_before_reset = issue.enhance_issue_rounds
         attrs = { paid_state: "new" }
-        attrs[:enhance_issue_rounds] = 0 if issue.enhance_issue_rounds.to_i.positive?
+        attrs[:enhance_issue_rounds] = 0 if rounds_before_reset.to_i.positive?
         issue.update!(attrs)
         changed = true
 
@@ -429,7 +430,7 @@ module Activities
           project_id: project.id,
           issue_id: issue.id,
           issue_number: issue.github_number,
-          enhance_issue_rounds: issue.enhance_issue_rounds
+          enhance_issue_rounds: rounds_before_reset
         )
       end
 

@@ -537,7 +537,7 @@ module Activities
     # @spec ISSUE-ANALYSIS-014
     def build_cycle_state(issue, all_comments, project)
       rounds = issue.enhance_issue_rounds.to_i
-      max_rounds = issue.project.max_enhance_issue_reevaluation_rounds
+      max_rounds = project.max_enhance_issue_reevaluation_rounds
       prior_verdict = issue.last_analyzer_sufficient_context
       prior_areas = issue.last_analyzer_missing_context_areas
       summary = prior_enhancement_summary(project, all_comments)

@@ -170,7 +170,9 @@
 ## Trust and response contract
 
 - [x] **ISSUE-ANALYSIS-004** — The system SHALL reject untrusted issues and
-  filter issue comments through the trusted-user allowlist before any LLM call.
+  filter issue comments before any LLM call: trusted-user allowlist comments
+  plus `ClarifyingQuestions::CommentAdmission` (Paid's own bot-authored
+  enhancement/answer marker comments, whose app-bot login is unspoofable).
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("rejects untrusted issues", "filters untrusted issue comments").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#ensure_trusted_issue!`, `#trusted_comments`.
 
