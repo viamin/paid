@@ -243,6 +243,37 @@ RSpec.describe Prompt, type: :model do
     end
   end
 
+  describe "goal.enhance_issue self-contained questions coupling" do
+    # If the question-context guidance ever changes, the seeded template AND
+    # the FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT in RunAgentActivity must be
+    # updated together (plus the prompt-sync migration), or fallback runs and
+    # seeded runs will ask differently-shaped questions.
+    let(:seed_template) do
+      described_class.global.find_by(slug: "goal.enhance_issue").current_version.template
+    end
+    let(:fallback_template) { Activities::RunAgentActivity::FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT }
+
+    it "seeded template requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
+      expect(seed_template).to include("stands on its own")
+      expect(seed_template).to match(/why you are asking and what\s+you found in the repository/)
+      expect(seed_template).to include("Reference the relevant code, issue, or doc")
+      expect(seed_template).to include("name the options")
+      expect(seed_template).to include("where the issue sits in the roadmap")
+    end
+
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires self-contained questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
+      expect(fallback_template).to include("stands on its own")
+      expect(fallback_template).to match(/why you are asking and what\s+you found in the repository/)
+      expect(fallback_template).to include("Reference the relevant code, issue, or doc")
+      expect(fallback_template).to include("name the options")
+      expect(fallback_template).to include("where the issue sits in the roadmap")
+    end
+
+    it "seeded template matches the code fallback template exactly" do
+      expect(seed_template.strip).to eq(fallback_template.strip)
+    end
+  end
+
   describe "coding.pr_review_rebase already-addressed marker" do
     it "seeded template includes the no-change review resolution variable slot" do
       template = described_class.global.find_by(slug: "coding.pr_review_rebase").current_version.template
