@@ -473,7 +473,12 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # LLM that disobeys does not re-park the issue in manual_review (#3849).
     context "when the enhancement round cap has been reached" do
       before do
-        issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+        issue.update!(
+          enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds,
+          # The analyzer pass that queued the last enhancement round — the
+          # fresh-signal anchor for ISSUE-ANALYSIS-015.
+          last_analyzed_at: Time.zone.parse("2026-04-20 11:00:00 UTC")
+        )
         allow(llm_response).to receive(:output).and_return(
           {
             sufficient_context: false,
@@ -516,6 +521,73 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:sufficient_context]).to be false
+      end
+
+      # @spec ISSUE-ANALYSIS-015
+      # PAT-backed projects have no bot identity
+      # (Project#paid_bot_author? is always false), so anchoring the
+      # fresh-signal check on the bot-authored enhancement marker comment
+      # made the carve-out dead code there: the anchor was permanently nil
+      # and a genuinely fresh trusted comment was ignored — the verdict was
+      # forced to true and reopen_enhancement_budget! could never fire.
+      # The anchor must be the analyzer's own last_analyzed_at timestamp,
+      # which exists for both credential models.
+      it "does not override on a PAT-backed project when a trusted human commented after the last analysis" do
+        allow(client).to receive(:issue_comments).and_return([
+          OpenStruct.new(
+            body: "Here is more detail on scope.",
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-04-20 13:00:00 UTC")
+          )
+        ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be false
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
+      end
+
+      # @spec ISSUE-ANALYSIS-015
+      # On a PAT-backed project Paid posts its own enhancement comments as
+      # the PAT user — a login that is typically allowlisted. Without
+      # excluding marker-comment bodies from the fresh-signal scan, every
+      # enhancement round's own comment would read as fresh human signal,
+      # reopen the budget, and turn the cap into an infinite enhance loop.
+      it "still overrides on a PAT-backed project when the only newer comment is Paid's own enhancement marker posted as the PAT user" do
+        allow(client).to receive(:issue_comments).and_return([
+          OpenStruct.new(
+            body: "<!-- paid:enhance-issue -->\n## Implementation context",
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+          )
+        ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect(issue.reload.enhance_issue_rounds).to eq(project.max_enhance_issue_reevaluation_rounds)
+      end
+
+      # @spec ISSUE-ANALYSIS-015
+      # cap 0 disables automatic enhancement — `0 >= 0` must not let the
+      # override fire on the very first analysis. Pre-#3849 behavior kept
+      # a human gate: the false verdict parks the issue via the queue-time
+      # rejection instead of forcing create_pr on known-insufficient
+      # context.
+      context "when the project's round cap is zero" do
+        before do
+          project.update!(max_enhance_issue_reevaluation_rounds: 0)
+          issue.update!(enhance_issue_rounds: 0)
+        end
+
+        it "keeps the manual_review gate when the round cap is zero" do
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result[:sufficient_context]).to be false
+          expect(result[:missing_context_areas]).to include("scope")
+          expect(issue.reload.enhance_issue_rounds).to eq(0)
+          expect(issue.last_analyzer_sufficient_context).to be false
+        end
       end
 
       # @spec ISSUE-ANALYSIS-015
