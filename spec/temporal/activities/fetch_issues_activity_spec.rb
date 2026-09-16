@@ -497,6 +497,23 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(existing_issue.reload.enhance_issue_rounds).to eq(2)
       end
+
+      # @spec ISSUE-ENHANCEMENT-015
+      # A recommend-close label removal and a trusted body edit can land in
+      # the same sync: the removal makes Issues::UpsertFromGithub perform a
+      # later save on the same instance (maybe_clear_recommend_close), which
+      # replaces saved_change_to_body? with the paid_state change. The body
+      # edit must still reset the counter — detect it across the upsert, not
+      # via the last save's change tracking.
+      it "still resets the round counter when a recommend-close label removal lands in the same sync" do
+        existing_issue.update!(paid_state: "recommend_close", labels: [ "paid-recommend-close" ])
+
+        activity.execute(project_id: project.id)
+
+        reloaded = existing_issue.reload
+        expect(reloaded.paid_state).to eq("new")
+        expect(reloaded.enhance_issue_rounds).to eq(0)
+      end
     end
 
     context "when results include pull requests" do

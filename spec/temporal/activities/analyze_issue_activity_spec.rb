@@ -518,6 +518,35 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         expect(result[:sufficient_context]).to be false
       end
 
+      # @spec ISSUE-ANALYSIS-015
+      # A plain trusted comment matches none of the counter-reset paths
+      # (answer flow, needs-input label removal, body edit), so the counter
+      # is still at cap when the suppression fires. Returning the raw false
+      # verdict without reopening the budget would get the enhance_issue
+      # follow-up rejected at queue time and re-park the issue in
+      # manual_review — exactly the flapping #3849 acceptance criterion 1
+      # eliminates.
+      it "resets the round counter when suppression fires so the enhance_issue follow-up can queue" do
+        configure_app_backed_project
+        allow(client).to receive(:issue_comments).and_return([
+          OpenStruct.new(
+            body: "<!-- paid:enhance-issue -->\n## Implementation context",
+            user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+            created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: "Here is more detail on scope.",
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-04-20 13:00:00 UTC")
+          )
+        ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be false
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
+      end
+
       it "still overrides when the only post-enhancement comment is untrusted" do
         configure_app_backed_project
         allow(client).to receive(:issue_comments).and_return([

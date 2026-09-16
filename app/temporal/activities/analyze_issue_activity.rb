@@ -608,13 +608,20 @@ module Activities
     # only for the instruction-following case. Enforce the cap
     # deterministically instead, unless a human has provided fresh signal
     # since the last enhancement round that the analyzer hasn't reacted to
-    # yet — in that case `fresh_human_signal_since?` returning true means
-    # the round counter should already have reset via the answer/body-edit
-    # paths, so a real re-evaluation is warranted rather than a forced one.
+    # yet. In that case the analyzer's real verdict stands — and because a
+    # plain trusted comment matches none of the counter-reset paths (answer
+    # flow, needs-input label removal, body edit), the counter can still sit
+    # at cap here, so reopen_enhancement_budget! restores the invariant
+    # "suppression ⇒ counter below cap" and lets the re-evaluation round
+    # queue instead of flapping back into manual_review (#3849).
     def enforce_cap_override(issue, cycle_state, parsed)
       return parsed unless cycle_state[:enhance_issue_rounds] >= cycle_state[:max_enhance_issue_reevaluation_rounds]
       return parsed if parsed[:sufficient_context]
-      return parsed if cycle_state[:fresh_human_signal_since_enhancement]
+
+      if cycle_state[:fresh_human_signal_since_enhancement]
+        reopen_enhancement_budget!(issue, cycle_state)
+        return parsed
+      end
 
       logger.info(
         message: "agent_execution.analyze_issue_cap_override",
@@ -627,6 +634,19 @@ module Activities
       )
 
       parsed.merge(sufficient_context: true, missing_context_areas: [])
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    def reopen_enhancement_budget!(issue, cycle_state)
+      return unless issue.persisted? && cycle_state[:enhance_issue_rounds].positive?
+
+      issue.update!(enhance_issue_rounds: 0)
+      logger.info(
+        message: "agent_execution.analyze_issue_enhancement_budget_reopened",
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds_before: cycle_state[:enhance_issue_rounds]
+      )
     end
 
     # @spec ISSUE-ANALYSIS-014

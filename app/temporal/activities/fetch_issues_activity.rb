@@ -279,6 +279,7 @@ module Activities
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
       previous_labels = Array(existing_issue&.labels)
       rounds_before_reset = existing_issue&.enhance_issue_rounds.to_i
+      body_before_upsert = existing_issue&.body
 
       unless trusted
         logger.warn(
@@ -295,7 +296,14 @@ module Activities
         body: trusted ? github_issue.body : nil
       )
       upsert_changed = issue.previous_changes.present?
-      rounds_reset = reset_enhancement_rounds_on_trusted_body_edit!(issue, trusted: trusted, rounds_before_reset: rounds_before_reset)
+      # Detect the body edit by comparing across the upsert, not via the
+      # instance's change tracking: Issues::UpsertFromGithub can perform a
+      # later save on the same instance (maybe_clear_recommend_close), which
+      # would otherwise mask a body change with that save's changes.
+      body_changed_in_upsert = issue.body != body_before_upsert
+      rounds_reset = reset_enhancement_rounds_on_trusted_body_edit!(
+        issue, trusted: trusted, rounds_before_reset: rounds_before_reset, body_changed: body_changed_in_upsert
+      )
       collect_eligible_issue(project, issue, eligible_issues) if eager_queue_enabled
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
@@ -313,10 +321,13 @@ module Activities
     # where genuinely fresh human context just arrived (#3849). `trusted`
     # reflects the issue's current author trust, the only signal available
     # here without an extra GitHub API call to attribute the edit itself.
-    def reset_enhancement_rounds_on_trusted_body_edit!(issue, trusted:, rounds_before_reset:)
+    # `body_changed` comes from the caller's before/after comparison across
+    # the upsert — `saved_change_to_body?` only reflects the most recent
+    # save, which a recommend-close reset inside the upsert can replace.
+    def reset_enhancement_rounds_on_trusted_body_edit!(issue, trusted:, rounds_before_reset:, body_changed:)
       return false unless trusted
       return false unless rounds_before_reset.positive?
-      return false unless issue.saved_change_to_body?
+      return false unless body_changed
 
       issue.update!(enhance_issue_rounds: 0)
       logger.info(

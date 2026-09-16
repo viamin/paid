@@ -258,10 +258,15 @@
   representation does not report who last edited the body, only who created
   the issue — so the reset SHALL NOT fire for an issue whose current author
   is untrusted, and SHALL NOT fire on the initial sync that creates the
-  issue (there is no "prior" body to diverge from). The reset SHALL be
+  issue (there is no "prior" body to diverge from). The body change SHALL
+  be detected by comparing the synced body against the locally stored body
+  from before the upsert — not via the record's last-save change tracking,
+  which `Issues::UpsertFromGithub` can replace with a later save on the
+  same instance (a recommend-close label removal) and silently mask the
+  edit. The reset SHALL be
   reflected in the sync's `changed` result even when the body was the only
   change.
   *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`
-  ("resets enhance_issue_rounds to 0", "does not reset the round counter when the body is unchanged", "does not reset the round counter when the issue's author is untrusted").
+  ("resets enhance_issue_rounds to 0", "does not reset the round counter when the body is unchanged", "does not reset the round counter when the issue's author is untrusted", "still resets the round counter when a recommend-close label removal lands in the same sync").
   *Code:* `app/temporal/activities/fetch_issues_activity.rb#sync_issue`,
   `#reset_enhancement_rounds_on_trusted_body_edit!`.

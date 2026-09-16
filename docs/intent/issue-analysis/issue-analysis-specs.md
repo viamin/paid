@@ -225,19 +225,29 @@
   in `manual_review` on LLM noncompliance alone (#3849, follow-up to
   #3842/#3844). The override SHALL NOT apply when the model already
   returned `sufficient_context: true`, nor when a trusted human commented
-  after the last enhancement marker comment — that fresh signal means the
-  round counter should already have been reset via `ISSUE-ENHANCEMENT-015`
-  or `ISSUE-ENHANCEMENT-014`'s human-signal resets, so a real
-  re-evaluation is warranted. The raw LLM verdict and the override SHALL
-  both be logged (`agent_execution.analyze_issue_cap_override`) for
+  after the last enhancement marker comment — that fresh signal warrants a
+  real re-evaluation rather than a forced one. Because a plain trusted
+  comment matches none of the counter-reset paths (the answer flow, a
+  needs-input label removal, or a trusted body edit via
+  `ISSUE-ENHANCEMENT-015`), the counter can still sit at cap when this
+  suppression fires — in that case the system SHALL reset
+  `enhance_issue_rounds` to 0, preserving the invariant "suppression ⇒
+  counter below cap" so the re-evaluation `enhance_issue` follow-up queues
+  instead of being rejected at queue time and re-parking the issue in
+  `manual_review` (#3849 acceptance criterion 1). The raw LLM verdict and
+  the override SHALL both be logged
+  (`agent_execution.analyze_issue_cap_override`,
+  `agent_execution.analyze_issue_enhancement_budget_reopened`) for
   observability. No test SHALL depend on the LLM obeying the prompt-level
   cap instruction.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
   ("forces sufficient_context: true regardless of the LLM's raw verdict",
   "persists the overridden verdict, not the LLM's raw false",
   "does not override when a trusted human commented after the last enhancement round",
+  "resets the round counter when suppression fires so the enhance_issue follow-up can queue",
   "still overrides when the only post-enhancement comment is untrusted",
   "does not override when the LLM already returned sufficient_context: true",
   "does not override sufficient_context: false when the round cap has not been reached").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#enforce_cap_override`,
-  `#fresh_human_signal_since?`, `#build_cycle_state`.
+  `#reopen_enhancement_budget!`, `#fresh_human_signal_since?`,
+  `#build_cycle_state`.
