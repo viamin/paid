@@ -147,10 +147,33 @@ going through that service) as its summary, and `manual_review_started_at`
 `ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
 offers a "Start enhancement run" action that queues a manual `enhance_issue`
 run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
-`manual_review` and only an explicit operator-triggered run resumes work, so
-(unlike `unblock_escalation`, which clears state directly) this action queues
-the run rather than clearing state itself — nothing else ever moves the issue
-out of `manual_review`.
+`manual_review` and only an explicit operator-triggered run resumes work —
+the queueing is the resume, so (unlike `unblock_escalation`, which clears
+state directly) this action still creates a run rather than just flipping
+state. The same request also transitions the issue out of `manual_review`
+(`paid_state: "in_progress"`, the state `CreateAgentRunActivity` sets when
+the run starts), inside the same transaction that creates the run, so the
+entry leaves the queue and the nav badge at queue time (#3853) instead of
+surviving the whole queue wait — the operator-inbox invariant "acting on an
+item removes it now" that every other lane already satisfies. The existing
+`sync_manual_review_started_at` callback clears the lane columns on exit and
+bumps the badge cache version; no inbox-side cache work is needed. A stale
+or double click degrades to "This issue is no longer waiting for manual
+review." instead of an active-run error.
+
+The item returns only when the resumed work itself needs another human
+decision, through the existing re-entry producers: an unparseable
+enhancement (`IssueEnhancements::StopForManualReview`), the configured round
+limit again (`EnhanceIssueActivity#paid_state_for`), or clarifying questions
+(the `needs_input` lane). A `sufficient_context: true` verdict correctly
+does not return it (`completed` + `create_pr` follow-up). If the queued run
+fails, generic failure handling applies (`paid_state: "failed"`, auto-pick
+eligible, so generic re-evaluation — not a silent stranding); if it is
+cancelled before starting, the issue stays `in_progress` exactly like any
+other cancelled run, with `StaleRunDetectorJob`'s orphaned-in_progress
+recovery as the backstop. The same queue-time flip covers a `manual_review`
+issue queued through the bulk enhance form, which is equally
+operator-triggered.
 
 Scoping follows `INBOX-FOUNDATION-006` like every other kind (auto-pick +
 owner gated), not the dashboard's broader account-wide scope — the same
@@ -259,6 +282,9 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 - `spec/requests/inbox_spec.rb` covers `manual_review` detail rendering (reason,
   age, and the `resume_manual_review` action).
 - `spec/requests/agent_runs_spec.rb` covers `resume_manual_review` queuing a
-  manual `enhance_issue` run and its inbox-aware redirect.
+  manual `enhance_issue` run, its inbox-aware redirect, the queue-time
+  `manual_review` → `in_progress` transition (state/lanes/badge on success,
+  state preserved on budget/no-runner failure, graceful stale re-click), and
+  the same flip through the bulk enhance form.
 - `spec/services/dashboard/eligibility_breakdown_spec.rb` covers the named
   `manual_review` bucket.
