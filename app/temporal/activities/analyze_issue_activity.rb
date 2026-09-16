@@ -20,6 +20,13 @@ module Activities
     CLAUDE_MODEL = "claude-sonnet-4-6"
     MAX_SEARCH_RESULTS = 10
     MAX_COMMENTS = 50
+    # Total budget for the cycle-state digest of every admissible enhancement
+    # / answer marker comment, and the per-section cap within it (#3850).
+    CYCLE_STATE_BUDGET = 8_000
+    CYCLE_STATE_SECTION_BUDGET = 4_000
+    # Per-comment and whole-section budgets for the `## Conversation` section.
+    COMMENT_BODY_BUDGET = 2_000
+    CONVERSATION_BUDGET = 40_000
     KNOWLEDGE_SEARCH_BUDGET = 60
     CONTEXT_BUNDLE_BUDGET = 60
 
@@ -527,6 +534,7 @@ module Activities
         - Prior analyzer verdict: #{cycle_state[:prior_sufficient_context]}
         - Prior missing_context_areas: #{cycle_state[:prior_missing_context_areas].to_json}
 
+        ### Prior enhancement output (oldest first)
         #{cycle_state[:prior_enhancement_summary].presence || 'No prior enhancement comment found.'}
 
         If `Prior analyzer verdict` is "true" but the run still re-evaluated, treat any
@@ -552,13 +560,18 @@ module Activities
       }
     end
 
-    # @spec ISSUE-ANALYSIS-014
+    # @spec ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-015
     # The marker text alone is not a trust signal — any GitHub user can type
     # `<!-- paid:enhance-issue -->`. Reuse ClarifyingQuestions::CommentAdmission
     # so only marker comments authored by the project's GitHub App bot (whose
     # login is unspoofable) reach the analyzer prompt; otherwise an untrusted
     # commenter can inject arbitrary instructions into the Cycle-state section
     # and steer the verdict (#3842).
+    #
+    # Every admissible marker comment is collapsed in, oldest first, under one
+    # section-aware budget: the latest comment is often just the newest
+    # clarifying questions while earlier rounds hold the implementation
+    # context that proves readiness (#3850).
     def prior_enhancement_summary(project, comments)
       enhancement_comments = comments.select do |comment|
         ClarifyingQuestions::CommentAdmission.paid_marker_comment?(
@@ -567,10 +580,15 @@ module Activities
       end
       return nil if enhancement_comments.empty?
 
-      latest = enhancement_comments.max_by { |comment| comment.created_at || Time.at(0) }
-      body = latest.body.to_s
-      body = body.sub(EnhanceIssueActivity::COMMENT_MARKER, "").strip
-      body.truncate(2_000)
+      ordered = enhancement_comments.sort_by { |comment| comment.created_at || Time.at(0) }
+      digests = IssueEnhancements::CommentDigest.call(
+        bodies: ordered.map { |comment| comment.body.to_s },
+        total_budget: CYCLE_STATE_BUDGET,
+        section_budget: CYCLE_STATE_SECTION_BUDGET
+      )
+      ordered.zip(digests).filter_map do |comment, digest|
+        "#### #{comment.created_at || 'unknown time'}\n#{digest}" if digest.present?
+      end.join("\n\n")
     end
 
     # @spec ISSUE-ANALYSIS-014
@@ -581,7 +599,7 @@ module Activities
         last_analyzer_missing_context_areas: parsed[:missing_context_areas].to_a,
         last_analyzed_at: Time.current
       }
-      issue.update_columns(attrs) if issue.persisted?
+      issue.update!(attrs) if issue.persisted?
     rescue => e
       logger.warn(
         message: "agent_execution.analyze_issue_persist_verdict_failed",
@@ -591,16 +609,28 @@ module Activities
       )
     end
 
+    # @spec ISSUE-ANALYSIS-015
+    # Newest comments are kept first so a long thread still surfaces the most
+    # recent human answers and enhancement sections within CONVERSATION_BUDGET;
+    # each body is shaped by section rather than head-truncated (#3850).
     def format_comments(comments)
-      relevant = comments.last(MAX_COMMENTS)
-      return "No comments." if relevant.empty?
+      return "No comments." if comments.empty?
 
-      relevant.map do |comment|
-        author = comment.user&.login || "unknown"
-        created = comment.created_at || "unknown time"
-        body = comment.body.to_s.truncate(2_000)
-        "### #{author} at #{created}\n#{body}"
-      end.join("\n\n")
+      relevant = comments.last(MAX_COMMENTS)
+      digests = IssueEnhancements::CommentDigest.call(
+        bodies: relevant.map { |comment| comment.body.to_s },
+        total_budget: CONVERSATION_BUDGET,
+        section_budget: COMMENT_BODY_BUDGET
+      )
+      kept = relevant.zip(digests).select { |_comment, digest| digest.present? }
+      lines = kept.map { |comment, digest| "### #{comment_header(comment)}\n#{digest}" }
+      omitted = comments.size - kept.size
+      lines.unshift("_#{omitted} earlier comments omitted to fit the prompt budget._") if omitted.positive?
+      lines.join("\n\n")
+    end
+
+    def comment_header(comment)
+      "#{comment.user&.login || 'unknown'} at #{comment.created_at || 'unknown time'}"
     end
 
     # @spec ISSUE-ANALYSIS-004
