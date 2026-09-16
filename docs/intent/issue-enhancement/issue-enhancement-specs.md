@@ -46,6 +46,24 @@
   containerized agent with repository access, and the prompt instructs it to
   explore the repo and self-answer before asking the human.
 
+- [x] **ISSUE-ENHANCEMENT-014** — When issue enhancement asks clarifying
+  questions, the system SHALL require every question to stand on its own so a
+  reader without deep project knowledge can understand and answer it. Each
+  question SHALL open with one or two sentences of background explaining why
+  the agent is asking and what it found in the repository, SHALL reference the
+  relevant code, issue, or doc when one exists, SHALL name the options being
+  asked about when the question could be read more than one way, and SHALL
+  note where the issue fits in the roadmap (dependencies, follow-up work)
+  when it affects the answer (#3841).
+  *Tests:* `spec/models/agent_run_spec.rb#prompt_for_enhance_issue`,
+  `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`,
+  `spec/db/prompt_seeds_spec.rb` (`goal.enhance_issue self-contained questions coupling`),
+  `spec/migrations/sync_enhance_issue_contextual_questions_prompt_spec.rb`.
+  *Code:* `app/models/agent_run.rb#prompt_for_enhance_issue`,
+  `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
+  `db/seeds/prompts.rb` (`goal.enhance_issue`),
+  enhancement question-context prompt synchronization migration.
+
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the
   prior clarifying questions and answers in the conversation context supplied
