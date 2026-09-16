@@ -1219,7 +1219,7 @@ RSpec.describe Activities::RunAgentActivity do
       allow(Prompt).to receive(:resolve).and_return(nil)
     end
 
-    it "includes knowledge context when artifacts are available", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-008
+    it "includes knowledge context when artifacts are available", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-001, ISSUE-ENHANCEMENT-008
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
         .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
@@ -1247,6 +1247,12 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("Explore the repository")
       expect(prompt).to include("self-answer codebase-determinable questions")
       expect(prompt).to include("before asking the human")
+      # Pin the simplified-technical-English style rules (#3840): the agent
+      # must write comments and clarifying questions with short sentences
+      # and plain technical words so a human can read them once.
+      expect(prompt).to include("Write the comment in simplified technical English.")
+      expect(prompt).to include("Use short sentences.")
+      expect(prompt).to include("Do not stack jargon.")
     end
 
     it "requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014

@@ -1958,6 +1958,27 @@ RSpec.describe AgentRun do
         expect(prompt).to include("Treat named plan docs as authored intent")
       end
 
+      # @spec ISSUE-ENHANCEMENT-001
+      it "builds the enhance_issue prompt with simplified-technical-English style rules (#3840)" do
+        project = create(:project, allowed_github_usernames: [ "viamin" ])
+        issue = create(:issue, project: project, github_number: 7, github_creator_login: "viamin")
+        agent_run = build(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+
+        prompt = agent_run.send(:prompt_for_enhance_issue)
+
+        expect(prompt).to include("Enhance issue #7 in #{project.full_name}")
+        expect(prompt).to include("Use short sentences.")
+        expect(prompt).to include("One idea per sentence.")
+        expect(prompt).to include("Use plain technical words.")
+        expect(prompt).to include("Do not stack jargon.")
+      end
+
+      it "returns nil for the enhance_issue prompt when no issue is attached" do
+        agent_run = build(:agent_run, :enhance_issue_goal, project: create(:project), issue: nil)
+
+        expect(agent_run.send(:prompt_for_enhance_issue)).to be_nil
+      end
+
       it "builds the create_feature prompt from the feature_brief (custom_prompt is checked at effective_prompt)" do
         project = create(:project)
         brief = { "title" => "Add dark mode", "problem" => "Eye strain", "desired_behavior" => "Dark" }
