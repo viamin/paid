@@ -329,7 +329,9 @@ module Activities
       return false unless rounds_before_reset.positive?
       return false unless body_changed
 
-      issue.update!(enhance_issue_rounds: 0)
+      issue.with_lock do
+        issue.update!(enhance_issue_rounds: 0) if issue.enhance_issue_rounds.positive?
+      end
       logger.info(
         message: "github_sync.enhance_issue_rounds_reset_on_body_edit",
         project_id: issue.project_id,

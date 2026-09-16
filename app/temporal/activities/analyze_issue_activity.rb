@@ -30,7 +30,11 @@ module Activities
     PAID_MARKER_COMMENT_BODIES = [
       EnhanceIssueActivity::COMMENT_MARKER,
       ClarifyingQuestions::Load::ANSWER_MARKER,
-      IssueEnhancements::StopForManualReview::COMMENT_MARKER
+      IssueEnhancements::StopForManualReview::COMMENT_MARKER,
+      HandleNoOutputIssueRunActivity::NEEDS_INPUT_COMMENT_MARKER,
+      HandleNoOutputIssueRunActivity::RECOMMEND_CLOSE_COMMENT_MARKER,
+      HandleNoOutputIssueRunActivity::NO_CODE_REQUIRED_COMMENT_MARKER,
+      MarkEscalatedActivity::COMMENT_MARKER
     ].freeze
 
     # Bridges a response-shaped failure (`AgentHarness::Response` with
@@ -679,7 +683,9 @@ module Activities
     def reopen_enhancement_budget!(issue, cycle_state)
       return unless issue.persisted? && cycle_state[:enhance_issue_rounds].positive?
 
-      issue.update!(enhance_issue_rounds: 0)
+      issue.with_lock do
+        issue.update!(enhance_issue_rounds: 0) if issue.enhance_issue_rounds.positive?
+      end
       logger.info(
         message: "agent_execution.analyze_issue_enhancement_budget_reopened",
         issue_id: issue.id,

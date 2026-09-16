@@ -569,6 +569,37 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       end
 
       # @spec ISSUE-ANALYSIS-015
+      # Paid posts several other structured marker comments on issue
+      # threads besides the enhance-issue marker exercised above:
+      # HandleNoOutputIssueRunActivity's needs-input / recommend-close /
+      # no-code-required markers, and MarkEscalatedActivity's escalation
+      # note. Each posts via the project's configured credential, so on a
+      # PAT-backed project it lands as the (allowlisted) PAT user too — the
+      # exclusion list must cover all of them, not just the enhancement
+      # marker, or the cap override would flap open on the next round.
+      [
+        Activities::HandleNoOutputIssueRunActivity::NEEDS_INPUT_COMMENT_MARKER,
+        Activities::HandleNoOutputIssueRunActivity::RECOMMEND_CLOSE_COMMENT_MARKER,
+        Activities::HandleNoOutputIssueRunActivity::NO_CODE_REQUIRED_COMMENT_MARKER,
+        Activities::MarkEscalatedActivity::COMMENT_MARKER
+      ].each do |marker|
+        it "still overrides on a PAT-backed project when the only newer comment carries the #{marker.inspect} marker posted as the PAT user" do
+          allow(client).to receive(:issue_comments).and_return([
+            OpenStruct.new(
+              body: "#{marker}\nSome details.",
+              user: OpenStruct.new(login: "viamin"),
+              created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+            )
+          ])
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result[:sufficient_context]).to be true
+          expect(issue.reload.enhance_issue_rounds).to eq(project.max_enhance_issue_reevaluation_rounds)
+        end
+      end
+
+      # @spec ISSUE-ANALYSIS-015
       # cap 0 disables automatic enhancement — `0 >= 0` must not let the
       # override fire on the very first analysis. Pre-#3849 behavior kept
       # a human gate: the false verdict parks the issue via the queue-time
