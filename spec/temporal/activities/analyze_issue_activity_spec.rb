@@ -327,6 +327,92 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(result[:missing_context_areas]).to eq([])
     end
 
+    # @spec ISSUE-ANALYSIS-015
+    context "when the issue body appears truncated or corrupted" do
+      let(:issue) do
+        create(:issue, :in_progress,
+          project: project,
+          github_number: 42,
+          title: "Add audit log",
+          body: "Dot notation is central to ergonomics, but it should not force Rubys " \
+            "naming convention on every consumer without a documented way to opt out")
+      end
+
+      it "includes a body integrity warning in the prompt" do
+        captured_prompt = nil
+        allow(AgentHarness).to receive(:send_message) do |prompt, **|
+          captured_prompt = prompt
+          llm_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(captured_prompt).to include("Body integrity warning")
+      end
+
+      it "deterministically adds the truncation flag to missing_context_areas even when the LLM omits it" do
+        allow(llm_response).to receive(:output).and_return(
+          {
+            sufficient_context: false,
+            reasoning: "Not enough detail.",
+            missing_context_areas: [ "acceptance criteria" ]
+          }.to_json
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:missing_context_areas]).to include(
+          "acceptance criteria",
+          described_class::BODY_TRUNCATION_FLAG
+        )
+      end
+
+      it "does not duplicate the flag when the LLM already reported the truncation" do
+        allow(llm_response).to receive(:output).and_return(
+          {
+            sufficient_context: false,
+            reasoning: "The issue body looks truncated.",
+            missing_context_areas: [ "issue body appears truncated mid-sentence" ]
+          }.to_json
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:missing_context_areas].size).to eq(1)
+      end
+
+      it "persists the flagged missing_context_areas on the issue" do
+        allow(llm_response).to receive(:output).and_return(
+          { sufficient_context: false, reasoning: "Not enough detail." }.to_json
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.last_analyzer_missing_context_areas).to include(described_class::BODY_TRUNCATION_FLAG)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    context "when the issue body is well-formed" do
+      it "does not include a body integrity warning in the prompt" do
+        captured_prompt = nil
+        allow(AgentHarness).to receive(:send_message) do |prompt, **|
+          captured_prompt = prompt
+          llm_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(captured_prompt).not_to include("Body integrity warning")
+      end
+
+      it "does not add a truncation flag to missing_context_areas" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:missing_context_areas]).to eq([])
+      end
+    end
+
     # @spec ISSUE-ANALYSIS-014
     # Reproduces the analyzer's blind spot described in #3842: without
     # re-admitting Paid bot enhancement comments the readiness assessor never
