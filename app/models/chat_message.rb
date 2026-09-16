@@ -34,6 +34,15 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["fallback_notice"] == true
   end
 
+  # @spec CHAT-API-014
+  # A server-injected system message explaining that a send was rejected
+  # because the chat session or account hit its configured token limit
+  # (#3847). Rendered as a persistent, non-collapsed notice instead of the
+  # regular collapsible system-prompt bubble.
+  def token_limit_error?
+    metadata.is_a?(Hash) && metadata["token_limit_error"] == true
+  end
+
   private
 
   def tool_result_message?

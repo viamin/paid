@@ -145,6 +145,41 @@ RSpec.describe "ChatMessages" do
           "error" => "API rate limit exceeded: Weekly/Monthly Limit Exhausted"
         )
       end
+
+      it "returns a structured error and persists a durable rejection when the session token limit is exceeded" do
+        # @spec CHAT-API-014
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Hello" }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body).to include(
+          "limit_type" => "session", "limit" => 100, "used" => 110
+        )
+        expect(response.parsed_body["error"]).to include("token limit reached")
+
+        rejection = chat_session.messages.where(role: "system").order(:created_at).last
+        expect(rejection.token_limit_error?).to be true
+        expect(rejection.content).to include("Start a new chat session")
+        expect(chat_session.messages.where(role: "user", content: "Hello")).not_to exist
+      end
+
+      it "returns a structured error explaining a new session will not help when the monthly limit is exceeded" do
+        # @spec CHAT-API-014
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_monthly_token_limit" => 100 } })
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Hello" }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body).to include("limit_type" => "monthly", "limit" => 100, "used" => 110)
+
+        rejection = chat_session.messages.where(role: "system").order(:created_at).last
+        expect(rejection.content).to include("Starting a new chat session will not help")
+      end
     end
 
     context "when authenticated with SSE response" do
@@ -234,6 +269,25 @@ RSpec.describe "ChatMessages" do
           "fallback_notice" => true,
           "stream_message_id" => nil
         )
+      end
+
+      it "emits the persisted rejection as message_created and an error event with limit details for a token limit" do
+        # @spec CHAT-API-014
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
+
+        post chat_session_chat_messages_path(chat_session),
+          params: { content: "Hello" }, headers: { "Accept" => "text/event-stream" }
+
+        created_data = JSON.parse(response.body.scan(/event: message_created\ndata: (.+)\n/).flatten.first)
+        expect(created_data).to include("role" => "system", "token_limit_error" => true)
+        expect(created_data["content"]).to include("Session chat token limit reached")
+
+        error_data = JSON.parse(response.body.scan(/event: error\ndata: (.+)\n/).flatten.first)
+        expect(error_data).to include("limit_type" => "session", "limit" => 100, "used" => 110)
+
+        expect(chat_session.messages.where(role: "user", content: "Hello")).not_to exist
       end
 
       it "does not emit tool events for regular user or assistant messages" do

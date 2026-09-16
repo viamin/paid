@@ -255,3 +255,37 @@
   `spec/mcp/tools/base_tool_spec.rb`.
   *Code:* `Tools::Registry.chat_definition_for`, `Tools::BaseTool.description_for`,
   `Tools::GrepRepo.description_for`, `Tools::GrepRepo.knowledge_ready?`.
+
+- [x] **CHAT-API-014** — When a chat send is rejected because the session or
+  account hit its configured chat token limit (`ChatSessions::CheckTokenLimit`),
+  the system SHALL persist a system-role `ChatMessage` explaining which limit
+  was reached (session vs. monthly), the used/allowed token counts when known,
+  and what to do next — a new chat session or an administrator limit increase
+  for a session limit; an explicit note that a new session will NOT help for a
+  monthly limit, since the limit resets on the account rather than the
+  session. This message SHALL render as a persistent, non-collapsed notice
+  (not folded into the collapsible system-prompt disclosure) so it stays
+  visible across a reload, unlike the transient status-line text. The
+  rejection SHALL be raised before `persist_user_message`, so the user's own
+  rejected text is never written to history — the client is responsible for
+  restoring the unsent text into the input.
+
+  Both delivery paths SHALL surface the same structured detail
+  (`limit_type`, `limit`, `used`) alongside the persisted message: the
+  ActionCable/background-job path (`ChatSessions::ProcessMessageJob`)
+  broadcasts the persisted message as `message_created` and a `error` event
+  carrying the structured fields; the SSE/JSON request path
+  (`ChatMessagesController`) emits the same `message_created` SSE event and
+  returns a `422` JSON body carrying the structured fields for the JSON path.
+  *Tests:* `spec/services/chat_sessions/check_token_limit_spec.rb`,
+  `spec/services/chat_sessions/token_limit_error_message_spec.rb`,
+  `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/models/chat_message_spec.rb`,
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`,
+  `spec/requests/chat_messages_spec.rb`, `spec/requests/chat_sessions_spec.rb`,
+  `spec/lib/chat_controller_node_harness_spec.rb`.
+  *Code:* `ChatSessions::CheckTokenLimit`, `ChatSessions::TokenLimitErrorMessage`,
+  `ChatSessions::SendMessage#check_token_limit!`, `ChatMessage#token_limit_error?`,
+  `ChatSessions::ProcessMessageJob`, `ChatMessagesController#write_sse_tool_event`,
+  `app/views/chat_messages/_token_limit_error.html.erb`,
+  `app/javascript/controllers/chat_controller.js#restorePendingContent`.

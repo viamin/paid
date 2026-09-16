@@ -112,6 +112,8 @@ class ChatMessagesController < ApplicationController
     write_sse_event("error", { message: e.message }) rescue IOError
   rescue ChatSessions::LlmClientConfigurationError => e
     write_sse_event("error", { message: e.message }) rescue IOError
+  rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    write_sse_event("error", token_limit_error_payload(e)) rescue IOError
   rescue ArgumentError => e
     write_sse_event("error", { message: e.message }) rescue IOError
   rescue AgentHarness::RateLimitError => e
@@ -138,6 +140,8 @@ class ChatMessagesController < ApplicationController
     render json: { error: e.message }, status: :service_unavailable
   rescue ChatSessions::LlmClientConfigurationError => e
     render json: { error: e.message }, status: :service_unavailable
+  rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    render json: token_limit_error_payload(e), status: :unprocessable_content
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content
   rescue AgentHarness::RateLimitError => e
@@ -153,10 +157,22 @@ class ChatMessagesController < ApplicationController
     response.stream.write("event: #{event}\ndata: #{data.to_json}\n\n")
   end
 
+  def token_limit_error_payload(error)
+    { error: error.message, limit_type: error.limit_type, limit: error.limit, used: error.used }.compact
+  end
+
   def write_sse_tool_event(message, stream_message_id: nil)
     if message.fallback_notice?
       write_sse_event("message_created", message_json(message).merge(
         fallback_notice: true,
+        stream_message_id: nil
+      ))
+      return
+    end
+
+    if message.token_limit_error?
+      write_sse_event("message_created", message_json(message).merge(
+        token_limit_error: true,
         stream_message_id: nil
       ))
       return

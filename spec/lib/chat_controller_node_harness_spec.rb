@@ -103,6 +103,26 @@ class ChatControllerNodeHarness
       }
     }
 
+    // restorePendingContent dispatches a plain window.Event. Node has no
+    // `window`; stub a minimal Event constructor.
+    function withWindowEvent(callback) {
+      const origWindow = globalThis.window;
+      globalThis.window = {
+        Event: class {
+          constructor(type, options = {}) {
+            this.type = type;
+            this.bubbles = Boolean(options.bubbles);
+          }
+        }
+      };
+
+      try {
+        callback();
+      } finally {
+        globalThis.window = origWindow;
+      }
+    }
+
     function testToolCallAppendsCardAndUpdatesStatus() {
       const { controller, appended, statusMessages } = makeController();
 
@@ -182,6 +202,161 @@ class ChatControllerNodeHarness
 
       if (controller.streaming) {
         throw new Error("Expected streaming to be false after message_complete");
+      }
+    }
+
+    // A send is tracked before the server has confirmed anything (message_start
+    // travels over the same socket) so a later rejection — e.g. a token-limit
+    // error — can restore what the user typed.
+    function testSendMessageTracksPendingContentForRestoration() {
+      const performed = [];
+      const { controller } = makeController({
+        streaming: false,
+        subscription: { perform: (action, data) => performed.push({ action, data }) },
+        setBusy: () => {}
+      });
+
+      controller.sendMessage({ detail: { content: "Hello there" } });
+
+      if (controller.pendingContent !== "Hello there") {
+        throw new Error(`Expected pendingContent to be tracked, got '${controller.pendingContent}'`);
+      }
+      if (performed.length !== 1 || performed[0].action !== "send_message") {
+        throw new Error("Expected sendMessage to perform send_message over the subscription");
+      }
+    }
+
+    // A rejected send (e.g. a token-limit error) must not silently discard the
+    // user's typed text — chat-input#send already cleared the textarea
+    // optimistically, so handleError has to put it back. Only the token-limit
+    // rejection carries limit_type: it fires before persist_user_message, so
+    // the input's text was never persisted/rendered elsewhere.
+    function testHandleErrorRestoresPendingContentIntoInput() {
+      withWindowEvent(() => {
+        let restoredValue = null;
+        const dispatchedEvents = [];
+        const { controller } = makeController({
+          pendingContent: "Draft message",
+          hasInputTarget: true,
+          inputTarget: {
+            set value(v) { restoredValue = v; },
+            get value() { return restoredValue; },
+            dispatchEvent: (event) => dispatchedEvents.push(event.type)
+          },
+          setBusy: () => {},
+          toggleTyping: () => {},
+          setStatus: () => {},
+          removePendingAssistantMessage: () => {}
+        });
+
+        controller.handleError({
+          message: "Chat token limit reached (session): 5000000 tokens",
+          limit_type: "session"
+        });
+
+        if (restoredValue !== "Draft message") {
+          throw new Error(`Expected input value to be restored, got '${restoredValue}'`);
+        }
+        if (controller.pendingContent !== null) {
+          throw new Error("Expected pendingContent to be cleared after restoring it");
+        }
+        if (!dispatchedEvents.includes("input")) {
+          throw new Error("Expected an input event so chat-input resizes and updates the char count");
+        }
+      });
+    }
+
+    function testHandleErrorNoOpsWithoutPendingContent() {
+      withWindowEvent(() => {
+        let restoredValue = "unchanged";
+        const { controller } = makeController({
+          pendingContent: null,
+          hasInputTarget: true,
+          inputTarget: {
+            set value(v) { restoredValue = v; },
+            get value() { return restoredValue; },
+            dispatchEvent: () => { throw new Error("Expected no dispatch when there is no pending content"); }
+          },
+          setBusy: () => {},
+          toggleTyping: () => {},
+          setStatus: () => {},
+          removePendingAssistantMessage: () => {}
+        });
+
+        controller.handleError({ message: "boom", limit_type: "session" });
+
+        if (restoredValue !== "unchanged") {
+          throw new Error("Expected no restoration when there is no pending content");
+        }
+      });
+    }
+
+    // Mid-loop failures (provider fallback exhaustion, rate limits, unexpected
+    // errors) fire after persist_user_message already broadcast the user's
+    // message via message_created — restoring here would duplicate it in the
+    // input. These errors never carry limit_type, so they must not restore.
+    function testHandleErrorDoesNotRestoreWithoutLimitType() {
+      withWindowEvent(() => {
+        let restoredValue = "unchanged";
+        const { controller } = makeController({
+          pendingContent: "Already rendered as a message",
+          hasInputTarget: true,
+          inputTarget: {
+            set value(v) { restoredValue = v; },
+            get value() { return restoredValue; },
+            dispatchEvent: () => { throw new Error("Expected no dispatch when the error lacks limit_type"); }
+          },
+          setBusy: () => {},
+          toggleTyping: () => {},
+          setStatus: () => {},
+          removePendingAssistantMessage: () => {}
+        });
+
+        controller.handleError({ message: "Provider unavailable" });
+
+        if (restoredValue !== "unchanged") {
+          throw new Error("Expected no restoration for an error without limit_type");
+        }
+        if (controller.pendingContent !== "Already rendered as a message") {
+          throw new Error("Expected pendingContent to be left untouched when restoration is skipped");
+        }
+      });
+    }
+
+    // Success paths (turn completed, or paused for tool approval) must clear
+    // pendingContent — otherwise a later, unrelated error would resurrect
+    // already-sent text into the input.
+    function testMessageCompleteClearsPendingContent() {
+      const { controller } = makeController({
+        pendingContent: "Already sent",
+        incrementTokenUsage: () => {},
+        scrollToBottom: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        dispatchChatState: () => {},
+        setBusy: function(busy) { this.streaming = busy; }
+      });
+
+      controller.handleMessageComplete({ tokens: { input: 10, output: 5 } });
+
+      if (controller.pendingContent !== null) {
+        throw new Error("Expected pendingContent to be cleared after message_complete");
+      }
+    }
+
+    function testToolConfirmationClearsPendingContent() {
+      const { controller } = makeController({
+        pendingContent: "Already sent",
+        setBusy: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageToolConfirmation({ tool_name: "trigger_agent_run" });
+
+      if (controller.pendingContent !== null) {
+        throw new Error("Expected pendingContent to be cleared after a tool confirmation pause");
       }
     }
 
@@ -647,6 +822,12 @@ class ChatControllerNodeHarness
       testToolResultAppendsCard();
       testToolResultWithMissingHtmlDoesNotAppend();
       testMessageCompleteResetsStreamingState();
+      testSendMessageTracksPendingContentForRestoration();
+      testHandleErrorRestoresPendingContentIntoInput();
+      testHandleErrorNoOpsWithoutPendingContent();
+      testHandleErrorDoesNotRestoreWithoutLimitType();
+      testMessageCompleteClearsPendingContent();
+      testToolConfirmationClearsPendingContent();
       testToolEventsDoNotResetStreamingBeforeComplete();
       testHandleEventDispatchesToolCall();
       testFallbackNoticeRemovesStaleToolCards();

@@ -76,6 +76,7 @@ module ChatSessions
       chat_session.status == "closed" && !chat_session.inline_only?
     end
 
+    # @spec CHAT-API-014
     def check_token_limit!
       result = ChatSessions::CheckTokenLimit.call(chat_session: chat_session)
       # Capture the baseline so AgentLoop can guard mid-loop without re-running
@@ -83,12 +84,30 @@ module ChatSessions
       @token_budget = result[:remaining_tokens]
       return if result[:within_limit]
 
+      persist_token_limit_error(result)
+
       raise TokenLimitExceededError.new(
         "Chat token limit reached (#{result[:limit_type]}): #{result[:limit]} tokens",
         remaining: 0,
         limit: result[:limit],
-        limit_type: result[:limit_type]
+        limit_type: result[:limit_type],
+        used: result[:used_tokens]
       )
+    end
+
+    # Persists a durable, visible explanation of the rejection (#3847) so it
+    # survives reload instead of living only in a transient status string.
+    # The user's own message is intentionally NOT persisted here — the send
+    # was rejected before any work was attempted.
+    def persist_token_limit_error(result)
+      built = TokenLimitErrorMessage.build(
+        limit_type: result[:limit_type],
+        limit: result[:limit],
+        used: result[:used_tokens]
+      )
+      message = chat_session.messages.create!(role: "system", content: built.content, metadata: built.metadata)
+      on_message_persisted&.call(message)
+      message
     end
 
     def persist_user_message

@@ -199,7 +199,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
 
   it "broadcasts error for token limit exceeded" do
     allow(ChatSessions::SendMessage).to receive(:call)
-      .and_raise(ChatSessions::TokenLimitExceededError.new("limit reached", remaining: 0, limit: 100, limit_type: "session"))
+      .and_raise(ChatSessions::TokenLimitExceededError.new("limit reached", remaining: 0, limit: 100, limit_type: "session", used: 110))
 
     expect {
       described_class.perform_now(
@@ -208,7 +208,27 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         stream_message_id: stream_message_id
       )
     }.to have_broadcasted_to(stream_name)
-      .with(hash_including(type: "error", message: "limit reached"))
+      .with(hash_including(type: "error", message: "limit reached", limit_type: "session", limit: 100, used: 110))
+  end
+
+  it "broadcasts the persisted token-limit rejection as message_created alongside the error event" do
+    # @spec CHAT-API-014
+    create(:tenant_setting, account: account,
+      features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+    create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Hello",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "system"))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "error", limit_type: "session", limit: 100, used: 110))
+
+    expect(chat_session.messages.where(role: "user", content: "Hello")).not_to exist
   end
 
   it "broadcasts provider rate limit errors" do

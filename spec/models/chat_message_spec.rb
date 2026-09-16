@@ -34,6 +34,19 @@ RSpec.describe ChatMessage do
     end
   end
 
+  describe "#token_limit_error?" do
+    # @spec CHAT-API-014
+    it "is true for a system message flagged as a token-limit rejection" do
+      message = build(:chat_message, :system, metadata: { "token_limit_error" => true })
+      expect(message.token_limit_error?).to be true
+    end
+
+    it "is false for a regular system message" do
+      message = build(:chat_message, :system)
+      expect(message.token_limit_error?).to be false
+    end
+  end
+
   describe "scopes" do
     let(:chat_session) { create(:chat_session) }
 
