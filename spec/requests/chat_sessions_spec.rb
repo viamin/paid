@@ -336,6 +336,26 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      it "renders a persisted token-limit rejection visibly, without collapsing it into the system-prompt disclosure" do
+        # @spec CHAT-API-014
+        create(:chat_message, :system, chat_session: chat_session, content: "You are a helpful assistant.")
+        create(:chat_message, chat_session: chat_session,
+          content: "Session chat token limit reached.\n\nUsed 5,193,598 of 5,000,000 tokens allowed.\n\nStart a new chat session to continue, or ask an administrator to increase the configured session token limit.",
+          role: "system",
+          metadata: { "token_limit_error" => true, "limit_type" => "session", "limit" => 5_000_000, "used_tokens" => 5_193_598 })
+
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        # Not tucked behind the collapsible "System prompt" <summary> — it must
+        # be readable without expanding anything, and survive a reload (#3847).
+        expect(doc.at_xpath("//summary[contains(., 'Token limit reached')]")).to be_nil
+        expect(response.body).to include("Token limit reached")
+        expect(response.body).to include("Used 5,193,598 of 5,000,000 tokens allowed")
+        expect(response.body).to include("Start a new chat session to continue")
+      end
+
       it "gives the conversation's scroll wrapper a min-h-0 flex constraint (#3331)" do
         # Without `min-h-0` on this flex-1 wrapper, WebKit lets it grow to fit
         # its content instead of clamping to the available space, so the

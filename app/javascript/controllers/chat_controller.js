@@ -9,6 +9,7 @@ export default class extends Controller {
     this.autoScroll = true
     this.streaming = false
     this.currentStreamId = null
+    this.pendingContent = null
     this.currentAttemptToolCards = []
     this.scrollAnimationId = null
     this.boundUpdateViewportHeight = () => this.updateViewportHeight()
@@ -72,6 +73,10 @@ export default class extends Controller {
     const content = event.detail.content?.trim()
     if (!content || this.streaming) return
 
+    // Retained so a rejected send (e.g. a token-limit error) can restore the
+    // text into the input instead of silently discarding it — the textarea
+    // is already cleared optimistically by chat-input#send at this point.
+    this.pendingContent = content
     this.setBusy(true)
     this.subscription.perform("send_message", { content })
   }
@@ -172,6 +177,7 @@ export default class extends Controller {
   handleMessageComplete(data) {
     this.streaming = false
     this.currentStreamId = null
+    this.pendingContent = null
     this.setBusy(false)
     this.toggleTyping(false)
     this.setStatus("Ready")
@@ -239,7 +245,20 @@ export default class extends Controller {
     this.currentStreamId = null
     this.setBusy(false)
     this.toggleTyping(false)
+    this.restorePendingContent()
     this.setStatus(data.message || "An unexpected error occurred")
+  }
+
+  // Puts the rejected turn's text back into the input (e.g. after a
+  // token-limit rejection) so it can be copied into a new chat or retried
+  // once the limit changes, instead of being silently lost. Dispatching
+  // "input" re-triggers chat-input's own resize/char-count handling.
+  restorePendingContent() {
+    if (!this.pendingContent || !this.hasInputTarget) return
+
+    this.inputTarget.value = this.pendingContent
+    this.inputTarget.dispatchEvent(new window.Event("input", { bubbles: true }))
+    this.pendingContent = null
   }
 
   setBusy(busy) {
@@ -337,6 +356,7 @@ export default class extends Controller {
 
     this.streaming = false
     this.currentStreamId = null
+    this.pendingContent = null
     this.setBusy(false)
     this.toggleTyping(false)
     this.setStatus(`Waiting for approval to run ${data.tool_name || "tool"}…`)

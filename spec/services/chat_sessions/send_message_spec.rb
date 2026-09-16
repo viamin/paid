@@ -197,6 +197,82 @@ RSpec.describe ChatSessions::SendMessage do
 
         expect(chat_session.messages.where(role: "user", content: "Hello").count).to eq(0)
       end
+
+      it "raises with the limit type, limit, and used tokens" do
+        expect {
+          described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+        }.to raise_error(ChatSessions::TokenLimitExceededError) do |error|
+          expect(error.limit_type).to eq("session")
+          expect(error.limit).to eq(100)
+          expect(error.used).to eq(110)
+        end
+      end
+
+      it "persists a durable system message explaining the rejection" do
+        # @spec CHAT-API-014
+        expect {
+          described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+        }.to raise_error(ChatSessions::TokenLimitExceededError)
+          .and change { chat_session.messages.where(role: "system").count }.by(1)
+
+        message = chat_session.messages.order(:created_at).last
+        expect(message.token_limit_error?).to be true
+        expect(message.metadata).to include(
+          "token_limit_error" => true,
+          "limit_type" => "session",
+          "limit" => 100,
+          "used_tokens" => 110
+        )
+        expect(message.content).to include("Session chat token limit reached")
+        expect(message.content).to include("Used 110 of 100 tokens allowed")
+        expect(message.content).to include("Start a new chat session")
+      end
+
+      it "notifies on_message_persisted with the rejection message" do
+        persisted = []
+
+        expect {
+          described_class.call(
+            chat_session: chat_session,
+            content: "Hello",
+            llm_client: llm_client,
+            on_message_persisted: ->(message, stream_message_id: nil) { persisted << message }
+          )
+        }.to raise_error(ChatSessions::TokenLimitExceededError)
+
+        expect(persisted.length).to eq(1)
+        expect(persisted.first.token_limit_error?).to be true
+      end
+    end
+
+    context "when monthly token limit is reached" do
+      before do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_monthly_token_limit" => 100 } })
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
+      end
+
+      it "raises TokenLimitExceededError for the monthly limit" do
+        expect {
+          described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+        }.to raise_error(ChatSessions::TokenLimitExceededError) do |error|
+          expect(error.limit_type).to eq("monthly")
+          expect(error.limit).to eq(100)
+          expect(error.used).to eq(110)
+        end
+      end
+
+      it "persists a durable system message explaining a new session will not help" do
+        # @spec CHAT-API-014
+        expect {
+          described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+        }.to raise_error(ChatSessions::TokenLimitExceededError)
+
+        message = chat_session.messages.order(:created_at).last
+        expect(message.metadata).to include("limit_type" => "monthly")
+        expect(message.content).to include("Monthly chat token limit reached")
+        expect(message.content).to include("Starting a new chat session will not help")
+      end
     end
 
     context "when session token limit is increased after being reached" do
