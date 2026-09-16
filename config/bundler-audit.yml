@@ -3,3 +3,12 @@
 
 ignore:
   - CVE-THAT-DOES-NOT-APPLY
+  # GHSA-42r3-x6vx-x49x / CVE-2026-67991 — Polynomial-Time Regular Expression Denial of
+  # Service in RubyLLM::Utils.underscore. The affected code path only exhibits polynomial
+  # behavior on Ruby 3.1.x, which Paid does not run (current toolchain pins Ruby 3.4.x in
+  # .tool-versions). Paid also only feeds trusted registry data into ruby_llm via
+  # Services::Models::RegistryModels (no untrusted user input reaches the affected
+  # operation), so the exposure described by the advisory does not apply. Re-evaluate when
+  # either the Ruby toolchain drops to 3.1.x or ruby_llm is used to process untrusted
+  # model/agent/tool names.
+  - CVE-2026-67991
