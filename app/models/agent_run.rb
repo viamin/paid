@@ -3595,12 +3595,20 @@ class AgentRun < ApplicationRecord
   def prompt_for_enhance_issue
     return nil unless issue
 
+    # @spec ISSUE-ENHANCEMENT-014
     "Enhance issue ##{issue.github_number} in #{project.full_name}. " \
       "Read the issue body and the comments. " \
       "Then write one comment. " \
       "Give implementation context or ask the user specific questions. " \
       "Use short sentences. One idea per sentence. " \
-      "Use plain technical words. Do not stack jargon."
+      "Use plain technical words. Do not stack jargon. " \
+      "Write each clarifying question so it stands on its own. " \
+      "The reader may not know the project, the issue history, or the roadmap. " \
+      "Open each question with one or two sentences of background. " \
+      "Say why you are asking and what you found in the repository. " \
+      "Then reference the relevant code, issue, or doc when one exists. " \
+      "Name the options when the question could be read two ways. " \
+      "Note where the issue sits in the roadmap when it changes the answer."
   end
 
   def prompt_for_analyze_issue

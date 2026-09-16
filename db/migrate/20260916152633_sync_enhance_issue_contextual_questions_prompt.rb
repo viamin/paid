@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
-# @spec ISSUE-ENHANCEMENT-001
-class SyncEnhanceIssuePromptSimplifiedEnglish < ActiveRecord::Migration[8.1]
-  CHANGE_NOTES = "Require simplified technical English in enhance_issue comments and clarifying questions"
+class SyncEnhanceIssueContextualQuestionsPrompt < ActiveRecord::Migration[8.1]
+  CHANGE_NOTES = "Require self-contained clarifying questions with background, references, options, and roadmap context"
   PROMPT_SLUG = "goal.enhance_issue"
   VARIABLES = [
     { "name" => "base_prompt", "required" => true, "description" => "The base prompt this augmentation extends" },
@@ -22,13 +21,9 @@ class SyncEnhanceIssuePromptSimplifiedEnglish < ActiveRecord::Migration[8.1]
     State directories (under /home/agent/) are writable for scratch/tooling needs.
 
     Read issue #{{issue_number}} in {{repo}}. Trusted collaborator comments are already included in
-    the base prompt. Do not fetch raw issue comments. Explore the repository
+    the base prompt; do not fetch raw issue comments. Explore the repository
     to self-answer codebase-determinable questions (existing models, platform targets, patterns, etc.)
     before asking the human. Only ask about genuine product, scope, or intent ambiguities.
-
-    Write the comment in simplified technical English. Use short sentences. One idea per sentence.
-    Use plain technical words. Do not stack jargon. Avoid nested clauses and long noun chains.
-    Keep technical precision. Simplify the wording, not the meaning.
 
     You can search the project's knowledge base to look up existing code,
     symbols, routes, and patterns before asking questions:
@@ -88,6 +83,7 @@ class SyncEnhanceIssuePromptSimplifiedEnglish < ActiveRecord::Migration[8.1]
     then the question itself, so the question list stays machine-parseable.
   TEMPLATE
 
+  # @spec ISSUE-ENHANCEMENT-014, POSTGRESQL-PERSISTENCE-008
   def up
     TenantContext.with_system_access do
       prompt = Prompt.global.find_by(slug: PROMPT_SLUG)

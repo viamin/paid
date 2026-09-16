@@ -975,6 +975,20 @@ upsert_global_prompt.call(
     1. ...
     ## Current context
     - ...
+
+    Write each clarifying question so it stands on its own: the reader cannot be
+    assumed to know the project, the issue history, or the roadmap. For each
+    numbered question:
+    - Open with one or two sentences of background: why you are asking and what
+      you found in the repository that raised the question.
+    - Reference the relevant code, issue, or doc when one exists (file path and
+      symbol, issue number such as #123, or design doc).
+    - When the question could be read two ways, name the options you are asking
+      about (for example, "Option A: ... or Option B: ...").
+    - When the answer depends on where the issue sits in the roadmap, say so —
+      dependencies on other issues, or follow-up work this issue enables.
+    Keep each question a single numbered item with its context sentences inline,
+    then the question itself, so the question list stays machine-parseable.
   TEMPLATE
   variables: [
     var.call("base_prompt", "The base prompt this augmentation extends"),
