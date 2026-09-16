@@ -15,6 +15,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
         expect(result[:within_limit]).to be true
         expect(result[:remaining_tokens]).to be_nil
         expect(result[:limit]).to be_nil
+        expect(result[:used_tokens]).to be_nil
       end
     end
 
@@ -33,6 +34,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
         expect(result[:remaining_tokens]).to eq(700)
         expect(result[:limit]).to eq(1000)
         expect(result[:limit_type]).to eq("session")
+        expect(result[:used_tokens]).to eq(300)
       end
 
       it "returns exceeded when at the limit" do
@@ -43,6 +45,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
         expect(result[:within_limit]).to be false
         expect(result[:remaining_tokens]).to eq(0)
         expect(result[:limit]).to eq(1000)
+        expect(result[:used_tokens]).to eq(1000)
       end
 
       it "returns exceeded when over the limit" do
@@ -77,6 +80,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
         expect(result[:within_limit]).to be true
         expect(result[:remaining_tokens]).to eq(2000)
         expect(result[:limit_type]).to eq("monthly")
+        expect(result[:used_tokens]).to eq(3000)
       end
 
       it "returns exceeded when monthly limit reached" do
@@ -87,6 +91,7 @@ RSpec.describe ChatSessions::CheckTokenLimit do
 
         expect(result[:within_limit]).to be false
         expect(result[:remaining_tokens]).to eq(0)
+        expect(result[:used_tokens]).to eq(5000)
       end
     end
 

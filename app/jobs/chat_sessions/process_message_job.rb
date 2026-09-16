@@ -49,8 +49,9 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
-  rescue ChatSessions::TokenLimitExceededError => e
-    broadcast_error(chat_session_id, stream_message_id, e.message)
+  rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    broadcast_error(chat_session_id, stream_message_id, e.message,
+      limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
     Rails.logger.warn(
       message: "chat_process_message_job.rate_limited",
@@ -108,13 +109,13 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     })
   end
 
-  def broadcast_error(chat_session_id, stream_message_id, error_message)
+  def broadcast_error(chat_session_id, stream_message_id, error_message, **extra)
     stream_name = "chat_session:#{chat_session_id}"
     ActionCable.server.broadcast(stream_name, {
       type: "error",
       message_id: stream_message_id,
       message: error_message
-    })
+    }.merge(extra.compact))
   end
 
   def tenant_account

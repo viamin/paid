@@ -11,6 +11,7 @@ module ChatSessions
   #   result[:remaining_tokens] # => 95000
   #   result[:limit]            # => 100000
   #   result[:limit_type]       # => "session"
+  #   result[:used_tokens]      # => 5000
   class CheckTokenLimit
     attr_reader :chat_session
 
@@ -42,7 +43,8 @@ module ChatSessions
         within_limit: used < limit,
         remaining_tokens: remaining,
         limit: limit,
-        limit_type: "session"
+        limit_type: "session",
+        used_tokens: used
       }
     end
 
@@ -57,7 +59,8 @@ module ChatSessions
         within_limit: used < limit,
         remaining_tokens: remaining,
         limit: limit,
-        limit_type: "monthly"
+        limit_type: "monthly",
+        used_tokens: used
       }
     end
 
@@ -69,7 +72,7 @@ module ChatSessions
     end
 
     def unlimited_result(limit_type)
-      { within_limit: true, remaining_tokens: nil, limit: nil, limit_type: limit_type }
+      { within_limit: true, remaining_tokens: nil, limit: nil, limit_type: limit_type, used_tokens: nil }
     end
 
     def session_token_limit
