@@ -924,9 +924,13 @@ upsert_global_prompt.call(
     State directories (under /home/agent/) are writable for scratch/tooling needs.
 
     Read issue #{{issue_number}} in {{repo}}. Trusted collaborator comments are already included in
-    the base prompt; do not fetch raw issue comments. Explore the repository
+    the base prompt. Do not fetch raw issue comments. Explore the repository
     to self-answer codebase-determinable questions (existing models, platform targets, patterns, etc.)
     before asking the human. Only ask about genuine product, scope, or intent ambiguities.
+
+    Write the comment in simplified technical English. Use short sentences. One idea per sentence.
+    Use plain technical words. Do not stack jargon. Avoid nested clauses and long noun chains.
+    Keep technical precision. Simplify the wording, not the meaning.
 
     You can search the project's knowledge base to look up existing code,
     symbols, routes, and patterns before asking questions:

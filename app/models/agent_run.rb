@@ -3595,9 +3595,11 @@ class AgentRun < ApplicationRecord
     return nil unless issue
 
     "Enhance issue ##{issue.github_number} in #{project.full_name}. " \
-      "Read the issue description and all comments, then add a comment that either " \
-      "provides implementation context (relevant files, architecture notes, suggested approach) " \
-      "or asks specific clarifying questions the user needs to answer."
+      "Read the issue body and the comments. " \
+      "Then write one comment. " \
+      "Give implementation context or ask the user specific questions. " \
+      "Use short sentences. One idea per sentence. " \
+      "Use plain technical words. Do not stack jargon."
   end
 
   def prompt_for_analyze_issue

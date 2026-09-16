@@ -1247,6 +1247,12 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("Explore the repository")
       expect(prompt).to include("self-answer codebase-determinable questions")
       expect(prompt).to include("before asking the human")
+      # Pin the simplified-technical-English style rules (#3840): the agent
+      # must write comments and clarifying questions with short sentences
+      # and plain technical words so a human can read them once.
+      expect(prompt).to include("Write the comment in simplified technical English.")
+      expect(prompt).to include("Use short sentences.")
+      expect(prompt).to include("Do not stack jargon.")
     end
 
     it "renders without knowledge context when no artifacts are available" do
