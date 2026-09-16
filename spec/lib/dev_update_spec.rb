@@ -16,8 +16,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   let(:poll_env) do
     {
       "DEV_UPDATE_OVERMIND_STOP_POLL_COUNT" => "3",
-      "DEV_UPDATE_OVERMIND_START_POLL_COUNT" => "3",
-      "DEV_UPDATE_OVERMIND_POLL_INTERVAL" => "0.01",
+      # start_dev launches `nohup bin/dev` asynchronously before polling for
+      # health, so the start window must tolerate the detached stub being
+      # scheduled late: under CI load the stub has needed hundreds of
+      # milliseconds before `overmind status` first succeeds, while
+      # 3 x 0.01s gives it only tens. ~2s of polling keeps recovery tests
+      # deterministic without slowing the unhealthy-path tests meaningfully.
+      "DEV_UPDATE_OVERMIND_START_POLL_COUNT" => "100",
+      "DEV_UPDATE_OVERMIND_POLL_INTERVAL" => "0.02",
       # Require only 1 consecutive healthy poll (instead of the default 2) so
       # tests are resilient to CI timing variance when nohup bin/dev starts up
       # asynchronously and may not be visible on the very first poll.

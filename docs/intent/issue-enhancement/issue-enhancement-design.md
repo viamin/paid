@@ -48,6 +48,10 @@ therefore carries its own context:
 - where the issue fits in the roadmap (dependencies, follow-up work) when it
   affects the answer.
 
+The enhancement comment and its questions are written in simplified technical
+English: short sentences with one idea per sentence, plain technical words, no
+nested clauses or stacked jargon, keeping technical meaning precise (#3840).
+
 The activity still emits the same markdown shape:
 
 - `## Clarifying questions`
