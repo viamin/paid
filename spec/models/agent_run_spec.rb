@@ -2008,6 +2008,32 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#prompt_for_enhance_issue" do
+      it "returns nil when no issue is attached" do
+        agent_run = build(:agent_run, issue: nil)
+
+        expect(agent_run.send(:prompt_for_enhance_issue)).to be_nil
+      end
+
+      it "requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
+        project = create(:project)
+        issue = create(:issue, project: project, github_number: 9)
+        agent_run = build(:agent_run, :enhance_issue_goal, project: project, issue: issue)
+
+        prompt = agent_run.send(:prompt_for_enhance_issue)
+
+        expect(prompt).to include("Enhance issue ##{issue.github_number} in #{project.full_name}")
+        # A reader without deep project knowledge must be able to answer each
+        # question: the prompt has to demand background, references, named
+        # options, and roadmap context instead of assuming them known.
+        expect(prompt).to include("stands on its own")
+        expect(prompt).to include("why you are asking and what you found in the repository")
+        expect(prompt).to include("reference the relevant code, issue, or doc")
+        expect(prompt).to include("could be read two ways")
+        expect(prompt).to include("roadmap")
+      end
+    end
+
     describe "#ensure_proxy_token!" do
       it "returns the existing token when present" do
         agent_run = create(:agent_run)

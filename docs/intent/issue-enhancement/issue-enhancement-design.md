@@ -35,6 +35,19 @@ no LID-specific jargon. The questions should narrow the change along six axes:
 5. in-scope versus out-of-scope work,
 6. how a human will know the work is done.
 
+Each question must also stand on its own — the reader cannot be assumed to
+know the project, the issue history, or the roadmap (#3841). A question
+therefore carries its own context:
+
+- one or two sentences of background: why the agent is asking and what it
+  found in the repository that raised the question,
+- a reference to the relevant code, issue, or doc when one exists (file path
+  and symbol, issue number, design doc),
+- the options being asked about, named explicitly, when the question could be
+  read more than one way ("Option A vs Option B"),
+- where the issue fits in the roadmap (dependencies, follow-up work) when it
+  affects the answer.
+
 The activity still emits the same markdown shape:
 
 - `## Clarifying questions`

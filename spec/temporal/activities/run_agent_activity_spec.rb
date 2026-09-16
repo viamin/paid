@@ -1249,6 +1249,25 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("before asking the human")
     end
 
+    it "requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
+      base_prompt = "Enhance this issue with implementation context."
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+        .and_return(content: "")
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
+
+      # Pin the self-contained question instruction (#3841): each clarifying
+      # question must carry the background, references, named options, and
+      # roadmap context a reader without deep project knowledge needs in
+      # order to answer it.
+      expect(prompt).to include("stands on its own")
+      expect(prompt).to match(/why you are asking and what\s+you found in the repository/)
+      expect(prompt).to include("Reference the relevant code, issue, or doc")
+      expect(prompt).to include("name the options")
+      expect(prompt).to include("where the issue sits in the roadmap")
+    end
+
     it "renders without knowledge context when no artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
