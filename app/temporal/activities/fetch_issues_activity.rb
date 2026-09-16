@@ -414,14 +414,23 @@ module Activities
         issue = project.issues.find(issue_data[:id])
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
 
-        issue.update!(paid_state: "new")
+        # Removing the needs-input label is meaningful human signal — the
+        # operator has either answered in-thread, edited the body, or otherwise
+        # indicated the issue is actionable. Reset the enhancement round
+        # counter so a later regression doesn't inherit an exhausted automatic
+        # budget (#3842).
+        rounds_before_reset = issue.enhance_issue_rounds
+        attrs = { paid_state: "new" }
+        attrs[:enhance_issue_rounds] = 0 if rounds_before_reset.to_i.positive?
+        issue.update!(attrs)
         changed = true
 
         logger.info(
           message: "github_sync.needs_input_label_removed",
           project_id: project.id,
           issue_id: issue.id,
-          issue_number: issue.github_number
+          issue_number: issue.github_number,
+          enhance_issue_rounds: rounds_before_reset
         )
       end
 

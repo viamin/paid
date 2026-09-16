@@ -1570,6 +1570,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_152633) do
     t.datetime "issue_analysis_backoff_set_at", comment: "When the current automatic analyze_issue provider-exhaustion backoff window was recorded."
     t.datetime "issue_analysis_next_attempt_at", comment: "When automatic analyze_issue retries become eligible again after provider exhaustion."
     t.jsonb "labels", default: [], null: false
+    t.datetime "last_analyzed_at", comment: "Timestamp of the most recent analyze_issue verdict. Distinct from issue_analysis_next_attempt_at (which gates automatic retries) so the inbox can surface recency."
+    t.jsonb "last_analyzer_missing_context_areas", default: [], null: false, comment: "Missing-context areas the prior analyzer flagged. Threaded into the next analyzer prompt as cycle state so the next verdict is a delta against the previous one."
+    t.text "last_analyzer_reasoning", comment: "Reasoning accompanying last_analyzer_sufficient_context, surfaced in the operator inbox so a lane stuck in manual_review can be diagnosed without re-reading the analyzer run's stdout."
+    t.boolean "last_analyzer_sufficient_context", comment: "Most recent analyze_issue verdict — whether the issue had enough context to start a create_pr run. Drives the analyzer's cycle-state prompt so a re-evaluation can be a delta against the prior verdict rather than a repeat of the baseline."
     t.datetime "last_pr_scan_at"
     t.text "manual_review_reason", comment: "Why automation stopped and parked this issue in manual_review, surfaced in the operator inbox."
     t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."

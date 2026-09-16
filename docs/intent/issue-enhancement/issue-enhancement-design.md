@@ -268,6 +268,29 @@ GitHub I/O after releasing the database lock. Concurrent queue or poll workers
 therefore cannot both publish a stop notice, and a slow GitHub request does not
 hold an issue row lock.
 
+## Loop convergence to `create_pr`
+
+The analyze→enhance loop only converges when an `enhance_issue` round that
+concludes `sufficient_context: true` hands the issue off to a `create_pr` run.
+Without that handoff the issue parks in the `completed` paid_state — a state
+auto-pick does not select (it's not in `AUTO_PICK_ELIGIBLE_PAID_STATES`) — and
+no further automation touches it. The handoff is implemented as a
+`CreateFollowupRunActivity` call after `EnhanceIssueActivity` returns
+`sufficient_context: true`, mirroring the analyze branch's pattern.
+
+The `enhance_issue_rounds` counter is reset on two meaningful events so a
+later regression does not inherit an exhausted automatic-retry budget:
+
+1. A successful `enhance_issue` verdict (`sufficient_context: true`). The
+   lane has converged and the cap must not carry forward.
+2. Human signal: either `ClearNeedsInput` (a human answer comment arrives
+   through the `paid:clarifying-answers` marker, or the human edits the body
+   to embed answers) or `FetchIssuesActivity` observes the operator remove
+   the `needs-input` label on GitHub.
+
+Manual runs never consume a round at queue time so they have nothing to
+reset.
+
 ## Decisions and alternatives
 
 | Decision | Rationale | Alternatives considered |

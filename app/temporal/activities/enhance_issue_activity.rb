@@ -90,6 +90,13 @@ module Activities
       label_result = apply_label_state(client, project, issue, parsed)
       sync_needs_input_questions(issue, questions)
 
+      # Reset the enhancement round counter on a successful verdict (#3842):
+      # the lane has converged, and a later regression shouldn't inherit an
+      # exhausted cap that would deadlock the automatic path. The counter
+      # continues to gate the auto-retry loop while the issue is parked in
+      # needs_input — only a sufficient_context verdict clears it.
+      reset_enhancement_rounds!(issue) if parsed[:sufficient_context]
+
       agent_run.log!("stdout", comment_body)
       complete_run!(agent_run, paid_state_for(parsed, project, issue), reason: (max_rounds_reason(project) if max_rounds_reached))
       ProcessRunQueueJob.perform_later
@@ -287,6 +294,21 @@ module Activities
         next if issue.enhance_issue_rounds <= 0
 
         issue.update!(enhance_issue_rounds: issue.enhance_issue_rounds - 1)
+      end
+    end
+
+    # Clears the enhancement round counter when enhancement concludes the
+    # issue is ready (sufficient_context: true). The lane has converged —
+    # any later regression starts from a fresh budget so the cap does not
+    # deadlock the automatic path on the same issue (#3842).
+    # @spec ISSUE-ENHANCEMENT-014
+    def reset_enhancement_rounds!(issue)
+      return if issue.enhance_issue_rounds.to_i.zero?
+
+      issue.with_lock do
+        next if issue.enhance_issue_rounds.to_i.zero?
+
+        issue.update!(enhance_issue_rounds: 0)
       end
     end
 
