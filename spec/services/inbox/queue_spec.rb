@@ -240,6 +240,16 @@ RSpec.describe Inbox::Queue do
       expect(entries).to be_empty
     end
 
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+    it "drops the manual_review entry once queuing an enhancement run moves the issue out of manual_review" do
+      issue = create_manual_review_issue(github_number: 99)
+      expect(described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)).to be_present
+
+      issue.update!(paid_state: "in_progress")
+
+      expect(described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)).to be_empty
+    end
+
     # @spec OPERATOR-INBOX-002C
     it "keeps a PR in the inbox, as escalated_pr, when an awaiting_approval escalation fires on a merge_approval entry" do
       pr = create_merge_approval_pr(github_number: 93)
