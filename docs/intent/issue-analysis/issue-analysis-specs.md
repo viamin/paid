@@ -189,8 +189,11 @@
   enhancement marker comment) and SHALL admit Paid's own structured
   enhancement/answer marker comments to its prompt via the existing
   clarifying-question admission, so re-evaluation is a delta against the
-  previous cycle rather than a repeat of the baseline (#3842). The assessor
-  SHALL be calibrated to treat codebase-resolvable ambiguity as non-blocking
+  previous cycle rather than a repeat of the baseline (#3842). The cycle-state
+  summary SHALL filter through `ClarifyingQuestions::CommentAdmission.paid_marker_comment?`
+  (bot author + marker body) — the marker alone is not a trust signal, and an
+  untrusted commenter's spoofed marker comment must not reach the prompt. The
+  assessor SHALL be calibrated to treat codebase-resolvable ambiguity as non-blocking
   (the `create_pr` agent self-answers it), to prefer `sufficient_context:
   true` when prior rounds produced implementation context without a fresh
   human signal, and to default to `sufficient_context: true` when the round
@@ -200,7 +203,7 @@
   `last_analyzer_missing_context_areas`, `last_analyzed_at`) so operators
   can diagnose a lane stuck in `manual_review` without re-reading the
   run's stdout and so the next cycle's prompt can include it as cycle state.
-  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("admits the app bot's enhancement marker comments", "still rejects the app bot's non-marker comments", "threads prior cycle state", "persists the verdict and reasoning on the issue", "includes calibration guidance").
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("admits the app bot's enhancement marker comments", "still rejects the app bot's non-marker comments", "rejects spoofed enhancement marker comments from untrusted users in cycle state", "threads prior cycle state", "persists the verdict and reasoning on the issue", "includes calibration guidance").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#trusted_comments`,
   `#prompt_for`, `#cycle_state_section`, `#build_cycle_state`,
-  `#persist_verdict!`.
+  `#prior_enhancement_summary`, `#persist_verdict!`.

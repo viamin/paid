@@ -70,7 +70,7 @@ module Activities
       comments = trusted_comments(project, all_comments)
 
       context = build_context(agent_run, project, issue)
-      cycle_state = build_cycle_state(issue, all_comments)
+      cycle_state = build_cycle_state(issue, all_comments, project)
       response = call_llm(agent_run, prompt_for(project, issue, comments, context, cycle_state))
       issue.clear_issue_analysis_backoff!
       parsed = parse_response!(agent_run, response)
@@ -535,12 +535,12 @@ module Activities
     end
 
     # @spec ISSUE-ANALYSIS-014
-    def build_cycle_state(issue, all_comments)
+    def build_cycle_state(issue, all_comments, project)
       rounds = issue.enhance_issue_rounds.to_i
       max_rounds = issue.project.max_enhance_issue_reevaluation_rounds
       prior_verdict = issue.last_analyzer_sufficient_context
       prior_areas = issue.last_analyzer_missing_context_areas
-      summary = prior_enhancement_summary(all_comments)
+      summary = prior_enhancement_summary(project, all_comments)
 
       {
         enhance_issue_rounds: rounds,
@@ -552,9 +552,18 @@ module Activities
       }
     end
 
-    def prior_enhancement_summary(comments)
+    # @spec ISSUE-ANALYSIS-014
+    # The marker text alone is not a trust signal — any GitHub user can type
+    # `<!-- paid:enhance-issue -->`. Reuse ClarifyingQuestions::CommentAdmission
+    # so only marker comments authored by the project's GitHub App bot (whose
+    # login is unspoofable) reach the analyzer prompt; otherwise an untrusted
+    # commenter can inject arbitrary instructions into the Cycle-state section
+    # and steer the verdict (#3842).
+    def prior_enhancement_summary(project, comments)
       enhancement_comments = comments.select do |comment|
-        comment.body.to_s.include?(EnhanceIssueActivity::COMMENT_MARKER)
+        ClarifyingQuestions::CommentAdmission.paid_marker_comment?(
+          project, comment.user&.login, comment
+        )
       end
       return nil if enhancement_comments.empty?
 

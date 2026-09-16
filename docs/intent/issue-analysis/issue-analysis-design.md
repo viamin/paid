@@ -266,6 +266,14 @@ verdict and reasoning are persisted back on the issue (`last_analyzer_*`,
 `last_analyzed_at`) so operators can see why a lane stalled and so the next
 cycle can consume the prior verdict as cycle state.
 
+The cycle-state summary reuses `ClarifyingQuestions::CommentAdmission.paid_marker_comment?`
+so the marker text alone is not treated as a trust signal — only comments
+authored by the project's GitHub App bot (whose login is unspoofable) are
+included. Without this guard, any GitHub user could type `<!-- paid:enhance-issue -->`
+followed by arbitrary instructions and steer the verdict by reaching up to 2,000
+chars of untrusted content into the analyzer prompt under `## Cycle state`
+(#3842).
+
 The readiness prompt is calibrated so the verdict does not default to
 `sufficient_context: false`:
 

@@ -429,7 +429,7 @@ module Activities
           project_id: project.id,
           issue_id: issue.id,
           issue_number: issue.github_number,
-          enhance_issue_rounds: issue.reload.enhance_issue_rounds
+          enhance_issue_rounds: issue.enhance_issue_rounds
         )
       end
 
