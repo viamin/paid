@@ -15,10 +15,13 @@ module Issues
     # Bodies shorter than this are too short for "ends without terminal
     # punctuation" to be a meaningful signal (e.g. "Fix typo in README").
     MIN_LENGTH = 60
-    TERMINAL_CHARACTERS = [ ".", "!", "?", ":", ";", ")", "]", "}", "\"", "'", "`", "*", "_", ">", "|", "-" ].freeze
+    TERMINAL_CHARACTERS = [ ".", "!", "?", ":", ";", ")", "]", "}", "\"", "'", "`", "*", "_", ">", "|", "-", "…" ].freeze
     LIST_ITEM_PATTERN = /\A\s*([-*+]|\d+[.)])(\s|\z)/
     HEADING_PATTERN = /\A\s*\#{1,6}(\s|\z)/
     FENCE_LINE_PATTERN = /^\s*```/
+    # A line that ends in a bare link (logs, repros, gists) is a well-formed
+    # ending even though the URL's last character is not terminal punctuation.
+    BARE_LINK_ENDING_PATTERN = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+\z/i
 
     def self.call(body)
       new(body).call
@@ -63,6 +66,7 @@ module Issues
     def well_formed_ending?
       LIST_ITEM_PATTERN.match?(last_line) ||
         last_line.start_with?("```") ||
+        last_line.match?(BARE_LINK_ENDING_PATTERN) ||
         TERMINAL_CHARACTERS.include?(last_line[-1])
     end
   end

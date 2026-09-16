@@ -86,6 +86,34 @@ RSpec.describe Issues::DetectTruncatedBody do
       expect(described_class.call(body)).to be(false)
     end
 
+    it "does not flag a body ending in a bare URL" do
+      body = <<~BODY
+        The sync job drops rows whenever the upstream API paginates results
+        past the first page. Full logs here: https://example.com/logs/1234abcd
+      BODY
+
+      expect(described_class.call(body)).to be(false)
+    end
+
+    it "does not flag a body ending in a bare www link with a trailing slash" do
+      body = <<~BODY
+        The sync job drops rows whenever the upstream API paginates results
+        past the first page. Repro steps at www.example.com/repro/
+      BODY
+
+      expect(described_class.call(body)).to be(false)
+    end
+
+    it "does not flag a body ending in a unicode ellipsis" do
+      body = <<~BODY
+        The dashboard currently shows stale counts when a job fails midway
+        through, and the counts drift further apart on every retry until the
+        job gives up entirely and the numbers mean nothing at all…
+      BODY
+
+      expect(described_class.call(body)).to be(false)
+    end
+
     it "does not flag a short body without terminal punctuation" do
       expect(described_class.call("Fix typo in README")).to be(false)
     end

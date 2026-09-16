@@ -311,10 +311,10 @@ without opening the issue on GitHub.
 judgment — for whether a body looks cut off: it ends without terminal
 punctuation, ends inside an unterminated code fence, or ends with a dangling
 heading and no content beneath it. It deliberately tolerates the normal
-"unpunctuated" endings a well-formed body can have (a list item or a
-terminated code block as the last line) to keep the false-positive rate low,
-and skips short bodies (`MIN_LENGTH`) where "no terminal punctuation" carries
-no signal.
+"unpunctuated" endings a well-formed body can have (a list item, a terminated
+code block, or a bare link as the last line) to keep the false-positive rate
+low, and skips short bodies (`MIN_LENGTH`) where "no terminal punctuation"
+carries no signal.
 
 Detection is computed in code (ZFC: a structural fact), not delegated to the
 LLM. `AnalyzeIssueActivity#prompt_for` includes a `## Body integrity warning`

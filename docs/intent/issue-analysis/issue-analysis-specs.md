@@ -216,14 +216,14 @@
   dangling heading and no content beneath it — not an LLM judgment), the
   system SHALL tell the assessor this as ground truth in the prompt (a
   `## Body integrity warning` section) and SHALL deterministically ensure
-  `missing_context_areas` includes a canonical
+  `missing_context_areas` names the truncation — appending the canonical
   `"issue body appears truncated — the original intent may be lost"` entry
-  after parsing, regardless of whether the LLM's own response names the
-  truncation, so the verdict never silently depresses `sufficient_context`
+  after parsing unless the LLM's own response already names truncation or
+  corruption — so the verdict never silently depresses `sufficient_context`
   without explaining why (#3852). The heuristic SHALL NOT fire on normal
-  bodies that happen to end without punctuation (e.g. a code block or a list
-  item as the last line) and SHALL skip bodies too short for the signal to
-  be meaningful. This detector is shared with `enhance_issue`
+  bodies that happen to end without punctuation (e.g. a code block, a list
+  item, or a bare link as the last line) and SHALL skip bodies too short for
+  the signal to be meaningful. This detector is shared with `enhance_issue`
   (`ISSUE-ENHANCEMENT-015`).
   *Tests:* `spec/services/issues/detect_truncated_body_spec.rb`,
   `spec/temporal/activities/analyze_issue_activity_spec.rb`
