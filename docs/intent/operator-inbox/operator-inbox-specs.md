@@ -70,7 +70,14 @@
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
   `enhance_issue` run as its clearing action, since automatic picking excludes
   `manual_review` and only an explicit operator-triggered run resumes work
-  (`ISSUE-ENHANCEMENT-011`). The entry SHALL clear when the issue leaves
+  (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
+  of `manual_review` in the same request — inside the same transaction that
+  creates the run — so the entry clears from the queue and the badge at queue
+  time rather than when the workflow eventually starts the run (#3853); a
+  failed queue attempt (budget, no runnable runner) SHALL leave the issue in
+  `manual_review` and the entry in the inbox, and a repeated/stale click
+  SHALL yield a "no longer waiting for manual review" message instead of an
+  active-run error. The entry SHALL clear when the issue leaves
   `manual_review` or its underlying GitHub issue closes.
   `Dashboard::EligibilityBreakdown` SHALL report `manual_review` as its own
   named bucket instead of folding it into the unnamed `other_excluded`
