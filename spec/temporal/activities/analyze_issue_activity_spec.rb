@@ -326,6 +326,117 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect(result[:missing_context_areas]).to eq([])
     end
+
+    # @spec ISSUE-ANALYSIS-014
+    # Reproduces the analyzer's blind spot described in #3842: without
+    # re-admitting Paid bot enhancement comments the readiness assessor never
+    # sees the implementation context the enhance agent posted, so every
+    # re-evaluation repeats the baseline verdict.
+    it "admits the app bot's enhancement marker comments into the prompt" do
+      configure_app_backed_project
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      allow(client).to receive(:issue_comments).and_return([
+        OpenStruct.new(
+          body: "<!-- paid:enhance-issue -->\n## Implementation context\n### Relevant files and symbols\n- `app/models/audit_log.rb`",
+          user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+          created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+        )
+      ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("## Implementation context")
+      expect(captured_prompt).to include("`app/models/audit_log.rb`")
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    # The bot login is unspoofable, but the trust filter still must NOT admit
+    # arbitrary bot chatter — only comments containing the enhancement marker.
+    it "still rejects the app bot's non-marker comments from the prompt" do
+      configure_app_backed_project
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      allow(client).to receive(:issue_comments).and_return([
+        OpenStruct.new(
+          body: "Opened a pull request for this issue.",
+          user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+          created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+        )
+      ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).not_to include("Opened a pull request")
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    # Threads the prior enhancement round count and prior missing_context_areas
+    # into the prompt so a re-evaluation is a delta against the previous cycle
+    # rather than a repeat of the baseline (#3842).
+    it "threads prior cycle state (rounds, prior verdict, prior areas) into the prompt" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      issue.update!(
+        enhance_issue_rounds: 2,
+        last_analyzer_sufficient_context: false,
+        last_analyzer_missing_context_areas: [ "acceptance criteria" ]
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("## Cycle state")
+      expect(captured_prompt).to include("Prior enhancement rounds completed for this issue: 2")
+      expect(captured_prompt).to include("Prior analyzer verdict: false")
+      expect(captured_prompt).to include('"acceptance criteria"')
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    # Persists the analyzer verdict on the issue so operators can see why a
+    # lane stalled without re-reading the run's stdout (#3842).
+    it "persists the verdict and reasoning on the issue" do
+      allow(llm_response).to receive(:output).and_return(
+        {
+          sufficient_context: true,
+          reasoning: "The enhance agent posted enough implementation context.",
+          missing_context_areas: []
+        }.to_json
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      issue.reload
+      expect(issue.last_analyzer_sufficient_context).to be true
+      expect(issue.last_analyzer_reasoning).to include("implementation context")
+      expect(issue.last_analyzer_missing_context_areas).to eq([])
+      expect(issue.last_analyzed_at).to be_present
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    # The calibration guidance must be in the prompt so the analyzer defaults
+    # to `sufficient_context: true` when only codebase-resolvable ambiguity
+    # remains (#3842).
+    it "includes calibration guidance that codebase-resolvable ambiguity is not a blocker" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("Calibration")
+      expect(captured_prompt).to include("Codebase-determinable ambiguity")
+    end
   end
 
   describe "provider fallback" do
@@ -944,6 +1055,14 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(state).to be_present
     expect(state.circuit_state).to eq("open")
     expect(state.failure_count).to eq(1)
+  end
+
+  def configure_app_backed_project
+    project.update!(
+      github_token: nil,
+      github_installation: create(:github_installation, account: project.account)
+    )
+    allow(Github::AppInstallation).to receive(:token_for).and_return("token")
   end
 
   def expect_breaker_untouched!(user, runner_name:)

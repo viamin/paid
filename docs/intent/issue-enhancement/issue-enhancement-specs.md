@@ -194,3 +194,29 @@
   *Code:* `app/services/automation/feature_activation.rb`,
   `app/services/automation/label_policy.rb`,
   `app/services/automation/strategies/auto_pick.rb`.
+
+- [x] **ISSUE-ENHANCEMENT-014** — When enhancement concludes `sufficient_context:
+  true`, the system SHALL queue a `create_pr` follow-up run via
+  `CreateFollowupRunActivity` (mirroring the analyze branch) so the
+  analyze→enhance loop converges to `create_pr` instead of parking the
+  issue in the non-eligible `completed` paid_state forever (#3842).
+  Insufficient verdicts SHALL NOT queue a follow-up — the issue is parked
+  awaiting human input. The system SHALL reset `enhance_issue_rounds` on
+  the successful verdict (the lane has converged; a later regression must
+  not inherit an exhausted automatic-retry budget that would deadlock the
+  next cycle) and SHALL also reset it on the meaningful human signal of
+  clearing the `needs_input` label (either via `ClearNeedsInput` when a
+  human answer comment arrives or via `FetchIssuesActivity` when the label
+  is removed on GitHub). The reset on human signal only clears the
+  automatic cap; manual runs never consume a round at queue time so they
+  have nothing to reset.
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`
+  ("queues a create_pr follow-up when enhancement concludes sufficient_context: true", "does not queue a create_pr follow-up when enhancement concludes insufficient"),
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`
+  ("resets the enhancement round counter when sufficient_context is true", "does not reset the enhancement round counter when sufficient_context is false"),
+  `spec/services/clarifying_questions/clear_needs_input_spec.rb`
+  ("resets the enhancement round counter alongside paid_state").
+  *Code:* `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/temporal/activities/enhance_issue_activity.rb#reset_enhancement_rounds!`,
+  `app/services/clarifying_questions/clear_needs_input.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb#detect_needs_input_label_removals`.

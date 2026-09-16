@@ -37,8 +37,18 @@ module ClarifyingQuestions
         return
       end
 
+      # Reset the enhancement round counter on human signal — the operator has
+      # just answered clarifying questions, which is the meaningful human input
+      # that should restart the cap budget so a later regression doesn't inherit
+      # an exhausted automatic-retry budget (#3842).
+      attrs = {
+        paid_state: "new",
+        labels: Array(issue.labels) - [ label ],
+        needs_input_questions: nil
+      }
+      attrs[:enhance_issue_rounds] = 0 if issue.respond_to?(:enhance_issue_rounds) && issue.enhance_issue_rounds.to_i.positive?
       # @spec OPERATOR-INBOX-007
-      issue.update!(paid_state: "new", labels: Array(issue.labels) - [ label ], needs_input_questions: nil)
+      issue.update!(attrs)
     end
 
     private

@@ -182,3 +182,25 @@
   failure.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("malformed JSON", "missing required keys", "strips a markdown code fence").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#parse_response!`, `#extract_analysis_json`.
+
+- [x] **ISSUE-ANALYSIS-014** — The readiness assessor SHALL see the prior
+  cycle state when re-evaluating an issue (enhancement round count, prior
+  verdict, prior missing-context areas, and a summary of the latest Paid
+  enhancement marker comment) and SHALL admit Paid's own structured
+  enhancement/answer marker comments to its prompt via the existing
+  clarifying-question admission, so re-evaluation is a delta against the
+  previous cycle rather than a repeat of the baseline (#3842). The assessor
+  SHALL be calibrated to treat codebase-resolvable ambiguity as non-blocking
+  (the `create_pr` agent self-answers it), to prefer `sufficient_context:
+  true` when prior rounds produced implementation context without a fresh
+  human signal, and to default to `sufficient_context: true` when the round
+  cap has been reached so the issue moves to `create_pr` instead of being
+  parked in `manual_review`. The verdict SHALL be persisted on the issue
+  (`last_analyzer_sufficient_context`, `last_analyzer_reasoning`,
+  `last_analyzer_missing_context_areas`, `last_analyzed_at`) so operators
+  can diagnose a lane stuck in `manual_review` without re-reading the
+  run's stdout and so the next cycle's prompt can include it as cycle state.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("admits the app bot's enhancement marker comments", "still rejects the app bot's non-marker comments", "threads prior cycle state", "persists the verdict and reasoning on the issue", "includes calibration guidance").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#trusted_comments`,
+  `#prompt_for`, `#cycle_state_section`, `#build_cycle_state`,
+  `#persist_verdict!`.

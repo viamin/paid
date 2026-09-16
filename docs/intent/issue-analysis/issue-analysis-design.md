@@ -244,9 +244,43 @@ Clearing conditions:
 
 - The issue must be trusted (`issue.trusted?`); untrusted issues are rejected
   before the LLM is called.
-- Issue comments are filtered through the project's trusted-user allowlist.
+- Issue comments are filtered through `ClarifyingQuestions::CommentAdmission`
+  so that the prompt admits trusted human collaborators plus Paid's own
+  structured marker comments authored by the project's GitHub App bot
+  (enhancement comments and clarifying-answers). Without re-admitting the bot,
+  the readiness assessor never sees the implementation context the enhance
+  agent posted and re-flags the issue as insufficient on every cycle (#3842).
+  Arbitrary bot chatter remains excluded — only comments that contain a Paid
+  marker are let through.
 - Knowledge search and context-bundle failures degrade gracefully (empty
   context) rather than aborting the assessment.
+
+## Cycle state and calibration
+
+Each `analyze_issue` re-evaluation is a delta against the prior cycle, not a
+repeat of the baseline. The prompt threads the issue's `enhance_issue_rounds`,
+the project's `max_enhance_issue_reevaluation_rounds`, the prior analyzer
+verdict (`last_analyzer_sufficient_context`), the prior `missing_context_areas`,
+and a truncated summary of the latest Paid enhancement marker comment. The
+verdict and reasoning are persisted back on the issue (`last_analyzer_*`,
+`last_analyzed_at`) so operators can see why a lane stalled and so the next
+cycle can consume the prior verdict as cycle state.
+
+The readiness prompt is calibrated so the verdict does not default to
+`sufficient_context: false`:
+
+- Codebase-determinable ambiguity is not a blocker. The `create_pr` agent
+  reads the repository and self-answers questions that are resolvable from
+  the code (existing models, platform targets, patterns, etc.). Only
+  ambiguity that changes *product/scope/intent* should gate.
+- When prior enhancement rounds produced implementation context and no fresh
+  human signal has arrived since, another clarify round has near-zero
+  marginal value — default to `sufficient_context: true` so the issue moves
+  forward instead of looping.
+- When the enhancement round cap has been reached, a new clarification round
+  is blocked regardless. The verdict defaults to `sufficient_context: true`
+  so the issue can move to `create_pr` instead of being parked in
+  `manual_review` forever.
 
 ## Response contract
 

@@ -144,6 +144,34 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_label_added(project.enhance_issue_enhanced_label_name)
     end
 
+    # @spec ISSUE-ENHANCEMENT-014
+    # Resets the enhancement round counter on a successful verdict (#3842):
+    # the lane has converged, and a later regression should not inherit an
+    # exhausted automatic-retry budget that would deadlock the next cycle.
+    it "resets the enhancement round counter when sufficient_context is true" do
+      issue.update!(enhance_issue_rounds: 2)
+      log_agent_stdout(structured_output)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.enhance_issue_rounds).to eq(0)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-014
+    # Does NOT reset the round counter when the verdict is insufficient — the
+    # lane has not converged, the cap still bounds repeated automatic retries.
+    it "does not reset the enhancement round counter when sufficient_context is false" do
+      issue.update!(enhance_issue_rounds: 1)
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Clarifying questions\n1. Which events should be recorded?"
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.enhance_issue_rounds).to eq(1)
+    end
+
     it "posts clarifying questions when the agent reports insufficient context" do
       log_agent_stdout({
         sufficient_context: false,

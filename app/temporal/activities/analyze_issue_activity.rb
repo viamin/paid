@@ -66,12 +66,15 @@ module Activities
       ensure_trusted_issue!(issue)
 
       client = github_client(project)
-      comments = trusted_comments(project, client.issue_comments(project.full_name, issue.github_number))
+      all_comments = client.issue_comments(project.full_name, issue.github_number)
+      comments = trusted_comments(project, all_comments)
 
       context = build_context(agent_run, project, issue)
-      response = call_llm(agent_run, prompt_for(project, issue, comments, context))
+      cycle_state = build_cycle_state(issue, all_comments)
+      response = call_llm(agent_run, prompt_for(project, issue, comments, context, cycle_state))
       issue.clear_issue_analysis_backoff!
       parsed = parse_response!(agent_run, response)
+      persist_verdict!(issue, parsed)
 
       track_tokens(agent_run, response)
       agent_run.log!("stdout", parsed.to_json)
@@ -86,7 +89,8 @@ module Activities
         sufficient_context: parsed[:sufficient_context],
         missing_context_areas: parsed[:missing_context_areas],
         knowledge_results: context[:knowledge_results_count],
-        knowledge_sections: context[:bundle_sections]
+        knowledge_sections: context[:bundle_sections],
+        enhance_issue_rounds: cycle_state[:enhance_issue_rounds]
       )
 
       {
@@ -449,16 +453,35 @@ module Activities
       options
     end
 
-    def prompt_for(project, issue, comments, context)
+    # @spec ISSUE-ANALYSIS-014
+    def prompt_for(project, issue, comments, context, cycle_state)
       <<~PROMPT
         You are an issue readiness assessor. Evaluate whether the given GitHub issue
         has enough context for an autonomous implementation agent to start working.
 
+        Calibration (important — read carefully):
+        - Codebase-determinable ambiguity is NOT a blocker. The `create_pr` agent
+          reads the repository and can self-answer questions that are resolvable
+          from the code (existing models, platform targets, patterns, etc.). Only
+          flag ambiguity that genuinely changes the *product/scope/intent* of the
+          implementation — questions the human must answer, not questions the
+          code can answer.
+        - A failed `create_pr` attempt is cheap and informative. An endless
+          clarify loop is expensive and stalls the lane. When the issue is
+          actionable in code, prefer letting `create_pr` try.
+        - When prior enhancement rounds produced implementation context and no
+          fresh human signal has arrived since, lean toward `sufficient_context:
+          true` — another clarify round has near-zero marginal value.
+        - When the round cap has been reached, a new clarification round is
+          blocked regardless. Default to `sufficient_context: true` so the
+          issue can move to `create_pr` instead of being parked in
+          `manual_review`.
+
         Consider:
         - Does the issue title and description provide enough detail to start implementation?
         - Does the knowledge base contain relevant context (architecture, patterns, dependencies)?
-        - Are there ambiguities that require human clarification?
-        - Is the acceptance criteria clear enough for an agent to work autonomously?
+        - Have prior enhancement rounds already provided enough implementation context for an agent to act on?
+        - Is the only remaining ambiguity product/scope/intent (gating), or is it codebase-resolvable (non-gating)?
 
         Respond with ONLY valid JSON:
         {
@@ -468,7 +491,8 @@ module Activities
         }
 
         When sufficient_context is true, missing_context_areas should be an empty array.
-        When sufficient_context is false, list the specific areas that need clarification.
+        When sufficient_context is false, list the specific areas that need clarification
+        (must be product/scope/intent — not codebase-determinable).
 
         ## Repository
         #{project.full_name}
@@ -480,6 +504,8 @@ module Activities
 
         #{issue.body.to_s.truncate(20_000)}
 
+        #{cycle_state_section(cycle_state)}
+
         ## Conversation
         #{format_comments(comments)}
 
@@ -488,6 +514,72 @@ module Activities
 
         #{context[:bundle_content].presence || "## Codebase Context\nNo context bundle entries were available."}
       PROMPT
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    def cycle_state_section(cycle_state)
+      return "" unless cycle_state[:has_history]
+
+      <<~SECTION
+        ## Cycle state
+        - Prior enhancement rounds completed for this issue: #{cycle_state[:enhance_issue_rounds]}
+        - Project's max enhancement rounds: #{cycle_state[:max_enhance_issue_reevaluation_rounds]}
+        - Prior analyzer verdict: #{cycle_state[:prior_sufficient_context]}
+        - Prior missing_context_areas: #{cycle_state[:prior_missing_context_areas].to_json}
+
+        #{cycle_state[:prior_enhancement_summary].presence || 'No prior enhancement comment found.'}
+
+        If `Prior analyzer verdict` is "true" but the run still re-evaluated, treat any
+        remaining flagged area as already addressed unless a fresh human signal contradicts it.
+      SECTION
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    def build_cycle_state(issue, all_comments)
+      rounds = issue.enhance_issue_rounds.to_i
+      max_rounds = issue.project.max_enhance_issue_reevaluation_rounds
+      prior_verdict = issue.last_analyzer_sufficient_context
+      prior_areas = issue.last_analyzer_missing_context_areas
+      summary = prior_enhancement_summary(all_comments)
+
+      {
+        enhance_issue_rounds: rounds,
+        max_enhance_issue_reevaluation_rounds: max_rounds,
+        prior_sufficient_context: prior_verdict.nil? ? "unknown" : prior_verdict.to_s,
+        prior_missing_context_areas: prior_areas || [],
+        prior_enhancement_summary: summary,
+        has_history: rounds.positive? || prior_verdict.present? || summary.present?
+      }
+    end
+
+    def prior_enhancement_summary(comments)
+      enhancement_comments = comments.select do |comment|
+        comment.body.to_s.include?(EnhanceIssueActivity::COMMENT_MARKER)
+      end
+      return nil if enhancement_comments.empty?
+
+      latest = enhancement_comments.max_by { |comment| comment.created_at || Time.at(0) }
+      body = latest.body.to_s
+      body = body.sub(EnhanceIssueActivity::COMMENT_MARKER, "").strip
+      body.truncate(2_000)
+    end
+
+    # @spec ISSUE-ANALYSIS-014
+    def persist_verdict!(issue, parsed)
+      attrs = {
+        last_analyzer_sufficient_context: parsed[:sufficient_context],
+        last_analyzer_reasoning: parsed[:reasoning].to_s.truncate(2_000),
+        last_analyzer_missing_context_areas: parsed[:missing_context_areas].to_a,
+        last_analyzed_at: Time.current
+      }
+      issue.update_columns(attrs) if issue.persisted?
+    rescue => e
+      logger.warn(
+        message: "agent_execution.analyze_issue_persist_verdict_failed",
+        issue_id: issue.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def format_comments(comments)
@@ -503,8 +595,14 @@ module Activities
     end
 
     # @spec ISSUE-ANALYSIS-004
+    # Admit trusted human collaborators plus Paid's own structured marker
+    # comments authored by the project's GitHub App bot. Without re-admitting
+    # the bot's enhancement comments, the readiness assessor never sees the
+    # implementation context the enhance agent already posted and re-flags
+    # the issue as insufficient on every cycle. See
+    # ClarifyingQuestions::CommentAdmission and Project#paid_bot_author?.
     def trusted_comments(project, comments)
-      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
+      comments.select { |comment| ClarifyingQuestions::CommentAdmission.admissible?(project:, comment:) }
     end
 
     # @spec ISSUE-ANALYSIS-004
