@@ -261,17 +261,47 @@ Each `analyze_issue` re-evaluation is a delta against the prior cycle, not a
 repeat of the baseline. The prompt threads the issue's `enhance_issue_rounds`,
 the project's `max_enhance_issue_reevaluation_rounds`, the prior analyzer
 verdict (`last_analyzer_sufficient_context`), the prior `missing_context_areas`,
-and a truncated summary of the latest Paid enhancement marker comment. The
-verdict and reasoning are persisted back on the issue (`last_analyzer_*`,
-`last_analyzed_at`) so operators can see why a lane stalled and so the next
-cycle can consume the prior verdict as cycle state.
+and a budgeted, section-aware digest of every admissible Paid enhancement and
+clarifying-answer marker comment. The verdict and reasoning are persisted back
+on the issue (`last_analyzer_*`, `last_analyzed_at`) so operators can see why a
+lane stalled and so the next cycle can consume the prior verdict as cycle state.
+
+### Enhancement fidelity (#3850)
+
+Multi-round histories are the norm on looping issues: the latest marker comment
+is often just the newest clarifying questions, while the implementation context
+from earlier rounds (and any human answers, which arrive as separate comments)
+carries the evidence of readiness. Enhancement comments also lead with prose or
+`## Clarifying questions` and put `## Implementation context` further down, so
+a blind head-truncate of the body cuts exactly the content that matters.
+
+`IssueEnhancements::CommentDigest` therefore shapes marker comments for the
+prompt by section, not by byte offset:
+
+- Every comment is split on `##` headings (fenced code blocks are opaque), with
+  any prose before the first heading kept as a preamble section.
+- Sections are ranked: decision-relevant headings (`Implementation context`,
+  `Suggested approach`, `Clarifying questions`, `Clarifying question answers`,
+  `Current context`) first, unrecognised prose next, and boilerplate last
+  (`<!-- paid:* -->` markers are stripped; `Proposed Change Intent Record`,
+  `Auto-enhancement stopped`, `Latest context` are dropped first).
+- A single total budget is allocated across all comments in rank order, newer
+  comments first within a rank, with a per-section cap so one long section
+  cannot starve the others; leftover budget tops up capped sections. The
+  retained sections are rendered back in chronological comment order and
+  original section order so the narrative still reads top-to-bottom.
+
+The cycle-state section applies this digest to *all* admissible marker
+comments under `CYCLE_STATE_BUDGET`; the `## Conversation` section applies it
+per comment and additionally bounds the whole section by `CONVERSATION_BUDGET`,
+keeping the newest comments and noting how many older ones were omitted.
 
 The cycle-state summary reuses `ClarifyingQuestions::CommentAdmission.paid_marker_comment?`
 so the marker text alone is not treated as a trust signal — only comments
 authored by the project's GitHub App bot (whose login is unspoofable) are
 included. Without this guard, any GitHub user could type `<!-- paid:enhance-issue -->`
-followed by arbitrary instructions and steer the verdict by reaching up to 2,000
-chars of untrusted content into the analyzer prompt under `## Cycle state`
+followed by arbitrary instructions and steer the verdict by reaching thousands
+of chars of untrusted content into the analyzer prompt under `## Cycle state`
 (#3842).
 
 The readiness prompt is calibrated so the verdict does not default to
