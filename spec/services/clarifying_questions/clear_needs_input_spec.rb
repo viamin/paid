@@ -19,6 +19,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         needs_input?: true,
         has_label?: true,
         labels: [ "paid-needs-input", "P2" ],
+        enhance_issue_rounds: 0,
         update!: true
       )
     end
@@ -35,6 +36,33 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       described_class.call(project: project, issue: issue)
 
       expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-014
+    # The human signal of answering clarifying questions is the meaningful
+    # reset trigger: a later regression must not inherit an exhausted
+    # automatic-retry budget (#3842).
+    context "when the issue has consumed enhancement rounds" do
+      let(:issue) do
+        double(
+          github_number: 1964,
+          paid_state: "needs_input",
+          needs_input?: true,
+          has_label?: true,
+          labels: [ "paid-needs-input", "P2" ],
+          enhance_issue_rounds: 2,
+          update!: true
+        )
+      end
+
+      it "resets the enhancement round counter alongside paid_state" do
+        described_class.call(project: project, issue: issue)
+
+        expect(issue).to have_received(:update!).with(
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil,
+          enhance_issue_rounds: 0
+        )
+      end
     end
 
     context "when the issue is not awaiting input" do
@@ -55,6 +83,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
           needs_input?: false,
           has_label?: false,
           labels: [ "P2" ],
+          enhance_issue_rounds: 0,
           update!: true
         )
       end

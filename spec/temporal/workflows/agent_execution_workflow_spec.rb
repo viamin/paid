@@ -395,6 +395,58 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       result = workflow.execute(input)
       expect(result).to eq(success: true, agent_run_id: 42, sufficient_context: true)
     end
+
+    # @spec ISSUE-ENHANCEMENT-014
+    # When EnhanceIssueActivity concludes sufficient_context: true, the
+    # workflow queues a create_pr follow-up so the analyze->enhance loop
+    # converges instead of leaving the issue in the non-eligible `completed`
+    # paid_state forever (#3842).
+    it "queues a create_pr follow-up when enhancement concludes sufficient_context: true" do
+      allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
+        case klass.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, focus: "general", runner_attempt_count: 1,
+            agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600 }
+        when "Activities::RunAgentActivity"
+          { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::EnhanceIssueActivity"
+          { agent_run_id: 42, success: true, sufficient_context: true }
+        when "Activities::CreateFollowupRunActivity"
+          { agent_run_id: 42, followup_agent_run_id: 43, goal: "create_pr" }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateFollowupRunActivity, { agent_run_id: 42, goal: "create_pr" },
+          timeout: 30)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-014
+    # When enhancement concludes sufficient_context: false (a clarifying-questions
+    # comment was posted), no follow-up should be queued — the issue needs human
+    # input before it can move to create_pr.
+    it "does not queue a create_pr follow-up when enhancement concludes insufficient" do
+      allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
+        case klass.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, focus: "general", runner_attempt_count: 1,
+            agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600 }
+        when "Activities::RunAgentActivity"
+          { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::EnhanceIssueActivity"
+          { agent_run_id: 42, success: true, sufficient_context: false }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateFollowupRunActivity, anything, any_args)
+    end
   end
 
   describe "quality gate" do

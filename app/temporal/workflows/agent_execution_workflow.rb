@@ -293,7 +293,7 @@ module Workflows
 
         agent_step_succeeded = true
 
-        # @spec ISSUE-ENHANCEMENT-006
+        # @spec ISSUE-ENHANCEMENT-006 ISSUE-ENHANCEMENT-014
         if goal == "enhance_issue"
           # Containerized enhance_issue: the agent explored the repo and
           # produced structured JSON output.  EnhanceIssueActivity (post-run
@@ -303,6 +303,17 @@ module Workflows
             { agent_run_id: agent_run_id, post_run: true },
             start_to_close_timeout: 300,
             retry_policy: NO_RETRY)
+
+          # Handoff: when enhancement concludes the issue is ready, queue a
+          # create_pr follow-up so the analyze->enhance loop converges instead
+          # of leaving the issue in the non-eligible `completed` paid_state
+          # forever. Mirrors the analyze_issue branch's CreateFollowupRunActivity
+          # pattern (#3842).
+          if enhance_result.is_a?(Hash) && enhance_result[:sufficient_context] == true
+            run_activity(Activities::CreateFollowupRunActivity,
+              { agent_run_id: agent_run_id, goal: "create_pr" },
+              timeout: 30)
+          end
 
           return { success: true, agent_run_id: agent_run_id, **enhance_result.slice(:sufficient_context) }
         end
