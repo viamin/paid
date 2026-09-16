@@ -443,6 +443,62 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    # @spec ISSUE-ENHANCEMENT-015
+    context "when a trusted collaborator edits the issue body" do
+      let(:existing_issue) do
+        create(:issue,
+          project: project,
+          github_issue_id: 9101,
+          github_number: 91,
+          title: "Needs more detail",
+          body: "Original body",
+          enhance_issue_rounds: 2,
+          github_updated_at: 2.days.ago)
+      end
+
+      let(:edited_issue) do
+        OpenStruct.new(
+          id: 9101,
+          number: 91,
+          title: "Needs more detail",
+          body: "Original body, now with the missing detail",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 1.hour.ago
+        )
+      end
+
+      before do
+        existing_issue
+        stub_issues_by_label(nil => [ edited_issue ])
+      end
+
+      it "resets enhance_issue_rounds to 0" do
+        activity.execute(project_id: project.id)
+
+        expect(existing_issue.reload.enhance_issue_rounds).to eq(0)
+      end
+
+      it "does not reset the round counter when the body is unchanged" do
+        existing_issue.update!(body: edited_issue.body)
+
+        activity.execute(project_id: project.id)
+
+        expect(existing_issue.reload.enhance_issue_rounds).to eq(2)
+      end
+
+      it "does not reset the round counter when the issue's author is untrusted" do
+        project.update!(allowed_github_usernames: [ "someone-else" ])
+
+        activity.execute(project_id: project.id)
+
+        expect(existing_issue.reload.enhance_issue_rounds).to eq(2)
+      end
+    end
+
     context "when results include pull requests" do
       let(:github_items) do
         [

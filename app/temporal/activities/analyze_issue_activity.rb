@@ -74,6 +74,7 @@ module Activities
       response = call_llm(agent_run, prompt_for(project, issue, comments, context, cycle_state))
       issue.clear_issue_analysis_backoff!
       parsed = parse_response!(agent_run, response)
+      parsed = enforce_cap_override(issue, cycle_state, parsed)
       persist_verdict!(issue, parsed)
 
       track_tokens(agent_run, response)
@@ -534,13 +535,14 @@ module Activities
       SECTION
     end
 
-    # @spec ISSUE-ANALYSIS-014
+    # @spec ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-015
     def build_cycle_state(issue, all_comments, project)
       rounds = issue.enhance_issue_rounds.to_i
       max_rounds = project.max_enhance_issue_reevaluation_rounds
       prior_verdict = issue.last_analyzer_sufficient_context
       prior_areas = issue.last_analyzer_missing_context_areas
-      summary = prior_enhancement_summary(project, all_comments)
+      latest_enhancement_comment = latest_bot_enhancement_comment(project, all_comments)
+      summary = enhancement_summary_text(latest_enhancement_comment)
 
       {
         enhance_issue_rounds: rounds,
@@ -548,7 +550,8 @@ module Activities
         prior_sufficient_context: prior_verdict.nil? ? "unknown" : prior_verdict.to_s,
         prior_missing_context_areas: prior_areas || [],
         prior_enhancement_summary: summary,
-        has_history: rounds.positive? || prior_verdict.present? || summary.present?
+        has_history: rounds.positive? || prior_verdict.present? || summary.present?,
+        fresh_human_signal_since_enhancement: fresh_human_signal_since?(all_comments, project, latest_enhancement_comment)
       }
     end
 
@@ -559,18 +562,71 @@ module Activities
     # login is unspoofable) reach the analyzer prompt; otherwise an untrusted
     # commenter can inject arbitrary instructions into the Cycle-state section
     # and steer the verdict (#3842).
-    def prior_enhancement_summary(project, comments)
+    def latest_bot_enhancement_comment(project, comments)
       enhancement_comments = comments.select do |comment|
         ClarifyingQuestions::CommentAdmission.paid_marker_comment?(
           project, comment.user&.login, comment
         )
       end
-      return nil if enhancement_comments.empty?
+      enhancement_comments.max_by { |comment| comment.created_at || Time.at(0) }
+    end
 
-      latest = enhancement_comments.max_by { |comment| comment.created_at || Time.at(0) }
-      body = latest.body.to_s
-      body = body.sub(EnhanceIssueActivity::COMMENT_MARKER, "").strip
+    def enhancement_summary_text(comment)
+      return nil unless comment
+
+      body = comment.body.to_s.sub(EnhanceIssueActivity::COMMENT_MARKER, "").strip
       body.truncate(2_000)
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # Whether a trusted human commented after Paid's own latest enhancement
+    # round comment — the signal `enforce_cap_override` checks before
+    # forcing sufficient_context: true at the round cap (#3849). Scoped to
+    # comments only (not `github_updated_at`, which also advances on Paid's
+    # own label/comment activity and would be too noisy a proxy for "a human
+    # edited the body"): a false positive here would silently restore the
+    # deadlock the override exists to close.
+    def fresh_human_signal_since?(comments, project, anchor_comment)
+      anchor_time = anchor_comment&.created_at
+      return false unless anchor_time
+
+      comments.any? do |comment|
+        next false unless comment.created_at && comment.created_at > anchor_time
+
+        login = comment.user&.login
+        project.trusted_github_user?(login) && !project.paid_bot_author?(login)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # The prompt's calibration guidance asks the model to default to
+    # sufficient_context: true once the round cap is reached, but that's a
+    # soft instruction. An LLM that returns false anyway at the cap gets its
+    # enhance_issue follow-up rejected at queue time
+    # (QueueAgentRunActivity#enhancement_round_limit_reached?), re-parking
+    # the issue in manual_review — the state-flapping deadlock #3842 fixed
+    # only for the instruction-following case. Enforce the cap
+    # deterministically instead, unless a human has provided fresh signal
+    # since the last enhancement round that the analyzer hasn't reacted to
+    # yet — in that case `fresh_human_signal_since?` returning true means
+    # the round counter should already have reset via the answer/body-edit
+    # paths, so a real re-evaluation is warranted rather than a forced one.
+    def enforce_cap_override(issue, cycle_state, parsed)
+      return parsed unless cycle_state[:enhance_issue_rounds] >= cycle_state[:max_enhance_issue_reevaluation_rounds]
+      return parsed if parsed[:sufficient_context]
+      return parsed if cycle_state[:fresh_human_signal_since_enhancement]
+
+      logger.info(
+        message: "agent_execution.analyze_issue_cap_override",
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds: cycle_state[:enhance_issue_rounds],
+        max_enhance_issue_reevaluation_rounds: cycle_state[:max_enhance_issue_reevaluation_rounds],
+        raw_sufficient_context: parsed[:sufficient_context],
+        raw_missing_context_areas: parsed[:missing_context_areas]
+      )
+
+      parsed.merge(sufficient_context: true, missing_context_areas: [])
     end
 
     # @spec ISSUE-ANALYSIS-014

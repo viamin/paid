@@ -208,4 +208,36 @@
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("admits the app bot's enhancement marker comments", "still rejects the app bot's non-marker comments", "rejects spoofed enhancement marker comments from untrusted users in cycle state", "threads prior cycle state", "persists the verdict and reasoning on the issue", "includes calibration guidance").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#trusted_comments`,
   `#prompt_for`, `#cycle_state_section`, `#build_cycle_state`,
-  `#prior_enhancement_summary`, `#persist_verdict!`.
+  `#latest_bot_enhancement_comment`, `#enhancement_summary_text`, `#persist_verdict!`.
+
+- [x] **ISSUE-ANALYSIS-015** — The round-cap calibration guidance in
+  `ISSUE-ANALYSIS-014` is a prompt-only instruction, so the readiness
+  assessor's `sufficient_context` verdict SHALL be overridden
+  deterministically in code, not left to instruction-following: when
+  `enhance_issue_rounds` has reached the project's
+  `max_enhance_issue_reevaluation_rounds` and no trusted human has
+  commented since Paid's own latest enhancement-round marker comment, the
+  system SHALL force `sufficient_context: true` (and clear
+  `missing_context_areas`) regardless of the model's raw verdict, so the
+  issue proceeds to `create_pr` instead of having its `enhance_issue`
+  follow-up rejected at queue time
+  (`QueueAgentRunActivity#enhancement_round_limit_reached?`) and re-parked
+  in `manual_review` on LLM noncompliance alone (#3849, follow-up to
+  #3842/#3844). The override SHALL NOT apply when the model already
+  returned `sufficient_context: true`, nor when a trusted human commented
+  after the last enhancement marker comment — that fresh signal means the
+  round counter should already have been reset via `ISSUE-ENHANCEMENT-015`
+  or `ISSUE-ENHANCEMENT-014`'s human-signal resets, so a real
+  re-evaluation is warranted. The raw LLM verdict and the override SHALL
+  both be logged (`agent_execution.analyze_issue_cap_override`) for
+  observability. No test SHALL depend on the LLM obeying the prompt-level
+  cap instruction.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("forces sufficient_context: true regardless of the LLM's raw verdict",
+  "persists the overridden verdict, not the LLM's raw false",
+  "does not override when a trusted human commented after the last enhancement round",
+  "still overrides when the only post-enhancement comment is untrusted",
+  "does not override when the LLM already returned sufficient_context: true",
+  "does not override sufficient_context: false when the round cap has not been reached").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#enforce_cap_override`,
+  `#fresh_human_signal_since?`, `#build_cycle_state`.

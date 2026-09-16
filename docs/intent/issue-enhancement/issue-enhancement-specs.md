@@ -247,3 +247,21 @@
   `app/temporal/activities/enhance_issue_activity.rb#reset_enhancement_rounds!`,
   `app/services/clarifying_questions/clear_needs_input.rb`,
   `app/temporal/activities/fetch_issues_activity.rb#detect_needs_input_label_removals`.
+
+- [x] **ISSUE-ENHANCEMENT-015** — The `enhance_issue_rounds` cap SHALL also
+  reset on a trusted collaborator's edit to the issue body, not only on the
+  `needs_input` human-signal paths in `ISSUE-ENHANCEMENT-014` (#3849): when
+  `FetchIssuesActivity` syncs an issue whose author is currently trusted
+  (`Project#trusted_github_author?`) and the synced body differs from the
+  locally stored body, and the counter is non-zero, the system SHALL reset
+  `enhance_issue_rounds` to 0. This is a best-effort proxy — GitHub's issue
+  representation does not report who last edited the body, only who created
+  the issue — so the reset SHALL NOT fire for an issue whose current author
+  is untrusted, and SHALL NOT fire on the initial sync that creates the
+  issue (there is no "prior" body to diverge from). The reset SHALL be
+  reflected in the sync's `changed` result even when the body was the only
+  change.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`
+  ("resets enhance_issue_rounds to 0", "does not reset the round counter when the body is unchanged", "does not reset the round counter when the issue's author is untrusted").
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb#sync_issue`,
+  `#reset_enhancement_rounds_on_trusted_body_edit!`.

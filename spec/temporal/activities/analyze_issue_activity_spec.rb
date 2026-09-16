@@ -466,6 +466,98 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(captured_prompt).to include("Calibration")
       expect(captured_prompt).to include("Codebase-determinable ambiguity")
     end
+
+    # @spec ISSUE-ANALYSIS-015
+    # The prompt only asks the model to default to sufficient_context: true
+    # at the round cap — that's a soft instruction. Enforce it in code so an
+    # LLM that disobeys does not re-park the issue in manual_review (#3849).
+    context "when the enhancement round cap has been reached" do
+      before do
+        issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+        allow(llm_response).to receive(:output).and_return(
+          {
+            sufficient_context: false,
+            reasoning: "Still ambiguous",
+            missing_context_areas: [ "scope" ]
+          }.to_json
+        )
+      end
+
+      it "forces sufficient_context: true regardless of the LLM's raw verdict" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect(result[:missing_context_areas]).to eq([])
+      end
+
+      it "persists the overridden verdict, not the LLM's raw false" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        issue.reload
+        expect(issue.last_analyzer_sufficient_context).to be true
+        expect(issue.last_analyzer_missing_context_areas).to eq([])
+      end
+
+      it "does not override when a trusted human commented after the last enhancement round" do
+        configure_app_backed_project
+        allow(client).to receive(:issue_comments).and_return([
+          OpenStruct.new(
+            body: "<!-- paid:enhance-issue -->\n## Implementation context",
+            user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+            created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: "Here is more detail on scope.",
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-04-20 13:00:00 UTC")
+          )
+        ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be false
+      end
+
+      it "still overrides when the only post-enhancement comment is untrusted" do
+        configure_app_backed_project
+        allow(client).to receive(:issue_comments).and_return([
+          OpenStruct.new(
+            body: "<!-- paid:enhance-issue -->\n## Implementation context",
+            user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+            created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: "spoofed follow-up",
+            user: OpenStruct.new(login: "attacker"),
+            created_at: Time.zone.parse("2026-04-20 13:00:00 UTC")
+          )
+        ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+      end
+
+      it "does not override when the LLM already returned sufficient_context: true" do
+        allow(llm_response).to receive(:output).and_return(
+          { sufficient_context: true, reasoning: "Ready", missing_context_areas: [] }.to_json
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+      end
+    end
+
+    it "does not override sufficient_context: false when the round cap has not been reached" do
+      allow(llm_response).to receive(:output).and_return(
+        { sufficient_context: false, reasoning: "Still ambiguous", missing_context_areas: [ "scope" ] }.to_json
+      )
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be false
+    end
   end
 
   describe "provider fallback" do
