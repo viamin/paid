@@ -18,7 +18,7 @@ module Activities
     activity_name "EnhanceIssue"
 
     COMMENT_MARKER = "<!-- paid:enhance-issue -->"
-    # @spec ISSUE-ENHANCEMENT-016
+    # @spec ISSUE-ENHANCEMENT-017
     BODY_TRUNCATION_NOTICE = <<~NOTICE.strip
       > **Note:** This issue's body appears truncated or corrupted — it ends abruptly
       > without a complete sentence, code fence, or list item. The original intent may
@@ -436,7 +436,7 @@ module Activities
       comments.select { |comment| ClarifyingQuestions::CommentAdmission.admissible?(project:, comment:) }
     end
 
-    # @spec ISSUE-ENHANCEMENT-016
+    # @spec ISSUE-ENHANCEMENT-017
     def comment_body_for(issue, parsed, draft = nil)
       sections = [ COMMENT_MARKER ]
       sections << BODY_TRUNCATION_NOTICE if Issues::DetectTruncatedBody.call(issue.body)

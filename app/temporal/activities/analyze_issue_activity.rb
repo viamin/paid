@@ -31,6 +31,20 @@ module Activities
     CONVERSATION_BUDGET = 40_000
     KNOWLEDGE_SEARCH_BUDGET = 60
     CONTEXT_BUNDLE_BUDGET = 60
+    # Bodies of Paid's own structured issue comments (enhancement rounds,
+    # clarifying-answers postings, stop-for-manual-review notices). Used to
+    # EXCLUDE Paid's comments from the fresh-human-signal scan by content —
+    # a credential-agnostic check, since PAT-backed projects post them as
+    # the PAT user rather than the bot (#3849).
+    PAID_MARKER_COMMENT_BODIES = [
+      EnhanceIssueActivity::COMMENT_MARKER,
+      ClarifyingQuestions::Load::ANSWER_MARKER,
+      IssueEnhancements::StopForManualReview::COMMENT_MARKER,
+      HandleNoOutputIssueRunActivity::NEEDS_INPUT_COMMENT_MARKER,
+      HandleNoOutputIssueRunActivity::RECOMMEND_CLOSE_COMMENT_MARKER,
+      HandleNoOutputIssueRunActivity::NO_CODE_REQUIRED_COMMENT_MARKER,
+      MarkEscalatedActivity::COMMENT_MARKER
+    ].freeze
 
     # Bridges a response-shaped failure (`AgentHarness::Response` with
     # `success? == false`) onto the existing rescue-clause path so the phase
@@ -83,6 +97,7 @@ module Activities
       response = call_llm(agent_run, prompt_for(project, issue, comments, context, cycle_state))
       issue.clear_issue_analysis_backoff!
       parsed = parse_response!(agent_run, response)
+      parsed = enforce_cap_override(issue, cycle_state, parsed)
       parsed = apply_body_integrity_flag(issue, parsed)
       persist_verdict!(issue, parsed)
 
@@ -562,7 +577,7 @@ module Activities
       SECTION
     end
 
-    # @spec ISSUE-ANALYSIS-014
+    # @spec ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-015 ISSUE-ANALYSIS-016
     def build_cycle_state(issue, all_comments, project)
       rounds = issue.enhance_issue_rounds.to_i
       max_rounds = project.max_enhance_issue_reevaluation_rounds
@@ -576,7 +591,8 @@ module Activities
         prior_sufficient_context: prior_verdict.nil? ? "unknown" : prior_verdict.to_s,
         prior_missing_context_areas: prior_areas || [],
         prior_enhancement_summary: summary,
-        has_history: rounds.positive? || prior_verdict.present? || summary.present?
+        has_history: rounds.positive? || prior_verdict.present? || summary.present?,
+        fresh_human_signal_since_last_analysis: fresh_human_signal_since?(all_comments, project, issue.last_analyzed_at)
       }
     end
 
@@ -609,6 +625,108 @@ module Activities
       ordered.zip(digests).filter_map do |comment, digest|
         "#### #{comment.created_at || 'unknown time'}\n#{digest}" if digest.present?
       end.join("\n\n")
+    end
+
+    # @spec ISSUE-ANALYSIS-016
+    # Whether a trusted human commented after Paid's last analyzer pass — the
+    # signal `enforce_cap_override` checks before forcing
+    # sufficient_context: true at the round cap (#3849). Anchored on the
+    # locally stored `last_analyzed_at` (written only by #persist_verdict!,
+    # never derived from GitHub content) rather than on the enhancement
+    # marker comment, because `prior_enhancement_summary` admits only
+    # GitHub App bot authors and is permanently empty for PAT-backed projects
+    # — anchoring there made this check dead code for exactly the projects
+    # whose enhancement comments post as the PAT user. Paid's own
+    # structured marker comments are excluded by body: on PAT-backed
+    # projects they post as the (allowlisted) PAT user, and without the
+    # exclusion each one would read as fresh human signal, keep reopening
+    # the enhancement budget, and turn the cap into an infinite enhance
+    # loop. Marker matching is safe for this EXCLUSION purpose — a spoofed
+    # marker can only drop the spoofing comment out of this scan (and
+    # untrusted logins are already filtered), never admit content into the
+    # prompt; admission stays gated by CommentAdmission (#3842). Scoped to
+    # comments only (not `github_updated_at`, which also advances on Paid's
+    # own label/comment activity and would be too noisy a proxy for "a
+    # human edited the body"): a false positive here would silently
+    # restore the deadlock the override exists to close.
+    def fresh_human_signal_since?(comments, project, anchor_time)
+      return false unless anchor_time
+
+      comments.any? do |comment|
+        next false unless comment.created_at && comment.created_at > anchor_time
+        next false if paid_marker_comment_body?(comment)
+
+        login = comment.user&.login
+        project.trusted_github_user?(login) && !project.paid_bot_author?(login)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-016
+    # Exclusion-only and therefore spoof-safe: a forged marker can only drop
+    # the forging comment out of the fresh-signal scan, never admit content
+    # into the prompt (admission stays gated by
+    # ClarifyingQuestions::CommentAdmission, #3842).
+    def paid_marker_comment_body?(comment)
+      body = comment.body.to_s
+      PAID_MARKER_COMMENT_BODIES.any? { |marker| body.include?(marker) }
+    end
+
+    # @spec ISSUE-ANALYSIS-016
+    # The prompt's calibration guidance asks the model to default to
+    # sufficient_context: true once the round cap is reached, but that's a
+    # soft instruction. An LLM that returns false anyway at the cap gets its
+    # enhance_issue follow-up rejected at queue time
+    # (QueueAgentRunActivity#enhancement_round_limit_reached?), re-parking
+    # the issue in manual_review — the state-flapping deadlock #3842 fixed
+    # only for the instruction-following case. Enforce the cap
+    # deterministically instead — but only once an enhancement round has
+    # actually run: cap 0 disables automatic enhancement, and its
+    # pre-#3849 behavior (a false verdict parks the issue in manual_review
+    # for a human to gate) must survive `0 >= 0` on the very first
+    # analysis. The override is skipped when a human has provided fresh
+    # signal since the last analyzer pass that this run hasn't reacted to
+    # yet. In that case the analyzer's real verdict stands — and because a
+    # plain trusted comment matches none of the counter-reset paths (answer
+    # flow, needs-input label removal, body edit), the counter can still
+    # sit at cap here, so reopen_enhancement_budget! restores the invariant
+    # "suppression ⇒ counter below cap" and lets the re-evaluation round
+    # queue instead of flapping back into manual_review (#3849).
+    def enforce_cap_override(issue, cycle_state, parsed)
+      return parsed unless cycle_state[:enhance_issue_rounds].positive? &&
+        cycle_state[:enhance_issue_rounds] >= cycle_state[:max_enhance_issue_reevaluation_rounds]
+      return parsed if parsed[:sufficient_context]
+
+      if cycle_state[:fresh_human_signal_since_last_analysis]
+        reopen_enhancement_budget!(issue, cycle_state)
+        return parsed
+      end
+
+      logger.info(
+        message: "agent_execution.analyze_issue_cap_override",
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds: cycle_state[:enhance_issue_rounds],
+        max_enhance_issue_reevaluation_rounds: cycle_state[:max_enhance_issue_reevaluation_rounds],
+        raw_sufficient_context: parsed[:sufficient_context],
+        raw_missing_context_areas: parsed[:missing_context_areas]
+      )
+
+      parsed.merge(sufficient_context: true, missing_context_areas: [])
+    end
+
+    # @spec ISSUE-ANALYSIS-016
+    def reopen_enhancement_budget!(issue, cycle_state)
+      return unless issue.persisted? && cycle_state[:enhance_issue_rounds].positive?
+
+      issue.with_lock do
+        issue.update!(enhance_issue_rounds: 0) if issue.enhance_issue_rounds.positive?
+      end
+      logger.info(
+        message: "agent_execution.analyze_issue_enhancement_budget_reopened",
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        enhance_issue_rounds_before: cycle_state[:enhance_issue_rounds]
+      )
     end
 
     # Guarantees the truncation is named in missing_context_areas regardless
