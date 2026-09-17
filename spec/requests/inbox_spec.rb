@@ -172,6 +172,7 @@ RSpec.describe "Inbox" do
   end
 
   it "wires the shared list-detail shell's list and detail panes to the inbox master-detail targets" do
+    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -231,6 +232,7 @@ RSpec.describe "Inbox" do
   end
 
   it "renders a mobile detail state when the member route is selected" do
+    # @spec LIST-DETAIL-001
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_entry_path(

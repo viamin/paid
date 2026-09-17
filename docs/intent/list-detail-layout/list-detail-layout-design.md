@@ -35,8 +35,9 @@ or four spots the rule shows up in two views.
 
 ## Approach
 
-Define one maintained UI pattern — a `MasterDetail::Pane` shell — that
-encodes the shared rules and have both Inbox and Chat render through it.
+Define one maintained UI pattern — the `MasterDetailLayoutHelper` +
+`app/views/shared/_list_detail_shell.html.erb` shell — that encodes the
+shared rules and have both Inbox and Chat render through it.
 Feature-specific content, controls, and interaction state stay in each
 feature's own partials and controllers; only the layout rules move to the
 shared pattern.

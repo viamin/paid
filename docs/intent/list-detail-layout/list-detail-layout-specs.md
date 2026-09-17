@@ -17,7 +17,7 @@
   `app/views/chat_sessions/index.html.erb`,
   `app/views/chat_sessions/show.html.erb`.
   *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
-  `spec/system/dashboard_inbox_spec.rb`, `spec/system/chat_layout_spec.rb`.
+  `spec/system/chat_shared_layout_spec.rb`, `spec/requests/inbox_spec.rb`.
 
 - [x] **LIST-DETAIL-002** — The two-pane shell SHALL render the list pane
   and the detail pane inside cards that share the same chrome
@@ -30,7 +30,7 @@
   `app/views/shared/_list_detail_shell.html.erb`,
   `app/views/shared/_list_detail_empty_state.html.erb`.
   *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
-  `spec/system/dashboard_inbox_spec.rb`.
+  `spec/system/chat_shared_layout_spec.rb`.
 
 - [x] **LIST-DETAIL-003** — When a list row is the selected entry on Inbox
   or Chat, the row SHALL carry the shared active-row class set
@@ -48,9 +48,7 @@
   `app/views/chat_sessions/_session_card.html.erb`,
   `app/javascript/controllers/inbox_master_detail_controller.js`,
   `app/javascript/controllers/chat_session_list_controller.js`.
-  *Test:* `spec/requests/inbox_spec.rb`,
-  `spec/requests/chat_sessions_spec.rb`,
-  `spec/system/dashboard_inbox_spec.rb`,
+  *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
   `spec/system/chat_shared_layout_spec.rb`,
   `spec/lib/chat_session_list_controller_node_harness_spec.rb`.
 
@@ -82,7 +80,7 @@
   `app/views/inbox/index.html.erb`,
   `app/views/chat_sessions/index.html.erb`.
   *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
-  `spec/system/dashboard_inbox_spec.rb`.
+  `spec/requests/inbox_spec.rb`, `spec/system/chat_shared_layout_spec.rb`.
 
 - [x] **LIST-DETAIL-006** — Inbox and Chat SHALL keep their distinct
   content, controls, and interaction state: Inbox's
@@ -96,7 +94,4 @@
   `app/views/chat_sessions/index.html.erb`,
   `app/javascript/controllers/inbox_master_detail_controller.js`,
   `app/javascript/controllers/chat_session_list_controller.js`.
-  *Test:* `spec/requests/inbox_spec.rb`,
-  `spec/requests/chat_sessions_spec.rb`,
-  `spec/system/inbox_chat_popup_spec.rb`,
-  `spec/lib/chat_session_list_controller_node_harness_spec.rb`.
+  *Test:* `spec/system/inbox_chat_popup_spec.rb`.

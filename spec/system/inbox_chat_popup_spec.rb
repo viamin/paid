@@ -65,7 +65,7 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
   end
 
   it "shows both panes on desktop and collapses to a single pane below the 1024px breakpoint" do
-    # @spec OPERATOR-INBOX-003
+    # @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-006
     page.current_window.resize_to(1280, 800)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 

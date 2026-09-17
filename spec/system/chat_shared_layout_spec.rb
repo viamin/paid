@@ -16,7 +16,7 @@ require "warden/test/helpers"
 # with `format: :html` to force the HTML branch.
 #
 # @spec LIST-DETAIL-001 @spec LIST-DETAIL-002 @spec LIST-DETAIL-003
-# @spec LIST-DETAIL-005 @spec LIST-DETAIL-006
+# @spec LIST-DETAIL-005
 RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, type: :system do
   include Warden::Test::Helpers
 
@@ -73,6 +73,14 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
     sidebar_aside = document.at_css("#chat-list aside")
     expect(sidebar_aside).to be_present
     expect(sidebar_aside[:class]).not_to include("lg:rounded-lg", "lg:shadow")
+
+    # The mobile "Previous chats" toggle row renders inside the same pane
+    # card below `lg`; it must not carry its own rounded/shadow chrome
+    # either, or mobile nests a shadowed card inside the pane card.
+    toggle_row = document.at_css("#chat-list [data-controller='chat-session-list'] > div")
+    expect(toggle_row).to be_present
+    expect(toggle_row[:class]).to include("lg:hidden")
+    expect(toggle_row[:class]).not_to include("rounded-lg", "shadow")
   end
 
   it "exposes the shared active-row class set on chat session cards via data-active-classes" do
