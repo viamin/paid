@@ -44,6 +44,17 @@ RSpec.describe FeatureIntents::MarkApproved do
     expect(feature_intent.reload.status).not_to eq("approved_waiting_for_merge")
   end
 
+  it "raises a not-ready error (not InvalidTransitionError) when the feature status is not approvable" do
+    feature_intent.update!(status: "discovering", criteria_clarity_state: "clear")
+
+    expect { described_class.call(feature_intent: feature_intent, actor: owner) }
+      .to raise_error(FeatureIntents::MarkApproved::NotReadyError) { |error|
+        expect(error.blockers.map(&:code)).to include("not_approvable_status")
+      }
+
+    expect(feature_intent.reload.status).to eq("discovering")
+  end
+
   it "allows an account viewer with an explicit project role to approve" do
     viewer_with_project_role = create(:user, :viewer, account: account)
     viewer_with_project_role.add_role(:project_member, project)

@@ -67,10 +67,14 @@ that reason alone (see Rollout guard below).
 
 `FeatureIntents::ApprovalReadiness.call(feature_intent:)` returns a
 `Result` (`ready?`, `blockers:` — an ordered list of `{code:, message:}`).
-Every blocker is a deterministic read: open `FeatureIntentDecision` rows,
-stale *required* `FeatureIntentDesignPr` rows, and the feature's cached
-`criteria_clarity_state`. `Inbox::FeatureDecisionSummary`, the detail view,
-and `FeatureIntents::MarkApproved` all call this same service, so the Inbox
+Every blocker is a deterministic read: the feature's status against
+`FeatureIntent::APPROVABLE_STATUSES` (mirrors
+`FeatureIntent#record_approval!`'s lifecycle guard so `discovering`
+features that show in the Inbox are never presented as approvable), open
+`FeatureIntentDecision` rows, stale *required* `FeatureIntentDesignPr` rows,
+and the feature's cached `criteria_clarity_state`.
+`Inbox::FeatureDecisionSummary`, the detail view, and
+`FeatureIntents::MarkApproved` all call this same service, so the Inbox
 list, the Inbox detail pane, and the action that actually records an
 approval can never disagree about whether "Mark approved" should be
 available — the RDR-066 acceptance criterion "Mark approved is unavailable

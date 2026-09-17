@@ -67,5 +67,27 @@ RSpec.describe "Feature intents" do
       expect(feature_intent.reload.status).to eq("approved_waiting_for_merge")
       expect(feature_intent.approved_by).to eq(viewer_with_project_role)
     end
+
+    it "redirects with a not-ready alert when the feature status is not approvable" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project, status: "discovering",
+        criteria_clarity_state: "clear")
+
+      post approve_feature_intent_path(feature_intent)
+
+      expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
+      expect(flash[:alert]).to include("Not ready to approve", "discovering")
+      expect(feature_intent.reload.status).to eq("discovering")
+    end
+
+    it "gracefully redirects when the lifecycle transition rejects the approval mid-action" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+      feature_intent.update!(status: "released")
+      allow(FeatureIntents::MarkApproved).to receive(:call).and_raise(FeatureIntent::InvalidTransitionError, "cannot approve a released feature intent")
+
+      post approve_feature_intent_path(feature_intent)
+
+      expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
+      expect(flash[:alert]).to include("Not ready to approve", "released")
+    end
   end
 end

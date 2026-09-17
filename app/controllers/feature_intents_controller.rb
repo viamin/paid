@@ -14,6 +14,14 @@ class FeatureIntentsController < ApplicationController
   rescue FeatureIntents::MarkApproved::NotReadyError => e
     redirect_to inbox_entry_path(feature_decision_entry_id),
       alert: "Not ready to approve: #{e.blockers.map(&:message).join(" ")}"
+  rescue FeatureIntent::InvalidTransitionError => e
+    # Defense in depth: `ApprovalReadiness` reports the same status rule, so
+    # this should not normally fire. It guards a race between render and
+    # action (status changed underneath us) and any caller that bypasses the
+    # Inbox UI; without it, the user gets a 500 instead of the same graceful
+    # redirect every other rejection path uses.
+    redirect_to inbox_entry_path(feature_decision_entry_id),
+      alert: "Not ready to approve: feature is in '#{@feature_intent.status}' state and cannot be approved yet."
   end
 
   private

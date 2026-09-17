@@ -88,4 +88,24 @@ RSpec.describe FeatureIntents::ApprovalReadiness do
       "unresolved_questions", "unconfirmed_inferred_decisions", "vague_acceptance_criteria"
     )
   end
+
+  it "blocks when the feature status is not approvable (e.g. discovering)" do
+    feature_intent.update!(status: "discovering", criteria_clarity_state: "clear")
+
+    result = described_class.call(feature_intent: feature_intent)
+
+    expect(result).not_to be_ready
+    blocker = result.blockers.find { |b| b.code == "not_approvable_status" }
+    expect(blocker.message).to include("discovering")
+  end
+
+  it "is ready for every APPROVABLE_STATUSES status when other checks pass" do
+    FeatureIntent::APPROVABLE_STATUSES.each do |status|
+      feature_intent.update!(status: status)
+
+      result = described_class.call(feature_intent: feature_intent)
+
+      expect(result).to be_ready, "expected #{status} to be ready but got blockers: #{result.blockers.map(&:code)}"
+    end
+  end
 end

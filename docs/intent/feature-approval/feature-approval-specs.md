@@ -59,8 +59,12 @@
 
 - [x] **FEATURE-APPROVAL-006** — `FeatureIntents::ApprovalReadiness` SHALL
   report the feature intent not ready, with one blocker per failing check,
-  when: any linked question is unresolved; any inferred decision is
-  unconfirmed; any *required* design PR is stale
+  when: the feature's `status` is not in `FeatureIntent::APPROVABLE_STATUSES`
+  (mirrors `FeatureIntent#record_approval!`'s lifecycle guard so the Inbox
+  entry, the detail view, and `MarkApproved` never disagree on which
+  statuses accept an approval — `discovering` features show in the Inbox
+  but are not approvable); any linked question is unresolved; any inferred
+  decision is unconfirmed; any *required* design PR is stale
   (`FEATURE-APPROVAL-003`); or the cached acceptance-criteria clarity
   verdict (`criteria_clarity_state`) is not `clear`. The clarity verdict
   itself is an AI judgment (ZFC — `FeatureIntents::CriteriaClarityReview`,
@@ -93,7 +97,11 @@
   direct human merge counts only after readiness and authorized-actor
   checks" (RDR-066) and the Inbox action never disagree on who can approve.
   `FeatureIntentsController#approve` additionally calls Pundit's `authorize`
-  before invoking the service.
+  before invoking the service, and SHALL rescue
+  `FeatureIntent::InvalidTransitionError` (defense in depth — readiness
+  reports the same status rule, but a status change between render and
+  action, or a caller bypassing the Inbox UI, can still surface it) into
+  the same graceful "not ready" redirect the other rejection paths use.
   *Tests:* `spec/services/feature_intents/mark_approved_spec.rb`,
   `spec/policies/feature_intent_policy_spec.rb`,
   `spec/requests/feature_intents_spec.rb`.

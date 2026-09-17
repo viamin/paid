@@ -25,6 +25,7 @@ module FeatureIntents
 
     def call
       blockers = [
+        not_approvable_status_blocker,
         unresolved_question_blocker,
         unconfirmed_inferred_decision_blocker,
         stale_design_pr_blocker,
@@ -37,6 +38,22 @@ module FeatureIntents
     private
 
     attr_reader :feature_intent
+
+    # Mirrors `FeatureIntent#record_approval!`'s status guard so the Inbox
+    # entry, the detail view, and `MarkApproved` agree about which statuses
+    # accept an approval. Without this, a `discovering` feature intent that
+    # happens to pass every other check (e.g. clear criteria, no open
+    # decisions) would surface an enabled "Mark approved" button that 500s
+    # on click, because `discovering` is in `FEATURE_DECISION_STATUSES` (so
+    # it appears in the inbox) but not in `APPROVABLE_STATUSES`.
+    def not_approvable_status_blocker
+      return if feature_intent.status.in?(FeatureIntent::APPROVABLE_STATUSES)
+
+      Blocker.new(
+        code: "not_approvable_status",
+        message: "Feature is in '#{feature_intent.status}' state and cannot be approved yet."
+      )
+    end
 
     # These filters walk the loaded association arrays instead of re-scoping
     # with `.where` (which always issues a fresh query) so the Inbox queue's
