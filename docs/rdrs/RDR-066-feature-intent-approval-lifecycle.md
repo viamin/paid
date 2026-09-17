@@ -41,8 +41,11 @@ This closeout ([#3873](https://github.com/viamin/paid/issues/3873)) found no
 RDR-066-specific implementation in the working tree. All identified gaps are
 already tracked by the still-open dependency issues #3862–#3865 and #3872, so
 no new gap issues were filed. Per the closeout checklist, this PR does not
-close umbrella issue #3860 — it uses `Tracks #3860` — because the acceptance
-criteria are not yet met. See the audit report for full evidence.
+close umbrella issue #3860 — the acceptance criteria are not yet met — and
+the PR body uses `Closes #3873` for this closeout and `Tracks #3860` to leave
+the umbrella visibly open, so issue #3860 remains open for the follow-up
+work carried by #3862–#3865 and #3872. See the audit report for full
+evidence.
 
 ## Problem Statement
 

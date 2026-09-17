@@ -165,5 +165,7 @@ Feature Intent record, its lifecycle, Inbox approval actions, hold
 enforcement at any run entry point, or the named `human_led_feature_factory`
 mode — has shipped code or test evidence. All identified gaps are already
 tracked by existing, still-open child issues (#3862–#3865, #3872). Per
-acceptance criterion 4, this closeout does not close epic #3860; the closeout
-PR uses `Tracks #3860` rather than `Closes #3860`.
+acceptance criterion 4, this closeout does not close epic #3860: the PR
+description uses `Closes #3873` for this closeout and `Tracks #3860` per the
+closeout checklist, so #3860 stays open for the follow-up work tracked by
+issues #3862–#3865 and #3872.
