@@ -13,6 +13,8 @@ module Activities
     activity_name "AnalyzeIssue"
 
     LLM_TIMEOUT = 90
+    # @spec ISSUE-ANALYSIS-016
+    BODY_TRUNCATION_FLAG = "issue body appears truncated — the original intent may be lost"
     # Used only to pin a model and opt into the HTTP text transport when the
     # resolved provider happens to be claude. The provider itself is no longer
     # forced — selection comes from the user's issue-analysis / chat runners.
@@ -96,6 +98,7 @@ module Activities
       issue.clear_issue_analysis_backoff!
       parsed = parse_response!(agent_run, response)
       parsed = enforce_cap_override(issue, cycle_state, parsed)
+      parsed = apply_body_integrity_flag(issue, parsed)
       persist_verdict!(issue, parsed)
 
       track_tokens(agent_run, response)
@@ -526,6 +529,7 @@ module Activities
 
         #{issue.body.to_s.truncate(20_000)}
 
+        #{body_integrity_section(issue)}
         #{cycle_state_section(cycle_state)}
 
         ## Conversation
@@ -536,6 +540,22 @@ module Activities
 
         #{context[:bundle_content].presence || "## Codebase Context\nNo context bundle entries were available."}
       PROMPT
+    end
+
+    # A cheap structural heuristic, not an LLM judgment (#3852) — computed in
+    # code so the assessor is told the body is broken as ground truth rather
+    # than left to notice a garbled fragment on its own and guess.
+    # @spec ISSUE-ANALYSIS-016
+    def body_integrity_section(issue)
+      return "" unless Issues::DetectTruncatedBody.call(issue.body)
+
+      <<~SECTION
+        ## Body integrity warning
+        The issue body above appears truncated or corrupted — it ends abruptly without a
+        complete sentence, code fence, or list item. Do not guess at the missing intent or
+        treat the fragment as the whole spec. Unless the conversation or codebase context
+        below resolves the missing content, explain this in `reasoning`.
+      SECTION
     end
 
     # @spec ISSUE-ANALYSIS-014
@@ -707,6 +727,20 @@ module Activities
         issue_number: issue.github_number,
         enhance_issue_rounds_before: cycle_state[:enhance_issue_rounds]
       )
+    end
+
+    # Guarantees the truncation is named in missing_context_areas regardless
+    # of whether the LLM complied with the prompt's body-integrity guidance —
+    # detection is a structural fact code already has, so surfacing it must
+    # not depend on the LLM repeating it back correctly (#3852).
+    # @spec ISSUE-ANALYSIS-016
+    def apply_body_integrity_flag(issue, parsed)
+      return parsed unless Issues::DetectTruncatedBody.call(issue.body)
+
+      areas = parsed[:missing_context_areas].to_a
+      return parsed if areas.any? { |area| area.to_s.match?(/truncat|corrupt/i) }
+
+      parsed.merge(missing_context_areas: areas + [ BODY_TRUNCATION_FLAG ])
     end
 
     # @spec ISSUE-ANALYSIS-014

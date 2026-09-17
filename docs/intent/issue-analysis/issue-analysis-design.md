@@ -326,3 +326,46 @@ The LLM returns JSON: `sufficient_context` (bool), `reasoning` (string),
 `missing_context_areas` (array). Malformed or incomplete JSON is a non-retryable
 `AnalyzeIssueInvalidJson` error; the harness is trusted to deliver clean
 `response.output`, not Paid.
+
+## Body integrity detection
+
+Investigating the stuck-loop symptom on `viamin/yupyup#3` (#3842, Paid issue
+4529) found the root cause was a truncated GitHub issue body cut off
+mid-sentence — likely a failed rewrite that replaced the original body with a
+partial draft. Neither the analyzer nor the enhancer had any way to detect
+this: the assessor judged the fragment as if it were the whole spec, and
+`sufficient_context` was depressed for reasons the operator could not see
+without opening the issue on GitHub.
+
+`Issues::DetectTruncatedBody` is a cheap structural heuristic — not an LLM
+judgment — for whether a body looks cut off: it ends without terminal
+punctuation, ends inside an unterminated code fence, or ends with a dangling
+heading and no content beneath it. It deliberately tolerates the normal
+"unpunctuated" endings a well-formed body can have (a list item, a terminated
+code block, or a bare link as the last line) to keep the false-positive rate
+low, and skips short bodies (`MIN_LENGTH`) where "no terminal punctuation"
+carries no signal.
+
+Detection is computed in code (ZFC: a structural fact), not delegated to the
+LLM. `AnalyzeIssueActivity#prompt_for` includes a `## Body integrity warning`
+section when detected, telling the assessor as ground truth that the body is
+broken and to name it rather than guess at the missing intent. That guidance
+alone is not sufficient — an LLM can omit it — so `apply_body_integrity_flag`
+deterministically appends the canonical
+`"issue body appears truncated — the original intent may be lost"` string to
+`missing_context_areas` after parsing, whenever detection fires and the
+LLM's own response doesn't already mention truncation/corruption. This
+guarantees the flag survives into `last_analyzer_missing_context_areas`
+regardless of LLM compliance (`ISSUE-ANALYSIS-016`).
+
+The same detector backs the enhancer: `RunAgentActivity` includes the same
+warning in the containerized `enhance_issue` agent's prompt, and
+`EnhanceIssueActivity` deterministically prepends a body-integrity notice to
+the posted enhancement comment when detected, so a human sees the root cause
+without relying on the agent to mention it (`ISSUE-ENHANCEMENT-017`, see
+`docs/intent/issue-enhancement/`).
+
+This is detection and surfacing only — auto-repairing a truncated body (e.g.
+reconstructing it from git history when it was agent-rewritten) is out of
+scope; the flag exists to route the issue to a human who can fix the body
+directly.

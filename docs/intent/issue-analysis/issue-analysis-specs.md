@@ -211,6 +211,29 @@
   `#prompt_for`, `#cycle_state_section`, `#build_cycle_state`,
   `#prior_enhancement_summary`, `#persist_verdict!`.
 
+- [x] **ISSUE-ANALYSIS-016** — When an issue's body looks truncated or
+  corrupted (a cheap structural heuristic: it ends without terminal
+  punctuation, ends inside an unterminated code fence, or ends with a
+  dangling heading and no content beneath it — not an LLM judgment), the
+  system SHALL tell the assessor this as ground truth in the prompt (a
+  `## Body integrity warning` section) and SHALL deterministically ensure
+  `missing_context_areas` names the truncation — appending the canonical
+  `"issue body appears truncated — the original intent may be lost"` entry
+  after parsing unless the LLM's own response already names truncation or
+  corruption — so the verdict never silently depresses `sufficient_context`
+  without explaining why (#3852). The heuristic SHALL NOT fire on normal
+  bodies that happen to end without punctuation (e.g. a code block, a list
+  item, or a bare link as the last line) and SHALL skip bodies too short for
+  the signal to be meaningful. This detector is shared with `enhance_issue`
+  (`ISSUE-ENHANCEMENT-017`).
+  *Tests:* `spec/services/issues/detect_truncated_body_spec.rb`,
+  `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("when the issue body appears truncated or corrupted", "when the issue
+  body is well-formed").
+  *Code:* `app/services/issues/detect_truncated_body.rb`,
+  `app/temporal/activities/analyze_issue_activity.rb#body_integrity_section`,
+  `#apply_body_integrity_flag`.
+
 - [x] **ISSUE-ANALYSIS-015** — The readiness assessor SHALL see enhancement
   output at section fidelity rather than as head-truncated blobs (#3850).
   The cycle-state section SHALL collapse *all* admissible marker comments

@@ -1292,6 +1292,37 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("do NOT modify files in /workspace")
       expect(prompt).not_to include("/issues/#{issue.github_number}/comments")
     end
+
+    # @spec ISSUE-ENHANCEMENT-017
+    context "when the issue body appears truncated or corrupted" do
+      let(:issue) do
+        create(:issue, project: project,
+          body: "Dot notation is central to ergonomics, but it should not force Rubys " \
+            "naming convention on every consumer without a documented way to opt out")
+      end
+
+      it "tells the agent the body appears truncated" do
+        allow(Knowledge::ContextBundle::Build).to receive(:call)
+          .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+          .and_return(content: "")
+
+        prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, "Enhance this issue")
+
+        expect(prompt).to include("the issue body appears truncated or corrupted")
+      end
+    end
+
+    context "when the issue body is well-formed" do
+      it "does not add a body integrity note" do
+        allow(Knowledge::ContextBundle::Build).to receive(:call)
+          .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+          .and_return(content: "")
+
+        prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, "Enhance this issue")
+
+        expect(prompt).not_to include("appears truncated or corrupted")
+      end
+    end
   end
 
   describe "goal prompt version persistence" do
