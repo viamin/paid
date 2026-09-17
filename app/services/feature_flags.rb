@@ -56,6 +56,13 @@ class FeatureFlags
       intent: "Gate the RDR-067 intent-conformance auto-merge signal and Inbox decision lane behind a per-project rollout, standing in for the RDR-066 named feature operating mode until that mode exists.",
       rollout_plan: "Default-off; opt in per tenant or project via tenant_settings.features, then expand as verdict accuracy is measured against representative accepted and intentionally drifted PRs.",
       cleanup_criteria: "Remove once RDR-066's named feature operating mode ships and conformance enforcement is wired to a project's operating mode instead of this standalone flag."
+    ),
+    approved_intent_amendments: Definition.new(
+      name: :approved_intent_amendments,
+      owner: "approved-intent-conformance",
+      intent: "Gate the RDR-067 design-amendment flow (#3869): product-level drift routes through amended RDR/LID PRs, human approval, and merge, with revision-impact pause of affected feature work.",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
+      cleanup_criteria: "Remove once the RDR-066 operating mode setting owns the gate and every amendment-capable project is enrolled through that mode."
     )
   }.freeze
 
