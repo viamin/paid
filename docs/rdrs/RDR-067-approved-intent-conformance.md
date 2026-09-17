@@ -42,8 +42,8 @@ the reviewer to know which repository files constitute a feature's approved
 design) is not yet populated by anything — that wiring belongs to the
 RDR-066 approval-lifecycle issues (#3862/#3863); until it lands, `ReviewRun`
 correctly records `not_evaluated` for every feature intent. Evaluation/rollout
-telemetry (#3870) is also outstanding. The 2026-09-17 closeout audit for
-#3871 predates this work; see
+telemetry (#3870) is also outstanding. The 2026-09-17 closeout audit
+(see #3871) predates this work; see
 [audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md) for
 the state at that point in time.
 
