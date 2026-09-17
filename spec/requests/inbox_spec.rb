@@ -225,7 +225,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Back to queue", "Submit Answers", "lg:grid-cols-[22rem,1fr]")
+    expect(response.body).to include("Back to queue", "Submit Answers", "lg:grid-cols-[22rem_minmax(0,1fr)]")
     master_detail = Nokogiri::HTML(response.body).at_css("[data-controller~='inbox-master-detail']")
 
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")

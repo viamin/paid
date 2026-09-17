@@ -50,7 +50,7 @@
       sub-300px column. Below `lg` the master-detail Stimulus controller takes
       over and stacks the panes. %>
   <% else %>
-    <div class="grid gap-6 lg:grid-cols-[22rem,1fr]">
+    <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
       <aside class="<%= @detail_view ? 'hidden lg:block' : 'block' %>"
              data-inbox-master-detail-target="list">
         <%= render "dashboard/inbox_list",
