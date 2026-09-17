@@ -262,6 +262,63 @@ RSpec.describe Inbox::Queue do
       expect(entry.kind).to eq(described_class::ESCALATED_PR_KIND)
     end
 
+    # @spec FEATURE-APPROVAL-013
+    it "returns a feature_decision entry for an open feature intent" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      entry = entries.find { |candidate| candidate.record == feature_intent }
+      expect(entry).to have_attributes(
+        id: "#{described_class::FEATURE_DECISION_KIND}:#{feature_intent.id}",
+        kind: described_class::FEATURE_DECISION_KIND,
+        project: project,
+        issue: nil,
+        title: "Bulk CSV export"
+      )
+      expect(entry.summary).to eq("Ready for approval.")
+    end
+
+    # @spec FEATURE-APPROVAL-013
+    it "excludes released, revising, and cancelled feature intents" do
+      create(:feature_intent, project: project, status: "released")
+      create(:feature_intent, project: project, status: "revising")
+      create(:feature_intent, project: project, status: "cancelled")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec FEATURE-APPROVAL-013
+    it "surfaces feature_decision entries even when the project's auto-pick is off" do
+      planning_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      feature_intent = create(:feature_intent, :ready_for_approval, project: planning_project)
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
+    end
+
+    # @spec FEATURE-APPROVAL-013
+    it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
+      create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create_feature_decision_feature
+      single_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+      end
+
+      create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create_feature_decision_feature
+      create_feature_decision_feature
+      multi_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+      end
+
+      expect(multi_row_queries).to eq(single_row_queries)
+    end
+
     it "excludes plan reviews that are no longer open" do
       review_issue = create(:issue, project: project)
       create_plan_review(project: project, issue: review_issue, workflow_id: "planning-workflow-1", plan_data: {})
@@ -604,6 +661,17 @@ RSpec.describe Inbox::Queue do
       manual_review_reason: reason,
       **attrs
     )
+  end
+
+  # A feature intent exercising every deterministic readiness blocker (open
+  # question, unconfirmed inferred decision, stale required design PR) so the
+  # batch-preload query-count test walks the full ApprovalReadiness path.
+  def create_feature_decision_feature
+    feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+    create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+    create(:feature_intent_decision, :inferred_decision, feature_intent: feature_intent)
+    create(:feature_intent_design_pr, :stale, feature_intent: feature_intent)
+    feature_intent
   end
 
   def create_agent_run_blocking_notification(github_number:, source_pull_request_number:)

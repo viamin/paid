@@ -1,0 +1,111 @@
+<%# @spec FEATURE-APPROVAL-013 %>
+<% feature_intent = entry.record %>
+<% readiness = FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent) %>
+<div class="space-y-6">
+  <div class="rounded-xl border <%= readiness.ready? ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50" %> p-4">
+    <h3 class="text-sm font-semibold <%= readiness.ready? ? "text-emerald-900" : "text-amber-900" %>">
+      <%= readiness.ready? ? "Ready for approval" : "Held" %>
+    </h3>
+    <p class="mt-1 text-sm <%= readiness.ready? ? "text-emerald-800" : "text-amber-800" %>">
+      <%= entry.summary %>
+    </p>
+    <% if readiness.blockers.any? %>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">
+        <% readiness.blockers.each do |blocker| %>
+          <li data-testid="feature-decision-blocker-<%= blocker.code %>"><%= blocker.message %></li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+
+  <% if feature_intent.brief.present? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Feature brief</h3>
+      <p class="whitespace-pre-line rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600"><%= feature_intent.brief %></p>
+    </div>
+  <% end %>
+
+  <% open_questions = feature_intent.feature_intent_decisions.questions.open_decisions %>
+  <% if open_questions.any? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Open questions</h3>
+      <ul class="space-y-2">
+        <% open_questions.each do |decision| %>
+          <li class="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
+            <p class="text-gray-900"><%= decision.prompt %></p>
+            <p class="mt-1 text-xs text-gray-500">Affects: <%= decision.design_claim %></p>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% unconfirmed = feature_intent.feature_intent_decisions.inferred_decisions.open_decisions %>
+  <% if unconfirmed.any? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Inferred decisions awaiting confirmation</h3>
+      <ul class="space-y-2">
+        <% unconfirmed.each do |decision| %>
+          <li class="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
+            <p class="text-gray-900">[inferred] <%= decision.prompt %></p>
+            <p class="mt-1 text-xs text-gray-500">Affects: <%= decision.design_claim %></p>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% design_prs = feature_intent.feature_intent_design_prs %>
+  <% if design_prs.any? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Design pull requests</h3>
+      <ul class="space-y-2">
+        <% design_prs.each do |design_pr| %>
+          <li class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
+            <div>
+              <%= link_to "##{design_pr.pull_request_number}", design_pr.github_url, target: "_blank", rel: "noopener", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <span class="ml-2 text-xs text-gray-500"><%= design_pr.design_pr_kind.tr("_", " ").upcase %></span>
+              <% unless design_pr.required? %>
+                <span class="ml-2 text-xs text-gray-400">optional</span>
+              <% end %>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <% if design_pr.merged? %>
+                <span class="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">Merged</span>
+              <% elsif design_pr.stale? %>
+                <span class="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">Stale head</span>
+              <% else %>
+                <span class="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600">Open</span>
+              <% end %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% issues = feature_intent.issues %>
+  <% if issues.any? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Proposed issue tree</h3>
+      <ul class="space-y-1">
+        <% issues.each do |issue| %>
+          <li class="text-sm text-gray-600">
+            <%= link_to "##{issue.github_number} #{issue.title}", issue.github_url, target: "_blank", rel: "noopener", class: "text-indigo-600 hover:text-indigo-500" %>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% if policy(feature_intent).approve? %>
+    <div class="flex flex-wrap items-center gap-3">
+      <%= button_to "Mark approved",
+            approve_feature_intent_path(feature_intent),
+            method: :post,
+            disabled: !readiness.ready?,
+            class: "inline-flex items-center rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 disabled:cursor-not-allowed disabled:bg-gray-300",
+            form: { data: { turbo_confirm: "Approve #{feature_intent.title} at its current design PR heads?", turbo_frame: "_top" } } %>
+    </div>
+  <% end %>
+</div>

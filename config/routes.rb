@@ -210,6 +210,11 @@ Rails.application.routes.draw do
     post :revise, on: :member
   end
 
+  # Feature intent design-decision approval (RDR-066)
+  resources :feature_intents, only: [] do
+    post :approve, on: :member
+  end
+
   # Style guide management
   resources :style_guides do
     post :compress, on: :member
