@@ -87,6 +87,26 @@ RSpec.describe Configuration::Profiles::Planner do
       end
     end
 
+    context "when a project has a stricter tdd_mode than a legacy profile targets" do
+      let(:profile) { Configuration::Profiles::QualityStrict }
+
+      before { project.update!(tdd_mode: "strict") }
+
+      it "plans resetting tdd_mode to the profile's off target by default" do
+        plan = described_class.call(profile:, project:, actor:)
+
+        change = plan.changes.find { |candidate| candidate.key == "tdd_mode" }
+        expect(change).to have_attributes(from: "strict", to: "off")
+      end
+
+      it "preserves the existing tdd_mode when the caller overrides it" do
+        plan = described_class.call(profile:, project:, overrides: { "tdd_mode" => "strict" }, actor:)
+
+        expect(plan.changes.map(&:key)).not_to include("tdd_mode")
+        expect(plan.applied_overrides).to include("tdd_mode" => "strict")
+      end
+    end
+
     context "when a GitHub login override is supplied" do
       let(:profile) { Configuration::Profiles::TeamReviewed }
 
