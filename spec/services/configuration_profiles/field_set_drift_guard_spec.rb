@@ -53,7 +53,9 @@ RSpec.describe ConfigurationProfiles::FieldSet do
       allowed = {
         "auto_merge_mode" => %w[off dependabot_only all],
         "merge_method" => Project::MERGE_METHODS,
-        "auto_release_granularity" => Project::AUTO_RELEASE_GRANULARITIES
+        "auto_release_granularity" => Project::AUTO_RELEASE_GRANULARITIES,
+        "operating_mode" => Project::OPERATING_MODES,
+        "tdd_mode" => Project::TDD_MODES
       }
       described_class.all.each do |field|
         next unless field.kind == :enum_attribute

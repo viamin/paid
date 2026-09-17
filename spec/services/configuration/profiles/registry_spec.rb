@@ -12,12 +12,13 @@ RSpec.describe Configuration::Profiles::Registry do
       manual_on_label
       cost_capped_automated
       quality_strict
+      human_led_feature_factory
     ])
   end
 
   it "returns profile modules from #all" do
     expect(described_class.all).to all(be_a(Module))
-    expect(described_class.all.length).to eq(6)
+    expect(described_class.all.length).to eq(7)
   end
 
   it "finds a profile by name" do

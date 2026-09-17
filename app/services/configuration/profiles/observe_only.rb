@@ -15,6 +15,8 @@ module Configuration
           "auto_pick_enabled" => false,
           "auto_scan_prs" => false,
           "automation_on_label_enabled" => false,
+          "operating_mode" => "standard",
+          "tdd_mode" => "off",
           "auto_merge_mode" => "off",
           "auto_fix_merge_conflicts" => false,
           "merge_method" => "squash",

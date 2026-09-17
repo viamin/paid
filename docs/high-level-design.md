@@ -70,6 +70,14 @@ adds an automated review pass, but the authority over whether a change lands
 always rests with a human — exercised per-PR by default, or through the
 auto-merge configuration when the owner has enabled it.
 
+Human attention can also move earlier in the lifecycle. The
+`human_led_feature_factory` project operating mode ([RDR-066](rdrs/RDR-066-feature-intent-approval-lifecycle.md))
+makes human approval of a feature's design the boundary before
+implementation of that feature's work runs. Existing projects opt in; new
+account onboarding proposes the mode as the default project posture with a
+reviewable settings plan. The mode composes with — never replaces — the
+project's independent auto-merge and TDD test-review choices.
+
 ## Approach: All LLM Calls Through One Interface
 
 Every LLM interaction in the application goes through the `agent_harness` gem —

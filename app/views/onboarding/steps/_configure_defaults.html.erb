@@ -1,6 +1,63 @@
 <h2 class="text-lg font-semibold text-gray-900">Configure Defaults</h2>
 <p class="mt-1 text-sm text-gray-500">We'll set up default prompts and a style guide for your workspace. You can customize these later.</p>
 
+<% if @posture_plan %>
+  <div class="mt-6">
+    <h3 class="text-sm font-medium text-gray-900">Project operating posture</h3>
+    <p class="mt-1 text-sm text-gray-500">
+      We suggest the <strong>Human-Led Feature Factory</strong> posture for
+      <%= @posture_project.name %>: humans approve each feature's design before its
+      implementation runs. Review the plan below and choose whether to adopt it — nothing is
+      applied until you finish this step.
+    </p>
+
+    <fieldset class="mt-4 space-y-3">
+      <legend class="sr-only">Operating posture</legend>
+      <label class="flex items-start rounded-md border border-indigo-200 bg-indigo-50 p-3">
+        <%= radio_button_tag :operating_posture, "human_led_feature_factory", true, class: "mt-1" %>
+        <span class="ml-3">
+          <span class="block text-sm font-medium text-gray-900">Human-Led Feature Factory <span class="text-indigo-600">(suggested)</span></span>
+          <span class="block text-xs text-gray-500"><%= Onboarding::DefaultPosture.profile.description %></span>
+        </span>
+      </label>
+      <label class="flex items-start rounded-md border border-gray-200 p-3">
+        <%= radio_button_tag :operating_posture, "standard", false, class: "mt-1" %>
+        <span class="ml-3">
+          <span class="block text-sm font-medium text-gray-900">Standard defaults</span>
+          <span class="block text-xs text-gray-500">Keep the project on its current settings; you can apply any posture later.</span>
+        </span>
+      </label>
+    </fieldset>
+
+    <div class="mt-4 rounded-md bg-gray-50 p-4">
+      <h4 class="text-sm font-medium text-gray-900">Settings plan for the suggested posture:</h4>
+      <table class="mt-3 w-full text-sm text-gray-600">
+        <tbody>
+          <% @posture_plan.changes.each do |change| %>
+            <tr>
+              <td class="py-1 pr-4 font-medium text-gray-700"><%= Configuration::Profiles::Settings.fetch(change.key).label %></td>
+              <td class="py-1"><%= change.from.inspect %> &rarr; <%= change.to.inspect %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div>
+        <%= label_tag :auto_merge_mode, "Auto-merge (your choice — stays off)", class: "block text-sm font-medium text-gray-900" %>
+        <%= select_tag :auto_merge_mode, options_for_select(%w[off dependabot_only all], "off"), class: "mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+        <p class="mt-1 text-xs text-gray-500">This posture never enables auto-merge for you.</p>
+      </div>
+      <div>
+        <%= label_tag :tdd_mode, "Test review (strict keeps humans approving tests)", class: "block text-sm font-medium text-gray-900" %>
+        <%= select_tag :tdd_mode, options_for_select(Project::TDD_MODES, "non_strict"), class: "mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+        <p class="mt-1 text-xs text-gray-500">Non-strict is the suggestion; strict human review still works.</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
 <div class="mt-6 space-y-4">
   <div class="rounded-md bg-gray-50 p-4">
     <h3 class="text-sm font-medium text-gray-900">What will be created:</h3>
