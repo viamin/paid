@@ -1929,6 +1929,20 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "moves a manual_review issue out of the lane when queued through the bulk enhance form" do
+        parked = create(:issue, project: project, github_number: 91, paid_state: "manual_review",
+          manual_review_reason: "Round limit reached.")
+
+        post project_agent_runs_path(project), params: { goal: "enhance_issue", issue_ids: [ parked.id ] }
+
+        expect(response).to redirect_to(project_path(project))
+        parked.reload
+        expect(parked.paid_state).to eq("in_progress")
+        expect(parked.manual_review_started_at).to be_nil
+        expect(parked.manual_review_reason).to be_nil
+      end
+
       it "normalizes an invalid goal to create_pr and uses the create_pr default runner" do
         owner = project.created_by
         codex = owner.runners.create!(
@@ -2444,12 +2458,80 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
+      it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
+        gated_project = create(:project, account: account, github_token: github_token, created_by: user,
+          owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
+        parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
+          manual_review_reason: "Round limit reached.")
+
+        entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+        expect(entries.map(&:issue)).to include(parked)
+        expect(Inbox::Count.call(user: user)).to eq(1)
+
+        post resume_manual_review_project_agent_runs_path(gated_project), params: { issue_id: parked.id }
+
+        parked.reload
+        expect(parked.paid_state).to eq("in_progress")
+        expect(parked.manual_review_started_at).to be_nil
+        expect(parked.manual_review_reason).to be_nil
+        expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)).to be_empty
+        expect(Inbox::Count.call(user: user)).to eq(0)
+      end
+
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "keeps the issue in manual_review when the budget blocks run creation" do
+        create(:cost_budget, :hard_stop, :daily, project: project,
+          limit_cents: 100, current_usage_cents: 200,
+          period_started_at: Time.current.beginning_of_day)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to include("budget has been reached")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(parked_issue.reload.manual_review_reason).to be_present
+      end
+
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "keeps the issue in manual_review when no runnable runner can be resolved" do
+        owner = project.effective_owner
+        allow(UserSetting).to receive(:enabled_agent_runners).with(owner, identifiers: true).and_return([])
+        allow(owner.settings).to receive(:runner_priority).with(identifiers: true).and_return([])
+        allow(Runner).to receive(:for_identifier).and_return(nil)
+        allow(Runner).to receive(:ensure_default_for).with(owner).and_return(nil)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(dashboard_path)
+        parked_issue.reload
+        expect(parked_issue.paid_state).to eq("manual_review")
+        expect(parked_issue.manual_review_started_at).to be_present
+        expect(parked_issue.manual_review_reason).to be_present
+      end
+
       # @spec OPERATOR-INBOX-002D
       it "refuses when no issue is selected" do
         post resume_manual_review_project_agent_runs_path(project), params: {}
 
         expect(response).to redirect_to(dashboard_path)
-        expect(flash[:alert]).to be_present
+        expect(flash[:alert]).to eq("Please select an issue.")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "degrades gracefully when a stale click re-submits after the issue left manual_review" do
+        parked_issue.update!(paid_state: "in_progress")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to eq("This issue is no longer waiting for manual review.")
       end
 
       # @spec OPERATOR-INBOX-002D

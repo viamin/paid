@@ -176,8 +176,11 @@
   been reached, Paid SHALL NOT create another enhancement run; it SHALL leave
   the issue in `manual_review` and post at most one marked
   auto-enhancement-stop comment. Automatic picking SHALL exclude
-  `manual_review`; only an explicit operator-triggered run SHALL resume work.
-  Entering `manual_review` SHALL clear stored clarification questions and remove
+  `manual_review`; only an explicit operator-triggered run SHALL resume work,
+  and queueing such a run SHALL move the issue out of `manual_review` in the
+  same request (the queue-time state flip — see `OPERATOR-INBOX-002D`), with
+  re-entry only through the enhancement stop paths. Entering
+  `manual_review` SHALL clear stored clarification questions and remove
   the enhancement needs-input label so GitHub and Paid do not show contradictory
   lifecycle states. Only a marker comment authored by Paid's GitHub App SHALL
   suppress the stop notice; the marker text is unauthenticated, so trusting

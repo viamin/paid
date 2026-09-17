@@ -327,7 +327,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(result[:missing_context_areas]).to eq([])
     end
 
-    # @spec ISSUE-ANALYSIS-015
+    # @spec ISSUE-ANALYSIS-016
     context "when the issue body appears truncated or corrupted" do
       let(:issue) do
         create(:issue, :in_progress,
@@ -392,7 +392,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       end
     end
 
-    # @spec ISSUE-ANALYSIS-015
+    # @spec ISSUE-ANALYSIS-016
     context "when the issue body is well-formed" do
       it "does not include a body integrity warning in the prompt" do
         captured_prompt = nil
@@ -489,6 +489,90 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
 
       expect(captured_prompt).not_to include("Opened a pull request")
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # Multi-round histories are the norm on looping issues: the latest marker
+    # comment is often just the newest clarifying questions, while the
+    # implementation context that proves readiness lives in an earlier round.
+    # The cycle-state section must carry every admissible marker comment,
+    # oldest first, not just `max_by(&:created_at)` (#3850).
+    it "collapses every admissible enhancement comment into cycle state, oldest first" do
+      configure_app_backed_project
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      allow(client).to receive(:issue_comments).and_return([
+        bot_comment("<!-- paid:enhance-issue -->\n## Clarifying questions\n1. Which tenant scope applies to audit rows?", at: "2026-04-21 12:00:00 UTC"),
+        bot_comment("<!-- paid:enhance-issue -->\n## Implementation context\n### Relevant files and symbols\n- `app/models/audit_log.rb`", at: "2026-04-20 12:00:00 UTC"),
+        bot_comment("<!-- paid:clarifying-answers -->\n## Clarifying question answers\n**Q1: Which tenant scope applies to audit rows?**\n**A1:** Account-wide.", at: "2026-04-22 12:00:00 UTC")
+      ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      cycle_state = captured_prompt[/## Cycle state.*?## Conversation/m]
+      expect(cycle_state).to include("`app/models/audit_log.rb`")
+      expect(cycle_state).to include("Which tenant scope applies to audit rows?")
+      expect(cycle_state).to include("**A1:** Account-wide.")
+      expect(cycle_state.index("## Implementation context")).to be < cycle_state.index("## Clarifying questions")
+      expect(cycle_state.index("## Clarifying questions")).to be < cycle_state.index("## Clarifying question answers")
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # Enhancement comments lead with prose or clarifying questions and put
+    # `## Implementation context` further down, so a blind 2k head-truncate
+    # cut exactly the content that proves readiness (#3850).
+    it "keeps the implementation-context section of a long enhancement comment" do
+      configure_app_backed_project
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      preamble = "Thanks for the report. " + ("Background detail. " * 150)
+      body = "<!-- paid:enhance-issue -->\n#{preamble}\n\n## Implementation context\n" \
+        "### Relevant files and symbols\n- `app/services/audit/record.rb` is the entry point\n" \
+        "### Suggested approach\n- Extend `AuditLog` with a `tenant_id` column\n" + ("filler line\n" * 600)
+      expect(body.length).to be > 9_000
+      expect(body.index("## Implementation context")).to be > 2_000
+      allow(client).to receive(:issue_comments).and_return([ bot_comment(body, at: "2026-04-20 12:00:00 UTC") ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      cycle_state = captured_prompt[/## Cycle state.*?## Conversation/m]
+      expect(cycle_state).to include("`app/services/audit/record.rb` is the entry point")
+      expect(cycle_state).to include("Extend `AuditLog` with a `tenant_id` column")
+      expect(cycle_state.length).to be < described_class::CYCLE_STATE_BUDGET + 1_000
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # Long threads must fit a bounded prompt budget while keeping the most
+    # recent human answers (#3850).
+    it "bounds the conversation section and prefers the newest comments" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      thread = (1..60).map do |number|
+        OpenStruct.new(
+          body: "Comment number #{number} says: " + ("detail " * 250),
+          user: OpenStruct.new(login: "viamin"),
+          created_at: Time.zone.parse("2026-04-01 00:00:00 UTC") + number.hours
+        )
+      end
+      allow(client).to receive(:issue_comments).and_return(thread)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      conversation = captured_prompt[/## Conversation.*?## Retrieval Results/m]
+      expect(conversation).to include("Comment number 60 says:")
+      expect(conversation).to include("Comment number 45 says:")
+      expect(conversation).not_to include("Comment number 12 says:")
+      expect(conversation).to match(/\d+ earlier comments omitted/)
+      expect(conversation.length).to be < described_class::CONVERSATION_BUDGET + 5_000
     end
 
     # @spec ISSUE-ANALYSIS-014
@@ -1170,6 +1254,14 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(state).to be_present
     expect(state.circuit_state).to eq("open")
     expect(state.failure_count).to eq(1)
+  end
+
+  def bot_comment(body, at:)
+    OpenStruct.new(
+      body: body,
+      user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+      created_at: Time.zone.parse(at)
+    )
   end
 
   def configure_app_backed_project

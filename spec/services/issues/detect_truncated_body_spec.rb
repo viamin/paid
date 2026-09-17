@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec ISSUE-ANALYSIS-015
+# @spec ISSUE-ANALYSIS-016
 RSpec.describe Issues::DetectTruncatedBody do
   describe ".call" do
     it "flags a body cut off mid-sentence with no terminal punctuation" do

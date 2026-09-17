@@ -7,7 +7,7 @@ module Issues
   # is a structural fact (ZFC: code's job); whether that fact matters for a
   # given verdict is left to the analyzer/enhancer prompts.
   #
-  # @spec ISSUE-ANALYSIS-015
+  # @spec ISSUE-ANALYSIS-016
   #
   # @example
   #   Issues::DetectTruncatedBody.call(issue.body) # => true/false

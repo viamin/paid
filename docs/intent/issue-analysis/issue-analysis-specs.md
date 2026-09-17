@@ -187,8 +187,9 @@
 
 - [x] **ISSUE-ANALYSIS-014** — The readiness assessor SHALL see the prior
   cycle state when re-evaluating an issue (enhancement round count, prior
-  verdict, prior missing-context areas, and a summary of the latest Paid
-  enhancement marker comment) and SHALL admit Paid's own structured
+  verdict, prior missing-context areas, and a budgeted digest of every
+  admissible Paid enhancement/answer marker comment — see
+  ISSUE-ANALYSIS-015) and SHALL admit Paid's own structured
   enhancement/answer marker comments to its prompt via the existing
   clarifying-question admission, so re-evaluation is a delta against the
   previous cycle rather than a repeat of the baseline (#3842). The cycle-state
@@ -210,7 +211,7 @@
   `#prompt_for`, `#cycle_state_section`, `#build_cycle_state`,
   `#prior_enhancement_summary`, `#persist_verdict!`.
 
-- [x] **ISSUE-ANALYSIS-015** — When an issue's body looks truncated or
+- [x] **ISSUE-ANALYSIS-016** — When an issue's body looks truncated or
   corrupted (a cheap structural heuristic: it ends without terminal
   punctuation, ends inside an unterminated code fence, or ends with a
   dangling heading and no content beneath it — not an LLM judgment), the
@@ -232,3 +233,31 @@
   *Code:* `app/services/issues/detect_truncated_body.rb`,
   `app/temporal/activities/analyze_issue_activity.rb#body_integrity_section`,
   `#apply_body_integrity_flag`.
+
+- [x] **ISSUE-ANALYSIS-015** — The readiness assessor SHALL see enhancement
+  output at section fidelity rather than as head-truncated blobs (#3850).
+  The cycle-state section SHALL collapse *all* admissible marker comments
+  (enhancement rounds and clarifying answers), rendered oldest-first so the
+  narrative reads chronologically, under one total character budget
+  (`CYCLE_STATE_BUDGET`) instead of a per-comment head cut of the latest
+  comment only. Within that budget, `IssueEnhancements::CommentDigest` SHALL
+  split each comment on `##` headings and allocate budget by section
+  priority — decision-relevant sections (`## Implementation context`,
+  `## Suggested approach`, `## Clarifying questions`, `## Clarifying question
+  answers`, `## Current context`) first, unrecognised prose second, and
+  marker/CIR/stopped-round boilerplate (`<!-- paid:* -->`, `## Proposed Change
+  Intent Record`, `## Auto-enhancement stopped`, `## Latest context`) last —
+  preferring newer comments within a tier, and truncating a section at a
+  section-level budget rather than dropping it. The same digest SHALL shape
+  the `## Conversation` section, which SHALL fit a bounded total budget
+  (`CONVERSATION_BUDGET`) by retaining the newest comments and noting how many
+  older ones were omitted, so >50-comment threads still prefer the most recent
+  human answers and enhancement sections.
+  *Tests:* `spec/services/issue_enhancements/comment_digest_spec.rb`,
+  `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("collapses every admissible enhancement comment into cycle state",
+  "keeps the implementation-context section of a long enhancement comment",
+  "bounds the conversation section and prefers the newest comments").
+  *Code:* `app/services/issue_enhancements/comment_digest.rb`,
+  `app/temporal/activities/analyze_issue_activity.rb#prior_enhancement_summary`,
+  `#format_comments`.
