@@ -34,8 +34,11 @@ checklist §8, the closeout PR must **not** claim to close epic #3861.
   verdict table; the only "verdict" columns are the unrelated issue-analyzer
   verdict (`issues.last_analyzer_*`, `db/schema.rb:1573–1576`). A repo-wide
   search for `within_scope`, `IntentConformance`, `intent_conformance`,
-  `approved_revision`, and `design_revision` returns no matches in `app/`,
-  `db/`, or `lib/`.
+  `approved_revision`, and `design_revision` returns no relevant matches in
+  `app/`, `db/`, or `lib/` (one unrelated hit for `within_scope`:
+  `host_pattern_uniqueness_within_scope` in
+  `app/models/egress_allowlist_entry.rb`, an egress allowlist validation
+  method).
 - **No conformance signal in auto-merge.**
   `Automation::Strategies::AutoMerge::Signals`
   (`app/services/automation/strategies/auto_merge/signals.rb:41–54`) carries 13
