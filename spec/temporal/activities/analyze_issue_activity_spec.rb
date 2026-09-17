@@ -405,6 +405,90 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(captured_prompt).not_to include("Opened a pull request")
     end
 
+    # @spec ISSUE-ANALYSIS-015
+    # Multi-round histories are the norm on looping issues: the latest marker
+    # comment is often just the newest clarifying questions, while the
+    # implementation context that proves readiness lives in an earlier round.
+    # The cycle-state section must carry every admissible marker comment,
+    # oldest first, not just `max_by(&:created_at)` (#3850).
+    it "collapses every admissible enhancement comment into cycle state, oldest first" do
+      configure_app_backed_project
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      allow(client).to receive(:issue_comments).and_return([
+        bot_comment("<!-- paid:enhance-issue -->\n## Clarifying questions\n1. Which tenant scope applies to audit rows?", at: "2026-04-21 12:00:00 UTC"),
+        bot_comment("<!-- paid:enhance-issue -->\n## Implementation context\n### Relevant files and symbols\n- `app/models/audit_log.rb`", at: "2026-04-20 12:00:00 UTC"),
+        bot_comment("<!-- paid:clarifying-answers -->\n## Clarifying question answers\n**Q1: Which tenant scope applies to audit rows?**\n**A1:** Account-wide.", at: "2026-04-22 12:00:00 UTC")
+      ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      cycle_state = captured_prompt[/## Cycle state.*?## Conversation/m]
+      expect(cycle_state).to include("`app/models/audit_log.rb`")
+      expect(cycle_state).to include("Which tenant scope applies to audit rows?")
+      expect(cycle_state).to include("**A1:** Account-wide.")
+      expect(cycle_state.index("## Implementation context")).to be < cycle_state.index("## Clarifying questions")
+      expect(cycle_state.index("## Clarifying questions")).to be < cycle_state.index("## Clarifying question answers")
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # Enhancement comments lead with prose or clarifying questions and put
+    # `## Implementation context` further down, so a blind 2k head-truncate
+    # cut exactly the content that proves readiness (#3850).
+    it "keeps the implementation-context section of a long enhancement comment" do
+      configure_app_backed_project
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      preamble = "Thanks for the report. " + ("Background detail. " * 150)
+      body = "<!-- paid:enhance-issue -->\n#{preamble}\n\n## Implementation context\n" \
+        "### Relevant files and symbols\n- `app/services/audit/record.rb` is the entry point\n" \
+        "### Suggested approach\n- Extend `AuditLog` with a `tenant_id` column\n" + ("filler line\n" * 600)
+      expect(body.length).to be > 9_000
+      expect(body.index("## Implementation context")).to be > 2_000
+      allow(client).to receive(:issue_comments).and_return([ bot_comment(body, at: "2026-04-20 12:00:00 UTC") ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      cycle_state = captured_prompt[/## Cycle state.*?## Conversation/m]
+      expect(cycle_state).to include("`app/services/audit/record.rb` is the entry point")
+      expect(cycle_state).to include("Extend `AuditLog` with a `tenant_id` column")
+      expect(cycle_state.length).to be < described_class::CYCLE_STATE_BUDGET + 1_000
+    end
+
+    # @spec ISSUE-ANALYSIS-015
+    # Long threads must fit a bounded prompt budget while keeping the most
+    # recent human answers (#3850).
+    it "bounds the conversation section and prefers the newest comments" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+      thread = (1..60).map do |number|
+        OpenStruct.new(
+          body: "Comment number #{number} says: " + ("detail " * 250),
+          user: OpenStruct.new(login: "viamin"),
+          created_at: Time.zone.parse("2026-04-01 00:00:00 UTC") + number.hours
+        )
+      end
+      allow(client).to receive(:issue_comments).and_return(thread)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      conversation = captured_prompt[/## Conversation.*?## Retrieval Results/m]
+      expect(conversation).to include("Comment number 60 says:")
+      expect(conversation).to include("Comment number 45 says:")
+      expect(conversation).not_to include("Comment number 12 says:")
+      expect(conversation).to match(/\d+ earlier comments omitted/)
+      expect(conversation.length).to be < described_class::CONVERSATION_BUDGET + 5_000
+    end
+
     # @spec ISSUE-ANALYSIS-014
     # Threads the prior enhancement round count and prior missing_context_areas
     # into the prompt so a re-evaluation is a delta against the previous cycle
@@ -467,7 +551,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(captured_prompt).to include("Codebase-determinable ambiguity")
     end
 
-    # @spec ISSUE-ANALYSIS-015
+    # @spec ISSUE-ANALYSIS-016
     # The prompt only asks the model to default to sufficient_context: true
     # at the round cap — that's a soft instruction. Enforce it in code so an
     # LLM that disobeys does not re-park the issue in manual_review (#3849).
@@ -476,7 +560,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         issue.update!(
           enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds,
           # The analyzer pass that queued the last enhancement round — the
-          # fresh-signal anchor for ISSUE-ANALYSIS-015.
+          # fresh-signal anchor for ISSUE-ANALYSIS-016.
           last_analyzed_at: Time.zone.parse("2026-04-20 11:00:00 UTC")
         )
         allow(llm_response).to receive(:output).and_return(
@@ -523,7 +607,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         expect(result[:sufficient_context]).to be false
       end
 
-      # @spec ISSUE-ANALYSIS-015
+      # @spec ISSUE-ANALYSIS-016
       # PAT-backed projects have no bot identity
       # (Project#paid_bot_author? is always false), so anchoring the
       # fresh-signal check on the bot-authored enhancement marker comment
@@ -547,7 +631,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         expect(issue.reload.enhance_issue_rounds).to eq(0)
       end
 
-      # @spec ISSUE-ANALYSIS-015
+      # @spec ISSUE-ANALYSIS-016
       # On a PAT-backed project Paid posts its own enhancement comments as
       # the PAT user — a login that is typically allowlisted. Without
       # excluding marker-comment bodies from the fresh-signal scan, every
@@ -568,7 +652,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         expect(issue.reload.enhance_issue_rounds).to eq(project.max_enhance_issue_reevaluation_rounds)
       end
 
-      # @spec ISSUE-ANALYSIS-015
+      # @spec ISSUE-ANALYSIS-016
       # Paid posts several other structured marker comments on issue
       # threads besides the enhance-issue marker exercised above:
       # HandleNoOutputIssueRunActivity's needs-input / recommend-close /
@@ -599,7 +683,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         end
       end
 
-      # @spec ISSUE-ANALYSIS-015
+      # @spec ISSUE-ANALYSIS-016
       # cap 0 disables automatic enhancement — `0 >= 0` must not let the
       # override fire on the very first analysis. Pre-#3849 behavior kept
       # a human gate: the false verdict parks the issue via the queue-time
@@ -621,7 +705,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         end
       end
 
-      # @spec ISSUE-ANALYSIS-015
+      # @spec ISSUE-ANALYSIS-016
       # A plain trusted comment matches none of the counter-reset paths
       # (answer flow, needs-input label removal, body edit), so the counter
       # is still at cap when the suppression fires. Returning the raw false
@@ -1308,6 +1392,14 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(state).to be_present
     expect(state.circuit_state).to eq("open")
     expect(state.failure_count).to eq(1)
+  end
+
+  def bot_comment(body, at:)
+    OpenStruct.new(
+      body: body,
+      user: OpenStruct.new(login: Github::AppRegistry.bot_login),
+      created_at: Time.zone.parse(at)
+    )
   end
 
   def configure_app_backed_project

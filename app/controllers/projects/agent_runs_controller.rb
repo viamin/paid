@@ -302,14 +302,19 @@ module Projects
     # manual_review only clears when an explicit operator-triggered run
     # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
     # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since nothing else would ever move the issue out of manual_review.
+    # since a queued run is what actually resumes the enhancement work. The
+    # queue-time state flip (resume_issue_from_manual_review) removes the
+    # inbox entry as soon as the run is queued, so the item leaves the lane
+    # immediately instead of surviving the whole queue wait; re-entry
+    # producers (parse failure, round limit, needs_input) bring it back if
+    # the resumed work still needs a human decision.
     # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
-        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
         return
       end
 
@@ -796,6 +801,32 @@ module Projects
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
     end
 
+    # Queuing an operator-triggered enhance run resumes work on a manual_review
+    # issue, so the issue leaves the manual-review inbox lane at queue time —
+    # the same paid_state CreateAgentRunActivity sets when the run starts —
+    # instead of lingering in the lane through the whole queue wait. Model
+    # callbacks clear manual_review_started_at/manual_review_reason
+    # (ISSUE-ENHANCEMENT-012) and bump the inbox badge cache version.
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    def resume_issue_from_manual_review(issue)
+      return unless issue.paid_state == "manual_review"
+
+      issue.update!(paid_state: "in_progress")
+    end
+
+    # A stale page can still render the "Start enhancement run" button after
+    # the issue left manual_review (queue-time state flip); that repeat click
+    # is the expected path now, so it gets a specific message instead of the
+    # generic selection error.
+    # @spec OPERATOR-INBOX-002D
+    def manual_review_issue_missing_alert
+      if params[:issue_id].blank?
+        "Please select an issue."
+      else
+        "This issue is no longer waiting for manual review."
+      end
+    end
+
     def cancel_in_flight_execution_for_resume!
       return if @agent_run.temporal_workflow_id.blank?
 
@@ -1256,6 +1287,7 @@ module Projects
             goal: goal,
             priority_tier: priority_tier
           )
+          resume_issue_from_manual_review(issue)
           sync_args = apply_priority_label(issue, priority_tier) if priority_tier
           github_sync_args_list << [ issue, sync_args ] if sync_args
         end
