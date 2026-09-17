@@ -11,16 +11,31 @@
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/auto-merge-strategy/`, `docs/intent/operator-inbox/`, and new feature-approval/conformance segments
 - **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
-- **Related Tests**: None yet — implementation has not started (see the [2026-09-17 closeout audit](#2026-09-17-closeout-audit))
+- **Related Tests**: `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb`, `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb`, `spec/services/design_amendments/*_spec.rb`
 
 ## Implementation Status
 
-Not started as of September 17, 2026. The design is Final (approved in #3859,
-finalized in #3874), but no verdict contract, scanner/Inbox integration,
-final-merge guard, amendment flow, or evaluation telemetry has shipped. The
-closeout audit for #3871 verified the gaps and made no status change; see
-[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md).
-Implementation remains tracked by open issues #3866–#3870 under epic #3861.
+Partially implemented as of September 17, 2026. The design amendment and
+revision-impact slice (#3869) has shipped — see
+`docs/intent/approved-intent-amendment/`. The final-merge precondition slice
+(#3868) has also shipped — see `docs/intent/approved-intent-merge-guard/`:
+`IntentConformanceVerdict` (the minimal verdict-identity record) and
+`IntentConformance::VerifyAtMerge`, wired into
+`Activities::MergePullRequestActivity`, re-verify PR head, approved design
+revision, and verdict identity immediately before merge.
+
+Still missing: the independent conformance reviewer run that writes verdicts
+from PR content (#3866), and PR-scanner blockers plus Inbox escalation of
+drift verdicts (#3867). Until #3866 ships, any project with the
+`approved_intent_amendments` flag enabled and a linked feature intent will see
+every merge blocked with `verdict_missing` — correct fail-closed behavior for
+an unwired reviewer, not a defect. Per this RDR's rollout guard, the named
+mode stays off (the flag defaults off, and no project should enable it) until
+both the scanner (#3867) and this final guard are active together.
+Evaluation/rollout telemetry (#3870) is also outstanding. The 2026-09-17
+closeout audit for #3871 predates this work; see
+[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md) for
+the state at that point in time.
 
 ## Problem Statement
 

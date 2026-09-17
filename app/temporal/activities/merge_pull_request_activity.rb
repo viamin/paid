@@ -88,6 +88,22 @@ module Activities
           pr_number: pr_number
         )
         true
+      elsif (blocker = intent_conformance_blocker(project, issue, pr_data))
+        logger.info(
+          message: "pr_review.intent_conformance_blocked",
+          project_id: project.id,
+          pr_number: pr_number,
+          reason_code: blocker.reason_code
+        )
+        record_attempt(
+          project,
+          issue,
+          status: "blocked",
+          reason_code: AutoMergeAttempts::Record::REASON_INTENT_CONFORMANCE_BLOCKED,
+          message: blocker.message,
+          credential_mode: AutoMergeAttempt.primary_credential_mode(project)
+        )
+        return { merged: false, skipped: true, pr_number: pr_number }
       elsif !issue.merge_permission_retry_due?
         # A prior attempt hit a permanent GitHub App permission rejection
         # (e.g. missing `workflows` permission). Keep fetching the PR so we can
@@ -139,6 +155,18 @@ module Activities
     end
 
     private
+
+    # @spec INTENT-MERGE-GUARD-001 @spec INTENT-MERGE-GUARD-002
+    # @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
+    # @spec INTENT-MERGE-GUARD-005 @spec INTENT-MERGE-GUARD-006
+    # @spec INTENT-MERGE-GUARD-007 @spec INTENT-MERGE-GUARD-008
+    # Re-verifies PR head, approved design revision, and verdict identity
+    # against current data (not the scan-time snapshot that decided to
+    # attempt this merge), so a push or design amendment after scanning
+    # cannot bypass the gate (RDR-067 §Merge enforcement and race safety).
+    def intent_conformance_blocker(project, issue, pr_data)
+      IntentConformance::VerifyAtMerge.call(project: project, issue: issue, pr_head_sha: pr_data.head_sha)
+    end
 
     # @spec AUTO-MERGE-008 — a trusted PR activation label (paid-auto-merge)
     # enables auto-merge for that pull request even when the project-level

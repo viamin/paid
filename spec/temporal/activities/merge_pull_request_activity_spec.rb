@@ -199,6 +199,102 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    # @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
+    # @spec INTENT-MERGE-GUARD-005 @spec INTENT-MERGE-GUARD-006
+    # @spec INTENT-MERGE-GUARD-008
+    context "when the PR belongs to a feature under the intent-conformance rollout flag" do
+      let(:feature_intent) do
+        create(:feature_intent, project: project, status: "released", approved_design_revision: "rev1")
+      end
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "current_head", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+      let(:merge_result) do
+        Automation::Providers::Data::MergeResult.new(merged: true, sha: "def456", message: "Merged")
+      end
+
+      before do
+        project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+        allow(provider).to receive(:fetch_pull_request)
+          .with(repo: project.full_name, number: 42)
+          .and_return(pr_data)
+        allow(provider).to receive(:merge_pull_request).and_return(merge_result)
+        allow(provider).to receive(:add_labels)
+        allow(provider).to receive(:add_comment)
+      end
+
+      # @spec INTENT-MERGE-GUARD-003 — a new commit pushed after the scan-time
+      # verdict was recorded (the verdict is bound to an older head) blocks
+      # merge even though the PR is otherwise mergeable.
+      it "blocks merge when a push happened after the verdict was recorded (scan-to-merge race)" do
+        create(:intent_conformance_verdict, project: project, issue: issue,
+          pr_head_sha: "head_before_push", approved_design_revision: "rev1", outcome: "within_scope")
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          status: "blocked",
+          reason_code: AutoMergeAttempts::Record::REASON_INTENT_CONFORMANCE_BLOCKED
+        )
+      end
+
+      # @spec INTENT-MERGE-GUARD-004 — a design amendment that opened after the
+      # scan (moving the feature to `revising`) blocks merge even when the
+      # cached scan-time signals already decided to merge.
+      it "blocks merge when a design amendment opened after the verdict was recorded (scan-to-merge race)" do
+        create(:intent_conformance_verdict, project: project, issue: issue,
+          pr_head_sha: "current_head", approved_design_revision: "rev1", outcome: "within_scope")
+        feature_intent.update!(status: "revising")
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+
+      # @spec INTENT-MERGE-GUARD-005
+      it "blocks merge while a design-amendment hold is active on the issue" do
+        create(:intent_conformance_verdict, project: project, issue: issue,
+          pr_head_sha: "current_head", approved_design_revision: "rev1", outcome: "within_scope")
+        amendment = create(:design_amendment, project: project, feature_intent: feature_intent)
+        create(:design_amendment_pause, design_amendment: amendment, issue: issue, status: "held")
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+
+      # @spec INTENT-MERGE-GUARD-002 — no verdict has ever been recorded for
+      # this PR; a missing verdict never passes by default.
+      it "blocks merge when no verdict has been recorded" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+
+      # @spec INTENT-MERGE-GUARD-006
+      it "merges when the current verdict is within_scope for the exact head and approved revision" do
+        create(:intent_conformance_verdict, project: project, issue: issue,
+          pr_head_sha: "current_head", approved_design_revision: "rev1", outcome: "within_scope")
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result[:merged]).to be true
+        expect(provider).to have_received(:merge_pull_request)
+      end
+    end
+
     context "when merging a PR that was escalated" do
       let(:issue) do
         create(:issue, :pull_request,

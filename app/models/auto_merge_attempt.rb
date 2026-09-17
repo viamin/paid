@@ -6,6 +6,7 @@ class AutoMergeAttempt < ApplicationRecord
   REASON_CHECKS_NOT_GREEN = "checks_not_green"
   REASON_EXPECTED_MERGE_FAILURE = "expected_merge_failure"
   REASON_GRANULARITY_MISMATCH = "granularity_mismatch"
+  REASON_INTENT_CONFORMANCE_BLOCKED = "intent_conformance_blocked"
   REASON_MERGE_PERMISSION_COOLDOWN = "merge_permission_cooldown"
   REASON_MISSING_WORKFLOWS_PERMISSION = "missing_workflows_permission"
   REASON_NOT_MERGEABLE = "not_mergeable"
