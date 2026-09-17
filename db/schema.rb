@@ -1651,12 +1651,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_040153) do
     t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
     t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
     t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
+    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
     t.text "reasoning_summary", comment: "Reviewer's reasoning summary, shown to a human resolving the Inbox decision."
     t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
     t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
     t.datetime "updated_at", null: false
     t.index ["issue_id", "pr_head_sha", "evaluated_at"], name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
     t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
+    t.index ["outcome"], name: "index_intent_conformance_verdicts_on_outcome"
+    t.index ["project_id"], name: "index_intent_conformance_verdicts_on_project_id"
     t.index ["reviewer_run_id"], name: "index_intent_conformance_verdicts_on_reviewer_run_id"
   end
 
@@ -2556,6 +2559,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_040153) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."
@@ -3649,6 +3653,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_040153) do
   add_foreign_key "intent_conformance_resolutions", "users", column: "resolved_by_id"
   add_foreign_key "intent_conformance_verdicts", "agent_runs", column: "reviewer_run_id"
   add_foreign_key "intent_conformance_verdicts", "issues"
+  add_foreign_key "intent_conformance_verdicts", "projects"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"

@@ -70,13 +70,22 @@ adds an automated review pass, but the authority over whether a change lands
 always rests with a human — exercised per-PR by default, or through the
 auto-merge configuration when the owner has enabled it.
 
+Human attention can also move earlier in the lifecycle. The
+`human_led_feature_factory` project operating mode ([RDR-066](rdrs/RDR-066-feature-intent-approval-lifecycle.md))
+makes human approval of a feature's design the boundary before
+implementation of that feature's work runs. Existing projects opt in; new
+account onboarding proposes the mode as the default project posture with a
+reviewable settings plan. The mode composes with — never replaces — the
+project's independent auto-merge and TDD test-review choices.
+
 For features executed under an approved design (RDR-066/RDR-067 operating
 mode), the same authority applies at the design level: an agent PR that drifts
 from the human-approved design stops and asks a human. A one-PR exception can
 never change approved product behavior, constraints, scope, or acceptance
 criteria — product-level changes route through an amended RDR/LID design that
 a human approves and merges before affected work resumes. See
-`docs/intent/approved-intent-amendment/`.
+`docs/intent/approved-intent-amendment/` and
+`docs/intent/approved-intent-merge-guard/`.
 
 ## Approach: All LLM Calls Through One Interface
 

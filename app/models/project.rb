@@ -36,6 +36,10 @@ class Project < ApplicationRecord
   # "non_strict" runs an automated test-review verdict before implementation;
   # "strict" waits for a human-applied approval label before implementation.
   TDD_MODES = %w[off non_strict strict].freeze
+  # Feature operating mode (RDR-066). "standard" is the default posture — the
+  # human-led feature factory workflow is strictly opt-in, and the column is
+  # the RDR's rollout-guard config gate (never silently flipped by migration).
+  OPERATING_MODES = %w[standard human_led_feature_factory].freeze
   TDD_MODE_LABELS = {
     "off" => "Off",
     "non_strict" => "Non-strict",
@@ -283,6 +287,8 @@ class Project < ApplicationRecord
   validates :auto_release_granularity, inclusion: { in: AUTO_RELEASE_GRANULARITIES }
   validates :lid_mode, inclusion: { in: LID_MODES }, allow_nil: true
   validates :tdd_mode, inclusion: { in: TDD_MODES }
+  # @spec FEATURE-APPROVAL-001
+  validates :operating_mode, inclusion: { in: OPERATING_MODES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
@@ -995,6 +1001,14 @@ class Project < ApplicationRecord
 
   def auto_merge_bot_authored?
     allow_bot_authored_pr_auto_merge?
+  end
+
+  # @spec FEATURE-APPROVAL-001
+  # True when the project runs the RDR-066 human-led feature factory
+  # workflow for new feature work. Strictly opt-in: "standard" projects
+  # never run it.
+  def human_led_feature_factory?
+    operating_mode == "human_led_feature_factory"
   end
 
   def effective_quality_gate_settings

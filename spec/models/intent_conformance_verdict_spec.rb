@@ -3,6 +3,9 @@
 require "rails_helper"
 
 # @spec INTENT-CONFORMANCE-001
+# @spec INTENT-MERGE-GUARD-002
+# @spec INTENT-MERGE-GUARD-003
+# @spec INTENT-MERGE-GUARD-004
 RSpec.describe IntentConformanceVerdict do
   describe "validations" do
     it "requires an outcome from the defined set" do
@@ -44,6 +47,33 @@ RSpec.describe IntentConformanceVerdict do
 
       expect(described_class.current_for(issue: issue, head_sha: "current-sha")).to eq(newer)
       expect(described_class.current_for(issue: issue, head_sha: "current-sha")).not_to eq(older)
+    end
+  end
+
+  describe ".latest_for" do
+    it "returns the most recently evaluated verdict for the issue" do
+      issue = create(:issue, :pull_request)
+      older = create(:intent_conformance_verdict, issue: issue, evaluated_at: 2.hours.ago)
+      newer = create(:intent_conformance_verdict, issue: issue, evaluated_at: 1.minute.ago)
+
+      expect(described_class.latest_for(issue)).to eq(newer)
+      expect(described_class.latest_for(issue)).not_to eq(older)
+    end
+
+    it "returns nil when no verdict has been recorded" do
+      issue = create(:issue, :pull_request)
+
+      expect(described_class.latest_for(issue)).to be_nil
+    end
+  end
+
+  describe "#current_for?" do
+    it "matches only the exact head and approved design revision it was evaluated against" do
+      verdict = build(:intent_conformance_verdict, pr_head_sha: "head0001", approved_design_revision: "rev1")
+
+      expect(verdict.current_for?(pr_head_sha: "head0001", approved_design_revision: "rev1")).to be(true)
+      expect(verdict.current_for?(pr_head_sha: "head0002", approved_design_revision: "rev1")).to be(false)
+      expect(verdict.current_for?(pr_head_sha: "head0001", approved_design_revision: "rev2")).to be(false)
     end
   end
 

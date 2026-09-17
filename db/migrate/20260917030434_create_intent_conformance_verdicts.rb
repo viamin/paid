@@ -7,6 +7,7 @@ class CreateIntentConformanceVerdicts < ActiveRecord::Migration[8.1]
       comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved " \
         "design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is " \
         "authoritative for auto-merge gating." do |t|
+      t.references :project, null: false, foreign_key: true, comment: "The project the evaluated pull request belongs to."
       t.references :issue, null: false, foreign_key: true, comment: "The pull request (Issue row) this verdict evaluates."
       t.references :reviewer_run, null: true, foreign_key: { to_table: :agent_runs },
         comment: "The independent reviewer AgentRun that produced this verdict, when available."
@@ -28,5 +29,6 @@ class CreateIntentConformanceVerdicts < ActiveRecord::Migration[8.1]
 
     add_index :intent_conformance_verdicts, [ :issue_id, :pr_head_sha, :evaluated_at ],
       name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
+    add_index :intent_conformance_verdicts, :outcome
   end
 end
