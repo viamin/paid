@@ -29,8 +29,8 @@ RSpec.describe "Onboarding configure_defaults step", system_driver: :rack_test, 
     visit onboarding_path
 
     expect(page).to have_field("operating_posture", with: "human_led_feature_factory", checked: true)
-    expect(page).to have_select("auto_merge_mode", selected: "off")
-    expect(page).to have_select("tdd_mode", selected: "non_strict")
+    expect(page).to have_select("auto_merge_mode", selected: "Off")
+    expect(page).to have_select("tdd_mode", selected: "Non-strict")
 
     patch_form = page.find(:css, %(form[action="#{onboarding_path}"][method="post"]))
     expect(patch_form).to have_field("operating_posture", with: "human_led_feature_factory")
@@ -47,8 +47,8 @@ RSpec.describe "Onboarding configure_defaults step", system_driver: :rack_test, 
     visit onboarding_path
 
     choose "Human-Led Feature Factory"
-    select "all", from: "auto_merge_mode"
-    select "strict", from: "tdd_mode"
+    select "All PRs", from: "auto_merge_mode"
+    select "Strict", from: "tdd_mode"
     click_button "Set Up Defaults & Finish"
 
     expect(project.reload.auto_merge_mode).to eq("all")
