@@ -4,6 +4,10 @@ module ClarifyingQuestions
   class Parse
     ENHANCEMENT_MARKER = "<!-- paid:enhance-issue -->"
     CLARIFYING_SECTION_PATTERN = /^##\s+[^\n]*clarifying questions[^\n]*\n(.+?)(?=^## |\z)/mi.freeze
+    # Heading-only variant, reused by Context to locate the section without
+    # pulling the body — keeps the "what counts as a clarifying-questions
+    # heading" rule in one place.
+    CLARIFYING_SECTION_HEADING = /\A##\s+[^\n]*clarifying questions[^\n]*\z/i.freeze
 
     def self.call(...)
       new(...).call

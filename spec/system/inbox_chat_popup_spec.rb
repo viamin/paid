@@ -24,9 +24,16 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
     create(:project, account:, created_by: user, owner: "acme", repo: "alpha",
       auto_pick_enabled: true, active: true)
   end
+  # Factory projects ship with a github_token, so OPERATOR-INBOX-011's
+  # context_markdown accessor reaches for issue comments on the selected
+  # inbox entry. Stub the client so the inbox page can build under WebMock
+  # without touching the network.
+  let(:github_client) { instance_double(GithubClient, issue_comments: []) }
 
   before do
     skip "Chromium is not available for Cuprite" unless chromium_path
+
+    allow(GithubClient).to receive(:new).and_return(github_client)
 
     create(
       :issue,
@@ -65,7 +72,7 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
   end
 
   it "renders the queue and detail panes side by side on desktop" do
-    # @spec OPERATOR-INBOX-003
+    # @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-006
     page.current_window.resize_to(1280, 800)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 

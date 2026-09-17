@@ -9,6 +9,9 @@ FactoryBot.define do
     outcome { IntentConformanceVerdict::OUTCOME_WITHIN_SCOPE }
     reasoning_summary { "The PR matches the approved design's acceptance criteria." }
     evaluated_at { Time.current }
+    reviewer_model { "claude-sonnet-4-6" }
+    cited_claims { [] }
+    cited_diff_locations { [] }
 
     trait :material_drift do
       outcome { IntentConformanceVerdict::OUTCOME_MATERIAL_DRIFT }

@@ -8,6 +8,14 @@
 #
 # @spec INTENT-CONFORMANCE-001
 # @spec INTENT-MERGE-GUARD-002 @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
+# @spec INTENT-CONFORMANCE-REVIEW-002 @spec INTENT-CONFORMANCE-REVIEW-003
+# RDR-067 intent-conformance verdict: an outcome bound to an exact PR head and
+# approved design revision (so a push or design amendment recorded after the
+# verdict invalidates it), plus the independent reviewer run's evidence
+# (#3866) — cited design claims, cited diff locations, a reasoning summary,
+# and the reviewer run/model identity. Only IntentConformance::ReviewRun
+# creates these records; an implementation agent's self-report never writes
+# one directly.
 class IntentConformanceVerdict < ApplicationRecord
   OUTCOME_WITHIN_SCOPE = "within_scope"
   OUTCOME_MATERIAL_DRIFT = "material_drift"
@@ -20,8 +28,11 @@ class IntentConformanceVerdict < ApplicationRecord
   belongs_to :reviewer_run, class_name: "AgentRun", optional: true
   has_many :intent_conformance_decisions, foreign_key: :verdict_id, inverse_of: :verdict, dependent: :nullify
 
-  validates :pr_head_sha, :approved_design_revision, :evaluated_at, presence: true
-  validates :outcome, inclusion: { in: OUTCOMES }
+  validates :pr_head_sha, presence: true
+  validates :approved_design_revision, presence: true
+  validates :outcome, presence: true, inclusion: { in: OUTCOMES }
+  validates :evaluated_at, presence: true
+  validates :reviewer_model, presence: true
 
   scope :recent_first, -> { order(evaluated_at: :desc, id: :desc) }
 

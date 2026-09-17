@@ -26,7 +26,10 @@ entries into one responsive page.
    and the payload needed to render its detail pane.
 3. The inbox renders at `/inbox` and `/inbox/:entry_id`:
    - a desktop split-pane layout with the queue on the left and detail on the
-     right
+     right, both halves going through the shared
+     [`list-detail-layout`](../list-detail-layout/list-detail-layout-design.md)
+     shell (`grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]`, `22rem` list pane,
+     shared pane chrome, shared empty state, shared active-row treatment)
    - a mobile master-detail flow where the member route opens the detail pane
    - a neutral `Waiting —` label when a legacy entry has no waiting timestamp
 4. Existing action endpoints stay as the mutation surface:
@@ -34,6 +37,13 @@ entries into one responsive page.
      `Projects::ClarifyingQuestionsController`
    - planning approvals/rejections/revisions still post through
      `PlanReviewsController`, which signals the Temporal workflow
+
+The shared two-pane shell, pane chrome, empty state, and active-row treatment
+(`LIST-DETAIL-001`–`LIST-DETAIL-006`) are not inbox-specific — Chat
+(`/chat`, `/chat/:id`) renders through the same shell. The Inbox keeps its
+own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
+`inbox-master-detail` Stimulus controller; only the layout rules move to the
+shared pattern.
 
 ## Entry Kinds
 
@@ -59,6 +69,22 @@ When the operator opens a clarifying-question entry from the inbox,
 the answer flow resolves queue membership and next-entry traversal from
 `Inbox::Queue` filtered to `clarifying_questions`, so PR-backed records keep
 the same continuation behavior as issue-backed records.
+
+The entry payload also carries the agent-authored context that surrounded
+the numbered questions in the latest enhancement comment — the
+"Current Context" section plus the prose that introduced the
+`## Clarifying questions` heading — as `context_markdown`, surfaced by
+`ClarifyingQuestions::Load#context_markdown` reusing the cached
+`issue_comments` list the queue already loads. The inbox detail pane
+(`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
+viewports (two-column grid, sticky scrollable sidebar) and inside a
+collapsible native `<details>` disclosure above the questions on smaller
+viewports, via the shared `shared/markdown_text` partial in block mode.
+The panel hides gracefully when no context is fetchable (no GitHub
+credential, transient GitHub failure, or questions sourced from the local
+`needs_input_questions` snapshot rather than a fetched comment); the
+existing `View Issue` / `View PR` link remains so the operator can still
+read the comment directly on GitHub.
 
 ### `plan_review`
 

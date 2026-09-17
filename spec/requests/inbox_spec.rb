@@ -41,8 +41,17 @@ RSpec.describe "Inbox" do
       2. Should this be behind a flag?
     BODY
   end
+  # Factory projects come with a github_token, so github_credential_present?
+  # returns true and the new context_markdown accessor reaches for issue
+  # comments from GitHub. Stub the client so the inbox page builds without
+  # the network; tests that exercise context loading override this with a
+  # richer comment fixture.
+  let(:github_client) { instance_double(GithubClient, issue_comments: []) }
 
-  before { sign_in user }
+  before do
+    sign_in user
+    allow(GithubClient).to receive(:new).and_return(github_client)
+  end
 
   def entry_id(entry_kind, record)
     "#{entry_kind}:#{record.id}"
@@ -171,6 +180,22 @@ RSpec.describe "Inbox" do
     expect(link["data-inbox-master-detail-target"]).to eq("row")
   end
 
+  it "wires the shared list-detail shell's list and detail panes to the inbox master-detail targets" do
+    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    list = document.at_css("#inbox-list")
+    detail = document.at_css("#inbox-detail-pane")
+
+    expect(list).to be_present
+    expect(list["data-inbox-master-detail-target"]).to eq("list")
+    expect(detail).to be_present
+    expect(detail["data-inbox-master-detail-target"]).to eq("detailSection")
+  end
+
   it "supports project scoping" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
     create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
@@ -216,6 +241,7 @@ RSpec.describe "Inbox" do
   end
 
   it "renders a mobile detail state when the member route is selected" do
+    # @spec LIST-DETAIL-001
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_entry_path(
@@ -416,6 +442,161 @@ RSpec.describe "Inbox" do
       expect(question_node["data-markdown-text-content-value"]).to eq(markdown_question)
       expect(response.body).to include(CGI.escapeHTML(markdown_question))
       expect(response.body).not_to include("<strong>snake_case</strong>")
+    end
+  end
+
+  # @spec OPERATOR-INBOX-011
+  context "when the enhancement comment carries context sections" do
+    let(:context_comment_body) do
+      <<~COMMENT
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+
+        Need a call before implementation.
+
+        1. What is the expected behavior?
+        2. Should this be behind a flag?
+
+        ## Current context
+        - The repo already has a flag toggle wired up.
+        - Existing tests live in `app/services/foo.rb`.
+      COMMENT
+    end
+    let(:enhancement_comment) { double(body: context_comment_body, user: double(login: "viamin")) }
+
+    before do
+      allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment ])
+    end
+
+    it "renders the context panel inside a details disclosure with the preamble + Current context body wired into markdown-text" do
+      issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Context from Paid")
+      panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
+      expect(panel).to be_present
+      expect(panel.at_css("summary")).to be_present
+
+      context_node = panel.at_css('[data-controller="markdown-text"]')
+      expect(context_node["data-markdown-text-block-value"]).to eq("true")
+      expect(context_node["data-markdown-text-content-value"]).to include("Need a call before implementation.")
+      expect(context_node["data-markdown-text-content-value"]).to include("- The repo already has a flag toggle wired up.")
+    end
+
+    it "lays the context out beside the form on lg+ viewports via a two-column grid" do
+      issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']").parent
+      expect(grid["class"]).to include("lg:grid")
+      expect(grid["class"]).to include("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+    end
+
+    it "does not collapse the disclosure on lg+ so the operator does not have to tap to read context" do
+      issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
+      # OPERATOR-INBOX-011 expects the context to be visible by default on lg+
+      # so the operator does not have to expand the disclosure before reading it.
+      # The native <details open> default-expansion is what removes that tap;
+      # Nokogiri represents a present boolean attribute as `""`, so we look
+      # for the attribute itself rather than a truthy string value.
+      expect(panel.attribute("open")).not_to be_nil
+      expect(panel["class"]).to include("lg:sticky")
+      expect(panel.at_css("summary")["class"]).to include("lg:cursor-default")
+    end
+
+    it "escapes the fallback text so it never renders as raw HTML before JS runs" do
+      issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      # The comment contains a markdown backtick, so the fallback should ship
+      # the escaped raw string — never a live <code> tag — until the JS
+      # controller replaces it. The plain-text path uses escapeHtml in
+      # safe_markdown, so we look for the escaped form here.
+      expect(response.body).to include(CGI.escapeHTML("Existing tests live in `app/services/foo.rb`."))
+    end
+
+    it "keeps the View Issue link alongside the submit button when context is rendered" do
+      issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      document = Nokogiri::HTML(response.body)
+      view_issue = document.css("a").find { |anchor| anchor.text.include?("View") }
+      submit = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, issue)}"] input[type="submit"]))
+
+      expect(view_issue).to be_present
+      expect(view_issue["href"]).to eq(issue.github_url)
+      expect(submit).to be_present
+    end
+  end
+
+  # @spec OPERATOR-INBOX-011
+  context "when the enhancement comment has no recoverable context" do
+    let(:enhancement_comment) { double(body: questions_body, user: double(login: "viamin")) }
+
+    before do
+      allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment ])
+    end
+
+    it "hides the context panel and keeps the answer form intact" do
+      issue = create(:issue, :needs_input, project: project, title: "No context", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("Context from Paid")
+      expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
+      # The two-column grid wrapper is only emitted when context_markdown
+      # is present, so absence here is the signal that we fell back cleanly.
+      expect(response.body).not_to include("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      # Existing form + View Issue link remain so the operator can still
+      # answer the question and consult GitHub directly.
+      expect(response.body).to include("View Issue")
+      expect(response.body).to include("What is the expected behavior?")
+    end
+  end
+
+  # @spec OPERATOR-INBOX-011
+  context "when the questions come from the local needs_input_questions snapshot" do
+    it "hides the context panel because no comment was fetchable" do
+      issue = create(
+        :issue,
+        :needs_input,
+        project: project,
+        title: "Local snapshot question",
+        body: "No markdown here",
+        needs_input_questions: [ "What is the desired behavior?" ]
+      )
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("Context from Paid")
+      expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
+      expect(response.body).to include("What is the desired behavior?")
+    end
+  end
+
+  # @spec OPERATOR-INBOX-011
+  context "when GitHub credentials are missing" do
+    it "hides the context panel and keeps the View Issue link" do
+      issue = create(:issue, :needs_input, project: project, title: "Missing creds", body: questions_body)
+      allow(project).to receive(:github_credential_present?).and_return(false)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("Context from Paid")
+      expect(response.body).to include("View Issue")
     end
   end
 

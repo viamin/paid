@@ -6,6 +6,7 @@ require "rails_helper"
 # @spec INTENT-MERGE-GUARD-002
 # @spec INTENT-MERGE-GUARD-003
 # @spec INTENT-MERGE-GUARD-004
+# @spec INTENT-CONFORMANCE-REVIEW-002
 RSpec.describe IntentConformanceVerdict do
   describe "validations" do
     it "requires an outcome from the defined set" do
@@ -23,6 +24,14 @@ RSpec.describe IntentConformanceVerdict do
       expect(verdict.errors[:approved_design_revision]).to be_present
       expect(verdict.errors[:evaluated_at]).to be_present
     end
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-002
+  it "requires reviewer identity evidence (model)" do
+    verdict = build(:intent_conformance_verdict, reviewer_model: nil)
+
+    expect(verdict).not_to be_valid
+    expect(verdict.errors[:reviewer_model]).to be_present
   end
 
   describe ".current_for" do
