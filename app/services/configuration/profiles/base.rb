@@ -15,7 +15,7 @@ module Configuration
       # Shared clarifying question for profiles that target "off" for
       # tdd_mode. Declaring it keeps TDD posture an explicit operator choice
       # (an override) rather than a target every re-apply silently resets —
-      # see review discussion on PR #3879.
+      # see docs/intent/feature-approval/feature-approval-design.md (issue #3872).
       TDD_MODE_CLARIFYING_QUESTION = {
         id: "tdd_mode",
         question: "Test-review posture: off (no TDD gate) is this profile's suggested default; " \
