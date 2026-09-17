@@ -94,12 +94,15 @@ export default class extends Controller {
   }
 
   // Choice questions carry their answer target on a hidden composed input
-  // (OPERATOR-INBOX-012): hidden inputs take no focus and no border, so route
-  // the highlight to the click-to-answer widget's first pill instead.
+  // (OPERATOR-INBOX-012): hidden inputs take no focus and no border, and the
+  // pill inputs are sr-only with only peer-focus-visible styling, which never
+  // paints for programmatic focus after a click-driven submit. Focus the
+  // widget's visible detail textarea instead so the native focus ring marks
+  // the blank question, mirroring the textarea-only path.
   focusAnswer(answer) {
     if (answer.type === "hidden") {
       const widget = answer.closest('[data-controller~="clarifying-choice"]')
-      widget?.querySelector("input")?.focus()
+      widget?.querySelector("textarea")?.focus()
       return
     }
 
