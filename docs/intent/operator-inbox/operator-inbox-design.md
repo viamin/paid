@@ -258,6 +258,12 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
   inbox.
 - `spec/requests/inbox_spec.rb` covers the inbox layouts, member selection,
   stale-entry redirects, and action-required detail rendering.
+- `spec/system/inbox_chat_popup_spec.rb` drives a real browser and asserts
+  the desktop split-pane's actual geometry (queue and detail side by side,
+  not stacked as two rows) in addition to its existing pane-visibility and
+  mobile-collapse coverage — `spec/system/dashboard_inbox_spec.rb`'s
+  `:rack_test` driver never applies CSS, so it cannot catch a broken grid
+  declaration (#3876).
 - `spec/requests/plan_reviews_spec.rb` covers signal dispatch and inbox
   redirects after review actions.
 - `spec/requests/projects/clarifying_questions_spec.rb` covers inbox queue
