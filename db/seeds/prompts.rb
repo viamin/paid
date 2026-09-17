@@ -906,6 +906,7 @@ upsert_global_prompt.call(
 # goal.enhance_issue — Augment a base prompt for the enhance-issue goal
 # Used by: Activities::RunAgentActivity#augment_prompt_for_enhance_issue_goal
 # @spec ISSUE-ENHANCEMENT-001
+# @spec ISSUE-ENHANCEMENT-018
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
   slug: "goal.enhance_issue",
@@ -984,11 +985,30 @@ upsert_global_prompt.call(
     - Reference the relevant code, issue, or doc when one exists (file path and
       symbol, issue number such as #123, or design doc).
     - When the question could be read two ways, name the options you are asking
-      about (for example, "Option A: ... or Option B: ...").
+      about. When the answers form a short, enumerable set, mark the question as
+      a choice question with the option-marker syntax in "Choice questions"
+      below instead of naming the options in prose.
     - When the answer depends on where the issue sits in the roadmap, say so —
       dependencies on other issues, or follow-up work this issue enables.
     Keep each question a single numbered item with its context sentences inline,
     then the question itself, so the question list stays machine-parseable.
+
+    Choice questions. When — and only when — a question has a short, enumerable
+    set of answers, put the answers in a sub-list under the numbered question
+    using these exact marker lines:
+
+    1. Which storage backend should the export use?
+       - ( ) SQLite) local file, zero setup
+       - ( ) Postgres) already used for app data
+       - ( ) Flat JSON) easiest to diff
+
+    Use `- ( ) Label) description` lines when exactly one answer applies. Use
+    `- [ ] Label) description` lines when several answers may apply. The Label
+    is a short answer name of up to a few words and must not contain the `)`
+    character. The description is one short sentence. Provide at least two
+    option lines; with fewer options the question is not a choice question —
+    write it as prose. Never use these markers for context bullets or for
+    examples anywhere else in the comment.
   TEMPLATE
   variables: [
     var.call("base_prompt", "The base prompt this augmentation extends"),
