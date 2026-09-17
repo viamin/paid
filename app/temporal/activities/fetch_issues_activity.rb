@@ -311,7 +311,7 @@ module Activities
         changed: upsert_changed || rounds_reset }
     end
 
-    # @spec ISSUE-ENHANCEMENT-015
+    # @spec ISSUE-ENHANCEMENT-016
     # Resets the enhancement round counter when a trusted collaborator's
     # edit changed the issue body, mirroring the human-input resets already
     # applied on a clarifying-question answer

@@ -29,7 +29,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   def issue_class
-    @issue_class ||= Struct.new(:id, :github_number, :labels)
+    @issue_class ||= Struct.new(:id, :github_number, :labels, :paid_state, :last_analyzer_sufficient_context)
   end
 
   def run_class
@@ -42,7 +42,10 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     instance_double(project_class, id: 7, auto_enhance_enabled?: false,
       effective_auto_pick_skip_labels: [], feature_activation_label_for: nil)
   end
-  let(:issue) { instance_double(issue_class, id: 11, github_number: 42, labels: []) }
+  let(:issue) do
+    instance_double(issue_class, id: 11, github_number: 42, labels: [],
+      paid_state: "new", last_analyzer_sufficient_context: false)
+  end
   let(:eligible_scope) { instance_double(ActiveRecord::Relation) }
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
   let(:create_pr_blocking_runs) { instance_double(ActiveRecord::Relation) }
@@ -124,6 +127,29 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
 
     expect(analyze_issue_blocking_runs).to have_received(:find_or_create_by!).with(
       project: project, issue: issue, goal: "analyze_issue"
+    )
+  end
+
+  # @spec ISSUE-ENHANCEMENT-015
+  it "seeds create_pr directly for a completed issue with a prior sufficient-context verdict, even with auto_enhance enabled" do
+    allow(project).to receive(:auto_enhance_enabled?).and_return(true)
+    issue = instance_double(issue_class, id: 11, github_number: 42, labels: [],
+      paid_state: "completed", last_analyzer_sufficient_context: true)
+    service = described_class.new(issue, project: project)
+    allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
+    allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)
+    run = build_run(id: 99, previously_new_record: true)
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      expect(attrs).to eq(project: project, issue: issue, goal: "create_pr")
+      block.call(run)
+      run
+    end
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(create_pr_blocking_runs).to have_received(:find_or_create_by!).with(
+      project: project, issue: issue, goal: "create_pr"
     )
   end
 

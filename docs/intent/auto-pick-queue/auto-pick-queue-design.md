@@ -60,3 +60,15 @@ conclusion again. Such issues are stamped with `no_code_required_at`, which
 candidate selection excludes permanently and regardless of `paid_state` —
 the same always-on style already used for merged-PR-linked issues — so only a
 manually triggered run can pick the issue up again.
+
+A second, independent completed-issue recovery path (`#3851`, see
+`docs/intent/issue-enhancement/`) re-includes a `completed` issue whenever
+`last_analyzer_sufficient_context` is `true` — the durable marker an
+`analyze_issue` or `enhance_issue` run stamps when it concludes the issue is
+ready for `create_pr`. Unlike the run-based recovery path above, this one
+does not require the verdict-producing run to have been an automatic
+auto-pick run, so it also reconciles a lost `enhance_issue -> create_pr`
+handoff when the `enhance_issue` run was queued manually or directly by
+GitHub sync. Both recovery paths are additive (`OR`ed together) and both sit
+behind the same permanent no-code-required/merged-PR exclusions applied in
+`base_scope`.

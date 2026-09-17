@@ -443,7 +443,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
-    # @spec ISSUE-ENHANCEMENT-015
+    # @spec ISSUE-ENHANCEMENT-016
     context "when a trusted collaborator edits the issue body" do
       let(:existing_issue) do
         create(:issue,
@@ -498,7 +498,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(existing_issue.reload.enhance_issue_rounds).to eq(2)
       end
 
-      # @spec ISSUE-ENHANCEMENT-015
+      # @spec ISSUE-ENHANCEMENT-016
       # A recommend-close label removal and a trusted body edit can land in
       # the same sync: the removal makes Issues::UpsertFromGithub perform a
       # later save on the same instance (maybe_clear_recommend_close), which

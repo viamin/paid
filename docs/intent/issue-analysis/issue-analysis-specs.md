@@ -279,7 +279,7 @@
   re-evaluation rather than a forced one. Because a plain trusted
   comment matches none of the counter-reset paths (the answer flow, a
   needs-input label removal, or a trusted body edit via
-  `ISSUE-ENHANCEMENT-015`), the counter can still sit at cap when this
+  `ISSUE-ENHANCEMENT-016`), the counter can still sit at cap when this
   suppression fires — in that case the system SHALL reset
   `enhance_issue_rounds` to 0, preserving the invariant "suppression ⇒
   counter below cap" so the re-evaluation `enhance_issue` follow-up
