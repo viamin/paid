@@ -144,6 +144,41 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_label_added(project.enhance_issue_enhanced_label_name)
     end
 
+    # @spec ISSUE-ENHANCEMENT-016
+    context "when the issue body appears truncated or corrupted" do
+      let(:issue) do
+        create(:issue, :in_progress,
+          project: project,
+          github_number: 42,
+          title: "Add audit log",
+          body: "Dot notation is central to ergonomics, but it should not force Rubys " \
+            "naming convention on every consumer without a documented way to opt out")
+      end
+
+      it "includes a body integrity notice in the posted comment" do
+        log_agent_stdout(structured_output)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect_comment_including(described_class::COMMENT_MARKER, "appears truncated or corrupted", "## Implementation context")
+      end
+    end
+
+    context "when the issue body is well-formed" do
+      it "does not include a body integrity notice in the posted comment" do
+        log_agent_stdout(structured_output)
+        posted_body = nil
+        allow(client).to receive(:add_comment) do |*, body|
+          posted_body = body
+          posted_comment
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(posted_body).not_to include("appears truncated or corrupted")
+      end
+    end
+
     # @spec ISSUE-ENHANCEMENT-014
     # Resets the enhancement round counter on a successful verdict (#3842):
     # the lane has converged, and a later regression should not inherit an

@@ -282,3 +282,20 @@
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#complete_run!`,
   `app/models/issue.rb#auto_pick_eligible_paid_state_scope`,
   `app/services/issues/enqueue_eligible.rb#seeded_goal`.
+
+- [x] **ISSUE-ENHANCEMENT-016** — When an issue body looks truncated or
+  corrupted (`Issues::DetectTruncatedBody`), both the enhance agent's prompt
+  (`RunAgentActivity#augment_prompt_for_enhance_issue_goal`) and the posted
+  enhancement comment SHALL name the condition explicitly — the agent is
+  told not to guess at the missing intent or treat the fragment as the whole
+  spec, and the comment carries a visible notice that the original intent
+  may be lost — instead of silently guessing at intent from a partial draft
+  (#3852). Well-formed bodies SHALL see no prompt or comment change.
+  *Tests:* `spec/services/issues/detect_truncated_body_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`
+  ("when the issue body appears truncated or corrupted", "when the issue body is well-formed"),
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`
+  ("when the issue body appears truncated or corrupted", "when the issue body is well-formed").
+  *Code:* `app/services/issues/detect_truncated_body.rb`,
+  `app/temporal/activities/run_agent_activity.rb#inject_body_integrity_note`,
+  `app/temporal/activities/enhance_issue_activity.rb#comment_body_for`.

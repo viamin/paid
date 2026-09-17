@@ -344,8 +344,25 @@ reset.
 | Park malformed or round-exhausted enhancement in a distinct `manual_review` state. | Manual intervention is not an answerable questionnaire. A distinct state prevents questionless-needs-input repair from re-arming auto-pick and gives operators an unambiguous lifecycle state. | `needs_input` is reserved for parseable questions and is automatically repaired when questionless; `paused` represents an operator-imposed operational pause rather than an enhancement outcome; `failed` re-enters auto-pick. |
 | Count queued automatic enhancement attempts, not only answered-question re-evaluations. | All attempts consume resources and can produce side effects; a cap must cover every entry path. | Counting label removals misses initial-analysis follow-ups and permits an unbounded loop. |
 
+## Body integrity
+
+A truncated or corrupted issue body — a failed rewrite that left a partial,
+mid-sentence draft in place of the original — gives the enhance agent only a
+fragment to reason from, so its clarifying questions target the truncation
+instead of real ambiguities (#3852). `Issues::DetectTruncatedBody` (shared
+with `docs/intent/issue-analysis/`) computes the same structural heuristic
+used by the analyzer. `RunAgentActivity#inject_body_integrity_note` appends a
+note to the enhance-agent prompt so it does not guess at missing intent, and
+`EnhanceIssueActivity#comment_body_for` prepends a visible notice to the
+posted comment so a human opening the issue sees the root cause immediately
+instead of only the stuck-loop symptom. Both checks are no-ops for
+well-formed bodies.
+
 ## Open questions and future decisions
 
 - Duplicate comments created before these invariants were enforced require an
   explicit operator cleanup decision; automatic deletion is outside the
   enhancement lifecycle.
+- Auto-repair of a truncated body (e.g. reconstructing from git history when
+  the body was agent-rewritten) is out of scope for #3852; detection and
+  surfacing is enough to close the loop with a human operator.
