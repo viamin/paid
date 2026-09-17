@@ -4096,7 +4096,7 @@ module Activities
     # A cheap structural heuristic, not an LLM judgment (#3852) — computed in
     # code so the agent is told the body is broken as ground truth instead of
     # having to notice a garbled fragment on its own and guess at the intent.
-    # @spec ISSUE-ENHANCEMENT-016
+    # @spec ISSUE-ENHANCEMENT-017
     def inject_body_integrity_note(prompt, issue)
       return prompt unless Issues::DetectTruncatedBody.call(issue.body)
 

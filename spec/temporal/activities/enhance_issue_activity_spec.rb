@@ -144,7 +144,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_label_added(project.enhance_issue_enhanced_label_name)
     end
 
-    # @spec ISSUE-ENHANCEMENT-016
+    # @spec ISSUE-ENHANCEMENT-017
     context "when the issue body appears truncated or corrupted" do
       let(:issue) do
         create(:issue, :in_progress,
