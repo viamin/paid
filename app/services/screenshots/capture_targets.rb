@@ -268,6 +268,7 @@ module Screenshots
     CONTROLLER_TARGETS = {
       "dashboard_controller.rb" => [ :dashboard ],
       "inbox_controller.rb" => [ :dashboard ],
+      "feature_intents_controller.rb" => [ :dashboard ],
       "legacy_inbox_redirects_controller.rb" => [ :dashboard ],
       "home_controller.rb" => [ :dashboard ],
       "projects_controller.rb" => %i[projects project_new project_show project_edit],

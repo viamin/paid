@@ -31,7 +31,7 @@ module Inbox
 
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
-        escalated_pr_count + manual_review_count
+        escalated_pr_count + manual_review_count + feature_decision_count
     end
 
     def needs_input_count
@@ -43,6 +43,13 @@ module Inbox
 
     def open_plan_review_count
       PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve.open_plan_reviews.count
+    end
+
+    # @spec FEATURE-APPROVAL-013
+    def feature_decision_count
+      FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
+        .where(status: Inbox::Queue::FEATURE_DECISION_STATUSES)
+        .count
     end
 
     def merge_approval_count

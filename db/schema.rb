@@ -1394,6 +1394,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_093601) do
     t.index ["project_id"], name: "index_failure_classifications_on_project_id"
   end
 
+  create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
+    t.text "answer", comment: "Human's answer or confirmation note."
+    t.datetime "created_at", null: false
+    t.text "design_claim", null: false, comment: "The design claim this decision affects, so the Inbox can explain what it holds."
+    t.bigint "feature_intent_id", null: false
+    t.string "kind", null: false, comment: "question or inferred_decision."
+    t.text "prompt", null: false, comment: "The question text, or the inferred decision's stated assumption."
+    t.datetime "resolved_at"
+    t.bigint "resolved_by_id"
+    t.string "status", default: "open", null: false, comment: "open or resolved. For inferred_decision, resolved means human-confirmed."
+    t.datetime "updated_at", null: false
+    t.index ["feature_intent_id", "status"], name: "index_feature_intent_decisions_on_feature_intent_id_and_status"
+    t.index ["feature_intent_id"], name: "index_feature_intent_decisions_on_feature_intent_id"
+    t.index ["resolved_by_id"], name: "index_feature_intent_decisions_on_resolved_by_id"
+    t.index ["status"], name: "index_feature_intent_decisions_on_status"
+  end
+
+  create_table "feature_intent_design_prs", comment: "RDR-066 design PRs (RDR and/or LID Planning) linked to a feature intent, tracked for staleness and required-artifact checks.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "design_pr_kind", null: false, comment: "rdr or lid_planning."
+    t.bigint "feature_intent_id", null: false
+    t.string "head_sha", null: false, comment: "Most recently synced PR head SHA."
+    t.datetime "merged_at"
+    t.integer "pull_request_number", null: false
+    t.boolean "required", default: true, null: false, comment: "Whether this artifact must merge before the feature can release, per the project's LID mode."
+    t.string "reviewed_head_sha", comment: "Head SHA the feature's current open decisions/evidence were generated against. When it differs from head_sha, the PR moved after discovery and approval is held until Paid re-evaluates the new head."
+    t.datetime "updated_at", null: false
+    t.index ["feature_intent_id", "pull_request_number"], name: "index_feature_intent_design_prs_unique_pr", unique: true
+    t.index ["feature_intent_id"], name: "index_feature_intent_design_prs_on_feature_intent_id"
+  end
+
   create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "feature_intent_id", null: false
@@ -1404,15 +1435,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_093601) do
   end
 
   create_table "feature_intents", comment: "RDR-066 feature intent: links a feature's approved design revision to its issue tree.", force: :cascade do |t|
+    t.datetime "approved_at", comment: "When the current design revision was approved."
+    t.bigint "approved_by_id", comment: "User who recorded the Inbox Mark approved decision for the current design revision."
     t.string "approved_design_revision", comment: "Merged repository revision of the currently approved design."
+    t.jsonb "approved_pr_heads", default: {}, null: false, comment: "Design PR number => head SHA snapshot the human approved; a later commit on any key makes the approval stale."
     t.datetime "approved_revision_recorded_at", comment: "When the approved design revision was recorded."
     t.text "brief", comment: "Feature brief the design was researched from."
     t.datetime "created_at", null: false
+    t.datetime "criteria_clarity_evaluated_at", comment: "When criteria_clarity_state was last computed."
+    t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
+    t.string "criteria_clarity_state", default: "pending", null: false, comment: "Cached AI clarity judgment for acceptance criteria: pending, clear, or vague. Computed by FeatureIntents::EvaluateCriteriaClarity, not on Inbox render, so listing entries never makes a live LLM call per feature."
     t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
     t.bigint "project_id", null: false
     t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
     t.string "title", null: false, comment: "Human-readable feature name."
     t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_feature_intents_on_approved_by_id"
     t.index ["project_id", "status"], name: "index_feature_intents_on_project_id_and_status"
     t.index ["project_id"], name: "index_feature_intents_on_project_id"
     t.index ["status"], name: "index_feature_intents_on_status"
@@ -3620,9 +3658,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_093601) do
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
+  add_foreign_key "feature_intent_decisions", "feature_intents"
+  add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
+  add_foreign_key "feature_intent_design_prs", "feature_intents"
   add_foreign_key "feature_intent_issues", "feature_intents"
   add_foreign_key "feature_intent_issues", "issues"
   add_foreign_key "feature_intents", "projects"
+  add_foreign_key "feature_intents", "users", column: "approved_by_id"
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
