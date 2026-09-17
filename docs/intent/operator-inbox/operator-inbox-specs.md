@@ -202,3 +202,31 @@
   `app/views/inbox/count.html.erb`, `app/views/inbox/_count_badge.html.erb`.
   *Test:* `spec/requests/navigation_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
+
+- [x] **OPERATOR-INBOX-011** — When a clarifying-question inbox entry is
+  selected, the system SHALL render the agent-authored context that
+  surrounded the numbered questions in the latest enhancement comment
+  alongside the answer form: the "Current Context" section plus the prose
+  that introduced the `## Clarifying questions` heading (the "preamble").
+  The context SHALL be surfaced via `ClarifyingQuestions::Load#context_markdown`
+  reusing the same `issue_comments` list the queue already loads (no extra
+  GitHub API call), SHALL flow through `Inbox::Queue::Entry#context_markdown`,
+  and SHALL be exposed through `shared/markdown_text` rendered in block
+  mode so paragraphs and lists keep their structure. On `lg+` viewports
+  the context SHALL sit in a two-column grid beside the questions; below
+  `lg` it SHALL collapse into a native `<details>` disclosure above the
+  questions so it does not dominate the answer form on phones. When the
+  comment body cannot be fetched (missing GitHub credential, transient
+  GitHub failure, or the questions came from a local `needs_input_questions`
+  snapshot rather than a fetched comment), the system SHALL hide the panel
+  gracefully and keep the existing "open on GitHub" link so the operator
+  can still consult the comment directly.
+  *Code:* `app/services/clarifying_questions/context.rb`,
+  `app/services/clarifying_questions/load.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`,
+  `app/views/shared/_markdown_text.html.erb`,
+  `app/javascript/controllers/markdown_text_controller.js`.
+  *Test:* `spec/services/clarifying_questions/context_spec.rb`,
+  `spec/services/clarifying_questions/load_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.

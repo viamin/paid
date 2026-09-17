@@ -70,6 +70,22 @@ the answer flow resolves queue membership and next-entry traversal from
 `Inbox::Queue` filtered to `clarifying_questions`, so PR-backed records keep
 the same continuation behavior as issue-backed records.
 
+The entry payload also carries the agent-authored context that surrounded
+the numbered questions in the latest enhancement comment — the
+"Current Context" section plus the prose that introduced the
+`## Clarifying questions` heading — as `context_markdown`, surfaced by
+`ClarifyingQuestions::Load#context_markdown` reusing the cached
+`issue_comments` list the queue already loads. The inbox detail pane
+(`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
+viewports (two-column grid, sticky scrollable sidebar) and inside a
+collapsible native `<details>` disclosure above the questions on smaller
+viewports, via the shared `shared/markdown_text` partial in block mode.
+The panel hides gracefully when no context is fetchable (no GitHub
+credential, transient GitHub failure, or questions sourced from the local
+`needs_input_questions` snapshot rather than a fetched comment); the
+existing `View Issue` / `View PR` link remains so the operator can still
+read the comment directly on GitHub.
+
 ### `plan_review`
 
 Backed by `DecompositionDecision.open_plan_reviews`, scoped through

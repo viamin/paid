@@ -33,6 +33,7 @@ module Inbox
       :record,
       :waiting_since,
       :questions,
+      :context_markdown,
       :tasks,
       :summary_text,
       :title_text,
@@ -140,6 +141,7 @@ module Inbox
           record: issue,
           waiting_since: issue.needs_input_since,
           questions: questions,
+          context_markdown: context_markdown_for(issue),
           tasks: [],
           summary_text: nil,
           title_text: nil,
@@ -206,6 +208,19 @@ module Inbox
       # the needs-input comment is posted, so the dashboard renders without a
       # per-issue GitHub API round-trip (RDR-053).
       Array(issue.needs_input_questions)
+    end
+
+    # Pulls the agent-authored context sections ("Current Context" + the
+    # clarifying-questions preamble) from the latest enhancement comment for
+    # an issue, or returns nil when no comment is fetchable / parseable.
+    # Surfaces nil to callers so the panel can hide gracefully on the few
+    # issues whose questions came from the local needs_input_questions
+    # snapshot rather than a fetched comment.
+    def context_markdown_for(issue)
+      load = ClarifyingQuestions::Load.new(project: issue.project, issue: issue)
+      load.context_markdown
+    rescue GithubClient::Error
+      nil
     end
 
     def plan_review_entries
