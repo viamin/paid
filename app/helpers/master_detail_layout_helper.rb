@@ -43,11 +43,17 @@ module MasterDetailLayoutHelper
     "rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm".freeze
 
   # CSS grid wrapper around the two panes. Single source of truth for the
-  # `22rem, 1fr` template and the `gap-6` inter-pane spacing. Both the
-  # inbox and chat pages render through `_list_detail_shell` and pick up
-  # this exact class string.
+  # `22rem` fixed list track and the `minmax(0,1fr)` flexible detail track
+  # — Tailwind underscores become spaces, so this compiles to
+  # `grid-template-columns: 22rem minmax(0,1fr)`, a valid CSS declaration
+  # (a top-level comma in a track list is a parse error the browser drops
+  # entirely, leaving both panes stacked as one column). The `minmax(0,1fr)`
+  # on the detail track also keeps long unbreakable content in the detail
+  # pane from blowing out the flexible track. Combined with the `gap-6`
+  # inter-pane spacing, both inbox and chat pages render through
+  # `_list_detail_shell` and pick up this exact class string.
   def master_detail_grid_classes
-    "grid gap-6 lg:grid-cols-[#{MASTER_DETAIL_LIST_PANE_WIDTH},1fr]"
+    "grid gap-6 lg:grid-cols-[#{MASTER_DETAIL_LIST_PANE_WIDTH}_minmax(0,1fr)]"
   end
 
   # Pane-card chrome — see `MASTER_DETAIL_PANE_CLASSES`. Returned as a

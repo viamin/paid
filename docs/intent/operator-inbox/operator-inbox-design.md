@@ -28,7 +28,7 @@ entries into one responsive page.
    - a desktop split-pane layout with the queue on the left and detail on the
      right, both halves going through the shared
      [`list-detail-layout`](../list-detail-layout/list-detail-layout-design.md)
-     shell (`grid gap-6 lg:grid-cols-[22rem,1fr]`, `22rem` list pane,
+     shell (`grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]`, `22rem` list pane,
      shared pane chrome, shared empty state, shared active-row treatment)
    - a mobile master-detail flow where the member route opens the detail pane
    - a neutral `Waiting —` label when a legacy entry has no waiting timestamp

@@ -63,7 +63,7 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
     grid_classes = grid ? grid[:class] : ""
 
     expect(grid).to be_present
-    expect(grid_classes).to include("lg:grid-cols-[22rem,1fr]")
+    expect(grid_classes).to include("lg:grid-cols-[22rem_minmax(0,1fr)]")
     expect(document.at_css("#chat-list")).to be_present
     expect(document.at_css("#chat-detail")).to be_present
   end

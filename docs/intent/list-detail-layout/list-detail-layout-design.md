@@ -81,7 +81,7 @@ replaces.
 | Desktop breakpoint | `lg` (≥1024px) | same on both |
 | List pane width | `22rem` | same on both |
 | Inter-pane gap | `gap-6` | `gap-6` (inbox) vs. `gap-4 lg:gap-6` (chat) |
-| Grid template | `grid lg:grid-cols-[22rem,1fr]` | same on both |
+| Grid template | `grid lg:grid-cols-[22rem_minmax(0,1fr)]` | same on both |
 | Pane card chrome | `overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm` | `rounded-xl border ... shadow-sm` (inbox) vs. `rounded-lg bg-white shadow` (chat) |
 | Active row treatment | `bg-indigo-50 ring-1 ring-inset ring-indigo-200` | `bg-indigo-50` (inbox) vs. `border-sky-400 bg-sky-50 shadow-md` (chat) |
 | Empty state | `rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm` | per-screen |

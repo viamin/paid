@@ -29,7 +29,7 @@ RSpec.describe MasterDetailLayoutHelper, type: :helper do
     it "exposes a single grid class string with the shared template and gap-6 spacing" do
       helper = Class.new { include MasterDetailLayoutHelper }.new
 
-      expect(helper.master_detail_grid_classes).to eq("grid gap-6 lg:grid-cols-[22rem,1fr]")
+      expect(helper.master_detail_grid_classes).to eq("grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]")
     end
 
     # @spec LIST-DETAIL-002 @spec LIST-DETAIL-004

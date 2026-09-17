@@ -92,7 +92,7 @@ export default class extends Controller {
     this.cardTargets.forEach((card) => {
       const selected = Number(card.dataset.sessionId) === activeId
       const activeClasses = (card.dataset.activeClasses || "").split(/\s+/).filter(Boolean)
-      card.classList.toggle(...[ ...activeClasses, selected ].filter(Boolean))
+      activeClasses.forEach((cls) => card.classList.toggle(cls, selected))
     })
   }
 

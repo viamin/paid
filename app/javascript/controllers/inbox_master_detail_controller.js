@@ -79,7 +79,7 @@ export default class extends Controller {
     this.rowTargets.forEach((row) => {
       const selected = row === clicked
       const activeClasses = (row.dataset.activeClasses || "").split(/\s+/).filter(Boolean)
-      row.classList.toggle(...[ ...activeClasses, selected ].filter(Boolean))
+      activeClasses.forEach((cls) => row.classList.toggle(cls, selected))
     })
   }
 
