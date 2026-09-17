@@ -58,9 +58,11 @@ module MasterDetailLayoutHelper
 
   # Selected-row class set — see `MASTER_DETAIL_ACTIVE_ROW_CLASSES`.
   # Inbox applies this directly at render time based on its `selected_entry`
-  # comparison; Chat applies it both at render time (for the initial
-  # selected session) and via `chat-session-list#updateActiveCard` when
-  # the active session id changes.
+  # comparison; Chat renders it into each card's `data-active-classes` and
+  # `chat-session-list#updateActiveCard` toggles it on the active card
+  # whenever the active session id changes. Both controllers keep
+  # `hover:bg-gray-50` mutually exclusive with this set so hovering the
+  # selected row never overrides the selection state.
   def master_detail_active_row_classes
     MASTER_DETAIL_ACTIVE_ROW_CLASSES
   end

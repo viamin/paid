@@ -118,7 +118,7 @@ card; the unification is the point.
 
 ## Testing strategy
 
-- `spec/lib/master_detail_layout_helper_spec.rb` covers the shared class
+- `spec/helpers/master_detail_layout_helper_spec.rb` covers the shared class
   strings and constants stay aligned: pane width, breakpoint, gap, active
   row, empty state, pane chrome. A future edit that drifts the values is
   caught here.
@@ -129,7 +129,10 @@ card; the unification is the point.
 - The existing per-feature behavior tests
   (`inbox_chat_popup_spec`, `chat_session_list_controller_node_harness_spec`)
   stay green; the shared pattern does not alter the per-feature Stimulus
-  lifecycle.
+  lifecycle. The chat node harness also covers
+  `chat-session-list#updateActiveCard` toggling the shared active-row set
+  and keeping `hover:bg-gray-50` exclusive with it, mirroring
+  `inbox-master-detail#highlightRow`.
 
 ## LID anchors
 

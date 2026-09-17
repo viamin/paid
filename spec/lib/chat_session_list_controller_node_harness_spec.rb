@@ -289,9 +289,66 @@ class ChatSessionListControllerNodeHarness
       }
     }
 
+    // @spec LIST-DETAIL-003
+    // The session card partial paints `hover:bg-gray-50` on every card at
+    // render time. `updateActiveCard()` must keep it mutually exclusive
+    // with the shared active-row class set, matching
+    // `inbox-master-detail#highlightRow`, so the selected card doesn't
+    // gray out on hover and a deselected card gets its hover back.
+    function runUpdateActiveCardCase() {
+      const activeClasses = "bg-indigo-50 ring-1 ring-inset ring-indigo-200";
+      const buildCard = (sessionId) => ({
+        classList: buildClassList(["hover:bg-gray-50"]),
+        dataset: { activeClasses, sessionId: String(sessionId) }
+      });
+      const selectedCard = buildCard(42);
+      const otherCard = buildCard(7);
+
+      const controller = Object.create(ChatSessionListController.prototype);
+      controller.cardTargets = [selectedCard, otherCard];
+      controller.hasActiveSessionIdValue = true;
+      controller.activeSessionIdValue = 42;
+
+      controller.updateActiveCard();
+
+      activeClasses.split(" ").forEach((cls) => {
+        if (!selectedCard.classList.contains(cls)) {
+          throw new Error(`Expected the active card to carry ${cls}`);
+        }
+
+        if (otherCard.classList.contains(cls)) {
+          throw new Error(`Expected the inactive card not to carry ${cls}`);
+        }
+      });
+
+      if (selectedCard.classList.contains("hover:bg-gray-50")) {
+        throw new Error("Expected the active card to drop hover:bg-gray-50 so hover doesn't override the selection state");
+      }
+
+      if (!otherCard.classList.contains("hover:bg-gray-50")) {
+        throw new Error("Expected the inactive card to keep hover:bg-gray-50");
+      }
+
+      controller.activeSessionIdValue = 7;
+      controller.updateActiveCard();
+
+      if (!selectedCard.classList.contains("hover:bg-gray-50")) {
+        throw new Error("Expected a deselected card to regain hover:bg-gray-50");
+      }
+
+      if (selectedCard.classList.contains("bg-indigo-50")) {
+        throw new Error("Expected a deselected card to drop the active-row classes");
+      }
+
+      if (otherCard.classList.contains("hover:bg-gray-50")) {
+        throw new Error("Expected the newly-selected card to drop hover:bg-gray-50");
+      }
+    }
+
     runModernListenerCase();
     runLegacyListenerCase();
     runMissingMatchMediaCase();
+    runUpdateActiveCardCase();
   JAVASCRIPT
 
   def self.run
@@ -300,7 +357,8 @@ class ChatSessionListControllerNodeHarness
 end
 
 RSpec.describe ChatSessionListControllerNodeHarness, :no_db do
-  it "toggles the mobile sidebar and supports legacy media query listeners" do
+  # @spec LIST-DETAIL-003
+  it "toggles the mobile sidebar, supports legacy media query listeners, and keeps hover exclusive with the active card" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

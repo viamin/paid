@@ -5,9 +5,10 @@
 
     Locals:
       title:  Required heading text for the empty state.
-      body:   Required body text under the heading.
+      body:   Optional body text under the heading; omitted when blank.
 
     @spec LIST-DETAIL-002 @spec LIST-DETAIL-005 %>
+<% body ||= nil %>
 <div class="<%= master_detail_empty_state_classes %>">
   <h2 class="text-sm font-semibold text-gray-900"><%= title %></h2>
   <% if body.present? %>

@@ -16,7 +16,7 @@
   `app/views/inbox/index.html.erb`,
   `app/views/chat_sessions/index.html.erb`,
   `app/views/chat_sessions/show.html.erb`.
-  *Test:* `spec/lib/master_detail_layout_helper_spec.rb`,
+  *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
   `spec/system/dashboard_inbox_spec.rb`, `spec/system/chat_layout_spec.rb`.
 
 - [x] **LIST-DETAIL-002** — The two-pane shell SHALL render the list pane
@@ -29,7 +29,7 @@
   *Code:* `app/helpers/master_detail_layout_helper.rb`,
   `app/views/shared/_list_detail_shell.html.erb`,
   `app/views/shared/_list_detail_empty_state.html.erb`.
-  *Test:* `spec/lib/master_detail_layout_helper_spec.rb`,
+  *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
   `spec/system/dashboard_inbox_spec.rb`.
 
 - [x] **LIST-DETAIL-003** — When a list row is the selected entry on Inbox
@@ -39,14 +39,20 @@
   be made in one place. The active class SHALL be applied at render time
   via the same helper (`MasterDetailLayoutHelper#master_detail_active_row_classes`)
   on both pages; Chat's existing JS-driven selection update keeps doing the
-  same toggle on top of the shared class set.
+  same toggle on top of the shared class set. On both pages the selected
+  row SHALL NOT carry the `hover:bg-gray-50` hover affordance while it is
+  active, and SHALL regain it when deselected, so hovering the selected
+  row never overrides the shared active state.
   *Code:* `app/helpers/master_detail_layout_helper.rb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/chat_sessions/_session_card.html.erb`,
+  `app/javascript/controllers/inbox_master_detail_controller.js`,
   `app/javascript/controllers/chat_session_list_controller.js`.
   *Test:* `spec/requests/inbox_spec.rb`,
   `spec/requests/chat_sessions_spec.rb`,
-  `spec/system/dashboard_inbox_spec.rb`.
+  `spec/system/dashboard_inbox_spec.rb`,
+  `spec/system/chat_shared_layout_spec.rb`,
+  `spec/lib/chat_session_list_controller_node_harness_spec.rb`.
 
 - [x] **LIST-DETAIL-004** — `MasterDetailLayoutHelper` SHALL expose the
   shared class strings (`master_detail_grid_classes`,
@@ -63,7 +69,7 @@
   value (and are deliberately mirrored — the helper does not re-export it
   so changing it does not silently drift one of the three call sites).
   *Code:* `app/helpers/master_detail_layout_helper.rb`.
-  *Test:* `spec/lib/master_detail_layout_helper_spec.rb`.
+  *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`.
 
 - [x] **LIST-DETAIL-005** — The shared `_list_detail_shell` partial SHALL
   render the empty-state card when the `detail` local is blank and an
@@ -75,7 +81,7 @@
   `app/views/shared/_list_detail_empty_state.html.erb`,
   `app/views/inbox/index.html.erb`,
   `app/views/chat_sessions/index.html.erb`.
-  *Test:* `spec/lib/master_detail_layout_helper_spec.rb`,
+  *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
   `spec/system/dashboard_inbox_spec.rb`.
 
 - [x] **LIST-DETAIL-006** — Inbox and Chat SHALL keep their distinct

@@ -10,14 +10,18 @@
       list:        Content for the left (list) pane — usually rendered via
                    the feature's own list partial. Required.
       detail:      Content for the right (detail) pane — usually rendered
-                   via the feature's own detail partial. Required.
-      empty_title:        String title for the empty-state card.
-      empty_body:        Multi-line body required for the empty-state card.
-      list_dom_id:    DOM id for the list pane (used by feature Stimulus
+                   via the feature's own detail partial. Optional; when
+                   blank and `empty_title` is set, the shared empty state
+                   renders instead.
+      empty_title: String title for the empty-state card. Required when
+                   `detail` is blank; otherwise the detail pane renders
+                   empty.
+      empty_body:  Body text for the empty-state card. Optional.
+      list_dom_id:   DOM id for the list pane (used by feature Stimulus
                        controllers; falls back to "list-detail-list").
-      detail_dom_id:    DOM id for the detail pane (used by feature Stimulus
+      detail_dom_id: DOM id for the detail pane (used by feature Stimulus
                        controllers; falls back to "list-detail-detail").
-      list_data:        Hash of `data-*` attributes for the list pane. Keys
+      list_data:     Hash of `data-*` attributes for the list pane. Keys
                        are passed straight through to `tag.div data:`,
                        which auto-prepends `data-` and dasherizes each key
                        (so `"inbox_master_detail_target"` becomes
@@ -27,11 +31,14 @@
                        ERB-interpolated; the attribute name is fixed, so
                        the Herb lint rule on ERB-in-attribute-name does not
                        fire.
-      detail_data:        Same as `list_data`, for the detail pane.
-      list_classes:     Extra classes to merge into the list pane card.
-      detail_classes:    Extra classes to merge into the detail pane card.
+      detail_data:   Same as `list_data`, for the detail pane.
+      list_classes:  Extra classes to merge into the list pane card.
+      detail_classes: Extra classes to merge into the detail pane card.
 
     @spec LIST-DETAIL-001 @spec LIST-DETAIL-002 @spec LIST-DETAIL-005 %>
+<% detail ||= nil %>
+<% empty_title ||= nil %>
+<% empty_body ||= nil %>
 <% list_dom_id ||= "list-detail-list" %>
 <% detail_dom_id ||= "list-detail-detail" %>
 <% list_data ||= {} %>

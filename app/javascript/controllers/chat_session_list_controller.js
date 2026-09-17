@@ -93,6 +93,12 @@ export default class extends Controller {
       const selected = Number(card.dataset.sessionId) === activeId
       const activeClasses = (card.dataset.activeClasses || "").split(/\s+/).filter(Boolean)
       activeClasses.forEach((cls) => card.classList.toggle(cls, selected))
+      // `_session_card` paints `hover:bg-gray-50` on every card at render
+      // time. Keep it mutually exclusive with the active-row class set —
+      // the same treatment as `inbox-master-detail#highlightRow` — so
+      // hovering the selected card doesn't gray out the indigo selection
+      // and a just-deselected card gets its hover affordance back.
+      card.classList.toggle("hover:bg-gray-50", !selected)
     })
   }
 
