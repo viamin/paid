@@ -5,12 +5,12 @@
 ## Metadata
 
 - **Date**: 2026-09-16
-- **Status**: Draft
+- **Status**: Final
 - **Type**: Product workflow + orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-044](RDR-044-configuration-profiles-chat.md) (Configuration Profiles), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-053](RDR-053-new-feature-creation.md) (New Feature Creation), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-067](RDR-067-approved-intent-conformance.md) (Approved Intent Conformance)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/operator-inbox/`, `docs/intent/inbox-foundation/`, `docs/intent/lid-aware-agent-runs/`, and a new feature-approval segment
-- **Related Issues**: [#3860](https://github.com/viamin/paid/issues/3860) (epic), #3862–#3865 (approval and release), #3872 (mode and onboarding), #3873 (closeout). Every implementation issue remains blocked by draft design PR #3859 and carries the `planning` label until this RDR is finalized.
+- **Related Issues**: [#3860](https://github.com/viamin/paid/issues/3860) (epic), #3862–#3865 (approval and release), #3872 (mode and onboarding), #3873 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
 - **Related Tests**: TBD
 
 ## Problem Statement
