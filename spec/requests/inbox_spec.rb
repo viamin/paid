@@ -465,6 +465,12 @@ RSpec.describe "Inbox" do
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
+      # OPERATOR-INBOX-011 expects the context to be visible by default on lg+
+      # so the operator does not have to expand the disclosure before reading it.
+      # The native <details open> default-expansion is what removes that tap;
+      # Nokogiri represents a present boolean attribute as `""`, so we look
+      # for the attribute itself rather than a truthy string value.
+      expect(panel.attribute("open")).not_to be_nil
       expect(panel["class"]).to include("lg:sticky")
       expect(panel.at_css("summary")["class"]).to include("lg:cursor-default")
     end

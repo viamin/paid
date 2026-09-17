@@ -25,6 +25,7 @@
       <div class="<%= entry.context_markdown.present? ? "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-6 lg:space-y-0 space-y-4" : "space-y-4" %>">
         <% if entry.context_markdown.present? %>
           <details
+            open
             class="group rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:border-gray-200 lg:bg-gray-50"
             data-testid="inbox-clarifying-context">
             <summary class="flex cursor-pointer items-center justify-between gap-2 text-sm font-semibold text-gray-900 lg:cursor-default">
