@@ -28,6 +28,8 @@ RSpec.describe Configuration::Profiles::Settings do
       expect(described_class.fetch("merge_method").options).to match_array(Project::MERGE_METHODS)
       expect(described_class.fetch("auto_release_granularity").options).to match_array(Project::AUTO_RELEASE_GRANULARITIES)
       expect(described_class.fetch("adoption_mode").options).to match_array(Project::ADOPTION_MODES)
+      expect(described_class.fetch("operating_mode").options).to match_array(Project::OPERATING_MODES)
+      expect(described_class.fetch("tdd_mode").options).to match_array(Project::TDD_MODES)
     end
 
     it "fails when a mode-relevant project column lacks profile coverage or exemption" do

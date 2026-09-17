@@ -2522,6 +2522,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_025957) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."

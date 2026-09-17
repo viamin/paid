@@ -54,7 +54,7 @@
   <% if @current_step %>
     <div class="bg-white shadow sm:rounded-lg">
       <div class="px-4 py-5 sm:p-6">
-        <%= render "onboarding/steps/#{@current_step.step}", step: @current_step %>
+        <%= render "onboarding/steps/#{@current_step.step}", step: @current_step, posture_plan: @posture_plan, posture_project: @posture_project %>
       </div>
     </div>
   <% end %>

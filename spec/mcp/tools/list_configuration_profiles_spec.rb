@@ -16,7 +16,8 @@ RSpec.describe Tools::ListConfigurationProfiles do
       hash_including(profile_id: "observe_only", name: "Observe Only"),
       hash_including(profile_id: "manual_on_label", name: "Manual On Label"),
       hash_including(profile_id: "cost_capped_automated", name: "Cost Capped Automated"),
-      hash_including(profile_id: "quality_strict", name: "Quality Strict")
+      hash_including(profile_id: "quality_strict", name: "Quality Strict"),
+      hash_including(profile_id: "human_led_feature_factory", name: "Human Led Feature Factory")
     ])
   end
 end

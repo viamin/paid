@@ -15,6 +15,8 @@ module Configuration
           "auto_pick_enabled" => true,
           "auto_scan_prs" => true,
           "automation_on_label_enabled" => true,
+          "operating_mode" => "standard",
+          "tdd_mode" => "off",
           "auto_merge_mode" => "off",
           "auto_fix_merge_conflicts" => true,
           "merge_method" => "squash",
@@ -32,6 +34,10 @@ module Configuration
           "run_concurrency_mode" => "manual",
           "agent_auto_continue" => false
         }
+      end
+
+      def self.clarifying_questions
+        [ TDD_MODE_CLARIFYING_QUESTION ]
       end
 
       def self.prerequisites_for(_project, targets:)

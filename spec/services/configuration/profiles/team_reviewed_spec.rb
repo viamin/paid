@@ -28,8 +28,8 @@ RSpec.describe Configuration::Profiles::TeamReviewed do
     expect(prerequisites).to include(a_string_matching(/owner_reviewer_login/i))
   end
 
-  it "lists the owner_reviewer_login clarifying question" do
-    expect(described_class.override_keys).to eq(%w[owner_reviewer_login])
+  it "lists the owner_reviewer_login and tdd_mode clarifying questions" do
+    expect(described_class.override_keys).to eq(%w[owner_reviewer_login tdd_mode])
   end
 
   context "when a reviewer is supplied" do

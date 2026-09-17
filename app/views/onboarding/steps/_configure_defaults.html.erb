@@ -1,52 +1,109 @@
 <h2 class="text-lg font-semibold text-gray-900">Configure Defaults</h2>
 <p class="mt-1 text-sm text-gray-500">We'll set up default prompts and a style guide for your workspace. You can customize these later.</p>
 
-<div class="mt-6 space-y-4">
-  <div class="rounded-md bg-gray-50 p-4">
-    <h3 class="text-sm font-medium text-gray-900">What will be created:</h3>
-    <ul class="mt-3 space-y-2 text-sm text-gray-600">
-      <li class="flex items-start">
-        <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-        </svg>
-        <span><strong>Planning prompt</strong> - Break down issues into implementation steps</span>
-      </li>
-      <li class="flex items-start">
-        <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-        </svg>
-        <span><strong>Coding prompt</strong> - Generate code changes based on plans</span>
-      </li>
-      <li class="flex items-start">
-        <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-        </svg>
-        <span><strong>Review prompt</strong> - Review pull requests for quality</span>
-      </li>
-      <li class="flex items-start">
-        <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-        </svg>
-        <span><strong>Testing prompt</strong> - Generate test cases for changes</span>
-      </li>
-      <li class="flex items-start">
-        <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-        </svg>
-        <span><strong>Style guide</strong> - General coding standards for your agents</span>
-      </li>
-    </ul>
+<%= form_with url: onboarding_path, method: :patch, class: "mt-6" do |form| %>
+  <% if posture_plan %>
+    <div class="mt-6">
+      <h3 class="text-sm font-medium text-gray-900">Project operating posture</h3>
+      <p class="mt-1 text-sm text-gray-500">
+        We suggest the <strong>Human-Led Feature Factory</strong> posture for
+        <%= posture_project.name %>: humans approve each feature's design before its
+        implementation runs. Review the plan below and choose whether to adopt it — nothing is
+        applied until you finish this step.
+      </p>
+
+      <fieldset class="mt-4 space-y-3">
+        <legend class="sr-only">Operating posture</legend>
+        <label class="flex items-start rounded-md border border-indigo-200 bg-indigo-50 p-3">
+          <%= form.radio_button :operating_posture, "human_led_feature_factory", checked: true, class: "mt-1" %>
+          <span class="ml-3">
+            <span class="block text-sm font-medium text-gray-900">Human-Led Feature Factory <span class="text-indigo-600">(suggested)</span></span>
+            <span class="block text-xs text-gray-500"><%= Onboarding::DefaultPosture.profile.description %></span>
+          </span>
+        </label>
+        <label class="flex items-start rounded-md border border-gray-200 p-3">
+          <%= form.radio_button :operating_posture, "standard", checked: false, class: "mt-1" %>
+          <span class="ml-3">
+            <span class="block text-sm font-medium text-gray-900">Standard defaults</span>
+            <span class="block text-xs text-gray-500">Keep the project on its current settings; you can apply any posture later.</span>
+          </span>
+        </label>
+      </fieldset>
+
+      <div class="mt-4 rounded-md bg-gray-50 p-4">
+        <h4 class="text-sm font-medium text-gray-900">Settings plan for the suggested posture:</h4>
+        <table class="mt-3 w-full text-sm text-gray-600">
+          <tbody>
+            <% posture_plan.changes.each do |change| %>
+              <tr>
+                <td class="py-1 pr-4 font-medium text-gray-700"><%= Configuration::Profiles::Settings.fetch(change.key).label %></td>
+                <td class="py-1"><%= change.from.inspect %> &rarr; <%= change.to.inspect %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <%= form.label :auto_merge_mode, "Auto-merge (your choice — stays off)", class: "block text-sm font-medium text-gray-900" %>
+          <%= form.select :auto_merge_mode, options_for_select(Project::AUTO_MERGE_MODE_OPTIONS, Onboarding::DefaultPosture.profile.targets.fetch("auto_merge_mode")), {}, class: "mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+          <p class="mt-1 text-xs text-gray-500">This posture never enables auto-merge for you.</p>
+        </div>
+        <div>
+          <%= form.label :tdd_mode, "Test review (strict keeps humans approving tests)", class: "block text-sm font-medium text-gray-900" %>
+          <%= form.select :tdd_mode, options_for_select(Project::TDD_MODE_OPTIONS, Onboarding::DefaultPosture.profile.targets.fetch("tdd_mode")), {}, class: "mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+          <p class="mt-1 text-xs text-gray-500">Non-strict is the suggestion; strict human review still works.</p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="mt-6 space-y-4">
+    <div class="rounded-md bg-gray-50 p-4">
+      <h3 class="text-sm font-medium text-gray-900">What will be created:</h3>
+      <ul class="mt-3 space-y-2 text-sm text-gray-600">
+        <li class="flex items-start">
+          <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+          </svg>
+          <span><strong>Planning prompt</strong> - Break down issues into implementation steps</span>
+        </li>
+        <li class="flex items-start">
+          <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+          </svg>
+          <span><strong>Coding prompt</strong> - Generate code changes based on plans</span>
+        </li>
+        <li class="flex items-start">
+          <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+          </svg>
+          <span><strong>Review prompt</strong> - Review pull requests for quality</span>
+        </li>
+        <li class="flex items-start">
+          <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+          </svg>
+          <span><strong>Testing prompt</strong> - Generate test cases for changes</span>
+        </li>
+        <li class="flex items-start">
+          <svg class="mr-2 mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+          </svg>
+          <span><strong>Style guide</strong> - General coding standards for your agents</span>
+        </li>
+      </ul>
+    </div>
   </div>
-</div>
 
-<div class="mt-6 flex items-center justify-between">
-  <%= form_with url: skip_onboarding_path, method: :post, class: "inline" do |form| %>
-    <%= form.hidden_field :step, value: "configure_defaults" %>
-    <%= form.submit "Skip for now", class: "text-sm font-medium text-gray-500 hover:text-gray-700 cursor-pointer" %>
-  <% end %>
-
-  <%= form_with url: onboarding_path, method: :patch, class: "inline" do |form| %>
-    <%= form.hidden_field :step, value: "configure_defaults" %>
+  <%= form.hidden_field :step, value: "configure_defaults" %>
+  <div class="mt-6 flex justify-end">
     <%= form.submit "Set Up Defaults & Finish", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
-  <% end %>
-</div>
+  </div>
+<% end %>
+
+<%= form_with url: skip_onboarding_path, method: :post, class: "mt-2 inline" do |skip_form| %>
+  <%= skip_form.hidden_field :step, value: "configure_defaults" %>
+  <%= skip_form.submit "Skip for now", class: "text-sm font-medium text-gray-500 hover:text-gray-700 cursor-pointer" %>
+<% end %>

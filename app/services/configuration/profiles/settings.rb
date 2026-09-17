@@ -58,7 +58,9 @@ module Configuration
         /_enabled\z/,
         "automation_on_label_enabled",
         "allow_bot_authored_pr_auto_merge",
-        "merge_method"
+        "merge_method",
+        "operating_mode",
+        "tdd_mode"
       ].freeze
       EXCLUDED_ATTRIBUTE_COLUMNS = {
         "auto_pick_skip_labels" => "label override, not an automation toggle",
@@ -111,6 +113,20 @@ module Configuration
           read: ->(project) { project.auto_merge_mode },
           write: ->(project, value) { project.auto_merge_mode = value },
           coerce: enum(%w[off dependabot_only all])
+        ),
+        "operating_mode" => Descriptor.new(
+          key: "operating_mode", attribute: "operating_mode", label: "Operating mode",
+          kind: :enum_attribute, column: "operating_mode", options: Project::OPERATING_MODES,
+          read: ->(project) { project.operating_mode },
+          write: ->(project, value) { project.operating_mode = value },
+          coerce: enum(Project::OPERATING_MODES)
+        ),
+        "tdd_mode" => Descriptor.new(
+          key: "tdd_mode", attribute: "tdd_mode", label: "TDD mode",
+          kind: :enum_attribute, column: "tdd_mode", options: Project::TDD_MODES,
+          read: ->(project) { project.tdd_mode },
+          write: ->(project, value) { project.tdd_mode = value },
+          coerce: enum(Project::TDD_MODES)
         ),
         "auto_fix_merge_conflicts" => Descriptor.new(
           key: "auto_fix_merge_conflicts", attribute: "auto_fix_merge_conflicts", label: "Auto-fix merge conflicts",

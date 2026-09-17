@@ -8,6 +8,7 @@ class OnboardingController < ApplicationController
   def show
     @current_step = current_account.current_onboarding_step
     redirect_to dashboard_path if @current_step.nil?
+    prepare_default_posture if @current_step&.step == "configure_defaults"
   end
 
   def update
@@ -26,7 +27,13 @@ class OnboardingController < ApplicationController
     end
   rescue ActiveRecord::RecordInvalid => e
     @current_step = onboarding_step
+    prepare_default_posture if @current_step&.step == "configure_defaults"
     flash.now[:alert] = e.record.errors.full_messages.join(", ")
+    render :show, status: :unprocessable_content
+  rescue ArgumentError => e
+    @current_step = onboarding_step
+    prepare_default_posture if @current_step&.step == "configure_defaults"
+    flash.now[:alert] = e.message
     render :show, status: :unprocessable_content
   end
 
@@ -84,9 +91,34 @@ class OnboardingController < ApplicationController
   end
 
   def complete_configure_defaults
+    Onboarding::ApplyDefaultPosture.call(
+      account: current_account,
+      actor: current_user,
+      choice: params[:operating_posture].to_s,
+      overrides: posture_overrides
+    )
     Onboarding::ProvisionDefaults.call(account: current_account)
-    Onboarding::CompleteStep.call(account: current_account, step: "configure_defaults")
+    Onboarding::CompleteStep.call(
+      account: current_account,
+      step: "configure_defaults",
+      metadata: { operating_posture: params[:operating_posture].presence || "standard" }
+    )
     redirect_to dashboard_path, notice: "Welcome to Paid! Your workspace is ready."
+  end
+
+  def posture_overrides
+    {
+      "auto_merge_mode" => params[:auto_merge_mode],
+      "tdd_mode" => params[:tdd_mode]
+    }.compact_blank
+  end
+
+  def prepare_default_posture
+    project = Onboarding::DefaultPosture.first_project(current_account)
+    return if project.blank?
+
+    @posture_project = project
+    @posture_plan = Onboarding::DefaultPosture.plan_for(project: project, actor: current_user)
   end
 
   def first_project_params

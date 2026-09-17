@@ -15,6 +15,8 @@ module Configuration
           "auto_pick_enabled" => false,
           "auto_scan_prs" => false,
           "automation_on_label_enabled" => false,
+          "operating_mode" => "standard",
+          "tdd_mode" => "off",
           "auto_merge_mode" => "off",
           "auto_fix_merge_conflicts" => false,
           "merge_method" => "squash",
@@ -39,7 +41,8 @@ module Configuration
           {
             id: "active",
             question: "Keep the project active so Paid continues polling GitHub and observing activity?"
-          }
+          },
+          TDD_MODE_CLARIFYING_QUESTION
         ]
       end
     end

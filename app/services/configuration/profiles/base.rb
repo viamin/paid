@@ -12,6 +12,16 @@ module Configuration
     # +prerequisites_for+::    Unmet conditions that block {Applier} (e.g. the
     #                          Paid review bot GitHub App must be configured).
     module Base
+      # Shared clarifying question for profiles that target "off" for
+      # tdd_mode. Declaring it keeps TDD posture an explicit operator choice
+      # (an override) rather than a target every re-apply silently resets —
+      # see docs/intent/feature-approval/feature-approval-design.md (issue #3872).
+      TDD_MODE_CLARIFYING_QUESTION = {
+        id: "tdd_mode",
+        question: "Test-review posture: off (no TDD gate) is this profile's suggested default; " \
+          "keep strict or non-strict if the project already reviews tests that way."
+      }.freeze
+
       def self.included(base)
         base.extend(ClassMethods)
       end

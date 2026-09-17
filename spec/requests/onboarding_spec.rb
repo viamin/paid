@@ -137,6 +137,68 @@ RSpec.describe "Onboarding" do
         expect(response).to redirect_to(dashboard_path)
       end
     end
+
+    context "with configure_defaults step and a first project" do
+      let(:owner) { create(:user, :owner, account: account) }
+      let!(:project) { create(:project, account: account, created_by: owner) }
+
+      before do
+        %w[account_profile github_token].each do |step|
+          Onboarding::CompleteStep.call(account: account, step: step)
+        end
+        Onboarding::CompleteStep.call(
+          account: account,
+          step: "first_project",
+          metadata: { project_id: project.id }
+        )
+      end
+
+      # @spec FEATURE-APPROVAL-004
+      it "proposes the human-led feature factory posture with a reviewable plan" do
+        get onboarding_path
+
+        expect(response.body).to include("Human-Led Feature Factory")
+        expect(response.body).to include("human_led_feature_factory")
+        expect(response.body).to include("Operating mode")
+      end
+
+      # @spec FEATURE-APPROVAL-004
+      it "applies the proposed posture when the user accepts it" do
+        patch onboarding_path, params: {
+          step: "configure_defaults",
+          operating_posture: "human_led_feature_factory"
+        }
+
+        expect(project.reload.operating_mode).to eq("human_led_feature_factory")
+        expect(project.tdd_mode).to eq("non_strict")
+        expect(project.auto_merge_mode).to eq("off")
+        expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec FEATURE-APPROVAL-004
+      it "keeps standard defaults when the user declines the proposal" do
+        patch onboarding_path, params: {
+          step: "configure_defaults",
+          operating_posture: "standard"
+        }
+
+        expect(project.reload.operating_mode).to eq("standard")
+        expect(project.tdd_mode).to eq("off")
+      end
+
+      # @spec FEATURE-APPROVAL-003
+      it "honors strict human test review and an explicit auto-merge choice" do
+        patch onboarding_path, params: {
+          step: "configure_defaults",
+          operating_posture: "human_led_feature_factory",
+          auto_merge_mode: "all",
+          tdd_mode: "strict"
+        }
+
+        expect(project.reload.tdd_mode).to eq("strict")
+        expect(project.reload.auto_merge_mode).to eq("all")
+      end
+    end
   end
 
   describe "POST /onboarding/skip" do
