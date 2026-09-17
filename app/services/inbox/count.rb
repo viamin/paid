@@ -31,7 +31,7 @@ module Inbox
 
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
-        escalated_pr_count + manual_review_count
+        escalated_pr_count + manual_review_count + intent_conformance_count
     end
 
     def needs_input_count
@@ -103,6 +103,30 @@ module Inbox
       return 0 if project_ids.empty?
 
       Issue.where(project_id: project_ids, paid_state: "manual_review", github_state: "open").count
+    end
+
+    # Mirrors merge_approval_count's shape: a cheap SQL pre-filter narrows to
+    # rows that could plausibly carry the intent_conformance blocker before
+    # falling back to Ruby for the full Inbox::IntentConformance check.
+    # @spec INTENT-CONFORMANCE-006
+    def intent_conformance_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      intent_conformance_candidates(project_ids).count { |issue| Inbox::IntentConformance.call(issue).present? }
+    end
+
+    def intent_conformance_candidates(project_ids)
+      Issue
+        .includes(:project)
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: "ready"
+        )
+        .where.not(auto_merge_evaluated_at: nil)
+        .where.not(auto_merge_blockers: nil)
     end
 
     def gated_project_ids

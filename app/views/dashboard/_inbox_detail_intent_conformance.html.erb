@@ -1,0 +1,91 @@
+<%# @spec INTENT-CONFORMANCE-006 %>
+<% verdict = entry.record.verdict %>
+<% latest_decision = entry.record.latest_decision %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+    <h3 class="text-sm font-semibold text-red-900">Approved-intent conformance is blocking auto-merge</h3>
+    <p class="mt-1 text-sm text-red-800"><%= entry.record.summary %></p>
+  </div>
+
+  <% if latest_decision %>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+      Last recorded decision: <span class="font-medium"><%= latest_decision.action.tr("_", " ").titleize %></span>
+      by <%= latest_decision.actor&.email || "an operator" %> (<%= time_ago_in_words(latest_decision.created_at) %> ago) — "<%= latest_decision.reason %>"
+    </div>
+  <% end %>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Cited approved-design claim</h3>
+    <% if verdict && Array(verdict.cited_claims).any? %>
+      <ul class="space-y-2 text-sm text-gray-600">
+        <% Array(verdict.cited_claims).each do |claim| %>
+          <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <span class="font-medium"><%= claim["design_ref"] || claim[:design_ref] %></span>
+            <p class="mt-1"><%= claim["claim_text"] || claim[:claim_text] %></p>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="text-sm text-gray-500">No cited design claim is available for this verdict.</p>
+    <% end %>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Relevant diff</h3>
+    <% if verdict && Array(verdict.cited_diff_locations).any? %>
+      <ul class="space-y-2 text-sm text-gray-600">
+        <% Array(verdict.cited_diff_locations).each do |location| %>
+          <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-xs">
+            <%= location["file"] || location[:file] %><% if (location["anchor"] || location[:anchor]).present? %>:<%= location["anchor"] || location[:anchor] %><% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+    <%= link_to "View PR diff on GitHub", "#{entry.issue.github_url}/files",
+          target: "_blank", rel: "noopener noreferrer",
+          class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Reviewer evidence</h3>
+    <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+      <%= verdict&.reasoning_summary.presence || "No reviewer reasoning is available." %>
+    </p>
+    <% if verdict %>
+      <p class="text-xs text-gray-500">
+        Outcome: <span class="font-medium"><%= verdict.outcome.tr("_", " ").titleize %></span>
+        · HEAD <code><%= verdict.pr_head_sha&.first(7) %></code>
+        · Approved design revision <code><%= verdict.approved_design_revision&.first(7) %></code>
+      </p>
+    <% end %>
+  </div>
+
+  <% if policy(entry.project).run_agent? %>
+    <div class="space-y-3 border-t border-gray-200 pt-4">
+      <h3 class="text-sm font-semibold text-gray-900">Resolve this decision</h3>
+      <%= form_with url: project_intent_conformance_decisions_path(entry.project), method: :post, local: true,
+            data: { turbo_frame: "_top" }, class: "space-y-3" do |form| %>
+        <%= hidden_field_tag :verdict_id, verdict&.id %>
+        <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <fieldset class="space-y-2">
+          <label class="flex items-start gap-2 text-sm text-gray-700">
+            <%= radio_button_tag :action_type, "fix_pr", true, class: "mt-1" %>
+            Require the agent to bring the PR back within scope
+          </label>
+          <label class="flex items-start gap-2 text-sm text-gray-700">
+            <%= radio_button_tag :action_type, "bounded_exception", false, class: "mt-1" %>
+            Approve a bounded exception for this exact PR HEAD
+          </label>
+          <label class="flex items-start gap-2 text-sm text-gray-700">
+            <%= radio_button_tag :action_type, "design_amendment", false, class: "mt-1" %>
+            Open a design amendment — product behavior, constraints, or scope should change
+          </label>
+        </fieldset>
+        <%= text_area_tag :reason, nil, placeholder: "Reason for this decision", required: true, rows: 3,
+              class: "block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+        <%= form.submit "Record decision",
+              class: "inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

@@ -65,7 +65,11 @@ module Automation
         def not_evaluated_blockers = blockers.select(&:not_evaluated?)
       end
 
+      # @spec INTENT-CONFORMANCE-003 — bot-authored PRs (BOT_SIGNAL_DEFINITIONS)
+      # deliberately omit intent_conformance_ok: dependency-update bots are
+      # not feature PRs bound to an approved design.
       HUMAN_SIGNAL_DEFINITIONS = [
+        [ :intent_conformance_ok, "intent_conformance_blocked" ],
         [ :owner_approved, "owner_approval_missing" ],
         [ :checks_green, "checks_not_green" ],
         [ :mergeable, "not_mergeable" ],
@@ -167,6 +171,8 @@ module Automation
         return "Dependency resolution was not evaluated because an earlier auto-merge gate already failed." if status == SIGNAL_STATUS_NOT_EVALUATED
 
         case signal_name
+        when :intent_conformance_ok
+          "This pull request's conformance with the approved design has not been confirmed."
         when :owner_approved
           "The required owner approval is missing."
         when :checks_green
@@ -198,6 +204,8 @@ module Automation
         reviewer_handle = owner_reviewer_login.present? ? "@#{owner_reviewer_login}" : "the configured owner reviewer"
 
         case signal_name
+        when :intent_conformance_ok
+          "Review the intent-conformance decision in the Inbox and choose fix PR, a bounded exception, or a design amendment."
         when :owner_approved
           "Ask #{reviewer_handle} to approve this pull request, then wait for the next automatic merge evaluation."
         when :checks_green

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_17_030435) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1521,6 +1521,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
     t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
   end
 
+  create_table "intent_conformance_decisions", comment: "Human resolutions of a material_drift/uncertain/not_evaluated intent-conformance verdict (RDR-067). A bounded_exception decision is scoped to its exact head_sha and stops applying the moment a new commit changes the PR HEAD.", force: :cascade do |t|
+    t.string "action", null: false, comment: "fix_pr, bounded_exception, or design_amendment (see IntentConformanceDecision::ACTIONS)."
+    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
+    t.datetime "created_at", null: false
+    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this decision resolves."
+    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
+    t.datetime "updated_at", null: false
+    t.bigint "verdict_id", comment: "The intent-conformance verdict this decision responds to, when one exists."
+    t.index ["actor_id"], name: "index_intent_conformance_decisions_on_actor_id"
+    t.index ["issue_id", "action", "head_sha"], name: "index_intent_conformance_decisions_on_issue_action_head"
+    t.index ["issue_id"], name: "index_intent_conformance_decisions_on_issue_id"
+    t.index ["verdict_id"], name: "index_intent_conformance_decisions_on_verdict_id"
+  end
+
+  create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|
+    t.string "approved_design_revision", null: false, comment: "Merged repository commit SHA of the approved RDR/LID design revision compared against."
+    t.jsonb "cited_claims", default: [], null: false, comment: "Approved design claims the reviewer cited, e.g. [{design_ref:, claim_text:}]."
+    t.jsonb "cited_diff_locations", default: [], null: false, comment: "PR diff locations the reviewer cited, e.g. [{file:, anchor:}]."
+    t.datetime "created_at", null: false
+    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
+    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
+    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
+    t.text "reasoning_summary", comment: "Reviewer's reasoning summary, shown to a human resolving the Inbox decision."
+    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
+    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
+    t.datetime "updated_at", null: false
+    t.index ["issue_id", "pr_head_sha", "evaluated_at"], name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
+    t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
+    t.index ["reviewer_run_id"], name: "index_intent_conformance_verdicts_on_reviewer_run_id"
+  end
+
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "depends_on_issue_id"
@@ -1575,6 +1608,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
     t.text "last_analyzer_reasoning", comment: "Reasoning accompanying last_analyzer_sufficient_context, surfaced in the operator inbox so a lane stuck in manual_review can be diagnosed without re-reading the analyzer run's stdout."
     t.boolean "last_analyzer_sufficient_context", comment: "Most recent analyze_issue/enhance_issue readiness verdict — whether the issue had enough context to start a create_pr run. Drives the analyzer's cycle-state prompt and completed-issue auto-pick recovery (#3851)."
     t.datetime "last_pr_scan_at"
+    t.string "last_scanned_head_sha", limit: 40, comment: "PR HEAD commit SHA recorded by the most recent PR scan pass. Lets scan-time and Inbox-time consumers (e.g. intent-conformance verdict lookups) identify the current HEAD without an extra GitHub API call outside the scan cycle."
     t.text "manual_review_reason", comment: "Why automation stopped and parked this issue in manual_review, surfaced in the operator inbox."
     t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
@@ -3488,6 +3522,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
   add_foreign_key "integration_credentials", "users", column: "created_by_id"
+  add_foreign_key "intent_conformance_decisions", "intent_conformance_verdicts", column: "verdict_id"
+  add_foreign_key "intent_conformance_decisions", "issues"
+  add_foreign_key "intent_conformance_decisions", "users", column: "actor_id"
+  add_foreign_key "intent_conformance_verdicts", "agent_runs", column: "reviewer_run_id"
+  add_foreign_key "intent_conformance_verdicts", "issues"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"
