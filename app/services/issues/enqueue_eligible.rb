@@ -76,8 +76,14 @@ module Issues
         .exists?
     end
 
-    # @spec ISSUE-ENHANCEMENT-013
+    # @spec ISSUE-ENHANCEMENT-013 @spec ISSUE-ENHANCEMENT-015
     def seeded_goal
+      # A `completed` issue re-entering eligibility on the strength of a prior
+      # enhancement/analysis verdict has already been assessed ready for
+      # implementation (#3851) — seed `create_pr` directly instead of
+      # restarting the analyze/enhance loop from scratch.
+      return "create_pr" if issue.paid_state == "completed" && issue.last_analyzer_sufficient_context
+
       Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue:) ? "analyze_issue" : "create_pr"
     end
 
