@@ -69,14 +69,14 @@
           <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Projects</p>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <% if session_projects.any? %>
-                <% session_projects.each do |project| %>
-                  <%= link_to project.name,
-                              project_path(project),
-                              class: "inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100 hover:text-gray-900" %>
-                <% end %>
-              <% else %>
-                <span class="inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-500 ring-1 ring-gray-200">No project linked</span>
+              <% session_projects.each do |project| %>
+                <%= link_to project.name,
+                            project_path(project),
+                            class: "inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100 hover:text-gray-900" %>
               <% end %>
+            <% else %>
+              <span class="inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-500 ring-1 ring-gray-200">No project linked</span>
+            <% end %>
           </div>
         </div>
 

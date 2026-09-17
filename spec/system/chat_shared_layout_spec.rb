@@ -66,6 +66,13 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
     expect(grid_classes).to include("lg:grid-cols-[22rem_minmax(0,1fr)]")
     expect(document.at_css("#chat-list")).to be_present
     expect(document.at_css("#chat-detail")).to be_present
+
+    # The shared shell already supplies the pane chrome (rounded-xl border
+    # shadow-sm); the sidebar's inner <aside> must not repeat it, or desktop
+    # renders two nested cards instead of one.
+    sidebar_aside = document.at_css("#chat-list aside")
+    expect(sidebar_aside).to be_present
+    expect(sidebar_aside[:class]).not_to include("lg:rounded-lg", "lg:shadow")
   end
 
   it "exposes the shared active-row class set on chat session cards via data-active-classes" do
