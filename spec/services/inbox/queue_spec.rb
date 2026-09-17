@@ -168,6 +168,58 @@ RSpec.describe Inbox::Queue do
       expect(entry.context_markdown).to be_nil
     end
 
+    # @spec OPERATOR-INBOX-011
+    # The inbox view only renders the context panel for the selected entry,
+    # so the queue must not pre-fetch context for every clarifying-question
+    # row. Reusing `ClarifyingQuestions::Load`'s per-instance memoization
+    # across entries would not help either — each entry has a different
+    # `issue.github_number`, so the per-Load `@issue_comments` cache is cold
+    # for every row and a fresh `issue_comments` API call would fire per
+    # entry. The fix lives on `Entry#context_markdown` as a deferred
+    # accessor; this spec pins the behavior so future refactors don't
+    # regress to eager fetching.
+    it "does not fetch issue comments until a clarifying-question entry's context_markdown is read" do
+      3.times { |index| create_needs_input(github_number: 10 + index, body: questions_body) }
+
+      described_class.call(user: user, project: project)
+
+      expect(github_client).not_to have_received(:issue_comments)
+    end
+
+    # @spec OPERATOR-INBOX-011
+    # Once the selected entry asks for its `context_markdown`, fetch the
+    # comments exactly once for that issue. Multiple reads of the same
+    # entry's accessor (the view calls `.present?` and renders the body)
+    # must not trigger a second GitHub round-trip.
+    it "fetches issue comments at most once per selected entry, even when context_markdown is read repeatedly" do
+      issue = create_needs_input(github_number: 10, body: questions_body)
+      trusted_comment = double(body: questions_body, user: double(login: "viamin"))
+      allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+
+      entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
+
+      3.times { entry.context_markdown }
+
+      expect(github_client).to have_received(:issue_comments).once
+    end
+
+    # @spec OPERATOR-INBOX-011
+    # The queue still resolves non-selected clarifying-question entries
+    # without ever touching `issue_comments` — confirms the deferred
+    # accessor pattern applies to every row, not just the one the view
+    # happens to render.
+    it "leaves context_markdown unfetched for non-selected clarifying-question entries" do
+      first = create_needs_input(github_number: 10, body: questions_body)
+      second = create_needs_input(github_number: 20, body: questions_body)
+      third = create_needs_input(github_number: 30, body: questions_body)
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(github_client).not_to have_received(:issue_comments)
+      expect(entries.map(&:record)).to contain_exactly(first, second, third)
+      expect(entries.map(&:context_markdown)).to all(be_nil)
+    end
+
     it "uses locally persisted needs_input_questions for create_feature issues" do
       feature_issue = create_needs_input(
         github_number: 20,

@@ -33,7 +33,14 @@ module Inbox
       :record,
       :waiting_since,
       :questions,
-      :context_markdown,
+      # `:context_markdown` is intentionally NOT a struct member — it's a
+      # deferred accessor below so building the queue doesn't pre-fetch
+      # context for every clarifying-question entry. The inbox view only
+      # renders the panel for the SELECTED entry, so the rest stay
+      # unfetched until (and unless) the view asks. Each entry's loader
+      # memoizes `issue_comments` per instance, so the first access within
+      # a single view render (the partial calls `.present?` and then
+      # renders the body) fetches once.
       :tasks,
       :summary_text,
       :title_text,
@@ -81,6 +88,26 @@ module Inbox
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? || feature_decision?
 
         "#{tasks.size} proposed tasks"
+      end
+
+      # @spec OPERATOR-INBOX-011
+      # Lazy accessor: resolves the agent-authored context sections ("Current
+      # Context" + clarifying-questions preamble) for the SELECTED entry
+      # only. `ClarifyingQuestions::Load` rescues `GithubClient::Error`
+      # itself, so no second guard is needed here.
+      def context_markdown
+        return @context_markdown if defined?(@context_markdown)
+
+        @context_markdown = context_loader&.context_markdown
+      end
+
+      private
+
+      def context_loader
+        return unless clarifying_questions?
+        return unless project && issue
+
+        @context_loader ||= ClarifyingQuestions::Load.new(project: project, issue: issue)
       end
     end
 
@@ -141,7 +168,6 @@ module Inbox
           record: issue,
           waiting_since: issue.needs_input_since,
           questions: questions,
-          context_markdown: context_markdown_for(issue),
           tasks: [],
           summary_text: nil,
           title_text: nil,
@@ -208,19 +234,6 @@ module Inbox
       # the needs-input comment is posted, so the dashboard renders without a
       # per-issue GitHub API round-trip (RDR-053).
       Array(issue.needs_input_questions)
-    end
-
-    # Pulls the agent-authored context sections ("Current Context" + the
-    # clarifying-questions preamble) from the latest enhancement comment for
-    # an issue, or returns nil when no comment is fetchable / parseable.
-    # Surfaces nil to callers so the panel can hide gracefully on the few
-    # issues whose questions came from the local needs_input_questions
-    # snapshot rather than a fetched comment.
-    def context_markdown_for(issue)
-      load = ClarifyingQuestions::Load.new(project: issue.project, issue: issue)
-      load.context_markdown
-    rescue GithubClient::Error
-      nil
     end
 
     def plan_review_entries
