@@ -172,6 +172,27 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.enhance_issue_rounds).to eq(1)
     end
 
+    # @spec ISSUE-ENHANCEMENT-015
+    it "stamps last_analyzer_sufficient_context on the issue when sufficient_context is true" do
+      log_agent_stdout(structured_output)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.last_analyzer_sufficient_context).to be(true)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-015
+    it "stamps last_analyzer_sufficient_context false on the issue when sufficient_context is false" do
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Clarifying questions\n1. Which events should be recorded?"
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.last_analyzer_sufficient_context).to be(false)
+    end
+
     it "posts clarifying questions when the agent reports insufficient context" do
       log_agent_stdout({
         sufficient_context: false,
@@ -295,6 +316,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(client).not_to have_received(:add_comment)
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.last_analyzer_sufficient_context).to be(true) # @spec ISSUE-ENHANCEMENT-015
       expect(issue.labels).to include(project.enhance_issue_enhanced_label_name)
     end
 

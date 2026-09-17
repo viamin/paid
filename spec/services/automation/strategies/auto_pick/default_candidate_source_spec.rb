@@ -573,6 +573,34 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    # @spec ISSUE-ENHANCEMENT-015
+    it "recovers a completed issue with a prior sufficient-context verdict when no follow-up run was ever queued" do
+      issue = create(:issue, project: project, paid_state: "completed", last_analyzer_sufficient_context: true)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-015
+    it "does not recover a completed issue whose sufficient-context follow-up run is already in flight" do
+      issue = create(:issue, project: project, paid_state: "completed", last_analyzer_sufficient_context: true)
+      create(:agent_run, project: project, issue: issue, goal: "create_pr", status: "queued")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    # @spec ISSUE-ENHANCEMENT-015
+    it "does not recover a completed issue whose verdict was insufficient context" do
+      create(:issue, project: project, paid_state: "completed", last_analyzer_sufficient_context: false)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
     it "keeps a parent issue eligible when all of its sub-issues are closed" do
       parent = create(:issue, project: project, github_number: 1)
       create(:issue, :closed, project: project, github_number: 2, parent_issue: parent)

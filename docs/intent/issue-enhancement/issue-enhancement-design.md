@@ -282,6 +282,46 @@ no further automation touches it. The handoff is implemented as a
 `CreateFollowupRunActivity` call after `EnhanceIssueActivity` returns
 `sufficient_context: true`, mirroring the analyze branch's pattern.
 
+### Durable reconciliation of a lost handoff (#3851)
+
+`CreateFollowupRunActivity` is a single fire-and-forget activity call — it is
+not itself durable. If the workflow dies between `EnhanceIssueActivity`
+completing and that follow-up activity running, the issue is left in
+`completed` with nothing to notice the gap. Rather than adding a
+workflow-level retry or a dedicated sweep, the fix makes the enhancement
+verdict itself the durable, GitHub-independent marker: `EnhanceIssueActivity`
+stamps `last_analyzer_sufficient_context` on every verdict (the same column
+`AnalyzeIssueActivity` already writes, unifying the "last readiness verdict"
+signal across both goals — see `docs/intent/auto-pick-queue/`). Auto-Pick
+candidate selection (`Issue.auto_pick_eligible_paid_state_scope`) recovers a
+`completed` issue whenever that flag is `true`, on top of the existing
+completed-run recovery path — so the periodic `AutoPickEligibilitySweepJob`
+(or any event-driven recheck) surfaces the stranded issue without a dedicated
+job. This also covers a case the run-based recovery path misses: an
+`enhance_issue` run that was not itself flagged as an automatic auto-pick run
+(e.g. queued directly by GitHub sync, or triggered manually) is invisible to
+that path but still recoverable via the verdict flag.
+
+Recovery is gated on the verdict signal, not on `paid_state: "completed"`
+alone, so issues completed for unrelated reasons stay excluded: an
+agent-declared no-code-required completion (`no_code_required_at`) and an
+issue with a merged linked PR are excluded by their own permanent guards in
+`DefaultCandidateSource`, which run before this recovery path is considered.
+
+Re-picking a recovered issue seeds a `create_pr` run directly
+(`Issues::EnqueueEligible#seeded_goal`) instead of restarting at
+`analyze_issue` — the verdict already established the issue is ready, so
+redoing analysis would just waste a run.
+
+A `create_pr` run that later fails outright (not a retry-cap abandonment)
+already resets the issue's `paid_state` to `failed`
+(`MarkAgentRunFailedActivity`), which is unconditionally auto-pick eligible —
+no enhancement-specific handling is needed for that path. A run that is
+abandoned after every provider hits the per-issue retry cap
+(`runner_retry_abandoned_at`) is deliberately excluded from auto-pick until a
+human clears it, the same as for any other issue; that is an intentional
+stop, not a reconciliation gap.
+
 The `enhance_issue_rounds` counter is reset on two meaningful events so a
 later regression does not inherit an exhausted automatic-retry budget:
 

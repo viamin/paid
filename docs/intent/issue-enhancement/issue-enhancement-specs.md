@@ -250,3 +250,35 @@
   `app/temporal/activities/enhance_issue_activity.rb#reset_enhancement_rounds!`,
   `app/services/clarifying_questions/clear_needs_input.rb`,
   `app/temporal/activities/fetch_issues_activity.rb#detect_needs_input_label_removals`.
+
+- [x] **ISSUE-ENHANCEMENT-015** — The `create_pr` follow-up queued by
+  ISSUE-ENHANCEMENT-014 is a single fire-and-forget activity call: if the
+  workflow dies between `EnhanceIssueActivity` completing and
+  `CreateFollowupRunActivity` running, the issue is stranded in the
+  non-eligible `completed` paid_state with nothing to reconcile it (#3851).
+  `EnhanceIssueActivity` SHALL stamp `last_analyzer_sufficient_context` with
+  every readiness verdict (mirroring `AnalyzeIssueActivity`), unifying the
+  "last verdict" signal across both goals. Auto-Pick candidate selection
+  SHALL treat a `completed` issue with `last_analyzer_sufficient_context:
+  true` as recoverable, independent of whether the run that produced the
+  verdict was itself an automatic auto-pick run — so a manually triggered or
+  sync-queued `enhance_issue` run is reconciled the same as one chained from
+  `analyze_issue`. When such an issue is re-picked, the seeded goal SHALL be
+  `create_pr` directly rather than restarting the analyze/enhance loop.
+  Issues completed for unrelated reasons (`no_code_required_at`, a merged
+  linked PR) remain excluded by their own permanent guards, which apply
+  before this recovery path is considered.
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`
+  ("stamps last_analyzer_sufficient_context on the issue when sufficient_context is true",
+  "stamps last_analyzer_sufficient_context false on the issue when sufficient_context is false"),
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`
+  ("recovers a completed issue with a prior sufficient-context verdict when no follow-up run was ever queued",
+  "does not recover a completed issue whose sufficient-context follow-up run is already in flight",
+  "does not recover a completed issue whose verdict was insufficient context"),
+  `spec/models/issue_spec.rb`
+  ("returns :eligible for a completed issue with a prior sufficient-context verdict and no in-flight run"),
+  `spec/services/issues/enqueue_eligible_spec.rb`
+  ("seeds create_pr directly for a completed issue with a prior sufficient-context verdict, even with auto_enhance enabled").
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#complete_run!`,
+  `app/models/issue.rb#auto_pick_eligible_paid_state_scope`,
+  `app/services/issues/enqueue_eligible.rb#seeded_goal`.

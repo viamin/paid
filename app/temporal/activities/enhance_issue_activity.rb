@@ -98,7 +98,9 @@ module Activities
       reset_enhancement_rounds!(issue) if parsed[:sufficient_context]
 
       agent_run.log!("stdout", comment_body)
-      complete_run!(agent_run, paid_state_for(parsed, project, issue), reason: (max_rounds_reason(project) if max_rounds_reached))
+      complete_run!(agent_run, paid_state_for(parsed, project, issue),
+        sufficient_context: parsed[:sufficient_context],
+        reason: (max_rounds_reason(project) if max_rounds_reached))
       ProcessRunQueueJob.perform_later
 
       logger.info(
@@ -322,7 +324,7 @@ module Activities
     def recover_paid_question_comment!(agent_run, project, issue, client, comment)
       label_result = apply_label_state(client, project, issue, sufficient_context: false)
       issue.update!(needs_input_questions: paid_comment_questions(comment))
-      complete_run!(agent_run, "needs_input")
+      complete_run!(agent_run, "needs_input", sufficient_context: false)
       ProcessRunQueueJob.perform_later
 
       agent_run.log!("system", "Recovered Paid-authored clarifying question comment: #{comment.html_url}")
@@ -348,7 +350,9 @@ module Activities
     def complete_existing(agent_run, client, project, issue, existing_comment)
       label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
       paid_state = existing_paid_state(issue, existing_comment)
-      complete_run!(agent_run, paid_state, reason: (issue.manual_review_reason if paid_state == "manual_review"))
+      complete_run!(agent_run, paid_state,
+        sufficient_context: label_result[:sufficient_context],
+        reason: (issue.manual_review_reason if paid_state == "manual_review"))
       agent_run.log!("system", "Enhancement comment already exists: #{existing_comment.html_url}")
       ProcessRunQueueJob.perform_later
 
@@ -392,11 +396,17 @@ module Activities
       "completed"
     end
 
-    def complete_run!(agent_run, paid_state = "completed", reason: nil)
+    # `sufficient_context` also stamps `last_analyzer_sufficient_context`,
+    # unifying the "last readiness verdict" signal across analyze_issue and
+    # enhance_issue so auto-pick's completed-issue recovery can recognize an
+    # enhanced-and-ready issue without depending on how the run that produced
+    # the verdict was triggered (#3851).
+    def complete_run!(agent_run, paid_state = "completed", sufficient_context: nil, reason: nil)
       agent_run.complete!
       return unless agent_run.issue
 
       attrs = { paid_state: paid_state }
+      attrs[:last_analyzer_sufficient_context] = sufficient_context unless sufficient_context.nil?
       attrs[:manual_review_reason] = reason if reason
       agent_run.issue.update!(attrs)
     end

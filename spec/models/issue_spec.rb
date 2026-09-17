@@ -2191,6 +2191,15 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:eligible)
     end
 
+    it "returns :eligible for a completed issue with a prior sufficient-context verdict and no in-flight run" do # @spec ISSUE-ENHANCEMENT-015
+      issue = create(:issue, project: project, github_state: "open",
+        paid_state: "completed", last_analyzer_sufficient_context: true)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
     it "matches auto-pick eligibility for issues that differ only by paid_state" do # @spec AUTO-PICK-QUEUE-005
       recoverable_completed = create(:issue, project: project, github_state: "open", paid_state: "completed")
       create(:agent_run, :completed, :automatic, issue: recoverable_completed, project: project,
