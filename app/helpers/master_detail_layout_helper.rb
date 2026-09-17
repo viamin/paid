@@ -13,6 +13,12 @@
 module MasterDetailLayoutHelper
   # Width of the list pane on desktop. Matches the existing inbox and chat
   # layouts (`22rem`) so this helper is a refactor with no visible change.
+  # Documents the value baked into `MASTER_DETAIL_GRID_CLASSES` below; kept
+  # as a separate constant rather than interpolated into that string
+  # because Tailwind's CSS build scans source files as plain text for
+  # complete utility class names and never executes Ruby, so an
+  # interpolated arbitrary-value class is invisible to the scanner and the
+  # whole utility silently never makes it into the compiled CSS.
   MASTER_DETAIL_LIST_PANE_WIDTH = "22rem"
 
   # Selected row treatment applied by both Inbox's row link and Chat's
@@ -45,8 +51,13 @@ module MasterDetailLayoutHelper
   # pane from blowing out the flexible track. Combined with the `gap-6`
   # inter-pane spacing, both inbox and chat pages render through
   # `_list_detail_shell` and pick up this exact class string.
+  #
+  # Written as a literal string rather than interpolating
+  # `MASTER_DETAIL_LIST_PANE_WIDTH` — see the note on that constant.
+  MASTER_DETAIL_GRID_CLASSES = "grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]".freeze
+
   def master_detail_grid_classes
-    "grid gap-6 lg:grid-cols-[#{MASTER_DETAIL_LIST_PANE_WIDTH}_minmax(0,1fr)]"
+    MASTER_DETAIL_GRID_CLASSES
   end
 
   # Pane-card chrome — see `MASTER_DETAIL_PANE_CLASSES`. Returned as a
