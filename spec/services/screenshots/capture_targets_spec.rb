@@ -123,6 +123,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to contain_exactly("account_roi_dashboard", "project_roi_dashboard")
     end
 
+    it "maps the shared master-detail layout helper to the inbox and chat surfaces it styles" do
+      targets = described_class.call(changed_files: [ "app/helpers/master_detail_layout_helper.rb" ])
+
+      expect(targets.map(&:slug)).to contain_exactly("dashboard", "chat_sessions", "chat_session_show")
+    end
+
     it "maps operations dashboard views to the dedicated account operations target" do
       targets = described_class.call(changed_files: [ "app/views/accounts/operations_dashboards/show.html.erb" ])
 

@@ -26,7 +26,10 @@ entries into one responsive page.
    and the payload needed to render its detail pane.
 3. The inbox renders at `/inbox` and `/inbox/:entry_id`:
    - a desktop split-pane layout with the queue on the left and detail on the
-     right
+     right, both halves going through the shared
+     [`list-detail-layout`](../list-detail-layout/list-detail-layout-design.md)
+     shell (`grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]`, `22rem` list pane,
+     shared pane chrome, shared empty state, shared active-row treatment)
    - a mobile master-detail flow where the member route opens the detail pane
    - a neutral `Waiting —` label when a legacy entry has no waiting timestamp
 4. Existing action endpoints stay as the mutation surface:
@@ -34,6 +37,13 @@ entries into one responsive page.
      `Projects::ClarifyingQuestionsController`
    - planning approvals/rejections/revisions still post through
      `PlanReviewsController`, which signals the Temporal workflow
+
+The shared two-pane shell, pane chrome, empty state, and active-row treatment
+(`LIST-DETAIL-001`–`LIST-DETAIL-006`) are not inbox-specific — Chat
+(`/chat`, `/chat/:id`) renders through the same shell. The Inbox keeps its
+own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
+`inbox-master-detail` Stimulus controller; only the layout rules move to the
+shared pattern.
 
 ## Entry Kinds
 

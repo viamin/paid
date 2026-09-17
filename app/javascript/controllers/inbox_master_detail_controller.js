@@ -2,7 +2,13 @@ import { Controller } from "@hotwired/stimulus"
 
 // Keeps the inbox list/detail panes in sync with the current mobile
 // master-detail state while leaving desktop split-pane rendering intact.
-// @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-003A
+//
+// The selected-row class set is sourced from each row's
+// `data-active-classes` attribute, which the inbox list partial sets from
+// `MasterDetailLayoutHelper#master_detail_active_row_classes`. The
+// `chat-session-list` controller reads the same attribute, so a future
+// tweak to the shared active-row treatment lives in one place.
+// @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-003A @spec LIST-DETAIL-003
 export default class extends Controller {
   static targets = ["list", "detailSection", "row"]
   static values = { detailOpen: Boolean }
@@ -71,12 +77,15 @@ export default class extends Controller {
     if (!this.hasListTarget || !clicked) return
 
     this.rowTargets.forEach((row) => {
-      row.classList.remove("bg-indigo-50")
-      row.classList.add("hover:bg-gray-50")
+      const selected = row === clicked
+      const activeClasses = (row.dataset.activeClasses || "").split(/\s+/).filter(Boolean)
+      activeClasses.forEach((cls) => row.classList.toggle(cls, selected))
+      // The inbox list partial paints `hover:bg-gray-50` on every
+      // non-selected row at render time. Keep it mutually exclusive with
+      // the active-row class set so the newly-selected row doesn't keep a
+      // gray hover affordance and the just-deselected row doesn't lose it.
+      row.classList.toggle("hover:bg-gray-50", !selected)
     })
-
-    clicked.classList.remove("hover:bg-gray-50")
-    clicked.classList.add("bg-indigo-50")
   }
 
   show(element) {
