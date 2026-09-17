@@ -111,7 +111,8 @@
   `app/helpers/master_detail_layout_helper.rb`,
   `app/javascript/controllers/inbox_master_detail_controller.js`.
   *Test:* `spec/requests/inbox_spec.rb`, `spec/system/dashboard_inbox_spec.rb`,
-  `spec/helpers/master_detail_layout_helper_spec.rb`.
+  `spec/helpers/master_detail_layout_helper_spec.rb`,
+  `spec/system/inbox_chat_popup_spec.rb`.
 
 - [x] **OPERATOR-INBOX-003A** — While the inbox page initializes, the inbox
   master-detail controller SHALL complete its Stimulus lifecycle without

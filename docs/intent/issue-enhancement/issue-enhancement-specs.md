@@ -283,7 +283,30 @@
   `app/models/issue.rb#auto_pick_eligible_paid_state_scope`,
   `app/services/issues/enqueue_eligible.rb#seeded_goal`.
 
-- [x] **ISSUE-ENHANCEMENT-016** — When an issue body looks truncated or
+- [x] **ISSUE-ENHANCEMENT-016** — The `enhance_issue_rounds` cap SHALL also
+  reset on a trusted collaborator's edit to the issue body, not only on the
+  `needs_input` human-signal paths in `ISSUE-ENHANCEMENT-014` (#3849): when
+  `FetchIssuesActivity` syncs an issue whose author is currently trusted
+  (`Project#trusted_github_author?`) and the synced body differs from the
+  locally stored body, and the counter is non-zero, the system SHALL reset
+  `enhance_issue_rounds` to 0. This is a best-effort proxy — GitHub's issue
+  representation does not report who last edited the body, only who created
+  the issue — so the reset SHALL NOT fire for an issue whose current author
+  is untrusted, and SHALL NOT fire on the initial sync that creates the
+  issue (there is no "prior" body to diverge from). The body change SHALL
+  be detected by comparing the synced body against the locally stored body
+  from before the upsert — not via the record's last-save change tracking,
+  which `Issues::UpsertFromGithub` can replace with a later save on the
+  same instance (a recommend-close label removal) and silently mask the
+  edit. The reset SHALL be
+  reflected in the sync's `changed` result even when the body was the only
+  change.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`
+  ("resets enhance_issue_rounds to 0", "does not reset the round counter when the body is unchanged", "does not reset the round counter when the issue's author is untrusted", "still resets the round counter when a recommend-close label removal lands in the same sync").
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb#sync_issue`,
+  `#reset_enhancement_rounds_on_trusted_body_edit!`.
+
+- [x] **ISSUE-ENHANCEMENT-017** — When an issue body looks truncated or
   corrupted (`Issues::DetectTruncatedBody`), both the enhance agent's prompt
   (`RunAgentActivity#augment_prompt_for_enhance_issue_goal`) and the posted
   enhancement comment SHALL name the condition explicitly — the agent is

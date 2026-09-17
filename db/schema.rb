@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_17_073409) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -971,6 +971,66 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
     t.index ["workflow_id", "decision_type"], name: "index_decomposition_decisions_on_workflow_id_and_decision_type"
   end
 
+  create_table "design_amendment_follow_ups", comment: "Follow-up human decisions for already-merged work affected by a design revision; never auto-rolled back.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "decided_at"
+    t.bigint "decided_by_id"
+    t.text "decision", comment: "Human's follow-up decision."
+    t.bigint "design_amendment_id", null: false
+    t.jsonb "evidence", default: {}, null: false, comment: "Cited design claims and reviewer explanation for the follow-up."
+    t.bigint "issue_id", null: false
+    t.string "status", default: "open", null: false, comment: "Follow-up status: open or resolved."
+    t.datetime "updated_at", null: false
+    t.index ["decided_by_id"], name: "index_design_amendment_follow_ups_on_decided_by_id"
+    t.index ["design_amendment_id", "issue_id"], name: "index_design_amendment_follow_ups_unique_branch", unique: true
+    t.index ["design_amendment_id"], name: "index_design_amendment_follow_ups_on_design_amendment_id"
+    t.index ["issue_id"], name: "index_design_amendment_follow_ups_on_issue_id"
+    t.index ["status"], name: "index_design_amendment_follow_ups_on_status"
+  end
+
+  create_table "design_amendment_pauses", comment: "Per-branch holds applied while a design amendment's impact is resolved.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "design_amendment_id", null: false
+    t.jsonb "evidence", default: {}, null: false, comment: "Cited design claims and reviewer explanation for the hold."
+    t.bigint "issue_id", null: false
+    t.string "reason_code", null: false, comment: "Why the branch is held: affected, dependent, or uncertain."
+    t.text "release_reason"
+    t.datetime "released_at"
+    t.bigint "released_by_id"
+    t.string "status", default: "held", null: false, comment: "Hold status: held or released."
+    t.datetime "updated_at", null: false
+    t.index ["design_amendment_id", "issue_id"], name: "index_design_amendment_pauses_unique_branch", unique: true
+    t.index ["design_amendment_id"], name: "index_design_amendment_pauses_on_design_amendment_id"
+    t.index ["issue_id"], name: "index_design_amendment_pauses_on_issue_id"
+    t.index ["released_by_id"], name: "index_design_amendment_pauses_on_released_by_id"
+    t.index ["status"], name: "index_design_amendment_pauses_on_status"
+  end
+
+  create_table "design_amendments", comment: "RDR-067 design amendment: product-level drift routed through amended RDR/LID PRs, human approval, and merge.", force: :cascade do |t|
+    t.string "amended_revision", comment: "Merged repository revision that becomes the new approved baseline."
+    t.datetime "approved_at"
+    t.bigint "approved_by_id"
+    t.string "approved_pr_head_sha", comment: "Amended design PR head the human approved."
+    t.datetime "created_at", null: false
+    t.string "design_pr_url", comment: "Amended RDR/LID pull request under review."
+    t.jsonb "drift_evidence", default: {}, null: false, comment: "Cited design claims, diff references, and reviewer evidence motivating the amendment."
+    t.datetime "evaluated_at", comment: "When revision impact was last evaluated."
+    t.bigint "feature_intent_id", null: false
+    t.jsonb "impact", default: {}, null: false, comment: "Recorded revision-impact mapping per branch with actions taken."
+    t.datetime "merged_at"
+    t.bigint "project_id", null: false
+    t.text "reason", null: false, comment: "Why the approved design is being amended."
+    t.string "status", default: "open", null: false, comment: "Amendment status: open, approved, merged, abandoned."
+    t.string "superseded_revision", null: false, comment: "Approved design revision this amendment supersedes."
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_design_amendments_on_approved_by_id"
+    t.index ["feature_intent_id", "status"], name: "index_design_amendments_on_feature_intent_id_and_status"
+    t.index ["feature_intent_id"], name: "index_design_amendments_on_feature_intent_id"
+    t.index ["project_id", "status"], name: "index_design_amendments_on_project_id_and_status"
+    t.index ["project_id"], name: "index_design_amendments_on_project_id"
+    t.index ["status"], name: "index_design_amendments_on_status"
+  end
+
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this circuit breaker belongs to"
     t.datetime "circuit_opened_at", comment: "When the circuit was last opened"
@@ -1334,6 +1394,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
     t.index ["project_id"], name: "index_failure_classifications_on_project_id"
   end
 
+  create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", null: false
+    t.bigint "issue_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["feature_intent_id"], name: "index_feature_intent_issues_on_feature_intent_id"
+    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id", unique: true
+  end
+
+  create_table "feature_intents", comment: "RDR-066 feature intent: links a feature's approved design revision to its issue tree.", force: :cascade do |t|
+    t.string "approved_design_revision", comment: "Merged repository revision of the currently approved design."
+    t.datetime "approved_revision_recorded_at", comment: "When the approved design revision was recorded."
+    t.text "brief", comment: "Feature brief the design was researched from."
+    t.datetime "created_at", null: false
+    t.bigint "project_id", null: false
+    t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
+    t.string "title", null: false, comment: "Human-readable feature name."
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "status"], name: "index_feature_intents_on_project_id_and_status"
+    t.index ["project_id"], name: "index_feature_intents_on_project_id"
+    t.index ["status"], name: "index_feature_intents_on_status"
+  end
+
   create_table "flipper_features", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "key", null: false
@@ -1519,6 +1602,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
     t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
     t.index ["account_id"], name: "index_integration_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
+  end
+
+  create_table "intent_conformance_resolutions", comment: "RDR-067 human resolution of an intent-conformance decision, bound to actor and PR head.", force: :cascade do |t|
+    t.boolean "changes_acceptance_criteria", default: false, null: false, comment: "Approved acceptance criteria change; only valid on design_amendment resolutions."
+    t.boolean "changes_behavior", default: false, null: false, comment: "Approved product behavior changes; only valid on design_amendment resolutions."
+    t.boolean "changes_constraints", default: false, null: false, comment: "Approved constraints change; only valid on design_amendment resolutions."
+    t.boolean "changes_scope", default: false, null: false, comment: "Approved in/out scope changes; only valid on design_amendment resolutions."
+    t.datetime "created_at", null: false
+    t.bigint "design_amendment_id", comment: "Amendment created when the resolution changes the product contract."
+    t.bigint "issue_id", null: false, comment: "Local pull-request issue the resolution targets."
+    t.string "pr_head_sha", null: false, comment: "Exact PR head the resolution is bound to; a new head must be reviewed again."
+    t.bigint "project_id", null: false
+    t.integer "pull_request_number"
+    t.text "reason", null: false, comment: "Human's recorded reason for the resolution."
+    t.string "resolution_type", null: false, comment: "Human choice: require_within_scope, implementation_exception, or design_amendment."
+    t.bigint "resolved_by_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["design_amendment_id"], name: "index_intent_conformance_resolutions_on_design_amendment_id"
+    t.index ["issue_id", "pr_head_sha"], name: "index_intent_resolutions_unique_issue_head", unique: true
+    t.index ["issue_id"], name: "index_intent_conformance_resolutions_on_issue_id"
+    t.index ["project_id"], name: "index_intent_conformance_resolutions_on_project_id"
+    t.index ["resolution_type"], name: "index_intent_conformance_resolutions_on_resolution_type"
+    t.index ["resolved_by_id"], name: "index_intent_conformance_resolutions_on_resolved_by_id"
+  end
+
+  create_table "intent_conformance_verdicts", comment: "RDR-067 intent-conformance verdict identity: outcome bound to an exact PR head and approved design revision.", force: :cascade do |t|
+    t.string "approved_design_revision", null: false, comment: "Feature's approved design revision the verdict was evaluated against."
+    t.datetime "created_at", null: false
+    t.bigint "issue_id", null: false, comment: "Local pull-request issue the verdict targets."
+    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated."
+    t.string "pr_head_sha", null: false, comment: "PR head commit SHA the verdict was evaluated against."
+    t.bigint "project_id", null: false
+    t.datetime "recorded_at", null: false, comment: "When the verdict was recorded; the most recent row per issue is current."
+    t.datetime "updated_at", null: false
+    t.index ["issue_id", "recorded_at"], name: "index_intent_conformance_verdicts_on_issue_and_recorded_at"
+    t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
+    t.index ["outcome"], name: "index_intent_conformance_verdicts_on_outcome"
+    t.index ["project_id"], name: "index_intent_conformance_verdicts_on_project_id"
   end
 
   create_table "issue_dependencies", force: :cascade do |t|
@@ -2416,6 +2537,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."
@@ -3449,6 +3571,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
   add_foreign_key "decision_records", "projects", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "issues", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
+  add_foreign_key "design_amendment_follow_ups", "design_amendments"
+  add_foreign_key "design_amendment_follow_ups", "issues"
+  add_foreign_key "design_amendment_follow_ups", "users", column: "decided_by_id"
+  add_foreign_key "design_amendment_pauses", "design_amendments"
+  add_foreign_key "design_amendment_pauses", "issues"
+  add_foreign_key "design_amendment_pauses", "users", column: "released_by_id"
+  add_foreign_key "design_amendments", "feature_intents"
+  add_foreign_key "design_amendments", "projects"
+  add_foreign_key "design_amendments", "users", column: "approved_by_id"
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"
@@ -3483,11 +3614,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_222940) do
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
+  add_foreign_key "feature_intent_issues", "feature_intents"
+  add_foreign_key "feature_intent_issues", "issues"
+  add_foreign_key "feature_intents", "projects"
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
   add_foreign_key "integration_credentials", "users", column: "created_by_id"
+  add_foreign_key "intent_conformance_resolutions", "design_amendments"
+  add_foreign_key "intent_conformance_resolutions", "issues"
+  add_foreign_key "intent_conformance_resolutions", "projects"
+  add_foreign_key "intent_conformance_resolutions", "users", column: "resolved_by_id"
+  add_foreign_key "intent_conformance_verdicts", "issues"
+  add_foreign_key "intent_conformance_verdicts", "projects"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"

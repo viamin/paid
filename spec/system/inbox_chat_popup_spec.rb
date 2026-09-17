@@ -64,7 +64,7 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
     expect(account.chat_sessions.count).to eq(1)
   end
 
-  it "shows both panes on desktop and collapses to a single pane below the 1024px breakpoint" do
+  it "renders the queue and detail panes side by side on desktop" do
     # @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-006
     page.current_window.resize_to(1280, 800)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -74,6 +74,21 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
     expect(list).to be_visible
     expect(detail_section).to be_visible
 
+    # #3876: `visible` alone doesn't catch a broken split — an invalid
+    # arbitrary grid-cols value (a comma instead of a space) drops the whole
+    # `grid-template-columns` declaration, leaving both panes visible but
+    # stacked as two full-width rows instead of side by side. Assert the
+    # actual desktop geometry so that regression is caught here.
+    geometry = desktop_pane_geometry
+    expect(geometry.fetch("listRight")).to be <= geometry.fetch("detailLeft")
+    expect((geometry.fetch("listTop") - geometry.fetch("detailTop")).abs).to be <= 4
+    expect(geometry.fetch("detailWidth")).to be >= 300
+  end
+
+  it "collapses to a single pane below the 1024px breakpoint" do
+    # @spec OPERATOR-INBOX-003
+    page.current_window.resize_to(1280, 800)
+    visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
     page.current_window.resize_to(375, 812)
 
     # The resize pane swap runs in the controller's async media-query change
@@ -96,5 +111,24 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
     # render replaces it, so wait for the pane visibility to settle.
     expect(page).to have_css("[data-inbox-master-detail-target='list']", visible: :visible)
     expect(page).to have_css("[data-inbox-master-detail-target='detailSection']", visible: :hidden)
+  end
+
+  def desktop_pane_geometry
+    page.evaluate_script(<<~JS)
+      (() => {
+        const list = document.querySelector("[data-inbox-master-detail-target='list']");
+        const detail = document.querySelector("[data-inbox-master-detail-target='detailSection']");
+        const listRect = list.getBoundingClientRect();
+        const detailRect = detail.getBoundingClientRect();
+
+        return {
+          listRight: Math.round(listRect.right),
+          listTop: Math.round(listRect.top),
+          detailLeft: Math.round(detailRect.left),
+          detailTop: Math.round(detailRect.top),
+          detailWidth: Math.round(detailRect.width)
+        };
+      })()
+    JS
   end
 end

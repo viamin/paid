@@ -11,7 +11,31 @@
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/auto-merge-strategy/`, `docs/intent/operator-inbox/`, and new feature-approval/conformance segments
 - **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
-- **Related Tests**: TBD
+- **Related Tests**: `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb`, `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb`, `spec/services/design_amendments/*_spec.rb`
+
+## Implementation Status
+
+Partially implemented as of September 17, 2026. The design amendment and
+revision-impact slice (#3869) has shipped — see
+`docs/intent/approved-intent-amendment/`. The final-merge precondition slice
+(#3868) has also shipped — see `docs/intent/approved-intent-merge-guard/`:
+`IntentConformanceVerdict` (the minimal verdict-identity record) and
+`IntentConformance::VerifyAtMerge`, wired into
+`Activities::MergePullRequestActivity`, re-verify PR head, approved design
+revision, and verdict identity immediately before merge.
+
+Still missing: the independent conformance reviewer run that writes verdicts
+from PR content (#3866), and PR-scanner blockers plus Inbox escalation of
+drift verdicts (#3867). Until #3866 ships, any project with the
+`approved_intent_amendments` flag enabled and a linked feature intent will see
+every merge blocked with `verdict_missing` — correct fail-closed behavior for
+an unwired reviewer, not a defect. Per this RDR's rollout guard, the named
+mode stays off (the flag defaults off, and no project should enable it) until
+both the scanner (#3867) and this final guard are active together.
+Evaluation/rollout telemetry (#3870) is also outstanding. The 2026-09-17
+closeout audit for #3871 predates this work; see
+[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md) for
+the state at that point in time.
 
 ## Problem Statement
 
@@ -121,3 +145,23 @@ When a design revision supersedes approval, Paid identifies open PRs and unstart
 - A design revision pauses affected issues and dependents, leaves independent branches runnable, and identifies already merged affected work for a human decision.
 - Human-gated TDD continues to work when configured; automated test review is available without a routine human pause.
 - Rollout reports PR-to-merge conversion, human review time, false-alarm rate, escaped intent changes, rework, reviewer cost, and time to delivery.
+
+## 2026-09-17 Closeout Audit
+
+Closeout issue [#3871](https://github.com/viamin/paid/issues/3871) audited this
+RDR against the default branch (through #3874) following the
+[RDR Closeout Checklist](closeout-checklist.md). Findings, recorded in
+[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md):
+
+- **Nothing has shipped.** No verdict contract or persistence, no conformance
+  signal in `Automation::Strategies::AutoMerge`, no Inbox escalation kind, no
+  final-merge precondition, no amendment/impact mapping, and no false-alarm or
+  missed-drift evaluations exist in the codebase. Prerequisite RDR-066 (the
+  named feature operating mode) is also unimplemented.
+- **Status remains Final.** The evidence supports the current status exactly;
+  the audit updated neither this RDR's status nor its `docs/rdrs/README.md`
+  row, and filed no child issues because open issues #3866–#3870 already track
+  every gap.
+- **Epic #3861 must remain open.** The closeout PR uses non-closing tracking
+  language only; the epic closes when #3866–#3870 merge and a re-audit proves
+  the acceptance criteria.

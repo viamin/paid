@@ -225,7 +225,7 @@
   bodies that happen to end without punctuation (e.g. a code block, a list
   item, or a bare link as the last line) and SHALL skip bodies too short for
   the signal to be meaningful. This detector is shared with `enhance_issue`
-  (`ISSUE-ENHANCEMENT-016`).
+  (`ISSUE-ENHANCEMENT-017`).
   *Tests:* `spec/services/issues/detect_truncated_body_spec.rb`,
   `spec/temporal/activities/analyze_issue_activity_spec.rb`
   ("when the issue body appears truncated or corrupted", "when the issue
@@ -261,3 +261,69 @@
   *Code:* `app/services/issue_enhancements/comment_digest.rb`,
   `app/temporal/activities/analyze_issue_activity.rb#prior_enhancement_summary`,
   `#format_comments`.
+
+- [x] **ISSUE-ANALYSIS-016** — The round-cap calibration guidance in
+  `ISSUE-ANALYSIS-014` is a prompt-only instruction, so the readiness
+  assessor's `sufficient_context` verdict SHALL be overridden
+  deterministically in code, not left to instruction-following: when at
+  least one enhancement round has run (`enhance_issue_rounds > 0`) AND
+  the counter has reached the project's
+  `max_enhance_issue_reevaluation_rounds` and no trusted human has
+  commented since the analyzer's own previous pass, the system SHALL
+  force `sufficient_context: true` (and clear `missing_context_areas`)
+  regardless of the model's raw verdict, so the issue proceeds to
+  `create_pr` instead of having its `enhance_issue` follow-up rejected
+  at queue time
+  (`QueueAgentRunActivity#enhancement_round_limit_reached?`) and
+  re-parked in `manual_review` on LLM noncompliance alone (#3849,
+  follow-up to #3842/#3844). The `enhance_issue_rounds > 0` precondition
+  preserves the cap-0 semantics: `max_enhance_issue_reevaluation_rounds
+  = 0` disables automatic enhancement, so `0 >= 0` must not let the
+  override fire on the very first analysis — a `sufficient_context:
+  false` verdict keeps its queue-time rejection and the issue stays
+  parked in `manual_review` for a human to gate. The fresh-signal
+  anchor SHALL be the issue's `last_analyzed_at` timestamp (written only
+  by `#persist_verdict!`, never derived from GitHub content), because it
+  exists for both credential models — anchoring on the bot-authored
+  enhancement marker comment made the carve-out dead code for PAT-backed
+  projects, where `Project#paid_bot_author?` is always false and no
+  marker comment is ever admitted. Paid's own structured marker comments
+  (enhancement, clarifying-answers, stop-for-manual-review) SHALL be
+  excluded from the fresh-signal scan by body marker, so that on
+  PAT-backed projects — where Paid posts as the allowlisted PAT user —
+  its own comments never read as fresh human signal (which would reopen
+  the budget on every cycle and turn the cap into an infinite enhance
+  loop); a spoofed marker can only exclude the spoofing comment itself
+  from the scan, never admit content into the prompt (admission stays
+  gated by `ClarifyingQuestions::CommentAdmission`, #3842). The override
+  SHALL NOT apply when the model already returned
+  `sufficient_context: true`, nor when a trusted human commented after
+  the last analyzer pass — that fresh signal warrants a real
+  re-evaluation rather than a forced one. Because a plain trusted
+  comment matches none of the counter-reset paths (the answer flow, a
+  needs-input label removal, or a trusted body edit via
+  `ISSUE-ENHANCEMENT-016`), the counter can still sit at cap when this
+  suppression fires — in that case the system SHALL reset
+  `enhance_issue_rounds` to 0, preserving the invariant "suppression ⇒
+  counter below cap" so the re-evaluation `enhance_issue` follow-up
+  queues instead of being rejected at queue time and re-parking the
+  issue in `manual_review` (#3849 acceptance criterion 1). The raw LLM
+  verdict and the override SHALL both be logged
+  (`agent_execution.analyze_issue_cap_override`,
+  `agent_execution.analyze_issue_enhancement_budget_reopened`) for
+  observability. No test SHALL depend on the LLM obeying the
+  prompt-level cap instruction.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("forces sufficient_context: true regardless of the LLM's raw verdict",
+  "persists the overridden verdict, not the LLM's raw false",
+  "does not override when a trusted human commented after the last enhancement round",
+  "does not override on a PAT-backed project when a trusted human commented after the last analysis",
+  "still overrides on a PAT-backed project when the only newer comment is Paid's own enhancement marker posted as the PAT user",
+  "keeps the manual_review gate when the round cap is zero",
+  "resets the round counter when suppression fires so the enhance_issue follow-up can queue",
+  "still overrides when the only post-enhancement comment is untrusted",
+  "does not override when the LLM already returned sufficient_context: true",
+  "does not override sufficient_context: false when the round cap has not been reached").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#enforce_cap_override`,
+  `#reopen_enhancement_budget!`, `#fresh_human_signal_since?`,
+  `#paid_marker_comment_body?`, `#build_cycle_state`.
