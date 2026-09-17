@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
-# @spec INTENT-AMENDMENT-003 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010
+# @spec INTENT-AMENDMENT-003 @spec INTENT-CONFORMANCE-REVIEW-001 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010
 # RDR-066 feature intent: links a feature's brief, discovery decisions,
-# design PRs, issue tree, and approval record. Originated as a minimal
-# substrate for the RDR-067 amendment flow (`released`/`revising`
-# transitions); the RDR-066 Inbox approval lifecycle (#3864) extends it with
-# open decisions, linked design PRs, and the Mark approved transition.
+# design PRs, issue tree, and approval record. The RDR-067 amendment flow
+# (`released`/`revising` transitions) and the intent-conformance reviewer
+# (#3866, reading +design_document_paths+ at +approved_design_revision+)
+# are wired here. The RDR-066 Inbox approval lifecycle (#3864) extends this
+# record with open decisions, linked design PRs, and the Mark approved
+# transition.
 class FeatureIntent < ApplicationRecord
   STATUSES = %w[
     discovering

@@ -1,13 +1,14 @@
 # frozen_string_literal: true
 
 # @spec INTENT-MERGE-GUARD-002 @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
-# RDR-067 intent-conformance verdict identity. This is the minimal structural
-# contract IntentConformance::VerifyAtMerge (#3868) needs: an outcome bound to
-# an exact PR head and approved design revision, so a push or design amendment
-# recorded after the verdict invalidates it. Reviewer evidence (cited claims,
-# reasoning, run metadata) belongs to the independent reviewer run (#3866);
-# this record carries only the identity/outcome the final-merge guard and the
-# PR-scanner blocker (#3867) check.
+# @spec INTENT-CONFORMANCE-REVIEW-002 @spec INTENT-CONFORMANCE-REVIEW-003
+# RDR-067 intent-conformance verdict: an outcome bound to an exact PR head and
+# approved design revision (so a push or design amendment recorded after the
+# verdict invalidates it), plus the independent reviewer run's evidence
+# (#3866) — cited design claims, cited diff locations, a reasoning summary,
+# and the reviewer run/model identity. Only IntentConformance::ReviewRun
+# creates these records; an implementation agent's self-report never writes
+# one directly.
 class IntentConformanceVerdict < ApplicationRecord
   OUTCOME_WITHIN_SCOPE = "within_scope"
   OUTCOME_MATERIAL_DRIFT = "material_drift"
@@ -22,6 +23,8 @@ class IntentConformanceVerdict < ApplicationRecord
   validates :approved_design_revision, presence: true
   validates :outcome, presence: true, inclusion: { in: OUTCOMES }
   validates :recorded_at, presence: true
+  validates :reviewer_run_id, presence: true
+  validates :reviewer_model, presence: true
 
   scope :recent_first, -> { order(recorded_at: :desc, id: :desc) }
 
