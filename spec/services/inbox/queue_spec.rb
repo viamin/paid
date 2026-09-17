@@ -300,6 +300,25 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to include(feature_intent)
     end
 
+    # @spec FEATURE-APPROVAL-008
+    it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
+      create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create_feature_decision_feature
+      single_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+      end
+
+      create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create_feature_decision_feature
+      create_feature_decision_feature
+      multi_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+      end
+
+      expect(multi_row_queries).to eq(single_row_queries)
+    end
+
     it "excludes plan reviews that are no longer open" do
       review_issue = create(:issue, project: project)
       create_plan_review(project: project, issue: review_issue, workflow_id: "planning-workflow-1", plan_data: {})
@@ -642,6 +661,17 @@ RSpec.describe Inbox::Queue do
       manual_review_reason: reason,
       **attrs
     )
+  end
+
+  # A feature intent exercising every deterministic readiness blocker (open
+  # question, unconfirmed inferred decision, stale required design PR) so the
+  # batch-preload query-count test walks the full ApprovalReadiness path.
+  def create_feature_decision_feature
+    feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+    create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+    create(:feature_intent_decision, :inferred_decision, feature_intent: feature_intent)
+    create(:feature_intent_design_pr, :stale, feature_intent: feature_intent)
+    feature_intent
   end
 
   def create_agent_run_blocking_notification(github_number:, source_pull_request_number:)

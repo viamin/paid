@@ -38,22 +38,26 @@ module FeatureIntents
 
     attr_reader :feature_intent
 
+    # These filters walk the loaded association arrays instead of re-scoping
+    # with `.where` (which always issues a fresh query) so the Inbox queue's
+    # `includes(:feature_intent_decisions, :feature_intent_design_prs)`
+    # preload is actually used — no N+1 per feature-decision entry per render.
     def unresolved_question_blocker
-      count = feature_intent.feature_intent_decisions.questions.open_decisions.count
+      count = feature_intent.feature_intent_decisions.count { |decision| decision.question? && decision.open? }
       return if count.zero?
 
       Blocker.new(code: "unresolved_questions", message: "#{count} clarifying #{"question".pluralize(count)} still open.")
     end
 
     def unconfirmed_inferred_decision_blocker
-      count = feature_intent.feature_intent_decisions.inferred_decisions.open_decisions.count
+      count = feature_intent.feature_intent_decisions.count { |decision| decision.inferred_decision? && decision.open? }
       return if count.zero?
 
       Blocker.new(code: "unconfirmed_inferred_decisions", message: "#{count} inferred #{"decision".pluralize(count)} still need human confirmation.")
     end
 
     def stale_design_pr_blocker
-      stale = feature_intent.feature_intent_design_prs.required_artifacts.select(&:stale?)
+      stale = feature_intent.feature_intent_design_prs.select { |design_pr| design_pr.required? && design_pr.stale? }
       return if stale.empty?
 
       numbers = stale.map { |design_pr| "##{design_pr.pull_request_number}" }.join(", ")

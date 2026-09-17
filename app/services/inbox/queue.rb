@@ -368,7 +368,9 @@ module Inbox
         .where(status: FEATURE_DECISION_STATUSES)
       scope = scope.where(project: project) if project
 
-      scope.includes(:project, :feature_intent_decisions, :feature_intent_design_prs)
+      # approved_by is loaded too because FeatureDecisionSummary reads the
+      # approver's email for approved_waiting_for_merge entries.
+      scope.includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
         .order(:created_at, :id)
         .map { |feature_intent| feature_decision_entry(feature_intent) }
     end

@@ -16,9 +16,6 @@ class FeatureIntentDesignPr < ApplicationRecord
   validates :design_pr_kind, presence: true, inclusion: { in: KINDS }
   validates :head_sha, presence: true
 
-  scope :required_artifacts, -> { where(required: true) }
-  scope :unmerged, -> { where(merged_at: nil) }
-
   def merged? = merged_at.present?
 
   def github_url = "#{feature_intent.project.github_url}/pull/#{pull_request_number}"
