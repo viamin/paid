@@ -66,6 +66,13 @@ RSpec.describe Onboarding::ApplyDefaultPosture do
     expect(result[:applied_changes]).to be_empty
   end
 
+  it "is a no-op when the choice is empty (no radio selected)" do
+    result = described_class.call(account: account, actor: actor, choice: "")
+
+    expect(result[:applied_changes]).to be_empty
+    expect(project.reload.operating_mode).to eq("standard")
+  end
+
   it "rejects unknown posture choices" do
     expect {
       described_class.call(account: account, actor: actor, choice: "chaos_factory")

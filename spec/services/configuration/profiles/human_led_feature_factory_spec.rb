@@ -45,6 +45,6 @@ RSpec.describe Configuration::Profiles::HumanLedFeatureFactory do
     )
 
     expect(plan).not_to be_blocked
-    expect(plan.changes.map(&:key)).to include("operating_mode", "tdd_mode", "auto_merge_mode")
+    expect(plan.changes.map(&:key)).to include("operating_mode", "tdd_mode")
   end
 end

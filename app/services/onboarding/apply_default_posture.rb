@@ -22,11 +22,13 @@ module Onboarding
     end
 
     def call
-      case @choice
-      when DefaultPosture::CHOICE_HUMAN_LED then apply_human_led
-      when DefaultPosture::CHOICE_STANDARD, "" then NO_OP_RESULT
-      else raise ArgumentError, "Unknown operating posture: #{@choice.inspect}"
+      unless DefaultPosture::CHOICES.include?(@choice) || @choice.empty?
+        raise ArgumentError, "Unknown operating posture: #{@choice.inspect}"
       end
+
+      return NO_OP_RESULT if @choice.empty? || @choice == DefaultPosture::CHOICE_STANDARD
+
+      apply_human_led
     end
 
     private
