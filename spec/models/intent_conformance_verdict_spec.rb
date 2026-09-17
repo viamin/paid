@@ -5,6 +5,7 @@ require "rails_helper"
 # @spec INTENT-MERGE-GUARD-002
 # @spec INTENT-MERGE-GUARD-003
 # @spec INTENT-MERGE-GUARD-004
+# @spec INTENT-CONFORMANCE-REVIEW-002
 RSpec.describe IntentConformanceVerdict do
   it "is valid with an identity and a terminal outcome" do
     verdict = build(:intent_conformance_verdict)
@@ -17,6 +18,39 @@ RSpec.describe IntentConformanceVerdict do
 
     expect(verdict).not_to be_valid
     expect(verdict.errors[:outcome]).to be_present
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-002
+  it "requires reviewer identity evidence (run id and model)" do
+    verdict = build(:intent_conformance_verdict, reviewer_run_id: nil, reviewer_model: nil)
+
+    expect(verdict).not_to be_valid
+    expect(verdict.errors[:reviewer_run_id]).to be_present
+    expect(verdict.errors[:reviewer_model]).to be_present
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-002
+  it "requires an approved design revision" do
+    verdict = build(:intent_conformance_verdict, approved_design_revision: nil)
+
+    expect(verdict).not_to be_valid
+    expect(verdict.errors[:approved_design_revision]).to be_present
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-002
+  it "requires a PR head SHA" do
+    verdict = build(:intent_conformance_verdict, pr_head_sha: nil)
+
+    expect(verdict).not_to be_valid
+    expect(verdict.errors[:pr_head_sha]).to be_present
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-002
+  it "requires a recorded_at timestamp" do
+    verdict = build(:intent_conformance_verdict, recorded_at: nil)
+
+    expect(verdict).not_to be_valid
+    expect(verdict.errors[:recorded_at]).to be_present
   end
 
   describe ".current_for" do

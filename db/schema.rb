@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_17_073409) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_17_093601) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1408,6 +1408,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_073409) do
     t.datetime "approved_revision_recorded_at", comment: "When the approved design revision was recorded."
     t.text "brief", comment: "Feature brief the design was researched from."
     t.datetime "created_at", null: false
+    t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
     t.bigint "project_id", null: false
     t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
     t.string "title", null: false, comment: "Human-readable feature name."
@@ -1629,12 +1630,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_073409) do
 
   create_table "intent_conformance_verdicts", comment: "RDR-067 intent-conformance verdict identity: outcome bound to an exact PR head and approved design revision.", force: :cascade do |t|
     t.string "approved_design_revision", null: false, comment: "Feature's approved design revision the verdict was evaluated against."
+    t.jsonb "cited_design_claims", default: [], null: false, comment: "Approved design claims the reviewer cited as relevant to this outcome."
+    t.jsonb "cited_diff_locations", default: [], null: false, comment: "PR diff locations (file plus note) the reviewer cited as relevant to this outcome."
     t.datetime "created_at", null: false
     t.bigint "issue_id", null: false, comment: "Local pull-request issue the verdict targets."
     t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated."
     t.string "pr_head_sha", null: false, comment: "PR head commit SHA the verdict was evaluated against."
     t.bigint "project_id", null: false
+    t.text "reasoning_summary", comment: "Reviewer's free-text explanation of the outcome, for human review."
     t.datetime "recorded_at", null: false, comment: "When the verdict was recorded; the most recent row per issue is current."
+    t.string "reviewer_model", default: "", null: false, comment: "Model used by the independent reviewer run."
+    t.string "reviewer_run_id", default: "", null: false, comment: "Identifier for the independent reviewer invocation that produced this verdict, for audit correlation."
     t.datetime "updated_at", null: false
     t.index ["issue_id", "recorded_at"], name: "index_intent_conformance_verdicts_on_issue_and_recorded_at"
     t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"

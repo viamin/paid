@@ -11,7 +11,7 @@
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/auto-merge-strategy/`, `docs/intent/operator-inbox/`, and new feature-approval/conformance segments
 - **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
-- **Related Tests**: `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb`, `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb`, `spec/services/design_amendments/*_spec.rb`
+- **Related Tests**: `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/services/intent_conformance/review_run_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb`, `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb`, `spec/services/design_amendments/*_spec.rb`
 
 ## Implementation Status
 
@@ -22,18 +22,28 @@ revision-impact slice (#3869) has shipped — see
 `IntentConformanceVerdict` (the minimal verdict-identity record) and
 `IntentConformance::VerifyAtMerge`, wired into
 `Activities::MergePullRequestActivity`, re-verify PR head, approved design
-revision, and verdict identity immediately before merge.
+revision, and verdict identity immediately before merge. The independent
+conformance reviewer run (#3866) has also shipped — see
+`docs/intent/intent-conformance-review/`: `IntentConformance::ReviewRun`
+extends `IntentConformanceVerdict` with reviewer evidence (cited claims,
+cited diff locations, reasoning summary, reviewer run/model) and is the only
+writer of verdict rows; the implementing agent's self-report never supplies
+a passing verdict.
 
-Still missing: the independent conformance reviewer run that writes verdicts
-from PR content (#3866), and PR-scanner blockers plus Inbox escalation of
-drift verdicts (#3867). Until #3866 ships, any project with the
-`approved_intent_amendments` flag enabled and a linked feature intent will see
-every merge blocked with `verdict_missing` — correct fail-closed behavior for
-an unwired reviewer, not a defect. Per this RDR's rollout guard, the named
-mode stays off (the flag defaults off, and no project should enable it) until
-both the scanner (#3867) and this final guard are active together.
-Evaluation/rollout telemetry (#3870) is also outstanding. The 2026-09-17
-closeout audit for #3871 predates this work; see
+Still missing: PR-scanner blockers plus Inbox escalation of drift verdicts
+(#3867), which is also what will call `IntentConformance::ReviewRun` on a PR
+event — until #3867 wires a caller, no verdicts are produced in production
+and every applicable merge stays blocked with `verdict_missing`, which is
+correct fail-closed behavior for an unwired trigger, not a defect. Per this
+RDR's rollout guard, the named mode stays off (the flag defaults off, and no
+project should enable it) until the scanner (#3867) and the final guard are
+active together. `feature_intents.design_document_paths` (added by #3866 for
+the reviewer to know which repository files constitute a feature's approved
+design) is not yet populated by anything — that wiring belongs to the
+RDR-066 approval-lifecycle issues (#3862/#3863); until it lands, `ReviewRun`
+correctly records `not_evaluated` for every feature intent. Evaluation/rollout
+telemetry (#3870) is also outstanding. The 2026-09-17 closeout audit
+(see #3871) predates this work; see
 [audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md) for
 the state at that point in time.
 
