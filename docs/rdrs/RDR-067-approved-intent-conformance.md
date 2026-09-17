@@ -11,7 +11,16 @@
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/auto-merge-strategy/`, `docs/intent/operator-inbox/`, and new feature-approval/conformance segments
 - **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
-- **Related Tests**: TBD
+- **Related Tests**: None yet — implementation has not started (see the [2026-09-17 closeout audit](#2026-09-17-closeout-audit))
+
+## Implementation Status
+
+Not started as of September 17, 2026. The design is Final (approved in #3859,
+finalized in #3874), but no verdict contract, scanner/Inbox integration,
+final-merge guard, amendment flow, or evaluation telemetry has shipped. The
+closeout audit for #3871 verified the gaps and made no status change; see
+[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md).
+Implementation remains tracked by open issues #3866–#3870 under epic #3861.
 
 ## Problem Statement
 
@@ -121,3 +130,23 @@ When a design revision supersedes approval, Paid identifies open PRs and unstart
 - A design revision pauses affected issues and dependents, leaves independent branches runnable, and identifies already merged affected work for a human decision.
 - Human-gated TDD continues to work when configured; automated test review is available without a routine human pause.
 - Rollout reports PR-to-merge conversion, human review time, false-alarm rate, escaped intent changes, rework, reviewer cost, and time to delivery.
+
+## 2026-09-17 Closeout Audit
+
+Closeout issue [#3871](https://github.com/viamin/paid/issues/3871) audited this
+RDR against the default branch (through #3874) following the
+[RDR Closeout Checklist](closeout-checklist.md). Findings, recorded in
+[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md):
+
+- **Nothing has shipped.** No verdict contract or persistence, no conformance
+  signal in `Automation::Strategies::AutoMerge`, no Inbox escalation kind, no
+  final-merge precondition, no amendment/impact mapping, and no false-alarm or
+  missed-drift evaluations exist in the codebase. Prerequisite RDR-066 (the
+  named feature operating mode) is also unimplemented.
+- **Status remains Final.** The evidence supports the current status exactly;
+  the audit updated neither this RDR's status nor its `docs/rdrs/README.md`
+  row, and filed no child issues because open issues #3866–#3870 already track
+  every gap.
+- **Epic #3861 must remain open.** The closeout PR uses non-closing tracking
+  language only; the epic closes when #3866–#3870 merge and a re-audit proves
+  the acceptance criteria.
