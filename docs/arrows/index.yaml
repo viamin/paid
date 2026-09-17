@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-27
+last_updated: 2026-09-17
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -280,6 +280,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-04
+  approved-intent-merge-guard:
+    title: Approved Intent Final-Merge Guard
+    path: docs/intent/approved-intent-merge-guard/approved-intent-merge-guard-design.md
+    specs: docs/intent/approved-intent-merge-guard/approved-intent-merge-guard-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-09-17
   billing-aggregation:
     title: Billing Aggregation
     path: docs/intent/billing-aggregation/billing-aggregation-design.md
