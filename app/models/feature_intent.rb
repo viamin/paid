@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
-# @spec INTENT-AMENDMENT-003
-# Minimal RDR-066 feature intent substrate for the RDR-067 amendment flow:
-# links a feature's issue tree to its approved design revision. The full
-# approval lifecycle (#3862) extends this record; this slice only needs the
-# released/revising transitions a design amendment drives.
+# @spec INTENT-AMENDMENT-003 @spec INTENT-CONFORMANCE-REVIEW-001
+# Minimal RDR-066 feature intent substrate for the RDR-067 amendment and
+# conformance-review flows: links a feature's issue tree to its approved
+# design revision and the repository paths (RDR plus required LID artifacts)
+# that constitute that design (+design_document_paths+), read by
+# IntentConformance::ReviewRun (#3866) at the exact +approved_design_revision+.
+# The full approval lifecycle (#3862) extends this record; this slice only
+# needs the released/revising transitions a design amendment drives.
 class FeatureIntent < ApplicationRecord
   STATUSES = %w[
     discovering

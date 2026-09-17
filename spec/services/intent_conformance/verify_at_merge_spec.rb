@@ -162,5 +162,58 @@ RSpec.describe IntentConformance::VerifyAtMerge do
         end
       end
     end
+
+    # @spec INTENT-CONFORMANCE-REVIEW-006
+    context "when the verdict is authored by IntentConformance::ReviewRun" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:pr_base) { double("pr_base", sha: "base_sha") } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", base: pr_base) } # rubocop:disable RSpec/VerifiedDoubles
+      let(:file_content) { "# RDR-999\n\nThe widget SHALL always be blue." }
+      let(:comparison) do
+        {
+          files: [
+            { filename: "app/models/widget.rb", status: "modified", additions: 3, deletions: 1, patch: "@@ -1,2 +1,3 @@\n widget code" }
+          ]
+        }
+      end
+      let(:superseding_head) { "head_after_push" }
+
+      before do
+        feature_intent.update!(design_document_paths: [ "docs/rdrs/RDR-999-example.md" ])
+        allow(project).to receive(:client).and_return(github_client)
+        allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
+        allow(github_client).to receive(:file_content)
+          .with("acme/widgets", path: "docs/rdrs/RDR-999-example.md", ref: "rev1")
+          .and_return(file_content)
+        allow(github_client).to receive(:pull_request).with("acme/widgets", issue.github_number).and_return(pr_data)
+        allow(github_client).to receive(:compare_summary)
+          .with("acme/widgets", "base_sha", current_head).and_return(comparison)
+        allow(github_client).to receive(:compare_summary)
+          .with("acme/widgets", "base_sha", superseding_head).and_return(comparison)
+        allow(AgentHarness).to receive(:send_message).and_return(
+          instance_double(AgentHarness::Response,
+            success?: true,
+            output: { outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK" }.to_json,
+            model: "claude-sonnet-4-6")
+        )
+      end
+
+      it "unblocks merge for the exact head ReviewRun was invoked against" do
+        verdict = IntentConformance::ReviewRun.call(project: project, issue: issue, pr_head_sha: current_head)
+
+        expect(verdict).to be_within_scope
+        expect(verdict.pr_head_sha).to eq(current_head)
+        expect(call).to be_nil
+      end
+
+      it "is structurally stale after a superseding push (ReviewRun records a new verdict for the new head)" do
+        IntentConformance::ReviewRun.call(project: project, issue: issue, pr_head_sha: current_head)
+        IntentConformance::ReviewRun.call(project: project, issue: issue, pr_head_sha: superseding_head)
+
+        result = described_class.call(project: project, issue: issue, pr_head_sha: current_head)
+
+        expect(result.reason_code).to eq(described_class::REASON_VERDICT_STALE)
+      end
+    end
   end
 end

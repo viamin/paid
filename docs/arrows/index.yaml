@@ -288,6 +288,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-09-17
+  intent-conformance-review:
+    title: Independent Intent-Conformance Reviewer Run
+    path: docs/intent/intent-conformance-review/intent-conformance-review-design.md
+    specs: docs/intent/intent-conformance-review/intent-conformance-review-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-09-17
   billing-aggregation:
     title: Billing Aggregation
     path: docs/intent/billing-aggregation/billing-aggregation-design.md
