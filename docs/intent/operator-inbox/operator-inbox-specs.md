@@ -94,13 +94,24 @@
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route
-  opens the detail pane with a path back to the list.
+  opens the detail pane with a path back to the list. The two panes SHALL
+  render through the shared
+  [`list-detail-layout`](../list-detail-layout/list-detail-layout-specs.md)
+  shell (`LIST-DETAIL-001`, `LIST-DETAIL-002`), so a future change to the
+  shared pane proportions, breakpoint, gap, pane chrome, empty state, or
+  active-row treatment lands in one place. The Inbox's mobile master-detail
+  flow (`inbox-master-detail` controller, route-based member pane) is
+  feature-specific; the shared pattern encodes layout only.
   *Code:* `app/controllers/inbox_controller.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/views/shared/_list_detail_shell.html.erb`,
+  `app/views/shared/_list_detail_empty_state.html.erb`,
+  `app/helpers/master_detail_layout_helper.rb`,
   `app/javascript/controllers/inbox_master_detail_controller.js`.
-  *Test:* `spec/requests/inbox_spec.rb`, `spec/system/dashboard_inbox_spec.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/system/dashboard_inbox_spec.rb`,
+  `spec/lib/master_detail_layout_helper_spec.rb`.
 
 - [x] **OPERATOR-INBOX-003A** — While the inbox page initializes, the inbox
   master-detail controller SHALL complete its Stimulus lifecycle without

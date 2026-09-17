@@ -1,5 +1,12 @@
 import { Controller } from "@hotwired/stimulus"
 
+// Manages the chat session list (sidebar) on `/chat` and `/chat/:id`:
+// filters cards by search input, applies the shared active-row class
+// (LIST-DETAIL-003) when the card is the currently selected session,
+// and opens / closes the mobile overlay drawer. The shared class set
+// is sourced from `data-active-classes` on each card so a future
+// change to the active-row treatment lives in
+// `MasterDetailLayoutHelper#master_detail_active_row_classes`, not here.
 export default class extends Controller {
   static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel"]
   static values = { activeSessionId: Number }
@@ -84,9 +91,8 @@ export default class extends Controller {
 
     this.cardTargets.forEach((card) => {
       const selected = Number(card.dataset.sessionId) === activeId
-      card.classList.toggle("border-sky-400", selected)
-      card.classList.toggle("bg-sky-50", selected)
-      card.classList.toggle("shadow-md", selected)
+      const activeClasses = (card.dataset.activeClasses || "").split(/\s+/).filter(Boolean)
+      card.classList.toggle(...[ ...activeClasses, selected ].filter(Boolean))
     })
   }
 

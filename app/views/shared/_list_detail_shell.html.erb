@@ -1,0 +1,62 @@
+<%# Shared two-pane shell rendered by both the Inbox (`/inbox`, `/inbox/:id`)
+    and Chat (`/chat`, `/chat/:id`) list-and-detail surfaces. The shell
+    encodes the layout rules both pages share — pane widths, breakpoint,
+    inter-pane gap, pane chrome, empty state — so a future change to any of
+    those rules is a single edit in `MasterDetailLayoutHelper`. Feature
+    content, controls, and interaction state stay in the per-feature
+    partials passed in via `list` and `detail`.
+
+    Locals:
+      list:        Content for the left (list) pane — usually rendered via
+                   the feature's own list partial. Required.
+      detail:      Content for the right (detail) pane — usually rendered
+                   via the feature's own detail partial. Required.
+      empty_title:        String title for the empty-state card.
+      empty_body:        Multi-line body required for the empty-state card.
+      list_dom_id:    DOM id for the list pane (used by feature Stimulus
+                       controllers; falls back to "list-detail-list").
+      detail_dom_id:    DOM id for the detail pane (used by feature Stimulus
+                       controllers; falls back to "list-detail-detail").
+      list_data:        Hash of `data-*` attributes for the list pane.
+                       Keys are emitted after the `data-` prefix as
+                       kebab-case (so `"inbox_master_detail_target"` becomes
+                       `data-inbox-master-detail-target`). Only the value is
+                       ERB-interpolated; the attribute name is fixed, so the
+                       Herb lint rule on ERB-in-attribute-name does not
+                       fire.
+      detail_data:        Same as `list_data`, for the detail pane.
+      list_classes:     Extra classes to merge into the list pane card.
+      detail_classes:    Extra classes to merge into the detail pane card.
+
+    @spec LIST-DETAIL-001 @spec LIST-DETAIL-002 @spec LIST-DETAIL-005 %>
+<% list_dom_id ||= "list-detail-list" %>
+<% detail_dom_id ||= "list-detail-detail" %>
+<% list_data ||= {} %>
+<% detail_data ||= {} %>
+<% list_classes ||= "" %>
+<% detail_classes ||= "" %>
+<% list_class_string = [ master_detail_pane_classes, list_classes ].reject { |c| c.blank? }.join(" ") %>
+<% detail_class_string = [ master_detail_pane_classes, detail_classes ].reject { |c| c.blank? }.join(" ") %>
+<%
+  list_data_attributes = list_data.transform_keys { |key| "data-#{key.to_s.tr('_', '-')}" }
+  detail_data_attributes = detail_data.transform_keys { |key| "data-#{key.to_s.tr('_', '-')}" }
+%>
+<div class="<%= master_detail_grid_classes %>">
+  <%= tag.div id: list_dom_id,
+              class: list_class_string,
+              data: list_data_attributes do %>
+    <%= list %>
+  <% end %>
+
+  <%= tag.div id: detail_dom_id,
+              class: detail_class_string,
+              data: detail_data_attributes do %>
+    <% if detail.present? %>
+      <%= detail %>
+    <% elsif empty_title.present? %>
+      <%= render "shared/list_detail_empty_state",
+                 title: empty_title,
+                 body: empty_body %>
+    <% end %>
+  <% end %>
+</div>

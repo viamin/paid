@@ -1,0 +1,16 @@
+<%# Empty-state card used by both Inbox and Chat when the right (detail)
+    pane slot has no selection to render. The chrome comes from
+    `MasterDetailLayoutHelper#master_detail_empty_state_classes` so both
+    surfaces render the same dashed-border card.
+
+    Locals:
+      title:  Required heading text for the empty state.
+      body:   Required body text under the heading.
+
+    @spec LIST-DETAIL-002 @spec LIST-DETAIL-005 %>
+<div class="<%= master_detail_empty_state_classes %>">
+  <h2 class="text-sm font-semibold text-gray-900"><%= title %></h2>
+  <% if body.present? %>
+    <p class="mt-1 text-sm text-gray-500"><%= body %></p>
+  <% end %>
+</div>
