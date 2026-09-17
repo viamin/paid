@@ -78,6 +78,14 @@ account onboarding proposes the mode as the default project posture with a
 reviewable settings plan. The mode composes with — never replaces — the
 project's independent auto-merge and TDD test-review choices.
 
+For features executed under an approved design (RDR-066/RDR-067 operating
+mode), the same authority applies at the design level: an agent PR that drifts
+from the human-approved design stops and asks a human. A one-PR exception can
+never change approved product behavior, constraints, scope, or acceptance
+criteria — product-level changes route through an amended RDR/LID design that
+a human approves and merges before affected work resumes. See
+`docs/intent/approved-intent-amendment/`.
+
 ## Approach: All LLM Calls Through One Interface
 
 Every LLM interaction in the application goes through the `agent_harness` gem —
