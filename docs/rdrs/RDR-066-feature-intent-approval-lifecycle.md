@@ -5,13 +5,44 @@
 ## Metadata
 
 - **Date**: 2026-09-16
-- **Status**: Final
+- **Status**: Partially Implemented
 - **Type**: Product workflow + orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-044](RDR-044-configuration-profiles-chat.md) (Configuration Profiles), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-053](RDR-053-new-feature-creation.md) (New Feature Creation), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-067](RDR-067-approved-intent-conformance.md) (Approved Intent Conformance)
-- **Related Intent**: `docs/high-level-design.md`, `docs/intent/operator-inbox/`, `docs/intent/inbox-foundation/`, `docs/intent/lid-aware-agent-runs/`, and a new feature-approval segment
+- **Related Intent**: `docs/high-level-design.md`, `docs/intent/operator-inbox/`, `docs/intent/inbox-foundation/`, `docs/intent/lid-aware-agent-runs/`, and a new feature-approval segment (not yet created — see Implementation Status)
 - **Related Issues**: [#3860](https://github.com/viamin/paid/issues/3860) (epic), #3862–#3865 (approval and release), #3872 (mode and onboarding), #3873 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
 - **Related Tests**: TBD
+
+## Implementation Status
+
+RDR-066 is **Partially Implemented** as of 2026-09-17. The design is Final and
+merged (design PR #3859, finalization PR #3874), and the prerequisite RDRs it
+builds on (RDR-044 Configuration Profiles, RDR-051 LID-Aware Agent Runs,
+RDR-053 New Feature Creation, RDR-056 TDD Modes) have already shipped. None of
+RDR-066's own scope has shipped code or test evidence yet: no `FeatureIntent`
+record, no lifecycle states, no Inbox approval action, no hold enforcement at
+any run entry point, and no `human_led_feature_factory` operating mode. See
+[`audit-report-2026-09-17-rdr-066.md`](audit-report-2026-09-17-rdr-066.md) for
+the full evidence trail.
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Feature Intent record, lifecycle, and approval-revision binding | Gap | No `FeatureIntent` model, migration, or lifecycle state exists anywhere in `app/`, `spec/`, or `db/schema.rb`; tracked by #3862 |
+| `create_feature`/`lid_planning` attach design PRs and issue tree to a Feature Intent | Gap | No attachment code found; tracked by #3863 |
+| Inbox feature-question, design-review, and "Mark approved" entries | Gap | `app/services/inbox/queue.rb` has no such entry types; tracked by #3864 |
+| Release hold enforced at every run entry point (auto-pick, eager queue, dequeue, manual `create_pr`) | Gap | `app/services/automation/strategies/auto_pick/default_candidate_source.rb` and `app/services/issues/enqueue_eligible.rb` have no release-hold concept; tracked by #3865 |
+| Direct human merge / Inbox approval / stale head / incomplete design / bot merge / abandoned PR reconciliation | Gap | No corresponding code or specs found; tracked by #3865 |
+| Named `human_led_feature_factory` operating mode with independent merge/TDD controls | Gap | `app/services/configuration/profiles/` has no such profile; tracked by #3872 |
+| Rollout guard config gate | Gap | No gate exists because the mode itself has not shipped |
+
+### 2026-09-17 Closeout audit
+
+This closeout ([#3873](https://github.com/viamin/paid/issues/3873)) found no
+RDR-066-specific implementation in the working tree. All identified gaps are
+already tracked by the still-open dependency issues #3862–#3865 and #3872, so
+no new gap issues were filed. Per the closeout checklist, this PR does not
+close umbrella issue #3860 — it uses `Tracks #3860` — because the acceptance
+criteria are not yet met. See the audit report for full evidence.
 
 ## Problem Statement
 
