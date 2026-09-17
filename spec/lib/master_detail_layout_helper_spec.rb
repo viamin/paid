@@ -14,11 +14,6 @@ require "rails_helper"
 RSpec.describe MasterDetailLayoutHelper, type: :helper do
   describe "shared structural constants" do
     # @spec LIST-DETAIL-001 @spec LIST-DETAIL-004
-    it "pins the split-pane breakpoint to Tailwind's lg breakpoint (1024px)" do
-      expect(MasterDetailLayoutHelper::MASTER_DETAIL_BREAKPOINT_PX).to eq(1024)
-    end
-
-    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-004
     it "pins the list pane width at 22rem so both screens match" do
       expect(MasterDetailLayoutHelper::MASTER_DETAIL_LIST_PANE_WIDTH).to eq("22rem")
     end
@@ -70,6 +65,32 @@ RSpec.describe MasterDetailLayoutHelper, type: :helper do
       expect(File.exist?(shell_path)).to be(true), "expected #{shell_path} to exist"
       expect(shell_path).to end_with("_list_detail_shell.html.erb")
       expect(view.master_detail_grid_classes).to include("lg:grid-cols-[")
+    end
+
+    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
+    # Regression for #3881: passing `data:` keys straight through keeps
+    # `tag.div`'s built-in `data-` + dasherize conversion as the single
+    # prefix site, so a caller-supplied `data-inbox-master-detail-target`
+    # reaches the DOM as `data-inbox-master-detail-target` (not
+    # `data-data-inbox-master-detail-target`) and the inbox
+    # master-detail Stimulus targets resolve.
+    it "passes list_data and detail_data straight through to tag.div so the data- prefix is applied once" do
+      html = render(
+        partial: "shared/list_detail_shell",
+        locals: {
+          list: "<p>list body</p>".html_safe,
+          detail: "<p>detail body</p>".html_safe,
+          list_dom_id: "inbox-list",
+          detail_dom_id: "inbox-detail-pane",
+          list_data: { "inbox-master-detail-target" => "list" },
+          detail_data: { "inbox-master-detail-target" => "detailSection" }
+        }
+      )
+      document = Nokogiri::HTML.fragment(html)
+
+      expect(document.at_css("#inbox-list")["data-inbox-master-detail-target"]).to eq("list")
+      expect(document.at_css("#inbox-detail-pane")["data-inbox-master-detail-target"]).to eq("detailSection")
+      expect(html).not_to include("data-data-")
     end
 
     # @spec LIST-DETAIL-002 @spec LIST-DETAIL-005

@@ -11,13 +11,6 @@
 # @spec LIST-DETAIL-001 @spec LIST-DETAIL-002 @spec LIST-DETAIL-003
 # @spec LIST-DETAIL-004 @spec LIST-DETAIL-005
 module MasterDetailLayoutHelper
-  # Tailwind `lg` breakpoint — the lowest viewport width at which both
-  # Inbox and Chat split the page into a fixed-width list pane and a
-  # flexible detail pane. The mobile interaction model stays per-feature
-  # (Inbox: route-based master-detail; Chat: overlay drawer) — this number
-  # only governs when the shared two-pane grid activates.
-  MASTER_DETAIL_BREAKPOINT_PX = 1024
-
   # Width of the list pane on desktop. Matches the existing inbox and chat
   # layouts (`22rem`) so this helper is a refactor with no visible change.
   MASTER_DETAIL_LIST_PANE_WIDTH = "22rem"

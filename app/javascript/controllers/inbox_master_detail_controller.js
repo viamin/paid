@@ -80,6 +80,11 @@ export default class extends Controller {
       const selected = row === clicked
       const activeClasses = (row.dataset.activeClasses || "").split(/\s+/).filter(Boolean)
       activeClasses.forEach((cls) => row.classList.toggle(cls, selected))
+      // The inbox list partial paints `hover:bg-gray-50` on every
+      // non-selected row at render time. Keep it mutually exclusive with
+      // the active-row class set so the newly-selected row doesn't keep a
+      // gray hover affordance and the just-deselected row doesn't lose it.
+      row.classList.toggle("hover:bg-gray-50", !selected)
     })
   }
 

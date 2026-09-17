@@ -51,11 +51,17 @@
 - [x] **LIST-DETAIL-004** — `MasterDetailLayoutHelper` SHALL expose the
   shared class strings (`master_detail_grid_classes`,
   `master_detail_pane_classes`, `master_detail_active_row_classes`,
-  `master_detail_empty_state_classes`) and the structural constants
-  (`MASTER_DETAIL_BREAKPOINT_PX`, `MASTER_DETAIL_LIST_PANE_WIDTH`) as
-  constants so a future layout-rule change is a single edit and the values
-  stay aligned between the helper, the shared partial, and the per-feature
-  views that consume it.
+  `master_detail_empty_state_classes`) and the structural constant
+  `MASTER_DETAIL_LIST_PANE_WIDTH` as constants so a future layout-rule
+  change is a single edit and the values stay aligned between the helper,
+  the shared partial, and the per-feature views that consume it. The
+  desktop split-pane breakpoint (`1024px`) is encoded as Tailwind's `lg:`
+  prefix on the grid wrapper and as the
+  `window.matchMedia("(min-width: 1024px)")` media queries consumed by
+  `inbox-master-detail` and `chat-session-list`; the Tailwind config and
+  the two media-query literals are the live sources of truth for that
+  value (and are deliberately mirrored — the helper does not re-export it
+  so changing it does not silently drift one of the three call sites).
   *Code:* `app/helpers/master_detail_layout_helper.rb`.
   *Test:* `spec/lib/master_detail_layout_helper_spec.rb`.
 
