@@ -10,7 +10,7 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-044](RDR-044-configuration-profiles-chat.md) (Configuration Profiles), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-053](RDR-053-new-feature-creation.md) (New Feature Creation), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-067](RDR-067-approved-intent-conformance.md) (Approved Intent Conformance)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/operator-inbox/`, `docs/intent/inbox-foundation/`, `docs/intent/lid-aware-agent-runs/`, and a new feature-approval segment (not yet created — see Implementation Status)
-- **Related Issues**: [#3860](https://github.com/viamin/paid/issues/3860) (epic), #3862–#3865 (approval and release), #3872 (mode and onboarding), #3873 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
+- **Related Issues**: [#3860](https://github.com/viamin/paid/issues/3860) (epic), #3862–#3865 (approval and release), #3872 (mode and onboarding), #3873 (closeout). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); finalization #3874 is on the default branch, so the `planning` hold on the implementation issues is due to be lifted (see the 2026-09-17 closeout audit).
 - **Related Tests**: TBD
 
 ## Implementation Status
