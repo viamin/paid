@@ -90,7 +90,20 @@ export default class extends Controller {
     const stepIndex = Number(blankAnswer.dataset.stepIndex)
     this.currentIndex = stepIndex
     this.showStep(stepIndex)
-    blankAnswer.classList.add("border-red-500")
-    blankAnswer.focus()
+    this.focusAnswer(blankAnswer)
+  }
+
+  // Choice questions carry their answer target on a hidden composed input
+  // (OPERATOR-INBOX-012): hidden inputs take no focus and no border, so route
+  // the highlight to the click-to-answer widget's first pill instead.
+  focusAnswer(answer) {
+    if (answer.type === "hidden") {
+      const widget = answer.closest('[data-controller~="clarifying-choice"]')
+      widget?.querySelector("input")?.focus()
+      return
+    }
+
+    answer.classList.add("border-red-500")
+    answer.focus()
   }
 }

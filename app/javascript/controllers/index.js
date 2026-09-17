@@ -28,6 +28,9 @@ application.register("chat-session-list", ChatSessionListController)
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
+import ClarifyingChoiceController from "./clarifying_choice_controller"
+application.register("clarifying-choice", ClarifyingChoiceController)
+
 import ClarifyingQuestionsController from "./clarifying_questions_controller"
 application.register("clarifying-questions", ClarifyingQuestionsController)
 
@@ -75,6 +78,9 @@ application.register("mobile-menu", MobileMenuController)
 
 import NotificationDropdownController from "./notification_dropdown_controller"
 application.register("notification-dropdown", NotificationDropdownController)
+
+import PrCycleTimeController from "./pr_cycle_time_controller"
+application.register("pr-cycle-time", PrCycleTimeController)
 
 import ProjectSettingsFormController from "./project_settings_form_controller"
 application.register("project-settings-form", ProjectSettingsFormController)
