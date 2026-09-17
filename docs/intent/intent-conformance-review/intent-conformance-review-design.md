@@ -158,6 +158,13 @@ stale without any extra invalidation code here (AC3). `ReviewRun` does not
 need to delete or supersede prior rows; `IntentConformanceVerdict.current_for`
 already selects the most recent by `recorded_at`.
 
+For `not_evaluated` rows (the fail-closed fallback when the LLM was never
+called or its response was structurally invalid), `reviewer_run_id` is still
+the unique identifier for this exact invocation, but `reviewer_model` is
+recorded as the sentinel value `none` rather than the configured default —
+the column is meant to identify the model that produced the outcome (audit
+correlation), and asserting a model that never ran would be misleading.
+
 ### Non-goals
 
 - This segment does not decide *when* to run the reviewer (on PR push, on

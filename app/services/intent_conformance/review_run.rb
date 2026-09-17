@@ -27,6 +27,7 @@ module IntentConformance
     include Llm::OutputNormalizer
 
     DEFAULT_MODEL = "claude-sonnet-4-6"
+    NOT_EVALUATED_REVIEWER_MODEL = "none"
     TIMEOUT = 60
     LLM_OUTCOMES = %w[within_scope material_drift uncertain].freeze
     MAX_DESIGN_DOCS = 10
@@ -309,7 +310,7 @@ module IntentConformance
         outcome: IntentConformanceVerdict::OUTCOME_NOT_EVALUATED,
         recorded_at: Time.current,
         reviewer_run_id: reviewer_run_id,
-        reviewer_model: DEFAULT_MODEL,
+        reviewer_model: NOT_EVALUATED_REVIEWER_MODEL,
         cited_design_claims: [],
         cited_diff_locations: [],
         reasoning_summary: "Review could not be completed: #{reason}."

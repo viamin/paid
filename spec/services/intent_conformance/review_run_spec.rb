@@ -190,6 +190,34 @@ RSpec.describe IntentConformance::ReviewRun do
 
       expect(call).to be_not_evaluated
     end
+
+    it "records the reviewer_model sentinel rather than fabricating a model identity" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: nil, success: false))
+
+      verdict = call
+
+      expect(verdict.reviewer_model).to eq(IntentConformance::ReviewRun::NOT_EVALUATED_REVIEWER_MODEL)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-005
+  it "records the reviewer_model sentinel for an untrusted issue (no LLM call was made)" do
+    issue.update!(github_creator_login: "attacker")
+
+    verdict = call
+
+    expect(verdict).to be_not_evaluated
+    expect(verdict.reviewer_model).to eq(IntentConformance::ReviewRun::NOT_EVALUATED_REVIEWER_MODEL)
+  end
+
+  # @spec INTENT-CONFORMANCE-REVIEW-007
+  it "records the reviewer_model sentinel when there are no design documents (no LLM call was made)" do
+    feature_intent.update!(design_document_paths: [])
+
+    verdict = call
+
+    expect(verdict).to be_not_evaluated
+    expect(verdict.reviewer_model).to eq(IntentConformance::ReviewRun::NOT_EVALUATED_REVIEWER_MODEL)
   end
 
   # @spec INTENT-CONFORMANCE-REVIEW-003
