@@ -79,9 +79,6 @@ application.register("mobile-menu", MobileMenuController)
 import NotificationDropdownController from "./notification_dropdown_controller"
 application.register("notification-dropdown", NotificationDropdownController)
 
-import PrCycleTimeController from "./pr_cycle_time_controller"
-application.register("pr-cycle-time", PrCycleTimeController)
-
 import ProjectSettingsFormController from "./project_settings_form_controller"
 application.register("project-settings-form", ProjectSettingsFormController)
 

@@ -967,10 +967,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           answers: [ "Redis (not offered)" ]
         }
 
-      expect(github_client).not_to have_received(:add_comment)
-      expect(response).to redirect_to(project_issue_clarifying_questions_path(project, issue))
-      follow_redirect!
-      expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
+        expect(github_client).not_to have_received(:add_comment)
+        expect(response).to redirect_to(project_issue_clarifying_questions_path(project, issue))
+        follow_redirect!
+        expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
       end
 
       it "rejects multiple selections on a single-choice question without posting to GitHub" do
@@ -993,9 +993,9 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           answers: [ "X is a feature", "Redis (not offered)" ]
         }
 
-      follow_redirect!
-      expect(response.body).to include("Answer 2")
-      expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
+        follow_redirect!
+        expect(response.body).to include("Answer 2")
+        expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
       end
 
       it "still validates choice answers when submitted from the inbox pane and prefills the widget from the serialized answer" do
