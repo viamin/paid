@@ -61,6 +61,47 @@ The activity still emits the same markdown shape:
 That preserves the existing parser, `paid_state: "needs_input"` handling,
 dashboard queue, answer form, and answer-ingestion flow.
 
+## Choice questions (strict option markers)
+
+When — and only when — a question has a short, enumerable set of answers,
+the enhancement prompt tells the agent to opt the question into choice
+semantics by listing the answers as a marker sub-list under the numbered
+question (#3893):
+
+```
+1. Which storage backend should the export use?
+   - ( ) SQLite) local file, zero setup
+   - ( ) Postgres) already used for app data
+   - ( ) Flat JSON) easiest to diff
+```
+
+The markers are author-side opt-in and deliberately strict:
+
+- `- ( ) Label) description` marks a single-answer question (radio-style).
+- `- [ ] Label) description` (and `- [x]` as the checked-box spelling)
+  marks a multi-answer question (checkbox family).
+- The label is a short answer name without a `)` character; the description
+  is one short sentence. At least two option lines make a choice question;
+  fewer keep it prose.
+
+`ClarifyingQuestions::Parse#parse_numbered_items` folds each question's
+sub-lines into one string joined with spaces, so the markers survive inline
+and `ClarifyingQuestions::Choices` re-splits them at view time. The parser
+matches the markers only — no prose heuristics and no legacy `a)/b)`
+detection — and returns `nil` (free text) for prose options, context
+bullets, mixed marker families, malformed options, or partial marker sets.
+
+Choice markers are a **view-time** attribute: the folded question strings
+that `Parse` produces — and everything downstream of them (inbox queue
+entries, `needs_input_questions` persistence, the answer-form tamper guard,
+`AnswerPairs.questions_match?` reconciliation) — stay byte-identical,
+markers included. Rendering the parsed options as click-able choice UI and
+validating answers against them are tracked in a follow-up issue.
+
+The seeded `goal.enhance_issue` template, the code fallback
+(`RunAgentActivity::FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`), and the
+prompt-sync migration must stay in lockstep (see "Prompt deployment").
+
 ## Codebase-grounded questions and sufficiency
 
 Question-generation and answer-sufficiency judgment are codebase questions at

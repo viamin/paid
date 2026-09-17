@@ -1274,6 +1274,27 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("where the issue sits in the roadmap")
     end
 
+    it "instructs the agent to mark enumerable choice questions with strict option markers", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
+      base_prompt = "Enhance this issue with implementation context."
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+        .and_return(content: "")
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
+
+      # Pin the author-side choice-marker opt-in (#3893): the agent must only
+      # emit `- ( ) Label) description` (single) / `- [ ] Label) description`
+      # (multi) sub-lists for genuinely enumerable questions, so the platform
+      # parser (ClarifyingQuestions::Choices) never has to guess which
+      # sub-lines are options.
+      expect(prompt).to include("Choice questions")
+      expect(prompt).to include("- ( ) SQLite) local file, zero setup")
+      expect(prompt).to include("`- ( ) Label) description` lines when exactly one answer applies")
+      expect(prompt).to include("`- [ ] Label) description` lines when several answers may apply")
+      expect(prompt).to match(/Provide at least two\s+option lines/)
+      expect(prompt).to include("Never use these markers for context bullets")
+    end
+
     it "renders without knowledge context when no artifacts are available" do
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)

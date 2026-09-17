@@ -272,6 +272,22 @@ RSpec.describe Prompt, type: :model do
     it "seeded template matches the code fallback template exactly" do
       expect(seed_template.strip).to eq(fallback_template.strip)
     end
+
+    it "seeded template requires strict choice-option markers for enumerable questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
+      expect(seed_template).to include("Choice questions")
+      expect(seed_template).to include("- ( ) SQLite) local file, zero setup")
+      expect(seed_template).to include("`- ( ) Label) description` lines when exactly one answer applies")
+      expect(seed_template).to include("`- [ ] Label) description` lines when several answers may apply")
+      expect(seed_template).to match(/Provide at least two\s+option lines/)
+    end
+
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires strict choice-option markers", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
+      expect(fallback_template).to include("Choice questions")
+      expect(fallback_template).to include("- ( ) SQLite) local file, zero setup")
+      expect(fallback_template).to include("`- ( ) Label) description` lines when exactly one answer applies")
+      expect(fallback_template).to include("`- [ ] Label) description` lines when several answers may apply")
+      expect(fallback_template).to match(/Provide at least two\s+option lines/)
+    end
   end
 
   describe "coding.pr_review_rebase already-addressed marker" do
