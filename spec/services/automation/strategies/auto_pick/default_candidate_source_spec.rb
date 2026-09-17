@@ -841,4 +841,37 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
   end
+
+  # @spec INTENT-AMENDMENT-009
+  describe "design-amendment holds" do
+    let(:feature) { create(:feature_intent, project: project) }
+    let(:amendment) { create(:design_amendment, feature_intent: feature, project: project, status: "merged") }
+
+    it "excludes held issues from the eligible scope" do
+      eligible = create(:issue, project: project, github_state: "open")
+      held = create(:issue, project: project, github_state: "open")
+      create(:design_amendment_pause, design_amendment: amendment, issue: held, reason_code: "affected")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(eligible.id)
+    end
+
+    it "keeps held issues out of dequeue recheck" do
+      held = create(:issue, project: project, github_state: "open")
+      create(:design_amendment_pause, design_amendment: amendment, issue: held, reason_code: "uncertain")
+
+      expect(described_class.eligible_for_dequeue?(project, held.id, excluding_run_id: nil)).to be(false)
+    end
+
+    it "restores eligibility once the hold is released" do
+      held = create(:issue, project: project, github_state: "open")
+      create(:design_amendment_pause, design_amendment: amendment, issue: held,
+        reason_code: "affected", status: "released", released_at: Time.current)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to contain_exactly(held.id)
+    end
+  end
 end
