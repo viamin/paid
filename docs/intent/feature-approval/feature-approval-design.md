@@ -37,6 +37,17 @@ with the wiring issues of the RDR-066 epic and will extend this segment.
   set (`operating_mode` and `tdd_mode` descriptors), so the drift guards
   require every profile to declare an explicit value and existing profiles
   declare `standard` (opt-in only).
+- Every pre-existing profile targets `tdd_mode: "off"` for the same reason
+  it targets `operating_mode: "standard"` — the field-set drift guard
+  (`described_class.targets.keys` must match `profile_target_keys` exactly)
+  forces a value once the descriptor exists. Re-applying one of those
+  profiles to a project that already chose `non_strict`/`strict` TDD *does*
+  plan a reset to `off` by default. Each legacy profile also declares
+  `tdd_mode` as a clarifying question (`Base::TDD_MODE_CLARIFYING_QUESTION`),
+  so a caller can pass `overrides: { "tdd_mode" => "strict" }` to keep the
+  project's existing choice instead — the reset is the profile's suggested
+  default, not a forced value, mirroring how `auto_merge_mode` already
+  works.
 
 ### Named profile
 

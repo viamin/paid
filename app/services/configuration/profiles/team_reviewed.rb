@@ -41,7 +41,8 @@ module Configuration
           {
             id: "owner_reviewer_login",
             question: "Which GitHub login must review and approve PRs before they ship?"
-          }
+          },
+          TDD_MODE_CLARIFYING_QUESTION
         ]
       end
 

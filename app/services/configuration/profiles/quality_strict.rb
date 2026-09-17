@@ -36,6 +36,10 @@ module Configuration
         }
       end
 
+      def self.clarifying_questions
+        [ TDD_MODE_CLARIFYING_QUESTION ]
+      end
+
       def self.prerequisites_for(_project, targets:)
         missing = []
         if targets["review_paid_agent"] && !Github::ReviewBotInstallationToken.configured?

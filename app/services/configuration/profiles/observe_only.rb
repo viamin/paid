@@ -41,7 +41,8 @@ module Configuration
           {
             id: "active",
             question: "Keep the project active so Paid continues polling GitHub and observing activity?"
-          }
+          },
+          TDD_MODE_CLARIFYING_QUESTION
         ]
       end
     end

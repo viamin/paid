@@ -41,7 +41,8 @@ module Configuration
           {
             id: "quality_gate_enabled",
             question: "Block PR creation when the quality gate composite score drops below threshold?"
-          }
+          },
+          TDD_MODE_CLARIFYING_QUESTION
         ]
       end
 

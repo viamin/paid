@@ -35,6 +35,10 @@ module Configuration
           "agent_auto_continue" => true
         }
       end
+
+      def self.clarifying_questions
+        [ TDD_MODE_CLARIFYING_QUESTION ]
+      end
     end
   end
 end

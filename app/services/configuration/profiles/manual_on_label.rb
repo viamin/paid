@@ -41,7 +41,8 @@ module Configuration
           {
             id: "review_paid_agent",
             question: "Add a paid-agent review pass on PRs created from labeled work before they can ship?"
-          }
+          },
+          TDD_MODE_CLARIFYING_QUESTION
         ]
       end
 
