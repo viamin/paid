@@ -63,7 +63,7 @@ checklist §8, the closeout PR must **not** claim to close epic #3861.
 **Not satisfied.** No offline evaluation harness, fixtures, or recorded results
 exist anywhere in `docs/`, `script*/`, or `spec/`. The only mentions of false
 alarms or missed drift in the repository are RDR-067's own requirement text
-(RDR-067 lines 96, 113, 123).
+(RDR-067 lines 105, 122, 132).
 
 ### RDR Validation bullets
 
