@@ -32,6 +32,11 @@ entries into one responsive page.
      shared pane chrome, shared empty state, shared active-row treatment)
    - a mobile master-detail flow where the member route opens the detail pane
    - a neutral `Waiting —` label when a legacy entry has no waiting timestamp
+4. Existing action endpoints stay as the mutation surface:
+   - clarifying-question answers still post through
+     `Projects::ClarifyingQuestionsController`
+   - planning approvals/rejections/revisions still post through
+     `PlanReviewsController`, which signals the Temporal workflow
 
 The shared two-pane shell, pane chrome, empty state, and active-row treatment
 (`LIST-DETAIL-001`–`LIST-DETAIL-006`) are not inbox-specific — Chat
@@ -39,12 +44,6 @@ The shared two-pane shell, pane chrome, empty state, and active-row treatment
 own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
 `inbox-master-detail` Stimulus controller; only the layout rules move to the
 shared pattern.
-4. Existing action endpoints stay as the mutation surface:
-
-- clarifying-question answers still post through
-     `Projects::ClarifyingQuestionsController`
-- planning approvals/rejections/revisions still post through
-     `PlanReviewsController`, which signals the Temporal workflow
 
 ## Entry Kinds
 

@@ -66,10 +66,11 @@
   *Test:* `spec/lib/master_detail_layout_helper_spec.rb`.
 
 - [x] **LIST-DETAIL-005** — The shared `_list_detail_shell` partial SHALL
-  render the empty-state card when `entries.any?` is false and the
-  per-feature pages SHALL pass the empty-state copy and the list/detail
-  content as locals so the layout-rule markup stays in one file and the
-  feature-specific copy stays in the feature.
+  render the empty-state card when the `detail` local is blank and an
+  `empty_title` local is present, and the per-feature pages SHALL pass the
+  empty-state copy and the list/detail content as locals so the
+  layout-rule markup stays in one file and the feature-specific copy stays
+  in the feature.
   *Code:* `app/views/shared/_list_detail_shell.html.erb`,
   `app/views/shared/_list_detail_empty_state.html.erb`,
   `app/views/inbox/index.html.erb`,
