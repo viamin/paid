@@ -139,7 +139,10 @@ module PullRequests
         blocking_reviews_complete: blocking_reviews_complete,
         reviews_fresh: reviews_fresh,
         dependencies_resolved: dependencies_resolved,
-        skip_auto_merge: skip_auto_merge_label?(pr_data)
+        skip_auto_merge: skip_auto_merge_label?(pr_data),
+        intent_conformance_ok: IntentConformance::Signal.ok?(
+          project: @project, issue: @issue, head_sha: pr_data.head_sha
+        )
       )
     end
 
@@ -155,7 +158,12 @@ module PullRequests
     # Mirrors the scan's blocked_only_on_approval? gate signal-for-signal:
     # the PR must still be green, mergeable, free of outstanding review
     # feedback and unresolved dependencies, past every blocking review
-    # method, and held only by the approval gate.
+    # method, conform to its approved design, and held only by the approval
+    # gate. The conformance signal is computed against the freshly fetched
+    # HEAD — not the Signals fail-open default — so a material-drift PR
+    # cannot escalate as if owner approval alone would clear the merge
+    # (INTENT-CONFORMANCE-009).
+    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009
     def blocked_only_on_approval?(signals)
       !signals.owner_approved? &&
         signals.checks_green? &&
@@ -164,6 +172,7 @@ module PullRequests
         signals.blocking_reviews_complete? &&
         signals.reviews_fresh? &&
         signals.dependencies_resolved? &&
+        signals.intent_conformance_ok? &&
         !signals.skip_auto_merge?
     end
 

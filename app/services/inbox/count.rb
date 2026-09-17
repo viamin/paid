@@ -123,10 +123,12 @@ module Inbox
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready"
+          pr_review_phase: "ready",
+          merge_permission_rejected_at: nil
         )
         .where.not(auto_merge_evaluated_at: nil)
         .where.not(auto_merge_blockers: nil)
+        .where.not(projects: { auto_merge_mode: "off" })
     end
 
     def gated_project_ids

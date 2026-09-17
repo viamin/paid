@@ -57,8 +57,17 @@ module Inbox
 
     attr_reader :issue
 
+    # Read-time guards mirror Inbox::MergeApproval#candidate?: the snapshot is
+    # only refreshed while auto-merge runs, so once a project disables
+    # auto-merge (or its merge permission is rejected) a stale persisted
+    # blocker must not keep this lane alive indefinitely.
     def candidate?
-      issue.is_pull_request? && issue.github_state == "open" && failed_blocker.present?
+      issue.is_pull_request? &&
+        issue.github_state == "open" &&
+        issue.pr_review_phase == "ready" &&
+        issue.project.auto_merge_enabled? &&
+        !issue.merge_permission_rejected? &&
+        failed_blocker.present?
     end
 
     def failed_blocker

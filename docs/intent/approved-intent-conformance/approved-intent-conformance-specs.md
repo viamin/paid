@@ -77,6 +77,30 @@
   that HEAD SHA to `issues.last_scanned_head_sha` in the same scan pass that
   persists the blocker snapshot, so downstream consumers (the Inbox lane, a
   future final-merge check) can identify the scanned HEAD without an extra
-  GitHub call.
+  GitHub call. A pass that stages nothing SHALL preserve the previously
+  persisted HEAD SHA rather than wipe it, and a new HEAD SHALL overwrite the
+  stored value.
   *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-008** — When intent-conformance verdicts or
+  decisions are read or written, the system SHALL enforce forced tenant
+  row-level security on both tables, keying rows through
+  `issues → projects.account_id = paid_current_account_id()` (and, for
+  decisions, additionally requiring the actor user's
+  `users.account_id` to match), so no account can observe or mutate another
+  account's verdicts or decisions.
+  *Code:* `db/migrate/20260917040153_enable_rls_on_intent_conformance_tables.rb`.
+  *Test:* `spec/migrations/create_intent_conformance_verdicts_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-009** — When a pull request's failed
+  `intent_conformance_ok` signal is the only remaining condition keeping it
+  out of auto-merge alongside owner approval, the system SHALL NOT classify
+  the pull request as blocked only on approval (so it never starts the
+  approval-wait clock, escalates to `awaiting_approval`, or pings the owner
+  for an approval that cannot clear the merge) until the conformance signal
+  is satisfied again.
+  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/services/pull_requests/blocked_only_on_approval.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/services/pull_requests/blocked_only_on_approval_spec.rb`.

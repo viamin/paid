@@ -114,6 +114,7 @@ module Activities
       # for an issue in one pass must not be persisted on the next pass if the
       # current pass never reached `stage_auto_merge_snapshot` for it.
       @auto_merge_snapshots = {}
+      @auto_merge_head_shas = {}
 
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -1141,14 +1142,18 @@ module Activities
 
     # True when every automatic-merge precondition except owner approval is
     # satisfied: the PR is green, mergeable, free of outstanding review
-    # feedback, and held only by the human approval gate. This is the "green
-    # and parked" state that has no trigger of its own — nothing about it
-    # warrants agent work, which is exactly why it can wait forever.
-    # @spec PR-ESCALATION-025
+    # feedback, conforms to its approved design, and held only by the human
+    # approval gate. This is the "green and parked" state that has no trigger
+    # of its own — nothing about it warrants agent work, which is exactly why
+    # it can wait forever. A failed intent-conformance signal is a non-approval
+    # blocker: pinging the owner for an approval that cannot clear the merge
+    # would be misleading (RDR-067 Decision section).
+    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009
     def blocked_only_on_approval?(project, client, issue, signals)
       return false if project.owner_reviewer_login.blank?
       return false if signals.nil?
       return false if signals.owner_approved?
+      return false unless signals.intent_conformance_ok?
       return false unless signals.checks_green?
       return false unless signals.mergeable?
       return false unless signals.review_feedback_clear?
