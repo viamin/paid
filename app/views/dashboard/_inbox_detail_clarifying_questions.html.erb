@@ -1,8 +1,12 @@
-<%# @spec OPERATOR-INBOX-008 %>
+<%# @spec OPERATOR-INBOX-008 @spec OPERATOR-INBOX-011 %>
+<%# The two-column lg+ layout puts the agent-authored context beside the
+    answer form (sticky sidebar, scrolls with the page if long); below lg the
+    same context lives inside a collapsible <details> above the questions so
+    mobile operators can read the context once without it dominating the
+    answer form. Without the lg grid wrapper the flex default would still
+    render but the question list would lose its sticky bottom submit button. %>
 <div class="space-y-6">
   <% if entry.questions.any? %>
-    <%# Repopulate textareas when a previous submit bounced back via flash so
-        the operator can correct the error in place instead of retyping. %>
     <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
     <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
                   method: :post,
@@ -18,24 +22,49 @@
         <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
       <% end %>
 
-      <div class="space-y-4">
-        <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
-        <% entry.questions.each_with_index do |question, index| %>
-          <div class="rounded-lg bg-gray-50 px-4 py-3">
-            <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
-              <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
-              <%= render "shared/markdown_text", content: question %>
-            </label>
-            <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
-            <%= text_area_tag "answers[]", pending_answers&.at(index),
-                  id: dom_id(entry.record, "answer_#{index}"),
-                  rows: 4,
-                  required: true,
-                  placeholder: "Enter your answer...",
-                  data: { testid: "inbox-answer-#{index}" },
-                  class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
-          </div>
+      <div class="<%= entry.context_markdown.present? ? "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-6 lg:space-y-0 space-y-4" : "space-y-4" %>">
+        <% if entry.context_markdown.present? %>
+          <details
+            open
+            class="group rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:border-gray-200 lg:bg-gray-50"
+            data-testid="inbox-clarifying-context">
+            <summary class="flex cursor-pointer items-center justify-between gap-2 text-sm font-semibold text-gray-900 lg:cursor-default">
+              <span>Context from Paid's analysis</span>
+              <svg class="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180 lg:hidden"
+                   xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                   aria-hidden="true">
+                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+              </svg>
+            </summary>
+            <div class="mt-2 lg:mt-3">
+              <%= render "shared/markdown_text",
+                    content: entry.context_markdown,
+                    tag: :div,
+                    block: true,
+                    class: "prose prose-sm max-w-none text-gray-700" %>
+            </div>
+          </details>
         <% end %>
+
+        <div class="space-y-4">
+          <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
+          <% entry.questions.each_with_index do |question, index| %>
+            <div class="rounded-lg bg-gray-50 px-4 py-3">
+              <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
+                <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
+                <%= render "shared/markdown_text", content: question %>
+              </label>
+              <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
+              <%= text_area_tag "answers[]", pending_answers&.at(index),
+                    id: dom_id(entry.record, "answer_#{index}"),
+                    rows: 4,
+                    required: true,
+                    placeholder: "Enter your answer...",
+                    data: { testid: "inbox-answer-#{index}" },
+                    class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+            </div>
+          <% end %>
+        </div>
       </div>
 
       <div class="flex items-center justify-end gap-3">

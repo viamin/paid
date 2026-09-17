@@ -23,6 +23,15 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
       2. Should this be behind a flag?
     BODY
   end
+  # Factory projects come with a github_token; the new context_markdown accessor
+  # in ClarifyingQuestions::Load tries to fetch issue comments for every
+  # clarifying-question entry. Stub the client so the inbox page can build
+  # under WebMock without reaching for the network.
+  let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+
+  before do
+    allow(GithubClient).to receive(:new).and_return(github_client)
+  end
 
   def sign_in_as(user)
     visit new_user_session_path

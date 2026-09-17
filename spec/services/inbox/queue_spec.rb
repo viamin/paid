@@ -26,6 +26,16 @@ RSpec.describe Inbox::Queue do
       1. What is the expected behavior?
     BODY
   end
+  # Factory projects come with a `github_token`, so `github_credential_present?`
+  # returns true and the new `context_markdown` accessor tries to fetch issue
+  # comments from GitHub. Stub the client by default so the queue builds
+  # without hitting the network; tests that exercise context loading override
+  # this to return real comment fixtures.
+  let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+
+  before do
+    allow(GithubClient).to receive(:new).and_return(github_client)
+  end
 
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
@@ -97,6 +107,117 @@ RSpec.describe Inbox::Queue do
       entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
 
       expect(entry.waiting_since).to be_within(1.second).of(stamp)
+    end
+
+    # @spec OPERATOR-INBOX-011
+    it "populates context_markdown from the latest enhancement comment when GitHub is reachable" do
+      context_body = <<~COMMENT
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+
+        Need a call before implementation.
+
+        1. What is the expected behavior?
+
+        ## Current context
+        - The repo already has a flag toggle.
+      COMMENT
+      trusted_comment = double(body: context_body, user: double(login: "viamin"))
+      allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+
+      issue = create_needs_input(body: questions_body)
+      entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
+
+      expect(entry.context_markdown).to eq(
+        "Need a call before implementation.\n\n" \
+        "- The repo already has a flag toggle."
+      )
+    end
+
+    # @spec OPERATOR-INBOX-011
+    it "leaves context_markdown nil when the enhancement comment has no context sections" do
+      trusted_comment = double(body: questions_body, user: double(login: "viamin"))
+      allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+
+      issue = create_needs_input(body: questions_body)
+      entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
+
+      expect(entry.context_markdown).to be_nil
+    end
+
+    # @spec OPERATOR-INBOX-011
+    it "leaves context_markdown nil when GitHub credentials are missing" do
+      issue = create_needs_input(body: questions_body)
+      allow(project).to receive(:github_credential_present?).and_return(false)
+
+      entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
+
+      expect(entry.context_markdown).to be_nil
+    end
+
+    # @spec OPERATOR-INBOX-011
+    it "swallows transient GitHub errors and leaves context_markdown nil instead of dropping the entry" do
+      allow(github_client).to receive(:issue_comments).and_raise(GithubClient::Error, "GitHub unavailable")
+
+      issue = create_needs_input(body: questions_body)
+      entries = described_class.call(user: user, project: project)
+      entry = entries.find { |candidate| candidate.record == issue }
+
+      expect(entry).to be_present
+      expect(entry.context_markdown).to be_nil
+    end
+
+    # @spec OPERATOR-INBOX-011
+    # The inbox view only renders the context panel for the selected entry,
+    # so the queue must not pre-fetch context for every clarifying-question
+    # row. Reusing `ClarifyingQuestions::Load`'s per-instance memoization
+    # across entries would not help either — each entry has a different
+    # `issue.github_number`, so the per-Load `@issue_comments` cache is cold
+    # for every row and a fresh `issue_comments` API call would fire per
+    # entry. The fix lives on `Entry#context_markdown` as a deferred
+    # accessor; this spec pins the behavior so future refactors don't
+    # regress to eager fetching.
+    it "does not fetch issue comments until a clarifying-question entry's context_markdown is read" do
+      3.times { |index| create_needs_input(github_number: 10 + index, body: questions_body) }
+
+      described_class.call(user: user, project: project)
+
+      expect(github_client).not_to have_received(:issue_comments)
+    end
+
+    # @spec OPERATOR-INBOX-011
+    # Once the selected entry asks for its `context_markdown`, fetch the
+    # comments exactly once for that issue. Multiple reads of the same
+    # entry's accessor (the view calls `.present?` and renders the body)
+    # must not trigger a second GitHub round-trip.
+    it "fetches issue comments at most once per selected entry, even when context_markdown is read repeatedly" do
+      issue = create_needs_input(github_number: 10, body: questions_body)
+      trusted_comment = double(body: questions_body, user: double(login: "viamin"))
+      allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+
+      entry = described_class.call(user: user, project: project).find { |candidate| candidate.record == issue }
+
+      3.times { entry.context_markdown }
+
+      expect(github_client).to have_received(:issue_comments).once
+    end
+
+    # @spec OPERATOR-INBOX-011
+    # The queue still resolves non-selected clarifying-question entries
+    # without ever touching `issue_comments` — confirms the deferred
+    # accessor pattern applies to every row, not just the one the view
+    # happens to render.
+    it "leaves context_markdown unfetched for non-selected clarifying-question entries" do
+      first = create_needs_input(github_number: 10, body: questions_body)
+      second = create_needs_input(github_number: 20, body: questions_body)
+      third = create_needs_input(github_number: 30, body: questions_body)
+
+      entries = described_class.call(user: user, project: project)
+
+      expect(github_client).not_to have_received(:issue_comments)
+      expect(entries.map(&:record)).to contain_exactly(first, second, third)
+      expect(entries.map(&:context_markdown)).to all(be_nil)
     end
 
     it "uses locally persisted needs_input_questions for create_feature issues" do
