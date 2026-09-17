@@ -94,6 +94,11 @@ module Automation
 
             scope = apply_issue_analysis_backoff(scope, project)
 
+            # @spec INTENT-AMENDMENT-009 — branches held by a design
+            # amendment stay out of selection while the hold is active.
+            held_ids = DesignAmendmentPause.held_issue_ids(project)
+            scope = scope.where.not(id: held_ids) if held_ids.present?
+
             scope
           end
 
