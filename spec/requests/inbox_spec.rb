@@ -265,6 +265,23 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Open a design amendment")
   end
 
+  # @spec INTENT-CONFORMANCE-003 @spec INTENT-CONFORMANCE-006
+  it "omits the resolution form when no verdict exists for the current HEAD" do
+    pr = create_intent_conformance_pr(title: "Unscored PR", verdict: nil)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::INTENT_CONFORMANCE_KIND, pr),
+      project_id: project.id,
+      kind: Inbox::Queue::INTENT_CONFORMANCE_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Approved-intent conformance is blocking auto-merge")
+    expect(response.body).to include("could not evaluate this pull request")
+    expect(response.body).not_to include("Resolve this decision")
+    expect(response.body).not_to include("Require the agent to bring the PR back within scope")
+  end
+
   # @spec OPERATOR-INBOX-002C
   it "lists escalated pull requests scoped to auto-pick projects" do
     ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
@@ -507,7 +524,7 @@ RSpec.describe "Inbox" do
     )
   end
 
-  def create_intent_conformance_pr(title: "Drifted PR", github_number: 507)
+  def create_intent_conformance_pr(title: "Drifted PR", github_number: 507, verdict: :material_drift)
     issue = create(
       :issue,
       :pull_request,
@@ -527,9 +544,11 @@ RSpec.describe "Inbox" do
         "not_evaluated" => []
       }
     )
+    return issue if verdict.nil?
+
     create(
       :intent_conformance_verdict,
-      :material_drift,
+      verdict,
       issue: issue,
       pr_head_sha: "sha1",
       reasoning_summary: "The PR changes the approved retry policy."

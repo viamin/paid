@@ -60,12 +60,12 @@
     <% end %>
   </div>
 
-  <% if policy(entry.project).run_agent? %>
+  <% if verdict && policy(entry.project).run_agent? %>
     <div class="space-y-3 border-t border-gray-200 pt-4">
       <h3 class="text-sm font-semibold text-gray-900">Resolve this decision</h3>
       <%= form_with url: project_intent_conformance_decisions_path(entry.project), method: :post, local: true,
             data: { turbo_frame: "_top" }, class: "space-y-3" do |form| %>
-        <%= hidden_field_tag :verdict_id, verdict&.id %>
+        <%= hidden_field_tag :verdict_id, verdict.id %>
         <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
         <fieldset class="space-y-2">
           <label class="flex items-start gap-2 text-sm text-gray-700">
