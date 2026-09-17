@@ -8,14 +8,22 @@ module Inbox
     ACTION_REQUIRED_KIND = "action_required"
     ESCALATED_PR_KIND = "escalated_pr"
     MANUAL_REVIEW_KIND = "manual_review"
+    FEATURE_DECISION_KIND = "feature_decision"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
       MERGE_APPROVAL_KIND,
       ACTION_REQUIRED_KIND,
       ESCALATED_PR_KIND,
-      MANUAL_REVIEW_KIND
+      MANUAL_REVIEW_KIND,
+      FEATURE_DECISION_KIND
     ].freeze
+
+    # Statuses shown in the Inbox: the feature is not yet released, and not
+    # abandoned. Included even while `approved_waiting_for_merge`, since a
+    # stale design-PR head after approval invalidates it and the Inbox must
+    # keep explaining what holds the feature (RDR-066).
+    FEATURE_DECISION_STATUSES = (FeatureIntent::STATUSES - %w[released revising cancelled]).freeze
 
     Entry = Struct.new(
       :id,
@@ -59,13 +67,17 @@ module Inbox
         kind == MANUAL_REVIEW_KIND
       end
 
+      def feature_decision?
+        kind == FEATURE_DECISION_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
 
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
-        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review?
+        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? || feature_decision?
 
         "#{tasks.size} proposed tasks"
       end
@@ -90,6 +102,7 @@ module Inbox
       entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
       entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
       entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
+      entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
       sort_entries(entries)
     end
 
@@ -342,6 +355,38 @@ module Inbox
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
+    end
+
+    # Feature-decision entries deliberately use project-membership visibility
+    # (`FeatureIntentPolicy::Scope`, same as `plan_review_entries`) instead of
+    # `scoped_projects`'s auto-pick gate: RDR-066 requires these entries stay
+    # visible to any project member with Inbox access, including planning
+    # projects with auto-pick off.
+    # @spec FEATURE-APPROVAL-008
+    def feature_decision_entries
+      scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
+        .where(status: FEATURE_DECISION_STATUSES)
+      scope = scope.where(project: project) if project
+
+      scope.includes(:project, :feature_intent_decisions, :feature_intent_design_prs)
+        .order(:created_at, :id)
+        .map { |feature_intent| feature_decision_entry(feature_intent) }
+    end
+
+    def feature_decision_entry(feature_intent)
+      Entry.new(
+        id: "#{FEATURE_DECISION_KIND}:#{feature_intent.id}",
+        kind: FEATURE_DECISION_KIND,
+        project: feature_intent.project,
+        issue: nil,
+        record: feature_intent,
+        waiting_since: feature_intent.created_at,
+        questions: [],
+        tasks: [],
+        summary_text: Inbox::FeatureDecisionSummary.call(feature_intent: feature_intent),
+        title_text: feature_intent.title,
+        action_url: nil
+      )
     end
 
     def visible_blocking_notifications

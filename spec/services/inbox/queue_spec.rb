@@ -262,6 +262,44 @@ RSpec.describe Inbox::Queue do
       expect(entry.kind).to eq(described_class::ESCALATED_PR_KIND)
     end
 
+    # @spec FEATURE-APPROVAL-008
+    it "returns a feature_decision entry for an open feature intent" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      entry = entries.find { |candidate| candidate.record == feature_intent }
+      expect(entry).to have_attributes(
+        id: "#{described_class::FEATURE_DECISION_KIND}:#{feature_intent.id}",
+        kind: described_class::FEATURE_DECISION_KIND,
+        project: project,
+        issue: nil,
+        title: "Bulk CSV export"
+      )
+      expect(entry.summary).to eq("Ready for approval.")
+    end
+
+    # @spec FEATURE-APPROVAL-008
+    it "excludes released, revising, and cancelled feature intents" do
+      create(:feature_intent, project: project, status: "released")
+      create(:feature_intent, project: project, status: "revising")
+      create(:feature_intent, project: project, status: "cancelled")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec FEATURE-APPROVAL-008
+    it "surfaces feature_decision entries even when the project's auto-pick is off" do
+      planning_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      feature_intent = create(:feature_intent, :ready_for_approval, project: planning_project)
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
+    end
+
     it "excludes plan reviews that are no longer open" do
       review_issue = create(:issue, project: project)
       create_plan_review(project: project, issue: review_issue, workflow_id: "planning-workflow-1", plan_data: {})

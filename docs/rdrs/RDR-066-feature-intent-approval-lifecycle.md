@@ -18,18 +18,21 @@
 RDR-066 is **Partially Implemented** as of 2026-09-17. The design is Final and
 merged (design PR #3859, finalization PR #3874), and the prerequisite RDRs it
 builds on (RDR-044 Configuration Profiles, RDR-051 LID-Aware Agent Runs,
-RDR-053 New Feature Creation, RDR-056 TDD Modes) have already shipped. None of
-RDR-066's own scope has shipped code or test evidence yet: no `FeatureIntent`
-record, no lifecycle states, no Inbox approval action, no hold enforcement at
-any run entry point, and no `human_led_feature_factory` operating mode. See
+RDR-053 New Feature Creation, RDR-056 TDD Modes) have already shipped. The
+`FeatureIntent` record and lifecycle states, and the Inbox feature-decision
+entries and "Mark approved" action (#3864, `docs/intent/feature-approval/`),
+have since shipped. Still missing: `create_feature`/`lid_planning` attaching
+their output to a `FeatureIntent` (#3863, so no code path creates one outside
+tests yet), hold enforcement at any run entry point (#3865), and the
+`human_led_feature_factory` operating mode (#3872). See
 [`audit-report-2026-09-17-rdr-066.md`](audit-report-2026-09-17-rdr-066.md) for
-the full evidence trail.
+the 2026-09-17 evidence trail this status has been updated against.
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Feature Intent record, lifecycle, and approval-revision binding | Gap | No `FeatureIntent` model, migration, or lifecycle state exists anywhere in `app/`, `spec/`, or `db/schema.rb`; tracked by #3862 |
 | `create_feature`/`lid_planning` attach design PRs and issue tree to a Feature Intent | Gap | No attachment code found; tracked by #3863 |
-| Inbox feature-question, design-review, and "Mark approved" entries | Gap | `app/services/inbox/queue.rb` has no such entry types; tracked by #3864 |
+| Inbox feature-question, design-review, and "Mark approved" entries | Shipped (#3864) | `app/services/inbox/queue.rb#feature_decision_entries`, `app/services/feature_intents/mark_approved.rb`, `app/policies/feature_intent_policy.rb`; see `docs/intent/feature-approval/`. Dormant until #3863 attaches `create_feature`/`lid_planning` output to a `FeatureIntent` |
 | Release hold enforced at every run entry point (auto-pick, eager queue, dequeue, manual `create_pr`) | Gap | `app/services/automation/strategies/auto_pick/default_candidate_source.rb` and `app/services/issues/enqueue_eligible.rb` have no release-hold concept; tracked by #3865 |
 | Direct human merge / Inbox approval / stale head / incomplete design / bot merge / abandoned PR reconciliation | Gap | No corresponding code or specs found; tracked by #3865 |
 | Named `human_led_feature_factory` operating mode with independent merge/TDD controls | Gap | `app/services/configuration/profiles/` has no such profile; tracked by #3872 |

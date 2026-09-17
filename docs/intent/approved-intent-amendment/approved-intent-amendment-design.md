@@ -27,8 +27,10 @@ already-merged affected work as a follow-up decision instead of rolling it back.
 In scope (this segment):
 
 - A minimal `FeatureIntent` record with its issue links and the
-  `released` ⇄ `revising` transitions the amendment flow needs. The full
-  RDR-066 approval lifecycle (#3862, #3864) extends this substrate later.
+  `released` ⇄ `revising` transitions the amendment flow needs. The RDR-066
+  Inbox decision flow and Mark approved action (#3864) extend this substrate
+  with open decisions, linked design PRs, and the approval record — see
+  `docs/intent/feature-approval/`.
 - `IntentConformanceResolution` — the human decision record for a conformance
   verdict, with the structural bound that a one-PR implementation exception can
   never carry a product-contract change (behavior, constraints, scope,
@@ -45,8 +47,10 @@ In scope (this segment):
 Out of scope (owned by sibling issues under #3861): the independent conformance
 reviewer run and verdict persistence (#3866), PR-scanner blockers and Inbox
 escalation of drift verdicts (#3867), the final merge-activity guard (#3868),
-evaluation and rollout telemetry (#3870), and the RDR-066 approval UI and
-issue-tree hold machinery (#3862–#3864, #3872).
+evaluation and rollout telemetry (#3870), and the remaining RDR-066
+issue-tree hold machinery and operating mode (#3862, #3863, #3865, #3872) —
+the Inbox approval UI itself shipped under #3864, see
+`docs/intent/feature-approval/`.
 
 ## Design
 
@@ -122,7 +126,7 @@ While a hold is active, the held issue is excluded from
 which is the shared selection boundary for scheduled auto-pick, eager queue
 seeding, dequeue recheck, and enqueue eligibility. Independent branches are
 untouched. Manual run-start gating rides on the RDR-066 hold machinery
-(#3863/#3864) and is not duplicated here.
+(#3863/#3865) and is not duplicated here.
 
 ### Rollout guard
 

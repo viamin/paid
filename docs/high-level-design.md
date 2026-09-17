@@ -76,7 +76,8 @@ from the human-approved design stops and asks a human. A one-PR exception can
 never change approved product behavior, constraints, scope, or acceptance
 criteria — product-level changes route through an amended RDR/LID design that
 a human approves and merges before affected work resumes. See
-`docs/intent/approved-intent-amendment/`.
+`docs/intent/approved-intent-amendment/` and, for the Inbox decision flow and
+Mark approved action that records the initial approval, `docs/intent/feature-approval/`.
 
 ## Approach: All LLM Calls Through One Interface
 
