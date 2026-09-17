@@ -18,6 +18,12 @@ module Activities
     activity_name "EnhanceIssue"
 
     COMMENT_MARKER = "<!-- paid:enhance-issue -->"
+    # @spec ISSUE-ENHANCEMENT-016
+    BODY_TRUNCATION_NOTICE = <<~NOTICE.strip
+      > **Note:** This issue's body appears truncated or corrupted — it ends abruptly
+      > without a complete sentence, code fence, or list item. The original intent may
+      > be lost. Consider restoring or rewriting the body before relying on it further.
+    NOTICE
     MANUAL_REVIEW_MARKER = IssueEnhancements::StopForManualReview::COMMENT_MARKER
     # The containerized agent wraps its JSON result between two
     # OUTPUT_DELIMITER lines so the parser can anchor on it even when the
@@ -82,7 +88,7 @@ module Activities
       max_rounds_reached = !parsed[:sufficient_context] && max_rounds_reached?(project, issue)
       parsed = stop_after_max_rounds(parsed, project, issue)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
-      comment_body = comment_body_for(parsed, draft)
+      comment_body = comment_body_for(issue, parsed, draft)
       questions = needs_input_questions(parsed, comment_body, max_rounds_reached:)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
@@ -430,8 +436,11 @@ module Activities
       comments.select { |comment| ClarifyingQuestions::CommentAdmission.admissible?(project:, comment:) }
     end
 
-    def comment_body_for(parsed, draft = nil)
-      sections = [ COMMENT_MARKER, parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY) ]
+    # @spec ISSUE-ENHANCEMENT-016
+    def comment_body_for(issue, parsed, draft = nil)
+      sections = [ COMMENT_MARKER ]
+      sections << BODY_TRUNCATION_NOTICE if Issues::DetectTruncatedBody.call(issue.body)
+      sections << parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY)
       sections << change_intent_section(draft) if draft
       sections.join("\n\n")
     end

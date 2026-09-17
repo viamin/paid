@@ -4005,6 +4005,7 @@ module Activities
       ) unless issue
 
       prompt = inject_knowledge_into_prompt(prompt, issue, agent_run.project, agent_run)
+      prompt = inject_body_integrity_note(prompt, issue)
 
       vars = {
         base_prompt: prompt,
@@ -4090,6 +4091,20 @@ module Activities
       return nil unless ab_test
 
       AbTests::Assign.call(ab_test: ab_test, agent_run: agent_run)
+    end
+
+    # A cheap structural heuristic, not an LLM judgment (#3852) — computed in
+    # code so the agent is told the body is broken as ground truth instead of
+    # having to notice a garbled fragment on its own and guess at the intent.
+    # @spec ISSUE-ENHANCEMENT-016
+    def inject_body_integrity_note(prompt, issue)
+      return prompt unless Issues::DetectTruncatedBody.call(issue.body)
+
+      "#{prompt}\nNote: the issue body appears truncated or corrupted — it ends abruptly " \
+        "without a complete sentence, code fence, or list item. Do not guess at the missing " \
+        "intent or treat the fragment as the whole spec. Unless the repository or conversation " \
+        "resolves it, say explicitly in your comment that the issue body appears truncated and " \
+        "the original intent may be lost.\n"
     end
 
     def inject_knowledge_into_prompt(prompt, issue, project, agent_run)
