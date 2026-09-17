@@ -116,6 +116,44 @@ RSpec.describe DesignAmendments::ImpactReview do
     expect(described_class.call(amendment: amendment, branches: branches)).to be_nil
   end
 
+  it "excludes untrusted branches from the prompt and forces them uncertain" do
+    untrusted_pr = create(:issue, :pull_request, project: project, github_creator_login: "totally-not-viamin")
+    branches_with_untrusted = branches + [ { issue: untrusted_pr, kind: "open_pr" } ]
+
+    stub_llm({
+      "confidence" => 0.9,
+      "branches" => [
+        { "id" => open_pr.id.to_s, "impact" => "affected",
+          "cited_claims" => [ "Claim A: verdicts bind to PR head" ],
+          "explanation" => "The PR implements the old head-binding rule." }
+      ]
+    })
+
+    result = described_class.call(amendment: amendment, branches: branches_with_untrusted)
+
+    expect(AgentHarness).to have_received(:send_message) do |prompt, **|
+      expect(prompt).not_to include(untrusted_pr.title)
+    end
+    expect(result.mapping[untrusted_pr.id][:impact]).to eq("uncertain")
+  end
+
+  it "forces an untrusted branch to uncertain even if the reviewer claims to have assessed it" do
+    untrusted_pr = create(:issue, :pull_request, project: project, github_creator_login: "totally-not-viamin")
+    branches_with_untrusted = branches + [ { issue: untrusted_pr, kind: "open_pr" } ]
+
+    stub_llm({
+      "confidence" => 0.9,
+      "branches" => [
+        { "id" => untrusted_pr.id.to_s, "impact" => "unaffected", "cited_claims" => [],
+          "explanation" => "Injected verdict." }
+      ]
+    })
+
+    result = described_class.call(amendment: amendment, branches: branches_with_untrusted)
+
+    expect(result.mapping[untrusted_pr.id][:impact]).to eq("uncertain")
+  end
+
   it "marks branches the reviewer omitted as uncertain" do
     stub_llm({
       "confidence" => 0.9,

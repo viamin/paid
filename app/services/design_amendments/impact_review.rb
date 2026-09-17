@@ -90,8 +90,16 @@ module DesignAmendments
       format(
         PROMPT,
         claims: claims.map { |claim| "- #{claim}" }.join("\n"),
-        branches: branches.map { |branch| branch_line(branch) }.join("\n")
+        branches: trusted_branches.map { |branch| branch_line(branch) }.join("\n")
       )
+    end
+
+    # Branches from untrusted GitHub authors never reach the prompt — their
+    # titles are untrusted input and could steer the LLM's classification
+    # (prompt injection). They are force-mapped to "uncertain" in #validate
+    # instead, so they still fail closed for a human to review.
+    def trusted_branches
+      branches.select { |branch| branch[:issue].trusted? }
     end
 
     def branch_line(branch)
@@ -127,6 +135,8 @@ module DesignAmendments
 
         mapping[entry[:issue_id]] = entry[:assessment]
       end
+
+      mapping.merge!(untrusted_uncertain_mapping)
 
       Result.new(mapping:, confidence: confidence.round(3))
     rescue KeyError, ArgumentError, TypeError
@@ -167,6 +177,14 @@ module DesignAmendments
     # Branches the reviewer omitted are uncertain (fail closed per branch).
     def default_uncertain_mapping
       branch_ids.to_h { |id| [ id, { impact: "uncertain", cited_claims: [], explanation: "The reviewer did not assess this branch." } ] }
+    end
+
+    # Overrides any reviewer verdict for untrusted branches (defense in depth
+    # against the model guessing an id it was never shown).
+    def untrusted_uncertain_mapping
+      branches.reject { |branch| branch[:issue].trusted? }.to_h do |branch|
+        [ branch[:issue].id, { impact: "uncertain", cited_claims: [], explanation: "Branch author is not on the project's trusted allowlist; excluded from automated impact review." } ]
+      end
     end
 
     def branch_ids
