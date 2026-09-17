@@ -41,6 +41,27 @@ module ClarifyingQuestions
       current_questions
     end
 
+    # Returns the markdown for the agent-authored context sections that
+    # surrounded the clarifying questions in the latest enhancement comment
+    # (the "Current Context" section plus the prose preceding the numbered
+    # list). Reuses the cached issue_comments list so we never make a second
+    # GitHub API call from the inbox just to render context. Returns nil when
+    # GitHub credentials are missing, when the questions came from locally
+    # persisted needs_input_questions rather than a fetched comment, when a
+    # transient GitHub error blocks the fetch, or when the comment body has
+    # no recoverable context — callers use a single nil-check to decide
+    # whether to show the panel.
+    def context_markdown
+      return nil unless github_available?
+
+      enhancement_comment = latest_enhancement_comment
+      return nil unless enhancement_comment
+
+      Context.call(comment_body: comment_body(enhancement_comment))
+    rescue GithubClient::Error
+      nil
+    end
+
     private
 
     attr_reader :project, :issue

@@ -525,4 +525,74 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
   end
+
+  # @spec OPERATOR-INBOX-011
+  describe "#context_markdown" do
+    let(:context_loaded_load) { described_class.new(project: project, issue: issue) }
+
+    it "returns the Current Context section + clarifying preamble from the latest enhancement comment" do
+      body = <<~COMMENT
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+
+        Need a call before implementation.
+
+        1. What is the expected behavior?
+        2. Should this be behind a flag?
+
+        ## Current context
+        - The repo already has a flag toggle wired up.
+      COMMENT
+      comment = double(body: body, user: double(login: trusted_login))
+      allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+      expect(context_loaded_load.context_markdown).to eq(
+        "Need a call before implementation.\n\n" \
+        "- The repo already has a flag toggle wired up."
+      )
+    end
+
+    it "returns nil when the latest enhancement comment has no recoverable context" do
+      comment_body_without_context = <<~COMMENT
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+        1. What is the expected behavior?
+      COMMENT
+      comment = double(body: comment_body_without_context, user: double(login: trusted_login))
+      allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+      expect(context_loaded_load.context_markdown).to be_nil
+    end
+
+    it "returns nil when GitHub credentials are missing" do
+      credentialless = double(github_credential_present?: false)
+      load = described_class.new(project: credentialless, issue: issue)
+
+      expect(load.context_markdown).to be_nil
+    end
+
+    it "returns nil when no enhancement comment is fetchable" do
+      allow(github_client).to receive(:issue_comments).and_return([])
+
+      expect(context_loaded_load.context_markdown).to be_nil
+    end
+
+    it "reuses the cached issue_comments list so a second GitHub API call is not made" do
+      comment = double(body: comment_body, user: double(login: trusted_login))
+      allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+      context_loaded_load.context_markdown
+      context_loaded_load.context_markdown
+
+      expect(github_client).to have_received(:issue_comments).once
+    end
+
+    it "swallows transient GitHub errors instead of raising so the inbox can render" do
+      allow(github_client).to receive(:issue_comments).and_raise(GithubClient::Error, "GitHub unavailable")
+
+      expect(context_loaded_load.context_markdown).to be_nil
+    end
+  end
 end
