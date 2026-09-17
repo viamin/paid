@@ -1,49 +1,48 @@
-<%# @spec OPERATOR-INBOX-006 %>
-<div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-  <div class="border-b border-gray-200 px-4 py-4">
-    <h2 class="text-sm font-semibold text-gray-900">Queue</h2>
-    <p class="mt-1 text-sm text-gray-500"><%= pluralize(entries.size, "entry") %> waiting</p>
-  </div>
-
-  <ul class="divide-y divide-gray-100">
-    <% entries.each do |entry| %>
-      <% selected = entry == selected_entry %>
-      <li>
-        <%= link_to inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
-            data: {
-              action: "click->inbox-master-detail#open",
-              inbox_master_detail_target: "row"
-            },
-            class: [
-              "block px-4 py-4 transition-colors",
-              selected ? "bg-indigo-50" : "hover:bg-gray-50"
-            ].join(" ") do %>
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.plan_review? ? 'bg-amber-100 text-amber-800' : entry.merge_approval? ? 'bg-emerald-100 text-emerald-800' : entry.action_required? ? 'bg-rose-100 text-rose-800' : entry.escalated_pr? ? 'bg-orange-100 text-orange-800' : entry.manual_review? ? 'bg-purple-100 text-purple-800' : 'bg-sky-100 text-sky-800' %>">
-                  <%= entry.kind.tr("_", " ").titleize %>
-                </span>
-                <% if entry.issue && (entry.issue.is_pull_request? || entry.clarifying_questions?) %>
-                  <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= inbox_issue_badge_classes(entry.issue) %>">
-                    <%= inbox_issue_kind_label(entry.issue) %>
-                  </span>
-                <% end %>
-                <span class="truncate text-xs text-gray-500"><%= entry.project.full_name %></span>
-              </div>
-              <p class="mt-2 text-sm font-medium text-gray-900">
-                <% if entry.issue %>
-                  #<%= entry.issue.github_number %> <%= entry.title %>
-                <% else %>
-                  <%= entry.title %>
-                <% end %>
-              </p>
-              <p class="mt-1 text-sm text-gray-500"><%= entry.summary.presence || "Waiting for review" %></p>
-            </div>
-            <span class="shrink-0 text-xs text-gray-400" data-testid="inbox-list-waiting-age"><%= entry.waiting_since ? time_ago_in_words(entry.waiting_since) : "Waiting —" %></span>
-          </div>
-        <% end %>
-      </li>
-    <% end %>
-  </ul>
+<%# @spec OPERATOR-INBOX-006 @spec LIST-DETAIL-003 %>
+<div class="border-b border-gray-200 px-4 py-4">
+  <h2 class="text-sm font-semibold text-gray-900">Queue</h2>
+  <p class="mt-1 text-sm text-gray-500"><%= pluralize(entries.size, "entry") %> waiting</p>
 </div>
+
+<ul class="divide-y divide-gray-100">
+  <% entries.each do |entry| %>
+    <% selected = entry == selected_entry %>
+    <li>
+      <%= link_to inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
+          data: {
+            action: "click->inbox-master-detail#open",
+            inbox_master_detail_target: "row",
+            active_classes: master_detail_active_row_classes
+          },
+          class: [
+            "block px-4 py-4 transition-colors",
+            selected ? master_detail_active_row_classes : "hover:bg-gray-50"
+          ].join(" ") do %>
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.plan_review? ? 'bg-amber-100 text-amber-800' : entry.merge_approval? ? 'bg-emerald-100 text-emerald-800' : entry.action_required? ? 'bg-rose-100 text-rose-800' : entry.escalated_pr? ? 'bg-orange-100 text-orange-800' : entry.manual_review? ? 'bg-purple-100 text-purple-800' : 'bg-sky-100 text-sky-800' %>">
+                <%= entry.kind.tr("_", " ").titleize %>
+              </span>
+              <% if entry.issue && (entry.issue.is_pull_request? || entry.clarifying_questions?) %>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= inbox_issue_badge_classes(entry.issue) %>">
+                  <%= inbox_issue_kind_label(entry.issue) %>
+                </span>
+              <% end %>
+              <span class="truncate text-xs text-gray-500"><%= entry.project.full_name %></span>
+            </div>
+            <p class="mt-2 text-sm font-medium text-gray-900">
+              <% if entry.issue %>
+                #<%= entry.issue.github_number %> <%= entry.title %>
+              <% else %>
+                <%= entry.title %>
+              <% end %>
+            </p>
+            <p class="mt-1 text-sm text-gray-500"><%= entry.summary.presence || "Waiting for review" %></p>
+          </div>
+          <span class="shrink-0 text-xs text-gray-400" data-testid="inbox-list-waiting-age"><%= entry.waiting_since ? time_ago_in_words(entry.waiting_since) : "Waiting —" %></span>
+        </div>
+      <% end %>
+    </li>
+  <% end %>
+</ul>

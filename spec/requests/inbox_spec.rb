@@ -171,6 +171,22 @@ RSpec.describe "Inbox" do
     expect(link["data-inbox-master-detail-target"]).to eq("row")
   end
 
+  it "wires the shared list-detail shell's list and detail panes to the inbox master-detail targets" do
+    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    list = document.at_css("#inbox-list")
+    detail = document.at_css("#inbox-detail-pane")
+
+    expect(list).to be_present
+    expect(list["data-inbox-master-detail-target"]).to eq("list")
+    expect(detail).to be_present
+    expect(detail["data-inbox-master-detail-target"]).to eq("detailSection")
+  end
+
   it "supports project scoping" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
     create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
@@ -216,6 +232,7 @@ RSpec.describe "Inbox" do
   end
 
   it "renders a mobile detail state when the member route is selected" do
+    # @spec LIST-DETAIL-001
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_entry_path(
