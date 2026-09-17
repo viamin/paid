@@ -564,11 +564,24 @@ class Issue < ApplicationRecord
   def self.auto_pick_eligible_paid_state_scope(base_scope) # @spec AUTO-PICK-QUEUE-005
     scope = base_scope.where(paid_state: AUTO_PICK_ELIGIBLE_PAID_STATES)
 
-    scope.or(
+    scope = scope.or(
       base_scope.where(
         paid_state: "completed",
         id: recoverable_completed_auto_pick_issue_ids(base_scope)
       )
+    )
+
+    # Durable enhance->create_pr handoff marker (#3851): EnhanceIssueActivity
+    # (and AnalyzeIssueActivity) stamp `last_analyzer_sufficient_context` on
+    # every readiness verdict. Gating on that signal — rather than on
+    # `paid_state == "completed"` alone — lets a `completed` issue that was
+    # enhanced-and-ready re-enter Auto-Pick even when the follow-up
+    # `create_pr` run never got queued (a crashed workflow, or an enhance run
+    # that was not itself an automatic auto-pick run and so is invisible to
+    # the recovery path above), without resurrecting issues completed for
+    # unrelated reasons.
+    scope.or(
+      base_scope.where(paid_state: "completed", last_analyzer_sufficient_context: true)
     )
   end
 

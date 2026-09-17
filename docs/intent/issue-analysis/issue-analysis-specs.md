@@ -225,7 +225,7 @@
   bodies that happen to end without punctuation (e.g. a code block, a list
   item, or a bare link as the last line) and SHALL skip bodies too short for
   the signal to be meaningful. This detector is shared with `enhance_issue`
-  (`ISSUE-ENHANCEMENT-015`).
+  (`ISSUE-ENHANCEMENT-016`).
   *Tests:* `spec/services/issues/detect_truncated_body_spec.rb`,
   `spec/temporal/activities/analyze_issue_activity_spec.rb`
   ("when the issue body appears truncated or corrupted", "when the issue

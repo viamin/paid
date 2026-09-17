@@ -362,7 +362,7 @@ The same detector backs the enhancer: `RunAgentActivity` includes the same
 warning in the containerized `enhance_issue` agent's prompt, and
 `EnhanceIssueActivity` deterministically prepends a body-integrity notice to
 the posted enhancement comment when detected, so a human sees the root cause
-without relying on the agent to mention it (`ISSUE-ENHANCEMENT-015`, see
+without relying on the agent to mention it (`ISSUE-ENHANCEMENT-016`, see
 `docs/intent/issue-enhancement/`).
 
 This is detection and surfacing only — auto-repairing a truncated body (e.g.

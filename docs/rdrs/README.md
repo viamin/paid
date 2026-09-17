@@ -208,6 +208,8 @@ Scaling & Distribution above).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Implemented | P1 |
+| [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Draft | P1 |
+| [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Draft | P1 |
 
 ## Decision Summary
 

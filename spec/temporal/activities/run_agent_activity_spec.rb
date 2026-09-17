@@ -1293,7 +1293,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).not_to include("/issues/#{issue.github_number}/comments")
     end
 
-    # @spec ISSUE-ENHANCEMENT-015
+    # @spec ISSUE-ENHANCEMENT-016
     context "when the issue body appears truncated or corrupted" do
       let(:issue) do
         create(:issue, project: project,
