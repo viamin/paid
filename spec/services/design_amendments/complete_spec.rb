@@ -34,7 +34,24 @@ RSpec.describe DesignAmendments::Complete do
     expect(feature.reload).to be_released
     expect(feature.approved_design_revision).to eq("newrev")
     expect(feature.approved_revision_recorded_at).to be_present
-    expect(DesignAmendments::EvaluateImpact).to have_received(:call).with(amendment: amendment)
+    expect(DesignAmendments::EvaluateImpact).to have_received(:call).with(amendment: amendment, review: nil)
+  end
+
+  it "computes the impact review once and forwards it to EvaluateImpact instead of recomputing inside the transaction" do
+    branch = create(:issue, :pull_request, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: branch)
+    DesignAmendments::Approve.call(amendment: amendment, actor: actor, pr_head_sha: "designhead1")
+    review = DesignAmendments::ImpactReview::Result.new(
+      mapping: { branch.id => { impact: "unaffected", cited_claims: [], explanation: "n/a" } },
+      confidence: 0.9
+    )
+    allow(DesignAmendments::ImpactReview).to receive(:call).and_return(review)
+    allow(DesignAmendments::EvaluateImpact).to receive(:call).and_call_original
+
+    described_class.call(amendment: amendment, merged_revision: "newrev")
+
+    expect(DesignAmendments::ImpactReview).to have_received(:call).once
+    expect(DesignAmendments::EvaluateImpact).to have_received(:call).with(amendment: amendment, review: review)
   end
 
   it "leaves the feature revising when impact evaluation is not possible yet" do

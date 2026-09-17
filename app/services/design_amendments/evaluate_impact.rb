@@ -21,11 +21,31 @@ module DesignAmendments
 
     Result = Data.define(:paused, :follow_ups, :review_failed)
 
+    # Sentinel distinguishing "no review supplied yet, compute one" (the
+    # default) from "a review was already attempted and failed" (`nil`,
+    # passed explicitly). Without this, a nil review from a failed
+    # .review_for call would look identical to an uncomputed one and
+    # #call would silently retry the LLM request.
+    REVIEW_NOT_COMPUTED = Object.new.freeze
+    private_constant :REVIEW_NOT_COMPUTED
+
     def self.call(...)
       new(...).call
     end
 
-    def initialize(amendment:, review: nil)
+    # Runs the LLM impact review ahead of time, outside of any open
+    # transaction, so callers that wrap `call` in a DB transaction (e.g.
+    # DesignAmendments::Complete) aren't holding locks open for the
+    # network round trip. Returns nil when there are no branches to assess
+    # or when the review fails.
+    def self.review_for(amendment)
+      candidates = new(amendment: amendment).branch_candidates
+      return if candidates.empty?
+
+      ImpactReview.call(amendment: amendment, branches: candidates)
+    end
+
+    def initialize(amendment:, review: REVIEW_NOT_COMPUTED)
       @amendment = amendment
       @review = review
     end
@@ -34,7 +54,7 @@ module DesignAmendments
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       return empty_result if branch_candidates.empty?
 
-      review_result = review || ImpactReview.call(amendment: amendment, branches: branch_candidates)
+      review_result = review.equal?(REVIEW_NOT_COMPUTED) ? ImpactReview.call(amendment: amendment, branches: branch_candidates) : review
       mapping = review_result ? review_result.mapping : fail_closed_mapping
 
       paused = apply_pause_set(mapping)
@@ -44,6 +64,14 @@ module DesignAmendments
       log_completion(paused, follow_ups, review_result, started_at)
 
       Result.new(paused:, follow_ups:, review_failed: review_result.nil?)
+    end
+
+    # Public so .review_for can gather branches ahead of #call, before any
+    # DB transaction is open.
+    def branch_candidates
+      open_prs.map { |issue| { issue: issue, kind: "open_pr" } } +
+        unstarted_issues.map { |issue| { issue: issue, kind: "unstarted_issue" } } +
+        merged_prs.map { |issue| { issue: issue, kind: "merged_pr" } }
     end
 
     private
@@ -69,12 +97,6 @@ module DesignAmendments
 
     def merged_prs
       linked_issues.where(is_pull_request: true, pr_review_phase: "merged")
-    end
-
-    def branch_candidates
-      open_prs.map { |issue| { issue: issue, kind: "open_pr" } } +
-        unstarted_issues.map { |issue| { issue: issue, kind: "unstarted_issue" } } +
-        merged_prs.map { |issue| { issue: issue, kind: "merged_pr" } }
     end
 
     def runnable_branches

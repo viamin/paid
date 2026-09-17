@@ -115,7 +115,8 @@ module DesignAmendments
       cleaned = strip_markdown_fence(output.to_s.strip)
       return if cleaned.blank?
 
-      JSON.parse(cleaned)
+      parsed = JSON.parse(cleaned)
+      parsed.is_a?(Hash) ? parsed : nil
     rescue JSON::ParserError
       nil
     end

@@ -22,8 +22,14 @@ module DesignAmendments
         raise NotApprovedError, "amendment has no current human approval for #{merged_revision}"
       end
 
-      # requires_new so an impact-evaluation failure rolls back exactly this
-      # unit (savepoint) instead of poisoning a caller's transaction.
+      # Run the LLM impact review before opening the transaction below, so
+      # the network round trip doesn't hold the transaction's row locks
+      # open. A review failure fails closed inside EvaluateImpact, so
+      # nothing here depends on catching it.
+      review = EvaluateImpact.review_for(amendment)
+
+      # requires_new so a write failure rolls back exactly this unit
+      # (savepoint) instead of poisoning a caller's transaction.
       DesignAmendment.transaction(requires_new: true) do
         amendment.update!(
           status: "merged",
@@ -31,7 +37,7 @@ module DesignAmendments
           merged_at: Time.current
         )
         record_new_baseline
-        EvaluateImpact.call(amendment: amendment)
+        EvaluateImpact.call(amendment: amendment, review: review)
       end
       amendment
     end

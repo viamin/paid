@@ -82,6 +82,21 @@ RSpec.describe DesignAmendments::ImpactReview do
     expect(described_class.call(amendment: amendment, branches: branches)).to be_nil
   end
 
+  it "fails closed when the output is valid JSON but not a JSON object" do
+    allow(AgentHarness).to receive(:send_message).and_return(
+      AgentHarness::Response.new(
+        output: "42",
+        exit_code: 0,
+        duration: 1.0,
+        provider: :claude,
+        model: "claude-sonnet-4-6",
+        tokens: { input: 1, output: 1, total: 2 }
+      )
+    )
+
+    expect(described_class.call(amendment: amendment, branches: branches)).to be_nil
+  end
+
   it "fails closed when a cited claim was not provided" do
     stub_llm({
       "confidence" => 0.9,
