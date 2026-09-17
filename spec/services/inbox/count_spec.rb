@@ -47,7 +47,7 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
-    # @spec FEATURE-APPROVAL-008
+    # @spec FEATURE-APPROVAL-013
     it "counts open feature intents, including on projects with auto-pick off" do
       create(:feature_intent, :ready_for_approval, project: project)
       planning_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "planning")

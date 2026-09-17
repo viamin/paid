@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-004 @spec FEATURE-APPROVAL-005
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010
 class AddApprovalFieldsToFeatureIntents < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 

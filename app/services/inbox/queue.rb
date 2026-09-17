@@ -362,7 +362,7 @@ module Inbox
     # `scoped_projects`'s auto-pick gate: RDR-066 requires these entries stay
     # visible to any project member with Inbox access, including planning
     # projects with auto-pick off.
-    # @spec FEATURE-APPROVAL-008
+    # @spec FEATURE-APPROVAL-013
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
         .where(status: FEATURE_DECISION_STATUSES)

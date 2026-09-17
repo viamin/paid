@@ -1,22 +1,55 @@
-# EARS Specs: Feature Approval (Inbox)
+# EARS Specs: Feature Approval
 
-> RDR-066 feature-design decision flow and "Mark approved" action, surfaced
-> through the existing typed Inbox (`docs/intent/inbox-foundation/`,
-> `docs/intent/operator-inbox/`). Status markers:
-> `[x]` implemented · `[ ]` active gap · `[D]` deferred.
+> Testable claims for the human-led feature operating mode from
+> [RDR-066](../../rdrs/RDR-066-feature-intent-approval-lifecycle.md):
+> the named profile and onboarding posture (#3872, `001`–`005`) and the
+> feature-design decision flow and "Mark approved" action surfaced through
+> the existing typed Inbox (#3864, `006`–`013`; see
+> `docs/intent/inbox-foundation/`, `docs/intent/operator-inbox/`).
+> Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r FEATURE-APPROVAL-001`).
 
+## Operating mode and onboarding
+
+- [x] **FEATURE-APPROVAL-001** — When the human-led feature operating mode
+  ships, the `operating_mode` column SHALL default to `standard` and reject
+  unknown values, so no existing project is silently enrolled and new
+  projects start unenrolled unless the mode is deliberately chosen.
+
+- [x] **FEATURE-APPROVAL-002** — When the `human_led_feature_factory`
+  configuration profile is applied, the project SHALL enter the human-led
+  feature operating mode with `non_strict` TDD as the suggested
+  test-review posture, and `auto_merge_mode` SHALL remain `off` unless the
+  operator explicitly selects otherwise.
+
+- [x] **FEATURE-APPROVAL-003** — When an operator adopts the profile with
+  explicit auto-merge or TDD selections, the system SHALL apply those
+  selections instead of the suggested defaults, so auto-merge and strict
+  human test review remain independent project choices.
+
+- [x] **FEATURE-APPROVAL-004** — When a new account reaches the
+  configure-defaults onboarding step with a first project, onboarding SHALL
+  propose the `human_led_feature_factory` posture with a reviewable
+  settings plan and SHALL apply it only after the user accepts the
+  proposal.
+
+- [x] **FEATURE-APPROVAL-005** — When a project leaves the
+  `human_led_feature_factory` operating mode, the system SHALL NOT release,
+  enqueue, or otherwise mutate issue or run state; disabling the mode is a
+  settings-only change and any held work stays held until explicitly
+  migrated.
+
 ## Open decisions
 
-- [x] **FEATURE-APPROVAL-001** — A `FeatureIntentDecision` of kind
+- [x] **FEATURE-APPROVAL-006** — A `FeatureIntentDecision` of kind
   `question` SHALL record the prompt text and the design claim it affects,
   and SHALL stay `open` until a human resolves it with an answer, actor, and
   timestamp.
   *Tests:* `spec/models/feature_intent_decision_spec.rb`.
   *Code:* `app/models/feature_intent_decision.rb`.
 
-- [x] **FEATURE-APPROVAL-002** — A `FeatureIntentDecision` of kind
+- [x] **FEATURE-APPROVAL-007** — A `FeatureIntentDecision` of kind
   `inferred_decision` SHALL represent an AI-inferred assumption that requires
   explicit human confirmation before it counts as resolved; resolving it
   SHALL use the same `resolve!` path as a question.
@@ -25,7 +58,7 @@
 
 ## Design PR tracking and staleness
 
-- [x] **FEATURE-APPROVAL-003** — A `FeatureIntentDesignPr` SHALL track a
+- [x] **FEATURE-APPROVAL-008** — A `FeatureIntentDesignPr` SHALL track a
   linked design pull request's `head_sha` alongside a `reviewed_head_sha` —
   the head its open decisions/evidence were last generated against — and
   SHALL report `stale?` when the two diverge, so a commit landing after
@@ -37,7 +70,7 @@
 
 ## Approval recording
 
-- [x] **FEATURE-APPROVAL-004** — `FeatureIntent#record_approval!` SHALL
+- [x] **FEATURE-APPROVAL-009** — `FeatureIntent#record_approval!` SHALL
   transition the feature from `design_open`, `needs_decision`,
   `ready_for_approval`, or (to support refreshing a stale approval)
   `approved_waiting_for_merge` into `approved_waiting_for_merge`, and SHALL
@@ -46,7 +79,7 @@
   *Tests:* `spec/models/feature_intent_spec.rb`.
   *Code:* `app/models/feature_intent.rb`.
 
-- [x] **FEATURE-APPROVAL-005** — Recording an approval SHALL persist the
+- [x] **FEATURE-APPROVAL-010** — Recording an approval SHALL persist the
   approving user (`approved_by`), the timestamp (`approved_at`), and a
   snapshot of every linked design PR's exact head SHA at approval time
   (`approved_pr_heads`, keyed by PR number) — "approve the exact revision,"
@@ -57,7 +90,7 @@
 
 ## Readiness gate
 
-- [x] **FEATURE-APPROVAL-006** — `FeatureIntents::ApprovalReadiness` SHALL
+- [x] **FEATURE-APPROVAL-011** — `FeatureIntents::ApprovalReadiness` SHALL
   report the feature intent not ready, with one blocker per failing check,
   when: the feature's `status` is not in `FeatureIntent::APPROVABLE_STATUSES`
   (mirrors `FeatureIntent#record_approval!`'s lifecycle guard so the Inbox
@@ -65,7 +98,7 @@
   statuses accept an approval — `discovering` features show in the Inbox
   but are not approvable); any linked question is unresolved; any inferred
   decision is unconfirmed; any *required* design PR is stale
-  (`FEATURE-APPROVAL-003`); or the cached acceptance-criteria clarity
+  (`FEATURE-APPROVAL-008`); or the cached acceptance-criteria clarity
   verdict (`criteria_clarity_state`) is not `clear`. The clarity verdict
   itself is an AI judgment (ZFC — `FeatureIntents::CriteriaClarityReview`,
   citing only trusted linked issues) computed out-of-band by
@@ -84,7 +117,7 @@
 
 ## Authorization
 
-- [x] **FEATURE-APPROVAL-007** — `FeatureIntents::MarkApproved` SHALL be the
+- [x] **FEATURE-APPROVAL-012** — `FeatureIntents::MarkApproved` SHALL be the
   single choke point for recording an approval: it SHALL check
   `FeatureIntentPolicy#approve?` (any account owner/admin/member, or a
   narrower-role account user — e.g. a `viewer` — holding an explicit
@@ -111,7 +144,7 @@
 
 ## Inbox surface
 
-- [x] **FEATURE-APPROVAL-008** — `Inbox::Queue` SHALL expose a
+- [x] **FEATURE-APPROVAL-013** — `Inbox::Queue` SHALL expose a
   `feature_decision` entry for every `FeatureIntent` whose status is not
   `released`, `revising`, or `cancelled` (including `approved_waiting_for_merge`,
   since a stale head after approval reopens the hold). Unlike every other

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-003
+# @spec FEATURE-APPROVAL-008
 class CreateFeatureIntentDesignPrs < ActiveRecord::Migration[8.1]
   def up
     create_table :feature_intent_design_prs, comment: "RDR-066 design PRs (RDR and/or LID Planning) linked to a feature intent, tracked for staleness and required-artifact checks." do |t|

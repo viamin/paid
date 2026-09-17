@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-006
+# @spec FEATURE-APPROVAL-011
 RSpec.describe FeatureIntents::EvaluateCriteriaClarity do
   let(:feature_intent) { create(:feature_intent, criteria_clarity_state: "pending") }
 

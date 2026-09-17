@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-007 @spec FEATURE-APPROVAL-008
+# @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-013
 class FeatureIntentsController < ApplicationController
   before_action :set_feature_intent, only: :approve
 

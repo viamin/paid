@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # @spec TENANT-ACCESS-001
-# @spec FEATURE-APPROVAL-007
+# @spec FEATURE-APPROVAL-012
 # Any project member may see and approve a feature intent's design decision
 # — RDR-066 deliberately does not restrict Mark approved to project
 # admins/owners the way plan-review actions are ("Any project member with

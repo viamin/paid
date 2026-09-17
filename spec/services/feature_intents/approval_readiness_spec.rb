@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-006
+# @spec FEATURE-APPROVAL-011
 RSpec.describe FeatureIntents::ApprovalReadiness do
   let(:feature_intent) { create(:feature_intent, :ready_for_approval) }
 

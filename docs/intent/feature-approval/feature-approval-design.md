@@ -3,30 +3,90 @@ parent: PAID
 prefix: FEATURE-APPROVAL
 ---
 
-# Low-Level Design: Feature Approval (Inbox)
+# Low-Level Design: Feature Approval
 
-> Companion to the high-level design (`docs/high-level-design.md`). Implements
-> the Inbox decision-flow and "Mark approved" slice of
-> [RDR-066](../../rdrs/RDR-066-feature-intent-approval-lifecycle.md) (#3864),
-> extending the minimal `FeatureIntent` substrate
-> (`docs/intent/approved-intent-amendment/`, built for RDR-067) with the
-> open-decision, design-PR, readiness, and approval-authorization machinery
-> RDR-066's own approval lifecycle needs.
+> Companion to the high-level design (`docs/high-level-design.md`). This
+> segment covers the human-led feature operating mode from
+> [RDR-066](../../rdrs/RDR-066-feature-intent-approval-lifecycle.md) in two
+> slices: the named project setting, its configuration profile, and the
+> onboarding posture proposal (#3872); and the Inbox decision flow and
+> "Mark approved" action (#3864), which extends the minimal `FeatureIntent`
+> substrate (`docs/intent/approved-intent-amendment/`, built for RDR-067)
+> with the open-decision, design-PR, readiness, and approval-authorization
+> machinery RDR-066's own approval lifecycle needs.
 
 ## Purpose
 
-RDR-066 moves a project's implementation-authorization boundary from
-per-issue judgment to a human-approved feature design: once a human approves
-a complete design, Paid may execute the whole issue tree within that scope.
-This segment gives the Inbox — Paid's existing typed queue of things needing
-a human — the surface to show that decision and to record it. Repository
-documents (the RDR PR, LID Planning PR) remain the source of design content;
-this segment persists only the linkage, open-decision state, and
-authorization record needed to enforce the workflow.
+RDR-066 shifts human attention to discovery, design, and decisions: once a
+human approves a complete feature design, Paid may execute the whole feature
+tree within that approved scope. The operating mode is the posture switch
+that makes a project run that workflow for new features. The Inbox — Paid's
+existing typed queue of things needing a human — is the surface that shows
+that approval decision and records it. Repository documents (the RDR PR, LID
+Planning PR) remain the source of design content; this segment persists only
+the linkage, open-decision state, and authorization record needed to enforce
+the workflow.
 
-## Scope
+## Operating mode, profile, and onboarding
 
-In scope (this segment):
+### Operating-mode setting
+
+- `projects.operating_mode` enum: `standard` (default) or
+  `human_led_feature_factory` (`Project::OPERATING_MODES`).
+- The column is the RDR-066 rollout-guard **config gate**: it ships default
+  `standard`, so existing projects are never silently enrolled and nothing
+  is paused on migration. No Flipper flag is involved — the guard is the
+  named setting itself, exactly as the RDR's Rollout Guard specifies.
+- The mode is a posture lever in the RDR-044 configuration-profile field
+  set (`operating_mode` and `tdd_mode` descriptors), so the drift guards
+  require every profile to declare an explicit value and existing profiles
+  declare `standard` (opt-in only).
+- Every pre-existing profile targets `tdd_mode: "off"` for the same reason
+  it targets `operating_mode: "standard"` — the field-set drift guard
+  (`described_class.targets.keys` must match `profile_target_keys` exactly)
+  forces a value once the descriptor exists. Re-applying one of those
+  profiles to a project that already chose `non_strict`/`strict` TDD *does*
+  plan a reset to `off` by default. Each legacy profile also declares
+  `tdd_mode` as a clarifying question (`Base::TDD_MODE_CLARIFYING_QUESTION`),
+  so a caller can pass `overrides: { "tdd_mode" => "strict" }` to keep the
+  project's existing choice instead — the reset is the profile's suggested
+  default, not a forced value, mirroring how `auto_merge_mode` already
+  works.
+
+### Named profile
+
+- `Configuration::Profiles::HumanLedFeatureFactory` is registered in the
+  curated registry and targets `operating_mode:
+  "human_led_feature_factory"`.
+- Suggested test-review posture: `tdd_mode: "non_strict"`.
+- Auto-merge stays `off` by default; the profile declares clarifying
+  questions for `auto_merge_mode` and `tdd_mode` so the owner explicitly
+  chooses both — auto-merge and strict human TDD remain independent
+  selections, per RDR-066's operating-mode decision.
+
+### Onboarding proposal
+
+- The `configure_defaults` onboarding step proposes the
+  `human_led_feature_factory` posture for the account's first project with
+  a reviewable settings plan rendered from `Configuration::Profiles::Planner`
+  (deterministic before/after diff) before any write executes.
+- Applying happens only on explicit acceptance, through
+  `Configuration::Profiles::Applier` (one audited
+  `configuration_profile.applied` activity event), honoring the operator's
+  auto-merge and TDD selections.
+- Declining leaves the project on `standard` defaults.
+
+### Disabling the mode
+
+- Mode changes are settings-only writes. Disabling
+  `human_led_feature_factory` (direct edit or applying another profile)
+  never enqueues, releases, or mutates issue/run state — held feature work
+  requires an explicit migration decision (RDR-066 rollback posture), and
+  when the release hold ships it must keep honoring this boundary.
+
+## Scope of the Inbox slice
+
+In scope (#3864):
 
 - `FeatureIntentDecision` — open clarifying questions and AI-inferred
   decisions, each bound to the design claim it affects.
@@ -54,14 +114,13 @@ Out of scope (owned by sibling issues under #3860): attaching `create_feature`
 questions/evidence) to a `FeatureIntent` (#3863); enforcing the release hold
 at auto-pick, eager queue, dequeue, and manual `create_pr` entry points, and
 reconciling direct GitHub human merges, bot merges, and abandoned design PRs
-against this same readiness/authorization contract (#3865); the named
-`human_led_feature_factory` operating mode and onboarding default (#3872).
+against this same readiness/authorization contract (#3865).
 Until #3863 lands, no code path creates `FeatureIntentDecision` or
 `FeatureIntentDesignPr` rows outside tests, so this segment's behavior is
 present but dormant for existing projects — no rollout flag is needed for
 that reason alone (see Rollout guard below).
 
-## Design
+## Inbox decision flow and Mark approved
 
 ### Readiness is a single answer, computed once
 
@@ -123,7 +182,7 @@ check. `FeatureIntentDesignPr` tracks both:
 all). Before a first approval, this blocks the *first* Mark approved click
 until Paid re-evaluates a PR that moved after discovery ran. After an
 approval, `approved_pr_heads` already recorded the exact reviewed heads
-(`FEATURE-APPROVAL-005`); a later commit moves `head_sha` past
+(`FEATURE-APPROVAL-010`); a later commit moves `head_sha` past
 `reviewed_head_sha` again, which both invalidates the stale approval (the
 feature is no longer meaningfully "approved" — see
 `Inbox::FeatureDecisionSummary`) and blocks a naive re-approval attempt
@@ -184,14 +243,26 @@ operational, high-churn-during-discovery tables.
 
 ## Rollout guard
 
-No new feature flag: nothing in the application creates a `FeatureIntent`,
-`FeatureIntentDecision`, or `FeatureIntentDesignPr` row outside tests until
-`#3863` wires `create_feature`/`lid_planning` to this substrate, so this
-segment's Inbox entries and Mark approved action are structurally inert for
-every existing project today. When `#3863` lands, the named
-`human_led_feature_factory` operating mode (`#3872`) is the actual rollout
-gate for *creating* feature intents in the first place; this segment does
-not duplicate that gate. Per the RDR-066 rollout guard, do not release held
+The `operating_mode` column is the RDR-066 config gate (see above): it ships
+default `standard`, so no existing project is silently enrolled. Nothing in
+the application creates a `FeatureIntent`, `FeatureIntentDecision`, or
+`FeatureIntentDesignPr` row outside tests until `#3863` wires
+`create_feature`/`lid_planning` to this substrate, so this segment's Inbox
+entries and Mark approved action are structurally inert for every existing
+project today. When `#3863` lands, the
+`human_led_feature_factory` operating mode is the actual rollout gate for
+*creating* feature intents in the first place; the Inbox slice does not
+duplicate that gate. Per the RDR-066 rollout guard, do not release held
 issues or bypass readiness/authorization on any rollback — those checks live
 in code (`ApprovalReadiness`, `FeatureIntentPolicy`), not behind a flag that
 could be flipped off.
+
+## What this is not
+
+- **Not an auto-merge or TDD policy change.** The profile suggests a
+  posture; the owner's explicit choices win, and other profiles keep
+  `standard` mode with their existing automation posture.
+- **Not the issue-tree hold/release.** Enforcing the release hold and
+  reconciling direct GitHub merges against the readiness/authorization
+  contract are the epic's remaining wiring issues (#3865); until they land,
+  an approval is recorded but not yet enforced at execution entry points.

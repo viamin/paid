@@ -5,7 +5,7 @@ module FeatureIntents
   # caches the verdict (RDR-066 readiness). Enqueued whenever something that
   # could change the verdict happens — a feature intent decision resolves —
   # rather than on Inbox render.
-  # @spec FEATURE-APPROVAL-006
+  # @spec FEATURE-APPROVAL-011
   class EvaluateCriteriaClarityJob < ApplicationJob
     queue_as :low_priority
 

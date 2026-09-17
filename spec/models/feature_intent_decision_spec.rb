@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-001 @spec FEATURE-APPROVAL-002
+# @spec FEATURE-APPROVAL-006 @spec FEATURE-APPROVAL-007
 RSpec.describe FeatureIntentDecision do
   it "requires the design claim it affects" do
     decision = build(:feature_intent_decision, design_claim: nil)

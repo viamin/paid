@@ -6,7 +6,7 @@ module FeatureIntents
   # callers enqueue EvaluateCriteriaClarityJob when something that could
   # change the verdict happens (a decision resolves, the brief or linked
   # issues change), not on every read.
-  # @spec FEATURE-APPROVAL-006
+  # @spec FEATURE-APPROVAL-011
   class EvaluateCriteriaClarity
     def self.call(...)
       new(...).call

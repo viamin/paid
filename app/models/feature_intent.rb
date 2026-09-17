@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec INTENT-AMENDMENT-003 @spec FEATURE-APPROVAL-004 @spec FEATURE-APPROVAL-005
+# @spec INTENT-AMENDMENT-003 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010
 # RDR-066 feature intent: links a feature's brief, discovery decisions,
 # design PRs, issue tree, and approval record. Originated as a minimal
 # substrate for the RDR-067 amendment flow (`released`/`revising`

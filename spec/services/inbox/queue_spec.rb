@@ -262,7 +262,7 @@ RSpec.describe Inbox::Queue do
       expect(entry.kind).to eq(described_class::ESCALATED_PR_KIND)
     end
 
-    # @spec FEATURE-APPROVAL-008
+    # @spec FEATURE-APPROVAL-013
     it "returns a feature_decision entry for an open feature intent" do
       feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
 
@@ -279,7 +279,7 @@ RSpec.describe Inbox::Queue do
       expect(entry.summary).to eq("Ready for approval.")
     end
 
-    # @spec FEATURE-APPROVAL-008
+    # @spec FEATURE-APPROVAL-013
     it "excludes released, revising, and cancelled feature intents" do
       create(:feature_intent, project: project, status: "released")
       create(:feature_intent, project: project, status: "revising")
@@ -290,7 +290,7 @@ RSpec.describe Inbox::Queue do
       expect(entries).to be_empty
     end
 
-    # @spec FEATURE-APPROVAL-008
+    # @spec FEATURE-APPROVAL-013
     it "surfaces feature_decision entries even when the project's auto-pick is off" do
       planning_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
       feature_intent = create(:feature_intent, :ready_for_approval, project: planning_project)
@@ -300,7 +300,7 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to include(feature_intent)
     end
 
-    # @spec FEATURE-APPROVAL-008
+    # @spec FEATURE-APPROVAL-013
     it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
       create_feature_decision_feature

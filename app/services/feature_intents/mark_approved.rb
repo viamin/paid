@@ -7,7 +7,7 @@ module FeatureIntents
   # through here, so authorization and readiness are enforced identically
   # regardless of source — "a direct human merge counts only after readiness
   # and authorized-actor checks."
-  # @spec FEATURE-APPROVAL-004 @spec FEATURE-APPROVAL-005 @spec FEATURE-APPROVAL-007
+  # @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012
   class MarkApproved
     def self.call(...)
       new(...).call

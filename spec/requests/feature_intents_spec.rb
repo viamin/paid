@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-004 @spec FEATURE-APPROVAL-005 @spec FEATURE-APPROVAL-007
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012
 RSpec.describe "Feature intents" do
   let(:owner) { create(:user, :owner) }
   let(:project) { create(:project, account: owner.account) }

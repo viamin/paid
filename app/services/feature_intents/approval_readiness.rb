@@ -8,7 +8,7 @@ module FeatureIntents
   # (ZFC) via CriteriaClarityReview and fails closed. This is the single
   # place that answers "is this feature ready to approve" so the Inbox entry
   # and the approval action never disagree.
-  # @spec FEATURE-APPROVAL-006
+  # @spec FEATURE-APPROVAL-011
   class ApprovalReadiness
     Blocker = Data.define(:code, :message)
     Result = Data.define(:ready, :blockers) do

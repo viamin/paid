@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_17_073211) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_17_073409) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1665,6 +1665,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_073211) do
     t.index ["resolved_by_id"], name: "index_intent_conformance_resolutions_on_resolved_by_id"
   end
 
+  create_table "intent_conformance_verdicts", comment: "RDR-067 intent-conformance verdict identity: outcome bound to an exact PR head and approved design revision.", force: :cascade do |t|
+    t.string "approved_design_revision", null: false, comment: "Feature's approved design revision the verdict was evaluated against."
+    t.datetime "created_at", null: false
+    t.bigint "issue_id", null: false, comment: "Local pull-request issue the verdict targets."
+    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated."
+    t.string "pr_head_sha", null: false, comment: "PR head commit SHA the verdict was evaluated against."
+    t.bigint "project_id", null: false
+    t.datetime "recorded_at", null: false, comment: "When the verdict was recorded; the most recent row per issue is current."
+    t.datetime "updated_at", null: false
+    t.index ["issue_id", "recorded_at"], name: "index_intent_conformance_verdicts_on_issue_and_recorded_at"
+    t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
+    t.index ["outcome"], name: "index_intent_conformance_verdicts_on_outcome"
+    t.index ["project_id"], name: "index_intent_conformance_verdicts_on_project_id"
+  end
+
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "depends_on_issue_id"
@@ -2560,6 +2575,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_073211) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."
@@ -3652,6 +3668,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_17_073211) do
   add_foreign_key "intent_conformance_resolutions", "issues"
   add_foreign_key "intent_conformance_resolutions", "projects"
   add_foreign_key "intent_conformance_resolutions", "users", column: "resolved_by_id"
+  add_foreign_key "intent_conformance_verdicts", "issues"
+  add_foreign_key "intent_conformance_verdicts", "projects"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"

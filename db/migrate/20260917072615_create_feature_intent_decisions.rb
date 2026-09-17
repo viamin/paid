@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-001 @spec FEATURE-APPROVAL-002
+# @spec FEATURE-APPROVAL-006 @spec FEATURE-APPROVAL-007
 class CreateFeatureIntentDecisions < ActiveRecord::Migration[8.1]
   def up
     create_table :feature_intent_decisions, comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation." do |t|

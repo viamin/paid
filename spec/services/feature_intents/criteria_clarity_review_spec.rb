@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-006
+# @spec FEATURE-APPROVAL-011
 RSpec.describe FeatureIntents::CriteriaClarityReview do
   let(:project) { create(:project) }
   let(:feature_intent) { create(:feature_intent, project: project, brief: "Ship a CSV export button.") }

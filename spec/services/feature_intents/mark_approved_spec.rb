@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-004 @spec FEATURE-APPROVAL-005 @spec FEATURE-APPROVAL-007
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012
 RSpec.describe FeatureIntents::MarkApproved do
   let(:account) { create(:account) }
   let(:owner) { create(:user, account: account) }

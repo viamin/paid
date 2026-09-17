@@ -10,7 +10,7 @@ module FeatureIntents
   # quality judgment (ZFC); this class performs only structural validation.
   # Every failure mode returns nil so the caller fails closed and treats the
   # criteria as unconfirmed.
-  # @spec FEATURE-APPROVAL-006
+  # @spec FEATURE-APPROVAL-011
   class CriteriaClarityReview
     include Llm::OutputNormalizer
 

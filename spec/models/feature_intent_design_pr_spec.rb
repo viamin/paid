@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-003
+# @spec FEATURE-APPROVAL-008
 RSpec.describe FeatureIntentDesignPr do
   it "is stale when the head moved past the last reviewed head" do
     design_pr = build(:feature_intent_design_pr, :stale)

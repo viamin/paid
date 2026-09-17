@@ -5,7 +5,7 @@ module Inbox
   # clear it (RDR-066: "The Inbox explains what keeps a feature held and
   # what clears it."). Reads only cached/deterministic state — no live LLM
   # call — so it is safe to call once per Inbox entry per render.
-  # @spec FEATURE-APPROVAL-008
+  # @spec FEATURE-APPROVAL-013
   class FeatureDecisionSummary
     def self.call(...)
       new(...).call

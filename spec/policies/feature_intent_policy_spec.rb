@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-007
+# @spec FEATURE-APPROVAL-012
 RSpec.describe FeatureIntentPolicy do
   describe "#approve?" do
     it "permits any account member of the feature's project" do

@@ -5,7 +5,7 @@
 # decision awaiting human confirmation. Each one names the design claim it
 # affects so the Inbox can explain what it holds (RDR-066 "Discovery and
 # approval readiness").
-# @spec FEATURE-APPROVAL-001 @spec FEATURE-APPROVAL-002
+# @spec FEATURE-APPROVAL-006 @spec FEATURE-APPROVAL-007
 class FeatureIntentDecision < ApplicationRecord
   KINDS = %w[question inferred_decision].freeze
   STATUSES = %w[open resolved].freeze

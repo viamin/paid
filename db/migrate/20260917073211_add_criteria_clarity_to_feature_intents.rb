@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-006
+# @spec FEATURE-APPROVAL-011
 class AddCriteriaClarityToFeatureIntents < ActiveRecord::Migration[8.1]
   def change
     add_column :feature_intents, :criteria_clarity_state, :string, null: false, default: "pending",

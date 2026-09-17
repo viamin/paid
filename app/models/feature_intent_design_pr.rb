@@ -5,7 +5,7 @@
 # stale head — a commit landing on the PR after a human's Mark approved
 # invalidates that approval until the new head is reviewed (RDR-066
 # "Approval sources and revision binding").
-# @spec FEATURE-APPROVAL-003
+# @spec FEATURE-APPROVAL-008
 class FeatureIntentDesignPr < ApplicationRecord
   KINDS = %w[rdr lid_planning].freeze
 

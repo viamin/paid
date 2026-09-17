@@ -15,7 +15,8 @@ module Configuration
         ObserveOnly,
         ManualOnLabel,
         CostCappedAutomated,
-        QualityStrict
+        QualityStrict,
+        HumanLedFeatureFactory
       ].freeze
 
       def all

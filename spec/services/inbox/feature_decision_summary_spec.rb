@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-008
+# @spec FEATURE-APPROVAL-013
 RSpec.describe Inbox::FeatureDecisionSummary do
   it "explains readiness when there are no blockers" do
     feature_intent = create(:feature_intent, :ready_for_approval)
