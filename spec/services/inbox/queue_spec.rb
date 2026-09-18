@@ -268,6 +268,19 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to eq([ pr ])
     end
 
+    # @spec INTENT-CONFORMANCE-006
+    it "filters to intent_conformance when kind: intent_conformance is requested" do
+      create_needs_input(body: questions_body)
+      pr = create_intent_conformance_pr
+
+      entries = described_class.call(user: user, kind: described_class::INTENT_CONFORMANCE_KIND)
+
+      expect(entries.map(&:issue)).to eq([ pr ])
+      entry = entries.first
+      expect(entry.id).to eq("#{described_class::INTENT_CONFORMANCE_KIND}:#{pr.id}")
+      expect(entry.summary).to include("changes approved behavior")
+    end
+
     it "filters to action_required when kind: action_required is requested" do
       create_needs_input(body: questions_body)
       create_plan_review(project: project, workflow_id: "planning-workflow-1")
@@ -840,6 +853,23 @@ RSpec.describe Inbox::Queue do
         not_evaluated: []
       )
     )
+  end
+
+  def create_intent_conformance_pr(github_number: 50)
+    issue = create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      last_scanned_head_sha: "sha1",
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: snapshot_hash(
+        failed: [ blocker(signal: "intent_conformance_ok", reason_code: "intent_conformance_blocked") ],
+        not_evaluated: []
+      )
+    )
+    create(:intent_conformance_verdict, :material_drift, issue: issue, pr_head_sha: "sha1")
+    issue
   end
 
   def create_escalated_pr(github_number:, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK, **attrs)

@@ -2,71 +2,77 @@
 
 require "rails_helper"
 
+# @spec INTENT-CONFORMANCE-001
 # @spec INTENT-MERGE-GUARD-002
 # @spec INTENT-MERGE-GUARD-003
 # @spec INTENT-MERGE-GUARD-004
 # @spec INTENT-CONFORMANCE-REVIEW-002
 RSpec.describe IntentConformanceVerdict do
-  it "is valid with an identity and a terminal outcome" do
-    verdict = build(:intent_conformance_verdict)
+  describe "validations" do
+    it "requires an outcome from the defined set" do
+      verdict = build(:intent_conformance_verdict, outcome: "not_a_real_outcome")
 
-    expect(verdict).to be_valid
-  end
+      expect(verdict).not_to be_valid
+      expect(verdict.errors[:outcome]).to be_present
+    end
 
-  it "requires a terminal outcome" do
-    verdict = build(:intent_conformance_verdict, outcome: "approved")
+    it "requires a pr_head_sha, approved_design_revision, and evaluated_at" do
+      verdict = build(:intent_conformance_verdict, pr_head_sha: nil, approved_design_revision: nil, evaluated_at: nil)
 
-    expect(verdict).not_to be_valid
-    expect(verdict.errors[:outcome]).to be_present
+      expect(verdict).not_to be_valid
+      expect(verdict.errors[:pr_head_sha]).to be_present
+      expect(verdict.errors[:approved_design_revision]).to be_present
+      expect(verdict.errors[:evaluated_at]).to be_present
+    end
   end
 
   # @spec INTENT-CONFORMANCE-REVIEW-002
-  it "requires reviewer identity evidence (run id and model)" do
-    verdict = build(:intent_conformance_verdict, reviewer_run_id: nil, reviewer_model: nil)
+  it "requires reviewer identity evidence (model)" do
+    verdict = build(:intent_conformance_verdict, reviewer_model: nil)
 
     expect(verdict).not_to be_valid
-    expect(verdict.errors[:reviewer_run_id]).to be_present
     expect(verdict.errors[:reviewer_model]).to be_present
   end
 
-  # @spec INTENT-CONFORMANCE-REVIEW-002
-  it "requires an approved design revision" do
-    verdict = build(:intent_conformance_verdict, approved_design_revision: nil)
-
-    expect(verdict).not_to be_valid
-    expect(verdict.errors[:approved_design_revision]).to be_present
-  end
-
-  # @spec INTENT-CONFORMANCE-REVIEW-002
-  it "requires a PR head SHA" do
-    verdict = build(:intent_conformance_verdict, pr_head_sha: nil)
-
-    expect(verdict).not_to be_valid
-    expect(verdict.errors[:pr_head_sha]).to be_present
-  end
-
-  # @spec INTENT-CONFORMANCE-REVIEW-002
-  it "requires a recorded_at timestamp" do
-    verdict = build(:intent_conformance_verdict, recorded_at: nil)
-
-    expect(verdict).not_to be_valid
-    expect(verdict.errors[:recorded_at]).to be_present
-  end
-
   describe ".current_for" do
-    it "returns the most recently recorded verdict for the issue" do
+    it "returns nil when head_sha is blank" do
       issue = create(:issue, :pull_request)
-      older = create(:intent_conformance_verdict, issue: issue, recorded_at: 2.hours.ago)
-      newer = create(:intent_conformance_verdict, issue: issue, recorded_at: 1.minute.ago)
 
-      expect(described_class.current_for(issue)).to eq(newer)
-      expect(described_class.current_for(issue)).not_to eq(older)
+      expect(described_class.current_for(issue: issue, head_sha: nil)).to be_nil
+    end
+
+    it "returns nil when no verdict matches the given head" do
+      issue = create(:issue, :pull_request)
+      create(:intent_conformance_verdict, issue: issue, pr_head_sha: "old-sha")
+
+      expect(described_class.current_for(issue: issue, head_sha: "current-sha")).to be_nil
+    end
+
+    it "returns the most recently evaluated verdict for the exact head" do
+      issue = create(:issue, :pull_request)
+      older = create(:intent_conformance_verdict, issue: issue, pr_head_sha: "current-sha", evaluated_at: 2.hours.ago)
+      newer = create(:intent_conformance_verdict, issue: issue, pr_head_sha: "current-sha", evaluated_at: 1.minute.ago)
+      create(:intent_conformance_verdict, issue: issue, pr_head_sha: "other-sha")
+
+      expect(described_class.current_for(issue: issue, head_sha: "current-sha")).to eq(newer)
+      expect(described_class.current_for(issue: issue, head_sha: "current-sha")).not_to eq(older)
+    end
+  end
+
+  describe ".latest_for" do
+    it "returns the most recently evaluated verdict for the issue" do
+      issue = create(:issue, :pull_request)
+      older = create(:intent_conformance_verdict, issue: issue, evaluated_at: 2.hours.ago)
+      newer = create(:intent_conformance_verdict, issue: issue, evaluated_at: 1.minute.ago)
+
+      expect(described_class.latest_for(issue)).to eq(newer)
+      expect(described_class.latest_for(issue)).not_to eq(older)
     end
 
     it "returns nil when no verdict has been recorded" do
       issue = create(:issue, :pull_request)
 
-      expect(described_class.current_for(issue)).to be_nil
+      expect(described_class.latest_for(issue)).to be_nil
     end
   end
 
@@ -81,11 +87,11 @@ RSpec.describe IntentConformanceVerdict do
   end
 
   describe "outcome predicates" do
-    it "reflects the recorded outcome" do
-      expect(build(:intent_conformance_verdict, outcome: "within_scope")).to be_within_scope
-      expect(build(:intent_conformance_verdict, outcome: "material_drift")).to be_material_drift
-      expect(build(:intent_conformance_verdict, outcome: "uncertain")).to be_uncertain
-      expect(build(:intent_conformance_verdict, outcome: "not_evaluated")).to be_not_evaluated
+    it "reflects the persisted outcome" do
+      expect(build(:intent_conformance_verdict, :material_drift)).to be_material_drift
+      expect(build(:intent_conformance_verdict, :uncertain)).to be_uncertain
+      expect(build(:intent_conformance_verdict, :not_evaluated)).to be_not_evaluated
+      expect(build(:intent_conformance_verdict)).to be_within_scope
     end
   end
 end

@@ -38,8 +38,12 @@ In scope (this segment):
 - Extending `intent_conformance_verdicts` (per the merge-guard LLD's
   instruction that "both sibling issues extend this table rather than
   duplicating it") with the reviewer-evidence columns RDR-067 §Decision
-  requires: `reviewer_run_id`, `reviewer_model`, `cited_design_claims`,
-  `cited_diff_locations`, `reasoning_summary`.
+  requires: `reviewer_model`, `cited_claims`, `cited_diff_locations`,
+  `reasoning_summary`, and the optional `reviewer_run` link to the reviewer
+  `AgentRun`. (Merged with #3867's version of the table: the reviewer
+  evidence lives alongside the head/revision identity columns, and the
+  per-invocation audit correlation is the `reviewer_run` association plus
+  `reviewer_model`.)
 - Extending `feature_intents` with `design_document_paths` — the repository
   paths (RDR file plus required LID artifacts) that constitute the feature's
   approved design. Nothing else in the codebase yet records which files are
@@ -156,11 +160,11 @@ verdict's stored head/revision against the current PR head and the feature's
 that advances `approved_design_revision` automatically makes this verdict
 stale without any extra invalidation code here (AC3). `ReviewRun` does not
 need to delete or supersede prior rows; `IntentConformanceVerdict.current_for`
-already selects the most recent by `recorded_at`.
+(#3867's head-scoped lookup) selects the most recently evaluated row for the
+exact PR head by `evaluated_at`.
 
 For `not_evaluated` rows (the fail-closed fallback when the LLM was never
-called or its response was structurally invalid), `reviewer_run_id` is still
-the unique identifier for this exact invocation, but `reviewer_model` is
+called or its response was structurally invalid), `reviewer_model` is
 recorded as the sentinel value `none` rather than the configured default —
 the column is meant to identify the model that produced the outcome (audit
 correlation), and asserting a model that never ran would be misleading.
@@ -181,8 +185,10 @@ correlation), and asserting a model that never ran would be misleading.
 ## Persistence
 
 - `intent_conformance_verdicts` (extended, not duplicated) —
-  `reviewer_run_id`, `reviewer_model`, `cited_design_claims`,
-  `cited_diff_locations`, `reasoning_summary` added alongside the identity
-  columns the final-merge guard already reads.
+  `reviewer_model`, `cited_claims` (stored as `{design_ref, claim_text}`
+  entries; the reviewer's string citations are wrapped as `claim_text`),
+  `cited_diff_locations` (stored as `{file, anchor}` entries), and
+  `reasoning_summary` alongside the identity columns the final-merge guard
+  already reads.
 - `feature_intents` (extended) — `design_document_paths` (jsonb array,
   default `[]`).

@@ -1,5 +1,12 @@
 # frozen_string_literal: true
 
+# Independent conformance verdict comparing a feature PR's HEAD against its
+# approved design revision. See RDR-067. Reviewer evidence (cited claims,
+# reasoning, run metadata) is populated by the independent reviewer run
+# (#3866); the identity fields (head, approved revision, outcome) are what
+# the PR-scanner blocker (#3867) and the final-merge guard (#3868) check.
+#
+# @spec INTENT-CONFORMANCE-001
 # @spec INTENT-MERGE-GUARD-002 @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
 # @spec INTENT-CONFORMANCE-REVIEW-002 @spec INTENT-CONFORMANCE-REVIEW-003
 # RDR-067 intent-conformance verdict: an outcome bound to an exact PR head and
@@ -18,19 +25,32 @@ class IntentConformanceVerdict < ApplicationRecord
 
   belongs_to :project
   belongs_to :issue
+  belongs_to :reviewer_run, class_name: "AgentRun", optional: true
+  has_many :intent_conformance_decisions, foreign_key: :verdict_id, inverse_of: :verdict, dependent: :nullify
 
   validates :pr_head_sha, presence: true
   validates :approved_design_revision, presence: true
   validates :outcome, presence: true, inclusion: { in: OUTCOMES }
-  validates :recorded_at, presence: true
-  validates :reviewer_run_id, presence: true
+  validates :evaluated_at, presence: true
   validates :reviewer_model, presence: true
 
-  scope :recent_first, -> { order(recorded_at: :desc, id: :desc) }
+  scope :recent_first, -> { order(evaluated_at: :desc, id: :desc) }
 
-  # The most recently recorded verdict for the issue, regardless of whether
+  # The authoritative verdict for a PR HEAD is the most recently evaluated
+  # row recorded for that exact commit. A HEAD with no matching row has no
+  # current verdict — a new commit or an unreviewed PR are the same case for
+  # gating purposes: `nil` blocks auto-merge (@spec INTENT-CONFORMANCE-003).
+  def self.current_for(issue:, head_sha:)
+    return nil if head_sha.blank?
+
+    where(issue: issue, pr_head_sha: head_sha).recent_first.first
+  end
+
+  # The most recently evaluated verdict for the issue, regardless of whether
   # it is still current for today's PR head or approved design revision.
-  def self.current_for(issue)
+  # Used by the final-merge guard to distinguish a missing verdict from a
+  # stale one (@spec INTENT-MERGE-GUARD-002, INTENT-MERGE-GUARD-003).
+  def self.latest_for(issue)
     where(issue: issue).recent_first.first
   end
 

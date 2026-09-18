@@ -15,9 +15,9 @@
 
 - [x] **INTENT-CONFORMANCE-REVIEW-002** — Every verdict `ReviewRun` persists
   SHALL record the PR head SHA, the feature's approved design revision at
-  call time, a reviewer run id, the reviewer model, cited design claims,
-  cited diff locations, a reasoning summary, and a recorded-at timestamp; the
-  outcome SHALL be exactly one of `within_scope`, `material_drift`,
+  call time, the reviewer model, cited design claims, cited diff locations,
+  a reasoning summary, and an evaluated-at timestamp; the outcome SHALL be
+  exactly one of `within_scope`, `material_drift`,
   `uncertain`, or `not_evaluated`.
   *Code:* `app/services/intent_conformance/review_run.rb`,
   `app/models/intent_conformance_verdict.rb`.

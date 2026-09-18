@@ -279,7 +279,7 @@ module IntentConformance
         file = stringified["file"].to_s
         next if file.blank?
 
-        { "file" => file, "note" => stringified["note"].to_s }
+        { "file" => file, "anchor" => stringified["note"].to_s }
       end
     end
 
@@ -290,10 +290,9 @@ module IntentConformance
         pr_head_sha: pr_head_sha,
         approved_design_revision: feature_intent.approved_design_revision,
         outcome: validated[:outcome],
-        recorded_at: Time.current,
-        reviewer_run_id: reviewer_run_id,
+        evaluated_at: Time.current,
         reviewer_model: response.model.presence || DEFAULT_MODEL,
-        cited_design_claims: validated[:cited_design_claims],
+        cited_claims: validated[:cited_design_claims].map { |claim| { "claim_text" => claim } },
         cited_diff_locations: validated[:cited_diff_locations],
         reasoning_summary: validated[:reasoning_summary]
       )
@@ -308,17 +307,12 @@ module IntentConformance
         pr_head_sha: pr_head_sha,
         approved_design_revision: feature_intent.approved_design_revision,
         outcome: IntentConformanceVerdict::OUTCOME_NOT_EVALUATED,
-        recorded_at: Time.current,
-        reviewer_run_id: reviewer_run_id,
+        evaluated_at: Time.current,
         reviewer_model: NOT_EVALUATED_REVIEWER_MODEL,
-        cited_design_claims: [],
+        cited_claims: [],
         cited_diff_locations: [],
         reasoning_summary: "Review could not be completed: #{reason}."
       )
-    end
-
-    def reviewer_run_id
-      @reviewer_run_id ||= SecureRandom.uuid
     end
 
     def log_failure(reason)

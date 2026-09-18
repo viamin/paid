@@ -499,6 +499,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
       end
 
+      # @spec INTENT-CONFORMANCE-007
+      it "persists the scanned HEAD SHA in the same pass as the blocker snapshot" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
+
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.auto_merge_blockers).to be_present
+        expect(pr_issue.last_scanned_head_sha).to eq("abc123")
+      end
+
+      # @spec INTENT-CONFORMANCE-007
+      it "overwrites the scanned HEAD SHA when a new commit changes the PR HEAD" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
+
+        activity.execute(project_id: project.id)
+        expect(pr_issue.reload.last_scanned_head_sha).to eq("abc123")
+
+        pr_issue.update_columns(github_updated_at: Time.current)
+        stub_owner_approval_ready_signals(head_sha: "def456")
+
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.last_scanned_head_sha).to eq("def456")
+      end
+
       it "re-requests review from the owner when auto-merge is blocked only by a stale approval" do
         project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
         pr_issue.update!(pr_review_phase: "ready")
@@ -587,6 +616,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(decision_types(result)).not_to include("request_review")
       end
 
+      # @spec INTENT-CONFORMANCE-007
       it "preserves a prior auto-merge snapshot when only the merge-conflict rescan path runs" do
         project.update!(auto_fix_merge_conflicts: true)
         prior_evaluated_at = 30.minutes.ago
@@ -594,7 +624,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           last_pr_scan_at: 1.hour.ago,
           github_updated_at: 2.hours.ago,
           auto_merge_blockers: stale_approval_snapshot,
-          auto_merge_evaluated_at: prior_evaluated_at
+          auto_merge_evaluated_at: prior_evaluated_at,
+          last_scanned_head_sha: "priorsha"
         )
         stub_github_for_pr(mergeable: false)
 
@@ -605,6 +636,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           expect(pr_issue.last_pr_scan_at).to eq(Time.current)
           expect(pr_issue.auto_merge_blockers).to eq(stale_approval_snapshot)
           expect(pr_issue.auto_merge_evaluated_at).to be_within(1.second).of(prior_evaluated_at)
+          expect(pr_issue.last_scanned_head_sha).to eq("priorsha")
         end
       end
 
@@ -616,6 +648,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
         leaked_snapshot = { "failed" => [ { "leaked" => true } ], "not_evaluated" => [] }
         activity.instance_variable_set(:@auto_merge_snapshots, { pr_issue.id => leaked_snapshot })
+        activity.instance_variable_set(:@auto_merge_head_shas, { pr_issue.id => "leakedsha" })
         stub_github_for_pr(mergeable: false)
 
         activity.execute(project_id: project.id)
@@ -623,7 +656,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_issue.reload
         expect(pr_issue.auto_merge_blockers).to be_nil
         expect(pr_issue.auto_merge_evaluated_at).to be_nil
+        expect(pr_issue.last_scanned_head_sha).to be_nil
         expect(activity.instance_variable_get(:@auto_merge_snapshots)).to eq({})
+        expect(activity.instance_variable_get(:@auto_merge_head_shas)).to eq({})
       end
 
       it "checks lifecycle gate queries at most once per PR scan" do
@@ -6784,6 +6819,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to eq([])
         expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+
+      # @spec INTENT-CONFORMANCE-009
+      it "clears a stale approval wait without escalating when the intent-conformance signal is blocking" do
+        FeatureFlags.enable!(:intent_conformance_enforcement, project: project)
+        create(:intent_conformance_verdict, :material_drift, issue: pr_issue, pr_head_sha: "abc123")
+        pr_issue.update_columns(awaiting_approval_since: 25.hours.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+        expect(pr_issue.pr_review_phase).to eq("ready")
+        failed_signals = pr_issue.auto_merge_blockers.fetch("failed").map { |b| b["signal"] }
+        expect(failed_signals).to include("intent_conformance_ok")
+      end
+
+      # @spec INTENT-CONFORMANCE-009
+      it "stamps the wait once a matching bounded exception clears the conformance signal" do
+        FeatureFlags.enable!(:intent_conformance_enforcement, project: project)
+        create(:intent_conformance_verdict, :material_drift, issue: pr_issue, pr_head_sha: "abc123")
+        create(:intent_conformance_decision, :bounded_exception, issue: pr_issue, head_sha: "abc123")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_present
       end
 
       it "restarts the wait after a non-approval blocker appears and clears" do

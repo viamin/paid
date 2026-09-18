@@ -46,7 +46,7 @@ module IntentConformance
       return blocker(REASON_REVISING, "The feature's approved design is under amendment (revising).") if feature_intent.revising?
       return blocker(REASON_PAUSED, "This branch is paused pending a design-amendment impact decision.") if paused?
 
-      verdict = IntentConformanceVerdict.current_for(issue)
+      verdict = IntentConformanceVerdict.latest_for(issue)
       return blocker(REASON_VERDICT_MISSING, "No intent-conformance verdict exists for this pull request.") if verdict.blank?
       return blocker(REASON_VERDICT_STALE, stale_message) unless current_verdict?(verdict)
       return nil if verdict.within_scope?

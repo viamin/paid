@@ -47,6 +47,15 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
+    # @spec INTENT-CONFORMANCE-006
+    it "counts open PRs blocked by intent_conformance_ok" do
+      create_intent_conformance_pr
+      create(:issue, :closed, :pull_request, project: project, pr_review_phase: "ready",
+        auto_merge_evaluated_at: Time.current, auto_merge_blockers: intent_conformance_snapshot)
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002E
     it "counts open retry-limited issues and PRs, including push-permission abandonments" do
       create(:issue, project: project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
@@ -378,6 +387,29 @@ RSpec.describe Inbox::Count do
         "reason_code" => "owner_approval_missing",
         "sanitized_message" => "Owner approval is missing.",
         "next_action" => "Ask the owner to approve."
+      } ],
+      "not_evaluated" => []
+    }
+  end
+
+  def create_intent_conformance_pr
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: intent_conformance_snapshot
+    )
+  end
+
+  def intent_conformance_snapshot
+    {
+      "failed" => [ {
+        "signal" => "intent_conformance_ok",
+        "status" => "failed",
+        "reason_code" => "intent_conformance_blocked",
+        "sanitized_message" => "This pull request's conformance with the approved design has not been confirmed.",
+        "next_action" => "Review the intent-conformance decision in the Inbox."
       } ],
       "not_evaluated" => []
     }
