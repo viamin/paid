@@ -85,7 +85,8 @@
   into and out of `manual_review` via `Dashboard::CacheVersion`'s `INBOX_SCOPE`.
   When the issue's `needs_input_questions` is present (preserved by
   `EnhanceIssueActivity` from the terminal round's parseable clarifying
-  questions — `ISSUE-ENHANCEMENT-011`), the entry SHALL also carry those
+  questions, and kept by `IssueEnhancements::StopForManualReview` on every
+  stop path — `ISSUE-ENHANCEMENT-011`), the entry SHALL also carry those
   questions and the detail pane SHALL render the same clarifying-questions
   answer form `clarifying_questions` entries use, submitting to the same
   `ClarifyingQuestionsController#create` endpoint. Submitting SHALL clear
@@ -93,7 +94,11 @@
   `manual_review` as a clearable source state), reset
   `enhance_issue_rounds`, and post the standard answer-marker comment — the
   entry then clears the same way any other answered-and-cleared entry does.
-  An entry with no preserved questions renders the state + "Start
+  When a `create_feature` run is paused on the issue (RDR-053), clearing
+  SHALL resume that run under the same `in_progress` queue-time flip an
+  operator-triggered run gets, rather than leaving the issue in a lane
+  auto-pick skips until the run completes. An entry with no preserved
+  questions renders the state + "Start
   enhancement run" button only, as before.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,

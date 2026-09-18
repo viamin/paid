@@ -18,7 +18,13 @@ RSpec.describe IssueEnhancements::StopForManualReview do
   end
 
   # @spec ISSUE-ENHANCEMENT-002, ISSUE-ENHANCEMENT-011
-  it "clears the needs-input label and questions when requiring manual review" do
+  # Stored questions are preserved: every stop path (hard parse failure,
+  # label-removal recheck at the limit, queue-time limit stop) can be
+  # entered while the issue still has the latest round's questions stored,
+  # and those questions are the answerable surface the inbox's
+  # manual_review lane renders — wiping them recreates the dead end #3905
+  # describes.
+  it "clears the needs-input label but preserves stored questions when requiring manual review" do
     described_class.call(project: project, issue: issue, reason: "Structured output was invalid.")
 
     expect(client).to have_received(:remove_label_from_issue).with(
@@ -26,8 +32,17 @@ RSpec.describe IssueEnhancements::StopForManualReview do
       issue.github_number,
       project.enhance_issue_needs_input_label_name
     )
-    expect(issue.reload).to have_attributes(paid_state: "manual_review", needs_input_questions: nil)
+    expect(issue.reload).to have_attributes(paid_state: "manual_review", needs_input_questions: [ "Which behavior should ship?" ])
     expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-011
+  it "leaves needs_input_questions empty when none are stored" do
+    issue.update!(needs_input_questions: nil)
+
+    described_class.call(project: project, issue: issue, reason: "Round limit reached.")
+
+    expect(issue.reload.needs_input_questions).to be_nil
   end
 
   # @spec ISSUE-ENHANCEMENT-012

@@ -299,14 +299,21 @@ answer. It does NOT always clear stored clarification questions: a round that
 hit the configured limit while the agent still asked something parseable is
 itself the manual review the state asks for, so `needs_input_questions` is
 preserved instead of wiped so the inbox can render it as an answerable
-surface. Only a hard parse failure (`IssueEnhancements::StopForManualReview` —
-there is nothing parseable to preserve) or a terminal round whose comment has
-no parseable questions clears `needs_input_questions`. Answering the preserved
-questions from the inbox is accepted as a `manual_review` clearing action the
-same way an answered `needs_input` questionnaire is: `ClarifyingQuestions::
-ClearNeedsInput` posts the standard answer-marker comment, resets `paid_state`
-to `new`, and resets `enhance_issue_rounds` (`ISSUE-ENHANCEMENT-014`) — the
-same human-signal round-budget reset a `needs_input` answer already gets.
+surface. Preservation holds on every entry path: `IssueEnhancements::
+StopForManualReview` — reached from the hard parse failure, the
+label-removal recheck at the limit, and the queue-time limit stop — keeps
+already-stored `needs_input_questions`, since those stored questions are the
+latest answerable surface and wiping them recreates the dead end. Only a
+terminal round whose comment has no parseable questions clears
+`needs_input_questions`. Answering the preserved questions from the inbox is
+accepted as a `manual_review` clearing action the same way an answered
+`needs_input` questionnaire is: `ClarifyingQuestions::ClearNeedsInput` posts
+the standard answer-marker comment, resets `enhance_issue_rounds`
+(`ISSUE-ENHANCEMENT-014`) — the same human-signal round-budget reset a
+`needs_input` answer already gets — and moves the issue out of
+`manual_review`: to `new`, or, when a `create_feature` run is paused on the
+issue (RDR-053), by resuming that run under the same `in_progress`
+queue-time flip an operator-triggered run gets.
 
 Every write path that moves an issue into `manual_review` also stamps
 `manual_review_started_at` (cleared on exit, via the same model callback

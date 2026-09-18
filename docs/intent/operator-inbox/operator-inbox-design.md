@@ -187,10 +187,11 @@ bumps the badge cache version; no inbox-side cache work is needed. A stale
 or double click degrades to "This issue is no longer waiting for manual
 review." instead of an active-run error.
 
-When the terminal round's parked comment still has a parseable
-`## Clarifying questions` section, `EnhanceIssueActivity` preserves those
-questions on `Issue#needs_input_questions` instead of clearing them
-(`ISSUE-ENHANCEMENT-011`), and `manual_review_entries` carries them on the
+When the parked state still has clarifying questions stored — preserved by
+`EnhanceIssueActivity` when the terminal round's comment has a parseable
+`## Clarifying questions` section, and kept by
+`IssueEnhancements::StopForManualReview` on every stop path
+(`ISSUE-ENHANCEMENT-011`) — `manual_review_entries` carries them on the
 entry's `questions` the same local-only way `clarifying_question_entries`
 does (`Array(issue.needs_input_questions)`, no GitHub round-trip during queue
 listing). The detail pane then renders the same answer form
@@ -200,12 +201,15 @@ enhancement run" action, so answering the questions the agent asked on its
 final round is itself an operator-triggered manual review. Submitting posts
 the standard answer-marker comment and calls
 `ClarifyingQuestions::ClearNeedsInput`, which now also treats
-`paid_state == "manual_review"` as a clearable source state: it clears
-`paid_state` to `new` and resets `enhance_issue_rounds` to 0, the same
-human-signal reset a `needs_input` answer already gets. A terminal round with
-no parseable questions (or a hard parse failure via
-`IssueEnhancements::StopForManualReview`, which has nothing to preserve)
-falls back to the state + "Start enhancement run" button only, as before.
+`paid_state == "manual_review"` as a clearable source state: it resets
+`enhance_issue_rounds` to 0 (the same human-signal reset a `needs_input`
+answer already gets) and moves the issue out of the lane — to `new`, or,
+when a `create_feature` run is paused on the issue (RDR-053), by resuming
+that run under the same `in_progress` queue-time flip an operator-triggered
+run gets, so the resume path cannot leave the issue lingering in a lane
+auto-pick skips. An issue whose local lookup finds no questions (nothing
+stored, nothing parseable in the body) falls back to the state + "Start
+enhancement run" button only, as before.
 GitHub in-thread answers are not auto-detected for `manual_review` —
 `FetchIssuesActivity`'s needs-input recovery paths gate on
 `paid_state: needs_input` only — so the inbox answer form is the only

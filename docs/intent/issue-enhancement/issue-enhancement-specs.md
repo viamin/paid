@@ -213,16 +213,24 @@
   preserve those questions on `needs_input_questions` (instead of clearing
   them) so the operator inbox's `manual_review` lane can render them as an
   answerable surface (`OPERATOR-INBOX-002D`) — the terminal round's questions
-  ARE the manual review the state asks for. Only a hard parse failure
-  (`IssueEnhancements::StopForManualReview`, which has nothing parseable to
-  preserve) or a terminal round whose comment has no parseable questions
-  SHALL clear `needs_input_questions`. Submitting an answer to those preserved
-  questions from the inbox SHALL be accepted as a `manual_review` clearing
-  action: `ClarifyingQuestions::ClearNeedsInput` SHALL post the standard
-  answer-marker comment, reset `paid_state` to `new`, and reset
-  `enhance_issue_rounds` (`ISSUE-ENHANCEMENT-014`) — the same human-signal
-  round-budget reset a `needs_input` answer already gets. GitHub in-thread
-  answers SHALL NOT be auto-detected for `manual_review`:
+  ARE the manual review the state asks for. Preservation SHALL hold on every
+  `manual_review` entry path: `IssueEnhancements::StopForManualReview` —
+  reached from the hard parse failure in `EnhanceIssueActivity`, the
+  label-removal recheck at the limit in `FetchIssuesActivity`, and the
+  queue-time limit stop in `QueueAgentRunActivity` — SHALL keep
+  already-stored `needs_input_questions` (the stored questions are the
+  latest answerable surface; there is nothing new to parse, but wiping them
+  would recreate the dead end). `needs_input_questions` SHALL be cleared
+  only by a terminal round whose comment has no parseable questions.
+  Submitting an answer to those preserved questions from the inbox SHALL be
+  accepted as a `manual_review` clearing action: `ClarifyingQuestions::
+  ClearNeedsInput` SHALL post the standard answer-marker comment, reset
+  `enhance_issue_rounds` (`ISSUE-ENHANCEMENT-014` — the same human-signal
+  round-budget reset a `needs_input` answer already gets), and move the
+  issue out of `manual_review` — to `new`, or, when a `create_feature` run
+  is paused on the issue (RDR-053), by resuming that run under the same
+  `in_progress` queue-time flip an operator-triggered run gets. GitHub
+  in-thread answers SHALL NOT be auto-detected for `manual_review`:
   `FetchIssuesActivity`'s needs-input recovery paths gate on
   `paid_state: needs_input` only, so the inbox is the sole recovery surface
   for a parked terminal round's questions. Only a marker comment authored by
@@ -233,6 +241,7 @@
   *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
   `spec/temporal/activities/fetch_issues_activity_spec.rb`,
   `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/services/issue_enhancements/stop_for_manual_review_spec.rb`,
   `spec/services/clarifying_questions/clear_needs_input_spec.rb`,
   `spec/services/inbox/queue_spec.rb`,
   `spec/requests/inbox_spec.rb`,
@@ -240,6 +249,7 @@
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
   `app/temporal/activities/fetch_issues_activity.rb`,
   `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`,
+  `app/services/issue_enhancements/stop_for_manual_review.rb`,
   `app/services/clarifying_questions/clear_needs_input.rb`,
   `app/services/inbox/queue.rb#manual_review_entries`,
   `app/views/dashboard/_inbox_detail_manual_review.html.erb`.

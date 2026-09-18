@@ -388,13 +388,15 @@ module Inbox
     end
 
     # An explicit operator-triggered run is one way to clear manual_review
-    # (ISSUE-ENHANCEMENT-011); answering the terminal round's preserved
+    # (ISSUE-ENHANCEMENT-011); answering the parked round's preserved
     # clarifying questions is the other. `question_summary_for` is the same
     # local-only lookup `clarifying_question_entries` uses (issue body, then
     # `needs_input_questions` — no GitHub round-trip during queue listing),
-    # since `EnhanceIssueActivity` now preserves those questions on
-    # `needs_input_questions` instead of wiping them when the terminal round
-    # still has a parseable `## Clarifying questions` section. This lane
+    # since `EnhanceIssueActivity` preserves those questions on
+    # `needs_input_questions` when the terminal round still has a parseable
+    # `## Clarifying questions` section, and
+    # `IssueEnhancements::StopForManualReview` keeps already-stored questions
+    # on every stop path. This lane
     # derives from `paid_state` directly, the same way clarifying_questions
     # and escalated_pr do, rather than a separate notification.
     # @spec OPERATOR-INBOX-002D

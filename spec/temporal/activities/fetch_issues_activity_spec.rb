@@ -732,9 +732,9 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.paid_state).to eq("completed")
       end
 
-      it "posts a stop comment and requires manual review after the max round" do
+      it "posts a stop comment and requires manual review after the max round" do # @spec ISSUE-ENHANCEMENT-011
         project.update!(max_enhance_issue_reevaluation_rounds: 1)
-        issue.update!(enhance_issue_rounds: 1)
+        issue.update!(enhance_issue_rounds: 1, needs_input_questions: [ "Which behavior should Paid implement?" ])
 
         result = activity.execute(project_id: project.id)
 
@@ -746,6 +746,10 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
         expect(issue.reload.enhance_issue_rounds).to eq(1)
         expect(issue.paid_state).to eq("manual_review")
+        # The recheck stop can fire while the issue still has the latest
+        # round's questions stored; they are the manual_review lane's
+        # answerable surface, so the stop must preserve them (#3905).
+        expect(issue.needs_input_questions).to eq([ "Which behavior should Paid implement?" ])
         expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
       end
 
