@@ -91,6 +91,43 @@
   `spec/services/dashboard/eligibility_breakdown_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
+  `runner_retry_abandoned_at` set (parked by
+  `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit
+  the per-issue retry cap, or by
+  `Issue#abandon_due_to_push_permission_rejection!` when the GitHub App
+  installation token lacks a required permission) and its project is in the
+  operator's auto-pick-gated scope (`INBOX-FOUNDATION-006`, the same gate
+  every other inbox kind uses — a deliberate divergence from the dashboard's
+  account-wide Retry-Limited card, the same divergence `escalated_pr` and
+  `manual_review` already record, `OPERATOR-INBOX-002C` / `002D`), the system
+  SHALL expose that record as a `retry_limited` inbox entry showing why
+  automation stopped (`runner_retry_abandon_reason`) and how long it has
+  been stopped (`runner_retry_abandoned_at`). The entry SHALL distinguish
+  `push_permission_abandoned?` (the GitHub App lacked a required permission —
+  prefixed `Push rejected:`) from the runner-retry-cap case in both the list
+  and detail views via the Push Blocked vs Retry Cap badge split the dashboard
+  card already shows, so operators can pick the right remediation (re-grant
+  the GitHub App permission vs. clear the retry-cap flag and queue a manual
+  run). The entry SHALL clear when `clear_runner_retry_abandonment!` runs
+  (called by `RunAgentActivity#clear_issue_runner_retry_abandonment` after a
+  successful manual run) or when the underlying GitHub issue closes;
+  `Inbox::Count`'s cached badge SHALL invalidate on
+  `runner_retry_abandoned_at` transitions into and out of the lane via
+  `saved_change_to_runner_retry_abandoned_at?` joining
+  `Issue#inbox_count_cache_invalidation_needed?`, the same pattern
+  `saved_change_to_manual_review_started_at?` already follows for
+  `manual_review`. The Inbox nav filter and `valid_inbox_kind` SHALL accept
+  `retry_limited` alongside the existing kinds.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/models/issue.rb`,
+  `app/views/dashboard/_inbox_list.html.erb`,
+  `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/views/dashboard/_inbox_detail_retry_limited.html.erb`,
+  `app/views/inbox/index.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route
