@@ -114,6 +114,7 @@ module Activities
       # for an issue in one pass must not be persisted on the next pass if the
       # current pass never reached `stage_auto_merge_snapshot` for it.
       @auto_merge_snapshots = {}
+      @auto_merge_head_shas = {}
 
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -1141,14 +1142,18 @@ module Activities
 
     # True when every automatic-merge precondition except owner approval is
     # satisfied: the PR is green, mergeable, free of outstanding review
-    # feedback, and held only by the human approval gate. This is the "green
-    # and parked" state that has no trigger of its own — nothing about it
-    # warrants agent work, which is exactly why it can wait forever.
-    # @spec PR-ESCALATION-025
+    # feedback, conforms to its approved design, and held only by the human
+    # approval gate. This is the "green and parked" state that has no trigger
+    # of its own — nothing about it warrants agent work, which is exactly why
+    # it can wait forever. A failed intent-conformance signal is a non-approval
+    # blocker: pinging the owner for an approval that cannot clear the merge
+    # would be misleading (RDR-067 Decision section).
+    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009
     def blocked_only_on_approval?(project, client, issue, signals)
       return false if project.owner_reviewer_login.blank?
       return false if signals.nil?
       return false if signals.owner_approved?
+      return false unless signals.intent_conformance_ok?
       return false unless signals.checks_green?
       return false unless signals.mergeable?
       return false unless signals.review_feedback_clear?
@@ -3558,7 +3563,7 @@ module Activities
       log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
 
       analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness)
+      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness, head_sha: pr_head_sha(pr_data))
       AutoMergeEvaluation.new(signals:, analysis:)
     end
 
@@ -3596,6 +3601,10 @@ module Activities
       end
 
       skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+      # @spec INTENT-CONFORMANCE-007
+      intent_conformance_ok = IntentConformance::Signal.ok?(
+        project: project, issue: issue, head_sha: pr_head_sha(pr_data)
+      )
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
@@ -3607,7 +3616,8 @@ module Activities
         blocking_reviews_complete: blocking_reviews_complete,
         reviews_fresh: reviews_fresh,
         dependencies_resolved: dependencies_resolved,
-        skip_auto_merge: skip_label
+        skip_auto_merge: skip_label,
+        intent_conformance_ok: intent_conformance_ok
       )
 
       AutoMergeSignalBuild.new(signals:, review_freshness:)
@@ -3740,11 +3750,13 @@ module Activities
       # approval) had just been recorded (#3653).
       staged_this_pass = auto_merge_snapshots.key?(issue.id)
       snapshot = auto_merge_snapshots.delete(issue.id)
+      head_sha = auto_merge_head_shas.delete(issue.id)
 
       attributes = { last_pr_scan_at: scanned_at }
       if staged_this_pass
         attributes[:auto_merge_blockers] = snapshot
         attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
+        attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
       end
       issue.update_columns(attributes)
     end
@@ -3753,7 +3765,11 @@ module Activities
       @auto_merge_snapshots ||= {}
     end
 
-    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh)
+    def auto_merge_head_shas
+      @auto_merge_head_shas ||= {}
+    end
+
+    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, head_sha: nil)
       snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
         "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
@@ -3762,6 +3778,7 @@ module Activities
       remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
 
       auto_merge_snapshots[issue.id] = snapshot
+      auto_merge_head_shas[issue.id] = head_sha if head_sha.present?
     end
 
     def remap_review_freshness_failure!(snapshot)

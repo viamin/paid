@@ -50,6 +50,13 @@ class FeatureFlags
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features, then expand after form parity metrics match or beat the legacy flow.",
       cleanup_criteria: "Remove once the catalog-backed runner model form is the default and the legacy direct-outbound form path is retired."
     ),
+    intent_conformance_enforcement: Definition.new(
+      name: :intent_conformance_enforcement,
+      owner: "intent-conformance",
+      intent: "Gate the RDR-067 intent-conformance auto-merge signal and Inbox decision lane behind a per-project rollout, standing in for the RDR-066 named feature operating mode until that mode exists.",
+      rollout_plan: "Default-off; opt in per tenant or project via tenant_settings.features, then expand as verdict accuracy is measured against representative accepted and intentionally drifted PRs.",
+      cleanup_criteria: "Remove once RDR-066's named feature operating mode ships and conformance enforcement is wired to a project's operating mode instead of this standalone flag."
+    ),
     approved_intent_amendments: Definition.new(
       name: :approved_intent_amendments,
       owner: "approved-intent-conformance",

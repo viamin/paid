@@ -132,10 +132,9 @@ RSpec.describe IntentConformance::ReviewRun do
       expect(verdict.pr_head_sha).to eq(pr_head_sha)
       expect(verdict.approved_design_revision).to eq("rev1")
       expect(verdict.reviewer_model).to eq("claude-sonnet-4-6")
-      expect(verdict.reviewer_run_id).to be_present
-      expect(verdict.cited_diff_locations).to eq([ { "file" => "app/models/widget.rb", "note" => "Color logic unchanged" } ])
+      expect(verdict.cited_diff_locations).to eq([ { "file" => "app/models/widget.rb", "anchor" => "Color logic unchanged" } ])
       expect(verdict.reasoning_summary).to eq("The PR keeps the widget blue as required.")
-      expect(verdict.recorded_at).to be_present
+      expect(verdict.evaluated_at).to be_present
     end
 
     it "persists a material_drift verdict when the reviewer cites a changed claim" do
@@ -149,7 +148,7 @@ RSpec.describe IntentConformance::ReviewRun do
       verdict = call
 
       expect(verdict).to be_material_drift
-      expect(verdict.cited_design_claims).to eq([ "The widget SHALL always be blue." ])
+      expect(verdict.cited_claims).to eq([ { "claim_text" => "The widget SHALL always be blue." } ])
     end
 
     it "strips a markdown fence around the JSON output" do
@@ -282,8 +281,8 @@ RSpec.describe IntentConformance::ReviewRun do
       allow(github_client).to receive(:compare_summary).with("acme/widgets", "base_sha", "head_new").and_return(comparison)
       later = described_class.call(project: project, issue: issue, pr_head_sha: "head_new")
 
-      expect(IntentConformanceVerdict.current_for(issue)).to eq(later)
-      expect(IntentConformanceVerdict.current_for(issue)).not_to eq(first)
+      expect(IntentConformanceVerdict.current_for(issue: issue, head_sha: "head_new")).to eq(later)
+      expect(IntentConformanceVerdict.current_for(issue: issue, head_sha: pr_head_sha)).to eq(first)
       expect(later.pr_head_sha).to eq("head_new")
     end
   end

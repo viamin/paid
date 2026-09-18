@@ -271,6 +271,43 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Waiting for owner re-approval on the current HEAD commit")
   end
 
+  # @spec INTENT-CONFORMANCE-006
+  it "renders intent-conformance detail with the cited claim, diff, evidence, and resolution actions" do
+    pr = create_intent_conformance_pr(title: "Drifted PR")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::INTENT_CONFORMANCE_KIND, pr),
+      project_id: project.id,
+      kind: Inbox::Queue::INTENT_CONFORMANCE_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Approved-intent conformance is blocking auto-merge")
+    expect(response.body).to include("Bounded exceptions are head-scoped.")
+    expect(response.body).to include("app/services/intent_conformance/signal.rb")
+    expect(response.body).to include("The PR changes the approved retry policy.")
+    expect(response.body).to include("Require the agent to bring the PR back within scope")
+    expect(response.body).to include("Approve a bounded exception for this exact PR HEAD")
+    expect(response.body).to include("Open a design amendment")
+  end
+
+  # @spec INTENT-CONFORMANCE-003 @spec INTENT-CONFORMANCE-006
+  it "omits the resolution form when no verdict exists for the current HEAD" do
+    pr = create_intent_conformance_pr(title: "Unscored PR", verdict: nil)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::INTENT_CONFORMANCE_KIND, pr),
+      project_id: project.id,
+      kind: Inbox::Queue::INTENT_CONFORMANCE_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Approved-intent conformance is blocking auto-merge")
+    expect(response.body).to include("could not evaluate this pull request")
+    expect(response.body).not_to include("Resolve this decision")
+    expect(response.body).not_to include("Require the agent to bring the PR back within scope")
+  end
+
   # @spec OPERATOR-INBOX-002C
   it "lists escalated pull requests scoped to auto-pick projects" do
     ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
@@ -721,6 +758,38 @@ RSpec.describe "Inbox" do
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: snapshot
     )
+  end
+
+  def create_intent_conformance_pr(title: "Drifted PR", github_number: 507, verdict: :material_drift)
+    issue = create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: title,
+      github_number: github_number,
+      last_scanned_head_sha: "sha1",
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: {
+        "failed" => [ {
+          "signal" => "intent_conformance_ok",
+          "status" => "failed",
+          "reason_code" => "intent_conformance_blocked",
+          "sanitized_message" => "This pull request's conformance with the approved design has not been confirmed.",
+          "next_action" => "Review the intent-conformance decision in the Inbox."
+        } ],
+        "not_evaluated" => []
+      }
+    )
+    return issue if verdict.nil?
+
+    create(
+      :intent_conformance_verdict,
+      verdict,
+      issue: issue,
+      pr_head_sha: "sha1",
+      reasoning_summary: "The PR changes the approved retry policy."
+    )
+    issue
   end
 
   def create_escalated_pr(title: "Escalated PR", github_number: 505, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK, **attrs)

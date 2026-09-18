@@ -159,6 +159,37 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
     end
 
+    # @spec INTENT-CONFORMANCE-009
+    it "returns false when the current HEAD's intent-conformance signal is blocking" do
+      FeatureFlags.enable!(:intent_conformance_enforcement, project: project)
+      create(:intent_conformance_verdict, :material_drift, issue: issue, pr_head_sha: "abc123")
+      sha = "abc123"
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([])
+      stub_head_commit(sha: sha)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
+    # @spec INTENT-CONFORMANCE-009
+    it "returns true when a bounded exception clears the current HEAD's conformance blocker" do
+      FeatureFlags.enable!(:intent_conformance_enforcement, project: project)
+      create(:intent_conformance_verdict, :material_drift, issue: issue, pr_head_sha: "abc123")
+      create(:intent_conformance_decision, :bounded_exception, issue: issue, head_sha: "abc123")
+      sha = "abc123"
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([])
+      stub_head_commit(sha: sha)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
+    end
+
     it "returns false when the PR has been closed since the scan" do
       issue.update!(github_state: "closed")
 
