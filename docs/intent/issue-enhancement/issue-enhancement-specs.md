@@ -262,9 +262,17 @@
   the successful verdict (the lane has converged; a later regression must
   not inherit an exhausted automatic-retry budget that would deadlock the
   next cycle) and SHALL also reset it on the meaningful human signal of
-  clearing the `needs_input` label (either via `ClearNeedsInput` when a
-  human answer comment arrives or via `FetchIssuesActivity` when the label
-  is removed on GitHub). The reset on human signal only clears the
+  clearing the `needs_input` label. The label-clearing reset SHALL behave
+  identically regardless of which label-removal handler picks the event
+  up (#3906): via `ClearNeedsInput` when a human answer comment arrives,
+  via `FetchIssuesActivity#detect_needs_input_label_removals` when the
+  plain-removal handler sees the label removed on GitHub, and via
+  `FetchIssuesActivity#enqueue_enhance_issue_recheck` when the recheck
+  handler claims the removal — the recheck enqueue SHALL reset the
+  counter at the same time it queues the re-evaluation, so the recheck
+  run consumes the first round of a fresh budget and a subsequent
+  insufficient verdict lands in `needs_input` instead of tripping the
+  cap into `manual_review`. The reset on human signal only clears the
   automatic cap; manual runs never consume a round at queue time so they
   have nothing to reset.
   *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`
@@ -272,11 +280,15 @@
   `spec/temporal/activities/enhance_issue_activity_spec.rb`
   ("resets the enhancement round counter when sufficient_context is true", "does not reset the enhancement round counter when sufficient_context is false"),
   `spec/services/clarifying_questions/clear_needs_input_spec.rb`
-  ("resets the enhancement round counter alongside paid_state").
+  ("resets the enhancement round counter alongside paid_state"),
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`
+  ("resets the enhancement round counter when the recheck handler claims the label removal",
+  "resets the enhancement round counter alongside paid_state").
   *Code:* `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/temporal/activities/enhance_issue_activity.rb#reset_enhancement_rounds!`,
   `app/services/clarifying_questions/clear_needs_input.rb`,
-  `app/temporal/activities/fetch_issues_activity.rb#detect_needs_input_label_removals`.
+  `app/temporal/activities/fetch_issues_activity.rb#detect_needs_input_label_removals`,
+  `app/temporal/activities/fetch_issues_activity.rb#enqueue_enhance_issue_recheck`.
 
 - [x] **ISSUE-ENHANCEMENT-015** — The `create_pr` follow-up queued by
   ISSUE-ENHANCEMENT-014 is a single fire-and-forget activity call: if the

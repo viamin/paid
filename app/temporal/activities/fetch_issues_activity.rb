@@ -398,19 +398,24 @@ module Activities
       Array(issue_data[:labels]).include?(project.enhance_issue_needs_input_label_name)
     end
 
+    # @spec ISSUE-ENHANCEMENT-014
+    # A recheck is only ever triggered by the needs-input label being
+    # removed, which is itself the meaningful human signal that resets the
+    # enhancement round budget (#3842). Reset the counter while enqueueing
+    # the re-evaluation — matching ClearNeedsInput and
+    # detect_needs_input_label_removals — so the recheck run consumes the
+    # first round of a fresh budget and a subsequent insufficient verdict
+    # lands in needs_input instead of tripping the cap into manual_review.
+    # Paid-initiated label removals never reach here: they flip paid_state
+    # away from needs_input before the sync can observe the removal.
     def enqueue_enhance_issue_recheck(project, issue)
-      max_rounds = project.max_enhance_issue_reevaluation_rounds
-      limit_reached = false
+      rounds_before_reset = issue.enhance_issue_rounds
 
       issue.with_lock do
-        if issue.enhance_issue_rounds >= max_rounds
-          limit_reached = true
-        else
-          issue.update!(paid_state: "in_progress")
-        end
+        attrs = { paid_state: "in_progress" }
+        attrs[:enhance_issue_rounds] = 0 if issue.enhance_issue_rounds.to_i.positive?
+        issue.update!(attrs)
       end
-
-      return stop_enhance_issue_recheck(project, issue, max_rounds) if limit_reached
 
       logger.info(
         message: "agent_execution.enhance_issue_recheck_requested",
@@ -418,28 +423,10 @@ module Activities
         issue_id: issue.id,
         issue_number: issue.github_number,
         enhance_issue_rounds: issue.enhance_issue_rounds,
-        max_rounds: max_rounds
+        enhance_issue_rounds_reset_from: rounds_before_reset
       )
 
       { issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: issue.enhance_issue_rounds }
-    end
-
-    def stop_enhance_issue_recheck(project, issue, max_rounds)
-      IssueEnhancements::StopForManualReview.call(
-        project: project,
-        issue: issue,
-        reason: "Paid reached the configured limit of #{max_rounds} enhancement re-evaluation rounds."
-      )
-
-      logger.info(
-        message: "agent_execution.enhance_issue_recheck_limit_reached",
-        project_id: project.id,
-        issue_id: issue.id,
-        issue_number: issue.github_number,
-        enhance_issue_rounds: issue.enhance_issue_rounds,
-        max_rounds: max_rounds
-      )
-      nil
     end
 
     def detect_needs_input_label_removals(project, synced_issues, ignored_issue_ids: [])
