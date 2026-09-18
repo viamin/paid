@@ -3660,187 +3660,21 @@ module Activities
       - Use only the `dependencies` array for dependency wiring; do not add `Depends on #N` lines inside task bodies
     INSTRUCTIONS
 
-    REVIEW_GOAL_PROMPT_SLUG = "goal.review_pull_request"
+    # @spec REVIEW-PR-001, REVIEW-PR-004
+    REVIEW_GOAL_PROMPT_SLUG = Prompts::GoalReviewPullRequest::PROMPT_SLUG
 
-    # The "Generated no new comments." phrase in the template below is
-    # matched (case-insensitive) by
+    # Code fallback for the review-PR goal when the seeded row is missing or
+    # deactivated. Bound to the shared source in
+    # Prompts::GoalReviewPullRequest::TEMPLATE so the seed and the fallback
+    # cannot drift. The "Generated no new comments." phrase in the template
+    # is matched (case-insensitive) by
     #   ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # which is how Paid recognizes a clean review and stops the review loop.
     # spec/db/seeds_prompts_spec.rb has a coupling spec — if you change the
-    # matcher pattern, update the seed AND this constant together or the spec
-    # will fail.
-    FALLBACK_REVIEW_GOAL_PROMPT = <<~'AUGMENTED'
-      {{base_prompt}}
-
-      ---
-      IMPORTANT: Your goal is to REVIEW A PULL REQUEST, not to write code, create issues, or create PRs.
-
-      Review PR #{{pr_number}} in {{repo}}. Examine the code changes and post a review on the PR.
-      Your review will be posted to GitHub under the `paid-code-reviewer[bot]`
-      account, so write in a direct review voice and do not mention that you
-      are unable to post as a bot.
-
-      You have access to the repository code (already cloned). To examine the code changes, either:
-      - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/{{pr_number}}/files` patches and review those diffs; or
-      - From the cloned repo, run an explicit diff against the PR base, for example:
-        `git fetch origin` then `git diff "$(git merge-base HEAD origin/main)"...HEAD`
-        (replace `main` with the PR's actual base branch if different).
-      You also have access to the GitHub API via a proxy for posting review comments.
-
-      You can search the project's knowledge base to look up existing code,
-      symbols, routes, and patterns before deciding whether a finding is valid:
-
-      ```bash
-      curl -s --connect-timeout 10 --max-time 30 "$KNOWLEDGE_SEARCH_URL?q=review+pattern" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN"
-      ```
-
-      Use this when the PR diff or linked issue raises a question that existing
-      code patterns can answer. Do not ask for clarification or report a finding
-      until you have checked whether the knowledge base answers it.
-
-      You may run targeted validation when it is useful for review confidence.
-      Before running Ruby/Rails commands such as `bin/rspec`, run
-      `bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3`
-      so the fresh review checkout has the bundled gems it needs without
-      changing the lockfile. If dependency installation or test execution still
-      fails because of missing network access, services, or environment
-      constraints, mention that specific blocker in the review body.
-
-      Review the code for:
-      1. **Performance** — inefficient algorithms, N+1 queries, unnecessary allocations, missing caching
-      2. **Security** — SQL injection, XSS, insecure deserialization, secrets in code
-      3. **Best practices** — language/framework idioms, error handling, naming
-      4. **Project code style** — adherence to existing conventions, indentation, file organization
-      5. **Scope violations** — changes unrelated to the linked issue, unnecessary refactoring, feature creep
-      6. **Issue linkage** — verify the PR actually addresses the issue it claims to fix
-
-      # Comment policy — read carefully
-
-      Inline comments are reserved **exclusively for actionable changes**: security,
-      correctness, performance, scope, or style problems that require the author to
-      edit code. Do **not** post praise-only comments, "looks good" notes, "nice
-      refactor" remarks, or any inline comment that does not request a concrete
-      change. If you have nothing actionable to say about a hunk, do not comment on it.
-
-      A clean PR with zero issues is a valid and expected outcome. Do not invent
-      nitpicks to justify having posted a review.
-
-      Use GitHub's suggestion block syntax for concrete fixes:
-      ````
-      ```suggestion
-      corrected code here
-      ```
-      ````
-
-      MANDATORY: When you find actionable issues (Case A), each issue MUST include an
-      inline comment in the "comments" array with a specific "path" and "line" number.
-      A review body describing problems WITHOUT corresponding inline comments is
-      incomplete. If you cannot identify specific file paths and line numbers, do not
-      include that issue in the review.
-
-      Post your review using the GitHub API proxy.
-
-      IMPORTANT: Do NOT pass the review JSON inline with a single-quoted `-d '...'`.
-      Review bodies and inline comments contain markdown, suggestion blocks, newlines,
-      and apostrophes — inlining that payload breaks shell quoting and produces
-      malformed JSON (invalid control characters inside strings) that Rails rejects
-      before the request ever reaches GitHub. Always write the review JSON to a
-      temporary file and submit it with `--data-binary @file`.
-
-      ```bash
-      # Get PR details (metadata and links)
-      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN"
-
-      # Get PR files
-      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN"
-
-      # Case A — actionable issues found: post a review with inline comments.
-      # MANDATORY: When you find actionable issues, each issue MUST include an
-      # inline comment in the "comments" array with a specific "path" and
-      # "line" number. A review body that describes problems without matching
-      # inline comments is incomplete. If you cannot identify a specific file
-      # path and line number for an issue, do not include that issue in the review.
-      # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code).
-      tmpfile=$(mktemp)
-      cat > "$tmpfile" <<'REVIEW_JSON'
-      {
-        "body": "Overall summary of the actionable issues found",
-        "event": "COMMENT",
-        "comments": [
-          {
-            "path": "file.rb",
-            "line": 10,
-            "side": "RIGHT",
-            "body": "Actionable change request on this line"
-          }
-        ]
-      }
-      REVIEW_JSON
-      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
-        -H "Content-Type: application/json" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN" \
-        --data-binary @"$tmpfile"
-      rm -f "$tmpfile"
-
-      # Case B — clean PR, no actionable issues: post a single review with an EMPTY
-      # comments array and a body that begins with the EXACT phrase
-      # "Generated no new comments." Include the exact HTML marker
-      # "<!-- paid-review-clean -->" somewhere in the body. These are the
-      # signals Paid uses to mark the review as clean and stop the review loop.
-      # Do NOT paraphrase either signal.
-      tmpfile=$(mktemp)
-      cat > "$tmpfile" <<'REVIEW_JSON'
-      {
-        "body": "Generated no new comments. The PR looks ready as-is. <!-- paid-review-clean -->",
-        "event": "COMMENT",
-        "comments": []
-      }
-      REVIEW_JSON
-      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
-        -H "Content-Type: application/json" \
-        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN" \
-        --data-binary @"$tmpfile"
-      rm -f "$tmpfile"
-      ```
-
-      If you ever need to send any other JSON payload to the proxy (for example a
-      follow-up issue comment), apply the same pattern: write the body to a temp
-      file and submit with `--data-binary @file`. Never inline JSON with `-d '...'`.
-
-      # Pre-submission verification
-
-      Before submitting your review, verify your JSON payload:
-      - Case A: "comments" array is NON-EMPTY, each entry has "path", "line", and "body"
-      - Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []
-
-      CRITICAL: Always use `"event": "COMMENT"` — never use `"event":
-      "REQUEST_CHANGES"` or `"event": "APPROVE"`. Change requests are
-      expressed through inline comments in the "comments" array, not
-      through the review event. Using REQUEST_CHANGES blocks PR merging
-      and will be automatically dismissed.
-
-      IMPORTANT: You MUST post exactly one PR review via the
-      `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
-      actionable comments) or Case B (clean review). This is how your review is
-      tracked as complete. Standalone PR comments via
-      `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
-
-      Available endpoints:
-      - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}} — get PR details
-      - GET  $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/files — list changed files
-      - POST $GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews — create review (REQUIRED, exactly once)
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{number} — get linked issue details
-
-      Do NOT push code, create issues, or create new pull requests. Only post the review on PR #{{pr_number}}.
-    AUGMENTED
+    # matcher pattern, update the shared source together or the spec will
+    # fail.
+    # @spec REVIEW-PR-002, REVIEW-PR-003, REVIEW-PR-005, REVIEW-PR-006
+    FALLBACK_REVIEW_GOAL_PROMPT = Prompts::GoalReviewPullRequest::TEMPLATE
 
     ENHANCE_ISSUE_GOAL_PROMPT_SLUG = "goal.enhance_issue"
 
