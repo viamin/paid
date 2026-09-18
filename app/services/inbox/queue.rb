@@ -8,6 +8,7 @@ module Inbox
     ACTION_REQUIRED_KIND = "action_required"
     ESCALATED_PR_KIND = "escalated_pr"
     MANUAL_REVIEW_KIND = "manual_review"
+    INTENT_CONFORMANCE_KIND = "intent_conformance"
     FEATURE_DECISION_KIND = "feature_decision"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
@@ -16,6 +17,7 @@ module Inbox
       ACTION_REQUIRED_KIND,
       ESCALATED_PR_KIND,
       MANUAL_REVIEW_KIND,
+      INTENT_CONFORMANCE_KIND,
       FEATURE_DECISION_KIND
     ].freeze
 
@@ -75,6 +77,10 @@ module Inbox
         kind == MANUAL_REVIEW_KIND
       end
 
+      def intent_conformance?
+        kind == INTENT_CONFORMANCE_KIND
+      end
+
       def feature_decision?
         kind == FEATURE_DECISION_KIND
       end
@@ -85,7 +91,7 @@ module Inbox
 
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
-        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? || feature_decision?
+        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? || intent_conformance? || feature_decision?
 
         "#{tasks.size} proposed tasks"
       end
@@ -130,6 +136,7 @@ module Inbox
       entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
       entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
       entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
+      entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
       entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
       sort_entries(entries)
     end
@@ -310,6 +317,40 @@ module Inbox
         Issue
           .includes(:project)
           .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+      end
+    end
+
+    # @spec INTENT-CONFORMANCE-006
+    def intent_conformance_entries
+      intent_conformance_issues.filter_map do |issue|
+        snapshot = Inbox::IntentConformance.call(issue)
+        next unless snapshot
+
+        Entry.new(
+          id: "#{INTENT_CONFORMANCE_KIND}:#{issue.id}",
+          kind: INTENT_CONFORMANCE_KIND,
+          project: issue.project,
+          issue: issue,
+          record: snapshot,
+          waiting_since: snapshot.waiting_since,
+          questions: [],
+          tasks: [],
+          summary_text: snapshot.summary,
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    def intent_conformance_issues
+      @intent_conformance_issues ||= begin
+        ids = scoped_projects.map(&:id)
+        return Issue.none if ids.empty?
+
+        Issue
+          .includes(:project)
+          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+          .where.not(auto_merge_blockers: nil)
       end
     end
 

@@ -590,6 +590,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_show" ])
     end
 
+    it "maps the intent conformance decisions controller to the dashboard inbox" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/intent_conformance_decisions_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
     it "maps convention settings controller to the convention settings page" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/convention_settings_controller.rb" ])
 

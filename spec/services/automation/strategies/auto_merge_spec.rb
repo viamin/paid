@@ -210,6 +210,13 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
         expect(result.decisions.first.payload[:pr_number]).to eq(10)
       end
 
+      it "returns noop when intent conformance is unresolved" do
+        signals = human_signals(intent_conformance_ok: false)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
+
       it "returns noop when owner has not approved" do
         signals = human_signals(owner_approved: false)
         result = strategy.evaluate(build_context(signals: signals))
@@ -313,6 +320,13 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
 
       it "does not require review feedback to be clear" do
         signals = bot_signals(review_feedback_clear: false)
+        result = strategy.evaluate(build_context(signals: signals))
+
+        expect(result.decisions.first.type).to eq("merge")
+      end
+
+      it "does not require intent conformance (dependency-update bots are not feature PRs)" do
+        signals = bot_signals(intent_conformance_ok: false)
         result = strategy.evaluate(build_context(signals: signals))
 
         expect(result.decisions.first.type).to eq("merge")
