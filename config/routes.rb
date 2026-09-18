@@ -279,6 +279,7 @@ Rails.application.routes.draw do
       post :toggle_auto_continue_pause, on: :collection
       post :unblock_escalation, on: :collection
       post :resume_manual_review, on: :collection
+      post :clear_retry_abandonment, on: :collection
       get :docker_host_options, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
