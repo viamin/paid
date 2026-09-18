@@ -47,12 +47,19 @@
           rel: "noopener noreferrer",
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% if policy(entry.project).run_agent? %>
+      <% confirm_message = if push_blocked
+        "Clear the push-block flag for #{entry.project.full_name}##{issue.github_number}? " \
+          "Once the GitHub App permission is granted, the issue will return to auto-pick on the next dispatch."
+      else
+        "Clear the retry-cap flag for #{entry.project.full_name}##{issue.github_number}? " \
+          "You'll still need to queue a run from the project page for work to resume."
+      end %>
       <%= button_to "Re-enable",
             clear_retry_abandonment_project_agent_runs_path(entry.project, issue_id: issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500",
-            form: { data: { turbo_confirm: "Clear the retry-cap flag for #{entry.project.full_name}##{issue.github_number}? You'll still need to queue a run from the project page for work to resume.", turbo_frame: "_top" } } %>
+            form: { data: { turbo_confirm: confirm_message, turbo_frame: "_top" } } %>
       <%= link_to "Open project runs",
             project_agent_runs_path(entry.project),
             class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
