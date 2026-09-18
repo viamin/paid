@@ -114,6 +114,16 @@ module Inbox
         @context_markdown = context_loader&.context_markdown
       end
 
+      # Lazy accessor, mirroring `context_markdown`: resolves the enhancement
+      # comment link for the SELECTED entry only, so building the queue never
+      # makes a GitHub API call per manual_review row.
+      # @spec OPERATOR-INBOX-002D
+      def manual_review_comment_url
+        return @manual_review_comment_url if defined?(@manual_review_comment_url)
+
+        @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
+      end
+
       private
 
       def context_loader
@@ -121,6 +131,12 @@ module Inbox
         return unless project && issue
 
         @context_loader ||= ClarifyingQuestions::Load.new(project: project, issue: issue)
+      end
+
+      def manual_review_comment_link
+        return unless project && issue
+
+        Inbox::ManualReviewCommentLink.call(project: project, issue: issue)
       end
     end
 

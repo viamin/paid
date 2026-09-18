@@ -65,9 +65,13 @@
   (the `intent_conformance_ok` signal is excluded from
   `Inbox::MergeApproval::APPROVAL_SIGNALS`), until a fresh `within_scope`
   verdict, a matching bounded exception, or a merge/close outcome clears it.
+  The Inbox nav filter (`app/views/inbox/index.html.erb`) SHALL offer an
+  `intent_conformance` tab alongside the other kinds, the same as every other
+  lane the queue exposes (`OPERATOR-INBOX-002D`).
   *Code:* `app/services/inbox/intent_conformance.rb`,
   `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
-  `app/views/dashboard/_inbox_detail_intent_conformance.html.erb`.
+  `app/views/dashboard/_inbox_detail_intent_conformance.html.erb`,
+  `app/views/inbox/index.html.erb`.
   *Test:* `spec/services/inbox/intent_conformance_spec.rb`,
   `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
