@@ -426,6 +426,33 @@ RSpec.describe "Inbox" do
     expect(form.at_css('input[name="inbox"]')["value"]).to eq("1")
   end
 
+  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  # Questions are preserved on every manual_review stop path
+  # (IssueEnhancements::StopForManualReview), including the hard parse-failure
+  # stop — so the banner must not assert a stop cause the condition cannot
+  # distinguish; the cause lives in the "Why this is in your inbox" summary.
+  it "renders the answer form without asserting a round-limit cause for a parse-failure stop with preserved questions" do
+    parked = create_manual_review_issue(
+      title: "Parked by parse failure",
+      github_number: 511,
+      reason: "Paid could not validate the enhancement agent's structured output.",
+      needs_input_questions: [ "Which events should be recorded?" ]
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(
+      "Paid could not validate the enhancement agent",
+      "Which events should be recorded?",
+      "Answer them below to resume"
+    )
+    expect(response.body).not_to include("enhancement round limit")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
