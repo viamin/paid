@@ -93,6 +93,13 @@
   `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
   `ChatSessions::BuildLlmClient::HttpClient#chat_kwargs`.
 
+- [x] **CHAT-API-015** — When a MiniMax runner is used for API-mode chat, the
+  system SHALL send OpenAI-compatible chat requests to MiniMax's `/v1` API
+  endpoint, while preserving its Anthropic endpoint for CLI runner execution.
+  *Test:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
+  *Code:* `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
+  `ChatSessions::BuildLlmClient#openai_compatible_client`.
+
 - [x] **CHAT-API-008** — When rendering the chat session show page
   (`GET /chat/:id` as HTML), the conversation panel's outer wrapper SHALL
   bound its height to the available viewport using `dvh` units, accounting
