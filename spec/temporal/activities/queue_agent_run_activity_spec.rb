@@ -287,6 +287,53 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.focus).to eq("review_feedback")
     end
 
+    describe "review_depth_snapshot" do # @spec REVIEW-DEPTH-006
+      it "snapshots the project's review_depth preset onto a review run" do
+        project.update!(review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "thorough" } }
+        })
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.review_depth_snapshot).to eq("thorough")
+      end
+
+      it "snapshots balanced as the default preset when the project has none" do
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.review_depth_snapshot).to eq("balanced")
+      end
+
+      it "freezes the snapshot when the project preset changes after the run is created" do
+        project.update!(review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "focused" } }
+        })
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+        agent_run = AgentRun.find(result[:agent_run_id])
+
+        project.update!(review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "thorough" } }
+        })
+
+        expect(agent_run.reload.review_depth_snapshot).to eq("focused")
+      end
+    end
+
     it "defaults goal to create_pr when not specified" do
       result = activity.execute(
         project_id: project.id,

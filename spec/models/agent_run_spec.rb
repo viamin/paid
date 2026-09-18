@@ -65,6 +65,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
     it { is_expected.to validate_presence_of(:focus) }
     it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
+    it { is_expected.to validate_inclusion_of(:review_depth_snapshot).in_array(described_class::REVIEW_DEPTHS) }
 
     # @spec FOCUSED-RUN-001
     it "accepts the performance_regression focus" do
@@ -161,6 +162,34 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, :review_goal)
 
         expect(agent_run).to be_valid
+      end
+    end
+
+    describe "review_depth_snapshot" do # @spec REVIEW-DEPTH-005
+      it "defaults review_depth_snapshot to balanced" do
+        agent_run = create(:agent_run, :review_goal)
+
+        expect(agent_run.review_depth_snapshot).to eq("balanced")
+      end
+
+      it "accepts each value in AgentRun::REVIEW_DEPTHS" do
+        described_class::REVIEW_DEPTHS.each do |preset|
+          agent_run = build(:agent_run, :review_goal, review_depth_snapshot: preset)
+          expect(agent_run).to be_valid, "expected review_depth_snapshot=#{preset.inspect} to be valid"
+        end
+      end
+
+      it "rejects an unknown review_depth_snapshot value" do
+        agent_run = build(:agent_run, :review_goal, review_depth_snapshot: "very-thorough")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:review_depth_snapshot]).to be_present
+      end
+
+      it "persists the snapshot and reads it back unchanged" do
+        agent_run = create(:agent_run, :review_goal, review_depth_snapshot: "focused")
+
+        expect(described_class.find(agent_run.id).review_depth_snapshot).to eq("focused")
       end
     end
 

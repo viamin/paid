@@ -25,6 +25,10 @@ class AgentRun < ApplicationRecord
   # agent_type here too.
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi omp api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
+  # Effective review_depth preset captured at review-run creation time. Same
+  # vocabulary as Project::REVIEW_DEPTHS so a project-level preset change
+  # cannot retroactively alter a run's review behavior. @spec REVIEW-DEPTH-005
+  REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
@@ -260,6 +264,10 @@ class AgentRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
   validates :focus, presence: true, inclusion: { in: FOCUSES }
+  # @spec REVIEW-DEPTH-005 — the column carries a DB-level "balanced"
+  # default so explicit nil values are rejected by the inclusion check
+  # without requiring an additional presence validator.
+  validates :review_depth_snapshot, inclusion: { in: REVIEW_DEPTHS }, allow_nil: true
   validates :tdd_phase, inclusion: { in: TDD_PHASES }, allow_nil: true
   validates :execution_origin, presence: true, inclusion: { in: EXECUTION_ORIGINS }
   validate :review_goal_requires_pull_request
