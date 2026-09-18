@@ -570,6 +570,24 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited 'Open project runs' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    capped = create_retry_limited_issue(title: "Capped issue", github_number: 516)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped),
+      kind: Inbox::Queue::RETRY_LIMITED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css(%(a[href="#{project_agent_runs_path(project)}"]))
+
+    expect(link).to be_present
+    expect(link.text).to eq("Open project runs")
+    expect(link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec OPERATOR-INBOX-002E
   it "exposes retry_limited in the inbox nav filter chips" do
     get inbox_path
 

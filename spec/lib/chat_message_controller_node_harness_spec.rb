@@ -133,10 +133,29 @@ class ChatMessageControllerNodeHarness
       }
     }
 
+    function testStreamingReasoningIsHiddenUntilAnswerArrives() {
+      const { controller, content } = makeController("");
+
+      controller.appendContent("<thi");
+      if (content.innerHTML !== "") throw new Error(`Partial tag was shown: ${content.innerHTML}`);
+
+      controller.appendContent("nk>private reasoning");
+      if (content.innerHTML !== "") throw new Error(`Reasoning was shown: ${content.innerHTML}`);
+
+      controller.appendContent("</think>\\n\\n**Answer**");
+      if (!content.innerHTML.includes("<strong>Answer</strong>")) {
+        throw new Error(`Answer was not shown: ${content.innerHTML}`);
+      }
+      if (content.innerHTML.includes("think") || content.innerHTML.includes("reasoning")) {
+        throw new Error(`Reasoning leaked into transcript: ${content.innerHTML}`);
+      }
+    }
+
     function run() {
       testMarkdownRendersSafeHtml();
       testMarkdownFailureFallsBackToText();
       testMarkdownSuccessRemovesFallbackFormatting();
+      testStreamingReasoningIsHiddenUntilAnswerArrives();
     }
 
     try {

@@ -85,6 +85,19 @@ export default class extends Controller {
     event.target.form?.requestSubmit()
   }
 
+  saveSettings(event) {
+    const form = event.currentTarget
+    const status = form.querySelector("[data-chat-settings-status]")
+    if (status) status.textContent = "Saving…"
+    form.requestSubmit()
+  }
+
+  settingsSubmitted(event) {
+    // @spec CHAT-SESSION-PREFERENCES-002
+    const status = event.currentTarget.querySelector("[data-chat-settings-status]")
+    if (status) status.textContent = event.detail.success ? "Chat settings saved" : "Could not save chat settings"
+  }
+
   submitTitleOnBlur(event) {
     const input = event.target
     if (input.name?.endsWith("[title]")) {

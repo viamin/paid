@@ -62,6 +62,7 @@
             form: { data: { turbo_confirm: confirm_message, turbo_frame: "_top" } } %>
       <%= link_to "Open project runs",
             project_agent_runs_path(entry.project),
+            data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% end %>
   </div>

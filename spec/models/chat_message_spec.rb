@@ -47,6 +47,22 @@ RSpec.describe ChatMessage do
     end
   end
 
+  describe "#display_content" do
+    # @spec CHAT-API-016
+    it "hides a leading reasoning block while keeping the answer and stored content" do
+      message = build(:chat_message, :assistant, content: "<think>private reasoning</think>\n\nThe answer is **42**.")
+
+      expect(message.display_content).to eq("The answer is **42**.")
+      expect(message.content).to start_with("<think>")
+    end
+
+    it "keeps ordinary HTML-looking text visible" do
+      message = build(:chat_message, :assistant, content: "Use <strong>care</strong> here")
+
+      expect(message.display_content).to eq(message.content)
+    end
+  end
+
   describe "scopes" do
     let(:chat_session) { create(:chat_session) }
 

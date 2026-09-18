@@ -336,6 +336,35 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      it "autosaves both chat runner and model selectors with visible status" do
+        # @spec CHAT-SESSION-PREFERENCES-002
+        get chat_session_path(chat_session)
+
+        doc = Nokogiri::HTML(response.body)
+        forms = doc.xpath("//form[@action='#{chat_session_path(chat_session)}'][.//select[@name='chat_session[runner_id]']][.//select[@name='chat_session[model]']]")
+
+        expect(forms.size).to eq(2)
+        forms.each do |form|
+          expect(form.at_xpath(".//input[@type='submit']")).to be_nil
+          expect(form.at_xpath(".//*[@data-chat-settings-status]")).to be_present
+          expect(form["data-action"]).to include("change->chat#saveSettings")
+          expect(form["data-action"]).to include("turbo:submit-end->chat#settingsSubmitted")
+        end
+      end
+
+      it "hides saved assistant reasoning from the visible transcript" do
+        # @spec CHAT-API-016
+        create(:chat_message, :assistant, chat_session: chat_session,
+          content: "<think>private reasoning</think>\n\nVisible answer")
+
+        get chat_session_path(chat_session)
+
+        transcript = Nokogiri::HTML(response.body).at_css(".chat-markdown")
+        expect(transcript.text).to include("Visible answer")
+        expect(transcript.text).not_to include("private reasoning", "<think>")
+        expect(transcript["data-raw-content"]).to eq("Visible answer")
+      end
+
       it "renders a persisted token-limit rejection visibly, without collapsing it into the system-prompt disclosure" do
         # @spec CHAT-API-014
         create(:chat_message, :system, chat_session: chat_session, content: "You are a helpful assistant.")
@@ -864,6 +893,20 @@ RSpec.describe "ChatSessions" do
         expect(response).to redirect_to(chat_session_path(chat_session))
         expect(chat_session.reload.title).to eq("Updated From Form")
         expect(chat_session.model).to eq("gpt-4.1")
+      end
+
+      it "saves the selected chat runner and model together in place" do
+        # @spec CHAT-SESSION-PREFERENCES-002
+        runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+
+        patch chat_session_path(chat_session),
+          params: { chat_session: { runner_id: runner.id, model: "moonshotai/kimi-k2" } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:no_content)
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "moonshotai/kimi-k2")
       end
 
       it "rejects runner updates that cannot build an API chat client" do
