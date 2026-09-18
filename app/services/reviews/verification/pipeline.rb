@@ -63,19 +63,7 @@ module Reviews
         loop do
           attempt += 1
           @attempt = attempt
-          pr = pull_request
-          @head_sha = pr.head.sha
-
-          if attempt == 1
-            files = fetch_files
-            changed_lines = ChangedLines.from_files(files)
-            candidates = run_find(files, pr)
-            verdicts = run_verify(candidates, files)
-            findings = group_confirmed(candidates, verdicts, changed_lines)
-            @confirmed_groups = findings.size
-            @unanchored_findings = findings.count { |f| f.anchor_line.nil? }
-            @draft = run_synthesize(findings, changed_lines)
-          end
+          run_attempt!
 
           break if head_stable?
           raise HeadMovedError, "head moved before posting on attempt #{attempt}" if attempt >= MAX_ATTEMPTS
@@ -86,6 +74,27 @@ module Reviews
       end
 
       private
+
+      def run_attempt!
+        # Reset attempt-scoped state so a re-run against a moved head does
+        # not publish comments anchored to the prior head's changed lines,
+        # and does not report verdicts/findings the discarded attempt left
+        # behind. Tokens, LLM call counts, and models stay cumulative: the
+        # cost of a discarded attempt is part of the run's real cost.
+        @verdicts_summary = { confirmed: 0, plausible: 0, refuted: 0 }
+
+        pr = pull_request
+        @head_sha = pr.head.sha
+
+        files = fetch_files
+        changed_lines = ChangedLines.from_files(files)
+        candidates = run_find(files, pr)
+        verdicts = run_verify(candidates, files)
+        findings = group_confirmed(candidates, verdicts, changed_lines)
+        @confirmed_groups = findings.size
+        @unanchored_findings = findings.count { |f| f.anchor_line.nil? }
+        @draft = run_synthesize(findings, changed_lines)
+      end
 
       def pull_request
         @github_client.pull_request(@project.full_name, @agent_run.source_pull_request_number)

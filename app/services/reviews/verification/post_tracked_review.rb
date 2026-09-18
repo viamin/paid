@@ -82,10 +82,10 @@ module Reviews
         }
       end
 
-      # Unanchored findings surface as body bullets appended to the model's
-      # summary so no confirmed finding is silently lost.
+      # The caller (Pipeline#review_body) has already appended any unanchored
+      # findings to @body as bullets, so the only work here is to drop blank
+      # bodies and emit a single string.
       def summary_body
-        bullets = @comments.map { |comment| comment[:body] }.blank? ? [] : []
         [ @body.presence ].compact.join("\n\n")
       end
 

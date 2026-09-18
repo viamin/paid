@@ -41,12 +41,54 @@ RSpec.describe Reviews::Verification::Pipeline do
     allow(AgentHarness).to receive(:send_message) { responses.shift }
   end
 
+  # Files for two attempts: the first hunk adds line 3, the second adds line 7
+  # (with the hunk widened to cover lines 1-7 so the new anchor is valid for
+  # the new head's ChangedLines index).
+  def stub_files_for_retry
+    old_files = [ {
+      filename: "app/services/foo.rb", status: "modified", additions: 2, deletions: 0,
+      patch: patch_adding_line(3)
+    } ]
+    new_files = [ {
+      filename: "app/services/foo.rb", status: "modified", additions: 2, deletions: 0,
+      patch: patch_adding_line(7)
+    } ]
+    attempt_index = 0
+    allow(client).to receive(:detailed_pull_request_files) do
+      attempt_index += 1
+      attempt_index == 1 ? old_files : new_files
+    end
+    allow(client).to receive(:file_content).and_return(
+      "line one\nline two\nnew line three\nnew line four\nnew line five\nnew line six\nnew line seven\n"
+    )
+  end
+
+  # Two find → verify → synthesize rounds with a stale comment for attempt 1
+  # and a fresh one (anchored to the new head's valid line) for attempt 2.
+  def stub_retry_llm_sequence
+    responses = [
+      llm_double({ candidates: [ candidate_payload ] }),                # find (attempt 1)
+      llm_double(confirmed_verdict),                                     # verify (attempt 1)
+      llm_double(synthesized_comment(line: 3, body: "Stale anchor.")),   # synthesize (attempt 1)
+      llm_double({ candidates: [ candidate_payload.merge("summary" => "Updated candidate") ] }), # find (attempt 2)
+      llm_double(confirmed_verdict),                                     # verify (attempt 2)
+      llm_double(synthesized_comment(line: 7, body: "Fresh anchor."))    # synthesize (attempt 2)
+    ]
+    allow(AgentHarness).to receive(:send_message) { responses.shift }
+  end
+
   def stub_pull_request_heads(heads)
     remaining = heads.dup
     allow(client).to receive(:pull_request) do
       sha = remaining.shift || heads.last
       OpenStruct.new(head: OpenStruct.new(sha: sha), title: "Add feature", body: "The body")
     end
+  end
+
+  def patch_adding_line(line)
+    "@@ -1,2 +1,#{line} @@\n line one\n line two\n" +
+      (3..line).map { |n| "+new line #{n == 3 ? 'three' : n}" }.join("\n") +
+      "\n"
   end
 
   def confirmed_verdict(claim_key: "nil-guard")
@@ -229,21 +271,38 @@ RSpec.describe Reviews::Verification::Pipeline do
     end
 
     # @spec REVIEW-VERIFY-007
-    it "retries once against the new head when the head moves before posting" do
+    it "retries once against the new head and posts comments anchored to the new head's changed lines" do
       new_head = "bbb222bbb222"
-      stub_pull_request_heads([ head_sha, new_head, new_head, new_head, new_head ])
+      stub_pull_request_heads([ head_sha, new_head ])
+      stub_files_for_retry
+      stub_retry_llm_sequence
 
       result = run_pipeline
 
       expect(result[:metrics][:attempts]).to eq(2)
+      expect(client).to have_received(:detailed_pull_request_files).twice
       expect(poster).to have_received(:call).once.with(
-        agent_run: agent_run, body: anything, comments: anything, commit_sha: new_head
+        agent_run: agent_run, body: anything,
+        comments: [ hash_including(path: "app/services/foo.rb", line: 7, body: "Fresh anchor.") ],
+        commit_sha: new_head
       )
     end
 
     # @spec REVIEW-VERIFY-007
     it "fails without posting when the head keeps moving" do
       stub_pull_request_heads([ head_sha, "bbb2", "bbb2", "ccc3" ])
+      # The pipeline now re-runs the full find → verify → synthesize loop on
+      # attempt 2 (so it never posts stale line comments), so the LLM stub
+      # has to cover both attempts.
+      responses = [
+        llm_double({ candidates: [ candidate_payload ] }), # find (attempt 1)
+        llm_double(confirmed_verdict),                      # verify (attempt 1)
+        llm_double(synthesized_comment),                    # synthesize (attempt 1)
+        llm_double({ candidates: [ candidate_payload ] }),  # find (attempt 2)
+        llm_double(confirmed_verdict),                      # verify (attempt 2)
+        llm_double(synthesized_comment)                     # synthesize (attempt 2)
+      ]
+      allow(AgentHarness).to receive(:send_message) { responses.shift }
 
       expect { run_pipeline }.to raise_error(described_class::HeadMovedError)
       expect(poster).not_to have_received(:call)
