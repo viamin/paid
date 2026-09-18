@@ -158,11 +158,15 @@
   "Held:"), or, once approved, who approved it and that it is waiting to
   merge — so the Inbox always explains what keeps a feature held and what
   clears it. `Inbox::Count`'s badge SHALL include the same scope so the
-  unread-style count and the queue agree.
+  unread-style count and the queue agree. The Inbox nav filter
+  (`app/views/inbox/index.html.erb`) SHALL offer a `feature_decision` tab
+  alongside the other kinds, and the empty-state copy SHALL name every lane
+  kind the queue exposes (#3908).
   *Tests:* `spec/services/inbox/queue_spec.rb`,
   `spec/services/inbox/feature_decision_summary_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
   *Code:* `app/services/inbox/queue.rb`,
   `app/services/inbox/feature_decision_summary.rb`,
   `app/services/inbox/count.rb`,
+  `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_detail_feature_decision.html.erb`.
