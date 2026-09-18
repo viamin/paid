@@ -27,10 +27,6 @@ module Prompts
       }
     ].freeze
 
-    # Single source of truth for the review-PR goal augmentation. Referenced
-    # from db/seeds/prompts.rb (the seeded row) and
-    # Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT (the code
-    # fallback when the seed row is missing or deactivated).
     # spec/db/prompt_seeds_spec.rb asserts both bindings stay in lockstep
     # with the clean-review marker and one-review contract.
     TEMPLATE = <<~'AUGMENTED'
