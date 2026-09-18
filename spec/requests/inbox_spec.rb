@@ -533,13 +533,31 @@ RSpec.describe "Inbox" do
     expect(response.body).to include(feature_intent.title)
   end
 
+  # @spec INTENT-CONFORMANCE-006
+  it "exposes intent_conformance in the inbox nav filter chips and filters to it" do
+    pr = create_intent_conformance_pr(title: "Drifted PR")
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Intent Conformance'][@href='#{inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)}'])
+    )
+    expect(chip).to be_present
+
+    get inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(pr.title)
+  end
+
   it "lists every lane kind in the empty-state copy" do
     get inbox_path
 
     expect(response.body).to include("Inbox clear")
     expect(response.body).to include(
       "clarifying-question", "plan-review", "merge-approval", "action-required",
-      "blocked-PR", "manual-review", "feature-decision", "retry-limited"
+      "blocked-PR", "manual-review", "intent-conformance", "feature-decision", "retry-limited"
     )
   end
 

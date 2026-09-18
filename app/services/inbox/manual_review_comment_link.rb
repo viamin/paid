@@ -31,7 +31,10 @@ module Inbox
     attr_reader :project, :issue
 
     def matching_comment
-      project.client.issue_comments(project.full_name, issue.github_number).reverse.find do |comment|
+      client = project.client
+      return nil if client.nil?
+
+      client.issue_comments(project.full_name, issue.github_number).reverse.find do |comment|
         paid_bot_comment?(comment) && comment.body.to_s.include?(IssueEnhancements::StopForManualReview::COMMENT_MARKER)
       end
     end

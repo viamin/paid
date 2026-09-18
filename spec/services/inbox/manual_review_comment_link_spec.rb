@@ -82,4 +82,11 @@ RSpec.describe Inbox::ManualReviewCommentLink do
 
     expect(described_class.call(project: project, issue: issue)).to be_nil
   end
+
+  # @spec OPERATOR-INBOX-002D
+  it "returns nil without raising when the project's GitHub installation is inactive" do
+    allow(project).to receive_messages(github_credential_present?: true, client: nil)
+
+    expect(described_class.call(project: project, issue: issue)).to be_nil
+  end
 end

@@ -25,6 +25,7 @@
         [ "Action Required", Inbox::Queue::ACTION_REQUIRED_KIND ],
         [ "Blocked PRs", Inbox::Queue::ESCALATED_PR_KIND ],
         [ "Manual Review", Inbox::Queue::MANUAL_REVIEW_KIND ],
+        [ "Intent Conformance", Inbox::Queue::INTENT_CONFORMANCE_KIND ],
         [ "Feature Decision", Inbox::Queue::FEATURE_DECISION_KIND ],
         [ "Retry-limited", Inbox::Queue::RETRY_LIMITED_KIND ]
       ].each do |label, kind| %>
@@ -42,7 +43,7 @@
   <% if @inbox_entries.empty? %>
     <%= render "shared/list_detail_empty_state",
                title: "Inbox clear",
-               body: "Paid does not currently have any clarifying-question, plan-review, merge-approval, action-required, blocked-PR, manual-review, feature-decision, or retry-limited items waiting here." %>
+               body: "Paid does not currently have any clarifying-question, plan-review, merge-approval, action-required, blocked-PR, manual-review, intent-conformance, feature-decision, or retry-limited items waiting here." %>
   <%# Split-pane activates at Tailwind's `lg` breakpoint (≥1024px) instead of
       the `md` (≥768px) called out in #3506: the answer form renders multi-row
       textareas and a sticky submit, so the 22rem list + flexible detail grid
