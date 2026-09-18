@@ -192,7 +192,11 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
     # @spec ISSUE-ENHANCEMENT-011
     it "parks the issue instead of queueing past the automatic enhancement limit" do
-      issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+      issue.update!(
+        paid_state: "needs_input",
+        enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds,
+        needs_input_questions: [ "Which behavior should Paid implement?" ]
+      )
       comments_url = %r{https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/comments}
       stub_request(:get, comments_url).to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
       stub_request(:post, comments_url).to_return(status: 201, body: "{}", headers: { "Content-Type" => "application/json" })
@@ -201,6 +205,10 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
       expect(result).to include(queued: false, skipped: true, reason: "enhancement_round_limit")
       expect(issue.reload.paid_state).to eq("manual_review")
+      # The queue-time stop can fire while the issue still has the latest
+      # round's questions stored; they are the manual_review lane's
+      # answerable surface, so the stop must preserve them (#3905).
+      expect(issue.needs_input_questions).to eq([ "Which behavior should Paid implement?" ])
       expect(AgentRun.where(project: project, issue: issue, goal: "enhance_issue")).to be_empty
       expect(WebMock).to have_requested(:post, comments_url).once
     end

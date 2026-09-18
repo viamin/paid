@@ -327,10 +327,18 @@ module Projects
       end
     end
 
+    # The entry the operator was looking at when the submit failed, so the
+    # failure redirect lands back in the same pane. The kind must match how
+    # Inbox::Queue ids that issue: manual_review issues answer from the
+    # manual_review pane (their terminal-round questions ARE the review,
+    # ISSUE-ENHANCEMENT-011), so a hardcoded clarifying_questions id would
+    # miss in that queue and bounce the operator to the bare inbox index,
+    # losing their place and the pending-answers prefill.
     def inbox_current_entry
+      kind = @issue.paid_state == "manual_review" ? Inbox::Queue::MANUAL_REVIEW_KIND : Inbox::Queue::CLARIFYING_QUESTIONS_KIND
       Inbox::Queue::Entry.new(
-        id: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{@issue.id}",
-        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        id: "#{kind}:#{@issue.id}",
+        kind: kind,
         record: @issue
       )
     end

@@ -89,7 +89,7 @@ module Activities
       parsed = stop_after_max_rounds(parsed, project, issue)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(issue, parsed, draft)
-      questions = needs_input_questions(parsed, comment_body, max_rounds_reached:)
+      questions = needs_input_questions(parsed, comment_body)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
@@ -571,8 +571,14 @@ module Activities
       "needs_input"
     end
 
-    def needs_input_questions(parsed, comment_body, max_rounds_reached:)
-      return [] unless needs_questions?(parsed, max_rounds_reached)
+    # Parses whenever the verdict is insufficient, including at the round
+    # limit: a max-rounds comment still wraps the agent's own comment_body
+    # under "## Latest context", and those clarifying questions are the
+    # manual review the resulting `manual_review` state asks for — preserving
+    # them (instead of discarding, as before) gives the inbox an answerable
+    # surface for the terminal round (@spec ISSUE-ENHANCEMENT-011).
+    def needs_input_questions(parsed, comment_body)
+      return [] if parsed[:sufficient_context]
 
       ClarifyingQuestions::Parse.call(comment_body:)
     end

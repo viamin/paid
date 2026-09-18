@@ -363,6 +363,21 @@ RSpec.describe Inbox::Queue do
       )
       expect(entry.waiting_since).to be_within(1.second).of(freeze_time)
       expect(entry.summary).to eq("Structured output was invalid.")
+      expect(entry.questions).to eq([])
+    end
+
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+    it "surfaces a manual_review issue's preserved terminal-round clarifying questions" do
+      issue = create_manual_review_issue(
+        github_number: 100,
+        reason: "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+        needs_input_questions: [ "Which events should be recorded?" ]
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == issue }
+      expect(entry.questions).to eq([ "Which events should be recorded?" ])
     end
 
     # @spec OPERATOR-INBOX-002D

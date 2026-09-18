@@ -1,0 +1,80 @@
+<%# @spec OPERATOR-INBOX-008 @spec OPERATOR-INBOX-011 @spec OPERATOR-INBOX-002D
+    Shared clarifying-questions answer form used by both the clarifying_questions
+    and manual_review inbox detail panes: same submit endpoint
+    (ClarifyingQuestionsController#create), same inbox redirect contract. The
+    two-column lg+ layout puts the agent-authored context beside the answer
+    form (sticky sidebar) when context_markdown is present (clarifying_questions
+    entries only — see Inbox::Queue::Entry#context_loader); manual_review
+    entries render the questions alone. %>
+<% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
+<%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
+              method: :post,
+              data: { turbo_frame: "_top" },
+              class: "space-y-6" do |f| %>
+  <%= hidden_field_tag :inbox, "1" %>
+  <%# Carry the active inbox kind filter (nil for the "All" tab) so the
+      controller's success/failure redirect can stay in the same tab the
+      operator was working in instead of forcing the clarifying-questions
+      filter. %>
+  <%= hidden_field_tag :inbox_kind, selected_kind.to_s %>
+  <% if scoped_project %>
+    <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
+  <% end %>
+
+  <div class="<%= entry.context_markdown.present? ? "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-6 lg:space-y-0 space-y-4" : "space-y-4" %>">
+    <% if entry.context_markdown.present? %>
+      <details
+        open
+        class="group rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:border-gray-200 lg:bg-gray-50"
+        data-testid="inbox-clarifying-context">
+        <summary class="flex cursor-pointer items-center justify-between gap-2 text-sm font-semibold text-gray-900 lg:cursor-default">
+          <span>Context from Paid's analysis</span>
+          <svg class="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180 lg:hidden"
+               xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+               aria-hidden="true">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+          </svg>
+        </summary>
+        <div class="mt-2 lg:mt-3">
+          <%= render "shared/markdown_text",
+                content: entry.context_markdown,
+                tag: :div,
+                block: true,
+                class: "prose prose-sm max-w-none text-gray-700" %>
+        </div>
+      </details>
+    <% end %>
+
+    <div class="space-y-4">
+      <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
+      <% entry.questions.each_with_index do |question, index| %>
+        <div class="rounded-lg bg-gray-50 px-4 py-3">
+          <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
+            <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
+            <%= render "shared/markdown_text", content: question %>
+          </label>
+          <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
+          <%# @spec OPERATOR-INBOX-012 %>
+          <%= render "projects/clarifying_questions/answer_field",
+                question: question,
+                field_id: dom_id(entry.record, "answer_#{index}"),
+                label: nil,
+                pending_answer: pending_answers&.at(index),
+                field_class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
+                answer_data: { testid: "inbox-answer-#{index}" } %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="flex items-center justify-end gap-3">
+    <%= link_to inbox_issue_link_label(entry.issue),
+          entry.issue.github_url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <%= f.submit "Submit Answers",
+          class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer",
+          data: { turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub #{issue_kind_label(entry.issue, style: :long)}." } %>
+  </div>
+<% end %>
