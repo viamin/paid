@@ -16,8 +16,9 @@
   <% elsif message.role == "assistant" %>
     <div class="chat-markdown"
          data-chat-message-target="content"
-         data-raw-content="<%= message.content.to_s %>">
-      <%= simple_format(h(message.content.to_s)) %>
+         data-raw-content="<%= message.display_content %>">
+      <%# @spec CHAT-API-016 %>
+      <%= simple_format(h(message.display_content)) %>
     </div>
   <% else %>
     <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>

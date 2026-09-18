@@ -20,7 +20,8 @@ export default class extends Controller {
   render() {
     if (!this.markdownValue || !this.hasContentTarget) return
 
-    const rawContent = this.contentTarget.dataset.rawContent || ""
+    // @spec CHAT-API-016
+    const rawContent = this.visibleContent(this.contentTarget.dataset.rawContent || "")
 
     try {
       this.disablePlainTextFallback()
@@ -31,6 +32,16 @@ export default class extends Controller {
       this.enablePlainTextFallback()
       this.contentTarget.textContent = rawContent
     }
+  }
+
+  visibleContent(rawContent) {
+    const openingTag = "<think>"
+    if (openingTag.startsWith(rawContent)) return ""
+    if (!rawContent.startsWith(openingTag)) return rawContent
+
+    const closingTag = "</think>"
+    const end = rawContent.indexOf(closingTag)
+    return end < 0 ? "" : rawContent.slice(end + closingTag.length).trimStart()
   }
 
   async copyCode(event) {
