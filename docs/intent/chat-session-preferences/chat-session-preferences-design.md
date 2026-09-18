@@ -23,3 +23,10 @@ Streams. `ChatSessionsController#update` persists the new preference and
 returns an empty Turbo Stream response so Turbo completes the request without a
 redirect or full-page reload. JSON callers keep the existing JSON response and
 non-Turbo HTML callers keep the redirect flow.
+
+## Runner and model controls
+
+Changing the runner or model in either chat header saves the form through
+Turbo. A status beside the controls shows when saving is in progress and
+whether it succeeded or failed. The conversation stays in place, and the
+controls remain editable after a failed save.

@@ -296,3 +296,13 @@
   `ChatSessions::ProcessMessageJob`, `ChatMessagesController#write_sse_tool_event`,
   `app/views/chat_messages/_token_limit_error.html.erb`,
   `app/javascript/controllers/chat_controller.js#restorePendingContent`.
+
+- [x] **CHAT-API-016** — When an assistant chat response starts with a
+  `<think>…</think>` reasoning block, the transcript SHALL show only the
+  answer after that block, both during streaming and after reload. It SHALL
+  keep the original message content stored and continue escaping other HTML.
+  *Tests:* `spec/models/chat_message_spec.rb`,
+  `spec/lib/chat_message_controller_node_harness_spec.rb`.
+  *Code:* `ChatMessage#display_content`,
+  `app/views/chat_messages/_bubble.html.erb`,
+  `app/javascript/controllers/chat_message_controller.js`.

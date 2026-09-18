@@ -76,6 +76,9 @@ What ships today:
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default
+- the transcript hides leading `<think>` reasoning blocks from assistant
+  messages during streaming and on reload while retaining the original
+  content and escaping ordinary HTML
 - MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back

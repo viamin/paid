@@ -815,7 +815,33 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testChatSettingsAutosaveReportsResult() {
+      const { controller } = makeController();
+      const status = { textContent: "" };
+      let submissions = 0;
+      const form = {
+        querySelector: () => status,
+        requestSubmit: () => { submissions += 1; }
+      };
+
+      controller.saveSettings({ currentTarget: form });
+      if (submissions !== 1 || status.textContent !== "Saving…") {
+        throw new Error("Changing chat settings should submit and show progress");
+      }
+
+      controller.settingsSubmitted({ currentTarget: form, detail: { success: false } });
+      if (status.textContent !== "Could not save chat settings") {
+        throw new Error("Failed chat settings save should show an error");
+      }
+
+      controller.settingsSubmitted({ currentTarget: form, detail: { success: true } });
+      if (status.textContent !== "Chat settings saved") {
+        throw new Error("Successful chat settings save should show confirmation");
+      }
+    }
+
     function run() {
+      testChatSettingsAutosaveReportsResult();
       testToolCallAppendsCardAndUpdatesStatus();
       testToolCallWithUnknownToolName();
       testToolCallWithMissingHtmlDoesNotAppend();
