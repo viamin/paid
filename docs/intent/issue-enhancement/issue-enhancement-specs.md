@@ -220,24 +220,33 @@
   `app/temporal/activities/fetch_issues_activity.rb`.
 
 - [x] **ISSUE-ENHANCEMENT-019** — The enhancement-round cap SHALL bound
-  automatic re-evaluation only, at both the entry points that apply it:
+  automatic re-evaluation only, at every entry point that applies it:
   queue time (ISSUE-ENHANCEMENT-011, which only automatic runs consume or
-  are blocked by) and completion time. When `EnhanceIssueActivity` finishes
-  a run whose verdict is `sufficient_context: false`, it SHALL treat the
-  round cap as reached only when the run's `trigger_type` is `automatic`.
-  An operator-triggered manual run — including one queued by "Start
-  enhancement run" against an issue already parked in `manual_review` — SHALL
-  land an insufficient verdict in `needs_input` with clarifying questions
-  synced, never back in `manual_review`, regardless of the issue's
-  accumulated `enhance_issue_rounds`. This closes the loop where the
-  designated `manual_review` recovery action re-wrapped its own comment in
-  "## Auto-enhancement stopped" and re-parked the issue in the state it was
-  meant to clear (#3907). An automatic run's behavior at the cap is
-  unchanged: it still parks the issue in `manual_review` and posts the
-  auto-enhancement-stop comment.
+  are blocked by), completion time, and the already-enhanced
+  reconciliation path. When `EnhanceIssueActivity` finishes a run whose
+  verdict is `sufficient_context: false`, it SHALL treat the round cap as
+  reached only when the run's `trigger_type` is `automatic`. An
+  operator-triggered manual run — including one queued by "Start
+  enhancement run" against an issue already parked in `manual_review` —
+  SHALL land an insufficient verdict in `needs_input` with clarifying
+  questions synced, never back in `manual_review`, regardless of the
+  issue's accumulated `enhance_issue_rounds`. The same scoping applies
+  when a manual run re-enters through the already-enhanced short circuit
+  because a trusted body edit (ISSUE-ENHANCEMENT-016) reset the counter to
+  zero while the issue stayed parked: an existing "## Auto-enhancement
+  stopped" comment SHALL reconcile to `needs_input` — the stop wrapper
+  only ever encloses an insufficient verdict — and SHALL never re-park the
+  issue in `manual_review` or be read as a sufficient verdict. This closes
+  the loop where the designated `manual_review` recovery action re-wrapped
+  its own comment in "## Auto-enhancement stopped" and re-parked the issue
+  in the state it was meant to clear (#3907). An automatic run's behavior
+  at the cap is unchanged: it still parks the issue in `manual_review`
+  and posts the auto-enhancement-stop comment.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#max_rounds_reached?`,
-  `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`.
+  `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`,
+  `app/temporal/activities/enhance_issue_activity.rb#reconcile_existing_label_state`,
+  `app/temporal/activities/enhance_issue_activity.rb#existing_paid_state`.
 
 ## Manual-review visibility
 

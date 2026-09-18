@@ -327,6 +327,20 @@ would loop straight back into it whenever the agent still had questions,
 re-posting the "## Auto-enhancement stopped" wrapper comment each time (#3907).
 An automatic run's behavior at the cap is unchanged.
 
+The same trigger-type scoping covers the duplicate-comment reconciliation
+path. `EnhanceIssueActivity` short-circuits when an enhancement comment
+already exists and no round is in flight (`enhance_issue_rounds` is zero) —
+normally an idempotency guard for retries. A trusted body edit can reset the
+counter to zero (ISSUE-ENHANCEMENT-016) while the issue stays parked behind a
+"## Auto-enhancement stopped" comment, so the operator's "Start enhancement
+run" can land in that short circuit too. Re-parking there would recreate
+the #3907 loop through a second door, so the stop-marker reconciliation is
+scoped to automatic runs as well: a manual run reconciles the stop comment
+as the insufficient verdict it encloses — re-applying the needs-input label
+and landing in `needs_input`, never back in `manual_review`, and never
+reading the stop comment as a sufficient verdict (which would hand an
+unready issue to `create_pr`).
+
 ## Loop convergence to `create_pr`
 
 The analyze→enhance loop only converges when an `enhance_issue` round that

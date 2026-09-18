@@ -107,6 +107,29 @@ RSpec.describe Activities::EnhanceIssueActivity do
     allow(client).to receive(:issue_comments).and_return([ existing_comment ])
   end
 
+  # The stop comment stop_after_max_rounds posts: the round-limit copy plus
+  # the agent's latest context, which carries its clarifying questions.
+  def stub_existing_max_rounds_stop_comment
+    existing_comment = OpenStruct.new(
+      body: [
+        described_class::COMMENT_MARKER,
+        IssueEnhancements::StopForManualReview::COMMENT_MARKER,
+        "## Auto-enhancement stopped",
+        "",
+        "Paid has reached the configured limit of #{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds for this issue.",
+        "",
+        "Manual review is needed before enhancement can continue.",
+        "",
+        "## Latest context",
+        "## Clarifying questions",
+        "1. Which events should be recorded?"
+      ].join("\n"),
+      html_url: "https://github.com/owner/repo/issues/42#issuecomment-0",
+      user: OpenStruct.new(login: "viamin")
+    )
+    allow(client).to receive(:issue_comments).and_return([ existing_comment ])
+  end
+
   def configure_app_backed_project
     project.update!(
       github_token: nil,
@@ -501,6 +524,62 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.manual_review_reason).to eq(parse_error_reason)
       expect(issue.manual_review_started_at).to be_present
+    end
+
+    # A trusted body edit resets enhance_issue_rounds to zero while the issue
+    # stays parked (ISSUE-ENHANCEMENT-016), so the operator's manual "Start
+    # enhancement run" can land in this already-enhanced short circuit. The
+    # stop-marker re-park is scoped to automatic runs: re-parking a manual
+    # run here would loop the designated manual_review recovery action
+    # straight back into manual_review through a second door (#3907).
+    # @spec ISSUE-ENHANCEMENT-019
+    it "reconciles an existing stop comment to needs_input for a manual run" do
+      agent_run.update!(trigger_type: "manual")
+      park_issue_with_manual_review_reason(
+        reason: "Paid reached the configured limit of #{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds for this issue."
+      )
+      stub_existing_max_rounds_stop_comment
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(result[:sufficient_context]).to be false
+      expect(result[:max_rounds_reached]).to be false
+      expect(client).not_to have_received(:add_comment)
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.manual_review_reason).to be_nil
+      expect(issue.manual_review_started_at).to be_nil
+    end
+
+    # A stop wrapper only ever encloses an insufficient verdict — at the cap
+    # clarifying questions are optional — so a manual run must not read a
+    # questionless stop comment as a sufficient verdict either: that would
+    # apply the enhanced label and hand an unready issue to create_pr.
+    # @spec ISSUE-ENHANCEMENT-019
+    it "does not read a questionless stop comment as a sufficient verdict for a manual run" do
+      agent_run.update!(trigger_type: "manual")
+      park_issue_with_manual_review_reason(reason: "Paid could not validate the enhancement agent's structured output.")
+      stub_existing_stop_comment(reason: "Paid could not validate the enhancement agent's structured output.")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).to be true
+      expect(result[:sufficient_context]).to be false
+      expect(result[:max_rounds_reached]).to be false
+      expect(client).not_to have_received(:add_comment)
+      expect(client).not_to have_received(:add_labels_to_issue).with(
+        project.full_name,
+        issue.github_number,
+        [ project.enhance_issue_enhanced_label_name ]
+      )
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.last_analyzer_sufficient_context).to be(false)
+      expect(issue.manual_review_reason).to be_nil
     end
 
     it "ignores untrusted enhancement-marker comments" do

@@ -355,7 +355,7 @@ module Activities
 
     def complete_existing(agent_run, client, project, issue, existing_comment)
       label_result = reconcile_existing_label_state(client, project, issue, existing_comment, agent_run)
-      paid_state = existing_paid_state(issue, existing_comment)
+      paid_state = existing_paid_state(issue, existing_comment, agent_run)
       complete_run!(agent_run, paid_state,
         sufficient_context: label_result[:sufficient_context],
         reason: (issue.manual_review_reason if paid_state == "manual_review"))
@@ -375,12 +375,22 @@ module Activities
 
     # `## Auto-enhancement stopped` markers can be posted by either the
     # max-rounds path (max_rounds_reason) or raise_parse_error! (the
-    # "Paid could not validate..." reason). On a retry that re-enters this
-    # branch, the reason the issue was originally parked with is the source
-    # of truth — overwrite it with the round-limit copy and the inbox lane
-    # will show operators the wrong cause.
+    # "Paid could not validate..." reason). On an automatic retry that
+    # re-enters this branch, the reason the issue was originally parked with
+    # is the source of truth — overwrite it with the round-limit copy and the
+    # inbox lane will show operators the wrong cause.
+    #
+    # The re-park is scoped to automatic runs (ISSUE-ENHANCEMENT-019): a
+    # trusted body edit can reset `enhance_issue_rounds` to zero while the
+    # issue stays parked, so a manual "Start enhancement run" can land in
+    # this already-enhanced short circuit — re-parking it here would loop
+    # the designated manual_review recovery action straight back into
+    # manual_review through a second door (#3907). A stop wrapper only ever
+    # encloses an insufficient verdict, so the manual run reconciles it as
+    # insufficient rather than reading the comment content as sufficient.
+    # @spec ISSUE-ENHANCEMENT-019
     def reconcile_existing_label_state(client, project, issue, existing_comment, agent_run)
-      if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
+      if stop_marker_comment?(existing_comment) && agent_run.automatic?
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
         attrs = { paid_state: "manual_review" }
@@ -389,13 +399,14 @@ module Activities
         return { applied: nil, max_rounds_reached: true, sufficient_context: false }
       end
 
-      sufficient_context = !existing_comment.body.to_s.include?("## Clarifying questions")
+      sufficient_context = !stop_marker_comment?(existing_comment) && !existing_comment.body.to_s.include?("## Clarifying questions")
       result = apply_label_state(client, project, issue, { sufficient_context: sufficient_context }, agent_run)
       result.merge(sufficient_context: sufficient_context)
     end
 
-    def existing_paid_state(issue, existing_comment)
-      return "manual_review" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
+    # @spec ISSUE-ENHANCEMENT-019
+    def existing_paid_state(issue, existing_comment, agent_run)
+      return "manual_review" if stop_marker_comment?(existing_comment) && agent_run.automatic?
       return "needs_input" if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
       return "needs_input" if existing_comment.body.to_s.include?("## Clarifying questions")
 
@@ -525,6 +536,12 @@ module Activities
 
     def enhancement_comment(comments)
       comments.find { |comment| comment.body.to_s.include?(COMMENT_MARKER) }
+    end
+
+    # Shared heading of the max-rounds and parse-error stop comments posted
+    # by stop_after_max_rounds and IssueEnhancements::StopForManualReview.
+    def stop_marker_comment?(comment)
+      comment.body.to_s.include?("## Auto-enhancement stopped")
     end
 
     def ensure_trusted_issue!(issue)
