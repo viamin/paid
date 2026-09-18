@@ -90,6 +90,23 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         expect_chat_without_max_tokens(client, model: "moonshotai/kimi-k2")
       end
 
+      it "uses MiniMax's OpenAI chat endpoint for a MiniMax runner" do
+        # @spec CHAT-API-015
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-minimax-test-key", api_service_type: "minimax")
+        runner = build_openai_runner(
+          user: user,
+          credential_source: { provider_api_key: api_key_record, integration_credential: nil },
+          service_type: "minimax",
+          model: "minimax-m3"
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "minimax-m3")
+
+        client = described_class.call(chat_session: chat_session)
+        transport = client.instance_variable_get(:@transport)
+
+        expect(transport.instance_variable_get(:@base_url)).to eq("https://api.minimax.io/v1")
+      end
+
       %w[zai zai_coding].each do |service_type|
         it "raises the z.ai chat output cap above the transport default for #{service_type} runners" do
           # @spec CHAT-API-007

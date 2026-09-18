@@ -70,7 +70,8 @@ module ChatSessions
       # @spec CHAT-API-007
       service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
-      base_url = config&.dig(:base_url) || "https://api.openai.com/v1"
+      # @spec CHAT-API-015
+      base_url = config&.dig(:chat_base_url) || config&.dig(:base_url) || "https://api.openai.com/v1"
       model = chat_session.model || default_model_for(provider)
 
       transport = AgentHarness::OpenAICompatibleTransport.new(

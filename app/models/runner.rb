@@ -70,7 +70,7 @@ class Runner < ApplicationRecord
                     opencode_model_provider: "deepseek" },
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
                    opencode_model_provider: "mistral" },
-    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic/v1", service_type: "minimax",
+    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic/v1", chat_base_url: "https://api.minimax.io/v1", service_type: "minimax",
                    env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
                    opencode_model_provider: "minimax" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
