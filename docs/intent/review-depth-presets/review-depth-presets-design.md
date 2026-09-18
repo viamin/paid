@@ -118,12 +118,33 @@ so callers that only set some keys continue to behave correctly.
 ## Run-time snapshot
 
 `AgentRun#review_depth_snapshot` is a non-null string column with a
-database-level default of `"balanced"`, set when `AgentRun.create!` runs in
-`Activities::QueueAgentRunActivity` and `Activities::CreateAgentRunActivity`
-for `goal: "review"`. The snapshot is taken from the project's
-`effective_review_depth` at creation time and is not mutated afterwards.
-This satisfies the acceptance criterion that "a run records its effective
-preset and uses a stable value throughout its review."
+database-level default of `"balanced"`. Every code path that creates a run
+capable of `goal: "review"` sets the snapshot explicitly from the project's
+`effective_review_depth` at creation time:
+
+- `Activities::QueueAgentRunActivity` and `Activities::CreateAgentRunActivity`
+  (automatic and Temporal-orchestrated runs, including review sweeps).
+- `Projects::AgentRunsController#create_agent_run` — the shared controller
+  creation path, which covers manual UI review runs queued through
+  `create_review_runs_and_redirect`.
+- `Tools::TriggerAgentRun` (the MCP tool), which snapshots every run it
+  creates from the project's effective preset. Its `goal` enum includes
+  `review`, and while a review run additionally requires a
+  `source_pull_request_number` the tool does not yet expose (the model
+  validation rejects the creation without it), any run the tool queues
+  carries the snapshot rather than silently falling back to the DB
+  default.
+- The manual retry and refresh-auth retry paths in
+  `Projects::AgentRunsController`, which carry the original run's
+  `review_depth_snapshot` forward instead of re-snapshotting, so a retry
+  cannot revert review depth mid-review-loop when the project preset
+  changed after the original run was queued.
+
+The snapshot is not mutated afterwards. This satisfies the acceptance
+criterion that "a run records its effective preset and uses a stable value
+throughout its review." Paths that can never produce a review run (followup
+creation, auto-pick, external ingestion, preview sessions) rely on the
+column default and are unaffected.
 
 ## UI surface
 

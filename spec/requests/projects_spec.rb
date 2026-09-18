@@ -606,6 +606,51 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "renders the review depth badge in the review summary when paid_agent review is enabled" do # @spec REVIEW-DEPTH-009
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true, "review_depth" => "thorough" }
+          }
+        })
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Review depth: Thorough")
+      end
+
+      it "renders the effective balanced review depth badge for an unconfigured preset" do # @spec REVIEW-DEPTH-009
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true }
+          }
+        })
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Review depth: Balanced")
+      end
+
+      it "omits the review depth badge when the paid_agent review method is disabled" do # @spec REVIEW-DEPTH-009
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => false, "review_depth" => "thorough" },
+            "manual" => { "enabled" => true, "reviewer_login" => "alice" }
+          }
+        })
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include("Review depth:")
+      end
+
       it "hides the OKF export link when the project has no effectively exportable knowledge" do
         project = create(:project, account: account, github_token: github_token)
         project_version = create(:project_version, project:)

@@ -59,17 +59,30 @@
   `AgentRun` review_depth_snapshot validation, schema migration.
   *Test:* `spec/models/agent_run_spec.rb`.
 
-- [x] **REVIEW-DEPTH-006** — When `Activities::QueueAgentRunActivity` or
-  `Activities::CreateAgentRunActivity` creates an `AgentRun` for a
-  `goal: "review"` run, the activity SHALL set
-  `review_depth_snapshot` from the project's `effective_review_depth` at
-  creation time and SHALL NOT update the snapshot thereafter, so a later
-  change to the project preset cannot retroactively alter the run's review
-  behavior or its downstream interpretability.
+- [x] **REVIEW-DEPTH-006** — When any creation path queues an `AgentRun`
+  capable of `goal: "review"` (`Activities::QueueAgentRunActivity`,
+  `Activities::CreateAgentRunActivity`,
+  `Projects::AgentRunsController#create_agent_run` including the
+  `create_review_runs_and_redirect` flow, or the `Tools::TriggerAgentRun`
+  MCP tool), the path SHALL set `review_depth_snapshot` from the project's
+  `effective_review_depth` at creation time and SHALL NOT update the
+  snapshot thereafter, so a later change to the project preset cannot
+  retroactively alter the run's review behavior or its downstream
+  interpretability. (The MCP tool snapshots every run it creates; a
+  `goal: "review"` call through it is additionally rejected by the
+  source-pull-request validation until the tool exposes that parameter,
+  so no review run can silently take the DB default.) The manual retry
+  and refresh-auth retry paths SHALL carry the original run's
+  `review_depth_snapshot` forward so a retry cannot revert review depth
+  mid-review-loop.
   *Code:* `Activities::QueueAgentRunActivity`,
-  `Activities::CreateAgentRunActivity`.
+  `Activities::CreateAgentRunActivity`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/mcp/tools/trigger_agent_run.rb`.
   *Test:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
-  `spec/temporal/activities/create_agent_run_activity_spec.rb`.
+  `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`,
+  `spec/mcp/tools/trigger_agent_run_spec.rb`.
 
 ## Rendered review instructions
 
@@ -99,3 +112,13 @@
   merged default for an unconfigured project without writing to the record.
   *Code:* `app/models/project.rb`.
   *Test:* `spec/models/project_spec.rb`.
+
+## Show-page surfacing
+
+- [x] **REVIEW-DEPTH-009** — When PR reviews are enabled and the
+  `paid_agent` review method is enabled, the project show page review
+  summary SHALL render a badge naming the project's effective
+  `review_depth` preset (via `Project::REVIEW_DEPTH_LABELS`), and SHALL NOT
+  render the badge when the `paid_agent` method is disabled.
+  *Code:* `app/views/projects/show.html.erb`.
+  *Test:* `spec/requests/projects_spec.rb`.

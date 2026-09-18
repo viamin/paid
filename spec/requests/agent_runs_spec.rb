@@ -1991,6 +1991,24 @@ RSpec.describe "AgentRuns" do
           expect(response).to redirect_to(project_path(project))
         end
 
+        it "snapshots the project's effective review depth preset onto the run" do # @spec REVIEW-DEPTH-006
+          allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+          project.update!(review_settings: {
+            "enabled" => true,
+            "methods" => { "paid_agent" => { "enabled" => true, "review_depth" => "focused" } }
+          })
+
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+
+          expect(AgentRun.last.review_depth_snapshot).to eq("focused")
+        end
+
+        it "snapshots the balanced default onto review runs for unconfigured projects" do # @spec REVIEW-DEPTH-006
+          post project_agent_runs_path(project), params: { goal: "review", pull_request_ids: [ pr.id ] }
+
+          expect(AgentRun.last.review_depth_snapshot).to eq("balanced")
+        end
+
         it "redirects with error when no pull request selected" do
           post project_agent_runs_path(project), params: { goal: "review" }
 
@@ -2986,6 +3004,20 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.reload.status).to eq("retried")
       end
 
+      it "carries the original run's review_depth_snapshot forward on retry" do # @spec REVIEW-DEPTH-006
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        agent_run = create(:agent_run, :failed, :review_goal, project: project, review_depth_snapshot: "thorough")
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true, "review_depth" => "focused" } }
+        })
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(AgentRun.last.goal).to eq("review")
+        expect(AgentRun.last.review_depth_snapshot).to eq("thorough")
+      end
+
       it "keeps the primary retry action on the original agent type" do
         user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false)
         agent_run = create(:agent_run, :failed, project: project, agent_type: "cursor")
@@ -3270,6 +3302,21 @@ RSpec.describe "AgentRuns" do
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
 
         expect(AgentRun.last.tdd_returned_to_test_review).to be(false)
+      end
+
+      it "carries the original run's review_depth_snapshot forward on refresh-auth retries" do # @spec REVIEW-DEPTH-006
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        agent_run = create(:agent_run, :auth_expired, :review_goal, project: project, review_depth_snapshot: "thorough")
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true, "review_depth" => "focused" } }
+        })
+        without_partial_double_verification { allow(AgentHarness).to receive(:refresh_auth) }
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
+
+        expect(AgentRun.last.goal).to eq("review")
+        expect(AgentRun.last.review_depth_snapshot).to eq("thorough")
       end
 
       it "persists explicit host selection metadata on refresh-auth retries" do
