@@ -79,6 +79,8 @@ What ships today:
 - the transcript hides leading `<think>` reasoning blocks from assistant
   messages during streaming and on reload while retaining the original
   content and escaping ordinary HTML
+- MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
+  the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back
   through the chat UI/API totals
 - `Tools::RepoReadClientResolver` resolves repo-read tool calls (`grep_repo`,
