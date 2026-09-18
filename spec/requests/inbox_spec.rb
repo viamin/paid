@@ -497,6 +497,86 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
   end
 
+  # @spec OPERATOR-INBOX-002D
+  it "exposes manual_review in the inbox nav filter chips and filters to it" do
+    create_manual_review_issue(title: "Parked issue", github_number: 514)
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Manual Review'][@href='#{inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)}'])
+    )
+    expect(chip).to be_present
+
+    get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Parked issue")
+  end
+
+  # @spec FEATURE-APPROVAL-013
+  it "exposes feature_decision in the inbox nav filter chips and filters to it" do
+    feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Feature Decision'][@href='#{inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)}'])
+    )
+    expect(chip).to be_present
+
+    get inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(feature_intent.title)
+  end
+
+  it "lists every lane kind in the empty-state copy" do
+    get inbox_path
+
+    expect(response.body).to include("Inbox clear")
+    expect(response.body).to include(
+      "clarifying-question", "plan-review", "merge-approval", "action-required",
+      "blocked-PR", "manual-review", "feature-decision", "retry-limited"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "links the manual_review detail pane to the GitHub issue" do
+    parked = create_manual_review_issue(title: "Parked issue", github_number: 515)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    document = Nokogiri::HTML(response.body)
+    issue_link = document.at_css(%(a[href="#{parked.github_url}"]))
+
+    expect(issue_link).to be_present
+    expect(issue_link.text).to include("View")
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "links the manual_review detail pane to the enhancement comment when it can be resolved" do
+    parked = create_manual_review_issue(title: "Parked issue", github_number: 516)
+    comment_url = "#{parked.github_url}#issuecomment-1"
+    allow(Inbox::ManualReviewCommentLink).to receive(:call).and_return(comment_url)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    document = Nokogiri::HTML(response.body)
+    comment_link = document.at_css(%(a[href="#{comment_url}"]))
+
+    expect(comment_link).to be_present
+    expect(comment_link.text).to eq("View enhancement comment")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)

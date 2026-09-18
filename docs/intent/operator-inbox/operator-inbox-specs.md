@@ -83,9 +83,19 @@
   named bucket instead of folding it into the unnamed `other_excluded`
   remainder, and `Inbox::Count`'s cached badge SHALL invalidate on transitions
   into and out of `manual_review` via `Dashboard::CacheVersion`'s `INBOX_SCOPE`.
+  The Inbox nav filter (`app/views/inbox/index.html.erb`) SHALL offer a
+  `manual_review` tab alongside the other kinds, and the empty-state copy
+  SHALL name every lane kind the queue exposes, not a stale subset (#3908).
+  The detail pane SHALL link to the entry's underlying GitHub issue, and, when
+  `IssueEnhancements::StopForManualReview`'s marker comment can be resolved
+  (`Inbox::ManualReviewCommentLink`), to that enhancement comment directly, so
+  an operator can read the analysis the state was derived from without
+  digging through the issue thread (#3908).
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/services/inbox/manual_review_comment_link.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,
   `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/dashboard/eligibility_breakdown_spec.rb`,
