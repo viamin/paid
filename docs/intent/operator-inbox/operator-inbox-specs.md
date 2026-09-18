@@ -230,3 +230,39 @@
   *Test:* `spec/services/clarifying_questions/context_spec.rb`,
   `spec/services/clarifying_questions/load_spec.rb`,
   `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-012** — When a clarifying question carries strict
+  choice markers (ISSUE-ENHANCEMENT-018), every answer surface — the inbox
+  detail pane, the standalone `clarifying_questions#show` page (which also
+  serves the needs-input dashboard flow), SHALL render a click-to-answer
+  widget from ONE shared partial backed by `ClarifyingQuestions::Choices`:
+  native `<input type="radio">` (single) or `<input type="checkbox">`
+  (multi) inputs visually styled as segmented buttons with touch-friendly
+  tap targets, an always-present "Other" option, and a detail textarea that
+  becomes required when "Other" is selected. Questions whose parsed choices
+  are `nil` SHALL render the existing textarea-only widget unchanged. The
+  form SHALL keep submitting the same `questions[]` / `answers[]` params
+  with unmutated question strings; each choice answer SHALL be composed
+  client-side into a hidden `answers[]` input as human-readable lines —
+  `Label (text)` per selection, `Other: …` for the escape hatch, and an
+  appended `Details: …` line when detail text is present — so the posted
+  comment still round-trips `AnswerPairs.parse` /
+  `AnswerPairs.questions_match?`. The server SHALL NOT trust the composed
+  strings: it SHALL re-parse each question with
+  `ClarifyingQuestions::Choices` and reject (ArgumentError alert redirect,
+  no GitHub post) answers whose selections are not offered options or a
+  specified "Other", while skipping validation for questions whose parser
+  result is `nil`. Pending-answer prefill after a failure redirect SHALL
+  re-select the chosen pills and repopulate the detail textarea from the
+  serialized answer instead of dumping the serialized answer into a
+  textarea (#3894).
+  *Code:* `app/views/projects/clarifying_questions/_answer_field.html.erb`,
+  `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`,
+  `app/views/projects/clarifying_questions/show.html.erb`,
+  `app/services/clarifying_questions/choice_answers.rb`,
+  `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/javascript/controllers/clarifying_choice_controller.js`.
+  *Test:* `spec/services/clarifying_questions/choice_answers_spec.rb`,
+  `spec/services/clarifying_questions/answer_pairs_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

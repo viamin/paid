@@ -90,7 +90,23 @@ export default class extends Controller {
     const stepIndex = Number(blankAnswer.dataset.stepIndex)
     this.currentIndex = stepIndex
     this.showStep(stepIndex)
-    blankAnswer.classList.add("border-red-500")
-    blankAnswer.focus()
+    this.focusAnswer(blankAnswer)
+  }
+
+  // Choice questions carry their answer target on a hidden composed input
+  // (OPERATOR-INBOX-012): hidden inputs take no focus and no border, and the
+  // pill inputs are sr-only with only peer-focus-visible styling, which never
+  // paints for programmatic focus after a click-driven submit. Focus the
+  // widget's visible detail textarea instead so the native focus ring marks
+  // the blank question, mirroring the textarea-only path.
+  focusAnswer(answer) {
+    if (answer.type === "hidden") {
+      const widget = answer.closest('[data-controller~="clarifying-choice"]')
+      widget?.querySelector("textarea")?.focus()
+      return
+    }
+
+    answer.classList.add("border-red-500")
+    answer.focus()
   }
 }

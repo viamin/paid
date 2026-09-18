@@ -71,16 +71,14 @@
 
             <%= f.hidden_field "questions[]", value: question, id: "question_#{index}" %>
 
-            <label for="answer_<%= index %>" class="block text-sm font-medium text-gray-700 mb-1">
-              Your answer <span class="text-red-500">*</span>
-            </label>
-            <%= text_area_tag "answers[]", nil,
-                  id: "answer_#{index}",
-                  rows: 4,
-                  required: true,
-                  placeholder: "Enter your answer...",
-                  class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
-                  data: {
+            <%# @spec OPERATOR-INBOX-012 %>
+            <%= render "projects/clarifying_questions/answer_field",
+                  question: question,
+                  field_id: "answer_#{index}",
+                  label: "Your answer",
+                  pending_answer: nil,
+                  field_class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
+                  answer_data: {
                     clarifying_questions_target: "answer",
                     step_index: index,
                     action: "input->clarifying-questions#updateProgress"

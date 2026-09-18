@@ -152,6 +152,57 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    # @spec OPERATOR-INBOX-012
+    context "when a question carries strict choice markers" do
+      let(:single_choice_question) do
+        "Which storage backend should the export use? " \
+          "- ( ) SQLite) local file, zero setup " \
+          "- ( ) Postgres) already used for app data"
+      end
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body,
+          needs_input_questions: [ single_choice_question, "Should this be behind a flag?" ])
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "renders the click-to-answer widget with segmented radio pills, an Other option, and a hidden composed answer" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        expect(response).to have_http_status(:ok)
+        document = Nokogiri::HTML(response.body)
+        widget = document.at_css('[data-controller="clarifying-choice"]')
+        expect(widget).to be_present
+
+        radios = widget.css('input[type="radio"]')
+        expect(radios.size).to eq(3)
+        expect(radios.map { |radio| radio["data-clarifying-choice-line"] }.compact).to eq(
+          [ "SQLite (local file, zero setup)", "Postgres (already used for app data)" ]
+        )
+        expect(widget.at_css("label[for$='_other']")).to be_present
+
+        composed = widget.at_css('input[type="hidden"][name="answers[]"]')
+        expect(composed["data-clarifying-questions-target"]).to eq("answer")
+        expect(composed["data-step-index"]).to eq("0")
+
+        detail = widget.at_css("textarea")
+        expect(detail["name"]).to be_nil
+        expect(detail["data-clarifying-choice-target"]).to eq("detail")
+      end
+
+      it "renders the textarea-only widget unchanged for questions without parsed choices" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        textarea = Nokogiri::HTML(response.body).at_css("textarea[name='answers[]']#answer_1")
+
+        expect(textarea).to be_present
+        expect(textarea["required"]).to be_present
+        expect(textarea["placeholder"]).to eq("Enter your answer...")
+      end
+    end
+
     context "when no clarifying questions found" do
       before do
         allow(github_client).to receive(:issue_comments).and_return([])
@@ -866,6 +917,108 @@ RSpec.describe "Projects::ClarifyingQuestions" do
             selected: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{issue.id}"
           )
         end
+      end
+    end
+
+    # @spec OPERATOR-INBOX-012
+    context "when the question carries strict choice markers" do
+      let(:single_choice_question) do
+        "Which storage backend should the export use? " \
+          "- ( ) SQLite) local file, zero setup " \
+          "- ( ) Postgres) already used for app data"
+      end
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body, needs_input_questions: [ single_choice_question ])
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "posts the composed choice answer lines in the GitHub comment" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ single_choice_question ],
+          answers: [ "SQLite (local file, zero setup)\nDetails: needs a migration" ]
+        }
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("**A1:** SQLite (local file, zero setup)\nDetails: needs a migration")
+        )
+      end
+
+      it "posts a specified Other response" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ single_choice_question ],
+          answers: [ "Other: Redis if the team prefers" ]
+        }
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("**A1:** Other: Redis if the team prefers")
+        )
+      end
+
+      it "rejects a forged selection that is not an offered option without posting to GitHub" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ single_choice_question ],
+          answers: [ "Redis (not offered)" ]
+        }
+
+        expect(github_client).not_to have_received(:add_comment)
+        expect(response).to redirect_to(project_issue_clarifying_questions_path(project, issue))
+        follow_redirect!
+        expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
+      end
+
+      it "rejects multiple selections on a single-choice question without posting to GitHub" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ single_choice_question ],
+          answers: [ "SQLite (local file, zero setup)\nPostgres (already used for app data)" ]
+        }
+
+        expect(github_client).not_to have_received(:add_comment)
+        follow_redirect!
+        expect(response.body).to include("select exactly one option")
+      end
+
+      it "names the rejected answer position in the alert" do
+        two_choice_issue = create(:issue, :needs_input, project: project, body: issue_body,
+          needs_input_questions: [ "What is the expected behavior?", single_choice_question ])
+
+        post project_issue_clarifying_questions_path(project, two_choice_issue), params: {
+          questions: [ "What is the expected behavior?", single_choice_question ],
+          answers: [ "X is a feature", "Redis (not offered)" ]
+        }
+
+        follow_redirect!
+        expect(response.body).to include("Answer 2")
+        expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
+      end
+
+      it "still validates choice answers when submitted from the inbox pane and prefills the widget from the serialized answer" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ single_choice_question ],
+          answers: [ "Redis (not offered)" ],
+          inbox: "1"
+        }
+
+        expect(github_client).not_to have_received(:add_comment)
+        follow_redirect!
+
+        document = Nokogiri::HTML(response.body)
+        widget = document.at_css("turbo-frame#inbox-detail [data-controller='clarifying-choice']")
+        composed = widget.at_css('input[type="hidden"][name="answers[]"]')
+
+        # The serialized answer rides along on the composed input so the choice
+        # controller re-selects the pills and repopulates the detail textarea
+        # instead of dumping the serialized answer into a textarea.
+        expect(composed["value"]).to eq("Redis (not offered)")
+        expect(composed["data-testid"]).to eq("inbox-answer-0")
       end
     end
 

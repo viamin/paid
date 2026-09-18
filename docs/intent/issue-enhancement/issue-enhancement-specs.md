@@ -73,6 +73,33 @@
   `db/seeds/prompts.rb` (`goal.enhance_issue`),
   enhancement question-context prompt synchronization migration.
 
+- [x] **ISSUE-ENHANCEMENT-018** — When a clarifying question has a short,
+  enumerable set of answers, the `goal.enhance_issue` prompt SHALL instruct
+  the agent to opt the question into choice semantics with strict sub-list
+  option markers — `- ( ) Label) description` lines for single-answer
+  questions, `- [ ]` / `- [x]` checkbox-family lines for multi-answer
+  questions — instead of naming the options in prose (#3893). The seeded
+  template, the code fallback in `RunAgentActivity`, and the prompt-sync
+  migration SHALL carry the same option-syntax instructions. On the reader
+  side, `ClarifyingQuestions::Choices` SHALL parse those markers — and only
+  those markers — from a single folded question string, returning
+  `{ type: :single | :multi, options: [{ label:, text: }] }` for a
+  well-formed choice question with at least two options, and `nil` for
+  prose questions, context bullets, mixed marker families, malformed
+  options, or partial marker sets, so unmarked questions stay free text.
+  Question strings SHALL remain byte-identical — `ClarifyingQuestions::Parse`
+  is untouched and choices are a view-time attribute only (the click-to-answer
+  UI that consumes them is specified as OPERATOR-INBOX-012).
+  *Tests:* `spec/services/clarifying_questions/choices_spec.rb`,
+  `spec/migrations/sync_enhance_issue_choice_markers_prompt_spec.rb`,
+  `spec/db/prompt_seeds_spec.rb`
+  (`goal.enhance_issue choice-marker coupling`),
+  `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`.
+  *Code:* `app/services/clarifying_questions/choices.rb`,
+  `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
+  `db/seeds/prompts.rb` (`goal.enhance_issue`),
+  `db/migrate/*_sync_enhance_issue_choice_markers_prompt.rb`.
+
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the
   prior clarifying questions and answers in the conversation context supplied
