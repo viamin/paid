@@ -421,6 +421,88 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to include(feature_intent)
     end
 
+    # @spec OPERATOR-INBOX-002E
+    it "filters to retry_limited when kind: retry_limited is requested" do
+      create_needs_input(body: questions_body)
+      parked = create_retry_limited_issue(github_number: 100)
+
+      entries = described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)
+
+      expect(entries.map(&:issue)).to eq([ parked ])
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "returns typed entries for retry-limited issues, exposing the abandon reason and waiting timestamp" do
+      freeze_time = 2.days.ago
+      issue = create_retry_limited_issue(
+        github_number: 101,
+        reason: "All available runners reached the per-issue retry cap (3) after repeated failures and were excluded: claude, codex.",
+        abandoned_at: freeze_time
+      )
+
+      entries = described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == issue }
+      expect(entry).to have_attributes(
+        id: "#{described_class::RETRY_LIMITED_KIND}:#{issue.id}",
+        kind: described_class::RETRY_LIMITED_KIND,
+        project: project,
+        issue: issue
+      )
+      expect(entry.waiting_since).to be_within(1.second).of(freeze_time)
+      expect(entry.summary).to include("All available runners reached the per-issue retry cap (3)")
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "exposes push_permission_abandoned? issues under the same retry_limited kind with their abandon reason" do
+      issue = create(
+        :issue,
+        project: project,
+        github_number: 102,
+        runner_retry_abandoned_at: 1.hour.ago,
+        runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+      )
+
+      entries = described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == issue }
+      expect(entry).not_to be_nil
+      expect(entry.summary).to eq("#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission")
+      expect(entry.issue.push_permission_abandoned?).to be(true)
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "excludes closed retry-limited issues and issues on non-gated projects" do
+      gated = create_retry_limited_issue(github_number: 103)
+      create_retry_limited_issue(github_number: 104, github_state: "closed")
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "echo")
+      create_retry_limited_issue(github_number: 105, project: other_project)
+
+      entries = described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)
+
+      expect(entries.map(&:issue)).to eq([ gated ])
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "clears the entry once a successful manual run clears the abandonment flag" do
+      issue = create_retry_limited_issue(github_number: 106)
+      expect(described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)).to be_present
+
+      issue.clear_runner_retry_abandonment!
+
+      expect(described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)).to be_empty
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "includes retry_limited entries in the unscoped call alongside the other kinds" do
+      parked = create_retry_limited_issue(github_number: 107)
+
+      entries = described_class.call(user: user)
+
+      expect(entries.map(&:kind)).to include(described_class::RETRY_LIMITED_KIND)
+      expect(entries.map(&:issue)).to include(parked)
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
@@ -780,6 +862,17 @@ RSpec.describe Inbox::Queue do
       github_number: github_number,
       paid_state: "manual_review",
       manual_review_reason: reason,
+      **attrs
+    )
+  end
+
+  def create_retry_limited_issue(github_number:, reason: "All available runners reached the per-issue retry cap (3).", abandoned_at: 1.hour.ago, **attrs)
+    create(
+      :issue,
+      project: project,
+      github_number: github_number,
+      runner_retry_abandoned_at: abandoned_at,
+      runner_retry_abandon_reason: reason,
       **attrs
     )
   end

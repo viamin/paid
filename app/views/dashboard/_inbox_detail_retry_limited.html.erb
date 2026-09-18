@@ -1,0 +1,54 @@
+<%# @spec OPERATOR-INBOX-002E %>
+<% issue = entry.issue %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-orange-200 bg-orange-50 p-4">
+    <h3 class="text-sm font-semibold text-orange-900">
+      <% if issue.push_permission_abandoned? %>
+        Paid stopped pushing this issue — GitHub App lacks a permission
+      <% else %>
+        Paid reached the retry cap for this issue
+      <% end %>
+    </h3>
+    <p class="mt-1 text-sm text-orange-800">
+      <% if issue.push_permission_abandoned? %>
+        The GitHub App installation token cannot complete the push (for example, a change
+        under <code>.github/workflows/</code> needs the <code>workflows</code> permission).
+        Re-grant the permission on GitHub, then trigger a manual run to clear the flag.
+      <% else %>
+        Every available runner hit the per-issue retry cap and was excluded from dispatch.
+        Clear the flag once the underlying failures have aged out of the window, then queue a
+        manual run to resume work.
+      <% end %>
+    </p>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
+    <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+      <%= entry.summary.presence || "Paid parked this issue and is waiting for an operator." %>
+    </p>
+    <div class="flex flex-wrap items-center gap-2">
+      <% if issue.push_permission_abandoned? %>
+        <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20">Push Blocked</span>
+      <% else %>
+        <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">Retry Cap</span>
+      <% end %>
+      <span class="text-xs text-gray-500">
+        Abandoned <%= entry.waiting_since ? "#{time_ago_in_words(entry.waiting_since)} ago" : "—" %>
+      </span>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <%= link_to "View on GitHub",
+          issue.github_url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% if policy(entry.project).run_agent? %>
+      <%= link_to "Open project runs",
+            project_agent_runs_path(entry.project),
+            class: "inline-flex items-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500" %>
+    <% end %>
+  </div>
+</div>

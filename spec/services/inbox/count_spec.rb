@@ -47,6 +47,59 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
+    # @spec OPERATOR-INBOX-002E
+    it "counts open retry-limited issues and PRs, including push-permission abandonments" do
+      create(:issue, project: project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
+      create(
+        :issue, :pull_request, project: project, github_number: 91,
+        runner_retry_abandoned_at: 1.hour.ago,
+        runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+      )
+      create(:issue, :closed, project: project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "stale")
+
+      expect(described_class.call(user: user)).to eq(2)
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "excludes retry-limited issues on non-gated projects" do
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
+      create(:issue, project: other_project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "capped")
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "bumps the cache automatically when an issue is abandoned or cleared via runner_retry_abandoned_at" do
+      issue = create(:issue, project: project)
+      first = described_class.call(user: user)
+
+      issue.update!(runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
+      after_abandon = described_class.call(user: user)
+
+      issue.clear_runner_retry_abandonment!
+      after_clear = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_abandon).to eq(1)
+      expect(after_clear).to eq(0)
+    end
+
+    # @spec OPERATOR-INBOX-002E
+    it "bumps the cache automatically when a retry-limited issue closes on GitHub" do
+      issue = create(:issue, project: project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
+      first = described_class.call(user: user)
+
+      issue.update!(github_state: "closed")
+      after_close = described_class.call(user: user)
+
+      issue.update!(github_state: "open")
+      after_reopen = described_class.call(user: user)
+
+      expect(first).to eq(1)
+      expect(after_close).to eq(0)
+      expect(after_reopen).to eq(1)
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "counts open feature intents, including on projects with auto-pick off" do
       create(:feature_intent, :ready_for_approval, project: project)

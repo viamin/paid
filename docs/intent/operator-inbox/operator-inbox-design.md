@@ -154,6 +154,52 @@ just changes kind. This closes the gap the dashboard-only surface left: before
 this kind existed, that transition silently dropped the PR from the Inbox and
 its nav badge at the exact moment it became more urgent.
 
+### `retry_limited`
+
+Backed by `Issue#runner_retry_abandoned_at` directly (the same column the
+runner-retry-cap path writes via `Issue#abandon_due_to_runner_retry_cap!` and
+the push-permission path writes via `Issue#abandon_due_to_push_permission_rejection!`,
+which share an abandonment gate but encode different causes). Before this kind
+existed, both abandonments were dashboard-only — visible on the
+Retry-Limited card (#2674) but absent from the Inbox and its nav badge, so
+operators only learned about the block by scrolling the dashboard, and the
+dashboard card had no action buttons. The HLD tenet "No silent stops" requires
+the system to surface *that* automation stopped, *why*, and *what clears it*
+the same way it surfaces `manual_review`; this kind closes that gap (#3902).
+
+The query is `paid_state`-agnostic (the abandonment gate is independent of
+`paid_state`, and the dashboard card deliberately surfaces both issues and PRs
+that hit the cap), so it filters on `runner_retry_abandoned_at IS NOT NULL` and
+`github_state = "open"` only. It reuses the same auto-pick + owner scoping
+(`INBOX-FOUNDATION-006`) every other kind uses, the same divergence from the
+dashboard's account-wide scope that `escalated_pr` and `manual_review` already
+record (`OPERATOR-INBOX-002C`, `OPERATOR-INBOX-002D`).
+
+The entry payload carries `runner_retry_abandon_reason` as the summary and
+distinguishes `push_permission_abandoned?` (prefixed `Push rejected:` — the
+GitHub App installation token lacked the permission) from the runner-retry-cap
+case in the list and detail views via the same Push Blocked vs Retry Cap badge
+split the dashboard card already shows. `waiting_since` is
+`runner_retry_abandoned_at`; both producers stamp the timestamp on
+abandonment, so there are no legacy nulls to worry about. The clearing path is
+the existing `clear_runner_retry_abandonment!` (called from
+`RunAgentActivity` on a successful run), the same producer the abandonment
+flag already has — no inbox-side controller change is needed, just the cache
+invalidation that `Issue#inbox_count_cache_invalidation_needed?` adds for
+`saved_change_to_runner_retry_abandoned_at?`.
+
+The detail pane offers the same path the dashboard card implies but does not
+actually render: link to the GitHub issue/PR (the operator needs to read the
+failure surface anyway) plus a per-project "Start manual run" hint pointing at
+the project's runs page. The operator-facing action is the existing
+`clear_runner_retry_abandonment!` path on a successful manual run, so there is
+no new endpoint to introduce — the kind exists to make the abandonment
+discoverable, not to invent a new clearing workflow. The entry leaves the lane
+when `clear_runner_retry_abandonment!` runs (on a successful manual run) or
+when the underlying GitHub issue closes; both transitions are already covered
+by the cache invalidation `saved_change_to_runner_retry_abandoned_at?` adds to
+`Issue#inbox_count_cache_invalidation_needed?`.
+
 ### `manual_review`
 
 Backed by `Issue#paid_state == "manual_review"` directly, the same way
@@ -271,6 +317,17 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 - **Missing waiting timestamps remain visible**: legacy entries with a nullable
   waiting timestamp stay actionable and render `Waiting —` instead of deriving
   an inaccurate age or failing the inbox page.
+- **`retry_limited` shares the cache-invalidation pattern with
+  `manual_review`**: the abandonment timestamp flips on
+  `abandon_due_to_runner_retry_cap!` /
+  `abandon_due_to_push_permission_rejection!` and on
+  `clear_runner_retry_abandonment!`, so
+  `saved_change_to_runner_retry_abandoned_at?` joins
+  `Issue#inbox_count_cache_invalidation_needed?` the same way
+  `saved_change_to_manual_review_started_at?` already does
+  (`OPERATOR-INBOX-002D`). No bespoke callback needed — the abandonment and
+  clearing producers write the timestamp, the existing
+  `after_commit :bump_inbox_cache_version` callback picks up the change.
 - **Temporal signaling remains controller-driven**: the inbox changes the UI
   surface, not the workflow contract. `approve_plan`, `reject_plan`, and
   `revise_plan` remain the bridge into `Workflows::PlanningWorkflow`.
@@ -311,6 +368,13 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 - `spec/services/inbox/queue_spec.rb` and `spec/services/inbox/count_spec.rb`
   cover `manual_review` discovery, scoping, and cache invalidation on
   `paid_state` transitions into and out of `manual_review`.
+- `spec/services/inbox/queue_spec.rb` and `spec/services/inbox/count_spec.rb`
+  cover `retry_limited` discovery (including the
+  `push_permission_abandoned?` Push Blocked vs Retry Cap distinction), the
+  same auto-pick + owner scoping the other gated kinds use, and cache
+  invalidation on `runner_retry_abandoned_at` transitions into and out of
+  the lane via `clear_runner_retry_abandonment!` and the
+  runner-retry-cap / push-permission abandonment producers.
 - `spec/requests/inbox_spec.rb` covers `manual_review` detail rendering (reason,
   age, and the `resume_manual_review` action).
 - `spec/requests/agent_runs_spec.rb` covers `resume_manual_review` queuing a
