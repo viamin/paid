@@ -48,6 +48,7 @@
     <% if policy(entry.project).run_agent? %>
       <%= link_to "Open project runs",
             project_agent_runs_path(entry.project),
+            data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500" %>
     <% end %>
   </div>
