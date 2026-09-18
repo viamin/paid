@@ -129,7 +129,7 @@ module Inbox
     end
 
     def gated_project_ids
-      Project
+      @gated_project_ids ||= Project
         .includes(account: :tenant_setting, created_by: :user_setting)
         .where(
           account_id: user.account_id,
