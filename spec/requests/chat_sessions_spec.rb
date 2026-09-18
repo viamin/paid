@@ -494,13 +494,14 @@ RSpec.describe "ChatSessions" do
         expect(desktop_header["class"].split).to include("hidden", "xl:block")
       end
 
-      it "bounds the desktop chat panel header so the transcript keeps usable height" do
+      it "collapses the desktop session-details disclosure by default so the chat stays chat-first" do
         # @spec CHAT-API-009
-        # Structural backstop: no combination of long titles, badges, or
-        # workspace state may push the header past its share of the panel.
-        # `overflow-y-auto` also zeroes the header's automatic minimum size
-        # so it can actually shrink when the panel is short, and
-        # `overflow-x-hidden` stops that from computing the x axis to `auto`.
+        # #3925: the always-visible desktop chrome is a single compact line
+        # (title + "Session details" toggle). All session settings sit inside
+        # a <details> closed by default. No `max-h-[45%]` cap is needed
+        # because the always-visible chrome is a single compact line by
+        # design; opening the disclosure is the user's choice and lets the
+        # header grow for as long as the user keeps it open.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -510,25 +511,64 @@ RSpec.describe "ChatSessions" do
         expect(header).to be_present
 
         classes = header["class"].split
+        expect(classes).not_to include("max-h-[45%]", "has-[details[open]]:max-h-[75%]", "overflow-y-auto")
 
-        expect(classes).to include("max-h-[45%]")
-        expect(classes).to include("overflow-y-auto")
-        expect(classes).to include("overflow-x-hidden")
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+
+        expect(disclosure).to be_present
+        expect(disclosure["open"]).to be_nil
       end
 
-      it "relaxes the desktop header cap while the workspace disclosure is open" do
+      it "places runner/model/token-usage/archive controls inside the desktop session-details disclosure" do
         # @spec CHAT-API-009
-        # Clipping content the user just chose to expand is worse than a
-        # temporarily shorter transcript: without the relaxed cap, opening
-        # Workspace on a 900px viewport hid ~84px of the panel below the
-        # header's clipped edge with no visible hint that it scrolled.
+        # #3925: the right column of the old desktop header (runner/model
+        # selectors, token usage tile, archive/unarchive buttons) and the
+        # project/updated metadata under the title now live inside the
+        # Session details disclosure. They are not part of the always-visible
+        # chrome and must not appear at the top of the desktop header.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        header = desktop_header_in(doc)
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+        summary = disclosure&.at_xpath("./summary")
+
+        expect(disclosure).to be_present
+        expect(summary).to be_present
+
+        runner_select = disclosure.at_xpath(".//select[@name='chat_session[runner_id]']")
+        model_select = disclosure.at_xpath(".//select[@name='chat_session[model]']")
+        token_usage = disclosure.at_xpath(".//span[@data-chat-target='tokenUsage']")
+
+        expect(runner_select).to be_present
+        expect(model_select).to be_present
+        expect(token_usage).to be_present
+
+        # The runner/model/token usage elements must live in the disclosure
+        # body, not the always-visible summary line.
+        expect(summary.at_xpath(".//select[@name='chat_session[runner_id]']")).to be_nil
+        expect(summary.at_xpath(".//select[@name='chat_session[model]']")).to be_nil
+        expect(summary.at_xpath(".//span[@data-chat-target='tokenUsage']")).to be_nil
+      end
+
+      it "does not render the redundant Active/Inline status badges in the desktop chat header" do
+        # @spec CHAT-API-009
+        # #3925: chat_session_status_badge (Active/Idle/Closed/Archived)
+        # duplicates the per-row state on the chat list and the Active vs
+        # Archived tabs on the chat page. chat_mode_badge (Inline/Container)
+        # is opaque to most users. Both helpers are removed from the chat
+        # panel header; they remain on the popup and the sidebar card.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
         doc = Nokogiri::HTML(response.body)
         header = desktop_header_in(doc)
 
-        expect(header["class"].split).to include("has-[details[open]]:max-h-[75%]")
+        # CHAT_SESSION_STATUS_STYLES["active"] -> bg-green-100 text-green-700
+        expect(header.css("span.bg-green-100.text-green-700")).to be_empty
+        # CHAT_MODE_STYLES["inline"] -> bg-blue-100 text-blue-700
+        expect(header.css("span.bg-blue-100.text-blue-700")).to be_empty
       end
 
       it "keeps the measured viewport height bound when the show page renders a flash banner" do

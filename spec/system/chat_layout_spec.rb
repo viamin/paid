@@ -33,7 +33,12 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     expect(metrics.fetch("panelBottomGap")).to be_between(-2, 4).inclusive
     expect(metrics.fetch("documentOverflow")).to be <= 4
     expect(metrics.fetch("transcriptH")).to be >= 288
-    expect(metrics.fetch("transcriptShare")).to be >= 0.45
+    # #3925: with session settings behind a closed "Session details"
+    # disclosure on mobile, the always-visible chrome shrinks to a
+    # single compact title row, so the transcript keeps a larger share
+    # of the viewport-bound panel even with the Workspace disclosure
+    # open by default for non-inline chats.
+    expect(metrics.fetch("transcriptShare")).to be >= 0.55
   end
 
   def create_mobile_workspace_chat
