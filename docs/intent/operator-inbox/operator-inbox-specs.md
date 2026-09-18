@@ -83,13 +83,34 @@
   named bucket instead of folding it into the unnamed `other_excluded`
   remainder, and `Inbox::Count`'s cached badge SHALL invalidate on transitions
   into and out of `manual_review` via `Dashboard::CacheVersion`'s `INBOX_SCOPE`.
+  When the issue's `needs_input_questions` is present (preserved by
+  `EnhanceIssueActivity` from the terminal round's parseable clarifying
+  questions, and kept by `IssueEnhancements::StopForManualReview` on every
+  stop path — `ISSUE-ENHANCEMENT-011`), the entry SHALL also carry those
+  questions and the detail pane SHALL render the same clarifying-questions
+  answer form `clarifying_questions` entries use, submitting to the same
+  `ClarifyingQuestionsController#create` endpoint. Submitting SHALL clear
+  `manual_review` (via `ClarifyingQuestions::ClearNeedsInput`, which accepts
+  `manual_review` as a clearable source state), reset
+  `enhance_issue_rounds`, and post the standard answer-marker comment — the
+  entry then clears the same way any other answered-and-cleared entry does.
+  When a `create_feature` run is paused on the issue (RDR-053), clearing
+  SHALL resume that run under the same `in_progress` queue-time flip an
+  operator-triggered run gets, rather than leaving the issue in a lane
+  auto-pick skips until the run completes. An entry with no preserved
+  questions renders the state + "Start
+  enhancement run" button only, as before.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,
   `app/controllers/projects/agent_runs_controller.rb`,
-  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/services/clarifying_questions/clear_needs_input.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`,
+  `app/views/dashboard/_inbox_clarifying_answer_form.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/dashboard/eligibility_breakdown_spec.rb`,
-  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by

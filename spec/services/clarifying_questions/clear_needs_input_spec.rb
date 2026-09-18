@@ -75,6 +75,41 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       end
     end
 
+    # @spec ISSUE-ENHANCEMENT-011
+    # Answering a manual_review issue's preserved terminal-round questions
+    # from the inbox is accepted as a clearing action too, not only an
+    # explicit "Start enhancement run" click — see EnhanceIssueActivity,
+    # which now preserves needs_input_questions instead of wiping them when
+    # the terminal round still has parseable clarifying questions.
+    context "when the issue is parked in manual_review with preserved questions" do
+      let(:issue) do
+        double(
+          github_number: 1964,
+          paid_state: "manual_review",
+          needs_input?: false,
+          has_label?: false,
+          labels: [ "P2" ],
+          enhance_issue_rounds: 3,
+          update!: true
+        )
+      end
+
+      it "resets paid_state, clears the preserved questions, and resets the round counter" do
+        described_class.call(project: project, issue: issue)
+
+        expect(issue).to have_received(:update!).with(
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil,
+          enhance_issue_rounds: 0
+        )
+      end
+
+      it "does not call GitHub to remove a label that was already removed on entry to manual_review" do
+        described_class.call(project: project, issue: issue)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
     context "when the local state is stale and the label is already gone" do
       let(:issue) do
         double(
@@ -182,6 +217,56 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         described_class.call(project: project, issue: issue)
 
         expect(issue.reload.needs_input_since).to be_nil
+      end
+    end
+
+    # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-014
+    # A manual_review issue can also carry a paused create_feature run: an
+    # issue parked in the RDR-053 needs-input flow whose enhancement rounds
+    # were later exhausted. Submitting the preserved terminal-round answers
+    # must resume the run AND clear manual_review in the same action — the
+    # resume path never touches paid_state on its own, so without the flip
+    # the issue would linger in the manual-review lane (which auto-pick
+    # skips) until the resumed run completes.
+    context "when a manual_review issue with preserved questions has a paused create_feature run" do
+      let(:issue) do
+        create(:issue, project: project,
+               title: "[Feature] Add dark mode", body: "Users want dark mode",
+               paid_state: "manual_review",
+               manual_review_reason: "Paid reached the configured limit of 3 enhancement re-evaluation rounds.",
+               manual_review_started_at: 1.hour.ago,
+               needs_input_questions: [ "What is the desired behavior?" ],
+               enhance_issue_rounds: 3)
+      end
+      let!(:agent_run) do
+        create(:agent_run, :create_feature_goal, project: project, issue: issue,
+               status: "paused",
+               external_metadata: {
+                 "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark theme" }
+               })
+      end
+
+      it "resumes the run and fully clears manual_review in the same action" do
+        expect { described_class.call(project: project, issue: issue) }
+          .to change { agent_run.reload.status }.from("paused").to("queued")
+
+        expect(issue.reload).to have_attributes(
+          paid_state: "in_progress",
+          needs_input_questions: nil,
+          needs_input_since: nil,
+          enhance_issue_rounds: 0,
+          manual_review_reason: nil,
+          manual_review_started_at: nil
+        )
+      end
+
+      it "merges the assembled feature brief into external_metadata" do
+        described_class.call(project: project, issue: issue)
+
+        brief = agent_run.reload.external_metadata["feature_brief"]
+        expect(brief).to be_present
+        expect(brief["title"]).to eq("Add dark mode")
+        expect(brief["problem"]).to eq("Users want dark mode")
       end
     end
 

@@ -920,6 +920,120 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-014
+    # Answering the terminal round's preserved questions from the
+    # manual_review inbox pane IS the manual review the state asks for
+    # (#3905): it must clear manual_review, not just needs_input.
+    context "when the issue is parked in manual_review with preserved terminal-round questions" do
+      let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
+      let(:answers) { [ "X is a feature", "Yes, by default" ] }
+      let(:issue) do
+        create(:issue, project: project, body: issue_body,
+          paid_state: "manual_review",
+          manual_review_reason: "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+          manual_review_started_at: 1.hour.ago,
+          needs_input_questions: questions,
+          enhance_issue_rounds: 3)
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+      end
+
+      it "clears manual_review, resets the round counter, and posts the standard answer-marker comment" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_kind: Inbox::Queue::MANUAL_REVIEW_KIND,
+          inbox_project_id: project.id
+        }
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_matching(/Clarifying question answers/)
+        )
+        issue.reload
+        expect(issue.paid_state).to eq("new")
+        expect(issue.enhance_issue_rounds).to eq(0)
+        expect(issue.needs_input_questions).to be_nil
+        expect(response).to redirect_to(
+          inbox_path(project_id: project.id, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+        )
+      end
+
+      # The failure redirect must address the issue as the manual_review
+      # entry id the inbox queue uses, or InboxController#show cannot resolve
+      # it and bounces the operator to the bare inbox index — a different
+      # issue's pane — dropping the pending-answers prefill with it.
+      it "bounces back into the manual_review pane when an answer is blank" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: [ "X is a feature", "" ],
+          inbox: "1",
+          inbox_kind: Inbox::Queue::MANUAL_REVIEW_KIND,
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          inbox_entry_path(
+            "#{Inbox::Queue::MANUAL_REVIEW_KIND}:#{issue.id}",
+            project_id: project.id,
+            kind: Inbox::Queue::MANUAL_REVIEW_KIND
+          )
+        )
+        follow_redirect!
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Answer them below to resume")
+        textareas = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail").css("textarea[name='answers[]']")
+        expect(textareas.map(&:text).map(&:strip)).to eq([ "X is a feature", "" ])
+      end
+
+      it "bounces back into the manual_review pane when the GitHub post fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          inbox: "1",
+          inbox_kind: Inbox::Queue::MANUAL_REVIEW_KIND,
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          inbox_entry_path(
+            "#{Inbox::Queue::MANUAL_REVIEW_KIND}:#{issue.id}",
+            project_id: project.id,
+            kind: Inbox::Queue::MANUAL_REVIEW_KIND
+          )
+        )
+      end
+
+      it "keeps the manual_review entry selected when validation fails on the All tab" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: [ "X is a feature", "" ],
+          inbox: "1",
+          inbox_kind: "",
+          inbox_project_id: project.id
+        }
+
+        expect(response).to redirect_to(
+          inbox_entry_path(
+            "#{Inbox::Queue::MANUAL_REVIEW_KIND}:#{issue.id}",
+            project_id: project.id
+          )
+        )
+        expect(response.location).not_to include("kind=")
+      end
+    end
+
     # @spec OPERATOR-INBOX-012
     context "when the question carries strict choice markers" do
       let(:single_choice_question) do

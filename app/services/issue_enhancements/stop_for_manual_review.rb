@@ -16,9 +16,18 @@ module IssueEnhancements
 
     # @spec ISSUE-ENHANCEMENT-002, ISSUE-ENHANCEMENT-011, ISSUE-ENHANCEMENT-012
     def call
+      # Stored clarifying questions are deliberately preserved: every stop
+      # path (hard parse failure in EnhanceIssueActivity, label-removal
+      # recheck at the limit in FetchIssuesActivity, queue-time limit stop
+      # in QueueAgentRunActivity) can be entered while the issue still has
+      # the latest round's questions stored, and those questions are the
+      # answerable surface the inbox's manual_review lane renders — wiping
+      # them recreates the unreachable-questions dead end (#3905). They are
+      # cleared only when a terminal round's comment has nothing parseable
+      # (EnhanceIssueActivity#sync_needs_input_questions).
       should_post = issue.with_lock do
         newly_stopped = issue.paid_state != "manual_review"
-        issue.update!(paid_state: "manual_review", needs_input_questions: nil, manual_review_reason: reason)
+        issue.update!(paid_state: "manual_review", manual_review_reason: reason)
         newly_stopped
       end
       remove_needs_input_label
