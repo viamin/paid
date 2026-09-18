@@ -403,6 +403,100 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec OPERATOR-INBOX-002E
+  it "lists retry-limited issues scoped to auto-pick projects" do
+    ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "epsilon")
+    create_retry_limited_issue(title: "Capped issue", github_number: 510)
+    create_retry_limited_issue(title: "Not gated", github_number: 511, project: ungated_project)
+
+    get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    expect(response.body).to include("Retry-limited", "Capped issue")
+    expect(response.body).not_to include("Not gated")
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "distinguishes Push Blocked from Retry Cap in the list view badge" do
+    capped = create_retry_limited_issue(title: "Capped issue", github_number: 512)
+    push_blocked = create(
+      :issue,
+      project: project,
+      title: "Push blocked issue",
+      github_number: 513,
+      runner_retry_abandoned_at: 1.hour.ago,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+    )
+
+    get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    capped_row = document.at_xpath(%(//li[.//p[contains(text(), "#{capped.title}")]]))
+    push_blocked_row = document.at_xpath(%(//li[.//p[contains(text(), "#{push_blocked.title}")]]))
+
+    expect(capped_row.text).to include("Retry Cap")
+    expect(capped_row.text).not_to include("Push Blocked")
+    expect(push_blocked_row.text).to include("Push Blocked")
+    expect(push_blocked_row.text).not_to include("Retry Cap")
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited detail with the abandon reason and the Retry Cap badge for runner-cap abandonments" do
+    capped = create_retry_limited_issue(
+      title: "Capped issue",
+      github_number: 512,
+      reason: "All available runners reached the per-issue retry cap (3) after repeated failures and were excluded: claude, codex."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped),
+      kind: Inbox::Queue::RETRY_LIMITED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("All available runners reached the per-issue retry cap (3)")
+    expect(response.body).to include("Retry Cap")
+    expect(response.body).not_to include("Push Blocked")
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "renders the Push Blocked badge and reason when a retry-limited issue was abandoned by push permission" do
+    push_blocked = create(
+      :issue,
+      project: project,
+      title: "Push blocked issue",
+      github_number: 513,
+      runner_retry_abandoned_at: 1.hour.ago,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::RETRY_LIMITED_KIND, push_blocked),
+      kind: Inbox::Queue::RETRY_LIMITED_KIND
+    )
+
+    expect(response.body).to include("Push Blocked")
+    expect(response.body).to include("missing workflows permission")
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "exposes retry_limited in the inbox nav filter chips" do
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Retry-limited'][@href='#{inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)}'])
+    )
+
+    expect(chip).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "accepts retry_limited as a valid inbox kind for the nav filter" do
+    get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    expect(response).to have_http_status(:ok)
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
@@ -814,6 +908,18 @@ RSpec.describe "Inbox" do
       github_number: github_number,
       paid_state: "manual_review",
       manual_review_reason: reason,
+      **attrs
+    )
+  end
+
+  def create_retry_limited_issue(title: "Retry-limited issue", github_number: 510, reason: "All available runners reached the per-issue retry cap (3).", **attrs)
+    create(
+      :issue,
+      project: project,
+      title: title,
+      github_number: github_number,
+      runner_retry_abandoned_at: 1.hour.ago,
+      runner_retry_abandon_reason: reason,
       **attrs
     )
   end
