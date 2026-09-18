@@ -3608,7 +3608,7 @@ module Activities
     # `goal.create_github_issue` and `goal.review_pull_request`. The
     # FALLBACK_* constants below are the safety net used when the seeded
     # row is missing or deactivated; they must stay in sync with the seeds.
-    # spec/db/seeds_prompts_spec.rb asserts both pairs match.
+    # spec/db/prompt_seeds_spec.rb asserts both pairs match.
     ISSUE_GOAL_PROMPT_SLUG = Prompts::GoalCreateGithubIssue::PROMPT_SLUG
 
     FALLBACK_ISSUE_GOAL_PROMPT = Prompts::GoalCreateGithubIssue::TEMPLATE
@@ -3670,7 +3670,7 @@ module Activities
     # is matched (case-insensitive) by
     #   ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # which is how Paid recognizes a clean review and stops the review loop.
-    # spec/db/seeds_prompts_spec.rb has a coupling spec — if you change the
+    # spec/db/prompt_seeds_spec.rb has a coupling spec — if you change the
     # matcher pattern, update the shared source together or the spec will
     # fail.
     # @spec REVIEW-PR-002, REVIEW-PR-003, REVIEW-PR-005, REVIEW-PR-006
