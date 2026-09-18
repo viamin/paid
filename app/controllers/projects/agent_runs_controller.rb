@@ -517,6 +517,11 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        # @spec REVIEW-DEPTH-006 — carry the original run's review_depth
+        # snapshot forward so a retry cannot revert review depth
+        # mid-review-loop when the project preset changed after the
+        # original run was queued.
+        review_depth_snapshot: @agent_run.review_depth_snapshot,
         tdd_phase: @agent_run.tdd_phase,
         **resolved_container_host_attributes(runner: retry_runner),
         trigger_type: "manual",
@@ -607,6 +612,11 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        # @spec REVIEW-DEPTH-006 — carry the original run's review_depth
+        # snapshot forward so a refresh-auth retry cannot revert review
+        # depth mid-review-loop when the project preset changed after the
+        # original run was queued.
+        review_depth_snapshot: @agent_run.review_depth_snapshot,
         tdd_phase: @agent_run.tdd_phase,
         **resolved_container_host_attributes(runner: @agent_run.runner),
         trigger_type: "manual",
@@ -863,6 +873,12 @@ module Projects
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pull_request_number,
           goal: goal,
+          # @spec REVIEW-DEPTH-006 — snapshot the project's effective
+          # review_depth preset at creation time (covers manual UI review
+          # runs queued through create_review_runs_and_redirect) so later
+          # project changes cannot retroactively alter the run's review
+          # behavior.
+          review_depth_snapshot: @project.effective_review_depth,
           container_host: host_attributes[:container_host],
           external_metadata: external_metadata,
           trigger_type: trigger_type,

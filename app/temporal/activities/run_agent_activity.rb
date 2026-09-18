@@ -3847,7 +3847,86 @@ module Activities
         fallback_template: FALLBACK_REVIEW_GOAL_PROMPT
       )
 
-      maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
+      # @spec REVIEW-DEPTH-007 — the depth scope is a runtime-must-have section,
+      # so it is appended after A/B variant resolution: maybe_assign_ab_test_variant
+      # re-renders the variant from vars and would silently discard a section
+      # appended to the pre-variant render. append_prompt_section keeps this
+      # idempotent if a variant template already renders the section itself.
+      rendered = maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
+      append_review_depth_scope(agent_run, rendered)
+    end
+
+    # @spec REVIEW-DEPTH-007 — append the investigation-scope section for the
+    # run's effective review_depth preset. Always-on comment and JSON /
+    # payload rules remain in the base template; this method only varies the
+    # named categories so a focused run still has to back every comment with
+    # the same evidence a thorough run does, and a thorough run cannot
+    # publish speculative findings.
+    def append_review_depth_scope(agent_run, rendered)
+      section = review_depth_scope_section(agent_run.review_depth_snapshot)
+      append_prompt_section(rendered, section)
+    end
+
+    def review_depth_scope_section(depth)
+      preset = AgentRun::REVIEW_DEPTHS.include?(depth) ? depth : Project::DEFAULT_REVIEW_DEPTH
+
+      case preset
+      when "focused"
+        <<~SCOPE.strip
+          # Review Depth: Focused
+
+          Investigation scope is intentionally narrow for this rule. Look for
+          actionable correctness and security findings only. Each finding
+          must include a concrete failure scenario (input, code path, and
+          observed vs. expected behavior) backed by file:line references.
+
+          Do not post performance, maintainability, convention, or
+          caller-compat findings under this preset. If you discover a
+          severe problem in another category while reviewing for the named
+          scope, you may still report it — the evidence bar is the same
+          regardless of category — but do not seek it out.
+        SCOPE
+      when "thorough"
+        <<~SCOPE.strip
+          # Review Depth: Thorough
+
+          Investigation scope is intentionally broad for this rule. Beyond
+          the Balanced scope, also investigate caller compatibility and
+          removed safeguards:
+          - Caller compatibility: did this change break any other call site
+            in the repo? Search the codebase for symbols you are modifying
+            and follow each call.
+          - Removed safeguards: was something protecting an invariant that is
+            now gone (validation, transaction, lock, exception handler, env
+            var check)? If the diff deletes a guard, look at what depended
+            on it.
+          - Optional extra search effort: where the question warrants it,
+            spend additional budget on knowledge-base or repo-wide searches
+            before deciding a comment is unwarranted.
+
+          The evidence bar is identical to Focused and Balanced — every
+          finding still needs concrete failure scenarios and file:line
+          references. Thorough means deeper investigation, not more
+          speculative comments.
+        SCOPE
+      else
+        <<~SCOPE.strip
+          # Review Depth: Balanced
+
+          Investigation scope for this rule covers actionable:
+          - Correctness and security findings with concrete failure scenarios.
+          - Performance issues (algorithmic complexity, N+1 queries,
+            unnecessary allocations, missing caching).
+          - Maintainability concerns (clarity of intent, dead code,
+            error-handling shape).
+          - Project conventions the project has already declared through
+            conventions, style guides, or prior reviews on this PR's
+            neighborhood.
+
+          Do not seek caller-compat or removed-safeguard investigations
+          under this preset — those belong to Thorough.
+        SCOPE
+      end
     end
 
     def augment_prompt_for_enhance_issue_goal(agent_run, prompt)

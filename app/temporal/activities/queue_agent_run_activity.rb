@@ -93,6 +93,10 @@ module Activities
             auto_pick: auto_pick,
             count_toward_draft_review_round: count_toward_draft_review_round,
             expected_draft_review_count: expected_draft_review_count,
+            # @spec REVIEW-DEPTH-006 — snapshot the project's effective
+            # review_depth preset at queue time so later project changes
+            # cannot retroactively alter the run's review behavior.
+            review_depth_snapshot: project.effective_review_depth,
             status: "queued"
           )
           snapshot_page_load_evidence!(run, input[:focus_evidence])

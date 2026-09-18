@@ -45,6 +45,19 @@ class Project < ApplicationRecord
     "non_strict" => "Non-strict",
     "strict" => "Strict"
   }.freeze
+  # Paid's own reviewer's investigation depth preset. The same evidence and
+  # JSON payload bar applies to every preset — what varies is how broadly the
+  # reviewer investigates before deciding to comment. See
+  # docs/intent/review-depth-presets/. Default is "balanced"; existing
+  # projects pick it up through the merged default so no manual migration is
+  # required. @spec REVIEW-DEPTH-001, REVIEW-DEPTH-008
+  REVIEW_DEPTHS = %w[focused balanced thorough].freeze
+  REVIEW_DEPTH_LABELS = {
+    "focused" => "Focused",
+    "balanced" => "Balanced",
+    "thorough" => "Thorough"
+  }.freeze
+  DEFAULT_REVIEW_DEPTH = "balanced".freeze
   DATA_CLASSIFICATIONS = %w[open internal confidential restricted].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
@@ -90,6 +103,7 @@ class Project < ApplicationRecord
       },
       "paid_agent" => {
         "enabled" => false,
+        "review_depth" => DEFAULT_REVIEW_DEPTH,
         "termination" => {
           "max_review_rounds" => 15,
           "max_review_goal_retries" => 3,
@@ -178,6 +192,10 @@ class Project < ApplicationRecord
   ].freeze
 
   TDD_MODE_OPTIONS = TDD_MODES.map { |mode| [ TDD_MODE_LABELS[mode], mode ] }.freeze
+
+  # Human-facing select options for the project-level review_depth preset.
+  # @spec REVIEW-DEPTH-008
+  REVIEW_DEPTH_OPTIONS = REVIEW_DEPTHS.map { |preset| [ REVIEW_DEPTH_LABELS[preset], preset ] }.freeze
 
   # Bots whose PRs may be admitted by scoped automation paths when the project
   # is configured to auto-merge dependency updates. They are deliberately not
@@ -1166,6 +1184,29 @@ class Project < ApplicationRecord
     normalized["enabled"] == true && normalized.dig("methods", "paid_agent", "enabled") == true
   end
 
+  # @spec REVIEW-DEPTH-001, REVIEW-DEPTH-004
+  # Raw persisted review_depth preset for the paid_agent method, or nil when
+  # the project has never configured one. Reads the raw +review_settings+
+  # JSONB so unconfigured projects return nil; callers that want the
+  # resolved preset (including the "balanced" default) should use
+  # {#effective_review_depth}.
+  def review_depth
+    return nil unless review_settings.is_a?(Hash)
+
+    raw = review_settings.deep_stringify_keys.dig("methods", "paid_agent", "review_depth")
+    raw.is_a?(String) ? raw.strip.presence : nil
+  end
+
+  # @spec REVIEW-DEPTH-001, REVIEW-DEPTH-004
+  # Returns the review_depth preset that applies to a new review run for this
+  # project. Falls back to the default ("balanced") when the project has no
+  # preset configured so existing projects adopt the default without a
+  # manual migration.
+  def effective_review_depth
+    candidate = review_depth
+    REVIEW_DEPTHS.include?(candidate) ? candidate : DEFAULT_REVIEW_DEPTH
+  end
+
   def wait_for_reviews?
     automation_configuration.auto_review.wait_for_reviews?
   end
@@ -1996,6 +2037,17 @@ class Project < ApplicationRecord
       unless config.is_a?(Hash)
         errors.add(:review_settings, "#{method_name} config must be a JSON object")
         next
+      end
+
+      # @spec REVIEW-DEPTH-002 — validate the paid_agent review_depth preset
+      # against the known vocabulary. A blank/nil value is acceptable (the
+      # project default takes over); anything else outside REVIEW_DEPTHS is
+      # rejected.
+      if method_name == "paid_agent" && config.key?("review_depth") && !config["review_depth"].nil?
+        depth = config["review_depth"]
+        unless depth.is_a?(String) && REVIEW_DEPTHS.include?(depth)
+          errors.add(:review_settings, "paid_agent review_depth must be one of: #{REVIEW_DEPTHS.join(', ')}")
+        end
       end
 
       next unless config["enabled"] == true
