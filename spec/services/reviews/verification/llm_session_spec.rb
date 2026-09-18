@@ -6,6 +6,7 @@ RSpec.describe Reviews::Verification::LlmSession do
   let(:operation) { "verified_review.find" }
   let(:error_class) { Class.new(StandardError) }
   let(:invalid_output_error) { Class.new(StandardError) }
+  let(:usages) { [] }
 
   def harness_response(json, success: true, error: nil, input_tokens: 50, output_tokens: 25)
     instance_double(
@@ -24,7 +25,7 @@ RSpec.describe Reviews::Verification::LlmSession do
       session = described_class.new(
         operation: operation, error_class: error_class,
         invalid_output_error: invalid_output_error,
-        on_usage: ->(**usage) { @usage = usage }
+        on_usage: ->(**usage) { usages << usage }
       )
       allow(AgentHarness).to receive(:send_message).and_return(
         harness_response({ candidates: [ "ok" ] }.to_json)
@@ -33,7 +34,7 @@ RSpec.describe Reviews::Verification::LlmSession do
       result = session.request_json("prompt")
 
       expect(result).to eq("candidates" => [ "ok" ])
-      expect(@usage).to include(
+      expect(usages.first).to include(
         tokens_input: 50, tokens_output: 25,
         llm_model: "claude-sonnet-4-6", operation: operation
       )

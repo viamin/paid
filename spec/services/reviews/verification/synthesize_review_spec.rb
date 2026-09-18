@@ -52,10 +52,8 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
   end
 
   describe ".call" do
-    # @spec REVIEW-VERIFY-005
-    it "returns one validated comment per deduplicated confirmed finding" do
-      finding = confirmed_finding(id: 1, members: [ 1, 2 ])
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(<<~JSON))
+    let(:deduplicated_payload) do
+      <<~JSON
         {
           "body": "One confirmed issue.",
           "comments": [
@@ -68,6 +66,12 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
           ]
         }
       JSON
+    end
+
+    # @spec REVIEW-VERIFY-005
+    it "returns one validated comment per deduplicated confirmed finding" do
+      finding = confirmed_finding(id: 1, members: [ 1, 2 ])
+      allow(AgentHarness).to receive(:send_message).and_return(llm_response(deduplicated_payload))
 
       draft = described_class.call(
         project: project, findings: [ finding ], changed_lines: changed_lines

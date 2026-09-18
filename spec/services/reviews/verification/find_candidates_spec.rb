@@ -28,9 +28,8 @@ RSpec.describe Reviews::Verification::FindCandidates do
   end
 
   describe ".call" do
-    # @spec REVIEW-VERIFY-002
-    it "returns validated candidates with the four required evidence fields" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(<<~JSON))
+    let(:find_payload) do
+      <<~JSON
         {
           "candidates": [
             {
@@ -44,6 +43,11 @@ RSpec.describe Reviews::Verification::FindCandidates do
           ]
         }
       JSON
+    end
+
+    # @spec REVIEW-VERIFY-002
+    it "returns validated candidates with the four required evidence fields" do
+      allow(AgentHarness).to receive(:send_message).and_return(llm_response(find_payload))
 
       candidates = described_class.call(
         project: project, pr_number: 7, files: files,

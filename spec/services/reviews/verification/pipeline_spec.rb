@@ -107,8 +107,7 @@ RSpec.describe Reviews::Verification::Pipeline do
   before do
     allow(project).to receive(:client).and_return(client)
     stub_pull_request_heads([ head_sha ])
-    allow(client).to receive(:detailed_pull_request_files).and_return(files)
-    allow(client).to receive(:file_content).and_return(file_content)
+    allow(client).to receive_messages(detailed_pull_request_files: files, file_content: file_content)
     allow(poster).to receive(:call).and_return(
       { review_id: 555, review_url: "https://github.com/o/r/pull/42#pullrequestreview-555", already_posted: false }
     )
@@ -153,15 +152,17 @@ RSpec.describe Reviews::Verification::Pipeline do
       result = run_pipeline
       metrics = result[:metrics]
 
-      expect(metrics[:outcome]).to eq("posted_findings")
-      expect(metrics[:candidates]).to eq(1)
-      expect(metrics[:verdicts]).to eq(confirmed: 1, plausible: 0, refuted: 0)
-      expect(metrics[:confirmed_groups]).to eq(1)
-      expect(metrics[:comments_posted]).to eq(1)
-      expect(metrics[:llm_calls]).to eq(find: 1, verify: 1, synthesize: 1)
-      expect(metrics[:models]).to eq([ "claude-sonnet-4-6" ])
-      expect(metrics[:tokens_input]).to eq(300)
-      expect(metrics[:tokens_output]).to eq(120)
+      expect(metrics).to include(
+        outcome: "posted_findings",
+        candidates: 1,
+        verdicts: { confirmed: 1, plausible: 0, refuted: 0 },
+        confirmed_groups: 1,
+        comments_posted: 1,
+        llm_calls: { find: 1, verify: 1, synthesize: 1 },
+        models: [ "claude-sonnet-4-6" ],
+        tokens_input: 300,
+        tokens_output: 120
+      )
       expect(metrics[:latency_ms]).to include(:find, :verify, :synthesize, :post, :total)
       expect(metrics[:cost_cents]).to be >= 0
 
@@ -227,15 +228,13 @@ RSpec.describe Reviews::Verification::Pipeline do
 
     # @spec REVIEW-VERIFY-005
     it "collapses duplicate confirmed claims into one comment" do
+      duplicate_candidates = [
+        candidate_payload,
+        candidate_payload.merge("summary" => "Nil guard missing (duplicate)")
+      ]
       stub_llm_sequence(
-        find_output: llm_double({ candidates: [
-          candidate_payload,
-          candidate_payload.merge("summary" => "Nil guard missing (duplicate)")
-        ] }),
-        verify_outputs: [
-          llm_double(confirmed_verdict),
-          llm_double(confirmed_verdict)
-        ],
+        find_output: llm_double({ candidates: duplicate_candidates }),
+        verify_outputs: [ llm_double(confirmed_verdict), llm_double(confirmed_verdict) ],
         synthesize_output: llm_double(synthesized_comment(source_ids: [ 1, 2 ]))
       )
 

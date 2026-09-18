@@ -27,13 +27,13 @@ RSpec.describe Reviews::Verification::PostTrackedReview do
   end
 
   describe ".call" do
+    let(:review_comment) { { path: "app/foo.rb", line: 3, side: "RIGHT", body: "Fix this." } }
+
     # @spec REVIEW-VERIFY-006
     it "posts one COMMENT review under the review-bot token with the Paid marker and pinned commit" do
       result = described_class.call(
-        agent_run: agent_run,
-        body: "Found one issue.",
-        comments: [ { path: "app/foo.rb", line: 3, side: "RIGHT", body: "Fix this." } ],
-        commit_sha: "pinnedsha123"
+        agent_run: agent_run, body: "Found one issue.",
+        comments: [ review_comment ], commit_sha: "pinnedsha123"
       )
 
       expect(bot_client).to have_received(:create_pull_request_review_payload).with(
@@ -43,7 +43,7 @@ RSpec.describe Reviews::Verification::PostTrackedReview do
             .and(include("## Code Review", "Found one issue.")),
           event: "COMMENT",
           commit_id: "pinnedsha123",
-          comments: [ { path: "app/foo.rb", line: 3, side: "RIGHT", body: "Fix this." } ]
+          comments: [ review_comment ]
         }
       )
       expect(result[:review_id]).to eq(987_654)
@@ -69,8 +69,7 @@ RSpec.describe Reviews::Verification::PostTrackedReview do
 
     it "recovers from a pending-review 422 by deleting the pending review and retrying once" do
       pending_review = { id: 111, state: "PENDING", user_login: "paid-code-reviewer[bot]" }
-      allow(bot_client).to receive(:pull_request_reviews).and_return([ pending_review ])
-      allow(bot_client).to receive(:delete_pending_pull_request_review).and_return(true)
+      allow(bot_client).to receive_messages(pull_request_reviews: [ pending_review ], delete_pending_pull_request_review: true)
       create_calls = 0
       allow(bot_client).to receive(:create_pull_request_review_payload) do |*_args|
         create_calls += 1

@@ -5,30 +5,36 @@ require "rails_helper"
 RSpec.describe Reviews::Verification::ChangedLines do
   # @spec REVIEW-VERIFY-008
   describe ".from_files" do
-    it "parses right-side changed line ranges from unified diff patches" do
-      files = [
+    let(:two_hunk_patch) do
+      <<~PATCH
+        @@ -10,3 +10,7 @@ class User
+         context
+        -removed
+        +added one
+        +added two
+        +added three
+        +added four
+        @@ -40,2 +44,2 @@ class User
+         keep
+        -old
+        +new
+      PATCH
+    end
+
+    let(:two_hunk_files) do
+      [
         {
           filename: "app/models/user.rb",
           status: "modified",
           additions: 4,
           deletions: 1,
-          patch: <<~PATCH
-            @@ -10,3 +10,7 @@ class User
-             context
-            -removed
-            +added one
-            +added two
-            +added three
-            +added four
-            @@ -40,2 +44,2 @@ class User
-             keep
-            -old
-            +new
-          PATCH
+          patch: two_hunk_patch
         }
       ]
+    end
 
-      changed_lines = described_class.from_files(files)
+    it "parses right-side changed line ranges from unified diff patches" do
+      changed_lines = described_class.from_files(two_hunk_files)
 
       expect(changed_lines.changed_file?("app/models/user.rb")).to be true
       expect(changed_lines.changed_file?("app/models/other.rb")).to be false
