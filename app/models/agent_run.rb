@@ -264,10 +264,10 @@ class AgentRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
   validates :focus, presence: true, inclusion: { in: FOCUSES }
-  # @spec REVIEW-DEPTH-005 — the column carries a DB-level "balanced"
-  # default so explicit nil values are rejected by the inclusion check
-  # without requiring an additional presence validator.
-  validates :review_depth_snapshot, inclusion: { in: REVIEW_DEPTHS }, allow_nil: true
+  # @spec REVIEW-DEPTH-005 — the column is null: false with a DB-level
+  # "balanced" default, so an explicit nil fails validation cleanly here
+  # instead of raising ActiveRecord::NotNullViolation on insert/update.
+  validates :review_depth_snapshot, presence: true, inclusion: { in: REVIEW_DEPTHS }
   validates :tdd_phase, inclusion: { in: TDD_PHASES }, allow_nil: true
   validates :execution_origin, presence: true, inclusion: { in: EXECUTION_ORIGINS }
   validate :review_goal_requires_pull_request

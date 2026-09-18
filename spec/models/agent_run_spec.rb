@@ -65,6 +65,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
     it { is_expected.to validate_presence_of(:focus) }
     it { is_expected.to validate_inclusion_of(:focus).in_array(described_class::FOCUSES) }
+    it { is_expected.to validate_presence_of(:review_depth_snapshot) }
     it { is_expected.to validate_inclusion_of(:review_depth_snapshot).in_array(described_class::REVIEW_DEPTHS) }
 
     # @spec FOCUSED-RUN-001
@@ -181,6 +182,13 @@ RSpec.describe AgentRun do
 
       it "rejects an unknown review_depth_snapshot value" do
         agent_run = build(:agent_run, :review_goal, review_depth_snapshot: "very-thorough")
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:review_depth_snapshot]).to be_present
+      end
+
+      it "rejects an explicit nil review_depth_snapshot" do
+        agent_run = build(:agent_run, :review_goal, review_depth_snapshot: nil)
 
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:review_depth_snapshot]).to be_present
