@@ -337,6 +337,31 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.manual_review_started_at).to be_present
     end
 
+    # The round cap bounds automatic re-evaluation only (ISSUE-ENHANCEMENT-011).
+    # An operator explicitly resuming from manual_review via "Start enhancement
+    # run" has chosen to spend a run regardless of the automatic budget, so an
+    # insufficient verdict must land in needs_input (with questions synced),
+    # not loop straight back to manual_review (#3907).
+    # @spec ISSUE-ENHANCEMENT-019
+    it "lands a manual run at the max round in needs_input instead of manual_review" do
+      issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+      agent_run.update!(trigger_type: "manual")
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Clarifying questions\n1. Which events should be recorded?"
+      }.to_json)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:max_rounds_reached]).to be false
+      expect(result[:sufficient_context]).to be false
+      expect_comment_including("## Clarifying questions", "Which events")
+      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
+      expect(issue.manual_review_reason).to be_nil
+    end
+
     it "does not post a duplicate enhancement comment when one already exists" do
       existing_comment = OpenStruct.new(
         body: "#{described_class::COMMENT_MARKER}\nExisting",

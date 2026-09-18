@@ -83,17 +83,17 @@ module Activities
     end
 
     # Build comment, post, apply labels, complete run.
-    # @spec ISSUE-ENHANCEMENT-006
+    # @spec ISSUE-ENHANCEMENT-006 @spec ISSUE-ENHANCEMENT-019
     def finish_enhance_issue(agent_run, project, issue, client, parsed)
-      max_rounds_reached = !parsed[:sufficient_context] && max_rounds_reached?(project, issue)
-      parsed = stop_after_max_rounds(parsed, project, issue)
+      max_rounds_reached = !parsed[:sufficient_context] && max_rounds_reached?(project, issue, agent_run)
+      parsed = stop_after_max_rounds(parsed, project, issue, agent_run)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(issue, parsed, draft)
       questions = needs_input_questions(parsed, comment_body, max_rounds_reached:)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
-      label_result = apply_label_state(client, project, issue, parsed)
+      label_result = apply_label_state(client, project, issue, parsed, agent_run)
       sync_needs_input_questions(issue, questions)
 
       # Reset the enhancement round counter on a successful verdict (#3842):
@@ -104,7 +104,7 @@ module Activities
       reset_enhancement_rounds!(issue) if parsed[:sufficient_context]
 
       agent_run.log!("stdout", comment_body)
-      complete_run!(agent_run, paid_state_for(parsed, project, issue),
+      complete_run!(agent_run, paid_state_for(parsed, project, issue, agent_run),
         sufficient_context: parsed[:sufficient_context],
         reason: (max_rounds_reason(project) if max_rounds_reached))
       ProcessRunQueueJob.perform_later
@@ -328,7 +328,7 @@ module Activities
     end
 
     def recover_paid_question_comment!(agent_run, project, issue, client, comment)
-      label_result = apply_label_state(client, project, issue, sufficient_context: false)
+      label_result = apply_label_state(client, project, issue, { sufficient_context: false }, agent_run)
       issue.update!(needs_input_questions: paid_comment_questions(comment))
       complete_run!(agent_run, "needs_input", sufficient_context: false)
       ProcessRunQueueJob.perform_later
@@ -354,7 +354,7 @@ module Activities
     end
 
     def complete_existing(agent_run, client, project, issue, existing_comment)
-      label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
+      label_result = reconcile_existing_label_state(client, project, issue, existing_comment, agent_run)
       paid_state = existing_paid_state(issue, existing_comment)
       complete_run!(agent_run, paid_state,
         sufficient_context: label_result[:sufficient_context],
@@ -379,7 +379,7 @@ module Activities
     # branch, the reason the issue was originally parked with is the source
     # of truth — overwrite it with the round-limit copy and the inbox lane
     # will show operators the wrong cause.
-    def reconcile_existing_label_state(client, project, issue, existing_comment)
+    def reconcile_existing_label_state(client, project, issue, existing_comment, agent_run)
       if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
@@ -390,7 +390,7 @@ module Activities
       end
 
       sufficient_context = !existing_comment.body.to_s.include?("## Clarifying questions")
-      result = apply_label_state(client, project, issue, sufficient_context: sufficient_context)
+      result = apply_label_state(client, project, issue, { sufficient_context: sufficient_context }, agent_run)
       result.merge(sufficient_context: sufficient_context)
     end
 
@@ -504,9 +504,9 @@ module Activities
       Rails.application.routes.url_helpers
     end
 
-    def stop_after_max_rounds(parsed, project, issue)
+    def stop_after_max_rounds(parsed, project, issue, agent_run)
       return parsed if parsed[:sufficient_context]
-      return parsed unless max_rounds_reached?(project, issue)
+      return parsed unless max_rounds_reached?(project, issue, agent_run)
 
       parsed.merge(
         comment_body: <<~COMMENT
@@ -542,7 +542,7 @@ module Activities
       )
     end
 
-    def apply_label_state(client, project, issue, parsed)
+    def apply_label_state(client, project, issue, parsed, agent_run)
       if parsed[:sufficient_context]
         added = labels_added(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
         require_label_added!(project.enhance_issue_enhanced_label_name, added)
@@ -551,7 +551,7 @@ module Activities
         return { applied: added.first, max_rounds_reached: false }
       end
 
-      if max_rounds_reached?(project, issue)
+      if max_rounds_reached?(project, issue, agent_run)
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
         return { applied: nil, max_rounds_reached: true }
@@ -564,9 +564,9 @@ module Activities
       { applied: added.first, max_rounds_reached: false }
     end
 
-    def paid_state_for(parsed, project, issue)
+    def paid_state_for(parsed, project, issue, agent_run)
       return "completed" if parsed[:sufficient_context]
-      return "manual_review" if max_rounds_reached?(project, issue)
+      return "manual_review" if max_rounds_reached?(project, issue, agent_run)
 
       "needs_input"
     end
@@ -585,8 +585,16 @@ module Activities
       issue.update!(needs_input_questions: questions.presence)
     end
 
-    def max_rounds_reached?(project, issue)
-      issue.enhance_issue_rounds >= project.max_enhance_issue_reevaluation_rounds
+    # The round cap bounds *automatic* re-evaluation (ISSUE-ENHANCEMENT-011).
+    # A manual run is an explicit operator decision to spend a run regardless
+    # of the automatic budget, so it never re-parks the issue in
+    # manual_review at completion — an insufficient verdict lands in
+    # needs_input instead, otherwise the designated recovery action ("Start
+    # enhancement run") loops straight back to the state it exists to clear
+    # (#3907).
+    # @spec ISSUE-ENHANCEMENT-019
+    def max_rounds_reached?(project, issue, agent_run)
+      agent_run.automatic? && issue.enhance_issue_rounds >= project.max_enhance_issue_reevaluation_rounds
     end
 
     def add_label(client, project, issue, label)

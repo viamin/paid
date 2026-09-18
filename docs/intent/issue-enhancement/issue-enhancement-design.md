@@ -313,6 +313,20 @@ GitHub I/O after releasing the database lock. Concurrent queue or poll workers
 therefore cannot both publish a stop notice, and a slow GitHub request does not
 hold an issue row lock.
 
+The cap is re-checked a second time when `EnhanceIssueActivity` finishes a run
+with an insufficient verdict, independent of the queue-time check above. That
+completion-time check is scoped to automatic runs the same way the queue-time
+one is (ISSUE-ENHANCEMENT-019): a manual run — including the run queued by the
+inbox's "Start enhancement run" action against an issue already parked in
+`manual_review` — never re-parks the issue in `manual_review` at completion,
+even when `enhance_issue_rounds` is already at or past the cap. An operator
+clicking that button has explicitly chosen to spend a run, so an insufficient
+verdict lands in `needs_input` with clarifying questions synced instead.
+Without this scoping, the only documented recovery path out of `manual_review`
+would loop straight back into it whenever the agent still had questions,
+re-posting the "## Auto-enhancement stopped" wrapper comment each time (#3907).
+An automatic run's behavior at the cap is unchanged.
+
 ## Loop convergence to `create_pr`
 
 The analyze→enhance loop only converges when an `enhance_issue` round that

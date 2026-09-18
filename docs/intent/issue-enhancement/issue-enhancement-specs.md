@@ -219,6 +219,26 @@
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
   `app/temporal/activities/fetch_issues_activity.rb`.
 
+- [x] **ISSUE-ENHANCEMENT-019** — The enhancement-round cap SHALL bound
+  automatic re-evaluation only, at both the entry points that apply it:
+  queue time (ISSUE-ENHANCEMENT-011, which only automatic runs consume or
+  are blocked by) and completion time. When `EnhanceIssueActivity` finishes
+  a run whose verdict is `sufficient_context: false`, it SHALL treat the
+  round cap as reached only when the run's `trigger_type` is `automatic`.
+  An operator-triggered manual run — including one queued by "Start
+  enhancement run" against an issue already parked in `manual_review` — SHALL
+  land an insufficient verdict in `needs_input` with clarifying questions
+  synced, never back in `manual_review`, regardless of the issue's
+  accumulated `enhance_issue_rounds`. This closes the loop where the
+  designated `manual_review` recovery action re-wrapped its own comment in
+  "## Auto-enhancement stopped" and re-parked the issue in the state it was
+  meant to clear (#3907). An automatic run's behavior at the cap is
+  unchanged: it still parks the issue in `manual_review` and posts the
+  auto-enhancement-stop comment.
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#max_rounds_reached?`,
+  `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`.
+
 ## Manual-review visibility
 
 - [x] **ISSUE-ENHANCEMENT-012** — When an issue's `paid_state` transitions
