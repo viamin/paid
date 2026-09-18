@@ -15,3 +15,13 @@
   ("updates the auto-approve flag in place for Turbo Stream requests").
   *Code:* `app/views/chat_sessions/_conversation.html.erb`,
   `ChatSessionsController#update`.
+
+## Runner and model selection
+
+- [x] **CHAT-SESSION-PREFERENCES-002** - When a user chooses a runner or model
+  in the chat header, the UI SHALL save the changed selection automatically
+  and show whether the update succeeded, without navigating away from the
+  conversation.
+  *Test:* `spec/requests/chat_sessions_spec.rb`.
+  *Code:* `app/views/chat_sessions/_chat_panel.html.erb`,
+  `app/javascript/controllers/chat_controller.js`.
