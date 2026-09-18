@@ -187,6 +187,30 @@ bumps the badge cache version; no inbox-side cache work is needed. A stale
 or double click degrades to "This issue is no longer waiting for manual
 review." instead of an active-run error.
 
+When the terminal round's parked comment still has a parseable
+`## Clarifying questions` section, `EnhanceIssueActivity` preserves those
+questions on `Issue#needs_input_questions` instead of clearing them
+(`ISSUE-ENHANCEMENT-011`), and `manual_review_entries` carries them on the
+entry's `questions` the same local-only way `clarifying_question_entries`
+does (`Array(issue.needs_input_questions)`, no GitHub round-trip during queue
+listing). The detail pane then renders the same answer form
+`clarifying_questions` entries use (shared partial, sans the agent-context
+sidebar, which is scoped to the `clarifying_questions` kind), plus the "Start
+enhancement run" action, so answering the questions the agent asked on its
+final round is itself an operator-triggered manual review. Submitting posts
+the standard answer-marker comment and calls
+`ClarifyingQuestions::ClearNeedsInput`, which now also treats
+`paid_state == "manual_review"` as a clearable source state: it clears
+`paid_state` to `new` and resets `enhance_issue_rounds` to 0, the same
+human-signal reset a `needs_input` answer already gets. A terminal round with
+no parseable questions (or a hard parse failure via
+`IssueEnhancements::StopForManualReview`, which has nothing to preserve)
+falls back to the state + "Start enhancement run" button only, as before.
+GitHub in-thread answers are not auto-detected for `manual_review` —
+`FetchIssuesActivity`'s needs-input recovery paths gate on
+`paid_state: needs_input` only — so the inbox answer form is the only
+recovery surface for a parked terminal round's questions.
+
 The item returns only when the resumed work itself needs another human
 decision, through the existing re-entry producers: an unparseable
 enhancement (`IssueEnhancements::StopForManualReview`), the configured round

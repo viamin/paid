@@ -206,18 +206,43 @@
   `manual_review`; only an explicit operator-triggered run SHALL resume work,
   and queueing such a run SHALL move the issue out of `manual_review` in the
   same request (the queue-time state flip — see `OPERATOR-INBOX-002D`), with
-  re-entry only through the enhancement stop paths. Entering
-  `manual_review` SHALL clear stored clarification questions and remove
-  the enhancement needs-input label so GitHub and Paid do not show contradictory
-  lifecycle states. Only a marker comment authored by Paid's GitHub App SHALL
-  suppress the stop notice; the marker text is unauthenticated, so trusting
-  allowlisted human collaborators would let any one of them forge the marker
-  and silence platform feedback, breaking the convention used by other
-  marker-based status comments.
+  re-entry only through the enhancement stop paths. Entering `manual_review`
+  SHALL remove the enhancement needs-input label so GitHub and Paid do not
+  show contradictory lifecycle states. When the terminal round's agent output
+  still has a parseable `## Clarifying questions` section, the system SHALL
+  preserve those questions on `needs_input_questions` (instead of clearing
+  them) so the operator inbox's `manual_review` lane can render them as an
+  answerable surface (`OPERATOR-INBOX-002D`) — the terminal round's questions
+  ARE the manual review the state asks for. Only a hard parse failure
+  (`IssueEnhancements::StopForManualReview`, which has nothing parseable to
+  preserve) or a terminal round whose comment has no parseable questions
+  SHALL clear `needs_input_questions`. Submitting an answer to those preserved
+  questions from the inbox SHALL be accepted as a `manual_review` clearing
+  action: `ClarifyingQuestions::ClearNeedsInput` SHALL post the standard
+  answer-marker comment, reset `paid_state` to `new`, and reset
+  `enhance_issue_rounds` (`ISSUE-ENHANCEMENT-014`) — the same human-signal
+  round-budget reset a `needs_input` answer already gets. GitHub in-thread
+  answers SHALL NOT be auto-detected for `manual_review`:
+  `FetchIssuesActivity`'s needs-input recovery paths gate on
+  `paid_state: needs_input` only, so the inbox is the sole recovery surface
+  for a parked terminal round's questions. Only a marker comment authored by
+  Paid's GitHub App SHALL suppress the stop notice; the marker text is
+  unauthenticated, so trusting allowlisted human collaborators would let any
+  one of them forge the marker and silence platform feedback, breaking the
+  convention used by other marker-based status comments.
   *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
-  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/services/clarifying_questions/clear_needs_input_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`,
+  `spec/requests/inbox_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`.
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
-  `app/temporal/activities/fetch_issues_activity.rb`.
+  `app/temporal/activities/fetch_issues_activity.rb`,
+  `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`,
+  `app/services/clarifying_questions/clear_needs_input.rb`,
+  `app/services/inbox/queue.rb#manual_review_entries`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
 
 ## Manual-review visibility
 
@@ -264,9 +289,11 @@
   next cycle) and SHALL also reset it on the meaningful human signal of
   clearing the `needs_input` label (either via `ClearNeedsInput` when a
   human answer comment arrives or via `FetchIssuesActivity` when the label
-  is removed on GitHub). The reset on human signal only clears the
-  automatic cap; manual runs never consume a round at queue time so they
-  have nothing to reset.
+  is removed on GitHub), or of answering a `manual_review` issue's preserved
+  terminal-round questions from the inbox (`ClearNeedsInput`, extended by
+  `ISSUE-ENHANCEMENT-011` to accept `manual_review` as a clearable source
+  state). The reset on human signal only clears the automatic cap; manual
+  runs never consume a round at queue time so they have nothing to reset.
   *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`
   ("queues a create_pr follow-up when enhancement concludes sufficient_context: true", "does not queue a create_pr follow-up when enhancement concludes insufficient"),
   `spec/temporal/activities/enhance_issue_activity_spec.rb`

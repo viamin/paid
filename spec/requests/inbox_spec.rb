@@ -403,6 +403,29 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
+    parked = create_manual_review_issue(
+      title: "Parked with questions",
+      github_number: 510,
+      reason: "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+      needs_input_questions: [ "Which events should be recorded?" ]
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Start enhancement run")
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, parked)}"]))
+
+    expect(form).to be_present
+    expect(form.at_css('input[name="inbox"]')["value"]).to eq("1")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)

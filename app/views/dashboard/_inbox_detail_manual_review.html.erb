@@ -3,7 +3,11 @@
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+      <% if entry.questions.any? %>
+        Paid reached its enhancement round limit with clarifying questions still open. Answer them below to resume, or start a new enhancement run.
+      <% else %>
+        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+      <% end %>
     </p>
   </div>
 
@@ -13,6 +17,25 @@
       <%= entry.summary %>
     </p>
   </div>
+
+  <%# @spec ISSUE-ENHANCEMENT-011
+      The terminal round's preserved clarifying questions ARE the manual
+      review this state asks for: render the same answer form the
+      clarifying_questions lane uses, submitting to the same endpoint. %>
+  <% if entry.questions.any? %>
+    <%= render "dashboard/inbox_clarifying_answer_form",
+          entry: entry,
+          scoped_project: scoped_project,
+          selected_kind: selected_kind %>
+  <% else %>
+    <div class="flex items-center gap-3">
+      <%= link_to inbox_issue_link_label(entry.issue),
+            entry.issue.github_url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
     <% if policy(entry.project).run_agent? %>

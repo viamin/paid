@@ -320,7 +320,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
     end
 
     # @spec ISSUE-ENHANCEMENT-011
-    it "moves the issue to manual review at the max round" do
+    it "moves the issue to manual review at the max round and preserves the terminal round's clarifying questions" do
       issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
       log_agent_stdout({
         sufficient_context: false,
@@ -335,6 +335,22 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
       expect(issue.manual_review_reason).to include("#{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds")
       expect(issue.manual_review_started_at).to be_present
+      expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
+    end
+
+    # @spec ISSUE-ENHANCEMENT-011
+    it "leaves needs_input_questions nil when the terminal round's comment has no parseable questions" do
+      issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "Paid could not determine what to build next."
+      }.to_json)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:max_rounds_reached]).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.needs_input_questions).to be_nil
     end
 
     it "does not post a duplicate enhancement comment when one already exists" do

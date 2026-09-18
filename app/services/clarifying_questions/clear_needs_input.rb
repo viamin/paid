@@ -4,7 +4,10 @@ module ClarifyingQuestions
   # Clears an issue's "needs input" marker once its clarifying questions have
   # been answered: removes the needs-input label on GitHub and resets
   # paid_state so the "Answer Questions" button disappears and the issue
-  # re-enters the pipeline.
+  # re-enters the pipeline. Also accepts a `manual_review` issue whose
+  # terminal enhancement round preserved parseable clarifying questions
+  # (ISSUE-ENHANCEMENT-011) — answering those from the inbox is itself the
+  # manual review the state asks for, so it clears the same way.
   #
   # Idempotent (a no-op unless the issue is currently awaiting input) and
   # best-effort: a GitHub failure is logged but still updates local state, and
@@ -23,7 +26,7 @@ module ClarifyingQuestions
     end
 
     def call
-      return unless issue.needs_input? || issue_paid_state_needs_input?
+      return unless issue.needs_input? || issue_paid_state_needs_input? || issue_paid_state_manual_review?
 
       label = project.enhance_issue_needs_input_label_name
       remove_label(label) if issue.has_label?(label)
@@ -57,6 +60,10 @@ module ClarifyingQuestions
 
     def issue_paid_state_needs_input?
       issue.respond_to?(:paid_state) && issue.paid_state == "needs_input"
+    end
+
+    def issue_paid_state_manual_review?
+      issue.respond_to?(:paid_state) && issue.paid_state == "manual_review"
     end
 
     def remove_label(label)

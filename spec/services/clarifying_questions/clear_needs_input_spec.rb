@@ -75,6 +75,41 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       end
     end
 
+    # @spec ISSUE-ENHANCEMENT-011
+    # Answering a manual_review issue's preserved terminal-round questions
+    # from the inbox is accepted as a clearing action too, not only an
+    # explicit "Start enhancement run" click — see EnhanceIssueActivity,
+    # which now preserves needs_input_questions instead of wiping them when
+    # the terminal round still has parseable clarifying questions.
+    context "when the issue is parked in manual_review with preserved questions" do
+      let(:issue) do
+        double(
+          github_number: 1964,
+          paid_state: "manual_review",
+          needs_input?: false,
+          has_label?: false,
+          labels: [ "P2" ],
+          enhance_issue_rounds: 3,
+          update!: true
+        )
+      end
+
+      it "resets paid_state, clears the preserved questions, and resets the round counter" do
+        described_class.call(project: project, issue: issue)
+
+        expect(issue).to have_received(:update!).with(
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil,
+          enhance_issue_rounds: 0
+        )
+      end
+
+      it "does not call GitHub to remove a label that was already removed on entry to manual_review" do
+        described_class.call(project: project, issue: issue)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
     context "when the local state is stale and the label is already gone" do
       let(:issue) do
         double(
