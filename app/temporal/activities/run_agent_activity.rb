@@ -4013,8 +4013,13 @@ module Activities
         fallback_template: FALLBACK_REVIEW_GOAL_PROMPT
       )
 
-      rendered = append_review_depth_scope(agent_run, rendered)
-      maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
+      # @spec REVIEW-DEPTH-007 — the depth scope is a runtime-must-have section,
+      # so it is appended after A/B variant resolution: maybe_assign_ab_test_variant
+      # re-renders the variant from vars and would silently discard a section
+      # appended to the pre-variant render. append_prompt_section keeps this
+      # idempotent if a variant template already renders the section itself.
+      rendered = maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
+      append_review_depth_scope(agent_run, rendered)
     end
 
     # @spec REVIEW-DEPTH-007 — append the investigation-scope section for the

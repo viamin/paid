@@ -86,8 +86,10 @@
 
 ## Rendered review instructions
 
-- [x] **REVIEW-DEPTH-007** — The fallback review-goal prompt
-  (`RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT`) SHALL vary its
+- [x] **REVIEW-DEPTH-007** — The rendered review-goal prompt — whether
+  rendered from the fallback template
+  (`RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT`), a resolved prompt
+  version, or an assigned A/B test variant — SHALL vary its
   investigation scope section by the run's `review_depth_snapshot` —
   Focused limits the named categories to actionable correctness and
   security findings, Balanced adds material performance, maintainability,
