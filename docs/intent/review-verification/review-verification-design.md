@@ -141,11 +141,17 @@ the review loop terminates exactly as it does today.
 the `verified_review` phase metadata, a system agent-run log entry, and a
 structured log line: candidate count; verdict counts (confirmed / plausible /
 refuted); dedup group count; posted comment count; unanchored findings moved
-to the body; outcome (`posted_findings`, `posted_clean`, `failed`);
-per-stage and total latency; LLM call counts; model(s); token input/output
-totals and cost cents (via `TokenUsageTracker`). No repository content — no
-file paths, diffs, summaries, or comment bodies — is written to logs or phase
-metadata.
+to the body; outcome (`posted_findings`, `posted_unanchored`, `posted_clean`,
+`already_posted`, `failed`); per-stage and total latency; LLM call counts;
+model(s); token input/output totals and cost cents (via `TokenUsageTracker`).
+`posted_unanchored` distinguishes "had confirmed findings, but every inline
+comment was demoted to a body bullet by the anchor guard" from
+`posted_clean` ("no findings produced"), so pilot metrics can group the two
+cases separately. Per-stage latency is cumulative across attempts: when the
+head-move retry path runs the pipeline a second time, the discarded
+attempt's stage time is preserved — the run's real cost includes it.
+No repository content — no file paths, diffs, summaries, or comment bodies —
+is written to logs or phase metadata.
 
 ## Workflow routing
 

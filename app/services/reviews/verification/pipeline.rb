@@ -79,8 +79,9 @@ module Reviews
         # Reset attempt-scoped state so a re-run against a moved head does
         # not publish comments anchored to the prior head's changed lines,
         # and does not report verdicts/findings the discarded attempt left
-        # behind. Tokens, LLM call counts, and models stay cumulative: the
-        # cost of a discarded attempt is part of the run's real cost.
+        # behind. Tokens, LLM call counts, models, and per-stage latency
+        # stay cumulative: the cost of a discarded attempt is part of the
+        # run's real cost (REVIEW-VERIFY-009).
         @verdicts_summary = { confirmed: 0, plausible: 0, refuted: 0 }
 
         pr = pull_request
@@ -188,10 +189,17 @@ module Reviews
         @review_url = result[:review_url]
         @outcome = if result[:already_posted]
           "already_posted"
-        elsif @draft.comments.empty?
-          "posted_clean"
-        else
+        elsif !@draft.comments.empty?
           "posted_findings"
+        elsif @confirmed_groups.positive?
+          # Confirmed findings survived verification but every inline comment
+          # was demoted to a body bullet (synthesize_review.rb's anchor guard
+          # in `validate_comments`). Distinguishing this from `posted_clean`
+          # lets pilot metrics group "had findings, lost all anchors" separately
+          # from "no findings produced" (REVIEW-VERIFY-009).
+          "posted_unanchored"
+        else
+          "posted_clean"
         end
       end
 
@@ -224,7 +232,7 @@ module Reviews
       def timed(stage)
         started = monotonic_now
         result = yield
-        @latency[stage] = ((monotonic_now - started) * 1000).round
+        @latency[stage] += ((monotonic_now - started) * 1000).round
         result
       end
 

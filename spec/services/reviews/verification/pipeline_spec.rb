@@ -251,6 +251,32 @@ RSpec.describe Reviews::Verification::Pipeline do
         commit_sha: head_sha
       )
     end
+
+    # @spec REVIEW-VERIFY-009
+    it "reports `posted_unanchored` when confirmed findings exist but every inline comment is demoted to a body bullet" do
+      # Synthesizer cites the confirmed finding but anchors the comment to an
+      # invalid line (99). SynthesizeReview's anchor guard demotes it to a
+      # body bullet and leaves @draft.comments empty, so the pipeline must
+      # distinguish "had findings, lost all anchors" from "no findings".
+      stub_llm_sequence(
+        find_output: llm_double({ candidates: [ candidate_payload ] }),
+        verify_outputs: [ llm_double(confirmed_verdict) ],
+        synthesize_output: llm_double(synthesized_comment(line: 99, body: "Real bug, bogus anchor."))
+      )
+
+      result = run_pipeline
+
+      expect(poster).to have_received(:call).once.with(
+        agent_run: agent_run,
+        body: a_string_including("Real bug, bogus anchor."),
+        comments: [],
+        commit_sha: head_sha
+      )
+      expect(result[:outcome]).to eq("posted_unanchored")
+      expect(result[:comments_posted]).to eq(0)
+      expect(result[:metrics][:confirmed_groups]).to eq(1)
+      expect(result[:metrics][:unanchored_findings]).to eq(0)
+    end
   end
 
   describe "failure handling" do
@@ -286,6 +312,42 @@ RSpec.describe Reviews::Verification::Pipeline do
         comments: [ hash_including(path: "app/services/foo.rb", line: 7, body: "Fresh anchor.") ],
         commit_sha: new_head
       )
+    end
+
+    # @spec REVIEW-VERIFY-009
+    it "accumulates per-stage latency across the head-move retry (discarded attempt's time is part of the run)" do
+      new_head = "bbb222bbb222"
+      stub_pull_request_heads([ head_sha, new_head ])
+      stub_files_for_retry
+      stub_retry_llm_sequence
+
+      # 1ms per clock tick: each `timed(:stage)` measures the difference
+      # between two consecutive ticks, so a fresh attempt adds exactly one
+      # tick to its stage's counter. After two attempts the find/verify/
+      # synthesize counters each carry the discarded attempt's contribution
+      # plus the second attempt's, while `post` is still a single tick.
+      # Stub the underlying Process.clock_gettime so `@started_at` (set in
+      # initialize) and the `timed` calls share a single deterministic clock.
+      monotonic_ticks = 0
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) do
+        monotonic_ticks += 1
+        monotonic_ticks.to_f / 1000.0
+      end
+
+      result = run_pipeline
+
+      latency = result[:metrics][:latency_ms]
+      expect(result[:metrics][:attempts]).to eq(2)
+      # find/verify/synthesize run twice → each ticks twice
+      expect(latency[:find]).to eq(2)
+      expect(latency[:verify]).to eq(2)
+      expect(latency[:synthesize]).to eq(2)
+      # post runs once after the successful attempt
+      expect(latency[:post]).to eq(1)
+      # total is wall-clock from @started_at — strictly greater than the
+      # largest single stage's accumulated latency.
+      expect(latency[:total]).to be > latency[:find]
     end
 
     # @spec REVIEW-VERIFY-007
