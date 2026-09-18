@@ -379,6 +379,30 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002E
+  it "distinguishes Push Blocked from Retry Cap in the list view badge" do
+    capped = create_retry_limited_issue(title: "Capped issue", github_number: 512)
+    push_blocked = create(
+      :issue,
+      project: project,
+      title: "Push blocked issue",
+      github_number: 513,
+      runner_retry_abandoned_at: 1.hour.ago,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+    )
+
+    get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    capped_row = document.at_xpath(%(//li[.//p[contains(text(), "#{capped.title}")]]))
+    push_blocked_row = document.at_xpath(%(//li[.//p[contains(text(), "#{push_blocked.title}")]]))
+
+    expect(capped_row.text).to include("Retry Cap")
+    expect(capped_row.text).not_to include("Push Blocked")
+    expect(push_blocked_row.text).to include("Push Blocked")
+    expect(push_blocked_row.text).not_to include("Retry Cap")
+  end
+
+  # @spec OPERATOR-INBOX-002E
   it "renders the retry_limited detail with the abandon reason and the Retry Cap badge for runner-cap abandonments" do
     capped = create_retry_limited_issue(
       title: "Capped issue",
