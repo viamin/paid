@@ -34,6 +34,15 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["fallback_notice"] == true
   end
 
+  # @spec CHAT-API-016
+  def display_content
+    text = content.to_s
+    return text unless text.start_with?("<think>")
+    return "" unless text.include?("</think>")
+
+    text.sub(/\A<think>.*?<\/think>\s*/m, "")
+  end
+
   # @spec CHAT-API-014
   # A server-injected system message explaining that a send was rejected
   # because the chat session or account hit its configured token limit

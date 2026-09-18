@@ -52,12 +52,13 @@
     </div>
   <% end %>
 
+  <%# @spec CHAT-SESSION-PREFERENCES-002 %>
   <% if can_update_chat_session %>
     <%= form_with model: chat_session,
                   url: chat_session_path(chat_session),
                   method: :patch,
                   class: "grid gap-3 sm:grid-cols-2",
-                  data: { action: "change->chat#submitForm" } do |form| %>
+                  data: { action: "change->chat#saveSettings turbo:submit-end->chat#settingsSubmitted" } do |form| %>
       <div>
         <%= form.label :runner_id,
                        "Runner",
@@ -80,6 +81,7 @@
                         id: "chat_session_model#{dom_id_suffix}",
                         class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
       </div>
+      <p data-chat-settings-status role="status" class="text-sm text-gray-600 sm:col-span-2"></p>
     <% end %>
   <% else %>
     <div class="grid gap-3 sm:grid-cols-2">
