@@ -88,8 +88,8 @@
   prose questions, context bullets, mixed marker families, malformed
   options, or partial marker sets, so unmarked questions stay free text.
   Question strings SHALL remain byte-identical — `ClarifyingQuestions::Parse`
-  is untouched and choices are a view-time attribute only (UI rendering is
-  a follow-up issue).
+  is untouched and choices are a view-time attribute only (the click-to-answer
+  UI that consumes them is specified as OPERATOR-INBOX-012).
   *Tests:* `spec/services/clarifying_questions/choices_spec.rb`,
   `spec/migrations/sync_enhance_issue_choice_markers_prompt_spec.rb`,
   `spec/db/prompt_seeds_spec.rb`
