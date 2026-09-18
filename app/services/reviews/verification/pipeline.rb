@@ -179,7 +179,11 @@ module Reviews
             comments: @draft.comments, commit_sha: @head_sha
           )
         end
-        @comments_posted = @draft.comments.size
+        # `comments_posted` reflects what GitHub actually received: when the
+        # poster reports the run already posted (the workflow-retry path), no
+        # new comments were published this attempt, so the count stays at zero
+        # rather than mirroring the discarded draft (REVIEW-VERIFY-009).
+        @comments_posted = result[:already_posted] ? 0 : @draft.comments.size
         @review_id = result[:review_id]
         @review_url = result[:review_url]
         @outcome = if result[:already_posted]

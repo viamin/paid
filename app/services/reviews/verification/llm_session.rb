@@ -69,8 +69,11 @@ module Reviews
         raise @invalid_output_error, "#{@operation} output is not a JSON object" unless parsed.is_a?(Hash)
 
         parsed
-      rescue JSON::ParserError => e
-        raise @invalid_output_error, "#{@operation} output is not valid JSON: #{e.message}"
+      rescue JSON::ParserError
+        # The stdlib message embeds the offending input, which would propagate
+        # through `track_phase` into `agent_run_phases.metadata.error_message`
+        # and leak repository content into the database (REVIEW-VERIFY-009).
+        raise @invalid_output_error, "#{@operation} output is not valid JSON"
       end
     end
   end

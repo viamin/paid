@@ -308,6 +308,7 @@ RSpec.describe Reviews::Verification::Pipeline do
       expect(poster).not_to have_received(:call)
     end
 
+    # @spec REVIEW-VERIFY-009
     it "does not post a second review when the poster reports the run already posted" do
       allow(poster).to receive(:call).and_return(
         { review_id: 555, review_url: "https://example.com/r/555", already_posted: true }
@@ -316,6 +317,10 @@ RSpec.describe Reviews::Verification::Pipeline do
       result = run_pipeline
 
       expect(result[:outcome]).to eq("already_posted")
+      # `comments_posted` has to reflect what GitHub actually received, not
+      # what the discarded draft contained (REVIEW-VERIFY-009).
+      expect(result[:comments_posted]).to eq(0)
+      expect(result[:metrics][:comments_posted]).to eq(0)
     end
   end
 end
