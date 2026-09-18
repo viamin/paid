@@ -300,10 +300,10 @@ hit the configured limit while the agent still asked something parseable is
 itself the manual review the state asks for, so `needs_input_questions` is
 preserved instead of wiped so the inbox can render it as an answerable
 surface. Preservation holds on every entry path: `IssueEnhancements::
-StopForManualReview` — reached from the hard parse failure, the
-label-removal recheck at the limit, and the queue-time limit stop — keeps
-already-stored `needs_input_questions`, since those stored questions are the
-latest answerable surface and wiping them recreates the dead end. Only a
+StopForManualReview` — reached from the hard parse failure and the
+queue-time limit stop — keeps already-stored `needs_input_questions`, since
+those stored questions are the latest answerable surface and wiping them
+recreates the dead end. Only a
 terminal round whose comment has no parseable questions clears
 `needs_input_questions`. Answering the preserved questions from the inbox is
 accepted as a `manual_review` clearing action the same way an answered
@@ -332,6 +332,17 @@ uses a short row-locked state transition to elect one notifier, then performs
 GitHub I/O after releasing the database lock. Concurrent queue or poll workers
 therefore cannot both publish a stop notice, and a slow GitHub request does not
 hold an issue row lock.
+
+The round-limit stop cannot preempt the human-signal reset: removing the
+needs-input label is itself the #3842 human signal, so the recheck handler
+(`fetch_issues_activity#enqueue_enhance_issue_recheck`) resets the counter at
+the same time it enqueues the re-evaluation (#3906). A human removing the
+label on an issue parked at cap therefore gets a fresh automatic budget — the
+recheck run consumes the first round of it and a subsequent insufficient
+verdict lands back in `needs_input` — instead of the removal spending the
+last round and re-parking the issue in `manual_review`. The queue-time limit
+guard in `QueueAgentRunActivity` remains as the backstop for automatic paths
+that reach the cap without a human signal.
 
 ## Loop convergence to `create_pr`
 
@@ -391,7 +402,12 @@ later regression does not inherit an exhausted automatic-retry budget:
 2. Human signal: either `ClearNeedsInput` (a human answer comment arrives
    through the `paid:clarifying-answers` marker, or the human edits the body
    to embed answers) or `FetchIssuesActivity` observes the operator remove
-   the `needs-input` label on GitHub.
+   the `needs-input` label on GitHub — whichever label-removal handler
+   claims the event: the plain-removal handler
+   (`detect_needs_input_label_removals`) resets the counter directly, and
+   the recheck handler (`enqueue_enhance_issue_recheck`) resets it while
+   enqueuing the re-evaluation, so the budget behaves identically either
+   way (#3906).
 
 Manual runs never consume a round at queue time so they have nothing to
 reset.

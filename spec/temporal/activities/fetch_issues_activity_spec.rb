@@ -732,50 +732,24 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.paid_state).to eq("completed")
       end
 
-      it "posts a stop comment and requires manual review after the max round" do # @spec ISSUE-ENHANCEMENT-011
-        project.update!(max_enhance_issue_reevaluation_rounds: 1)
-        issue.update!(enhance_issue_rounds: 1, needs_input_questions: [ "Which behavior should Paid implement?" ])
+      # @spec ISSUE-ENHANCEMENT-014
+      # Removing the needs-input label is the #3842 human signal. When the
+      # recheck handler claims the event, enqueueing the recheck must reset
+      # the round budget — not spend the last round of it — so an issue
+      # parked at cap still gets a fresh re-evaluation and a subsequent
+      # insufficient verdict lands in needs_input, not manual_review (#3906).
+      it "resets the enhancement round counter when the recheck handler claims the label removal" do
+        issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:enhance_issue_rechecks]).to be_empty
-        expect(github_client).to have_received(:add_comment).with(
-          project.full_name,
-          issue.github_number,
-          a_string_including("## Auto-enhancement stopped", IssueEnhancements::StopForManualReview::COMMENT_MARKER)
+        expect(result[:enhance_issue_rechecks]).to contain_exactly(
+          hash_including(issue_id: issue.id, issue_number: issue.github_number, enhance_issue_rounds: 0)
         )
-        expect(issue.reload.enhance_issue_rounds).to eq(1)
-        expect(issue.paid_state).to eq("manual_review")
-        # The recheck stop can fire while the issue still has the latest
-        # round's questions stored; they are the manual_review lane's
-        # answerable surface, so the stop must preserve them (#3905).
-        expect(issue.needs_input_questions).to eq([ "Which behavior should Paid implement?" ])
-        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
-      end
-
-      it "contains the loop even when posting the stop comment fails" do
-        project.update!(max_enhance_issue_reevaluation_rounds: 1)
-        issue.update!(enhance_issue_rounds: 1)
-        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error.new("GitHub unavailable"))
-
-        activity.execute(project_id: project.id)
-
-        issue.reload
-        expect(issue.enhance_issue_rounds).to eq(1)
-        expect(issue.paid_state).to eq("manual_review")
-        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
-      end
-
-      it "does not restore the needs-input label at the manual-review boundary" do
-        project.update!(max_enhance_issue_reevaluation_rounds: 1)
-        issue.update!(enhance_issue_rounds: 1)
-        allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
-
-        activity.execute(project_id: project.id)
-
-        expect(github_client).to have_received(:add_comment).once
-        expect(github_client).not_to have_received(:add_labels_to_issue)
-        expect(issue.reload.paid_state).to eq("manual_review")
+        reloaded = issue.reload
+        expect(reloaded.enhance_issue_rounds).to eq(0)
+        expect(reloaded.paid_state).to eq("in_progress")
+        expect(github_client).not_to have_received(:add_comment)
       end
     end
 
@@ -912,6 +886,20 @@ RSpec.describe Activities::FetchIssuesActivity do
         activity.execute(project_id: project.id)
 
         expect(issue.reload.paid_state).to eq("new")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-014
+      # Parity with the recheck handler: whichever label-removal handler
+      # picks the event up, the human signal resets the round budget the
+      # same way (#3906).
+      it "resets the enhancement round counter alongside paid_state" do
+        issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
+
+        activity.execute(project_id: project.id)
+
+        reloaded = issue.reload
+        expect(reloaded.paid_state).to eq("new")
+        expect(reloaded.enhance_issue_rounds).to eq(0)
       end
 
       it "enqueues auto-pick recheck after transitioning to new" do
