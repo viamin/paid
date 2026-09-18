@@ -4,6 +4,7 @@ require "rails_helper"
 require Rails.root.join("db/migrate/20260917030434_create_intent_conformance_verdicts")
 require Rails.root.join("db/migrate/20260917030435_create_intent_conformance_decisions")
 require Rails.root.join("db/migrate/20260917040153_enable_rls_on_intent_conformance_tables")
+require Rails.root.join("db/migrate/20260918000007_align_intent_conformance_verdicts_with_approved_design")
 
 RSpec.describe CreateIntentConformanceVerdicts, :aggregate_failures do
   # @spec INTENT-CONFORMANCE-001 @spec INTENT-CONFORMANCE-008
@@ -12,6 +13,7 @@ RSpec.describe CreateIntentConformanceVerdicts, :aggregate_failures do
   let(:verdicts_migration) { described_class.new }
   let(:decisions_migration) { CreateIntentConformanceDecisions.new }
   let(:rls_migration) { EnableRlsOnIntentConformanceTables.new }
+  let(:alignment_migration) { AlignIntentConformanceVerdictsWithApprovedDesign.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
@@ -62,6 +64,56 @@ RSpec.describe CreateIntentConformanceVerdicts, :aggregate_failures do
     expect(connection.data_source_exists?("intent_conformance_decisions")).to be(false)
   end
 
+  # Databases migrated through main carry the earlier #3890 shape of the
+  # verdicts table (recorded_at, cited_design_claims, string reviewer_run_id,
+  # and an inline project-keyed tenant_isolation policy). This context replays
+  # this branch's migrations against that shape, as bin/ci-migration-replay
+  # does on CI.
+  # @spec INTENT-MERGE-GUARD-002 @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
+  context "when the earlier #3890 shape of the verdicts table already exists" do
+    it "reshapes the table to the approved design without dropping decisions or RLS" do
+      create_legacy_verdicts_table!
+
+      # The guarded create is a no-op on databases that already have the table.
+      expect { verdicts_migration.migrate(:up) }.not_to raise_error
+      expect(connection.columns(:intent_conformance_verdicts).map(&:name)).to include("recorded_at")
+      expect(connection.columns(:intent_conformance_verdicts).map(&:name)).not_to include("evaluated_at")
+
+      expect { decisions_migration.migrate(:up) }.not_to raise_error
+
+      # The legacy table already carries a same-named tenant_isolation policy;
+      # re-enabling RLS must replace it, not crash.
+      expect { rls_migration.up }.not_to raise_error
+      expect_rls_on("intent_conformance_verdicts", actor_constrained: false)
+
+      expect { alignment_migration.up }.not_to raise_error
+
+      expect_verdict_schema
+      expect_decision_schema
+      expect_indexes
+      expect_rls_on("intent_conformance_verdicts", actor_constrained: false)
+      expect_rls_on("intent_conformance_decisions", actor_constrained: true)
+    end
+
+    it "rolls the reshape back to the earlier shape" do
+      create_legacy_verdicts_table!
+      decisions_migration.migrate(:up)
+      rls_migration.up
+      alignment_migration.up
+
+      expect { alignment_migration.down }.not_to raise_error
+
+      columns = connection.columns(:intent_conformance_verdicts).map(&:name)
+      expect(columns).to include("recorded_at", "cited_design_claims", "reviewer_model")
+      expect(columns).not_to include("evaluated_at", "cited_claims")
+      expect(connection.indexes(:intent_conformance_verdicts).map(&:name))
+        .to include("index_intent_conformance_verdicts_on_issue_and_recorded_at")
+      expect(connection.foreign_key_exists?(:intent_conformance_decisions, :intent_conformance_verdicts, column: "verdict_id"))
+        .to be(true)
+      expect(tenant_policy_present?("intent_conformance_verdicts")).to be(true)
+    end
+  end
+
   private
 
   def clear_schema_metadata!
@@ -76,6 +128,52 @@ RSpec.describe CreateIntentConformanceVerdicts, :aggregate_failures do
     rls_migration.down
     connection.drop_table(:intent_conformance_decisions, if_exists: true)
     connection.drop_table(:intent_conformance_verdicts, if_exists: true)
+  end
+
+  # Recreates the verdicts table exactly as main's #3890 left it: the
+  # CreateIntentConformanceVerdicts + AddReviewerEvidenceToIntentConformanceVerdicts
+  # shape, including the inline project-keyed RLS policy.
+  def create_legacy_verdicts_table!
+    connection.create_table :intent_conformance_verdicts,
+      comment: "RDR-067 intent-conformance verdict identity: outcome bound to an exact PR head and approved design revision." do |t|
+      t.references :project, null: false, foreign_key: true
+      t.references :issue, null: false, foreign_key: true, comment: "Local pull-request issue the verdict targets."
+      t.string :pr_head_sha, null: false, comment: "PR head commit SHA the verdict was evaluated against."
+      t.string :approved_design_revision, null: false,
+        comment: "Feature's approved design revision the verdict was evaluated against."
+      t.string :outcome, null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated."
+      t.datetime :recorded_at, null: false, comment: "When the verdict was recorded; the most recent row per issue is current."
+      t.timestamps
+    end
+    connection.add_column :intent_conformance_verdicts, :reviewer_run_id, :string, null: false, default: ""
+    connection.add_column :intent_conformance_verdicts, :reviewer_model, :string, null: false, default: ""
+    connection.add_column :intent_conformance_verdicts, :cited_design_claims, :jsonb, null: false, default: []
+    connection.add_column :intent_conformance_verdicts, :cited_diff_locations, :jsonb, null: false, default: []
+    connection.add_column :intent_conformance_verdicts, :reasoning_summary, :text
+    connection.add_index :intent_conformance_verdicts, %i[issue_id recorded_at],
+      name: "index_intent_conformance_verdicts_on_issue_and_recorded_at"
+    connection.add_index :intent_conformance_verdicts, :outcome
+
+    connection.execute "ALTER TABLE intent_conformance_verdicts ENABLE ROW LEVEL SECURITY"
+    connection.execute "ALTER TABLE intent_conformance_verdicts FORCE ROW LEVEL SECURITY"
+    connection.execute <<~SQL
+      CREATE POLICY tenant_isolation ON intent_conformance_verdicts
+      AS PERMISSIVE FOR ALL
+      USING (
+        paid_tenant_bypass() OR EXISTS (
+          SELECT 1 FROM projects
+          WHERE projects.id = intent_conformance_verdicts.project_id
+            AND projects.account_id = paid_current_account_id()
+        )
+      )
+      WITH CHECK (
+        paid_tenant_bypass() OR EXISTS (
+          SELECT 1 FROM projects
+          WHERE projects.id = intent_conformance_verdicts.project_id
+            AND projects.account_id = paid_current_account_id()
+        )
+      )
+    SQL
   end
 
   def expect_verdict_schema

@@ -2,7 +2,11 @@
 
 # See RDR-067 (docs/rdrs/RDR-067-approved-intent-conformance.md).
 class CreateIntentConformanceVerdicts < ActiveRecord::Migration[8.1]
-  def change
+  def up
+    # Databases migrated through main already carry the earlier #3890 shape of
+    # this table; AlignIntentConformanceVerdictsWithApprovedDesign reshapes it.
+    return if table_exists?(:intent_conformance_verdicts)
+
     create_table :intent_conformance_verdicts,
       comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved " \
         "design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is " \
@@ -30,5 +34,9 @@ class CreateIntentConformanceVerdicts < ActiveRecord::Migration[8.1]
     add_index :intent_conformance_verdicts, [ :issue_id, :pr_head_sha, :evaluated_at ],
       name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
     add_index :intent_conformance_verdicts, :outcome
+  end
+
+  def down
+    drop_table :intent_conformance_verdicts, if_exists: true
   end
 end

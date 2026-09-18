@@ -22,6 +22,9 @@ class EnableRlsOnIntentConformanceTables < ActiveRecord::Migration[8.1]
   def enable_rls_on_intent_conformance_verdicts
     execute "ALTER TABLE intent_conformance_verdicts ENABLE ROW LEVEL SECURITY"
     execute "ALTER TABLE intent_conformance_verdicts FORCE ROW LEVEL SECURITY"
+    # Databases migrated through main carry #3890's project-keyed policy of the
+    # same name; replace it with the approved-design tenancy keying.
+    execute "DROP POLICY IF EXISTS tenant_isolation ON intent_conformance_verdicts"
     execute <<~SQL
       CREATE POLICY tenant_isolation ON intent_conformance_verdicts
       AS PERMISSIVE
@@ -55,6 +58,7 @@ class EnableRlsOnIntentConformanceTables < ActiveRecord::Migration[8.1]
   def enable_rls_on_intent_conformance_decisions
     execute "ALTER TABLE intent_conformance_decisions ENABLE ROW LEVEL SECURITY"
     execute "ALTER TABLE intent_conformance_decisions FORCE ROW LEVEL SECURITY"
+    execute "DROP POLICY IF EXISTS tenant_isolation ON intent_conformance_decisions"
     execute <<~SQL
       CREATE POLICY tenant_isolation ON intent_conformance_decisions
       AS PERMISSIVE
