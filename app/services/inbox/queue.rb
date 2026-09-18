@@ -8,7 +8,9 @@ module Inbox
     ACTION_REQUIRED_KIND = "action_required"
     ESCALATED_PR_KIND = "escalated_pr"
     MANUAL_REVIEW_KIND = "manual_review"
+    INTENT_CONFORMANCE_KIND = "intent_conformance"
     FEATURE_DECISION_KIND = "feature_decision"
+    RETRY_LIMITED_KIND = "retry_limited"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
@@ -16,7 +18,9 @@ module Inbox
       ACTION_REQUIRED_KIND,
       ESCALATED_PR_KIND,
       MANUAL_REVIEW_KIND,
-      FEATURE_DECISION_KIND
+      INTENT_CONFORMANCE_KIND,
+      FEATURE_DECISION_KIND,
+      RETRY_LIMITED_KIND
     ].freeze
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
@@ -75,8 +79,16 @@ module Inbox
         kind == MANUAL_REVIEW_KIND
       end
 
+      def intent_conformance?
+        kind == INTENT_CONFORMANCE_KIND
+      end
+
       def feature_decision?
         kind == FEATURE_DECISION_KIND
+      end
+
+      def retry_limited?
+        kind == RETRY_LIMITED_KIND
       end
 
       def title
@@ -85,7 +97,8 @@ module Inbox
 
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
-        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? || feature_decision?
+        return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
+          intent_conformance? || feature_decision? || retry_limited?
 
         "#{tasks.size} proposed tasks"
       end
@@ -121,7 +134,7 @@ module Inbox
       @kind = kind.to_s.presence
     end
 
-    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D
+    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E
     def call
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
@@ -130,7 +143,9 @@ module Inbox
       entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
       entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
       entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
+      entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
       entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
+      entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
       sort_entries(entries)
     end
 
@@ -313,6 +328,40 @@ module Inbox
       end
     end
 
+    # @spec INTENT-CONFORMANCE-006
+    def intent_conformance_entries
+      intent_conformance_issues.filter_map do |issue|
+        snapshot = Inbox::IntentConformance.call(issue)
+        next unless snapshot
+
+        Entry.new(
+          id: "#{INTENT_CONFORMANCE_KIND}:#{issue.id}",
+          kind: INTENT_CONFORMANCE_KIND,
+          project: issue.project,
+          issue: issue,
+          record: snapshot,
+          waiting_since: snapshot.waiting_since,
+          questions: [],
+          tasks: [],
+          summary_text: snapshot.summary,
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    def intent_conformance_issues
+      @intent_conformance_issues ||= begin
+        ids = scoped_projects.map(&:id)
+        return Issue.none if ids.empty?
+
+        Issue
+          .includes(:project)
+          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+          .where.not(auto_merge_blockers: nil)
+      end
+    end
+
     # Reuses Dashboard::BlockedPullRequests (PR-ESCALATION-011/012/013) rather
     # than reimplementing the escalated-PR query, then narrows the account-wide
     # result to the operator's auto-pick-gated projects, the same scope every
@@ -417,6 +466,48 @@ module Inbox
         title_text: feature_intent.title,
         action_url: nil
       )
+    end
+
+    # Both abandonment producers (RunAgentActivity#apply_issue_runner_retry_cap
+    # via Issue#abandon_due_to_runner_retry_cap! and the push-permission path
+    # via Issue#abandon_due_to_push_permission_rejection!) write the same two
+    # columns — runner_retry_abandoned_at + runner_retry_abandon_reason — so the
+    # inbox lane derives from those columns directly rather than from
+    # paid_state (the dashboard's Retry-Limited card deliberately shows both
+    # issues and PRs regardless of paid_state, the same surface this lane
+    # matches). The push_permission_abandoned? split is preserved via
+    # summary_text and the entry's underlying issue, so the list/detail views
+    # can render the Push Blocked vs Retry Cap badge split (#3902).
+    # @spec OPERATOR-INBOX-002E
+    def retry_limited_entries
+      ordered_retry_limited_issues.map do |issue|
+        Entry.new(
+          id: "#{RETRY_LIMITED_KIND}:#{issue.id}",
+          kind: RETRY_LIMITED_KIND,
+          project: issue.project,
+          issue: issue,
+          record: issue,
+          waiting_since: issue.runner_retry_abandoned_at,
+          questions: [],
+          tasks: [],
+          summary_text: issue.runner_retry_abandon_reason.to_s,
+          title_text: nil,
+          action_url: nil
+        )
+      end
+    end
+
+    def ordered_retry_limited_issues
+      ids = scoped_projects.map(&:id)
+      return Issue.none if ids.empty?
+
+      Issue
+        .joins(:project)
+        .includes(:project)
+        .where(project_id: ids, github_state: "open")
+        .where.not(runner_retry_abandoned_at: nil)
+        .order(runner_retry_abandoned_at: :desc)
+        .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
     end
 
     def visible_blocking_notifications

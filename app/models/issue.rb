@@ -88,6 +88,8 @@ class Issue < ApplicationRecord
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :change_intents, dependent: :nullify
   has_many :issue_merge_subscriptions, dependent: :destroy
+  has_many :intent_conformance_verdicts, dependent: :destroy
+  has_many :intent_conformance_decisions, dependent: :destroy
 
   # @spec INTENT-AMENDMENT-003 — feature intent linkage; an
   # issue belongs to at most one feature tree (unique index on the join).
@@ -150,13 +152,15 @@ class Issue < ApplicationRecord
   before_save :sync_manual_review_started_at, if: :will_save_change_to_paid_state?
 
   # Invalidates the cached inbox nav badge count whenever an issue enters or
-  # leaves the needs_input queue, enters or leaves manual_review, or when a
-  # waiting issue is closed/reopened on GitHub, so the async badge endpoint
-  # recomputes instead of serving a stale number for the rest of its TTL. Also
-  # covers a pull request entering or leaving the escalated_pr inbox lane,
-  # since merge_approval_candidate_state_changed? already watches
+  # leaves the needs_input queue, enters or leaves manual_review, enters or
+  # leaves the retry_limited queue (runner-retry-cap or push-permission
+  # abandonment, cleared by a successful manual run), or when a waiting issue
+  # is closed/reopened on GitHub, so the async badge endpoint recomputes
+  # instead of serving a stale number for the rest of its TTL. Also covers a
+  # pull request entering or leaving the escalated_pr inbox lane, since
+  # merge_approval_candidate_state_changed? already watches
   # saved_change_to_pr_review_phase? for every pull request.
-  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -671,7 +675,9 @@ class Issue < ApplicationRecord
   def inbox_count_cache_invalidation_needed?
     saved_change_to_needs_input_since? ||
       saved_change_to_manual_review_started_at? ||
+      saved_change_to_runner_retry_abandoned_at? ||
       waiting_issue_github_state_changed? ||
+      retry_limited_issue_github_state_changed? ||
       merge_approval_candidate_state_changed?
   end
 
@@ -681,6 +687,14 @@ class Issue < ApplicationRecord
 
   def waiting_issue_github_state_changed?
     saved_change_to_github_state? && paid_state.in?(%w[needs_input manual_review])
+  end
+
+  # Mirror of waiting_issue_github_state_changed? for the retry_limited lane:
+  # the Inbox query filters `github_state: "open"` regardless of paid_state,
+  # so a close/reopen on a runner-retry-abandoned issue must also bump the
+  # cached badge count (OPERATOR-INBOX-002E).
+  def retry_limited_issue_github_state_changed?
+    saved_change_to_github_state? && runner_retry_abandoned_at.present?
   end
 
   def merge_approval_candidate_state_changed?

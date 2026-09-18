@@ -31,7 +31,8 @@ module Inbox
 
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
-        escalated_pr_count + manual_review_count + feature_decision_count
+        escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
+        retry_limited_count
     end
 
     def needs_input_count
@@ -112,8 +113,50 @@ module Inbox
       Issue.where(project_id: project_ids, paid_state: "manual_review", github_state: "open").count
     end
 
+    # Mirrors merge_approval_count's shape: a cheap SQL pre-filter narrows to
+    # rows that could plausibly carry the intent_conformance blocker before
+    # falling back to Ruby for the full Inbox::IntentConformance check.
+    # @spec INTENT-CONFORMANCE-006
+    def intent_conformance_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      intent_conformance_candidates(project_ids).count { |issue| Inbox::IntentConformance.call(issue).present? }
+    end
+
+    def intent_conformance_candidates(project_ids)
+      Issue
+        .includes(:project)
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: "ready",
+          merge_permission_rejected_at: nil
+        )
+        .where.not(auto_merge_evaluated_at: nil)
+        .where.not(auto_merge_blockers: nil)
+        .where.not(projects: { auto_merge_mode: "off" })
+    end
+
+    # A direct indexed count: both abandonment producers (runner-retry-cap and
+    # push-permission rejection) write the same `runner_retry_abandoned_at`
+    # column, so the lane is a single WHERE NOT NULL scan. No paid_state
+    # filter — the dashboard's Retry-Limited card deliberately shows both
+    # issues and PRs regardless of paid_state, and this lane matches that
+    # surface.
+    # @spec OPERATOR-INBOX-002E
+    def retry_limited_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      Issue.where(project_id: project_ids, github_state: "open")
+        .where.not(runner_retry_abandoned_at: nil)
+        .count
+    end
+
     def gated_project_ids
-      Project
+      @gated_project_ids ||= Project
         .includes(account: :tenant_setting, created_by: :user_setting)
         .where(
           account_id: user.account_id,

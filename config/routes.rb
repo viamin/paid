@@ -305,6 +305,8 @@ Rails.application.routes.draw do
         post :discard
       end
     end
+    resources :intent_conformance_decisions, only: [ :create ],
+      controller: "projects/intent_conformance_decisions"
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],
       controller: "knowledge/context_intake" do
