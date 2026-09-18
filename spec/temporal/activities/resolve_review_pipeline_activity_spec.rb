@@ -7,6 +7,14 @@ RSpec.describe Activities::ResolveReviewPipelineActivity do
   let(:agent_run) { create(:agent_run, project: project, goal: "review", source_pull_request_number: 7) }
   let(:activity) { described_class.new }
 
+  before do
+    # BaseActivity wraps execute in a tenant context + executor that doesn't
+    # share AR's query-cache identity with the test's let-bound instances.
+    # Route the activity's AgentRun.find back to the test's instance so the
+    # project stubs below actually apply.
+    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+  end
+
   def resolve(agent_run_id)
     activity.execute({ agent_run_id: agent_run_id })
   end
@@ -35,6 +43,7 @@ RSpec.describe Activities::ResolveReviewPipelineActivity do
 
   it "selects the container pipeline for non-review goals even with the flag on" do
     create_run = create(:agent_run, project: project, goal: "create_pr")
+    allow(AgentRun).to receive(:find).with(create_run.id).and_return(create_run)
     allow(project).to receive(:paid_agent_independent_verification?).and_return(true)
 
     expect(resolve(create_run.id)).to eq(pipeline: "container")

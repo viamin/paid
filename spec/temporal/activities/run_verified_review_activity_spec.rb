@@ -29,6 +29,11 @@ RSpec.describe Activities::RunVerifiedReviewActivity do
   end
 
   before do
+    # BaseActivity wraps execute in a tenant context + executor that doesn't
+    # share AR's query-cache identity with the test's let-bound instances.
+    # Route the activity's AgentRun.find back to the test's instance so the
+    # Pipeline.call assertion below matches on the same agent_run object.
+    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Reviews::Verification::Pipeline).to receive(:call).and_return(pipeline_result)
     allow(ProcessRunQueueJob).to receive(:perform_later)
   end
@@ -37,7 +42,11 @@ RSpec.describe Activities::RunVerifiedReviewActivity do
   it "runs the pipeline, records a verified_review phase, and returns its result" do
     result = activity.execute({ agent_run_id: agent_run.id })
 
-    expect(Reviews::Verification::Pipeline).to have_received(:call).with(agent_run: agent_run)
+    expect(Reviews::Verification::Pipeline).to have_received(:call).with(
+      agent_run: agent_run,
+      github_client: agent_run.project.client,
+      poster: Reviews::Verification::PostTrackedReview
+    )
     expect(result[:outcome]).to eq("posted_findings")
     expect(result[:agent_run_id]).to eq(agent_run.id)
 

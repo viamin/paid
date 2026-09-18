@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Reviews::Verification::PostTrackedReview do
   let(:project) { create(:project) }
@@ -11,12 +12,10 @@ RSpec.describe Reviews::Verification::PostTrackedReview do
   let(:bot_token) { "bot-installation-token" }
   let(:bot_client) { instance_double(GithubClient) }
   let(:created_review) do
-    instance_double(Sawyer::Resource).tap do |resource|
-      allow(resource).to receive_messages(
-        id: 987_654,
-        html_url: "https://github.com/#{project.full_name}/pull/42#pullrequestreview-987654"
-      )
-    end
+    OpenStruct.new(
+      id: 987_654,
+      html_url: "https://github.com/#{project.full_name}/pull/42#pullrequestreview-987654"
+    )
   end
 
   before do
@@ -72,9 +71,15 @@ RSpec.describe Reviews::Verification::PostTrackedReview do
       pending_review = { id: 111, state: "PENDING", user_login: "paid-code-reviewer[bot]" }
       allow(bot_client).to receive(:pull_request_reviews).and_return([ pending_review ])
       allow(bot_client).to receive(:delete_pending_pull_request_review).and_return(true)
-      allow(bot_client).to receive(:create_pull_request_review_payload)
-        .and_raise(GithubClient::ApiError.new("Only one pending review per pull request is allowed", status: 422))
-        .and_return(created_review)
+      create_calls = 0
+      allow(bot_client).to receive(:create_pull_request_review_payload) do |*_args|
+        create_calls += 1
+        if create_calls == 1
+          raise GithubClient::ApiError.new("Only one pending review per pull request is allowed", status: 422)
+        end
+
+        created_review
+      end
 
       described_class.call(agent_run: agent_run, body: "body", comments: [], commit_sha: "sha")
 

@@ -173,6 +173,31 @@ module Workflows
           return { success: true, agent_run_id: agent_run_id, **result.slice(:sufficient_context) }
         end
 
+        # @spec REVIEW-VERIFY-001 — pilot dispatch for the review-goal pipeline.
+        # When the project's pilot flag is on, ResolveReviewPipelineActivity
+        # returns pipeline: "verified" and we run the Find → Verify →
+        # Synthesize pipeline directly instead of provisioning a container
+        # and running the containerized reviewer. The patched gate keeps
+        # non-patched workflows on the container path, so a rollback to a
+        # worker without this branch does not break in-flight runs.
+        if goal == "review" && Temporalio::Workflow.patched("review-independent-verification-v1")
+          pipeline_result = run_activity(Activities::ResolveReviewPipelineActivity,
+            { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+
+          if pipeline_result[:pipeline] == "verified"
+            run_activity(Activities::RunVerifiedReviewActivity,
+              { agent_run_id: agent_run_id },
+              start_to_close_timeout: 1800,
+              retry_policy: NO_RETRY)
+
+            run_activity(Activities::CompleteReviewGoalActivity,
+              { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+
+            agent_step_succeeded = true
+            return { success: true, agent_run_id: agent_run_id }
+          end
+        end
+
         # Step 1.5: Provision service containers (database, redis, etc.)
         # Always run unconditionally — the activity returns {} when no services
         # are configured. Avoids DB queries inside the workflow, which would

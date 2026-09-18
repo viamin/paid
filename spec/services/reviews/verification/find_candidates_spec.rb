@@ -66,7 +66,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
       described_class.call(
         project: project, pr_number: 7, files: files,
-        pr_title: "Add foo", pr_body: "Body text"
+        pr_title: "Fix foo", pr_body: "Body text"
       )
 
       expect(AgentHarness).to have_received(:send_message).with(
