@@ -529,6 +529,60 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited detail with an inbox-scoped Re-enable action and return_to for runner-cap abandonments" do
+    capped = create_retry_limited_issue(
+      title: "Capped issue",
+      github_number: 514,
+      reason: "All available runners reached the per-issue retry cap (3)."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped),
+      kind: Inbox::Queue::RETRY_LIMITED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(
+      %(form[action="#{clear_retry_abandonment_project_agent_runs_path(project, issue_id: capped.id)}"])
+    )
+
+    expect(form).to be_present
+    expect(form["data-turbo-frame"]).to eq("_top")
+    expect(form.at_css('button').text).to include("Re-enable")
+    expect(form.at_css('input[name="return_to"]')["value"]).to eq(
+      inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+    )
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited detail with the inbox-scoped Re-enable action for Push Blocked abandonments" do
+    push_blocked = create(
+      :issue,
+      project: project,
+      title: "Push blocked issue",
+      github_number: 515,
+      runner_retry_abandoned_at: 1.hour.ago,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::RETRY_LIMITED_KIND, push_blocked),
+      kind: Inbox::Queue::RETRY_LIMITED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(
+      %(form[action="#{clear_retry_abandonment_project_agent_runs_path(project, issue_id: push_blocked.id)}"])
+    )
+
+    expect(form).to be_present
+    expect(form["data-turbo-frame"]).to eq("_top")
+    expect(form.at_css('button').text).to include("Re-enable")
+  end
+
+  # @spec OPERATOR-INBOX-002E
   it "exposes retry_limited in the inbox nav filter chips" do
     get inbox_path
 
