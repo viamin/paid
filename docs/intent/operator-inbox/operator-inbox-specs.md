@@ -148,16 +148,34 @@
   `saved_change_to_runner_retry_abandoned_at?` joining
   `Issue#inbox_count_cache_invalidation_needed?`, the same pattern
   `saved_change_to_manual_review_started_at?` already follows for
-  `manual_review`. The Inbox nav filter and `valid_inbox_kind` SHALL accept
-  `retry_limited` alongside the existing kinds.
+  `manual_review`. The detail pane SHALL also expose an inline
+  `button_to` ("Re-enable") that posts to
+  `clear_retry_abandonment_project_agent_runs_path(issue_id: …)` with
+  a hidden `return_to: inbox_path(kind: retry_limited)` field and
+  `turbo_frame: "_top"`, so the operator can clear
+  `runner_retry_abandoned_at` / `runner_retry_abandon_reason` without
+  leaving the inbox — matching the `unblock_escalation` and
+  `resume_manual_review` patterns `OPERATOR-INBOX-002C` / `002D`
+  already follow. The action SHALL authorize `:run_agent?` and refuse
+  the request when the issue is not currently flagged
+  (`runner_retry_abandoned_at` nil), so a stale page or repeated click
+  after the flag already cleared never silently no-ops; on success it
+  SHALL redirect back to `safe_return_target`, the badge cache SHALL
+  invalidate via `bump_inbox_cache_version` on
+  `saved_change_to_runner_retry_abandoned_at?` (the same callback the
+  auto-clear path follows), and the entry SHALL disappear from the
+  lane on the next render. The Inbox nav filter and `valid_inbox_kind`
+  SHALL accept `retry_limited` alongside the existing kinds.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/models/issue.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
   `app/views/dashboard/_inbox_detail_retry_limited.html.erb`,
-  `app/views/inbox/index.html.erb`.
+  `app/views/inbox/index.html.erb`,
+  `config/routes.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/requests/inbox_spec.rb`.
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
