@@ -593,10 +593,73 @@ RSpec.describe "ChatSessions" do
 
         doc = Nokogiri::HTML(response.body)
         header = desktop_header_in(doc)
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+        summary = disclosure&.at_xpath("./summary")
 
-        # CHAT_SESSION_STATUS_STYLES["active"] -> bg-green-100 text-green-700
-        expect(header.css("span.bg-green-100.text-green-700")).to be_empty
-        # CHAT_MODE_STYLES["inline"] -> bg-blue-100 text-blue-700
+        # CHAT_SESSION_STATUS_STYLES["active"] -> bg-green-100 text-green-700,
+        # but CHAT_CONTAINER_CAPABILITY_STYLES["ready"] reuses the same classes
+        # for the workspace capability badge, which lives inside the Session
+        # details disclosure body (still inside this <header>). Scope the lookup
+        # to spans outside the always-visible chrome (the disclosure summary)
+        # and exclude spans that are the workspace capability badge, identified
+        # by its `data-chat-target="capabilityBadge"` stimulus target.
+        chrome_spans = summary ? summary.css("span") : []
+        off_chrome = header.css("span").to_a - chrome_spans
+        non_capability = off_chrome.reject { |span| span["data-chat-target"] == "capabilityBadge" }
+        expect(non_capability.select { |span| (span["class"] || "").split.include?("bg-green-100") && (span["class"] || "").split.include?("text-green-700") }).to be_empty
+
+        # CHAT_MODE_STYLES["inline"] -> bg-blue-100 text-blue-700. The capability
+        # palette does not use blue, so the simple CSS check stays safe.
+        expect(header.css("span.bg-blue-100.text-blue-700")).to be_empty
+      end
+
+      it "does not render the redundant Active/Inline status badges when the workspace capability is ready" do
+        # @spec CHAT-API-009
+        # #3925 regression: CHAT_CONTAINER_CAPABILITY_STYLES["ready"] reuses
+        # the same green classes as CHAT_SESSION_STATUS_STYLES["active"], so
+        # a naive CSS lookup against the desktop header would match the
+        # workspace capability badge (which lives inside the Session details
+        # disclosure body, still inside <header>) and report a false-positive
+        # "Active badge reappeared" failure. Drive a workspace chat so the
+        # green capability badge is actually rendered, then confirm the
+        # redundant status/mode badges are still absent and that the
+        # capability badge is the only green span in the header.
+        chat_session = create(:chat_session, :workspace, account: account, created_by: user)
+
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        header = desktop_header_in(doc)
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+        summary = disclosure&.at_xpath("./summary")
+
+        # Sanity: the workspace capability badge really is present in green,
+        # otherwise this regression test would not be exercising the
+        # collision between the two badge palettes.
+        capability_badge = header.at_xpath(".//span[@data-chat-target='capabilityBadge']")
+        expect(capability_badge).to be_present
+        expect(capability_badge["class"].to_s.split).to include("bg-green-100", "text-green-700")
+
+        # Apply the same scoping the primary test uses: only spans outside
+        # the always-visible chrome and not the capability badge may carry
+        # the green status classes. If a future change reintroduces the
+        # status badge, the assertion below will fail; if the green-CSS
+        # check ever drifts back to a header-wide lookup, this test will
+        # fail with the original false-positive message.
+        chrome_spans = summary ? summary.css("span") : []
+        off_chrome = header.css("span").to_a - chrome_spans
+        non_capability = off_chrome.reject { |span| span["data-chat-target"] == "capabilityBadge" }
+        expect(non_capability.select { |span| (span["class"] || "").split.include?("bg-green-100") && (span["class"] || "").split.include?("text-green-700") }).to be_empty
+
+        # The green workspace capability badge is the *only* green span in
+        # the header — i.e., it never competes with another badge for the
+        # same classes from a different palette.
+        green_spans = header.css("span.bg-green-100.text-green-700").to_a
+        expect(green_spans.map { |span| span["data-chat-target"] }).to eq([ "capabilityBadge" ])
+
+        # CHAT_MODE_STYLES does not collide with the capability palette, so
+        # the CSS check stays safe.
         expect(header.css("span.bg-blue-100.text-blue-700")).to be_empty
       end
 
