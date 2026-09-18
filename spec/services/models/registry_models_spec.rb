@@ -6,12 +6,12 @@ RSpec.describe Models::RegistryModels do
   let(:registry) { instance_double(RubyLLM::Models) }
 
   def model(id:, provider:)
-    instance_double(RubyLLM::Model::Info, id: id, provider: provider)
+    instance_double(RubyLLM::Model, id: id, provider: provider)
   end
 
   before do
     allow(RubyLLM).to receive(:models).and_return(registry)
-    allow(registry).to receive(:refresh!).and_return(true)
+    allow(registry).to receive(:refresh).and_return(true)
   end
 
   it "normalizes the gemini provider alias to google" do
@@ -43,7 +43,7 @@ RSpec.describe Models::RegistryModels do
   end
 
   it "is not fetched and logs a fallback when the registry is unavailable" do
-    allow(registry).to receive(:refresh!).and_raise(StandardError.new("down"))
+    allow(registry).to receive(:refresh).and_raise(StandardError.new("down"))
     allow(Rails.logger).to receive(:warn)
 
     subject = described_class.fetch

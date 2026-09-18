@@ -1,0 +1,88 @@
+<%# @spec OPERATOR-INBOX-012 %>
+<%# Shared click-to-answer answer field rendered by BOTH answer surfaces —
+    the inbox detail pane and the standalone clarifying_questions#show page
+    (which also serves the needs-input dashboard flow). A question with
+    strict choice markers (ClarifyingQuestions::Choices) renders native
+    radio/checkbox inputs styled as segmented buttons, an always-present
+    "Other" option, and a detail textarea that becomes required when "Other"
+    is selected; a question whose parsed choices are nil renders the
+    textarea-only widget unchanged. Both branches submit the same
+    questions[]/answers[] params with unmutated question strings. %>
+<% choices = ClarifyingQuestions::Choices.call(question: question) %>
+<% if label.present? %>
+  <label for="<%= field_id %>" class="block text-sm font-medium text-gray-700 mb-1">
+    <%= label %> <span class="text-red-500">*</span>
+  </label>
+<% end %>
+<% if choices.nil? %>
+  <%= text_area_tag "answers[]", pending_answer,
+        id: field_id,
+        rows: 4,
+        required: true,
+        placeholder: "Enter your answer...",
+        class: field_class,
+        data: answer_data %>
+<% else %>
+  <% pill_class = "inline-flex min-h-11 items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 " \
+                  "text-sm font-medium text-gray-900 shadow-sm peer-checked:border-indigo-600 " \
+                  "peer-checked:bg-indigo-600 peer-checked:text-white peer-focus-visible:ring-2 " \
+                  "peer-focus-visible:ring-indigo-500" %>
+  <div class="mt-2" data-controller="clarifying-choice">
+    <div class="flex flex-wrap gap-2" role="group" aria-label="Answer choices">
+      <% choices[:options].each_with_index do |option, option_index| %>
+        <% option_line = ClarifyingQuestions::ChoiceAnswers.option_line(label: option[:label], text: option[:text]) %>
+        <label for="<%= field_id %>_choice_<%= option_index %>" class="cursor-pointer">
+          <%= tag.input(
+                type: choices[:type] == :single ? "radio" : "checkbox",
+                name: "#{field_id}_choices",
+                id: "#{field_id}_choice_#{option_index}",
+                value: option[:label],
+                class: "peer sr-only",
+                data: {
+                  clarifying_choice_target: "option",
+                  clarifying_choice_line: option_line,
+                  action: "change->clarifying-choice#compose"
+                }
+              ) %>
+          <span class="<%= pill_class %>">
+            <span><%= option[:label] %></span>
+            <span class="text-xs font-normal opacity-75"><%= option[:text] %></span>
+          </span>
+        </label>
+      <% end %>
+      <label for="<%= field_id %>_other" class="cursor-pointer">
+        <%= tag.input(
+              type: choices[:type] == :single ? "radio" : "checkbox",
+              name: "#{field_id}_choices",
+              id: "#{field_id}_other",
+              value: "Other",
+              class: "peer sr-only",
+              data: {
+                clarifying_choice_target: "other",
+                action: "change->clarifying-choice#compose"
+              }
+            ) %>
+        <span class="<%= pill_class %>">
+          <span>Other</span>
+        </span>
+      </label>
+    </div>
+
+    <%= text_area_tag nil, nil,
+          id: field_id,
+          rows: 2,
+          placeholder: "Add detail (required when choosing Other)",
+          class: "mt-3 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
+          data: {
+            clarifying_choice_target: "detail",
+            action: "input->clarifying-choice#compose"
+          } %>
+
+    <%= hidden_field_tag "answers[]", pending_answer,
+          id: "#{field_id}_composed",
+          data: {
+            clarifying_choice_target: "composed",
+            **answer_data
+          } %>
+  </div>
+<% end %>

@@ -9,7 +9,7 @@ RSpec.describe Models::SeedKnownModels do
 
     before do
       allow(RubyLLM).to receive(:models).and_return(registry)
-      allow(registry).to receive(:refresh!).and_return(true)
+      allow(registry).to receive(:refresh).and_return(true)
     end
 
     it "creates model records from known models" do
@@ -19,7 +19,7 @@ RSpec.describe Models::SeedKnownModels do
     it "refreshes the registry before reading models" do
       described_class.call
 
-      expect(registry).to have_received(:refresh!).once
+      expect(registry).to have_received(:refresh).once
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-002
@@ -80,7 +80,7 @@ RSpec.describe Models::SeedKnownModels do
     end
 
     it "falls back cleanly with a single structured warning when the registry is unavailable" do
-      allow(registry).to receive(:refresh!).and_raise(Faraday::ConnectionFailed.new("registry down"))
+      allow(registry).to receive(:refresh).and_raise(Faraday::ConnectionFailed.new("registry down"))
       allow(Rails.logger).to receive(:warn)
 
       described_class.call
@@ -225,7 +225,7 @@ RSpec.describe Models::SeedKnownModels do
 
   def registry_model(id:, name: id, provider:, family: "test-family", context_window: 123_456,
     max_output_tokens: 4_096, capabilities: [], pricing: {}, modalities: {})
-    RubyLLM::Model::Info.new(
+    RubyLLM::Model.new(
       id: id,
       name: name,
       provider: provider,

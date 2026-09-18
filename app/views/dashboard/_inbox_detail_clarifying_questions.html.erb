@@ -55,13 +55,14 @@
                 <%= render "shared/markdown_text", content: question %>
               </label>
               <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
-              <%= text_area_tag "answers[]", pending_answers&.at(index),
-                    id: dom_id(entry.record, "answer_#{index}"),
-                    rows: 4,
-                    required: true,
-                    placeholder: "Enter your answer...",
-                    data: { testid: "inbox-answer-#{index}" },
-                    class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+              <%# @spec OPERATOR-INBOX-012 %>
+              <%= render "projects/clarifying_questions/answer_field",
+                    question: question,
+                    field_id: dom_id(entry.record, "answer_#{index}"),
+                    label: nil,
+                    pending_answer: pending_answers&.at(index),
+                    field_class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
+                    answer_data: { testid: "inbox-answer-#{index}" } %>
             </div>
           <% end %>
         </div>

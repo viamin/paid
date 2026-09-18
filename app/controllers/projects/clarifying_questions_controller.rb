@@ -92,8 +92,26 @@ module Projects
       end
 
       questions.each_with_index.map do |question, i|
-        { question: question, answer: answers[i].to_s.strip }
+        answer = answers[i].to_s.strip
+        validate_choice_answer!(question: question, answer: answer, position: i + 1)
+        { question: question, answer: answer }
       end
+    end
+
+    # @spec OPERATOR-INBOX-012
+    # The click-to-answer widget composes choice answers client-side into one
+    # hidden `answers[]` input; the server never trusts those composed
+    # strings. Re-parse each question with ClarifyingQuestions::Choices and
+    # reject answers whose selections are not offered options or a specified
+    # "Other". Questions without parsed choices (free text) skip validation —
+    # the textarea answer is authoritative as typed.
+    def validate_choice_answer!(question:, answer:, position:)
+      error = ClarifyingQuestions::ChoiceAnswers.error_for(
+        question: question,
+        answer: answer,
+        position: position
+      )
+      raise ArgumentError, error if error
     end
 
     # True when the operator's submitted questions still match the issue's

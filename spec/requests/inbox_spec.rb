@@ -408,6 +408,61 @@ RSpec.describe "Inbox" do
     end
   end
 
+  # @spec OPERATOR-INBOX-012
+  context "when a clarifying question carries strict choice markers" do
+    let(:multi_choice_question) do
+      "Which browsers must the export UI support? " \
+        "- [ ] Chrome) primary browser " \
+        "- [ ] Firefox) required by the support team"
+    end
+
+    def create_choice_issue
+      create(
+        :issue,
+        :needs_input,
+        project: project,
+        title: "Choice question",
+        body: "No markdown here",
+        needs_input_questions: [ multi_choice_question, "What is the expected behavior?" ]
+      )
+    end
+
+    it "renders the click-to-answer widget with checkbox pills in the inbox detail pane" do
+      issue = create_choice_issue
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      widget = document.at_css("turbo-frame#inbox-detail [data-controller='clarifying-choice']")
+      expect(widget).to be_present
+
+      checkboxes = widget.css('input[type="checkbox"]')
+      expect(checkboxes.size).to eq(3)
+      expect(checkboxes.map { |box| box["data-clarifying-choice-line"] }.compact).to eq(
+        [ "Chrome (primary browser)", "Firefox (required by the support team)" ]
+      )
+      expect(widget.at_css("label[for$='_other']")).to be_present
+
+      composed = widget.at_css('input[type="hidden"][name="answers[]"]')
+      expect(composed["data-testid"]).to eq("inbox-answer-0")
+      expect(composed["data-clarifying-choice-target"]).to eq("composed")
+    end
+
+    it "keeps the textarea-only widget for questions without parsed choices" do
+      issue = create_choice_issue
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      detail_frame = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail")
+      textareas = detail_frame.css("textarea[name='answers[]']")
+
+      expect(textareas.size).to eq(1)
+      expect(textareas.first["data-testid"]).to eq("inbox-answer-1")
+      expect(textareas.first["required"]).to be_present
+    end
+  end
+
   # @spec OPERATOR-INBOX-011
   context "when the enhancement comment carries context sections" do
     let(:context_comment_body) do

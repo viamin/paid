@@ -81,7 +81,12 @@ gem "aws-sdk-s3", require: false
 gem "agent-harness", "0.36.23"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
-gem "ruby_llm", "~> 1.16"
+# Pinned to 2.0.x to pick up the GHSA-42r3-x6vx-x49x / CVE-2026-67991 ReDoS fix
+# (Polynomial-Time ReDoS in Bedrock video output prefix normalization). The
+# 2.0.x line is currently only released as release-candidates; 2.0.0 stable is
+# not yet published, so the lower bound uses the rc1 that contains the fix
+# and the upper bound tracks the 2.0.x line as new rcs ship.
+gem "ruby_llm", ">= 2.0.0.rc1", "< 2.1"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.

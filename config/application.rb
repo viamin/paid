@@ -20,15 +20,13 @@ require "action_cable/engine"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
-# Opt into RubyLLM's new acts_as mode before ActiveRecord loads. The gem's
-# railtie reads this flag from an `on_load :active_record` hook that fires
-# during the railtie phase (before config/initializers), and emits a per-boot
-# deprecation warning when it is false. We use RubyLLM only for model-catalog
-# data (app/services/models/*), never its acts_as ActiveRecord API, so enabling
-# the new mode is inert beyond silencing that warning across every CLI/process.
-RubyLLM.configure do |config|
-  config.use_new_acts_as = true
-end
+# RubyLLM 2.0 dropped the `use_new_acts_as` compatibility flag (it is now
+# always-on); the previous 1.x initializer block was kept here solely to
+# silence the per-boot deprecation warning that the 1.x railtie emitted when
+# the flag was unset. Paid uses RubyLLM only for model-catalog data
+# (app/services/models/*) and never touches its acts_as ActiveRecord API,
+# so no replacement configuration is required.
+
 
 # Loaded via require_relative because the middleware must be registered before
 # Zeitwerk autoloading is available. The middleware is stateless so the pinned
