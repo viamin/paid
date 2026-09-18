@@ -86,6 +86,10 @@ RSpec.describe Prompt, type: :model do
     # RunAgentActivity must be updated together or clean reviews will
     # silently fail to terminate the review loop.
     let(:pattern) { Activities::ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN }
+    let(:seed_template) do
+      described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
+    end
+    let(:fallback_template) { Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT }
 
     it "seeded template body matches the clean-review pattern" do
       template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
@@ -166,11 +170,6 @@ RSpec.describe Prompt, type: :model do
     # invalid JSON payload that Rails rejects before the request reaches
     # GitHub. Reviews must be submitted via a temp file + `--data-binary @file`.
     describe "review payload submission pattern (issue #839)" do
-      let(:seed_template) do
-        described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
-      end
-      let(:fallback_template) { Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT }
-
       # Match any curl invocation whose target URL is the /pulls/<n>/reviews
       # endpoint, regardless of what flags come between `curl` and the URL.
       # This catches new shapes (e.g. `curl -sS -X POST`) that a future edit
@@ -203,6 +202,96 @@ RSpec.describe Prompt, type: :model do
 
       it "FALLBACK_REVIEW_GOAL_PROMPT warns against inline JSON payloads" do
         expect(fallback_template).to match(/Do NOT pass .*inline/i)
+      end
+    end
+
+    # Acceptance criterion: review scope explicitly covers correctness and
+    # removed safeguards alongside the existing performance/security/style/
+    # scope/linkage categories, in both the seeded template and the code
+    # fallback. Keeps the two bindings in lockstep so a future edit can't
+    # add the new scope to only one of them.
+    describe "review scope and finding evidence (#3897)" do # @spec REVIEW-PR-002, REVIEW-PR-003
+      it "seeded template enumerates the five review-scope axes" do
+        expect(seed_template).to include("Scope of review")
+        expect(seed_template).to include("PR base/head diff")
+        expect(seed_template).to include("Changed behavior")
+        expect(seed_template).to include("Removed safeguards")
+        expect(seed_template).to include("Caller / callee compatibility")
+        expect(seed_template).to include("Project instructions")
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT enumerates the five review-scope axes" do
+        expect(fallback_template).to include("Scope of review")
+        expect(fallback_template).to include("PR base/head diff")
+        expect(fallback_template).to include("Changed behavior")
+        expect(fallback_template).to include("Removed safeguards")
+        expect(fallback_template).to include("Caller / callee compatibility")
+        expect(fallback_template).to include("Project instructions")
+      end
+
+      it "seeded template still lists the legacy review categories" do
+        expect(seed_template).to include("**Performance**")
+        expect(seed_template).to include("**Security**")
+        expect(seed_template).to include("**Project code style**")
+        expect(seed_template).to include("**Scope violations**")
+        expect(seed_template).to include("**Issue linkage**")
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT still lists the legacy review categories" do
+        expect(fallback_template).to include("**Performance**")
+        expect(fallback_template).to include("**Security**")
+        expect(fallback_template).to include("**Project code style**")
+        expect(fallback_template).to include("**Scope violations**")
+        expect(fallback_template).to include("**Issue linkage**")
+      end
+
+      it "seeded template requires triggering state, concrete cost, and supporting code location for each finding" do
+        expect(seed_template).to include("Finding quality bar")
+        expect(seed_template).to include("Triggering state.")
+        expect(seed_template).to include("Resulting incorrect behavior or concrete cost.")
+        expect(seed_template).to include("Supporting code location.")
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT requires triggering state, concrete cost, and supporting code location for each finding" do
+        expect(fallback_template).to include("Finding quality bar")
+        expect(fallback_template).to include("Triggering state.")
+        expect(fallback_template).to include("Resulting incorrect behavior or concrete cost.")
+        expect(fallback_template).to include("Supporting code location.")
+      end
+
+      it "seeded template requires the reviewer to recheck each finding against surrounding code before posting" do
+        expect(seed_template).to include("Recheck against surrounding code before posting")
+        expect(seed_template).to match(/Walk one or\ntwo levels above and below the cited line/)
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT requires the reviewer to recheck each finding against surrounding code before posting" do
+        expect(fallback_template).to include("Recheck against surrounding code before posting")
+        expect(fallback_template).to match(/Walk one or\ntwo levels above and below the cited line/)
+      end
+
+      it "seeded template keeps the actionable-only inline comment rule and forbids nitpicks" do
+        expect(seed_template).to include("Inline comments are reserved **exclusively for actionable changes**")
+        expect(seed_template).to match(/Do not\ninvent nitpicks/)
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT keeps the actionable-only inline comment rule and forbids nitpicks" do
+        expect(fallback_template).to include("Inline comments are reserved **exclusively for actionable changes**")
+        expect(fallback_template).to match(/Do not\ninvent nitpicks/)
+      end
+    end
+
+    # The seed and the code fallback MUST stay in lockstep byte-for-byte.
+    # spec/services/prompts/goal_create_github_issue_spec.rb holds the
+    # analogous invariant for the create_github_issue goal via
+    # Prompts::GoalCreateGithubIssue::TEMPLATE. The seed records the same
+    # shared source so the two cannot drift apart.
+    describe "seeded template matches the shared source exactly" do # @spec REVIEW-PR-001
+      it "seed template equals Prompts::GoalReviewPullRequest::TEMPLATE" do
+        expect(seed_template.strip).to eq(Prompts::GoalReviewPullRequest::TEMPLATE.strip)
+      end
+
+      it "FALLBACK_REVIEW_GOAL_PROMPT equals Prompts::GoalReviewPullRequest::TEMPLATE" do
+        expect(fallback_template.strip).to eq(Prompts::GoalReviewPullRequest::TEMPLATE.strip)
       end
     end
   end
