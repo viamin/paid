@@ -14,6 +14,7 @@ class AppleWorkerProfile < ApplicationRecord
 
   validates :name, :image_digest, presence: true
   validates :status, inclusion: { in: STATUSES }
+  validate :creator_matches_account
   validate :capabilities_are_safe
   validate :constraints_are_safe
   validate :supported_profile_contract
@@ -24,6 +25,12 @@ class AppleWorkerProfile < ApplicationRecord
   end
 
   private
+
+  def creator_matches_account
+    return unless created_by && created_by.account_id != account_id
+
+    errors.add(:created_by, "must belong to the profile account")
+  end
 
   def capabilities_are_safe
     validate_safe_object(capabilities, :capabilities)
