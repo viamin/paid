@@ -1,0 +1,45 @@
+# frozen_string_literal: true
+
+# Immutable, provider-neutral description of an Apple verification guest.
+# @spec APPLE-WORKER-001
+class AppleWorkerProfile < ApplicationRecord
+  include SecretSafeMetadata
+
+  STATUSES = %w[active deprecated revoked].freeze
+
+  belongs_to :account
+  belongs_to :created_by, class_name: "User", optional: true
+  has_many :apple_verification_workflow_revisions, dependent: :restrict_with_exception
+  has_many :apple_verification_attempts, dependent: :restrict_with_exception
+
+  validates :name, :image_digest, presence: true
+  validates :status, inclusion: { in: STATUSES }
+  validate :capabilities_are_safe
+  validate :constraints_are_safe
+  validate :immutable_contract, on: :update
+
+  def active?
+    status == "active"
+  end
+
+  private
+
+  def capabilities_are_safe
+    validate_safe_object(capabilities, :capabilities)
+  end
+
+  def constraints_are_safe
+    validate_safe_object(constraints, :constraints)
+  end
+
+  def validate_safe_object(value, attribute)
+    errors.add(attribute, "must be an object") unless value.is_a?(Hash)
+    scan_metadata_for_secrets(value, attribute:) if value.is_a?(Hash)
+  end
+
+  def immutable_contract
+    return unless will_save_change_to_name? || will_save_change_to_image_digest? || will_save_change_to_capabilities? || will_save_change_to_constraints?
+
+    errors.add(:base, "worker profile constraints are immutable")
+  end
+end
