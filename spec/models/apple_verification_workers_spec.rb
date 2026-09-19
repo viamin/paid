@@ -133,8 +133,20 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(attempt.errors[:lifecycle_gate]).to include("must match the workflow gate")
   end
 
-  it "requires an attempt to bind an approved workflow" do # @spec APPLE-WORKER-005
+  it "allows an attempt to bind a draft workflow during agent iteration" do # @spec APPLE-WORKER-005
     workflow = create(:apple_verification_workflow_revision)
+    attempt = build(:apple_verification_attempt,
+      account: workflow.account,
+      project: workflow.project,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: workflow.apple_worker_profile,
+      lifecycle_gate: workflow.lifecycle_gate)
+
+    expect(attempt).to be_valid
+  end
+
+  it "requires an attempt at an enforcement gate to bind an approved workflow" do # @spec APPLE-WORKER-005
+    workflow = create(:apple_verification_workflow_revision, lifecycle_gate: "pull_request_verification")
     attempt = build(:apple_verification_attempt,
       account: workflow.account,
       project: workflow.project,
