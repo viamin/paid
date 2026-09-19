@@ -72,8 +72,9 @@ class AppleVerificationImage < ApplicationRecord
 
     raise ArgumentError, "only deprecated images can be retired" unless deprecated?
     raise ArgumentError, "retirement reason is required" if reason.to_s.strip.blank?
+    raise ArgumentError, "retirement time has not arrived" if retirement_at.blank? || retirement_at.future?
 
-    update!(status: "retired", retirement_at: Time.current, deprecation_reason: reason.to_s.strip)
+    update!(status: "retired", deprecation_reason: reason.to_s.strip)
     self
   end
 
@@ -148,8 +149,10 @@ class AppleVerificationImage < ApplicationRecord
 
   def lifecycle_audit_fields
     errors.add(:deprecation_reason, "is required when deprecated") if deprecated? && deprecation_reason.blank?
+    errors.add(:deprecated_at, "is required when deprecated") if deprecated? && deprecated_at.blank?
     errors.add(:retirement_at, "is required when retired") if retired? && retirement_at.blank?
     errors.add(:revocation_reason, "is required when revoked") if revoked? && revocation_reason.blank?
+    errors.add(:revoked_at, "is required when revoked") if revoked? && revoked_at.blank?
   end
 
   def passing_smoke_test?

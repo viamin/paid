@@ -50,6 +50,16 @@ RSpec.describe AppleVerificationImage, type: :model do # @spec APPLE-VERIFY-001,
     expect(image.reload).not_to be_schedulable
   end
 
+  it "enforces deprecation and revocation audit timestamps for direct status updates" do
+    deprecated_image = create(:apple_verification_image, :active)
+    expect(deprecated_image.update(status: "deprecated", deprecation_reason: "Xcode successor", retirement_at: 2.weeks.from_now)).to be(false)
+    expect(deprecated_image.errors[:deprecated_at]).to include("is required when deprecated")
+
+    revoked_image = create(:apple_verification_image, :active)
+    expect(revoked_image.update(status: "revoked", revocation_reason: "security incident")).to be(false)
+    expect(revoked_image.errors[:revoked_at]).to include("is required when revoked")
+  end
+
   it "allows only the documented lifecycle transitions" do
     image = create(:apple_verification_image)
 
@@ -70,10 +80,22 @@ RSpec.describe AppleVerificationImage, type: :model do # @spec APPLE-VERIFY-001,
     expect(image.deprecate!(reason: "ignored retry", retirement_at: 3.weeks.from_now)).to equal(image)
     expect(image.reload.deprecated_at).to eq(deprecated_at)
 
-    image.retire!(reason: "migration complete")
-    retired_at = image.retirement_at
-    expect(image.retire!(reason: "ignored retry")).to equal(image)
-    expect(image.reload.retirement_at).to eq(retired_at)
+    travel_to(3.weeks.from_now) do
+      image.retire!(reason: "migration complete")
+      retired_at = image.retirement_at
+      expect(image.retire!(reason: "ignored retry")).to equal(image)
+      expect(image.reload.retirement_at).to eq(retired_at)
+    end
+  end
+
+  it "refuses to retire before the scheduled retirement time and preserves the scheduled deadline" do
+    image = create(:apple_verification_image, :active)
+    retirement_at = 2.weeks.from_now
+    image.deprecate!(reason: "Xcode successor", retirement_at: retirement_at)
+
+    expect { image.retire!(reason: "too early") }.to raise_error(ArgumentError, "retirement time has not arrived")
+    expect(image.reload.retirement_at).to be_within(1.second).of(retirement_at)
+    expect(image).to be_deprecated
   end
 
   it "tracks lifecycle changes with Logidze" do
@@ -87,11 +109,12 @@ RSpec.describe AppleVerificationImage, type: :model do # @spec APPLE-VERIFY-001,
   it "records deprecation, retirement, and immediate revocation without making an inactive image schedulable" do
     image = create(:apple_verification_image, :active)
 
-    image.deprecate!(reason: "Xcode successor", retirement_at: 2.weeks.from_now)
+    retirement_at = 2.weeks.from_now
+    image.deprecate!(reason: "Xcode successor", retirement_at: retirement_at)
     expect(image).to be_deprecated
     expect(image.retirement_at).to be_present
 
-    image.retire!(reason: "migration complete")
+    travel_to(retirement_at + 1.second) { image.retire!(reason: "migration complete") }
     expect(image).to be_retired
     expect(image).not_to be_schedulable
 
