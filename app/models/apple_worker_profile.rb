@@ -16,6 +16,7 @@ class AppleWorkerProfile < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validate :capabilities_are_safe
   validate :constraints_are_safe
+  validate :supported_profile_contract
   validate :immutable_contract, on: :update
 
   def active?
@@ -30,6 +31,19 @@ class AppleWorkerProfile < ApplicationRecord
 
   def constraints_are_safe
     validate_safe_object(constraints, :constraints)
+  end
+
+  def supported_profile_contract
+    return unless capabilities.is_a?(Hash) && constraints.is_a?(Hash)
+
+    AppleVerificationWorkers::ProfileConstraints.new(
+      platforms: constraints["platforms"],
+      xcode_version: constraints["xcode_version"],
+      simulator_runtimes: constraints["simulator_runtimes"],
+      capabilities: capabilities["capabilities"]
+    )
+  rescue AppleVerificationWorkers::UnsupportedCapability, ArgumentError => error
+    errors.add(:base, error.message)
   end
 
   def validate_safe_object(value, attribute)
