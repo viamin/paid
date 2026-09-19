@@ -19,26 +19,20 @@ intent. The resulting snapshot remains the authoritative combination of
 platform, tenant, operator, project, and run decisions and is persisted before
 the guest starts.
 
-`AppleVerification::GuestNetworkPolicy` translates that snapshot into a
-credential-free host/guest contract. The host provider must install the
-contract before it starts the VM: no direct external route, DNS only through
-the Paid resolver, and HTTP(S) only through the Paid proxy. The guest receives
-the proxy endpoint but no proxy userinfo, password, token, or alternate DNS
-configuration. The provider must reject guest traffic that does not use this
-path, including direct IP, non-Paid DNS, proxy override, and non-HTTP(S)
-protocols.
+The future Apple verification control-plane entry point SHALL translate that
+snapshot into a credential-free host/guest contract and send it only to the
+authenticated, narrow host-service start operation. That operation SHALL
+install the contract before it starts the VM: no direct external route, DNS
+only through the Paid resolver, and HTTP(S) only through the Paid proxy. The
+guest receives the proxy endpoint but no proxy userinfo, password, token, or
+alternate DNS configuration. The provider SHALL reject guest traffic that does
+not use this path, including direct IP, non-Paid DNS, proxy override, and
+non-HTTP(S) protocols.
 
-The contract is deliberately declarative. Tart/Softnet or a later provider
-implements the transport mechanics, while policy resolution and the safe
-manifest stay provider-neutral.
-
-`AppleVerification::StartGuest` is the Apple verification control-plane entry
-point. It always routes guest startup through `AppleVerification::GuestLauncher`,
-which resolves the snapshot and passes the resulting contract to the concrete
-`AppleVerification::TartProvider`. The provider sends that contract to the
-narrow host-service start operation, which installs it before booting the VM.
-Resolution or contract construction failure therefore prevents host-service
-startup.
+The contract is deliberately declarative. The concrete Tart/Softnet transport
+implementation belongs to #3933, which must also register the guest-start
+lifecycle. Until that authenticated host implementation is available, Paid
+must not expose or admit Apple verification guests.
 
 ## Decisions and audit
 
