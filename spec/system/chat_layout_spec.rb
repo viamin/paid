@@ -27,6 +27,7 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     visit chat_session_path(chat_session, format: :html)
     expect(page).to have_css("[data-chat-target='container']")
     expect(page).to have_css("[data-controller='chat'][style*='--chat-panel-offset-top:']")
+    expect(page).to have_css("[data-chat-workspace-options]:not([open]) summary", text: "Workspace options")
 
     metrics = settled_chat_layout_metrics
 

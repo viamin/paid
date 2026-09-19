@@ -519,21 +519,9 @@ RSpec.describe "ChatSessions" do
         expect(mobile_header["class"].split).to include("xl:hidden")
         expect(mobile_header.text).to include("Session details")
         expect(mobile_header.text).to include("Workspace")
+        expect(mobile_header.xpath("./details").last["open"]).not_to be_nil
 
-        # @spec CHAT-API-009
-        # Workspace chats render their outer disclosure open so recovery
-        # controls do not depend on JavaScript, but its mobile body needs
-        # compact spacing to preserve the transcript's 18rem floor.
-        mobile_capability_panel = mobile_header.at_css("[data-chat-target='capabilityPanel']")
-        expect(mobile_capability_panel["class"].split).to include("p-3", "sm:p-4")
-        expect(mobile_capability_panel.at_css("[data-chat-capability-ready-only='true']")["class"].split).to include("mt-2", "sm:mt-4")
-
-        # The open Workspace disclosure retains its recovery controls on
-        # mobile, but its clone controls must not stack and steal the
-        # transcript's guaranteed 18rem of height.
-        clone_form = mobile_capability_panel.at_css("form[action$='/clone_project']")
-        expect(clone_form["class"].split).to include("flex", "items-end", "gap-2")
-        expect(clone_form["class"].split).not_to include("flex-col")
+        expect_compact_mobile_workspace_options(mobile_header)
 
         expect(desktop_header["class"].split).to include("hidden", "xl:block")
       end
@@ -1283,6 +1271,26 @@ RSpec.describe "ChatSessions" do
 
   def desktop_header_in(doc)
     doc.xpath("//div[@data-controller='chat']/header").last
+  end
+
+  def expect_compact_mobile_workspace_options(mobile_header)
+    # @spec CHAT-API-009
+    # Workspace chats render their outer disclosure open so recovery controls
+    # do not depend on JavaScript. The potentially tall clone configuration is
+    # nested, preserving the transcript's 18rem floor while keeping it
+    # reachable.
+    mobile_capability_panel = mobile_header.at_css("[data-chat-target='capabilityPanel']")
+    expect(mobile_capability_panel["class"].split).to include("p-3", "sm:p-4")
+    workspace_options = mobile_capability_panel.at_css("details[data-chat-workspace-options]")
+    expect(workspace_options).to be_present
+    expect(workspace_options["open"]).to be_nil
+    expect(mobile_capability_panel.at_css("[data-chat-capability-ready-only='true']")["class"].split).to include("mt-2")
+
+    # The open Workspace disclosure retains recovery controls on mobile. Its
+    # nested clone controls must not stack when the user opens them.
+    clone_form = mobile_capability_panel.at_css("form[action$='/clone_project']")
+    expect(clone_form["class"].split).to include("flex", "items-end", "gap-2")
+    expect(clone_form["class"].split).not_to include("flex-col")
   end
 
   def desktop_workspace_disclosure_in(body)

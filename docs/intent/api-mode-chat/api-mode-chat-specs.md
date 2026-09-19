@@ -185,7 +185,12 @@
   described above plus the two disclosures (`Session details` and
   `Workspace`). Runner / model selectors, title editing, token usage, and
   archive controls remain reachable inside the `Session details`
-  disclosure. On a 390×844 viewport with the panel viewport-bound and a
+  disclosure. A workspace's status and recovery action remain visible in its
+  open `Workspace` disclosure; on mobile, its potentially tall clone
+  configuration and cloned-repository list SHALL sit in a nested, initially
+  closed `Workspace options` disclosure so they remain reachable without
+  consuming the transcript before the user asks for them. On a 390×844
+  viewport with the panel viewport-bound and a
   visible mobile history toggle, the transcript region
   (`[data-chat-target="container"]`) SHALL retain at least 18rem of height
   and the document itself SHALL remain non-scrolling so the transcript
