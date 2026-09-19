@@ -54,4 +54,35 @@ RSpec.describe AppleVerification::HostService do
       request_id: "request-1", image_id: "paid-macos-26.0", ownership_tags: { "paid.run_id" => "7" }
     )
   end
+
+  it "limits inventory to the Paid reconciliation tag set" do
+    allow(provider).to receive(:inventory).and_return([])
+    reconciliation_tags = ExecutionRunners::REQUIRED_RECONCILIATION_TAG_NAMES.to_h do |name|
+      [ "paid.#{name}", nil ]
+    end
+
+    result = service.call(
+      version: "v1", operation: "inventory",
+      payload: { "ownership_tags" => reconciliation_tags }, token: "host-token"
+    )
+
+    expect(result).to eq([])
+    expect(provider).to have_received(:inventory).with(ownership_tags: reconciliation_tags)
+  end
+
+  it "rejects inventory filters outside the Paid reconciliation boundary" do
+    allow(provider).to receive(:inventory)
+    invalid_filters = [ {}, { "owner" => "other-workload" }, { "paid.run_id" => "7" } ]
+
+    invalid_filters.each do |ownership_tags|
+      expect {
+        service.call(
+          version: "v1", operation: "inventory",
+          payload: { "ownership_tags" => ownership_tags }, token: "host-token"
+        )
+      }.to raise_error(AppleVerification::HostService::UnsafeRequestError)
+    end
+
+    expect(provider).not_to have_received(:inventory)
+  end
 end

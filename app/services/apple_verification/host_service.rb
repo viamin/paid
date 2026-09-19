@@ -17,6 +17,10 @@ module AppleVerification
     START_KEYS = %w[request_id vm_id profile_id].freeze
     VM_KEYS = %w[request_id vm_id].freeze
     INVENTORY_KEYS = %w[ownership_tags].freeze
+    PAID_TAG_PREFIX = "paid."
+    REQUIRED_INVENTORY_TAGS = ExecutionRunners::REQUIRED_RECONCILIATION_TAG_NAMES.map do |name|
+      "#{PAID_TAG_PREFIX}#{name}"
+    end.freeze
 
     AuthenticationError = Class.new(StandardError)
     UnsupportedRequestError = Class.new(ArgumentError)
@@ -52,6 +56,7 @@ module AppleVerification
       validate_payload_keys!(operation.to_s, payload.stringify_keys)
       reject_forbidden_content!(payload)
       validate_image!(payload) if operation.to_s == "clone"
+      validate_inventory!(payload) if operation.to_s == "inventory"
     end
 
     def validate_payload_keys!(operation, payload)
@@ -79,6 +84,19 @@ module AppleVerification
     def validate_image!(payload)
       image_id = payload["image_id"].to_s
       raise UnsafeRequestError, "Host request image is not approved" unless approved_images.include?(image_id)
+    end
+
+    def validate_inventory!(payload)
+      ownership_tags = payload["ownership_tags"]
+      return if ownership_tags.is_a?(Hash) && paid_reconciliation_tags?(ownership_tags)
+
+      raise UnsafeRequestError, "Host inventory must use the Paid reconciliation tag set"
+    end
+
+    def paid_reconciliation_tags?(ownership_tags)
+      tag_names = ownership_tags.keys.map(&:to_s)
+      tag_names.all? { |name| name.start_with?(PAID_TAG_PREFIX) } &&
+        REQUIRED_INVENTORY_TAGS.all? { |name| tag_names.include?(name) }
     end
 
     def dispatch(operation, payload)
