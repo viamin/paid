@@ -125,7 +125,9 @@ class AppleVerificationImage < ApplicationRecord
   end
 
   def immutable_facts_after_publication
-    return unless persisted? && (changes.keys & IMMUTABLE_FACTS).any?
+    changed_facts = changes.keys & IMMUTABLE_FACTS
+    return unless persisted? && changed_facts.any?
+    return if candidate? && changed_facts == [ "smoke_test" ]
 
     errors.add(:base, "Apple verification image facts are immutable after publication")
   end
