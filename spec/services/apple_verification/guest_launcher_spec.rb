@@ -13,8 +13,6 @@ RSpec.describe AppleVerification::GuestLauncher do
 
   it "resolves the policy and supplies its contract before starting the guest" do
     allow(provider).to receive(:start_guest!).and_return(:guest_handle)
-    snapshot = AgentRuns::EgressPolicy::Snapshot.new(mode: "proxy_restricted", destinations: [], required_destinations: [])
-    allow(AgentRuns::EgressPolicy::Resolve).to receive(:resolve_and_persist!).and_return(snapshot)
 
     result = described_class.new(
       provider: provider,
@@ -23,6 +21,7 @@ RSpec.describe AppleVerification::GuestLauncher do
     ).call(agent_run: agent_run)
 
     expect(result).to eq(:guest_handle)
+    expect(AgentRuns::EgressPolicy::Snapshot.from_record(agent_run)).to have_attributes(mode: "proxy_restricted")
     expect(provider).to have_received(:start_guest!).with(
       agent_run: agent_run,
       network_contract: hash_including("default_route" => "deny", "proxy" => hash_including("override" => "blocked"))

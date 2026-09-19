@@ -5,6 +5,8 @@ module AppleVerification
   # adapters must require the resolved network contract at startup.
   # @spec APPLE-NETWORK-001
   class GuestProvider
+    MissingNetworkContractError = Class.new(ArgumentError)
+
     def start_guest!(agent_run:, network_contract:)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
