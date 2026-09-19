@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_19_101625) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_19_110908) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -408,6 +408,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_101625) do
     t.text "deprecation_reason", comment: "Reason and migration guidance for deprecation or retirement."
     t.string "digest", null: false, comment: "Immutable sha256 content digest of the macOS VM image."
     t.jsonb "gui_account", default: {}, null: false, comment: "Dedicated verification-account security posture."
+    t.jsonb "log_data", comment: "Logidze change history for Apple verification image lifecycle transitions."
     t.string "name", null: false, comment: "Operator-visible logical worker profile name."
     t.jsonb "network_capability", default: {}, null: false, comment: "Guest network mechanism and policy-enforcement declaration."
     t.datetime "promoted_at", comment: "Time a smoke-tested candidate was promoted."
@@ -4695,6 +4696,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_101625) do
 
   create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_apple_verification_images, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_apple_verification_images BEFORE INSERT OR UPDATE ON public.apple_verification_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_billing_invoices, sql_definition: <<-SQL

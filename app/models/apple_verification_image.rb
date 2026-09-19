@@ -5,6 +5,13 @@
 class AppleVerificationImage < ApplicationRecord
   SmokeTestRequiredError = Class.new(StandardError)
   STATUSES = %w[candidate active deprecated retired revoked].freeze
+  ALLOWED_STATUS_TRANSITIONS = {
+    "candidate" => %w[active revoked],
+    "active" => %w[deprecated revoked],
+    "deprecated" => %w[retired revoked],
+    "retired" => %w[revoked],
+    "revoked" => []
+  }.freeze
   DIGEST_FORMAT = /\Asha256:[0-9a-f]{64}\z/
   IMMUTABLE_FACTS = %w[digest name toolchain resources network_capability gui_account smoke_test provenance account_id].freeze
   GUI_ACCOUNT_REQUIREMENTS = { "admin" => false, "apple_id" => false, "personal_data" => false, "host_credentials" => false, "persistent_secret_keychain" => false, "ready_gui_session" => true }.freeze
@@ -12,6 +19,8 @@ class AppleVerificationImage < ApplicationRecord
   RESOURCE_KEYS = %w[cpu_count memory_gib disk_gib].freeze
 
   belongs_to :account
+
+  has_logidze
 
   before_validation :normalize_facts
 
@@ -24,6 +33,8 @@ class AppleVerificationImage < ApplicationRecord
   validate :gui_account_is_isolated
   validate :smoke_test_is_recorded
   validate :immutable_facts_after_publication, on: :update
+  validate :status_transition_is_allowed
+  validate :active_image_is_smoke_tested
   validate :lifecycle_audit_fields
 
   scope :active, -> { where(status: "active") }
@@ -36,7 +47,9 @@ class AppleVerificationImage < ApplicationRecord
   end
 
   def promote!
-    raise SmokeTestRequiredError, "a passing smoke test is required for promotion" unless smoke_test.fetch("passed", false)
+    return self if active?
+
+    raise SmokeTestRequiredError, "a passing smoke test is required for promotion" unless passing_smoke_test?
     raise ArgumentError, "only candidate images can be promoted" unless candidate?
 
     update!(status: "active", promoted_at: Time.current)
@@ -44,6 +57,8 @@ class AppleVerificationImage < ApplicationRecord
   end
 
   def deprecate!(reason:, retirement_at:)
+    return self if deprecated?
+
     raise ArgumentError, "only active images can be deprecated" unless active?
     raise ArgumentError, "deprecation reason is required" if reason.to_s.strip.blank?
     raise ArgumentError, "retirement time is required" unless retirement_at.present?
@@ -53,6 +68,8 @@ class AppleVerificationImage < ApplicationRecord
   end
 
   def retire!(reason:)
+    return self if retired?
+
     raise ArgumentError, "only deprecated images can be retired" unless deprecated?
     raise ArgumentError, "retirement reason is required" if reason.to_s.strip.blank?
 
@@ -112,10 +129,31 @@ class AppleVerificationImage < ApplicationRecord
     errors.add(:base, "Apple verification image facts are immutable after publication")
   end
 
+  def status_transition_is_allowed
+    return unless will_save_change_to_status?
+
+    from_status, to_status = status_change_to_be_saved
+    return if from_status.nil? && candidate?
+    return if ALLOWED_STATUS_TRANSITIONS.fetch(from_status, []).include?(to_status)
+
+    errors.add(:status, "cannot transition from #{from_status} to #{to_status}")
+  end
+
+  def active_image_is_smoke_tested
+    return unless active?
+
+    errors.add(:smoke_test, "must have passed before promotion") unless passing_smoke_test?
+    errors.add(:promoted_at, "is required when active") if promoted_at.blank?
+  end
+
   def lifecycle_audit_fields
     errors.add(:deprecation_reason, "is required when deprecated") if deprecated? && deprecation_reason.blank?
     errors.add(:retirement_at, "is required when retired") if retired? && retirement_at.blank?
     errors.add(:revocation_reason, "is required when revoked") if revoked? && revocation_reason.blank?
+  end
+
+  def passing_smoke_test?
+    smoke_test.is_a?(Hash) && smoke_test["passed"] == true
   end
 
   def object_with_keys?(value, keys)

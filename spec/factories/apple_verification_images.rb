@@ -13,9 +13,11 @@ FactoryBot.define do
     provenance { { "build_id" => "operator-build-1" } }
 
     trait :active do
-      status { "active" }
-      promoted_at { Time.current }
       smoke_test { { "passed" => true, "completed_at" => Time.current.iso8601 } }
+
+      after(:create) do |image|
+        image.promote!
+      end
     end
   end
 end
