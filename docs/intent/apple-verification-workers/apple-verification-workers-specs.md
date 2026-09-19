@@ -31,9 +31,10 @@
   *Code:* `AppleVerification::GuestProtocol`.
 
 - [x] **APPLE-VERIFY-005** — When Apple verification work is submitted for a
-  feature-enabled project, the control plane SHALL select that account's active
-  immutable image and dispatch only a protocol-valid manifest to its guest
-  executor; disabled projects and accounts without an active image SHALL not
+  feature-enabled project with a control-plane-selected immutable image digest,
+  the control plane SHALL select only that account's active image matching the
+  digest and dispatch only a protocol-valid manifest to its guest executor;
+  disabled projects and accounts without a matching active image SHALL not
   dispatch work.
   *Tests:* `spec/services/apple_verification/execute_guest_job_spec.rb`.
   *Code:* `AppleVerification::ExecuteGuestJob`.

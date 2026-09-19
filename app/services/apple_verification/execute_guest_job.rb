@@ -15,10 +15,11 @@ module AppleVerification
       new(...).call
     end
 
-    def initialize(project:, manifest:, adapters:)
+    def initialize(project:, manifest:, adapters:, image_digest:)
       @project = project
       @manifest = manifest
       @adapters = adapters
+      @image_digest = image_digest
     end
 
     def call
@@ -37,8 +38,8 @@ module AppleVerification
     end
 
     def active_image!
-      AppleVerificationImage.schedulable.find_by(account: @project.account) ||
-        raise(NoActiveImageError, "no active Apple verification image is available for this account")
+      AppleVerificationImage.schedulable.find_by(account: @project.account, digest: @image_digest) ||
+        raise(NoActiveImageError, "the requested active Apple verification image is unavailable for this account")
     end
   end
 end
