@@ -61,10 +61,11 @@ them into a generic capture error.
 a submitted guest manifest. It refuses work unless the project has the
 `apple_verification_workers` rollout enabled, selects the active image matching
 the immutable digest chosen by the control plane for the project's account, and
-dispatches the manifest through the closed guest executor vocabulary. An
-account with no active image matching that digest cannot dispatch work. This
-keeps worker-profile selection deterministic when an account has multiple
-active images.
+validates the manifest before sending it through the provider-owned guest
+connection to the closed guest executor vocabulary. The control plane does not
+hold operation adapters or execute project work. An account with no active
+image matching that digest cannot dispatch work. This keeps worker-profile
+selection deterministic when an account has multiple active images.
 
 ## Decisions & Alternatives
 
