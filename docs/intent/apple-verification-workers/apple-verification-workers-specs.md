@@ -15,7 +15,9 @@
   per project SHALL be approved at a time.
 - [x] **APPLE-WORKER-005** — Each attempt SHALL bind account, project, source,
   workflow, profile, and gate; its profile and gate SHALL match its workflow;
-  and it SHALL use an explicit lifecycle state.
+  it SHALL use an explicit lifecycle state; and a draft workflow MAY run only
+  at the advisory `agent_iteration` gate, while enforcement gates require an
+  approved workflow.
 - [x] **APPLE-WORKER-006** — A waiver SHALL apply to exactly one attempt and
   SHALL bind its project-administrator actor, reason, expiry, source, workflow,
   gate, and checks.
