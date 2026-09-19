@@ -127,7 +127,7 @@ class ApplicationJob < ActiveJob::Base
     when AbTestAnalysisJob
       AbTest.includes(:prompt).find_by(id: arguments.first)&.prompt&.account
     else
-      tenant_account_from_project || tenant_account_from_agent_run || tenant_account_from_apple_verification_attempt
+      tenant_account_from_project || tenant_account_from_agent_run
     end
   end
 
@@ -143,12 +143,6 @@ class ApplicationJob < ActiveJob::Base
     return unless agent_run_id
 
     AgentRun.includes(:project).find_by(id: agent_run_id)&.project&.account
-  end
-
-  def tenant_account_from_apple_verification_attempt
-    return unless is_a?(AppleVerificationAttemptDispatchJob)
-
-    AppleVerificationAttempt.includes(:project).find_by(id: arguments.first)&.project&.account
   end
 
   def project_id_argument

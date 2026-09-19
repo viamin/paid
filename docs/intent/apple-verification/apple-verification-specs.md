@@ -11,8 +11,10 @@
 - [x] **APPLE-VERIFY-003** — Each attempt SHALL retain queue, retry lineage,
   outcome, provenance, explicit failure class, cancellation, rerun, and
   one-attempt waiver state. Reruns SHALL require an on-demand-capable project
-  mode; only queued or running attempts may be cancelled; only failed required
-  attempts may be waived; and only failed attempts without a recorded
-  destruction may record retained-VM destruction.
+  mode and create a queued attempt without dispatching until a worker lifecycle
+  can execute it and ingest a terminal result; only queued or running attempts
+  may be cancelled; only failed required attempts may be waived; and only
+  failed attempts without a recorded destruction may record retained-VM
+  destruction.
 - [x] **APPLE-VERIFY-004** — Screenshots and recordings SHALL be presented as
   protected artifacts rather than embedded public content.

@@ -17,8 +17,8 @@ administrators may waive one failed, required attempt with a reason or destroy
 one retained failed VM. Members may rerun when the project mode permits
 on-demand execution, or cancel their active project attempts. These lifecycle
 rules are enforced by record transitions, not only by the page controls. A
-rerun receives its Temporal workflow identifier while holding the attempt lock,
-which also serializes cancellation with workflow startup.
+rerun creates a queued attempt; it is not dispatched until the worker lifecycle
+can execute it and ingest a terminal result.
 
 Capture artifacts are never embedded in the page: screenshot and recording
 entries are explicitly labelled protected. Result JSON retains build, test,

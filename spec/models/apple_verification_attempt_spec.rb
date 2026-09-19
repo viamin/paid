@@ -97,15 +97,15 @@ RSpec.describe AppleVerificationAttempt do
       expect(attempt.reload.retained_vm_destroyed_at).to be_present
     end
 
-    it "queues a retry attempt for the same workflow revision" do # @spec APPLE-VERIFY-003
+    it "queues a retry attempt without dispatching it before the worker lifecycle exists" do # @spec APPLE-VERIFY-003
       project = create(:project, apple_verification_settings: { "mode" => "on_demand" })
       attempt = create(:apple_verification_attempt, project:, state: "failed")
 
       retry_attempt = nil
       expect { retry_attempt = attempt.retry! }
-        .to have_enqueued_job(AppleVerificationAttemptDispatchJob)
+        .not_to have_enqueued_job
 
-      expect(retry_attempt).to have_attributes(project: attempt.project, workflow_revision: attempt.workflow_revision, retry_of: attempt)
+      expect(retry_attempt).to have_attributes(project: attempt.project, workflow_revision: attempt.workflow_revision, retry_of: attempt, state: "queued")
     end
 
     it "refuses to retry a disabled workflow revision" do # @spec APPLE-VERIFY-003
