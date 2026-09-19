@@ -93,6 +93,13 @@
   `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
   `ChatSessions::BuildLlmClient::HttpClient#chat_kwargs`.
 
+- [x] **CHAT-API-015** — When a MiniMax runner is used for API-mode chat, the
+  system SHALL send OpenAI-compatible chat requests to MiniMax's `/v1` API
+  endpoint, while preserving its Anthropic endpoint for CLI runner execution.
+  *Test:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
+  *Code:* `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
+  `ChatSessions::BuildLlmClient#openai_compatible_client`.
+
 - [x] **CHAT-API-008** — When rendering the chat session show page
   (`GET /chat/:id` as HTML), the conversation panel's outer wrapper SHALL
   bound its height to the available viewport using `dvh` units, accounting
@@ -289,3 +296,13 @@
   `ChatSessions::ProcessMessageJob`, `ChatMessagesController#write_sse_tool_event`,
   `app/views/chat_messages/_token_limit_error.html.erb`,
   `app/javascript/controllers/chat_controller.js#restorePendingContent`.
+
+- [x] **CHAT-API-016** — When an assistant chat response starts with a
+  `<think>…</think>` reasoning block, the transcript SHALL show only the
+  answer after that block, both during streaming and after reload. It SHALL
+  keep the original message content stored and continue escaping other HTML.
+  *Tests:* `spec/models/chat_message_spec.rb`,
+  `spec/lib/chat_message_controller_node_harness_spec.rb`.
+  *Code:* `ChatMessage#display_content`,
+  `app/views/chat_messages/_bubble.html.erb`,
+  `app/javascript/controllers/chat_message_controller.js`.

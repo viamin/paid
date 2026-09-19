@@ -286,14 +286,34 @@ When an enhancement run cannot produce valid structured output, Paid fails the
 run non-retryably and parks the issue in the distinct `manual_review` state.
 This state transition is the terminal owner of the issue state for that
 failure; generic workflow failure handling must not overwrite it with the
-auto-pick-eligible `failed` state. Manual-review issues are not treated as
-answerable questionnaires and are not repaired by the questionless
-`needs_input` cleanup path. Automation resumes only through an explicit
-operator-triggered run.
-Moving into manual review also clears stored clarification questions and removes
-the needs-input label. This keeps the Paid state, GitHub label, and operator UI
-from simultaneously claiming that the issue awaits an answer and a manual
-review.
+auto-pick-eligible `failed` state. Manual-review issues are not repaired by
+the questionless `needs_input` cleanup path, and GitHub in-thread answers are
+not auto-detected — `FetchIssuesActivity`'s needs-input recovery paths gate on
+`paid_state: needs_input` only. Automation resumes through an explicit
+operator-triggered run, or — when the terminal round's agent output has a
+parseable `## Clarifying questions` section — by answering those questions
+from the inbox (see below and `docs/intent/operator-inbox/` `OPERATOR-INBOX-002D`).
+Moving into manual review always removes the needs-input label, keeping the
+Paid state and GitHub label from disagreeing about whether the issue awaits an
+answer. It does NOT always clear stored clarification questions: a round that
+hit the configured limit while the agent still asked something parseable is
+itself the manual review the state asks for, so `needs_input_questions` is
+preserved instead of wiped so the inbox can render it as an answerable
+surface. Preservation holds on every entry path: `IssueEnhancements::
+StopForManualReview` — reached from the hard parse failure and the
+queue-time limit stop — keeps already-stored `needs_input_questions`, since
+those stored questions are the latest answerable surface and wiping them
+recreates the dead end. Only a
+terminal round whose comment has no parseable questions clears
+`needs_input_questions`. Answering the preserved questions from the inbox is
+accepted as a `manual_review` clearing action the same way an answered
+`needs_input` questionnaire is: `ClarifyingQuestions::ClearNeedsInput` posts
+the standard answer-marker comment, resets `enhance_issue_rounds`
+(`ISSUE-ENHANCEMENT-014`) — the same human-signal round-budget reset a
+`needs_input` answer already gets — and moves the issue out of
+`manual_review`: to `new`, or, when a `create_feature` run is paused on the
+issue (RDR-053), by resuming that run under the same `in_progress`
+queue-time flip an operator-triggered run gets.
 
 Every write path that moves an issue into `manual_review` also stamps
 `manual_review_started_at` (cleared on exit, via the same model callback
@@ -312,6 +332,34 @@ uses a short row-locked state transition to elect one notifier, then performs
 GitHub I/O after releasing the database lock. Concurrent queue or poll workers
 therefore cannot both publish a stop notice, and a slow GitHub request does not
 hold an issue row lock.
+
+The cap is re-checked a second time when `EnhanceIssueActivity` finishes a run
+with an insufficient verdict, independent of the queue-time check above. That
+completion-time check is scoped to automatic runs the same way the queue-time
+one is (ISSUE-ENHANCEMENT-019): a manual run — including the run queued by the
+inbox's "Start enhancement run" action against an issue already parked in
+`manual_review` — never re-parks the issue in `manual_review` at completion,
+even when `enhance_issue_rounds` is already at or past the cap. An operator
+clicking that button has explicitly chosen to spend a run, so an insufficient
+verdict lands in `needs_input` with clarifying questions synced instead.
+Without this scoping, the only documented recovery path out of `manual_review`
+would loop straight back into it whenever the agent still had questions,
+re-posting the "## Auto-enhancement stopped" wrapper comment each time (#3907).
+An automatic run's behavior at the cap is unchanged.
+
+The same trigger-type scoping covers the duplicate-comment reconciliation
+path. `EnhanceIssueActivity` short-circuits when an enhancement comment
+already exists and no round is in flight (`enhance_issue_rounds` is zero) —
+normally an idempotency guard for retries. A trusted body edit can reset the
+counter to zero (ISSUE-ENHANCEMENT-016) while the issue stays parked behind a
+"## Auto-enhancement stopped" comment, so the operator's "Start enhancement
+run" can land in that short circuit too. Re-parking there would recreate
+the #3907 loop through a second door, so the stop-marker reconciliation is
+scoped to automatic runs as well: a manual run reconciles the stop comment
+as the insufficient verdict it encloses — re-applying the needs-input label
+and landing in `needs_input`, never back in `manual_review`, and never
+reading the stop comment as a sufficient verdict (which would hand an
+unready issue to `create_pr`).
 
 The round-limit stop cannot preempt the human-signal reset: removing the
 needs-input label is itself the #3842 human signal, so the recheck handler

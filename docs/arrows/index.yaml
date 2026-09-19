@@ -401,6 +401,14 @@ arrows:
     parent: PAID
     taxonomy: runtime
     audited: 2026-08-23
+  review-verification:
+    title: Independent Verification of PR Review Findings
+    path: docs/intent/review-verification/review-verification-design.md
+    specs: docs/intent/review-verification/review-verification-specs.md
+    parent: PAID
+    taxonomy: intelligence
+    status: OK
+    audited: 2026-09-18
   rdr-rollout-guards:
     title: RDR Rollout Guards
     path: docs/intent/rdr-rollout-guards/rdr-rollout-guards-design.md

@@ -25,6 +25,7 @@ class AgentRunPhase < ApplicationRecord
     "update_issue_with_pr" => "Update Issue With PR",
     "complete_existing_pr_run" => "Complete Existing PR Run",
     "mark_agent_run_complete" => "Mark Agent Run Complete",
+    "verified_review" => "Verified Review",
     "cleanup_container" => "Cleanup Container",
     "cleanup_execution_environment" => "Cleanup Execution Environment",
     "cleanup_services" => "Cleanup Services",

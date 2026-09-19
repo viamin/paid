@@ -104,6 +104,7 @@ class Project < ApplicationRecord
       "paid_agent" => {
         "enabled" => false,
         "review_depth" => DEFAULT_REVIEW_DEPTH,
+        "independent_verification" => false,
         "termination" => {
           "max_review_rounds" => 15,
           "max_review_goal_retries" => 3,
@@ -1207,6 +1208,15 @@ class Project < ApplicationRecord
     REVIEW_DEPTHS.include?(candidate) ? candidate : DEFAULT_REVIEW_DEPTH
   end
 
+  # @spec REVIEW-VERIFY-001
+  # Pilot flag (#3898): when true, review-goal runs for this project use the
+  # staged Find → Verify → Synthesize pipeline instead of the containerized
+  # reviewer. Read through +effective_review_settings+ so the default (false)
+  # applies without explicit configuration.
+  def paid_agent_independent_verification?
+    effective_review_settings.dig("methods", "paid_agent", "independent_verification") == true
+  end
+
   def wait_for_reviews?
     automation_configuration.auto_review.wait_for_reviews?
   end
@@ -2048,6 +2058,13 @@ class Project < ApplicationRecord
         unless depth.is_a?(String) && REVIEW_DEPTHS.include?(depth)
           errors.add(:review_settings, "paid_agent review_depth must be one of: #{REVIEW_DEPTHS.join(', ')}")
         end
+      end
+
+      # @spec REVIEW-VERIFY-001 — the pilot augments the paid_agent reviewer;
+      # enabling it without the reviewer itself is a configuration error.
+      # Checked before the enabled skip so a disabled method still rejects it.
+      if method_name == "paid_agent" && config["independent_verification"] == true && config["enabled"] != true
+        errors.add(:review_settings, "paid_agent independent_verification requires paid_agent to be enabled")
       end
 
       next unless config["enabled"] == true

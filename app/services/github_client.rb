@@ -253,6 +253,29 @@ class GithubClient
     end.map(&:filename)
   end
 
+  # Lists files changed in a pull request with their full metadata (status,
+  # additions/deletions, and the unified diff patch), capped at +max_files+.
+  # Used by callers that need to reason about the diff itself (e.g. the
+  # verified-review pipeline's changed-line parsing), not just the file list.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param max_files [Integer] Cap on returned entries
+  # @return [Array<Hash>] :filename, :status, :additions, :deletions, :patch
+  def detailed_pull_request_files(repo, number, max_files: 100)
+    handle_errors do
+      with_auto_paginate { client.pull_request_files(repo, number) }
+    end.first(max_files).map do |file|
+      {
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch
+      }
+    end
+  end
+
   # Compares two commits and returns the list of changed file paths.
   #
   # NOTE: GitHub's compare API returns a maximum of 300 files per response.
@@ -898,6 +921,19 @@ class GithubClient
     end
   end
 
+  # Deletes one of the authenticated user's PENDING pull request reviews.
+  # GitHub rejects review creation with 422 while a pending review exists, so
+  # interrupted review runs must clear theirs before retrying.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param review_id [Integer] The pending review ID to delete
+  def delete_pending_pull_request_review(repo, number, review_id)
+    handle_errors do
+      client.delete("#{Octokit::Repository.path(repo)}/pulls/#{number}/reviews/#{review_id}")
+    end
+  end
+
   # Replies to a review comment on a pull request.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -921,6 +957,22 @@ class GithubClient
   def create_pull_request_review(repo, number, event:, body: "")
     handle_errors do
       client.create_pull_request_review(repo, number, event: event, body: body.to_s)
+    end
+  end
+
+  # Creates a pull request review from a caller-built REST payload. Mirrors
+  # what the review-creation proxy forwards for containerized review runs:
+  # the payload may pin +commit_id+ and carry inline +comments+ entries with
+  # +path+ / +line+ / +side+, which the convenience wrapper above cannot
+  # express.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param payload [Hash] REST "Create a review for a pull request" body
+  # @return [Sawyer::Resource] The created review
+  def create_pull_request_review_payload(repo, number, payload)
+    handle_errors do
+      client.post("#{Octokit::Repository.path(repo)}/pulls/#{number}/reviews", payload)
     end
   end
 

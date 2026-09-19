@@ -206,18 +206,79 @@
   `manual_review`; only an explicit operator-triggered run SHALL resume work,
   and queueing such a run SHALL move the issue out of `manual_review` in the
   same request (the queue-time state flip — see `OPERATOR-INBOX-002D`), with
-  re-entry only through the enhancement stop paths. Entering
-  `manual_review` SHALL clear stored clarification questions and remove
-  the enhancement needs-input label so GitHub and Paid do not show contradictory
-  lifecycle states. Only a marker comment authored by Paid's GitHub App SHALL
-  suppress the stop notice; the marker text is unauthenticated, so trusting
-  allowlisted human collaborators would let any one of them forge the marker
-  and silence platform feedback, breaking the convention used by other
-  marker-based status comments.
+  re-entry only through the enhancement stop paths. Entering `manual_review`
+  SHALL remove the enhancement needs-input label so GitHub and Paid do not
+  show contradictory lifecycle states. When the terminal round's agent output
+  still has a parseable `## Clarifying questions` section, the system SHALL
+  preserve those questions on `needs_input_questions` (instead of clearing
+  them) so the operator inbox's `manual_review` lane can render them as an
+  answerable surface (`OPERATOR-INBOX-002D`) — the terminal round's questions
+  ARE the manual review the state asks for. Preservation SHALL hold on every
+  `manual_review` entry path: `IssueEnhancements::StopForManualReview` —
+  reached from the hard parse failure in `EnhanceIssueActivity` and the
+  queue-time limit stop in `QueueAgentRunActivity` — SHALL keep
+  already-stored `needs_input_questions` (the stored questions are the
+  latest answerable surface; there is nothing new to parse, but wiping them
+  would recreate the dead end). `needs_input_questions` SHALL be cleared
+  only by a terminal round whose comment has no parseable questions.
+  Submitting an answer to those preserved questions from the inbox SHALL be
+  accepted as a `manual_review` clearing action: `ClarifyingQuestions::
+  ClearNeedsInput` SHALL post the standard answer-marker comment, reset
+  `enhance_issue_rounds` (`ISSUE-ENHANCEMENT-014` — the same human-signal
+  round-budget reset a `needs_input` answer already gets), and move the
+  issue out of `manual_review` — to `new`, or, when a `create_feature` run
+  is paused on the issue (RDR-053), by resuming that run under the same
+  `in_progress` queue-time flip an operator-triggered run gets. GitHub
+  in-thread answers SHALL NOT be auto-detected for `manual_review`:
+  `FetchIssuesActivity`'s needs-input recovery paths gate on
+  `paid_state: needs_input` only, so the inbox is the sole recovery surface
+  for a parked terminal round's questions. Only a marker comment authored by
+  Paid's GitHub App SHALL suppress the stop notice; the marker text is
+  unauthenticated, so trusting allowlisted human collaborators would let any
+  one of them forge the marker and silence platform feedback, breaking the
+  convention used by other marker-based status comments.
   *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
-  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/services/issue_enhancements/stop_for_manual_review_spec.rb`,
+  `spec/services/clarifying_questions/clear_needs_input_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`,
+  `spec/requests/inbox_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`.
   *Code:* `app/temporal/activities/queue_agent_run_activity.rb`,
-  `app/temporal/activities/fetch_issues_activity.rb`.
+  `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`,
+  `app/services/issue_enhancements/stop_for_manual_review.rb`,
+  `app/services/clarifying_questions/clear_needs_input.rb`,
+  `app/services/inbox/queue.rb#manual_review_entries`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+
+- [x] **ISSUE-ENHANCEMENT-019** — The enhancement-round cap SHALL bound
+  automatic re-evaluation only, at every entry point that applies it:
+  queue time (ISSUE-ENHANCEMENT-011, which only automatic runs consume or
+  are blocked by), completion time, and the already-enhanced
+  reconciliation path. When `EnhanceIssueActivity` finishes a run whose
+  verdict is `sufficient_context: false`, it SHALL treat the round cap as
+  reached only when the run's `trigger_type` is `automatic`. An
+  operator-triggered manual run — including one queued by "Start
+  enhancement run" against an issue already parked in `manual_review` —
+  SHALL land an insufficient verdict in `needs_input` with clarifying
+  questions synced, never back in `manual_review`, regardless of the
+  issue's accumulated `enhance_issue_rounds`. The same scoping applies
+  when a manual run re-enters through the already-enhanced short circuit
+  because a trusted body edit (ISSUE-ENHANCEMENT-016) reset the counter to
+  zero while the issue stayed parked: an existing "## Auto-enhancement
+  stopped" comment SHALL reconcile to `needs_input` — the stop wrapper
+  only ever encloses an insufficient verdict — and SHALL never re-park the
+  issue in `manual_review` or be read as a sufficient verdict. This closes
+  the loop where the designated `manual_review` recovery action re-wrapped
+  its own comment in "## Auto-enhancement stopped" and re-parked the issue
+  in the state it was meant to clear (#3907). An automatic run's behavior
+  at the cap is unchanged: it still parks the issue in `manual_review`
+  and posts the auto-enhancement-stop comment.
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#max_rounds_reached?`,
+  `app/temporal/activities/enhance_issue_activity.rb#finish_enhance_issue`,
+  `app/temporal/activities/enhance_issue_activity.rb#reconcile_existing_label_state`,
+  `app/temporal/activities/enhance_issue_activity.rb#existing_paid_state`.
 
 ## Manual-review visibility
 
@@ -262,11 +323,14 @@
   the successful verdict (the lane has converged; a later regression must
   not inherit an exhausted automatic-retry budget that would deadlock the
   next cycle) and SHALL also reset it on the meaningful human signal of
-  clearing the `needs_input` label. The label-clearing reset SHALL behave
-  identically regardless of which label-removal handler picks the event
-  up (#3906): via `ClearNeedsInput` when a human answer comment arrives,
-  via `FetchIssuesActivity#detect_needs_input_label_removals` when the
-  plain-removal handler sees the label removed on GitHub, and via
+  clearing the `needs_input` label, or of answering a `manual_review`
+  issue's preserved terminal-round questions from the inbox. The
+  label-clearing reset SHALL behave identically regardless of which
+  handler picks the event up (#3906): via `ClearNeedsInput` when a human
+  answer comment arrives (extended by `ISSUE-ENHANCEMENT-011` to also
+  accept `manual_review` as a clearable source state for the inbox-answer
+  path), via `FetchIssuesActivity#detect_needs_input_label_removals` when
+  the plain-removal handler sees the label removed on GitHub, and via
   `FetchIssuesActivity#enqueue_enhance_issue_recheck` when the recheck
   handler claims the removal — the recheck enqueue SHALL reset the
   counter at the same time it queues the re-evaluation, so the recheck

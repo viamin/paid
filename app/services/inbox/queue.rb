@@ -114,6 +114,16 @@ module Inbox
         @context_markdown = context_loader&.context_markdown
       end
 
+      # Lazy accessor, mirroring `context_markdown`: resolves the enhancement
+      # comment link for the SELECTED entry only, so building the queue never
+      # makes a GitHub API call per manual_review row.
+      # @spec OPERATOR-INBOX-002D
+      def manual_review_comment_url
+        return @manual_review_comment_url if defined?(@manual_review_comment_url)
+
+        @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
+      end
+
       private
 
       def context_loader
@@ -121,6 +131,12 @@ module Inbox
         return unless project && issue
 
         @context_loader ||= ClarifyingQuestions::Load.new(project: project, issue: issue)
+      end
+
+      def manual_review_comment_link
+        return unless project && issue
+
+        Inbox::ManualReviewCommentLink.call(project: project, issue: issue)
       end
     end
 
@@ -395,11 +411,18 @@ module Inbox
       )
     end
 
-    # Only an explicit operator-triggered run clears manual_review
-    # (ISSUE-ENHANCEMENT-011), so this lane exists purely to surface the state
-    # and offer that action — it derives from `paid_state` directly, the same
-    # way clarifying_questions and escalated_pr do, rather than a separate
-    # notification.
+    # An explicit operator-triggered run is one way to clear manual_review
+    # (ISSUE-ENHANCEMENT-011); answering the parked round's preserved
+    # clarifying questions is the other. `question_summary_for` is the same
+    # local-only lookup `clarifying_question_entries` uses (issue body, then
+    # `needs_input_questions` — no GitHub round-trip during queue listing),
+    # since `EnhanceIssueActivity` preserves those questions on
+    # `needs_input_questions` when the terminal round still has a parseable
+    # `## Clarifying questions` section, and
+    # `IssueEnhancements::StopForManualReview` keeps already-stored questions
+    # on every stop path. This lane
+    # derives from `paid_state` directly, the same way clarifying_questions
+    # and escalated_pr do, rather than a separate notification.
     # @spec OPERATOR-INBOX-002D
     def manual_review_entries
       ordered_manual_review_issues.map do |issue|
@@ -410,7 +433,7 @@ module Inbox
           issue: issue,
           record: issue,
           waiting_since: issue.manual_review_started_at || issue.updated_at,
-          questions: [],
+          questions: question_summary_for(issue),
           tasks: [],
           summary_text: issue.manual_review_reason.presence || "Manual review required.",
           title_text: nil,

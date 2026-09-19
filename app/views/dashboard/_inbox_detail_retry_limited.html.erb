@@ -1,19 +1,20 @@
 <%# @spec OPERATOR-INBOX-002E %>
 <% issue = entry.issue %>
+<% push_blocked = issue.push_permission_abandoned? %>
 <div class="space-y-6">
   <div class="rounded-xl border border-orange-200 bg-orange-50 p-4">
     <h3 class="text-sm font-semibold text-orange-900">
-      <% if issue.push_permission_abandoned? %>
+      <% if push_blocked %>
         Paid stopped pushing this issue — GitHub App lacks a permission
       <% else %>
         Paid reached the retry cap for this issue
       <% end %>
     </h3>
     <p class="mt-1 text-sm text-orange-800">
-      <% if issue.push_permission_abandoned? %>
+      <% if push_blocked %>
         The GitHub App installation token cannot complete the push (for example, a change
         under <code>.github/workflows/</code> needs the <code>workflows</code> permission).
-        Re-grant the permission on GitHub, then trigger a manual run to clear the flag.
+        Re-grant the permission on GitHub, then click <strong>Re-enable</strong> below to clear the flag.
       <% else %>
         Every available runner hit the per-issue retry cap and was excluded from dispatch.
         Clear the flag once the underlying failures have aged out of the window, then queue a
@@ -28,7 +29,7 @@
       <%= entry.summary.presence || "Paid parked this issue and is waiting for an operator." %>
     </p>
     <div class="flex flex-wrap items-center gap-2">
-      <% if issue.push_permission_abandoned? %>
+      <% if push_blocked %>
         <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20">Push Blocked</span>
       <% else %>
         <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">Retry Cap</span>
@@ -46,9 +47,23 @@
           rel: "noopener noreferrer",
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% if policy(entry.project).run_agent? %>
+      <% confirm_message = if push_blocked
+        "Clear the push-block flag for #{entry.project.full_name}##{issue.github_number}? " \
+          "Once the GitHub App permission is granted, the issue will return to auto-pick on the next dispatch."
+      else
+        "Clear the retry-cap flag for #{entry.project.full_name}##{issue.github_number}? " \
+          "You'll still need to queue a run from the project page for work to resume."
+      end %>
+      <%= button_to "Re-enable",
+            clear_retry_abandonment_project_agent_runs_path(entry.project, issue_id: issue.id),
+            method: :post,
+            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500",
+            form: { data: { turbo_confirm: confirm_message, turbo_frame: "_top" } } %>
       <%= link_to "Open project runs",
             project_agent_runs_path(entry.project),
-            class: "inline-flex items-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500" %>
+            data: { turbo_frame: "_top" },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% end %>
   </div>
 </div>

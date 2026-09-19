@@ -2600,6 +2600,147 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/clear_retry_abandonment" do
+    let(:capped_issue) do
+      create(:issue,
+        project: project,
+        github_number: 91,
+        title: "Capped issue",
+        runner_retry_abandoned_at: 1.hour.ago,
+        runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
+    end
+
+    context "when not authenticated" do
+      # @spec OPERATOR-INBOX-002E
+      it "redirects to the sign in page" do
+        post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: capped_issue.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(capped_issue.reload.runner_retry_abandoned_at).to be_present
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec OPERATOR-INBOX-002E
+      it "refuses the clear" do
+        post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: capped_issue.id }
+
+        expect(response).not_to have_http_status(:ok)
+        expect(capped_issue.reload.runner_retry_abandoned_at).to be_present
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      # @spec OPERATOR-INBOX-002E
+      it "clears the runner-retry abandonment so the issue leaves the inbox lane" do
+        expect {
+          post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: capped_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        capped_issue.reload
+        expect(capped_issue.runner_retry_abandoned_at).to be_nil
+        expect(capped_issue.runner_retry_abandon_reason).to be_nil
+        expect(capped_issue.runner_retry_abandoned?).to be(false)
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:notice]).to include("Cleared the retry-cap flag")
+        expect(flash[:notice]).to include("#{project.full_name}#91")
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "removes the cleared issue from the retry_limited inbox lane and invalidates the badge count" do
+        gated_project = create(:project, account: account, github_token: github_token, created_by: user,
+          auto_pick_enabled: true, active: true)
+        capped = create(:issue, project: gated_project, github_number: 92,
+          runner_retry_abandoned_at: 1.hour.ago,
+          runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
+
+        expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::RETRY_LIMITED_KIND).map(&:issue)).to include(capped)
+        expect(Inbox::Count.call(user: user)).to be >= 1
+
+        post clear_retry_abandonment_project_agent_runs_path(gated_project), params: { issue_id: capped.id }
+
+        capped.reload
+        expect(capped.runner_retry_abandoned_at).to be_nil
+        expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::RETRY_LIMITED_KIND).map(&:issue)).not_to include(capped)
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "clears the flag for a Push Blocked (push-permission) abandonment" do
+        push_blocked = create(:issue, project: project, github_number: 93,
+          runner_retry_abandoned_at: 1.hour.ago,
+          runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission")
+
+        post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: push_blocked.id }
+
+        push_blocked.reload
+        expect(push_blocked.runner_retry_abandoned_at).to be_nil
+        expect(push_blocked.runner_retry_abandon_reason).to be_nil
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "redirects back to the inbox when return_to points there" do
+        post clear_retry_abandonment_project_agent_runs_path(project),
+          params: {
+            issue_id: capped_issue.id,
+            return_to: inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+          }
+
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND))
+        expect(capped_issue.reload.runner_retry_abandoned_at).to be_nil
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "ignores an external return_to and falls back to the dashboard" do
+        post clear_retry_abandonment_project_agent_runs_path(project),
+          params: { issue_id: capped_issue.id, return_to: "https://evil.example.com" }
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(capped_issue.reload.runner_retry_abandoned_at).to be_nil
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "refuses when no issue is selected" do
+        post clear_retry_abandonment_project_agent_runs_path(project), params: {}
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to eq("Please select an issue.")
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "refuses when the issue is not currently flagged (stale click after auto-clear)" do
+        capped_issue.update!(runner_retry_abandoned_at: nil, runner_retry_abandon_reason: nil)
+
+        expect {
+          post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: capped_issue.id }
+        }.not_to change { capped_issue.reload.runner_retry_abandoned_at }
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to eq("This issue is no longer flagged as retry-abandoned.")
+      end
+
+      # @spec OPERATOR-INBOX-002E
+      it "refuses an issue that belongs to a different project" do
+        other_project = create(:project, account: account, github_token: github_token, created_by: user)
+        other_capped = create(:issue, project: other_project, github_number: 94,
+          runner_retry_abandoned_at: 1.hour.ago,
+          runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).")
+
+        expect {
+          post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: other_capped.id }
+        }.not_to change { other_capped.reload.runner_retry_abandoned_at }
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to eq("This issue is no longer flagged as retry-abandoned.")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/toggle_auto_continue_pause" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

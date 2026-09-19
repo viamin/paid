@@ -403,6 +403,56 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
+    parked = create_manual_review_issue(
+      title: "Parked with questions",
+      github_number: 510,
+      reason: "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+      needs_input_questions: [ "Which events should be recorded?" ]
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Start enhancement run")
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, parked)}"]))
+
+    expect(form).to be_present
+    expect(form.at_css('input[name="inbox"]')["value"]).to eq("1")
+  end
+
+  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  # Questions are preserved on every manual_review stop path
+  # (IssueEnhancements::StopForManualReview), including the hard parse-failure
+  # stop — so the banner must not assert a stop cause the condition cannot
+  # distinguish; the cause lives in the "Why this is in your inbox" summary.
+  it "renders the answer form without asserting a round-limit cause for a parse-failure stop with preserved questions" do
+    parked = create_manual_review_issue(
+      title: "Parked by parse failure",
+      github_number: 511,
+      reason: "Paid could not validate the enhancement agent's structured output.",
+      needs_input_questions: [ "Which events should be recorded?" ]
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(
+      "Paid could not validate the enhancement agent",
+      "Which events should be recorded?",
+      "Answer them below to resume"
+    )
+    expect(response.body).not_to include("enhancement round limit")
+  end
+
   # @spec OPERATOR-INBOX-002E
   it "lists retry-limited issues scoped to auto-pick projects" do
     ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "epsilon")
@@ -479,6 +529,65 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited detail with an inbox-scoped Re-enable action and return_to for runner-cap abandonments" do
+    capped = create_retry_limited_issue(
+      title: "Capped issue", github_number: 514,
+      reason: "All available runners reached the per-issue retry cap (3)."
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped), kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    form = Nokogiri::HTML(response.body).at_css(
+      %(form[action="#{clear_retry_abandonment_project_agent_runs_path(project, issue_id: capped.id)}"])
+    )
+
+    expect(form).to be_present
+    expect(form["data-turbo-frame"]).to eq("_top")
+    expect(form["data-turbo-confirm"]).to include("retry-cap flag").and include("queue a run from the project page")
+    expect(form.at_css('button').text).to include("Re-enable")
+    expect(form.at_css('input[name="return_to"]')["value"]).to eq(inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND))
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited detail with the inbox-scoped Re-enable action for Push Blocked abandonments" do
+    push_blocked = create(
+      :issue, project: project, title: "Push blocked issue", github_number: 515,
+      runner_retry_abandoned_at: 1.hour.ago,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, push_blocked), kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    form = Nokogiri::HTML(response.body).at_css(
+      %(form[action="#{clear_retry_abandonment_project_agent_runs_path(project, issue_id: push_blocked.id)}"])
+    )
+
+    expect(form).to be_present
+    expect(form["data-turbo-frame"]).to eq("_top")
+    expect(form["data-turbo-confirm"]).to include("push-block flag")
+    expect(form["data-turbo-confirm"]).not_to include("queue a run from the project page")
+    expect(form.at_css('button').text).to include("Re-enable")
+  end
+
+  # @spec OPERATOR-INBOX-002E
+  it "renders the retry_limited 'Open project runs' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    capped = create_retry_limited_issue(title: "Capped issue", github_number: 516)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped),
+      kind: Inbox::Queue::RETRY_LIMITED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css(%(a[href="#{project_agent_runs_path(project)}"]))
+
+    expect(link).to be_present
+    expect(link.text).to eq("Open project runs")
+    expect(link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec OPERATOR-INBOX-002E
   it "exposes retry_limited in the inbox nav filter chips" do
     get inbox_path
 
@@ -495,6 +604,104 @@ RSpec.describe "Inbox" do
     get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
 
     expect(response).to have_http_status(:ok)
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "exposes manual_review in the inbox nav filter chips and filters to it" do
+    create_manual_review_issue(title: "Parked issue", github_number: 514)
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Manual Review'][@href='#{inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)}'])
+    )
+    expect(chip).to be_present
+
+    get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Parked issue")
+  end
+
+  # @spec FEATURE-APPROVAL-013
+  it "exposes feature_decision in the inbox nav filter chips and filters to it" do
+    feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Feature Decision'][@href='#{inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)}'])
+    )
+    expect(chip).to be_present
+
+    get inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(feature_intent.title)
+  end
+
+  # @spec INTENT-CONFORMANCE-006
+  it "exposes intent_conformance in the inbox nav filter chips and filters to it" do
+    pr = create_intent_conformance_pr(title: "Drifted PR")
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    chip = document.at_xpath(
+      %(//a[normalize-space()='Intent Conformance'][@href='#{inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)}'])
+    )
+    expect(chip).to be_present
+
+    get inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(pr.title)
+  end
+
+  it "lists every lane kind in the empty-state copy" do
+    get inbox_path
+
+    expect(response.body).to include("Inbox clear")
+    expect(response.body).to include(
+      "clarifying-question", "plan-review", "merge-approval", "action-required",
+      "blocked-PR", "manual-review", "intent-conformance", "feature-decision", "retry-limited"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "links the manual_review detail pane to the GitHub issue" do
+    parked = create_manual_review_issue(title: "Parked issue", github_number: 515)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    document = Nokogiri::HTML(response.body)
+    issue_link = document.at_css(%(a[href="#{parked.github_url}"]))
+
+    expect(issue_link).to be_present
+    expect(issue_link.text).to include("View")
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "links the manual_review detail pane to the enhancement comment when it can be resolved" do
+    parked = create_manual_review_issue(title: "Parked issue", github_number: 516)
+    comment_url = "#{parked.github_url}#issuecomment-1"
+    allow(Inbox::ManualReviewCommentLink).to receive(:call).and_return(comment_url)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    document = Nokogiri::HTML(response.body)
+    comment_link = document.at_css(%(a[href="#{comment_url}"]))
+
+    expect(comment_link).to be_present
+    expect(comment_link.text).to eq("View enhancement comment")
   end
 
   # @spec OPERATOR-INBOX-006

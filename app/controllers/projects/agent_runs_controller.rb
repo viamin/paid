@@ -328,6 +328,41 @@ module Projects
       )
     end
 
+    # Operator-driven counterpart to
+    # RunAgentActivity#clear_issue_runner_retry_abandonment: clears
+    # runner_retry_abandoned_at / runner_retry_abandon_reason so the issue
+    # leaves the retry_limited inbox lane and re-enters auto-pick. Mirrors
+    # Issue#clear_runner_retry_abandonment! (audit-logged via the issue
+    # itself); the surrounding controller layer also emits its own
+    # audit_event so the operator action is visible alongside the model
+    # log line.
+    #
+    # No run is queued here — the inbox-scoped button is the "re-enable"
+    # shape (preferred for Push Blocked, the safer retry-cap fallback),
+    # not the run-resuming shape resume_manual_review plays for
+    # manual_review. Operators wanting a fresh run after clearing the
+    # flag use the existing "Open project runs" link (or a manual run
+    # below the inbox detail).
+    # @spec OPERATOR-INBOX-002E
+    def clear_retry_abandonment
+      authorize @project, :run_agent?
+
+      issue = resolve_retry_abandonment_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: retry_abandonment_issue_missing_alert
+        return
+      end
+
+      issue.clear_runner_retry_abandonment!(reason: "Cleared by operator from inbox")
+      audit_event(
+        "issue.retry_abandonment_cleared",
+        metadata: { issue_id: issue.id, project_name: @project.name, github_number: issue.github_number }
+      )
+
+      redirect_to safe_return_target || dashboard_path,
+        notice: "Cleared the retry-cap flag for #{@project.full_name}##{issue.github_number}."
+    end
+
     def toggle_auto_continue_pause
       authorize @project, :run_agent?
 
@@ -809,6 +844,32 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    # The retry_limited lane carries issues and PRs (the runner-retry-cap
+    # path can abandon either), so this resolver does not narrow on
+    # is_pull_request — see OPERATOR-INBOX-002E / dashboard's
+    # Retry-Limited card. The runner_retry_abandoned_at gate is what makes
+    # the row part of the lane in the first place; matching on it stops a
+    # stale click from clearing the flag after the issue left the lane
+    # (e.g. via RunAgentActivity#clear_issue_runner_retry_abandonment after
+    # a successful automatic run).
+    def resolve_retry_abandonment_issue
+      return nil if params[:issue_id].blank?
+
+      @project.issues.find_by(id: params[:issue_id]).then do |issue|
+        next nil unless issue&.runner_retry_abandoned_at.present?
+
+        issue
+      end
+    end
+
+    def retry_abandonment_issue_missing_alert
+      if params[:issue_id].blank?
+        "Please select an issue."
+      else
+        "This issue is no longer flagged as retry-abandoned."
+      end
     end
 
     # Queuing an operator-triggered enhance run resumes work on a manual_review
