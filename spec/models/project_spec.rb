@@ -22,6 +22,24 @@ RSpec.describe Project do
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
   end
 
+  describe "Apple verification records" do
+    it "destroys attempts and their artifacts before workflow revisions" do # @spec APPLE-VERIFY-003
+      project = create(:project)
+      attempt = create(:apple_verification_attempt, project:)
+      artifact = AppleVerificationArtifact.create!(
+        attempt:,
+        kind: "screenshot",
+        storage_key: "apple-verification/#{attempt.id}/screenshot.png"
+      )
+
+      expect { project.destroy! }
+        .to change(AppleVerificationAttempt, :count).by(-1)
+        .and change(AppleVerificationWorkflowRevision, :count).by(-1)
+        .and change(AppleVerificationArtifact, :count).by(-1)
+      expect { artifact.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
   describe "validations" do
     subject { build(:project) }
 
