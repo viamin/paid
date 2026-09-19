@@ -22,6 +22,7 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   validate :account_matches_project
   validate :profile_matches_account
   validate :approval_fields_match_state
+  validate :approver_is_project_administrator
   validate :approval_binding_is_immutable, on: :update
 
   def draft?
@@ -80,6 +81,13 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
     return if approved? ? approved_by_id.present? && approved_at.present? : approved_by_id.blank? && approved_at.blank?
 
     errors.add(:base, "approval actor and timestamp are required only for approved revisions")
+  end
+
+  def approver_is_project_administrator
+    return unless approved? && approved_by && project
+    return if approved_by.has_role?(:project_admin, project)
+
+    errors.add(:approved_by, "must be a project administrator")
   end
 
   def approval_binding_is_immutable

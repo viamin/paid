@@ -19,6 +19,7 @@ class AppleVerificationWaiver < ApplicationRecord
   validate :binding_matches_attempt
   validate :creator_matches_account
   validate :creator_is_project_administrator
+  validate :check_ids_are_required_for_workflow
 
   def active?
     expires_at.future?
@@ -50,5 +51,16 @@ class AppleVerificationWaiver < ApplicationRecord
     return if created_by.has_role?(:project_admin, apple_verification_attempt.project)
 
     errors.add(:created_by, "must be a project administrator")
+  end
+
+  def check_ids_are_required_for_workflow
+    unless check_ids.is_a?(Array) && check_ids.any?
+      errors.add(:check_ids, "must identify at least one required check")
+      return
+    end
+    return unless apple_verification_workflow_revision
+
+    invalid_check_ids = check_ids - Array(apple_verification_workflow_revision.required_checks)
+    errors.add(:check_ids, "must identify required checks for the workflow") if invalid_check_ids.any?
   end
 end

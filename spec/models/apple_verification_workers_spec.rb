@@ -21,6 +21,16 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(profile.errors[:base]).to include("worker profile constraints are immutable")
   end
 
+  it "rejects persisted profiles with unsupported capabilities or platforms" do # @spec APPLE-WORKER-001
+    unsupported_capability = build(:apple_worker_profile, capabilities: { "capabilities" => [ "shell" ] })
+    unsupported_platform = build(:apple_worker_profile, constraints: { "platforms" => [ "windows" ], "xcode_version" => ">= 26.0" })
+
+    expect(unsupported_capability).not_to be_valid
+    expect(unsupported_capability.errors[:base]).to include("unsupported Apple worker capabilities: shell")
+    expect(unsupported_platform).not_to be_valid
+    expect(unsupported_platform.errors[:base]).to include("unsupported Apple platform")
+  end
+
   it "binds and freezes approval inputs while superseding the prior approval" do # @spec APPLE-WORKER-004
     project = create(:project)
     actor = create(:user, account: project.account)
@@ -46,6 +56,15 @@ RSpec.describe "Apple verification persistence", type: :model do
 
     expect { revision.approve!(actor: account_member) }.to raise_error(ArgumentError, /project administrator/)
     expect { revision.approve!(actor: project_member) }.to raise_error(ArgumentError, /project administrator/)
+  end
+
+  it "rejects a directly persisted approval by a non-administrator" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    revision = build(:apple_verification_workflow_revision, project:, account: project.account, status: "approved", approved_by: create(:user, account: project.account), approved_at: Time.current)
+
+    expect(revision).not_to be_valid
+    expect(revision.errors[:approved_by]).to include("must be a project administrator")
+    expect { revision.save! }.to raise_error(ActiveRecord::RecordInvalid, /project administrator/)
   end
 
   it "enforces one approved workflow revision per project" do # @spec APPLE-WORKER-004
@@ -85,6 +104,26 @@ RSpec.describe "Apple verification persistence", type: :model do
 
     expect(waiver).not_to be_valid
     expect(waiver.errors[:created_by]).to include("must be a project administrator")
+  end
+
+  it "requires a waiver to name required checks for its workflow" do # @spec APPLE-WORKER-006
+    attempt = create(:apple_verification_attempt)
+    administrator = create(:user, account: attempt.account)
+    administrator.add_role(:project_admin, attempt.project)
+    waiver = AppleVerificationWaiver.new(
+      account: attempt.account, project: attempt.project, apple_verification_attempt: attempt,
+      apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+      created_by: administrator, source_digest: attempt.source_digest,
+      lifecycle_gate: attempt.lifecycle_gate, reason: "Known simulator outage", expires_at: 1.hour.from_now
+    )
+
+    expect(waiver).not_to be_valid
+    expect(waiver.errors[:check_ids]).to include("must identify at least one required check")
+
+    waiver.check_ids = [ "screenshot" ]
+
+    expect(waiver).not_to be_valid
+    expect(waiver.errors[:check_ids]).to include("must identify required checks for the workflow")
   end
 
   it "destroys Apple verification records with their project" do # @spec APPLE-WORKER-005 @spec APPLE-WORKER-006
