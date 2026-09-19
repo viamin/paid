@@ -51,8 +51,13 @@ module AppleVerification
       end
 
       def shell_field?(value)
-        value.any? do |key, nested|
-          SHELL_FIELDS.include?(key.to_s) || nested.is_a?(Hash) && shell_field?(nested) || nested.is_a?(Array) && nested.any? { |item| item.is_a?(Hash) && shell_field?(item) }
+        case value
+        when Hash
+          value.any? { |key, nested| SHELL_FIELDS.include?(key.to_s) || shell_field?(nested) }
+        when Array
+          value.any? { |item| shell_field?(item) }
+        else
+          false
         end
       end
 
