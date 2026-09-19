@@ -9,10 +9,25 @@ module AppleVerificationWorkers
   MANIFEST_SCHEMA_VERSION = "remote_execution.apple_verification.v1"
   CAPABILITIES = %i[build test launch ui_flow screenshot].freeze
   PLATFORMS = %w[ios ipados macos].freeze
-  FORBIDDEN_KEYS = %w[
-    host_path host_paths mount mounts command shell provider provider_handle
-    lifecycle vm_id credential token secret password
-  ].freeze
+  FORBIDDEN_KEYS = (
+    %w[
+      host_path host_paths mount mounts command shell provider provider_handle
+      lifecycle vm_id credential token secret password
+    ] + SecretSafeMetadata::FORBIDDEN_METADATA_KEYS - [ "credentials" ]
+  ).uniq.freeze
+  INPUT_MANIFEST_FIELDS = %w[schema_version source verification profile lanes].freeze
+  OUTPUT_MANIFEST_FIELDS = %w[schema_version attempt result artifacts lanes].freeze
+  LANE_NAMES = %w[git control_plane_api object_storage credentials].freeze
+  INPUT_SECTION_FIELDS = {
+    "source" => %w[digest commit_sha bundle_digest],
+    "verification" => %w[operations workflow_digest],
+    "profile" => %w[digest platform xcode_version]
+  }.freeze
+  OUTPUT_SECTION_FIELDS = {
+    "attempt" => %w[id source_digest workflow_revision lifecycle_gate profile_digest],
+    "result" => %w[status timings retry_lineage failure_classification required_checks advisory_checks screenshot_metadata network_policy audit_event_references ledger_entry_references],
+    "artifacts" => %w[xcresult build_logs screenshots diagnostics references]
+  }.freeze
 
   class UnsupportedCapability < StandardError; end
   class InvalidManifest < StandardError; end
@@ -47,7 +62,7 @@ module AppleVerificationWorkers
   InputManifest = Data.define(:schema_version, :source, :verification, :profile, :lanes) do
     def initialize(schema_version: MANIFEST_SCHEMA_VERSION, source:, verification:, profile:, lanes:)
       super(schema_version:, source:, verification:, profile:, lanes:)
-      AppleVerificationWorkers.validate_manifest!(as_json)
+      AppleVerificationWorkers.validate_input_manifest!(as_json)
     end
 
     def as_json(*)
@@ -58,7 +73,7 @@ module AppleVerificationWorkers
   OutputManifest = Data.define(:schema_version, :attempt, :result, :artifacts, :lanes) do
     def initialize(schema_version: MANIFEST_SCHEMA_VERSION, attempt:, result:, artifacts:, lanes:)
       super(schema_version:, attempt:, result:, artifacts:, lanes:)
-      AppleVerificationWorkers.validate_manifest!(as_json)
+      AppleVerificationWorkers.validate_output_manifest!(as_json)
     end
 
     def as_json(*)
@@ -66,9 +81,20 @@ module AppleVerificationWorkers
     end
   end
 
-  def self.validate_manifest!(manifest)
+  def self.validate_input_manifest!(manifest)
+    validate_manifest!(manifest, allowed_fields: INPUT_MANIFEST_FIELDS, section_fields: INPUT_SECTION_FIELDS)
+  end
+
+  def self.validate_output_manifest!(manifest)
+    validate_manifest!(manifest, allowed_fields: OUTPUT_MANIFEST_FIELDS, section_fields: OUTPUT_SECTION_FIELDS)
+  end
+
+  def self.validate_manifest!(manifest, allowed_fields:, section_fields:)
     validate_object!(manifest)
+    validate_allowed_fields!(manifest, allowed_fields, "manifest")
+    validate_section_fields!(manifest, section_fields)
     validate_no_forbidden_keys!(manifest)
+    validate_no_secret_shaped_values!(manifest)
     validate_lanes!(manifest.fetch("lanes"))
   end
 
@@ -89,8 +115,35 @@ module AppleVerificationWorkers
     end
   end
 
+  def self.validate_allowed_fields!(value, allowed_fields, context)
+    unknown_fields = value.keys.map(&:to_s) - allowed_fields
+    return if unknown_fields.empty?
+
+    raise InvalidManifest, "#{context} contains unknown field #{unknown_fields.first}"
+  end
+
+  def self.validate_section_fields!(manifest, section_fields)
+    section_fields.each do |section, allowed_fields|
+      validate_object!(manifest.fetch(section))
+      validate_allowed_fields!(manifest.fetch(section), allowed_fields, "manifest #{section}")
+    end
+  end
+
+  def self.validate_no_secret_shaped_values!(value)
+    case value
+    when Hash
+      value.each_value { |nested| validate_no_secret_shaped_values!(nested) }
+    when Array
+      value.each { |nested| validate_no_secret_shaped_values!(nested) }
+    when String
+      raise InvalidManifest, "manifest contains a secret-shaped value" if SecretSafeMetadata.secret_like?(value)
+    end
+  end
+
   def self.validate_lanes!(lanes)
     raise InvalidManifest, "manifest lanes must be an object" unless lanes.is_a?(Hash)
+    validate_allowed_fields!(lanes, LANE_NAMES, "manifest lanes")
+    raise InvalidManifest, "manifest lanes must contain arrays" unless lanes.values.all? { |entries| entries.is_a?(Array) }
     raise InvalidManifest, "credential lane must contain references only" if Array(lanes["credentials"]).any? { |entry| !credential_reference?(entry) }
   end
 

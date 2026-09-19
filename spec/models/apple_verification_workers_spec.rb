@@ -24,6 +24,7 @@ RSpec.describe "Apple verification persistence", type: :model do
   it "binds and freezes approval inputs while superseding the prior approval" do # @spec APPLE-WORKER-004
     project = create(:project)
     actor = create(:user, account: project.account)
+    actor.add_role(:project_admin, project)
     old_revision = create(:apple_verification_workflow_revision, project:, account: project.account)
     old_revision.approve!(actor:)
     revision = create(:apple_verification_workflow_revision, project:, account: project.account)
@@ -36,7 +37,44 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(revision.errors[:base]).to include("approved workflow binding is immutable")
   end
 
+  it "requires a project administrator to approve a workflow revision" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    revision = create(:apple_verification_workflow_revision, project:)
+    account_member = create(:user, account: project.account)
+    project_member = create(:user, account: project.account)
+    project_member.add_role(:project_member, project)
+
+    expect { revision.approve!(actor: account_member) }.to raise_error(ArgumentError, /project administrator/)
+    expect { revision.approve!(actor: project_member) }.to raise_error(ArgumentError, /project administrator/)
+  end
+
+  it "enforces one approved workflow revision per project" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    approved_revision = create(:apple_verification_workflow_revision, project:)
+    competing_revision = create(:apple_verification_workflow_revision, project:)
+
+    approved_revision.approve!(actor: administrator)
+    competing_revision.approve!(actor: administrator)
+
+    expect(project.apple_verification_workflow_revisions.approved).to contain_exactly(competing_revision)
+  end
+
   it "requires waiver ownership and bindings to match one attempt" do # @spec APPLE-WORKER-005 @spec APPLE-WORKER-006
+    attempt = create(:apple_verification_attempt)
+    waiver = AppleVerificationWaiver.new(
+      account: attempt.account, project: attempt.project, apple_verification_attempt: attempt,
+      apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+      created_by: create(:user, account: attempt.account).tap { |user| user.add_role(:project_admin, attempt.project) }, source_digest: attempt.source_digest,
+      lifecycle_gate: attempt.lifecycle_gate, check_ids: [ "test" ], reason: "Known simulator outage", expires_at: 1.hour.from_now
+    )
+
+    expect(waiver).to be_valid
+    expect { waiver.save! }.to change(AppleVerificationWaiver, :count).by(1)
+  end
+
+  it "requires a project administrator to create a waiver" do # @spec APPLE-WORKER-006
     attempt = create(:apple_verification_attempt)
     waiver = AppleVerificationWaiver.new(
       account: attempt.account, project: attempt.project, apple_verification_attempt: attempt,
@@ -45,8 +83,32 @@ RSpec.describe "Apple verification persistence", type: :model do
       lifecycle_gate: attempt.lifecycle_gate, check_ids: [ "test" ], reason: "Known simulator outage", expires_at: 1.hour.from_now
     )
 
-    expect(waiver).to be_valid
-    expect { waiver.save! }.to change(AppleVerificationWaiver, :count).by(1)
+    expect(waiver).not_to be_valid
+    expect(waiver.errors[:created_by]).to include("must be a project administrator")
+  end
+
+  it "destroys Apple verification records with their project" do # @spec APPLE-WORKER-005 @spec APPLE-WORKER-006
+    attempt = create(:apple_verification_attempt)
+    administrator = create(:user, account: attempt.account)
+    administrator.add_role(:project_admin, attempt.project)
+    waiver = AppleVerificationWaiver.create!(
+      account: attempt.account,
+      project: attempt.project,
+      apple_verification_attempt: attempt,
+      apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+      created_by: administrator,
+      source_digest: attempt.source_digest,
+      lifecycle_gate: attempt.lifecycle_gate,
+      check_ids: [ "test" ],
+      reason: "Known simulator outage",
+      expires_at: 1.hour.from_now
+    )
+
+    expect { attempt.project.destroy! }
+      .to change(AppleVerificationWaiver, :count).by(-1)
+      .and change(AppleVerificationAttempt, :count).by(-1)
+      .and change(AppleVerificationWorkflowRevision, :count).by(-1)
+    expect { waiver.reload }.to raise_error(ActiveRecord::RecordNotFound)
   end
 
   it "keeps Apple audit and VM-ledger ownership bound to the attempt" do # @spec APPLE-WORKER-007

@@ -41,10 +41,11 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   end
 
   def approve!(actor:)
-    raise ArgumentError, "only a draft revision can be approved" unless draft?
-    raise ArgumentError, "approver must belong to the workflow account" unless actor.account_id == account_id
+    project.with_lock do
+      reload
+      raise ArgumentError, "only a draft revision can be approved" unless draft?
+      raise ArgumentError, "approver must be a project administrator" unless actor&.has_role?(:project_admin, project)
 
-    transaction do
       project.apple_verification_workflow_revisions.approved.where.not(id:).find_each(&:supersede!)
       update!(status: "approved", approved_by: actor, approved_at: Time.current)
     end

@@ -18,6 +18,7 @@ class AppleVerificationWaiver < ApplicationRecord
   validate :ownership_matches_attempt
   validate :binding_matches_attempt
   validate :creator_matches_account
+  validate :creator_is_project_administrator
 
   def active?
     expires_at.future?
@@ -42,5 +43,12 @@ class AppleVerificationWaiver < ApplicationRecord
 
   def creator_matches_account
     errors.add(:created_by, "must belong to the waiver account") if created_by && created_by.account_id != account_id
+  end
+
+  def creator_is_project_administrator
+    return unless created_by && apple_verification_attempt
+    return if created_by.has_role?(:project_admin, apple_verification_attempt.project)
+
+    errors.add(:created_by, "must be a project administrator")
   end
 end

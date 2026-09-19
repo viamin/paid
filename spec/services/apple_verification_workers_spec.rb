@@ -24,4 +24,24 @@ RSpec.describe AppleVerificationWorkers do
     expect { described_class::OutputManifest.new(attempt: {}, result: { "token" => "secret" }, artifacts: {}, lanes: {}) }
       .to raise_error(described_class::InvalidManifest, /token/)
   end
+
+  it "rejects raw credentials and unknown fields in every manifest section" do # @spec APPLE-WORKER-002
+    expect do
+      described_class::InputManifest.new(
+        source: { "digest" => "sha256:#{'a' * 64}" }, verification: { "api_key" => "raw-secret" }, profile: { "digest" => "sha256:#{'b' * 64}" }, lanes: {}
+      )
+    end.to raise_error(described_class::InvalidManifest, /api_key/)
+
+    expect do
+      described_class::InputManifest.new(
+        source: { "digest" => "sha256:#{'a' * 64}", "credential_value" => "raw-secret" }, verification: {}, profile: { "digest" => "sha256:#{'b' * 64}" }, lanes: {}
+      )
+    end.to raise_error(described_class::InvalidManifest, /credential_value/)
+
+    expect do
+      described_class::InputManifest.new(
+        source: { "digest" => "sha256:#{'a' * 64}" }, verification: {}, profile: { "digest" => "sha256:#{'b' * 64}" }, lanes: { "network" => [] }
+      )
+    end.to raise_error(described_class::InvalidManifest, /network/)
+  end
 end
