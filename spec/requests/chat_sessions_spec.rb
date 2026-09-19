@@ -520,6 +520,14 @@ RSpec.describe "ChatSessions" do
         expect(mobile_header.text).to include("Session details")
         expect(mobile_header.text).to include("Workspace")
 
+        # @spec CHAT-API-009
+        # Workspace chats render their outer disclosure open so recovery
+        # controls do not depend on JavaScript, but its mobile body needs
+        # compact spacing to preserve the transcript's 18rem floor.
+        mobile_capability_panel = mobile_header.at_css("[data-chat-target='capabilityPanel']")
+        expect(mobile_capability_panel["class"].split).to include("p-3", "sm:p-4")
+        expect(mobile_capability_panel.at_css("[data-chat-capability-ready-only='true']")["class"].split).to include("mt-2", "sm:mt-4")
+
         expect(desktop_header["class"].split).to include("hidden", "xl:block")
       end
 
