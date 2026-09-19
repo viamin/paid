@@ -41,6 +41,20 @@ RSpec.describe AppleVerificationImage, type: :model do # @spec APPLE-VERIFY-001,
     expect { image.promote! }.to raise_error(AppleVerificationImage::SmokeTestRequiredError)
   end
 
+  it "allows a candidate to record a successful smoke-test retry before promotion" do
+    image = create(:apple_verification_image, smoke_test: { "passed" => false })
+
+    expect(image.update(smoke_test: { "passed" => true, "completed_at" => Time.current.iso8601 })).to be(true)
+    expect { image.promote! }.to change { image.reload.status }.from("candidate").to("active")
+  end
+
+  it "freezes the smoke-test result after promotion" do
+    image = create(:apple_verification_image, :active)
+
+    expect(image.update(smoke_test: { "passed" => false, "completed_at" => Time.current.iso8601 })).to be(false)
+    expect(image.errors[:base]).to include("Apple verification image facts are immutable after publication")
+  end
+
   it "enforces promotion requirements for direct status updates" do
     image = create(:apple_verification_image, smoke_test: { "passed" => false })
 
