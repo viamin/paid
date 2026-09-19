@@ -114,15 +114,35 @@ RSpec.describe "Apple verification persistence", type: :model do
   it "keeps Apple audit and VM-ledger ownership bound to the attempt" do # @spec APPLE-WORKER-007
     attempt = create(:apple_verification_attempt)
     ledger = ExecutionResourceLedgerEntry.new(
-      account: attempt.account, project: attempt.project, apple_verification_attempt: attempt,
+      apple_verification_attempt: attempt,
       runner_type: "apple_verification", resource_kind: "verification_vm", status: "provisioning", tags: {}, runner_handle: {}
     )
     event = ExecutionAuditEvent.new(
-      account: attempt.account, project: attempt.project, apple_verification_attempt: attempt,
+      apple_verification_attempt: attempt,
       event_name: "apple.verification_started", event_version: 1, credential_classes: [], network_policy: {}, metadata: {}
     )
 
     expect(ledger).to be_valid
     expect(event).to be_valid
+    expect(ledger).to have_attributes(account: attempt.account, project: attempt.project)
+    expect(event).to have_attributes(account: attempt.account, project: attempt.project)
+  end
+
+  it "rejects Apple audit and VM-ledger records with another account" do # @spec APPLE-WORKER-007
+    attempt = create(:apple_verification_attempt)
+    other_account = create(:account)
+    ledger = ExecutionResourceLedgerEntry.new(
+      account: other_account, apple_verification_attempt: attempt,
+      runner_type: "apple_verification", resource_kind: "verification_vm", status: "provisioning", tags: {}, runner_handle: {}
+    )
+    event = ExecutionAuditEvent.new(
+      account: other_account, apple_verification_attempt: attempt,
+      event_name: "apple.verification_started", event_version: 1, credential_classes: [], network_policy: {}, metadata: {}
+    )
+
+    expect(ledger).to be_invalid
+    expect(ledger.errors[:account]).to include("must match the Apple verification attempt's account")
+    expect(event).to be_invalid
+    expect(event.errors[:account]).to include("must match the Apple verification attempt's account")
   end
 end
