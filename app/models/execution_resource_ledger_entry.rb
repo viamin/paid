@@ -30,6 +30,7 @@
 # @spec RESOURCE-LEDGER-003
 # @spec RESOURCE-LEDGER-004
 # @spec RESOURCE-LEDGER-007
+# @spec APPLE-WORKER-007
 # @see docs/rdrs/RDR-060-external-execution-resource-ledger.md
 # @see docs/intent/execution-resource-ledger/execution-resource-ledger-specs.md
 class ExecutionResourceLedgerEntry < ApplicationRecord
@@ -43,6 +44,7 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
     network
     preview_tunnel
     temporary_storage
+    verification_vm
   ].freeze
 
   STATUSES = %w[provisioning active cleanup_pending deleted orphaned cleanup_failed].freeze
@@ -58,6 +60,7 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
   belongs_to :account
   belongs_to :project, optional: true
   belongs_to :agent_run, optional: true
+  belongs_to :apple_verification_attempt, optional: true
 
   before_validation :assign_account_from_project
   before_validation :normalize_tags_and_handle
@@ -74,6 +77,7 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
   validate :runner_handle_is_object
   validate :runner_handle_secret_safety
   validate :project_matches_agent_run
+  validate :project_matches_apple_verification_attempt
   validate :account_matches_project
   validate :status_transition_is_allowed, on: :update
 
@@ -205,6 +209,13 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
     return unless project && agent_run
 
     errors.add(:project, "must match the agent run's project") if project_id != agent_run.project_id
+  end
+
+  def project_matches_apple_verification_attempt
+    return unless project && apple_verification_attempt
+
+    errors.add(:project, "must match the Apple verification attempt's project") if project_id != apple_verification_attempt.project_id
+    errors.add(:account, "must match the Apple verification attempt's account") if account_id != apple_verification_attempt.account_id
   end
 
   def account_matches_project

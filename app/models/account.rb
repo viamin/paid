@@ -20,6 +20,10 @@ class Account < ApplicationRecord
   has_many :members, through: :account_memberships, source: :user
   has_many :provider_api_keys, through: :users
   has_many :projects, dependent: :destroy
+  has_many :apple_worker_profiles, dependent: :destroy
+  has_many :apple_verification_workflow_revisions, dependent: :destroy
+  has_many :apple_verification_attempts, dependent: :destroy
+  has_many :apple_verification_waivers, dependent: :destroy
   has_many :roi_benchmarks, through: :projects
   has_many :github_tokens, dependent: :destroy
   has_many :github_installations, dependent: :destroy
