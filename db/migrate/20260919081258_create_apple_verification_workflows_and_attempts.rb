@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CreateAppleVerificationWorkflowsAndAttempts < ActiveRecord::Migration[8.1]
-  def change
+  def up
     add_column :projects, :apple_verification_settings, :jsonb, default: {}, null: false, comment: "Apple verification mode and inferred repository profiles (RDR-068)."
     create_table :apple_verification_workflow_revisions, comment: "Committed Apple verification workflow revisions and digest-bound approvals." do |t|
       t.references :project, null: false, foreign_key: true
@@ -27,6 +27,8 @@ class CreateAppleVerificationWorkflowsAndAttempts < ActiveRecord::Migration[8.1]
       t.string :failure_class
       t.jsonb :result, null: false, default: {}
       t.jsonb :provenance, null: false, default: {}
+      t.string :temporal_workflow_id, comment: "Durable worker workflow owning this attempt."
+      t.jsonb :worker_handle, null: false, default: {}, comment: "Opaque provider handle used for worker lifecycle control."
       t.text :waiver_reason
       t.datetime :cancelled_at
       t.datetime :retained_vm_destroyed_at
@@ -43,5 +45,72 @@ class CreateAppleVerificationWorkflowsAndAttempts < ActiveRecord::Migration[8.1]
       t.timestamps
     end
     add_index :apple_verification_artifacts, [ :attempt_id, :kind ]
+    enable_tenant_row_level_security
+  end
+
+  def down
+    disable_tenant_row_level_security
+    drop_table :apple_verification_artifacts
+    drop_table :apple_verification_attempts
+    drop_table :apple_verification_workflow_revisions
+    remove_column :projects, :apple_verification_settings
+  end
+
+  private
+
+  def enable_tenant_row_level_security
+    safety_assured do
+      execute project_policy_sql("apple_verification_workflow_revisions", "project_id")
+      execute project_policy_sql("apple_verification_attempts", "project_id")
+      execute attempt_policy_sql
+    end
+  end
+
+  def disable_tenant_row_level_security
+    safety_assured do
+      %w[apple_verification_artifacts apple_verification_attempts apple_verification_workflow_revisions].each do |table|
+        execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
+        execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
+      end
+    end
+  end
+
+  def project_policy_sql(table, project_id)
+    <<~SQL
+      ALTER TABLE #{table} ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE #{table} FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON #{table}
+        AS PERMISSIVE FOR ALL
+        USING (paid_tenant_bypass() OR EXISTS (
+          SELECT 1 FROM projects WHERE projects.id = #{table}.#{project_id}
+            AND projects.account_id = paid_current_account_id()
+        ))
+        WITH CHECK (paid_tenant_bypass() OR EXISTS (
+          SELECT 1 FROM projects WHERE projects.id = #{table}.#{project_id}
+            AND projects.account_id = paid_current_account_id()
+        ));
+    SQL
+  end
+
+  def attempt_policy_sql
+    <<~SQL
+      ALTER TABLE apple_verification_artifacts ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE apple_verification_artifacts FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON apple_verification_artifacts
+        AS PERMISSIVE FOR ALL
+        USING (paid_tenant_bypass() OR EXISTS (
+          SELECT 1 FROM apple_verification_attempts
+          INNER JOIN projects ON projects.id = apple_verification_attempts.project_id
+          WHERE apple_verification_attempts.id = apple_verification_artifacts.attempt_id
+            AND projects.account_id = paid_current_account_id()
+        ))
+        WITH CHECK (paid_tenant_bypass() OR EXISTS (
+          SELECT 1 FROM apple_verification_attempts
+          INNER JOIN projects ON projects.id = apple_verification_attempts.project_id
+          WHERE apple_verification_attempts.id = apple_verification_artifacts.attempt_id
+            AND projects.account_id = paid_current_account_id()
+        ));
+    SQL
   end
 end

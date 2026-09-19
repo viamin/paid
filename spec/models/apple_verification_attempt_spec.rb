@@ -28,6 +28,18 @@ RSpec.describe AppleVerificationAttempt do
       expect(attempt.reload).to have_attributes(state: "cancelled", failure_class: "cancellation", cancelled_at: be_present)
     end
 
+    it "cancels the durable worker before recording cancellation" do # @spec APPLE-VERIFY-003
+      attempt = create(:apple_verification_attempt, state: "running", temporal_workflow_id: "apple-123")
+      handle = double(cancel: nil)
+      temporal_client = double(workflow_handle: handle)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+
+      attempt.cancel!
+
+      expect(handle).to have_received(:cancel)
+      expect(attempt.reload).to be_cancelled
+    end
+
     it "only cancels queued or running attempts" do # @spec APPLE-VERIFY-003
       attempt = create(:apple_verification_attempt, state: "passed")
 
@@ -73,11 +85,25 @@ RSpec.describe AppleVerificationAttempt do
       expect(attempt.reload.retained_vm_destroyed_at).to be_present
     end
 
+    it "requests durable worker destruction before recording it" do # @spec APPLE-VERIFY-003
+      attempt = create(:apple_verification_attempt, state: "failed", temporal_workflow_id: "apple-123")
+      handle = double(signal: nil)
+      temporal_client = double(workflow_handle: handle)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+
+      attempt.record_retained_vm_destruction!
+
+      expect(handle).to have_received(:signal).with("destroy_retained_worker")
+      expect(attempt.reload.retained_vm_destroyed_at).to be_present
+    end
+
     it "queues a retry attempt for the same workflow revision" do # @spec APPLE-VERIFY-003
       project = create(:project, apple_verification_settings: { "mode" => "on_demand" })
       attempt = create(:apple_verification_attempt, project:, state: "failed")
 
-      retry_attempt = attempt.retry!
+      retry_attempt = nil
+      expect { retry_attempt = attempt.retry! }
+        .to have_enqueued_job(AppleVerificationAttemptDispatchJob)
 
       expect(retry_attempt).to have_attributes(project: attempt.project, workflow_revision: attempt.workflow_revision, retry_of: attempt)
     end
