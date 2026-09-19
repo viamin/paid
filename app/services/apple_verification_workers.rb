@@ -13,7 +13,7 @@ module AppleVerificationWorkers
     %w[
       host_path host_paths mount mounts command shell provider provider_handle
       lifecycle vm_id credential token secret password
-    ] + SecretSafeMetadata::FORBIDDEN_METADATA_KEYS - [ "credentials" ]
+    ] + SecretSafeMetadata::FORBIDDEN_METADATA_KEYS
   ).uniq.freeze
   INPUT_MANIFEST_FIELDS = %w[schema_version source verification profile lanes].freeze
   OUTPUT_MANIFEST_FIELDS = %w[schema_version attempt result artifacts lanes].freeze
@@ -93,7 +93,7 @@ module AppleVerificationWorkers
     validate_object!(manifest)
     validate_allowed_fields!(manifest, allowed_fields, "manifest")
     validate_section_fields!(manifest, section_fields)
-    validate_no_forbidden_keys!(manifest)
+    validate_no_forbidden_keys!(manifest.except("lanes"))
     validate_no_secret_shaped_values!(manifest)
     validate_lanes!(manifest.fetch("lanes"))
   end
@@ -144,6 +144,7 @@ module AppleVerificationWorkers
     raise InvalidManifest, "manifest lanes must be an object" unless lanes.is_a?(Hash)
     validate_allowed_fields!(lanes, LANE_NAMES, "manifest lanes")
     raise InvalidManifest, "manifest lanes must contain arrays" unless lanes.values.all? { |entries| entries.is_a?(Array) }
+    lanes.each_value { |entries| validate_no_forbidden_keys!(entries) }
     raise InvalidManifest, "credential lane must contain references only" if Array(lanes["credentials"]).any? { |entry| !credential_reference?(entry) }
   end
 

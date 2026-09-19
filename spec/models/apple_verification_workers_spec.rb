@@ -21,6 +21,13 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(profile.errors[:base]).to include("worker profile constraints are immutable")
   end
 
+  it "requires profiles to use canonical image digests" do # @spec APPLE-WORKER-001
+    profile = build(:apple_worker_profile, image_digest: "xcode:latest")
+
+    expect(profile).not_to be_valid
+    expect(profile.errors[:image_digest]).to be_present
+  end
+
   it "requires a profile creator to belong to its account" do # @spec APPLE-WORKER-001
     profile = build(:apple_worker_profile, created_by: create(:user, account: create(:account)))
 
@@ -126,6 +133,19 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(attempt.errors[:lifecycle_gate]).to include("must match the workflow gate")
   end
 
+  it "requires an attempt to bind an approved workflow" do # @spec APPLE-WORKER-005
+    workflow = create(:apple_verification_workflow_revision)
+    attempt = build(:apple_verification_attempt,
+      account: workflow.account,
+      project: workflow.project,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: workflow.apple_worker_profile,
+      lifecycle_gate: workflow.lifecycle_gate)
+
+    expect(attempt).not_to be_valid
+    expect(attempt.errors[:apple_verification_workflow_revision]).to include("must be approved")
+  end
+
   it "requires a waiver to name required checks for its workflow" do # @spec APPLE-WORKER-006
     attempt = create(:apple_verification_attempt)
     administrator = create(:user, account: attempt.account)
@@ -182,9 +202,29 @@ RSpec.describe "Apple verification persistence", type: :model do
     )
 
     expect(ledger).to be_valid
+    expect { ledger.save! }.to change(ExecutionResourceLedgerEntry, :count).by(1)
     expect(event).to be_valid
     expect(ledger).to have_attributes(account: attempt.account, project: attempt.project)
     expect(event).to have_attributes(account: attempt.account, project: attempt.project)
+  end
+
+  it "destroys waivers before their creators during account teardown" do # @spec APPLE-WORKER-006
+    attempt = create(:apple_verification_attempt)
+    administrator = create(:user, account: attempt.account)
+    administrator.add_role(:project_admin, attempt.project)
+    create(:apple_verification_waiver,
+      account: attempt.account,
+      project: attempt.project,
+      apple_verification_attempt: attempt,
+      apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+      created_by: administrator,
+      source_digest: attempt.source_digest,
+      lifecycle_gate: attempt.lifecycle_gate,
+      check_ids: [ "test" ])
+
+    expect { attempt.account.destroy! }
+      .to change(AppleVerificationWaiver, :count).by(-1)
+      .and change { User.where(id: administrator.id).count }.from(1).to(0)
   end
 
   it "rejects Apple audit and VM-ledger records with another account" do # @spec APPLE-WORKER-007

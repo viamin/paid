@@ -43,5 +43,11 @@ RSpec.describe AppleVerificationWorkers do
         source: { "digest" => "sha256:#{'a' * 64}" }, verification: {}, profile: { "digest" => "sha256:#{'b' * 64}" }, lanes: { "network" => [] }
       )
     end.to raise_error(described_class::InvalidManifest, /network/)
+
+    expect do
+      described_class::InputManifest.new(
+        source: { "digest" => { "credentials" => "plain-text-secret" } }, verification: {}, profile: {}, lanes: {}
+      )
+    end.to raise_error(described_class::InvalidManifest, /credentials/)
   end
 end

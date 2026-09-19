@@ -14,6 +14,8 @@ class Account < ApplicationRecord
 
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
+  before_destroy :destroy_apple_verification_waivers
+
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
   has_many :account_activity_events, dependent: :destroy
@@ -216,6 +218,10 @@ class Account < ApplicationRecord
   end
 
   private
+
+  def destroy_apple_verification_waivers
+    apple_verification_waivers.destroy_all
+  end
 
   def normalized_remediation_policy
     (remediation_policy.is_a?(Hash) ? remediation_policy : {})
