@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-09-17
+last_updated: 2026-09-19
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -168,6 +168,14 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-08-04
+  apple-verification-workers:
+    title: Apple Verification Workers
+    path: docs/intent/apple-verification-workers/apple-verification-workers-design.md
+    specs: docs/intent/apple-verification-workers/apple-verification-workers-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-19
   account-queue-fairness:
     title: Account Queue Fairness
     path: docs/intent/account-queue-fairness/account-queue-fairness-design.md
