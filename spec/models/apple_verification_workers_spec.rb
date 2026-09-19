@@ -106,6 +106,19 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(waiver.errors[:created_by]).to include("must be a project administrator")
   end
 
+  it "requires an attempt gate to match its approved workflow" do # @spec APPLE-WORKER-005
+    workflow = create(:apple_verification_workflow_revision, lifecycle_gate: "agent_iteration")
+    attempt = build(:apple_verification_attempt,
+      account: workflow.account,
+      project: workflow.project,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: workflow.apple_worker_profile,
+      lifecycle_gate: "pull_request_verification")
+
+    expect(attempt).not_to be_valid
+    expect(attempt.errors[:lifecycle_gate]).to include("must match the workflow gate")
+  end
+
   it "requires a waiver to name required checks for its workflow" do # @spec APPLE-WORKER-006
     attempt = create(:apple_verification_attempt)
     administrator = create(:user, account: attempt.account)

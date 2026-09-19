@@ -14,7 +14,8 @@
   profile, gate, and required/advisory checks immutably. At most one revision
   per project SHALL be approved at a time.
 - [x] **APPLE-WORKER-005** — Each attempt SHALL bind account, project, source,
-  workflow, profile, and gate and SHALL use an explicit lifecycle state.
+  workflow, profile, and gate; its profile and gate SHALL match its workflow;
+  and it SHALL use an explicit lifecycle state.
 - [x] **APPLE-WORKER-006** — A waiver SHALL apply to exactly one attempt and
   SHALL bind its project-administrator actor, reason, expiry, source, workflow,
   gate, and checks.
