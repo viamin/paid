@@ -52,14 +52,4 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
       )
     end
   end
-
-  describe AppleVerification::GuestExecutor do
-    it "dispatches only operations admitted by the protocol" do
-      executor = described_class.new(build: ->(payload) { { "scheme" => payload.fetch("scheme") } })
-
-      result = executor.execute!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "scheme" => "App" } } ])
-
-      expect(result).to eq([ { "scheme" => "App" } ])
-    end
-  end
 end

@@ -15,17 +15,18 @@ module AppleVerification
       new(...).call
     end
 
-    def initialize(project:, manifest:, adapters:, image_digest:)
+    def initialize(project:, manifest:, guest_connection:, image_digest:)
       @project = project
       @manifest = manifest
-      @adapters = adapters
+      @guest_connection = guest_connection
       @image_digest = image_digest
     end
 
     def call
       ensure_feature_enabled!
       image = active_image!
-      operations = GuestExecutor.new(@adapters).execute!(@manifest)
+      GuestProtocol.validate!(@manifest)
+      operations = @guest_connection.dispatch!(image:, manifest: @manifest)
       Result.new(image:, operations:)
     end
 
