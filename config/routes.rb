@@ -231,6 +231,13 @@ Rails.application.routes.draw do
 
   # Projects management
   resources :projects do
+    resource :apple_verification, only: [ :show, :update ], controller: "projects/apple_verifications" do
+      post :approve
+      post :rerun
+      post :cancel
+      post :waive
+      post :destroy_retained_vm
+    end
     post :toggle_auto_pick, on: :member
     post :toggle_auto_merge, on: :member
     post :toggle_pause, on: :member

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -399,6 +399,61 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
     t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "apple_verification_artifacts", comment: "Private Apple verification artifacts with protected storage references.", force: :cascade do |t|
+    t.bigint "attempt_id", null: false
+    t.string "content_type"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at"
+    t.string "kind", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "storage_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["attempt_id", "kind"], name: "index_apple_verification_artifacts_on_attempt_id_and_kind"
+    t.index ["attempt_id"], name: "index_apple_verification_artifacts_on_attempt_id"
+  end
+
+  create_table "apple_verification_attempts", comment: "Apple verification queue, execution, and outcome state.", force: :cascade do |t|
+    t.datetime "cancelled_at"
+    t.datetime "created_at", null: false
+    t.string "failure_class"
+    t.bigint "project_id", null: false
+    t.jsonb "provenance", default: {}, null: false
+    t.integer "queue_position"
+    t.jsonb "result", default: {}, null: false
+    t.datetime "retained_vm_destroyed_at"
+    t.bigint "retry_of_id"
+    t.string "state", default: "queued", null: false
+    t.string "temporal_workflow_id", comment: "Durable worker workflow owning this attempt."
+    t.datetime "updated_at", null: false
+    t.bigint "waived_by_id"
+    t.text "waiver_reason"
+    t.jsonb "worker_handle", default: {}, null: false, comment: "Opaque provider handle used for worker lifecycle control."
+    t.bigint "workflow_revision_id", null: false
+    t.index ["project_id", "state", "created_at"], name: "index_apple_attempts_on_project_state_created"
+    t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
+    t.index ["retry_of_id"], name: "index_apple_verification_attempts_on_retry_of_id"
+    t.index ["waived_by_id"], name: "index_apple_verification_attempts_on_waived_by_id"
+    t.index ["workflow_revision_id"], name: "index_apple_verification_attempts_on_workflow_revision_id"
+  end
+
+  create_table "apple_verification_workflow_revisions", comment: "Committed Apple verification workflow revisions and digest-bound approvals.", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.bigint "approved_by_id"
+    t.jsonb "checks", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "lifecycle_gate"
+    t.string "profile_name", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "referenced_files", default: [], null: false
+    t.string "source_digest", null: false
+    t.string "state", default: "draft", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "worker_constraints", default: {}, null: false
+    t.index ["approved_by_id"], name: "index_apple_verification_workflow_revisions_on_approved_by_id"
+    t.index ["project_id", "profile_name", "created_at"], name: "index_apple_workflows_on_project_profile_created"
+    t.index ["project_id"], name: "index_apple_verification_workflow_revisions_on_project_id"
   end
 
   create_table "auto_merge_attempts", comment: "Sanitized history of auto-merge decisions and blockers for pull requests.", force: :cascade do |t|
@@ -2544,6 +2599,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
     t.integer "agent_runs_count", default: 0, null: false, comment: "Counter cache for total agent runs"
     t.boolean "allow_bot_authored_pr_auto_merge", default: false, null: false, comment: "When true, PRs authored by the project's own GitHub App bot may auto-merge without explicit owner approval"
     t.jsonb "allowed_github_usernames", default: [], null: false
+    t.jsonb "apple_verification_settings", default: {}, null: false, comment: "Apple verification mode and inferred repository profiles (RDR-068)."
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_enhance_enabled", default: false, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
@@ -3573,6 +3629,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
+  add_foreign_key "apple_verification_artifacts", "apple_verification_attempts", column: "attempt_id"
+  add_foreign_key "apple_verification_attempts", "apple_verification_attempts", column: "retry_of_id"
+  add_foreign_key "apple_verification_attempts", "apple_verification_workflow_revisions", column: "workflow_revision_id"
+  add_foreign_key "apple_verification_attempts", "projects"
+  add_foreign_key "apple_verification_attempts", "users", column: "waived_by_id"
+  add_foreign_key "apple_verification_workflow_revisions", "projects"
+  add_foreign_key "apple_verification_workflow_revisions", "users", column: "approved_by_id"
   add_foreign_key "auto_merge_attempts", "issues"
   add_foreign_key "auto_merge_attempts", "projects"
   add_foreign_key "billing_invoices", "accounts"

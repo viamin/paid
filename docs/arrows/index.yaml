@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-09-17
+last_updated: 2026-09-19
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  apple-verification:
+    title: Apple Verification Presentation
+    path: docs/intent/apple-verification/apple-verification-design.md
+    specs: docs/intent/apple-verification/apple-verification-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-19
   auto-pick-queue:
     title: Auto-Pick Queue
     path: docs/intent/auto-pick-queue/auto-pick-queue-design.md
