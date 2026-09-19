@@ -37,7 +37,12 @@ module AppleVerification
     def list_resources_by_tags(tags:, resource_kind: nil)
       return [] if resource_kind.present? && resource_kind != RESOURCE_KIND
 
-      host.call(version: HostService::API_VERSION, operation: "inventory", payload: { "ownership_tags" => tags }, token:)
+      host.call(version: HostService::API_VERSION, operation: "inventory", payload: { "ownership_tags" => tags }, token:).map do |resource|
+        ExecutionRunners::ManagedResource.new(
+          runner_type: RUNNER_TYPE, resource_kind: RESOURCE_KIND, identifier: resource.fetch("vm_id"), host: nil,
+          ownership_tags: resource.fetch("tags", {}), metadata: resource.slice("state", "image_id")
+        )
+      end
     end
 
     def cleanup_resource(resource:, force: false)
