@@ -21,4 +21,17 @@ RSpec.describe "Projects::AppleVerifications" do
       expect(project.reload.apple_verification_settings).to eq({ "mode" => "on_demand", "profiles" => [ "ios" ] })
     end
   end
+
+  describe "POST /projects/:project_id/apple_verification/rerun" do
+    # @spec APPLE-VERIFY-003
+    it "does not queue a rerun while the project mode is off" do
+      attempt = create(:apple_verification_attempt, project:)
+
+      expect {
+        post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+      }.not_to change(AppleVerificationAttempt, :count)
+
+      expect(response).to redirect_to(root_path)
+    end
+  end
 end

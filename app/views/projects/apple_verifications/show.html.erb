@@ -54,12 +54,16 @@
         <% end %>
       </ul>
       <% if policy(@project).run_agent? %>
-        <%= button_to "Rerun", rerun_project_apple_verification_path(@project, attempt_id: attempt.id) %>
+        <% if @project.apple_verification_on_demand? %>
+          <%= button_to "Rerun", rerun_project_apple_verification_path(@project, attempt_id: attempt.id) %>
+        <% end %>
         <% if attempt.queued? || attempt.running? %><%= button_to "Cancel", cancel_project_apple_verification_path(@project, attempt_id: attempt.id) %><% end %>
       <% end %>
       <% if policy(@project).update? %>
-        <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id) do |form| %><%= form.label :reason, "Waiver reason" %><%= form.text_field :reason, required: true %><%= form.submit "Waive attempt" %><% end %>
-        <% if attempt.state == "failed" && attempt.retained_vm_destroyed_at.nil? %><%= button_to "Destroy retained VM", destroy_retained_vm_project_apple_verification_path(@project, attempt_id: attempt.id) %><% end %>
+        <% if attempt.failed? && attempt.required? %>
+          <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id) do |form| %><%= form.label :reason, "Waiver reason" %><%= form.text_field :reason, required: true %><%= form.submit "Waive attempt" %><% end %>
+        <% end %>
+        <% if attempt.failed? && attempt.retained_vm_destroyed_at.nil? %><%= button_to "Destroy retained VM", destroy_retained_vm_project_apple_verification_path(@project, attempt_id: attempt.id) %><% end %>
       <% end %>
     </article>
   <% end %>
