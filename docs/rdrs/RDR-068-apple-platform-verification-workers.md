@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-09-18
-- **Status**: Draft
+- **Status**: Accepted
 - **Type**: Architecture + Security + Verification
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation Strategy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) (Live Web App Preview and Interactive Agent Verification), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) (Polyglot Language Detection and Test Execution), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation), [RDR-059](RDR-059-immutable-agent-runtime-images.md) (Immutable Agent Runtime Images), [RDR-060](RDR-060-external-execution-resource-ledger.md) (External Execution Resource Ledger), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (Infrastructure Safety Rails and Execution Audit Events), [RDR-062](RDR-062-execution-network-policy-intent.md) (Provider-Neutral Execution Network Policy Intent)
