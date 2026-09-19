@@ -129,7 +129,8 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
-      context "with subscription auth and GPT-5.6 Sol" do # @spec MODEL-SELECTION-005
+      # @spec MODEL-SELECTION-005
+      context "with subscription auth and GPT-5.6 tier variants" do
         let(:model_id) { "gpt-5.6-sol" }
 
         it "uses the verified harness subscription contract" do

@@ -33,7 +33,13 @@ agent-harness, including subscription-authenticated runners. Authentication
 isolation remains in place; container defaults must not override the resolved
 model. When a run has no model-selection record, an explicitly configured
 mid-tier runner model supplies the execution default through the same
-compatibility checks and attempt logging.
+compatibility checks and attempt logging. Recovery must reject inactive catalog
+models and preserve project model exclusions, required-model settings, and
+provider routing restrictions before any provider execution.
+
+Subscription runner health tests use the explicit mid-tier model when configured,
+with the same compatibility resolution and credential isolation. Invalid model
+configuration is surfaced instead of falling back to a different CLI default.
 
 Each attempt can capture:
 

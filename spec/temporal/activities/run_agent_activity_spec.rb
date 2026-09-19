@@ -1193,6 +1193,50 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     # @spec RUNNER-FALLBACK-002
+    context "when recovering a missing model selection" do
+      let(:recovery_runner) do
+        model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+        create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+          tier_model_ids: { "mid" => model.model_id })
+      end
+
+      [
+        { "excluded_model_ids" => [ "gpt-5.6-terra" ] },
+        { "required_model_id" => "gpt-5.6-sol" },
+        { "llm_providers" => { "blocklist" => [ "openai" ] } },
+        { "llm_providers" => { "allowlist" => [ "anthropic" ] } }
+      ].each do |preferences|
+        it "rejects a configured model forbidden by #{preferences}" do
+          project.update!(model_preferences: preferences)
+
+          expect do
+            activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
+          end.to raise_error(Temporalio::Error::ApplicationError, /project model policy/)
+        end
+      end
+
+      it "allows recovery when the configured model satisfies project policy" do
+        project.update!(model_preferences: {
+          "required_model_id" => "gpt-5.6-terra",
+          "llm_providers" => { "allowlist" => [ "openai" ] }
+        })
+
+        runtime = activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
+
+        expect(runtime.model).to eq("gpt-5.6-terra")
+      end
+
+      it "does not revive an inactive catalog model" do
+        recovery_runner
+        LlmModel.find_by!(model_id: "gpt-5.6-terra").update!(active: false)
+
+        expect do
+          activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
+        end.to raise_error(Temporalio::Error::ApplicationError, /inactive/)
+      end
+    end
+
+    # @spec RUNNER-FALLBACK-002
     it "pins the resolved subscription model in fallback and preflight commands for a bare key" do
       model = create(:llm_model, :openai, model_id: "gpt-6-astra", tier: "mid")
       create(:runner, user: user, runner_key: "codex", auth_type: "subscription",

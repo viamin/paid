@@ -971,15 +971,41 @@ module Activities
       return nil if tier.blank?
 
       @resolved_tier_model_cache ||= {}
-      cache_key = [ user&.id, resolution_runner_cache_key(runner_candidate), tier ]
+      cache_key = [ user&.id, agent_run&.id, resolution_runner_cache_key(runner_candidate), tier ]
       return @resolved_tier_model_cache[cache_key] if @resolved_tier_model_cache.key?(cache_key)
 
       runner_entry = runner_entry_for(runner_candidate, user)
       resolution_runner = runner_entry || Runner.new(runner_key: RunnerSupport.runner_key_for_agent_type(runner_candidate))
-      @resolved_tier_model_cache[cache_key] = Runners::ResolveTierModel.call(
+      resolved = Runners::ResolveTierModel.call(
         runner: resolution_runner,
         tier: tier,
         user: user
+      )
+      validate_recovery_model!(resolved, agent_run) if agent_run && requested_tier_for(agent_run).blank?
+      @resolved_tier_model_cache[cache_key] = resolved
+    end
+
+    # @spec RUNNER-FALLBACK-002
+    def validate_recovery_model!(resolved, agent_run)
+      return unless resolved.success?
+
+      project = agent_run.project
+      preferences = project.model_preferences
+      model = LlmModel.find_by(model_id: resolved.model_id)
+      excluded = Array(preferences["excluded_model_ids"]).include?(resolved.model_id)
+      required = preferences["required_model_id"]
+      provider_blocked = project.llm_provider_routing_restricted? &&
+        (model.nil? || project.llm_provider_blocked?(model.provider))
+      reason = if model && !model.active?
+        "configured model is inactive"
+      elsif excluded || (required.present? && required != resolved.model_id) || provider_blocked
+        "configured model violates project model policy"
+      end
+      return unless reason
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Cannot recover missing model selection with #{resolved.model_id}: #{reason}",
+        type: "ModelSelectionPolicyViolation", non_retryable: true
       )
     end
 
