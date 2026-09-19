@@ -505,6 +505,8 @@ RSpec.describe "ChatSessions" do
         # viewport-bound panel, navbar, history toggle, and composer. Render a
         # separate compact header below `xl` and keep the transcript-dominating
         # desktop header out of that layout entirely.
+        chat_session.update!(container_capability: "ready")
+
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
