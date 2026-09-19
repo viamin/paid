@@ -67,7 +67,7 @@ module ExecutionRunners
     # create a resource it cannot reconcile.
     # @return [ProvisioningIntent, nil]
     # @spec CONTAINER-RUNTIME-025
-    def record_intent(agent_run:, attempt: 0, recorded_at: Time.current)
+    def record_intent(agent_run:, attempt: 0, recorded_at: Time.current, metadata: {})
       return unless recording?
 
       warn_capability_degradations
@@ -86,7 +86,7 @@ module ExecutionRunners
         ownership_tags: ownership_labels_for(agent_run: agent_run, attempt: attempt, recorded_at: recorded_at),
         tagging_supported: @supports_tagging,
         status: ProvisioningIntent::STATUS_PENDING,
-        metadata: degradation_metadata
+        metadata: degradation_metadata.merge(metadata)
       )
     end
 

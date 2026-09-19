@@ -9,8 +9,11 @@ never receives project paths, mounts, commands, or executable text.
 `AppleVerification::TartProvider` translates its fixed request vocabulary to
 Tart and Softnet adapters. `AppleVerification::Lifecycle` records a
 provisioning intent and an external-resource ledger entry before clone, then
-persists an opaque handle after start. Inventory is normalized to
-`ExecutionRunners::ManagedResource` for normal reconciliation.
+persists an opaque handle after start. It registers its configured Apple cleanup
+adapter before recording an intent, persists a request ID as the lifecycle
+idempotency key, and leaves a created intent reconcileable if a later lifecycle
+step fails. Inventory is normalized to `ExecutionRunners::ManagedResource` for
+normal reconciliation.
 
 The `apple_verification_workers` feature flag remains default-off. This phase
 does not schedule project verification or execute guest jobs.

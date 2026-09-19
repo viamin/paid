@@ -16,11 +16,14 @@ module AppleVerification
 
     def provision(agent_run:, image_id:, profile_id:, request_id:)
       require_enabled!(agent_run.project)
+      require_request_id!(request_id)
+      register_reconciliation_runner!
       ledger = provisioning_ledger
-      attempt = ledger.next_attempt_for(agent_run:)
-      intent = ledger.record_intent(agent_run:, attempt:)
-      tags = ledger.ownership_labels_for(agent_run:, attempt:)
-      entry = create_resource_entry(agent_run:, tags:)
+      intent = find_or_record_intent(ledger:, agent_run:, request_id:)
+      return ExecutionRunners::RunnerHandle.from_json(intent.runner_handle) if intent.linked?
+
+      tags = intent.ownership_tags
+      entry = resource_entry_for(agent_run:, tags:)
       clone = request("clone", "request_id" => request_id, "image_id" => image_id, "ownership_tags" => tags)
       ledger.link_created(intent, provider_resource_id: clone.fetch("vm_id"), host: nil)
       started = request("start", "request_id" => "#{request_id}:start", "vm_id" => clone.fetch("vm_id"), "profile_id" => profile_id)
@@ -29,7 +32,7 @@ module AppleVerification
       entry.activate!(provider_resource_id: handle.identifier, runner_handle: handle.to_storage)
       handle
     rescue StandardError
-      ledger&.mark_failed(intent)
+      ledger&.mark_failed(intent) if intent&.pending?
       raise
     end
 
@@ -43,17 +46,42 @@ module AppleVerification
       raise HostService::UnsupportedRequestError, "Apple verification workers are disabled for this project"
     end
 
+    def require_request_id!(request_id)
+      raise ArgumentError, "Apple lifecycle request ID is required" if request_id.to_s.blank?
+    end
+
     def provisioning_ledger
       ExecutionRunners::ProvisioningLedger.new(
         runner_type: RUNNER_TYPE, resource_kind: RESOURCE_KIND, environment:, supports_tagging: true, supports_listing: true
       )
     end
 
-    def create_resource_entry(agent_run:, tags:)
-      ExecutionResourceLedgerEntry.create!(
-        account: agent_run.project.account, project: agent_run.project, agent_run:, runner_type: RUNNER_TYPE,
-        backend: TartProvider::PROVIDER_NAME, resource_kind: "primary_environment", tags:, runner_handle: {}, status: "provisioning"
-      )
+    def find_or_record_intent(ledger:, agent_run:, request_id:)
+      agent_run.with_lock do
+        intent_for(request_id:) || record_intent(ledger:, agent_run:, request_id:)
+      end
+    end
+
+    def record_intent(ledger:, agent_run:, request_id:)
+      attempt = ledger.next_attempt_for(agent_run:)
+      ledger.record_intent(agent_run:, attempt:, metadata: { "request_id" => request_id })
+    end
+
+    def intent_for(request_id:)
+      ProvisioningIntent.where(runner_type: RUNNER_TYPE).where("metadata ->> 'request_id' = ?", request_id).first
+    end
+
+    def resource_entry_for(agent_run:, tags:)
+      ExecutionResourceLedgerEntry.find_or_create_by!(agent_run:, runner_type: RUNNER_TYPE, tags:) do |entry|
+        entry.assign_attributes(
+          account: agent_run.project.account, project: agent_run.project, agent_run:, runner_type: RUNNER_TYPE,
+          backend: TartProvider::PROVIDER_NAME, resource_kind: "primary_environment", tags:, runner_handle: {}, status: "provisioning"
+        )
+      end
+    end
+
+    def register_reconciliation_runner!
+      ExecutionRunners.register_reconciliation_runner(TartRunner.new(host:, token:))
     end
 
     def request(operation, payload)
