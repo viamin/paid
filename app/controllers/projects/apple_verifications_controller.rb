@@ -14,8 +14,11 @@ module Projects
 
     def update
       authorize @project, :update?
-      @project.update!(apple_verification_settings: @project.apple_verification_settings.merge(settings_params))
-      redirect_to project_apple_verification_path(@project), notice: "Apple verification settings updated."
+      if @project.update(apple_verification_settings: @project.apple_verification_settings.merge(settings_params))
+        redirect_to project_apple_verification_path(@project), notice: "Apple verification settings updated."
+      else
+        redirect_to project_apple_verification_path(@project), alert: @project.errors.full_messages.to_sentence
+      end
     end
 
     def approve
