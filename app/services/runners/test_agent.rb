@@ -17,6 +17,7 @@ module Runners
     UnsupportedRunnerError = Class.new(StandardError)
     NotContainerExecutableError = Class.new(StandardError)
     MissingProjectContextError = Class.new(StandardError)
+    InvalidModelError = Class.new(StandardError)
 
     TIMEOUT = 60
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
@@ -168,7 +169,7 @@ module Runners
     rescue UnsupportedRunnerError
       Result.new(success: false, error_type: :unexpected,
         message: "Runner #{runner.runner_key} is not recognized by the agent harness")
-    rescue MissingProjectContextError => e
+    rescue MissingProjectContextError, InvalidModelError => e
       Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
     rescue Containers::Provision::TimeoutError => e
       Result.new(success: false, error_type: :timeout, message: normalize_output_text(e.message))
@@ -413,7 +414,17 @@ module Runners
         unset_vars.delete("COPILOT_GITHUB_TOKEN")
       end
 
-      AgentHarness::ProviderRuntime.new(unset_env: unset_vars)
+      AgentHarness::ProviderRuntime.new(model: subscription_test_model, unset_env: unset_vars)
+    end
+
+    # @spec RUNNER-FALLBACK-005
+    def subscription_test_model
+      return unless runner.tier_model_ids&.dig("mid").present? || runner.tier_models&.dig("mid").present?
+
+      resolved = Runners::ResolveTierModel.call(runner: runner, tier: "mid", user: runner.user)
+      raise InvalidModelError, resolved.error if resolved.failure?
+
+      resolved.model_id
     end
 
     # Builds a ProviderRuntime for kilocode direct-outbound smoke tests.

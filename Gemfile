@@ -78,7 +78,8 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-gem "agent-harness", "0.36.23"
+# Temporary immutable pin for verified GPT-5.6 subscription support; replace after upstream release.
+gem "agent-harness", "0.36.23", github: "viamin/agent-harness", ref: "aaed8ad6c1c0a4015e120916d05c98d477244a97"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 # Pinned to 2.0.x to pick up the GHSA-42r3-x6vx-x49x / CVE-2026-67991 ReDoS fix

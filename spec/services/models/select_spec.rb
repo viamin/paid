@@ -346,21 +346,24 @@ RSpec.describe Models::Select do
       let(:agent_run) { create(:agent_run, project: project, provider: codex_provider, agent_type: "codex") }
 
       before do
-        create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid")
-        create(:llm_model, :openai, model_id: "gpt-4o-mini", tier: "low")
+        create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+        project.update!(model_preferences: { "required_model_id" => "gpt-5.6-terra" })
       end
 
-      it "returns nil instead of persisting an incompatible selected model" do
-        expect(described_class.call(agent_run: agent_run)).to be_nil
-        expect(agent_run.model_selection).to be_nil
+      it "persists the compatible subscription model and tier" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to have_attributes(tier: "mid")
+        expect(selection.llm_model.model_id).to eq("gpt-5.6-terra")
+        expect(agent_run.reload.model_selection).to eq(selection)
       end
 
-      it "records the no-selection outcome" do
+      it "records the selected outcome" do
         described_class.call(agent_run: agent_run)
 
         log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
 
-        expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "no_selection")
+        expect(log.metadata).to include("type" => "model_selection_decision", "outcome" => "selected")
       end
     end
 

@@ -31,6 +31,39 @@ RSpec.describe Runners::TestAgent do
   end
   let(:insert_result) { double(first: { "id" => 1 }) }
 
+  # @spec RUNNER-FALLBACK-005
+  describe "subscription smoke-test model" do
+    let(:model) { create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid") }
+    let(:codex_runner) do
+      create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+    end
+
+    it "tests the configured mid-tier model with subscription credentials" do
+      runtime = described_class.new(runner: codex_runner).send(:container_provider_runtime)
+
+      expect(runtime.model).to eq("gpt-5.6-terra")
+      expect(runtime.unset_env).to include("OPENAI_API_KEY")
+    end
+
+    it "surfaces invalid configuration instead of testing the CLI default" do
+      codex_runner.update_columns(tier_model_ids: { "mid" => "gpt-5.6" })
+
+      expect do
+        described_class.new(runner: codex_runner).send(:container_provider_runtime)
+      end.to raise_error(Runners::TestAgent::InvalidModelError, /not compatible/)
+    end
+
+    it "preserves the CLI default when no mid-tier model is configured" do
+      codex_runner.update!(tier_model_ids: {}, tier_models: {})
+
+      runtime = described_class.new(runner: codex_runner).send(:container_provider_runtime)
+
+      expect(runtime.model).to be_nil
+      expect(runtime.unset_env).to include("OPENAI_API_KEY")
+    end
+  end
+
   def stub_insert_all
     allow(AgentRun).to receive(:insert_all!).and_return(insert_result)
     allow(AgentRun).to receive(:find).with(1).and_return(test_run)

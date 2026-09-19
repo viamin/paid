@@ -28,6 +28,19 @@ concrete model across every runner.
 resolves the concrete model for each attempt via `Runners::ResolveTierModel`,
 and records the resolved attempt metadata on `agent_run.runners_attempted`.
 
+The resolved model is passed explicitly to both preflight and execution through
+agent-harness, including subscription-authenticated runners. Authentication
+isolation remains in place; container defaults must not override the resolved
+model. When a run has no model-selection record, an explicitly configured
+mid-tier runner model supplies the execution default through the same
+compatibility checks and attempt logging. Recovery must reject inactive catalog
+models and preserve project model exclusions, required-model settings, and
+provider routing restrictions before any provider execution.
+
+Subscription runner health tests use the explicit mid-tier model when configured,
+with the same compatibility resolution and credential isolation. Invalid model
+configuration is surfaced instead of falling back to a different CLI default.
+
 Each attempt can capture:
 
 - the attempted runner,

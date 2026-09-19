@@ -952,20 +952,17 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "#selected_runner_runtime" do
-    it "ignores Paid model selection for Codex subscription-auth runs" do
-      codex_provider = create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
-      runtime_issue = create(:issue, project: project)
-      run = create(:agent_run, :with_git_context,
-        project: project,
-        issue: runtime_issue,
-        agent_type: "codex",
-        provider: codex_provider,
-        container_id: "abc123")
-      create(:model_selection, agent_run: run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o"))
+    # @spec RUNNER-FALLBACK-002
+    it "passes the configured tier model for Codex subscription-auth runs" do
+      model = create(:llm_model, :openai, model_id: "gpt-6-astra", tier: "mid")
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
 
-      runtime = activity.send(:selected_runner_runtime, codex_provider, nil, run)
+      runtime = activity.send(:selected_runner_runtime, runner, user, agent_run)
 
-      expect(runtime).to be_nil
+      expect(runtime).to have_attributes(model: "gpt-6-astra")
     end
 
     it "keeps the configured runtime for direct-outbound runners with a different selected model" do
@@ -1178,26 +1175,95 @@ RSpec.describe Activities::RunAgentActivity do
       end.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, /no resolvable free model/)
     end
 
-    it "ignores Paid model selection when Codex subscription auth is referenced by bare runner key" do
-      create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
-      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid"))
+    # @spec RUNNER-FALLBACK-002
+    it "pins the configured mid-tier model without a model-selection record" do
+      model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+      expect(agent_run.model_selection).to be_nil
 
-      # Bare key — what fallback chains pass into the runner loop. Previously
-      # the subscription guard only fired for routing keys (`"runner:NN"`),
-      # so a fallback to "codex" leaked `--model gpt-4o` into the CLI even
-      # though the subscription /v1/responses endpoint rejects it.
-      runtime = activity.send(:selected_runner_runtime, "codex", user, agent_run)
+      [ "codex", runner.routing_key ].each do |candidate|
+        context = described_class::CommandContext.new(runner_candidate: candidate, runner: "codex", user: user)
+        command = activity.send(:build_command, context, "Reply with exactly OK.", agent_run: agent_run)
 
-      expect(runtime).to be_nil
+        expect(command[2]).to include("--model gpt-5.6-terra", "PAID_CODEX_SUBSCRIPTION_AUTH")
+        resolved = activity.send(:resolve_tier_model_for, candidate, agent_run, user)
+        expect(activity.send(:resolved_model_info_for, resolved)).to include(resolved_model_id: model.model_id)
+      end
     end
 
-    it "memoizes the bare-key Codex subscription lookup per user across calls" do
-      create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
+    # @spec RUNNER-FALLBACK-002
+    it "uses the user's configured mid-tier model for a bare runner key when it differs from the catalog default" do
+      configured_model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid", capability_score: 3.0)
+      catalog_default_model = create(:llm_model, :openai, model_id: "gpt-5.4", tier: "mid", capability_score: 9.0)
+      create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => configured_model.model_id })
+      expect(agent_run.model_selection).to be_nil
 
-      expect(Runner).to receive(:for_identifier).once.with(user, "codex").and_call_original
+      resolved = activity.send(:resolve_tier_model_for, "codex", agent_run, user)
 
-      2.times do
-        expect(activity.send(:selected_runner_runtime, "codex", user, agent_run)).to be_nil
+      expect(resolved.model_id).to eq(configured_model.model_id)
+      expect(resolved.model_id).not_to eq(catalog_default_model.model_id)
+    end
+
+    # @spec RUNNER-FALLBACK-002
+    context "when recovering a missing model selection" do
+      let(:recovery_runner) do
+        model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+        create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+          tier_model_ids: { "mid" => model.model_id })
+      end
+
+      [
+        { "excluded_model_ids" => [ "gpt-5.6-terra" ] },
+        { "required_model_id" => "gpt-5.6-sol" },
+        { "llm_providers" => { "blocklist" => [ "openai" ] } },
+        { "llm_providers" => { "allowlist" => [ "anthropic" ] } }
+      ].each do |preferences|
+        it "rejects a configured model forbidden by #{preferences}" do
+          project.update!(model_preferences: preferences)
+
+          expect do
+            activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
+          end.to raise_error(Temporalio::Error::ApplicationError, /project model policy/)
+        end
+      end
+
+      it "allows recovery when the configured model satisfies project policy" do
+        project.update!(model_preferences: {
+          "required_model_id" => "gpt-5.6-terra",
+          "llm_providers" => { "allowlist" => [ "openai" ] }
+        })
+
+        runtime = activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
+
+        expect(runtime.model).to eq("gpt-5.6-terra")
+      end
+
+      it "does not revive an inactive catalog model" do
+        recovery_runner
+        LlmModel.find_by!(model_id: "gpt-5.6-terra").update!(active: false)
+
+        expect do
+          activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
+        end.to raise_error(Temporalio::Error::ApplicationError, /inactive/)
+      end
+    end
+
+    # @spec RUNNER-FALLBACK-002
+    it "pins the resolved subscription model in fallback and preflight commands for a bare key" do
+      model = create(:llm_model, :openai, model_id: "gpt-6-astra", tier: "mid")
+      create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
+      context = described_class::CommandContext.new(runner_candidate: "codex", runner: "codex", user: user)
+
+      [ "Reply with exactly OK.", "Implement the requested change." ].each do |prompt|
+        command = activity.send(:build_command, context, prompt, agent_run: agent_run)
+
+        expect(command[2]).to include("--model gpt-6-astra", "PAID_CODEX_SUBSCRIPTION_AUTH", "env -u OPENAI_API_KEY")
+        expect(command.last).to eq(prompt)
       end
     end
   end
@@ -1211,6 +1277,33 @@ RSpec.describe Activities::RunAgentActivity do
       2.times do
         expect(activity.send(:runner_entry_for, runner.routing_key, user)).to eq(runner)
       end
+    end
+  end
+
+  describe "#resolved_runner_for" do
+    # @spec RUNNER-FALLBACK-002
+    it "resolves the persisted runner record, with its tier_model_ids, for a bare non-routing-key candidate" do
+      # Regression: runner_entry_for(runner_candidate, user) only resolves Runner
+      # instances and routing keys (e.g. "codex:42") — it returns nil for a bare
+      # runner_key like "codex". Model-selection recovery falls back to that bare
+      # key, so resolution must look the persisted runner up by runner_key
+      # instead of building a blank in-memory Runner.new placeholder, or a
+      # user's configured tier_model_ids are silently dropped.
+      model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+
+      resolved = activity.send(:resolved_runner_for, "codex", user)
+
+      expect(resolved).to eq(runner)
+      expect(resolved.tier_model_ids["mid"]).to eq(model.model_id)
+    end
+
+    it "falls back to an in-memory placeholder when the user has no matching runner" do
+      resolved = activity.send(:resolved_runner_for, "codex", user)
+
+      expect(resolved).not_to be_persisted
+      expect(resolved.runner_key).to eq("codex")
     end
   end
 

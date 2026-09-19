@@ -46,8 +46,10 @@ agent CLIs — Claude Code, Codex, OpenCode, Kilocode, Gemini, Copilot, Oh My Pi
 not: a Paid-side override would silently diverge from the version
 `agent-harness` was tested against. The only lever Paid controls is which
 `agent-harness` release it depends on, so that gem pin is what `bin/update`
-moves. Where a contract lags real upstream, `bin/update` reports the gap so it
-can be filed against `agent-harness` rather than patched locally.
+moves. A verified unreleased upstream correction may temporarily add an
+immutable git ref to that release pin; remove the ref once a containing release
+is available. Where a contract lags real upstream, `bin/update` reports the gap
+so it can be filed against `agent-harness` rather than patched locally.
 
 **Toolchain pins** — Ruby, Node, Go — are report-only. Moving them is a
 deliberate migration with build, gem, and CI consequences that no automated

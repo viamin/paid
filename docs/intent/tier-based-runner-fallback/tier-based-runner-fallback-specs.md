@@ -11,7 +11,13 @@
 
 - [x] **RUNNER-FALLBACK-002** — When a runner attempt resolves a concrete model
   for the requested tier, the system SHALL record the resolved model/provider
-  metadata on the attempt entry persisted in `agent_run.runners_attempted`.
+  metadata on the attempt entry persisted in `agent_run.runners_attempted`
+  and SHALL pass that model explicitly to preflight and execution, including
+  subscription-authenticated runners. When a run has no model-selection record
+  and the runner has an explicit mid-tier model, the system SHALL resolve and
+  pass that model through the same compatibility checks and attempt logging,
+  rejecting inactive models or models forbidden by project exclusion, required-model,
+  or provider routing policies before execution.
   *Code:* `Activities::RunAgentActivity`, `Runners::ResolveTierModel`.
 
 - [x] **RUNNER-FALLBACK-003** — When a container abort originates from a CLI
@@ -41,3 +47,11 @@
   *Code:* `Activities::RunAgentActivity#execute_smoke_with_state_repair`,
   `#runner_storage_failure?`, `#repair_runner_state_dir!`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-005** — When a subscription runner has an explicitly
+  configured mid-tier model, its Test action SHALL pass that resolved model to
+  the harness smoke test with subscription credential isolation. If the model
+  is incompatible, the test SHALL report the configuration error instead of
+  silently testing the CLI default.
+  *Code:* `Runners::TestAgent`.
+  *Test:* `spec/services/runners/test_agent_spec.rb`.

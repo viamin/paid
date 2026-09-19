@@ -70,7 +70,7 @@ module ToolchainPins
 
   # The gem whose release determines every contract-owned version above.
   AGENT_HARNESS_GEM = "agent-harness"
-  AGENT_HARNESS_PATTERN = /^(gem "agent-harness", ")([^"]+)(")$/
+  AGENT_HARNESS_PATTERN = /^(gem "agent-harness", ")([^"]+)(")(?:,|$)/
 
   # Devcontainer defaults that duplicate the omp contract. They exist because
   # the installer must run before bundler is available, so they are reconciled
