@@ -109,6 +109,32 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(project.apple_verification_workflow_revisions.approved).to contain_exactly(competing_revision)
   end
 
+  it "does not approve a workflow revision with a non-active profile" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    profile = create(:apple_worker_profile, account: project.account, status: "deprecated")
+    revision = create(:apple_verification_workflow_revision, project:, account: project.account, apple_worker_profile: profile)
+
+    expect { revision.approve!(actor: administrator) }.to raise_error(ArgumentError, /profile must be active/)
+    expect(revision).to be_draft
+  end
+
+  it "rejects a directly persisted approval with a non-active profile" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    profile = create(:apple_worker_profile, account: project.account, status: "revoked")
+    revision = build(:apple_verification_workflow_revision,
+      project:,
+      account: project.account,
+      apple_worker_profile: profile,
+      status: "approved",
+      approved_by: create(:user, account: project.account).tap { |user| user.add_role(:project_admin, project) },
+      approved_at: Time.current)
+
+    expect(revision).not_to be_valid
+    expect(revision.errors[:apple_worker_profile]).to include("must be active to approve")
+  end
+
   it "requires waiver ownership and bindings to match one attempt" do # @spec APPLE-WORKER-005 @spec APPLE-WORKER-006
     attempt = create(:apple_verification_attempt)
     waiver = AppleVerificationWaiver.new(
@@ -171,6 +197,27 @@ RSpec.describe "Apple verification persistence", type: :model do
 
     expect(attempt).not_to be_valid
     expect(attempt.errors[:apple_verification_workflow_revision]).to include("must be approved")
+  end
+
+  it "rejects an attempt when its workflow profile has been revoked" do # @spec APPLE-WORKER-005
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    workflow = create(:apple_verification_workflow_revision,
+      project:,
+      account: project.account,
+      lifecycle_gate: "pull_request_verification")
+    workflow.approve!(actor: administrator)
+    workflow.apple_worker_profile.update!(status: "revoked")
+    attempt = build(:apple_verification_attempt,
+      account: workflow.account,
+      project: workflow.project,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: workflow.apple_worker_profile,
+      lifecycle_gate: workflow.lifecycle_gate)
+
+    expect(attempt).not_to be_valid
+    expect(attempt.errors[:apple_worker_profile]).to include("must not be revoked")
   end
 
   it "requires a waiver to name required checks for its workflow" do # @spec APPLE-WORKER-006

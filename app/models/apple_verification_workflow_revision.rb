@@ -23,6 +23,7 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   validate :profile_matches_account
   validate :approval_fields_match_state
   validate :approver_is_project_administrator
+  validate :approval_requires_active_profile
   validate :approval_binding_is_immutable, on: :update
 
   def draft?
@@ -46,6 +47,7 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
       reload
       raise ArgumentError, "only a draft revision can be approved" unless draft?
       raise ArgumentError, "approver must be a project administrator" unless actor&.has_role?(:project_admin, project)
+      raise ArgumentError, "workflow profile must be active" unless apple_worker_profile.active?
 
       project.apple_verification_workflow_revisions.approved.where.not(id:).find_each(&:supersede!)
       update!(status: "approved", approved_by: actor, approved_at: Time.current)
@@ -88,6 +90,13 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
     return if approved_by.has_role?(:project_admin, project)
 
     errors.add(:approved_by, "must be a project administrator")
+  end
+
+  def approval_requires_active_profile
+    return unless approved? && apple_worker_profile
+    return if apple_worker_profile.active?
+
+    errors.add(:apple_worker_profile, "must be active to approve")
   end
 
   def approval_binding_is_immutable

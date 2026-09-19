@@ -16,10 +16,11 @@ Each project selects `off`, `on_demand`, or `automatic`. A workflow revision
 records its committed digest, verification-file references, worker profile,
 lifecycle gate, and required/advisory checks. A draft revision may run only at
 the `agent_iteration` advisory gate; only an approved revision is eligible to
-enforce a gate. A project administrator's serialized approval supersedes the
-prior approved revision without mutating it, leaving at most one approved
-revision per project. Attempts bind the eligible revision, its profile and
-lifecycle gate, and exact source.
+enforce a gate, and approval requires an active profile. A project
+administrator's serialized approval supersedes the prior approved revision
+without mutating it, leaving at most one approved revision per project.
+Attempts bind the eligible revision, its profile and lifecycle gate, and exact
+source; no attempt may use a revoked profile.
 
 Waivers are one-attempt records with a project-administrator actor, reason,
 expiry, source, revision, gate, and check identities. Execution audit events

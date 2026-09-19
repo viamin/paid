@@ -25,6 +25,10 @@ class AppleWorkerProfile < ApplicationRecord
     status == "active"
   end
 
+  def revoked?
+    status == "revoked"
+  end
+
   private
 
   def creator_matches_account

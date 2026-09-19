@@ -23,6 +23,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validate :ownership_matches_workflow
   validate :workflow_is_eligible_for_gate
   validate :profile_matches_workflow
+  validate :profile_is_not_revoked
   validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
 
@@ -54,6 +55,12 @@ class AppleVerificationAttempt < ApplicationRecord
     return unless apple_verification_workflow_revision
 
     errors.add(:apple_worker_profile, "must match the workflow profile") if apple_worker_profile_id != apple_verification_workflow_revision.apple_worker_profile_id
+  end
+
+  def profile_is_not_revoked
+    return unless apple_worker_profile&.revoked?
+
+    errors.add(:apple_worker_profile, "must not be revoked")
   end
 
   def lifecycle_gate_matches_workflow
