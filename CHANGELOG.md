@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.13.0](https://github.com/viamin/paid/compare/v1.12.0...v1.13.0) (2026-09-19)
+
+
+### Features
+
+* Align Inbox and Chat around a shared list-and-detail layout ([#3881](https://github.com/viamin/paid/issues/3881)) ([0a32c6e](https://github.com/viamin/paid/commit/0a32c6e9cc01f5417cde337f9f4624f335d1e645))
+* analyze→enhance loop never converges to create_pr: analyzer blind to enhancement output, biased readiness bar, no handoff on sufficient_context=true ([#3844](https://github.com/viamin/paid/issues/3844)) ([cfce317](https://github.com/viamin/paid/commit/cfce31728a1c18ae335f626da28219cc743d93b9))
+* Analyzer sees enhancement output at low fidelity: latest-comment-only, 2k head-truncation, no marker-section preference ([#3856](https://github.com/viamin/paid/issues/3856)) ([9537f31](https://github.com/viamin/paid/commit/9537f316c614d5db0a4bf8dc0bc7dc8da54339df))
+* **chat:** show persistent token-limit errors and recovery guidance ([#3848](https://github.com/viamin/paid/issues/3848)) ([9a53540](https://github.com/viamin/paid/commit/9a535406c84b93c6b5ef6bbb3ff162b1dacf47bf))
+* Clarifying questions: click-to-answer UI for choice questions (segmented buttons + detail textarea) ([#3896](https://github.com/viamin/paid/issues/3896)) ([396a18f](https://github.com/viamin/paid/commit/396a18f5300085bd975468e5cc61feb0d35fbce6))
+* **clarifying-questions:** strict choice-question markers in enhance prompt + Choices parser ([#3895](https://github.com/viamin/paid/issues/3895)) ([0c9d5e3](https://github.com/viamin/paid/commit/0c9d5e3d4551089d635b15b9a83c77706b826118))
+* Detect and surface truncated/corrupted issue bodies (analyzer and enhancer silently judge malformed baselines) ([#3858](https://github.com/viamin/paid/issues/3858)) ([ff6b92c](https://github.com/viamin/paid/commit/ff6b92cc6b95edebc843dfa3ff1fc9a0c46aedbe))
+* Enhance→create_pr handoff is fire-and-forget: no reconciliation when the follow-up run is lost, issue rests in non-eligible completed state ([#3855](https://github.com/viamin/paid/issues/3855)) ([79ceb7c](https://github.com/viamin/paid/commit/79ceb7c536b6ef2efa03ae790bd68a8462edeb32))
+* Improve Paid PR reviewer scope and evidence requirements ([#3903](https://github.com/viamin/paid/issues/3903)) ([da0a25e](https://github.com/viamin/paid/commit/da0a25e52a136492c6fbcb5db55c30d9539f7cf5))
+* Inbox: show clarifying-question context (Current Context section + preamble) alongside the answer form ([#3892](https://github.com/viamin/paid/issues/3892)) ([efde39f](https://github.com/viamin/paid/commit/efde39fe3e0d15699d613891f190be3925e93a00))
+* Include necessary context in clarifying questions so they can be answered without deep project knowledge ([#3843](https://github.com/viamin/paid/issues/3843)) ([aeeefbe](https://github.com/viamin/paid/commit/aeeefbef4f1dab183c07934da413bc38169c916a))
+* Pilot independent verification of Paid PR review findings ([#3920](https://github.com/viamin/paid/issues/3920)) ([67845e4](https://github.com/viamin/paid/commit/67845e4baf6f5ba91b387354f1222c9a9bb63628))
+* RDR-066: add human-led feature operating mode and onboarding default ([#3879](https://github.com/viamin/paid/issues/3879)) ([cfe055c](https://github.com/viamin/paid/commit/cfe055c39a09aaa8d5588e8d7880dbf2f673db8f))
+* RDR-066: add Inbox feature decisions and Mark approved ([#3889](https://github.com/viamin/paid/issues/3889)) ([0e97a9b](https://github.com/viamin/paid/commit/0e97a9b578ddb2a9fb1508f0de34a0860154242e))
+* RDR-066: audit feature intent approval lifecycle against shipped behavior ([#3875](https://github.com/viamin/paid/issues/3875)) ([a09089e](https://github.com/viamin/paid/commit/a09089ea4a55f380ff248d0bca41dccccb280fdf))
+* RDR-067: amend approved design and pause affected feature work ([#3883](https://github.com/viamin/paid/issues/3883)) ([cb3ed5d](https://github.com/viamin/paid/commit/cb3ed5dd26f8fffc9618cef2d7afede7830b16d6))
+* RDR-067: audit approved-intent conformance against shipped behavior ([#3878](https://github.com/viamin/paid/issues/3878)) ([6278728](https://github.com/viamin/paid/commit/627872806d7f35f64a94d113b04250773f4a0a54))
+* RDR-067: build independent, version-bound intent review verdict ([#3890](https://github.com/viamin/paid/issues/3890)) ([69fb9ff](https://github.com/viamin/paid/commit/69fb9ffea9d163a848c05c705fa2c8cc382c7988))
+* RDR-067: enforce current intent verdict at final merge ([#3888](https://github.com/viamin/paid/issues/3888)) ([7f0c78a](https://github.com/viamin/paid/commit/7f0c78a34ed2e52b3affad45b4b8e34eee5a9802))
+* RDR-067: surface intent drift and uncertainty in PR scanner and Inbox ([#3882](https://github.com/viamin/paid/issues/3882)) ([134ebdb](https://github.com/viamin/paid/commit/134ebdb4f5f0f4e06ea1c2e707ab0b69c73bf5c0))
+* Retry-Limited inbox items cannot be resolved inline — operators must leave the inbox to clear the abandonment flag ([#3926](https://github.com/viamin/paid/issues/3926)) ([6076cc5](https://github.com/viamin/paid/commit/6076cc5395967df4a6052ed7d1aad3624ed9f2b5))
+* Round-cap convergence is prompt-only and resets only on success: enforce cap fallback in code and reset rounds on human input ([#3854](https://github.com/viamin/paid/issues/3854)) ([52aba1a](https://github.com/viamin/paid/commit/52aba1aab628376a298d48af2d42766f639eccc5))
+* Use simplified technical English in agent-written issue/PR comments and clarifying questions ([#3845](https://github.com/viamin/paid/issues/3845)) ([82925bc](https://github.com/viamin/paid/commit/82925bcaae3c7f1910032f1b49789a8858d6d1e8))
+
+
+### Bug Fixes
+
+* **chat:** route MiniMax fallback through its chat API ([#3921](https://github.com/viamin/paid/issues/3921)) ([c49f188](https://github.com/viamin/paid/commit/c49f188501be9bc958f5f65478696f091f75fd08))
+* **chat:** show settings save status and hide reasoning blocks ([#3927](https://github.com/viamin/paid/issues/3927)) ([485db21](https://github.com/viamin/paid/commit/485db21c9a15d16ea8c441b0592693634668a614))
+* **dashboard:** add vertical spacing between blocked PRs and retry-limited issues tiles ([#3919](https://github.com/viamin/paid/issues/3919)) ([f94cf90](https://github.com/viamin/paid/commit/f94cf9013df13a3c272d4ec12da622f8ff8d1e4d)), closes [#3901](https://github.com/viamin/paid/issues/3901)
+* **enhance-issue:** "Start enhancement run" recovery loops straight back to manual_review — round cap at completion ignores trigger_type ([#3912](https://github.com/viamin/paid/issues/3912)) ([f752b3e](https://github.com/viamin/paid/commit/f752b3e4c194bbf138d44bf5a1209cb6870ad0b0))
+* **enhance-issue:** max-rounds manual_review discards the terminal round's clarifying questions — no answerable surface, GitHub answers are a dead end ([#3910](https://github.com/viamin/paid/issues/3910)) ([96e7ce1](https://github.com/viamin/paid/commit/96e7ce1ab0bbdf01547ad3990e12caedf83dce14))
+* **github-sync:** reset enhancement rounds on label-removal recheck enqueue ([#3911](https://github.com/viamin/paid/issues/3911)) ([dfe7034](https://github.com/viamin/paid/commit/dfe7034eecc8189b2ba9256446bac330cbd3ce06))
+* **inbox:** clear manual_review item at queue time on Start enhancement run ([#3857](https://github.com/viamin/paid/issues/3857)) ([4a0d13e](https://github.com/viamin/paid/commit/4a0d13e5aeb18f4dd32a7be3b914aa8a60c83ff4))
+* **inbox:** Manual Review and Feature Decision lanes missing from the Inbox tab filters; manual_review pane lacks a link to the GitHub issue ([#3918](https://github.com/viamin/paid/issues/3918)) ([1db63e2](https://github.com/viamin/paid/commit/1db63e29c8f147c03ed515353217782af2ce1171))
+* **inbox:** navigate out of the inbox-detail frame on retry-limited 'Open project runs' ([#3924](https://github.com/viamin/paid/issues/3924)) ([b401319](https://github.com/viamin/paid/commit/b40131988eaf448b9e4b51cc87bb0d0850f20ec5))
+* **inbox:** split queue and detail side by side on desktop ([#3880](https://github.com/viamin/paid/issues/3880)) ([aaae7ad](https://github.com/viamin/paid/commit/aaae7ade5a38330366958f2330a4425716cc61d5)), closes [#3876](https://github.com/viamin/paid/issues/3876)
+* Retry-limited issues are blocked from auto-pick but never surface in the Inbox ([#3909](https://github.com/viamin/paid/issues/3909)) ([fd88f56](https://github.com/viamin/paid/commit/fd88f5688dced2af572df2c0ed00055cff826c8b))
+
 ## [1.12.0](https://github.com/viamin/paid/compare/v1.11.0...v1.12.0) (2026-09-11)
 
 
