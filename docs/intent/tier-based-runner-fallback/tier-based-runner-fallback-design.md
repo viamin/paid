@@ -28,6 +28,11 @@ concrete model across every runner.
 resolves the concrete model for each attempt via `Runners::ResolveTierModel`,
 and records the resolved attempt metadata on `agent_run.runners_attempted`.
 
+The resolved model is passed explicitly to both preflight and execution through
+agent-harness, including subscription-authenticated runners. Authentication
+isolation remains in place; container defaults must not override the resolved
+model.
+
 Each attempt can capture:
 
 - the attempted runner,

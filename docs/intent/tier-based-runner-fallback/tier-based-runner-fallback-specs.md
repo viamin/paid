@@ -11,7 +11,9 @@
 
 - [x] **RUNNER-FALLBACK-002** — When a runner attempt resolves a concrete model
   for the requested tier, the system SHALL record the resolved model/provider
-  metadata on the attempt entry persisted in `agent_run.runners_attempted`.
+  metadata on the attempt entry persisted in `agent_run.runners_attempted`
+  and SHALL pass that model explicitly to preflight and execution, including
+  subscription-authenticated runners.
   *Code:* `Activities::RunAgentActivity`, `Runners::ResolveTierModel`.
 
 - [x] **RUNNER-FALLBACK-003** — When a container abort originates from a CLI

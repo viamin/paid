@@ -952,20 +952,17 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "#selected_runner_runtime" do
-    it "ignores Paid model selection for Codex subscription-auth runs" do
-      codex_provider = create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
-      runtime_issue = create(:issue, project: project)
-      run = create(:agent_run, :with_git_context,
-        project: project,
-        issue: runtime_issue,
-        agent_type: "codex",
-        provider: codex_provider,
-        container_id: "abc123")
-      create(:model_selection, agent_run: run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o"))
+    # @spec RUNNER-FALLBACK-002
+    it "passes the configured tier model for Codex subscription-auth runs" do
+      model = create(:llm_model, :openai, model_id: "gpt-6-astra", tier: "mid")
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
 
-      runtime = activity.send(:selected_runner_runtime, codex_provider, nil, run)
+      runtime = activity.send(:selected_runner_runtime, runner, user, agent_run)
 
-      expect(runtime).to be_nil
+      expect(runtime).to have_attributes(model: "gpt-6-astra")
     end
 
     it "keeps the configured runtime for direct-outbound runners with a different selected model" do
@@ -1178,26 +1175,20 @@ RSpec.describe Activities::RunAgentActivity do
       end.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, /no resolvable free model/)
     end
 
-    it "ignores Paid model selection when Codex subscription auth is referenced by bare runner key" do
-      create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
-      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid"))
+    # @spec RUNNER-FALLBACK-002
+    it "pins the resolved subscription model in fallback and preflight commands for a bare key" do
+      model = create(:llm_model, :openai, model_id: "gpt-6-astra", tier: "mid")
+      create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
+      context = described_class::CommandContext.new(runner_candidate: "codex", runner: "codex", user: user)
 
-      # Bare key — what fallback chains pass into the runner loop. Previously
-      # the subscription guard only fired for routing keys (`"runner:NN"`),
-      # so a fallback to "codex" leaked `--model gpt-4o` into the CLI even
-      # though the subscription /v1/responses endpoint rejects it.
-      runtime = activity.send(:selected_runner_runtime, "codex", user, agent_run)
+      [ "Reply with exactly OK.", "Implement the requested change." ].each do |prompt|
+        command = activity.send(:build_command, context, prompt, agent_run: agent_run)
 
-      expect(runtime).to be_nil
-    end
-
-    it "memoizes the bare-key Codex subscription lookup per user across calls" do
-      create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
-
-      expect(Runner).to receive(:for_identifier).once.with(user, "codex").and_call_original
-
-      2.times do
-        expect(activity.send(:selected_runner_runtime, "codex", user, agent_run)).to be_nil
+        expect(command[2]).to include("--model gpt-6-astra", "PAID_CODEX_SUBSCRIPTION_AUTH", "env -u OPENAI_API_KEY")
+        expect(command.last).to eq(prompt)
       end
     end
   end

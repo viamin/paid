@@ -862,8 +862,6 @@ module Activities
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
       configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
-      return nil if codex_subscription_auth_runtime?(runner_entry) ||
-        codex_subscription_auth_candidate?(runner_candidate, user)
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
@@ -898,30 +896,6 @@ module Activities
         unset_env: configured_runtime.unset_env,
         metadata: configured_runtime.metadata
       )
-    end
-
-    def codex_subscription_auth_runtime?(runner_entry)
-      runner_entry&.runner_key == "codex" && runner_entry&.subscription?
-    end
-
-    # Backstop for fallback chains that pass the bare runner key ("codex")
-    # rather than a routing key. runner_entry_for returns nil for bare keys,
-    # so codex_subscription_auth_runtime? would otherwise miss the guard
-    # and a stale tier_model (e.g. gpt-4o, which the Codex subscription
-    # /v1/responses endpoint rejects) would flow into --model. Look up the
-    # user's Codex runner record directly when the candidate is the bare
-    # "codex" key so subscription auth is honored regardless of how the
-    # runner is referenced. The lookup is memoized per user because the
-    # runner loop can revisit "codex" multiple times in a single attempt.
-    def codex_subscription_auth_candidate?(runner_candidate, user)
-      return false unless user
-      return false unless runner_candidate.is_a?(String) && runner_candidate == "codex"
-
-      @codex_subscription_lookup_cache ||= {}
-      cached = @codex_subscription_lookup_cache.fetch(user.id) do
-        @codex_subscription_lookup_cache[user.id] = Runner.for_identifier(user, "codex")&.subscription? == true
-      end
-      cached
     end
 
     def runtime_cache_key(runtime)
