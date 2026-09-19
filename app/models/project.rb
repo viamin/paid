@@ -40,6 +40,7 @@ class Project < ApplicationRecord
   # human-led feature factory workflow is strictly opt-in, and the column is
   # the RDR's rollout-guard config gate (never silently flipped by migration).
   OPERATING_MODES = %w[standard human_led_feature_factory].freeze
+  APPLE_VERIFICATION_MODES = %w[off on_demand automatic].freeze
   TDD_MODE_LABELS = {
     "off" => "Off",
     "non_strict" => "Non-strict",
@@ -216,6 +217,8 @@ class Project < ApplicationRecord
   has_many :issues, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
+  has_many :apple_verification_workflow_revisions, dependent: :destroy
+  has_many :apple_verification_attempts, dependent: :destroy
   has_many :preview_sessions, dependent: :destroy
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
@@ -322,6 +325,7 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
+  validate :apple_verification_settings_valid
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :exactly_one_github_credential, if: :validate_github_credential_presence?
@@ -678,6 +682,10 @@ class Project < ApplicationRecord
 
     stored = screenshot_settings.is_a?(Hash) ? screenshot_settings.deep_stringify_keys : {}
     @effective_screenshot_settings = normalize_screenshot_settings(DEFAULT_SCREENSHOT_SETTINGS.deep_merge(stored))
+  end
+
+  def apple_verification_mode
+    apple_verification_settings.fetch("mode", "off")
   end
 
   def effective_interop_settings
@@ -1044,6 +1052,12 @@ class Project < ApplicationRecord
   def screenshot_settings=(value)
     @effective_screenshot_settings = nil
     super
+  end
+
+  def apple_verification_settings_valid
+    return if apple_verification_mode.in?(APPLE_VERIFICATION_MODES)
+
+    errors.add(:apple_verification_settings, "mode must be one of #{APPLE_VERIFICATION_MODES.join(', ')}")
   end
 
   def screenshot_enabled
