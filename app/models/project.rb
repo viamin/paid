@@ -216,6 +216,11 @@ class Project < ApplicationRecord
   has_many :issues, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
+  has_many :apple_verification_waivers, dependent: :destroy
+  has_many :apple_verification_attempts, dependent: :destroy
+  has_many :apple_verification_workflow_revisions, dependent: :destroy
+
+  validates :apple_verification_mode, inclusion: { in: %w[off on_demand automatic] }
   has_many :preview_sessions, dependent: :destroy
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
