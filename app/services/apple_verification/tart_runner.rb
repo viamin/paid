@@ -8,6 +8,21 @@ module AppleVerification
     RUNNER_TYPE = :apple_tart
     RESOURCE_KIND = "apple_vm"
 
+    def self.register_from_environment!
+      runner = from_environment
+      return ExecutionRunners.unregister_reconciliation_runner(RUNNER_TYPE) unless runner
+
+      ExecutionRunners.register_reconciliation_runner(runner)
+    end
+
+    def self.from_environment
+      endpoint = ENV["APPLE_VERIFICATION_HOST_URL"]
+      token = ENV["APPLE_VERIFICATION_HOST_TOKEN"]
+      return if endpoint.blank? || token.blank?
+
+      new(host: HostClient.new(endpoint:), token:)
+    end
+
     def initialize(host:, token:)
       @host = host
       @token = token

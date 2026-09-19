@@ -67,7 +67,7 @@ module ExecutionRunners
     # create a resource it cannot reconcile.
     # @return [ProvisioningIntent, nil]
     # @spec CONTAINER-RUNTIME-025
-    def record_intent(agent_run:, attempt: 0, recorded_at: Time.current, metadata: {})
+    def record_intent(agent_run:, attempt: 0, recorded_at: Time.current, metadata: {}, request_id: nil)
       return unless recording?
 
       warn_capability_degradations
@@ -79,6 +79,7 @@ module ExecutionRunners
         project_id: agent_run&.project&.id,
         agent_run_id: agent_run&.id,
         attempt: Integer(attempt || 0),
+        request_id: request_id.presence,
         # The ownership tags mirror what is actually applied to the live
         # resource, so an unsupported-tagging degradation records no tags
         # rather than intended-but-unapplied tags that reconciliation could

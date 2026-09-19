@@ -17,7 +17,6 @@ module AppleVerification
     def provision(agent_run:, image_id:, profile_id:, request_id:)
       require_enabled!(agent_run.project)
       require_request_id!(request_id)
-      register_reconciliation_runner!
       ledger = provisioning_ledger
       intent = find_or_record_intent(ledger:, agent_run:, request_id:)
       return ExecutionRunners::RunnerHandle.from_json(intent.runner_handle) if intent.linked?
@@ -58,17 +57,17 @@ module AppleVerification
 
     def find_or_record_intent(ledger:, agent_run:, request_id:)
       agent_run.with_lock do
-        intent_for(request_id:) || record_intent(ledger:, agent_run:, request_id:)
+        intent_for(agent_run:, request_id:) || record_intent(ledger:, agent_run:, request_id:)
       end
     end
 
     def record_intent(ledger:, agent_run:, request_id:)
       attempt = ledger.next_attempt_for(agent_run:)
-      ledger.record_intent(agent_run:, attempt:, metadata: { "request_id" => request_id })
+      ledger.record_intent(agent_run:, attempt:, request_id:, metadata: { "request_id" => request_id })
     end
 
-    def intent_for(request_id:)
-      ProvisioningIntent.where(runner_type: RUNNER_TYPE).where("metadata ->> 'request_id' = ?", request_id).first
+    def intent_for(agent_run:, request_id:)
+      ProvisioningIntent.find_by(agent_run:, runner_type: RUNNER_TYPE, request_id:)
     end
 
     def resource_entry_for(agent_run:, tags:)
@@ -78,10 +77,6 @@ module AppleVerification
           backend: TartProvider::PROVIDER_NAME, resource_kind: "primary_environment", tags:, runner_handle: {}, status: "provisioning"
         )
       end
-    end
-
-    def register_reconciliation_runner!
-      ExecutionRunners.register_reconciliation_runner(TartRunner.new(host:, token:))
     end
 
     def request(operation, payload)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_19_092220) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2723,6 +2723,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
     t.string "provider_resource_host", limit: 200, comment: "Backend host owning the provider resource (e.g. container_host)."
     t.string "provider_resource_id", limit: 200, comment: "Provider resource identifier captured once the create call succeeds (e.g. Docker container id)."
     t.datetime "reconciled_at", comment: "When a reconciliation process resolved this ledger row (e.g. reclaimed an orphan)."
+    t.string "request_id", limit: 200, comment: "Caller idempotency key, unique per agent run and runner type when present."
     t.string "resource_kind", limit: 100, null: false, comment: "Kind of execution resource the runner intends to create (e.g. 'container', 'workspace_volume')."
     t.jsonb "runner_handle", comment: "Serialized ExecutionRunners::RunnerHandle linked once the runner builds the handle."
     t.string "runner_type", limit: 50, null: false, comment: "Runner type that recorded the intent (matches RunnerHandle#runner_type, e.g. 'local_docker')."
@@ -2731,6 +2732,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_18_000007) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_provisioning_intents_on_account_id"
     t.index ["agent_run_id", "resource_kind", "attempt"], name: "index_provisioning_intents_on_run_kind_attempt", unique: true
+    t.index ["agent_run_id", "runner_type", "request_id"], name: "index_provisioning_intents_on_run_runner_request", unique: true, where: "(request_id IS NOT NULL)"
     t.index ["agent_run_id"], name: "index_provisioning_intents_on_agent_run_id"
     t.index ["project_id"], name: "index_provisioning_intents_on_project_id"
     t.index ["provider_resource_id"], name: "index_provisioning_intents_on_provider_resource_id", where: "(provider_resource_id IS NOT NULL)"

@@ -23,7 +23,9 @@ RSpec.describe AppleVerification::Lifecycle do
     )
 
     expect(handle).to be_a(ExecutionRunners::RunnerHandle)
-    expect(ProvisioningIntent.last).to have_attributes(runner_type: "apple_tart", resource_kind: "apple_vm", status: "linked")
+    expect(ProvisioningIntent.last).to have_attributes(
+      runner_type: "apple_tart", resource_kind: "apple_vm", request_id: "request-1", status: "linked"
+    )
     expect(ExecutionResourceLedgerEntry.last).to have_attributes(backend: "tart", status: "active", provider_resource_id: "paid-vm-1")
   end
 
@@ -40,11 +42,46 @@ RSpec.describe AppleVerification::Lifecycle do
     second = lifecycle.provision(agent_run:, image_id: "paid-macos", profile_id: "ios-standard", request_id: "request-1")
 
     expect(second).to eq(first)
-    expect(ProvisioningIntent.where("metadata ->> 'request_id' = ?", "request-1")).to contain_exactly(ProvisioningIntent.last)
+    expect(ProvisioningIntent.where(request_id: "request-1")).to contain_exactly(ProvisioningIntent.last)
     expect(ExecutionResourceLedgerEntry.where(agent_run:)).to contain_exactly(ExecutionResourceLedgerEntry.last)
   end
 
+  it "isolates identical request IDs to their owning agent run" do
+    other_run = create(:agent_run)
+    FeatureFlags.enable!(:apple_verification_workers, project: other_run.project)
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "clone", token: "host-token", payload: hash_including("image_id" => "paid-macos")
+    ).and_return({ "vm_id" => "paid-vm-1" }, { "vm_id" => "paid-vm-2" })
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "start", token: "host-token", payload: hash_including("vm_id")
+    ).and_return("vm_id" => "paid-vm-1", "connection" => { "ready" => true })
+
+    lifecycle = described_class.new(host:, token: "host-token")
+    first = lifecycle.provision(agent_run:, image_id: "paid-macos", profile_id: "ios-standard", request_id: "request-1")
+    second = lifecycle.provision(agent_run: other_run, image_id: "paid-macos", profile_id: "ios-standard", request_id: "request-1")
+
+    expect([ first.identifier, second.identifier ]).to contain_exactly("paid-vm-1", "paid-vm-2")
+    expect(ProvisioningIntent.where(request_id: "request-1")).to contain_exactly(
+      have_attributes(agent_run: agent_run), have_attributes(agent_run: other_run)
+    )
+  end
+
   it "leaves a created VM reconcileable when start fails" do
+    configure_reconciliation_runner
+    stub_failed_lifecycle_requests
+
+    expect {
+      described_class.new(host:, token: "host-token").provision(
+        agent_run:, image_id: "paid-macos", profile_id: "ios-standard", request_id: "request-1"
+      )
+    }.to raise_error(Timeout::Error)
+
+    expect(ProvisioningIntent.last).to have_attributes(status: "created", provider_resource_id: "paid-vm-1")
+    expect { ExecutionRunners::ResourceReconciler.new.call }.to change(ExecutionResourceCleanup, :count).by(1)
+    expect(ProvisioningIntent.last).to have_attributes(status: "failed")
+  end
+
+  def stub_failed_lifecycle_requests
     allow(host).to receive(:call).with(
       version: "v1", operation: "clone", token: "host-token", payload: hash_including("image_id" => "paid-macos")
     ).and_return("vm_id" => "paid-vm-1")
@@ -57,15 +94,13 @@ RSpec.describe AppleVerification::Lifecycle do
     allow(host).to receive(:call).with(
       version: "v1", operation: "inventory", token: "host-token", payload: hash_including("ownership_tags")
     ).and_return([])
+  end
 
-    expect {
-      described_class.new(host:, token: "host-token").provision(
-        agent_run:, image_id: "paid-macos", profile_id: "ios-standard", request_id: "request-1"
-      )
-    }.to raise_error(Timeout::Error)
-
-    expect(ProvisioningIntent.last).to have_attributes(status: "created", provider_resource_id: "paid-vm-1")
-    expect { ExecutionRunners::ResourceReconciler.new.call }.to change(ExecutionResourceCleanup, :count).by(1)
-    expect(ProvisioningIntent.last).to have_attributes(status: "failed")
+  def configure_reconciliation_runner
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("APPLE_VERIFICATION_HOST_URL").and_return("https://macos-worker.example.test")
+    allow(ENV).to receive(:[]).with("APPLE_VERIFICATION_HOST_TOKEN").and_return("host-token")
+    allow(AppleVerification::HostClient).to receive(:new).with(endpoint: "https://macos-worker.example.test").and_return(host)
+    AppleVerification::TartRunner.register_from_environment!
   end
 end
