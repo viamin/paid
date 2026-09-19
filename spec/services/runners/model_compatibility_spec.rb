@@ -133,8 +133,11 @@ RSpec.describe Runners::ModelCompatibility do
         let(:model_id) { "gpt-5.6-sol" }
 
         it "uses the verified harness subscription contract" do
-          expect(result).to be_supported
-          expect(result.source).to eq("agent_harness")
+          %w[gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol].each do |variant|
+            compatibility = described_class.call(runner_key: "codex", model_id: variant, auth_type: "subscription")
+            expect(compatibility).to be_supported
+            expect(compatibility.source).to eq("agent_harness")
+          end
         end
       end
 

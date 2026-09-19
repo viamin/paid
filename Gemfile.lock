@@ -1,7 +1,7 @@
 GIT
   remote: https://github.com/viamin/agent-harness.git
-  revision: 4db053d37f9abf6ac7038b87d1b725f75404eb9a
-  ref: 4db053d37f9abf6ac7038b87d1b725f75404eb9a
+  revision: aaed8ad6c1c0a4015e120916d05c98d477244a97
+  ref: aaed8ad6c1c0a4015e120916d05c98d477244a97
   specs:
     agent-harness (0.36.23)
       logger (>= 1.6, < 2.0)

@@ -361,8 +361,7 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid",
-        active: false
+        tier: "low"
       },
       {
         model_id: "gpt-5.6-sol",
@@ -378,7 +377,7 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid"
+        tier: "high"
       },
       {
         model_id: "gpt-5.6-terra",
@@ -394,8 +393,7 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid",
-        active: false
+        tier: "mid"
       },
       {
         model_id: "gpt-5-mini",

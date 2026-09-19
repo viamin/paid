@@ -58,9 +58,9 @@ currently eligible candidate pool. The candidate pool is constrained by:
 - and the initial tier derived from the rules-based complexity estimate.
 
 Codex subscription runners use the agent-harness compatibility contract for
-model/authentication checks. GPT-5.6 Sol is available in the active catalog
-and supports explicit subscription runner pins; scheduled catalog sync retains
-its active status. Other models remain subject to the harness contract.
+model/authentication checks. GPT-5.6 Luna, Terra, and Sol are active catalog models with default low, mid,
+and high tiers respectively, and support explicit subscription runner pins.
+Scheduled catalog sync retains their active status. Other models remain subject to the harness contract.
 
 When only one candidate remains, the selector skips the LLM round trip and
 returns that candidate directly.
