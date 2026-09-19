@@ -21,6 +21,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validates :lifecycle_gate, inclusion: { in: LIFECYCLE_GATES }
   validates :retry_number, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :ownership_matches_workflow
+  validate :workflow_is_approved
   validate :profile_matches_workflow
   validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
@@ -36,6 +37,13 @@ class AppleVerificationAttempt < ApplicationRecord
 
     errors.add(:project, "must match the workflow project") if project_id != apple_verification_workflow_revision.project_id
     errors.add(:account, "must match the workflow account") if account_id != apple_verification_workflow_revision.account_id
+  end
+
+  def workflow_is_approved
+    return unless apple_verification_workflow_revision
+    return if apple_verification_workflow_revision.approved?
+
+    errors.add(:apple_verification_workflow_revision, "must be approved")
   end
 
   def profile_matches_workflow

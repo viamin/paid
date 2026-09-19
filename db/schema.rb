@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_19_105106) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1379,7 +1379,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_105106) do
     t.index ["runner_type", "backend", "provider_resource_id"], name: "idx_execution_resource_ledger_provider_identity", unique: true, where: "(provider_resource_id IS NOT NULL)", nulls_not_distinct: true
     t.index ["status"], name: "index_execution_resource_ledger_entries_on_status"
     t.check_constraint "cleanup_attempts >= 0", name: "chk_execution_resource_ledger_cleanup_attempts_nonneg"
-    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying::text, 'service'::character varying::text, 'sidecar'::character varying::text, 'workspace'::character varying::text, 'network'::character varying::text, 'preview_tunnel'::character varying::text, 'temporary_storage'::character varying::text])", name: "chk_execution_resource_ledger_kind_valid"
+    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying, 'service'::character varying, 'sidecar'::character varying, 'workspace'::character varying, 'network'::character varying, 'preview_tunnel'::character varying, 'temporary_storage'::character varying, 'verification_vm'::character varying]::text[])", name: "chk_execution_resource_ledger_kind_valid"
     t.check_constraint "status::text = ANY (ARRAY['provisioning'::character varying::text, 'active'::character varying::text, 'cleanup_pending'::character varying::text, 'deleted'::character varying::text, 'orphaned'::character varying::text, 'cleanup_failed'::character varying::text])", name: "chk_execution_resource_ledger_status_valid"
   end
 

@@ -13,6 +13,7 @@ class AppleWorkerProfile < ApplicationRecord
   has_many :apple_verification_attempts, dependent: :restrict_with_exception
 
   validates :name, :image_digest, presence: true
+  validates :image_digest, format: { with: /\Asha256:[a-f0-9]{64}\z/ }
   validates :status, inclusion: { in: STATUSES }
   validate :creator_matches_account
   validate :capabilities_are_safe
