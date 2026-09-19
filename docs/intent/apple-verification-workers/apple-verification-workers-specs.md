@@ -21,4 +21,4 @@
   *Tests:* `spec/services/apple_verification/tart_provider_spec.rb`,
   `spec/services/apple_verification/lifecycle_spec.rb`
   *Code:* `AppleVerification::TartProvider`, `AppleVerification::Lifecycle`,
-  `AppleVerification::TartRunner`
+  `AppleVerification::TartRunner`, `ExecutionRunners::ResourceReconciler`

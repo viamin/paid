@@ -6,6 +6,7 @@ module ExecutionRunners
   #
   # @spec CONTAINER-RUNTIME-035
   # @spec CONTAINER-RUNTIME-036
+  # @spec APPLE-WORKER-003
   class ResourceReconciler
     RETRY_DELAYS = [
       5.minutes,
@@ -126,6 +127,7 @@ module ExecutionRunners
     end
 
     def cleanup_request(request)
+      associate_pre_created_ledger_entries!(request)
       runner = ExecutionRunners.for_type(request.runner_type)
       runner.cleanup_resource(resource: resource_from_request(request), force: true)
       request.mark_completed!
@@ -177,6 +179,12 @@ module ExecutionRunners
       end
     end
 
+    def associate_pre_created_ledger_entries!(request)
+      ledger_entries_for(request).where(provider_resource_id: nil).find_each do |entry|
+        entry.update!(provider_resource_id: request.provider_resource_id)
+      end
+    end
+
     def record_ledger_cleanup_failure(request, error)
       ledger_entries_for(request).find_each do |entry|
         entry.request_cleanup! unless entry.cleanup_pending?
@@ -185,10 +193,19 @@ module ExecutionRunners
     end
 
     def ledger_entries_for(request)
-      ExecutionResourceLedgerEntry.where(
-        runner_type: request.runner_type,
-        provider_resource_id: request.provider_resource_id
-      ).where.not(status: "deleted")
+      entries = ExecutionResourceLedgerEntry.where(runner_type: request.runner_type).where.not(status: "deleted")
+      entries.where(provider_resource_id: request.provider_resource_id).or(pre_created_entries_for(entries, request))
+    end
+
+    def pre_created_entries_for(entries, request)
+      intent = request.provisioning_intent
+      return entries.none unless intent
+
+      entries.where(
+        agent_run_id: intent.agent_run_id,
+        provider_resource_id: nil,
+        tags: intent.ownership_tags
+      )
     end
   end
 end

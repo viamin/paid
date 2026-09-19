@@ -83,6 +83,37 @@ RSpec.describe AppleVerification::Lifecycle do
     expect(ExecutionResourceLedgerEntry.last).to have_attributes(status: "deleted", provider_resource_id: "paid-vm-1")
   end
 
+  it "links and deletes the pre-created ledger entry after a post-clone crash" do
+    configure_reconciliation_runner
+    stub_cleanup_requests
+    intent, entry = create_post_clone_crash_records
+
+    expect { ExecutionRunners::ResourceReconciler.new.call }.to change(ExecutionResourceCleanup, :count).by(1)
+
+    expect(intent.reload).to have_attributes(status: "failed")
+    expect(entry.reload).to have_attributes(status: "deleted", provider_resource_id: "paid-vm-1")
+  end
+
+  def create_post_clone_crash_records
+    intent = create(:provisioning_intent,
+      agent_run:,
+      runner_type: "apple_tart",
+      resource_kind: "apple_vm",
+      request_id: "request-1",
+      provider_resource_id: "paid-vm-1",
+      status: "created")
+    intent.update!(ownership_tags: intent.ownership_tags.merge("paid.request_id" => intent.request_id))
+    entry = create(:execution_resource_ledger_entry,
+      account: agent_run.project.account,
+      project: agent_run.project,
+      agent_run:,
+      runner_type: "apple_tart",
+      backend: "tart",
+      resource_kind: "primary_environment",
+      tags: intent.ownership_tags)
+    [ intent, entry ]
+  end
+
   def stub_failed_lifecycle_requests
     allow(host).to receive(:call).with(
       version: "v1", operation: "clone", token: "host-token", payload: hash_including("image_id" => "paid-macos")
@@ -90,6 +121,15 @@ RSpec.describe AppleVerification::Lifecycle do
     allow(host).to receive(:call).with(
       version: "v1", operation: "start", token: "host-token", payload: hash_including("vm_id" => "paid-vm-1")
     ).and_raise(Timeout::Error)
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "destroy", token: "host-token", payload: hash_including("vm_id" => "paid-vm-1")
+    ).and_return("vm_id" => "paid-vm-1", "state" => "destroyed")
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "inventory", token: "host-token", payload: hash_including("ownership_tags")
+    ).and_return([])
+  end
+
+  def stub_cleanup_requests
     allow(host).to receive(:call).with(
       version: "v1", operation: "destroy", token: "host-token", payload: hash_including("vm_id" => "paid-vm-1")
     ).and_return("vm_id" => "paid-vm-1", "state" => "destroyed")
