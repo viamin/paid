@@ -75,22 +75,23 @@ module AppleVerification
       return "direct IP or invalid hostname" if AgentRuns::EgressPolicy::HostPattern.invalid_reason(host)
       return "alternate DNS is blocked" unless dns_server.to_s == self.dns_server
       return "proxy override is blocked" unless normalized_proxy_url(proxy_url) == self.proxy_url
-      return "destination is not allowed" unless allowed_destination?(host, port)
+      return "destination is not allowed" unless allowed_destination?(host, port, scheme)
 
       nil
     rescue ArgumentError
       "proxy override is blocked"
     end
 
-    def allowed_destination?(host, port)
+    def allowed_destination?(host, port, scheme)
       destinations.any? do |destination|
         AgentRuns::EgressPolicy::HostPattern.matches?(destination["host"], host) &&
-          (destination["port"].nil? || destination["port"].to_i == port.to_i)
+          (destination["port"].nil? || destination["port"].to_i == port.to_i) &&
+          (destination["scheme"].nil? || destination["scheme"] == scheme.to_s)
       end
     end
 
     def destinations
-      @destinations ||= snapshot.destinations.map { |destination| destination.stringify_keys.slice("host", "port", "source") }
+      @destinations ||= snapshot.destinations.map { |destination| destination.stringify_keys.slice("host", "port", "scheme", "source") }
     end
 
     def normalized_proxy_url(value)

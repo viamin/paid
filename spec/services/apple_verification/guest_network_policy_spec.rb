@@ -22,7 +22,7 @@ RSpec.describe AppleVerification::GuestNetworkPolicy do
     AgentRuns::EgressPolicy::Snapshot.new(
       mode: "proxy_restricted",
       destinations: [
-        { "host" => "packages.example.com", "port" => 443, "source" => "project_allowlist" },
+        { "host" => "packages.example.com", "port" => 443, "scheme" => "https", "source" => "project_allowlist" },
         { "host" => "*.swift.org", "port" => 443, "source" => "account_allowlist" }
       ],
       required_destinations: []
@@ -41,6 +41,7 @@ RSpec.describe AppleVerification::GuestNetworkPolicy do
         "protocols" => %w[http https]
       )
       expect(policy.contract.to_json).not_to match(/password|token|userinfo/i)
+      expect(policy.contract.fetch("destinations").first).to include("scheme" => "https")
     end
 
     it "rejects proxy credentials and query parameters" do
@@ -67,6 +68,12 @@ RSpec.describe AppleVerification::GuestNetworkPolicy do
   describe "#allow_request!" do
     it "allows an approved dependency domain through Paid DNS and proxy" do
       expect(policy.allow_request!(host: "download.swift.org", port: 443, scheme: "https", dns_server: "paid-dns.internal", proxy_url: "http://paid-egress-proxy.internal:3128")).to be(true)
+    end
+
+    it "rejects HTTP when the matching allowlist destination is HTTPS-only" do
+      expect {
+        policy.allow_request!(host: "packages.example.com", port: 443, scheme: "http", dns_server: "paid-dns.internal", proxy_url: "http://paid-egress-proxy.internal:3128")
+      }.to raise_error(AppleVerification::GuestNetworkPolicy::NetworkPolicyError, /destination is not allowed/)
     end
 
     it "rejects denied domains, direct IPs, alternate DNS, proxy overrides, and unsupported protocols" do
