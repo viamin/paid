@@ -6,6 +6,7 @@ module AppleVerification
   # @spec APPLE-WORKER-003
   class TartProvider
     PROVIDER_NAME = "tart"
+    REQUEST_ID_TAG = "paid.request_id"
 
     def initialize(tart:, softnet:, profiles:)
       @tart = tart
@@ -20,7 +21,9 @@ module AppleVerification
     end
 
     def clone(request_id:, image_id:, ownership_tags:)
-      idempotently("clone", request_id) { tart.clone(image_id:, ownership_tags:) }
+      idempotently("clone", request_id) do
+        clone_for_request(request_id:, image_id:, ownership_tags:)
+      end
     end
 
     def start(request_id:, vm_id:, profile_id:)
@@ -64,6 +67,18 @@ module AppleVerification
         key = [ operation, request_key ]
         responses.fetch(key) { responses[key] = yield }
       end
+    end
+
+    def clone_for_request(request_id:, image_id:, ownership_tags:)
+      existing_clone(request_id) || tart.clone(image_id:, ownership_tags: ownership_tags.merge(REQUEST_ID_TAG => request_id.to_s))
+    end
+
+    def existing_clone(request_id)
+      clones = tart.inventory(ownership_tags: { REQUEST_ID_TAG => request_id.to_s })
+      return if clones.empty?
+      return clones.first if clones.one?
+
+      raise ArgumentError, "Multiple Apple VMs exist for lifecycle request: #{request_id}"
     end
   end
 end

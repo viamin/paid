@@ -130,6 +130,10 @@ module ExecutionRunners
       runner.cleanup_resource(resource: resource_from_request(request), force: true)
       request.mark_completed!
       request.provisioning_intent&.mark_reconciled_cleanup!(cleanup_id: request.id)
+      mark_ledger_entries_deleted(request)
+    rescue StandardError => e
+      record_ledger_cleanup_failure(request, e)
+      raise
     end
 
     def resource_from_request(request)
@@ -164,6 +168,27 @@ module ExecutionRunners
       return if value.blank? || !value.to_s.match?(/\A\d+\z/)
 
       value.to_i
+    end
+
+    def mark_ledger_entries_deleted(request)
+      ledger_entries_for(request).find_each do |entry|
+        entry.request_cleanup! unless entry.cleanup_pending?
+        entry.mark_deleted!
+      end
+    end
+
+    def record_ledger_cleanup_failure(request, error)
+      ledger_entries_for(request).find_each do |entry|
+        entry.request_cleanup! unless entry.cleanup_pending?
+        entry.record_cleanup_failure!(error: error.message)
+      end
+    end
+
+    def ledger_entries_for(request)
+      ExecutionResourceLedgerEntry.where(
+        runner_type: request.runner_type,
+        provider_resource_id: request.provider_resource_id
+      ).where.not(status: "deleted")
     end
   end
 end

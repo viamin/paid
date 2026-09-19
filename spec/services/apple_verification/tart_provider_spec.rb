@@ -17,7 +17,9 @@ module TartProviderSpecSupport
 
     def clone(image_id:, ownership_tags:)
       @clones += 1
-      { "vm_id" => "paid-vm-#{clones}", "image_id" => image_id, "ownership_tags" => ownership_tags }
+      resource = { "vm_id" => "paid-vm-#{clones}", "image_id" => image_id, "tags" => ownership_tags }
+      resources << resource
+      resource
     end
 
     def start(vm_id:, cpu_cores:, memory_mib:, disk_gb:)
@@ -27,7 +29,13 @@ module TartProviderSpecSupport
     def inspect(vm_id:) = { "vm_id" => vm_id, "state" => "running" }
     def stop(vm_id:) = stopped << vm_id
     def destroy(vm_id:) = (@destroys += 1; destroyed << vm_id)
-    def inventory(ownership_tags:) = resources
+    def inventory(ownership_tags:)
+      resources.select { |resource| matching_tags?(resource, ownership_tags) }
+    end
+
+    def matching_tags?(resource, ownership_tags)
+      ownership_tags.all? { |key, value| resource.fetch("tags").fetch(key, nil) == value }
+    end
     def readiness = { "cpu" => {}, "memory" => {}, "disk" => {}, "images" => [], "network" => {}, "guest_connection" => {} }
   end
 
@@ -57,6 +65,20 @@ RSpec.describe AppleVerification::TartProvider do
     expect(second).to eq(first)
     expect(tart.clones).to eq(1)
     expect(softnet.configured).to eq([ [ first.fetch("vm_id"), "paid-egress" ] ])
+  end
+
+  it "rediscovers a clone by request ID after a host restart" do
+    first = provider.clone(request_id: "request-1", image_id: "paid-macos", ownership_tags: tags)
+    restarted_provider = described_class.new(
+      tart:, softnet:,
+      profiles: { "ios-standard" => { cpu_cores: 2, memory_mib: 4096, disk_gb: 40, network: "paid-egress" } }
+    )
+
+    second = restarted_provider.clone(request_id: "request-1", image_id: "paid-macos", ownership_tags: tags)
+
+    expect(second).to eq(first)
+    expect(tart.clones).to eq(1)
+    expect(first.fetch("tags")).to include("paid.request_id" => "request-1")
   end
 
   it "recovers stop and destroy after partial provisioning" do

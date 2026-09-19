@@ -26,6 +26,7 @@ RSpec.describe AppleVerification::Lifecycle do
     expect(ProvisioningIntent.last).to have_attributes(
       runner_type: "apple_tart", resource_kind: "apple_vm", request_id: "request-1", status: "linked"
     )
+    expect(ProvisioningIntent.last.ownership_tags).to include("paid.request_id" => "request-1")
     expect(ExecutionResourceLedgerEntry.last).to have_attributes(backend: "tart", status: "active", provider_resource_id: "paid-vm-1")
   end
 
@@ -79,6 +80,7 @@ RSpec.describe AppleVerification::Lifecycle do
     expect(ProvisioningIntent.last).to have_attributes(status: "created", provider_resource_id: "paid-vm-1")
     expect { ExecutionRunners::ResourceReconciler.new.call }.to change(ExecutionResourceCleanup, :count).by(1)
     expect(ProvisioningIntent.last).to have_attributes(status: "failed")
+    expect(ExecutionResourceLedgerEntry.last).to have_attributes(status: "deleted", provider_resource_id: "paid-vm-1")
   end
 
   def stub_failed_lifecycle_requests

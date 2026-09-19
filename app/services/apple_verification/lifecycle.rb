@@ -21,16 +21,18 @@ module AppleVerification
       intent = find_or_record_intent(ledger:, agent_run:, request_id:)
       return ExecutionRunners::RunnerHandle.from_json(intent.runner_handle) if intent.linked?
 
-      tags = intent.ownership_tags
+      tags = ownership_tags_for(intent)
       entry = resource_entry_for(agent_run:, tags:)
       clone = request("clone", "request_id" => request_id, "image_id" => image_id, "ownership_tags" => tags)
       ledger.link_created(intent, provider_resource_id: clone.fetch("vm_id"), host: nil)
+      entry.update!(provider_resource_id: clone.fetch("vm_id"))
       started = request("start", "request_id" => "#{request_id}:start", "vm_id" => clone.fetch("vm_id"), "profile_id" => profile_id)
       handle = handle_for(vm_id: clone.fetch("vm_id"), response: started)
       ledger.link_handle(intent, handle)
       entry.activate!(provider_resource_id: handle.identifier, runner_handle: handle.to_storage)
       handle
     rescue StandardError
+      entry&.request_cleanup! if entry&.provider_resource_id.present?
       ledger&.mark_failed(intent) if intent&.pending?
       raise
     end
@@ -77,6 +79,14 @@ module AppleVerification
           backend: TartProvider::PROVIDER_NAME, resource_kind: "primary_environment", tags:, runner_handle: {}, status: "provisioning"
         )
       end
+    end
+
+    def ownership_tags_for(intent)
+      tags = intent.ownership_tags.merge(TartProvider::REQUEST_ID_TAG => intent.request_id)
+      return tags if intent.ownership_tags == tags
+
+      intent.update!(ownership_tags: tags)
+      tags
     end
 
     def request(operation, payload)
