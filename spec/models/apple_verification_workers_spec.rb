@@ -21,6 +21,13 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(profile.errors[:base]).to include("worker profile constraints are immutable")
   end
 
+  it "requires a profile creator to belong to its account" do # @spec APPLE-WORKER-001
+    profile = build(:apple_worker_profile, created_by: create(:user, account: create(:account)))
+
+    expect(profile).not_to be_valid
+    expect(profile.errors[:created_by]).to include("must belong to the profile account")
+  end
+
   it "rejects persisted profiles with unsupported capabilities or platforms" do # @spec APPLE-WORKER-001
     unsupported_capability = build(:apple_worker_profile, capabilities: { "capabilities" => [ "shell" ] })
     unsupported_platform = build(:apple_worker_profile, constraints: { "platforms" => [ "windows" ], "xcode_version" => ">= 26.0" })

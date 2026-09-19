@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CreateAppleVerificationWorkers < ActiveRecord::Migration[8.1]
-  def change
+  def up
     unless column_exists?(:projects, :apple_verification_mode)
       add_column :projects, :apple_verification_mode, :string, null: false, default: "off", comment: "Apple verification scheduling mode: off, on_demand, or automatic."
     end
@@ -97,5 +97,17 @@ class CreateAppleVerificationWorkers < ActiveRecord::Migration[8.1]
     unless check_constraint_exists?(:apple_verification_waivers, name: "chk_apple_waivers_gate")
       add_check_constraint :apple_verification_waivers, "lifecycle_gate IN ('agent_iteration', 'completion_verification', 'pull_request_verification')", name: "chk_apple_waivers_gate"
     end
+  end
+
+  def down
+    drop_table :apple_verification_waivers if table_exists?(:apple_verification_waivers)
+    drop_table :apple_verification_attempts if table_exists?(:apple_verification_attempts)
+    drop_table :apple_verification_workflow_revisions if table_exists?(:apple_verification_workflow_revisions)
+    drop_table :apple_worker_profiles if table_exists?(:apple_worker_profiles)
+
+    if check_constraint_exists?(:projects, name: "chk_projects_apple_verification_mode")
+      remove_check_constraint :projects, name: "chk_projects_apple_verification_mode"
+    end
+    remove_column :projects, :apple_verification_mode if column_exists?(:projects, :apple_verification_mode)
   end
 end
