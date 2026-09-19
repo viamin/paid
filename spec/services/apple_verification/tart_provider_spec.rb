@@ -93,14 +93,17 @@ RSpec.describe AppleVerification::TartProvider do
     expect(tart.destroys).to eq(1)
   end
 
-  it "normalizes Paid-owned inventory for reconciliation" do
-    tart.resources = [ { "vm_id" => "paid-vm-9", "tags" => tags, "state" => "running" } ]
+  it "returns Paid-owned inventory as host-service wire records" do
+    tart.resources = [ { "vm_id" => "paid-vm-9", "tags" => tags, "state" => "running", "image_id" => "paid-macos" } ]
 
     resources = provider.inventory(ownership_tags: { "paid.run_id" => "7" })
 
-    expect(resources.first).to be_a(ExecutionRunners::ManagedResource)
-    expect(resources.first.identifier).to eq("paid-vm-9")
-    expect(resources.first.ownership_tags).to include("paid.run_id" => "7")
+    expect(resources).to eq([ {
+      "vm_id" => "paid-vm-9",
+      "tags" => tags,
+      "state" => "running",
+      "image_id" => "paid-macos"
+    } ])
   end
 
   def tags = { "paid.run_id" => "7", "paid.resource" => "apple_vm" }

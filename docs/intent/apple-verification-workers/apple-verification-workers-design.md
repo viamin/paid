@@ -14,8 +14,9 @@ idempotency key scoped to its agent run, and leaves a created intent
 reconcileable if a later lifecycle step fails. Each Rails process builds the
 Apple cleanup adapter from `APPLE_VERIFICATION_HOST_URL` and
 `APPLE_VERIFICATION_HOST_TOKEN` during boot, so the durable cleanup queue can
-recover a VM after the original request process exits. Inventory is normalized
-to `ExecutionRunners::ManagedResource` for normal reconciliation.
+recover a VM after the original request process exits. The host boundary returns
+plain inventory records; `AppleVerification::TartRunner` normalizes them to
+`ExecutionRunners::ManagedResource` for normal reconciliation.
 
 The `apple_verification_workers` feature flag remains default-off. This phase
 does not schedule project verification or execute guest jobs.

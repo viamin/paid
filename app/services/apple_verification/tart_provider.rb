@@ -48,10 +48,12 @@ module AppleVerification
 
     def inventory(ownership_tags:)
       tart.inventory(ownership_tags:).map do |resource|
-        ExecutionRunners::ManagedResource.new(
-          runner_type: :apple_tart, resource_kind: "apple_vm", identifier: resource.fetch("vm_id"), host: nil,
-          ownership_tags: resource.fetch("tags", {}), metadata: resource.slice("state", "image_id")
-        )
+        {
+          "vm_id" => resource.fetch("vm_id"),
+          "tags" => resource.fetch("tags", {}),
+          "state" => resource["state"],
+          "image_id" => resource["image_id"]
+        }
       end
     end
 
