@@ -42,6 +42,7 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def retry!
     raise InvalidTransitionError, "cannot rerun a disabled workflow revision" if workflow_revision.disabled?
+    raise InvalidTransitionError, "on-demand verification is not enabled for this project" unless project.apple_verification_on_demand?
 
     project.apple_verification_attempts.create!(workflow_revision:, retry_of: self, queue_position:)
   end

@@ -74,7 +74,8 @@ RSpec.describe AppleVerificationAttempt do
     end
 
     it "queues a retry attempt for the same workflow revision" do # @spec APPLE-VERIFY-003
-      attempt = create(:apple_verification_attempt, state: "failed")
+      project = create(:project, apple_verification_settings: { "mode" => "on_demand" })
+      attempt = create(:apple_verification_attempt, project:, state: "failed")
 
       retry_attempt = attempt.retry!
 
@@ -82,11 +83,22 @@ RSpec.describe AppleVerificationAttempt do
     end
 
     it "refuses to retry a disabled workflow revision" do # @spec APPLE-VERIFY-003
-      revision = create(:apple_verification_workflow_revision, state: "disabled")
-      attempt = create(:apple_verification_attempt, project: revision.project, workflow_revision: revision, state: "failed")
+      project = create(:project, apple_verification_settings: { "mode" => "on_demand" })
+      revision = create(:apple_verification_workflow_revision, project:, state: "disabled")
+      attempt = create(:apple_verification_attempt, project:, workflow_revision: revision, state: "failed")
 
       expect { attempt.retry! }
         .to raise_error(described_class::InvalidTransitionError, "cannot rerun a disabled workflow revision")
+
+      expect(described_class.count).to eq(1)
+    end
+
+    it "refuses to retry when the project has not enabled on-demand verification" do # @spec APPLE-VERIFY-003
+      project = create(:project, apple_verification_settings: { "mode" => "off" })
+      attempt = create(:apple_verification_attempt, project:, state: "failed")
+
+      expect { attempt.retry! }
+        .to raise_error(described_class::InvalidTransitionError, "on-demand verification is not enabled for this project")
 
       expect(described_class.count).to eq(1)
     end
