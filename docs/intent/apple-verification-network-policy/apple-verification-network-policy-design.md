@@ -32,6 +32,12 @@ The contract is deliberately declarative. Tart/Softnet or a later provider
 implements the transport mechanics, while policy resolution and the safe
 manifest stay provider-neutral.
 
+`AppleVerification::GuestLauncher` is the admission boundary for this
+sequence. It resolves the snapshot and passes the resulting contract as the
+required `network_contract` argument to an `AppleVerification::GuestProvider`;
+resolution or contract construction failure therefore prevents provider
+startup.
+
 ## Decisions and audit
 
 The contract matches exact and leading-wildcard hosts from the persisted
