@@ -20,11 +20,12 @@ class AppleVerificationAttempt < ApplicationRecord
   def running? = state == "running"
   def passed? = state == "passed"
   def failed? = state == "failed"
+  def cancelled? = state == "cancelled"
   def waived? = state == "waived"
 
   def cancel!
     transition!("only queued or running attempts can be cancelled") do
-      update!(state: "cancelled", failure_class: "cancellation", cancelled_at: Time.current) if queued? || running?
+      AppleVerificationAttempts::Cancel.call(attempt: self) if queued? || running?
     end
   end
 
@@ -36,7 +37,7 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def record_retained_vm_destruction!
     transition!("only failed attempts can have retained VMs destroyed") do
-      update!(retained_vm_destroyed_at: Time.current) if failed? && retained_vm_destroyed_at.nil?
+      AppleVerificationAttempts::DestroyRetainedWorker.call(attempt: self) if failed? && retained_vm_destroyed_at.nil?
     end
   end
 
@@ -44,7 +45,17 @@ class AppleVerificationAttempt < ApplicationRecord
     raise InvalidTransitionError, "cannot rerun a disabled workflow revision" if workflow_revision.disabled?
     raise InvalidTransitionError, "on-demand verification is not enabled for this project" unless project.apple_verification_on_demand?
 
-    project.apple_verification_attempts.create!(workflow_revision:, retry_of: self, queue_position:)
+    project.apple_verification_attempts.create!(workflow_revision:, retry_of: self, queue_position:).tap do |attempt|
+      AppleVerificationAttemptDispatchJob.perform_later(attempt.id)
+    end
+  end
+
+  def mark_cancelled!
+    update!(state: "cancelled", failure_class: "cancellation", cancelled_at: Time.current)
+  end
+
+  def mark_retained_vm_destroyed!
+    update!(retained_vm_destroyed_at: Time.current)
   end
 
   def required?

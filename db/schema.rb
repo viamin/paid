@@ -425,9 +425,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.datetime "retained_vm_destroyed_at"
     t.bigint "retry_of_id"
     t.string "state", default: "queued", null: false
+    t.string "temporal_workflow_id", comment: "Durable worker workflow owning this attempt."
     t.datetime "updated_at", null: false
     t.bigint "waived_by_id"
     t.text "waiver_reason"
+    t.jsonb "worker_handle", default: {}, null: false, comment: "Opaque provider handle used for worker lifecycle control."
     t.bigint "workflow_revision_id", null: false
     t.index ["project_id", "state", "created_at"], name: "index_apple_attempts_on_project_state_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
