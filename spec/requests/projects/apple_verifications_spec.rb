@@ -27,6 +27,14 @@ RSpec.describe "Projects::AppleVerifications" do
       expect(response).to redirect_to(project_apple_verification_path(project))
       expect(project.reload.apple_verification_settings).to eq({ "mode" => "on_demand", "profiles" => [ "ios" ] })
     end
+
+    it "reports an invalid verification mode" do # @spec APPLE-VERIFY-001
+      patch project_apple_verification_path(project), params: { project: { mode: "unsupported" } }
+
+      expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(flash[:alert]).to include("mode must be one of off, on_demand, automatic")
+      expect(project.reload.apple_verification_settings).to eq({ "mode" => "off", "profiles" => [ "ios" ] })
+    end
   end
 
   describe "project administrator lifecycle controls" do
