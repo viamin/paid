@@ -8,6 +8,13 @@ class FeatureFlags
   InvalidPercentageError = Class.new(ArgumentError)
 
   DEFINITIONS = {
+    apple_verification_workers: Definition.new(
+      name: :apple_verification_workers,
+      owner: "apple-verification",
+      intent: "Gate RDR-068 Apple verification project controls and worker scheduling.",
+      rollout_plan: "Default-off; enable selected pilot projects only after worker, proxy, and isolation checks pass.",
+      cleanup_criteria: "Remove after RDR-068 closeout approves broad enablement."
+    ),
     context_intake_agent_questions: Definition.new(
       name: :context_intake_agent_questions,
       owner: "context-intake",
