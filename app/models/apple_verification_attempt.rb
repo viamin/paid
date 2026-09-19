@@ -22,6 +22,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validates :retry_number, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :ownership_matches_workflow
   validate :profile_matches_workflow
+  validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
 
   def terminal?
@@ -41,6 +42,12 @@ class AppleVerificationAttempt < ApplicationRecord
     return unless apple_verification_workflow_revision
 
     errors.add(:apple_worker_profile, "must match the workflow profile") if apple_worker_profile_id != apple_verification_workflow_revision.apple_worker_profile_id
+  end
+
+  def lifecycle_gate_matches_workflow
+    return unless apple_verification_workflow_revision
+
+    errors.add(:lifecycle_gate, "must match the workflow gate") if lifecycle_gate != apple_verification_workflow_revision.lifecycle_gate
   end
 
   def agent_run_matches_project

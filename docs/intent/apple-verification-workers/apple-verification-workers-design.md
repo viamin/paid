@@ -17,8 +17,8 @@ records its committed digest, verification-file references, worker profile,
 lifecycle gate, and required/advisory checks. Only an approved revision is
 eligible to enforce a gate; a project administrator's serialized approval
 supersedes the prior approved revision without mutating it, leaving at most one
-approved revision per project. Attempts bind the approved revision and exact
-source.
+approved revision per project. Attempts bind the approved revision, its profile
+and lifecycle gate, and exact source.
 
 Waivers are one-attempt records with a project-administrator actor, reason,
 expiry, source, revision, gate, and check identities. Execution audit events
