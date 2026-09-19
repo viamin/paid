@@ -38,6 +38,7 @@ module OrchestrationStrategies
           },
           "paid_agent" => {
             "enabled" => false,
+            "independent_verification" => false,
             "termination" => {
               "max_review_rounds" => 15,
               "max_review_goal_retries" => 3,

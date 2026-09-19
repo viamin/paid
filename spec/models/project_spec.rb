@@ -1410,6 +1410,49 @@ RSpec.describe Project do
       end
     end
 
+    describe "#paid_agent_independent_verification?" do
+      # @spec REVIEW-VERIFY-001
+      it "returns false by default" do
+        expect(build(:project).paid_agent_independent_verification?).to be false
+      end
+
+      # @spec REVIEW-VERIFY-001
+      it "returns true when the pilot flag is set on an enabled paid_agent method" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true, "independent_verification" => true } }
+        })
+
+        expect(project.paid_agent_independent_verification?).to be true
+      end
+    end
+
+    describe "independent_verification validation" do
+      # @spec REVIEW-VERIFY-001
+      it "rejects the pilot flag when paid_agent is disabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => false, "independent_verification" => true } }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings]).to include(
+          "paid_agent independent_verification requires paid_agent to be enabled"
+        )
+      end
+
+      # @spec REVIEW-VERIFY-001
+      it "accepts the pilot flag when paid_agent is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true, "independent_verification" => true } }
+        })
+
+        project.valid?
+        expect(project.errors[:review_settings]).to be_empty
+      end
+    end
+
     describe "#review_method_enabled?" do
       it "returns false by default" do
         project = build(:project)

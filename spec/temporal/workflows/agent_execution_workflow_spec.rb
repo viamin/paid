@@ -554,6 +554,59 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
   end
 
+  describe "review goal independent verification pilot" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "review", source_pull_request_number: 42 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    def stub_pilot_activities(pipeline)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::ResolveReviewPipelineActivity" then { pipeline: pipeline }
+        when "Activities::RunVerifiedReviewActivity" then { agent_run_id: 42, outcome: "posted_findings" }
+        when "Activities::CompleteReviewGoalActivity" then { agent_run_id: 42, success: true }
+        when "Activities::RunAgentActivity" then { success: true }
+        else {}
+        end
+      end
+    end
+
+    # @spec REVIEW-VERIFY-001
+    it "runs the verified pipeline instead of the container agent when selected" do
+      stub_pilot_activities("verified")
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RunVerifiedReviewActivity, { agent_run_id: 42 },
+              hash_including(retry_policy: described_class::NO_RETRY))
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteReviewGoalActivity, { agent_run_id: 42 },
+              timeout: 30, retry_policy: described_class::NO_RETRY)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ProvisionContainerActivity, anything, anything)
+    end
+
+    # @spec REVIEW-VERIFY-001
+    it "keeps the container reviewer when the pilot is not selected" do
+      stub_pilot_activities("container")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RunVerifiedReviewActivity, anything, anything)
+    end
+  end
+
   describe "RUN_AGENT_RETRY_POLICY" do
     it "allows 2 attempts for infrastructure-level recovery" do
       policy = described_class::RUN_AGENT_RETRY_POLICY

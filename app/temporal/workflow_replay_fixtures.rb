@@ -117,6 +117,8 @@ module WorkflowReplayFixtures
         "CleanupWorktreeActivity" => ->(_input) { {} },
         "CloneRepoActivity" => ->(_input) { {} },
         "CompleteReviewGoalActivity" => ->(input) { { agent_run_id: input_value(input, :agent_run_id), success: true } },
+        "ResolveReviewPipelineActivity" => ->(_input) { { pipeline: "container" } },
+        "RunVerifiedReviewActivity" => ->(input) { { agent_run_id: input_value(input, :agent_run_id), outcome: "posted_findings" } },
         "DraftDecisionRecordActivity" => ->(_input) { {} },
         "CreateAgentRunActivity" => lambda { |input|
           @agent_run_id += 1
