@@ -6,9 +6,13 @@
   credential-free guest enforcement contract only when
   `apple_verification_workers` is enabled for the project.
   *Tests:* `spec/services/apple_verification/guest_network_policy_spec.rb`,
-  `spec/services/apple_verification/guest_launcher_spec.rb`
+  `spec/services/apple_verification/guest_launcher_spec.rb`,
+  `spec/services/apple_verification/start_guest_spec.rb`,
+  `spec/services/apple_verification/tart_provider_spec.rb`
   *Code:* `AppleVerification::GuestNetworkPolicy`,
-  `AppleVerification::GuestLauncher`, `AppleVerification::GuestProvider`
+  `AppleVerification::StartGuest`, `AppleVerification::GuestLauncher`,
+  `AppleVerification::TartProvider`, `AppleVerification::HostService`,
+  `AppleVerification::GuestProvider`
 
 - [x] **APPLE-NETWORK-002** — The guest contract SHALL require Paid DNS and
   Paid proxy routing, deny a direct external route and host services, and

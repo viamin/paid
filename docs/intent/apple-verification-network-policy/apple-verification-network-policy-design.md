@@ -32,10 +32,12 @@ The contract is deliberately declarative. Tart/Softnet or a later provider
 implements the transport mechanics, while policy resolution and the safe
 manifest stay provider-neutral.
 
-`AppleVerification::GuestLauncher` is the admission boundary for this
-sequence. It resolves the snapshot and passes the resulting contract as the
-required `network_contract` argument to an `AppleVerification::GuestProvider`;
-resolution or contract construction failure therefore prevents provider
+`AppleVerification::StartGuest` is the Apple verification control-plane entry
+point. It always routes guest startup through `AppleVerification::GuestLauncher`,
+which resolves the snapshot and passes the resulting contract to the concrete
+`AppleVerification::TartProvider`. The provider sends that contract to the
+narrow host-service start operation, which installs it before booting the VM.
+Resolution or contract construction failure therefore prevents host-service
 startup.
 
 ## Decisions and audit
