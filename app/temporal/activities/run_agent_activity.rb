@@ -974,8 +974,7 @@ module Activities
       cache_key = [ user&.id, agent_run&.id, resolution_runner_cache_key(runner_candidate), tier ]
       return @resolved_tier_model_cache[cache_key] if @resolved_tier_model_cache.key?(cache_key)
 
-      runner_entry = runner_entry_for(runner_candidate, user)
-      resolution_runner = runner_entry || Runner.new(runner_key: RunnerSupport.runner_key_for_agent_type(runner_candidate))
+      resolution_runner = resolved_runner_for(runner_candidate, user)
       resolved = Runners::ResolveTierModel.call(
         runner: resolution_runner,
         tier: tier,
@@ -1010,11 +1009,22 @@ module Activities
     end
 
     def configured_mid_tier_for(runner_candidate, user)
-      entry = runner_entry_for(runner_candidate, user)
-      entry ||= Runner.for_identifier(user, RunnerSupport.runner_key_for_agent_type(runner_candidate)) if user
-      return unless entry&.tier_model_ids&.dig("mid").present? || entry&.tier_models&.dig("mid").present?
+      entry = resolved_runner_for(runner_candidate, user)
+      return unless entry.persisted? && (entry.tier_model_ids&.dig("mid").present? || entry.tier_models&.dig("mid").present?)
 
       "mid"
+    end
+
+    # Resolves the persisted Runner record for a candidate, falling back from a
+    # non-routing-key identifier (e.g. bare "codex") to a lookup by runner_key so
+    # a user's configured tier_model_ids are used instead of an unconfigured
+    # in-memory Runner.new placeholder. Falls back to that placeholder only when
+    # no persisted Runner exists.
+    def resolved_runner_for(runner_candidate, user)
+      runner_key = RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      runner_entry_for(runner_candidate, user) ||
+        (user && Runner.for_identifier(user, runner_key)) ||
+        Runner.new(runner_key: runner_key)
     end
 
     def resolution_runner_cache_key(runner_candidate)

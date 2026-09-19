@@ -1193,6 +1193,20 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     # @spec RUNNER-FALLBACK-002
+    it "uses the user's configured mid-tier model for a bare runner key when it differs from the catalog default" do
+      configured_model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid", capability_score: 3.0)
+      catalog_default_model = create(:llm_model, :openai, model_id: "gpt-5.4", tier: "mid", capability_score: 9.0)
+      create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => configured_model.model_id })
+      expect(agent_run.model_selection).to be_nil
+
+      resolved = activity.send(:resolve_tier_model_for, "codex", agent_run, user)
+
+      expect(resolved.model_id).to eq(configured_model.model_id)
+      expect(resolved.model_id).not_to eq(catalog_default_model.model_id)
+    end
+
+    # @spec RUNNER-FALLBACK-002
     context "when recovering a missing model selection" do
       let(:recovery_runner) do
         model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
@@ -1263,6 +1277,33 @@ RSpec.describe Activities::RunAgentActivity do
       2.times do
         expect(activity.send(:runner_entry_for, runner.routing_key, user)).to eq(runner)
       end
+    end
+  end
+
+  describe "#resolved_runner_for" do
+    # @spec RUNNER-FALLBACK-002
+    it "resolves the persisted runner record, with its tier_model_ids, for a bare non-routing-key candidate" do
+      # Regression: runner_entry_for(runner_candidate, user) only resolves Runner
+      # instances and routing keys (e.g. "codex:42") — it returns nil for a bare
+      # runner_key like "codex". Model-selection recovery falls back to that bare
+      # key, so resolution must look the persisted runner up by runner_key
+      # instead of building a blank in-memory Runner.new placeholder, or a
+      # user's configured tier_model_ids are silently dropped.
+      model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+
+      resolved = activity.send(:resolved_runner_for, "codex", user)
+
+      expect(resolved).to eq(runner)
+      expect(resolved.tier_model_ids["mid"]).to eq(model.model_id)
+    end
+
+    it "falls back to an in-memory placeholder when the user has no matching runner" do
+      resolved = activity.send(:resolved_runner_for, "codex", user)
+
+      expect(resolved).not_to be_persisted
+      expect(resolved.runner_key).to eq("codex")
     end
   end
 
