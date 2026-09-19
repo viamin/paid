@@ -2,6 +2,8 @@
 
 # @spec APPLE-VERIFY-003
 class AppleVerificationAttempt < ApplicationRecord
+  class InvalidTransitionError < StandardError; end
+
   STATES = %w[queued running passed failed cancelled waived].freeze
   FAILURE_CLASSES = %w[project compile test launch capture policy capacity infrastructure timeout cancellation].freeze
   belongs_to :project
@@ -13,7 +15,45 @@ class AppleVerificationAttempt < ApplicationRecord
   validates :state, inclusion: { in: STATES }
   validates :failure_class, inclusion: { in: FAILURE_CLASSES }, allow_nil: true
   validates :waiver_reason, presence: true, if: :waived?
+
   def queued? = state == "queued"
   def running? = state == "running"
+  def failed? = state == "failed"
   def waived? = state == "waived"
+
+  def cancel!
+    transition!("only queued or running attempts can be cancelled") do
+      update!(state: "cancelled", failure_class: "cancellation", cancelled_at: Time.current) if queued? || running?
+    end
+  end
+
+  def waive!(user, reason)
+    transition!("only failed required attempts can be waived") do
+      update!(state: "waived", waived_by: user, waiver_reason: reason) if failed? && required?
+    end
+  end
+
+  def record_retained_vm_destruction!
+    transition!("only failed attempts can have retained VMs destroyed") do
+      update!(retained_vm_destroyed_at: Time.current) if failed? && retained_vm_destroyed_at.nil?
+    end
+  end
+
+  def required?
+    workflow_revision.approved? && required_checks?
+  end
+
+  private
+
+  def transition!(error_message)
+    with_lock do
+      reload
+      raise InvalidTransitionError, error_message unless yield
+    end
+  end
+
+  def required_checks?
+    checks = workflow_revision.checks
+    checks.dig("tests", "required") == true || Array(checks["captures"]).any? { _1["required"] == true }
+  end
 end

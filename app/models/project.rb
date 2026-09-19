@@ -688,6 +688,11 @@ class Project < ApplicationRecord
     apple_verification_settings.fetch("mode", "off")
   end
 
+  # @spec APPLE-VERIFY-003
+  def apple_verification_on_demand?
+    apple_verification_mode.in?(%w[on_demand automatic])
+  end
+
   def effective_interop_settings
     return @effective_interop_settings if defined?(@effective_interop_settings) && @effective_interop_settings
 

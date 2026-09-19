@@ -6,6 +6,7 @@ FactoryBot.define do
     profile_name { "ios-app" }
     source_digest { "sha256:workflow" }
     lifecycle_gate { "completion_verification" }
+    checks { { "tests" => { "required" => true } } }
     referenced_files { [ ".paid/apple-verification.yml" ] }
 
     trait :approved do

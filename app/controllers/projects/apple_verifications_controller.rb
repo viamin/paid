@@ -22,10 +22,13 @@ module Projects
       authorize @project, :update?
       revision.approve!(current_user)
       redirect_to project_apple_verification_path(@project), notice: "Workflow revision approved."
+    rescue AppleVerificationWorkflowRevision::InvalidTransitionError => e
+      redirect_to project_apple_verification_path(@project), alert: e.message
     end
 
     def rerun
       authorize @project, :run_agent?
+      require_on_demand_execution
       source = attempt
       @project.apple_verification_attempts.create!(workflow_revision: source.workflow_revision, retry_of: source, queue_position: source.queue_position)
       redirect_to project_apple_verification_path(@project), notice: "Verification rerun queued."
@@ -33,20 +36,26 @@ module Projects
 
     def cancel
       authorize @project, :run_agent?
-      attempt.update!(state: "cancelled", failure_class: "cancellation", cancelled_at: Time.current)
+      attempt.cancel!
       redirect_to project_apple_verification_path(@project), notice: "Verification cancelled."
+    rescue AppleVerificationAttempt::InvalidTransitionError => e
+      redirect_to project_apple_verification_path(@project), alert: e.message
     end
 
     def waive
       authorize @project, :update?
-      attempt.update!(state: "waived", waived_by: current_user, waiver_reason: params.require(:reason))
+      attempt.waive!(current_user, params.require(:reason))
       redirect_to project_apple_verification_path(@project), notice: "Attempt waived."
+    rescue AppleVerificationAttempt::InvalidTransitionError => e
+      redirect_to project_apple_verification_path(@project), alert: e.message
     end
 
     def destroy_retained_vm
       authorize @project, :update?
-      attempt.update!(retained_vm_destroyed_at: Time.current)
+      attempt.record_retained_vm_destruction!
       redirect_to project_apple_verification_path(@project), notice: "Retained VM destruction recorded."
+    rescue AppleVerificationAttempt::InvalidTransitionError => e
+      redirect_to project_apple_verification_path(@project), alert: e.message
     end
 
     private
@@ -57,6 +66,12 @@ module Projects
 
     def require_feature
       return if FeatureFlags.enabled?(:apple_verification_workers, project: @project)
+
+      raise Pundit::NotAuthorizedError
+    end
+
+    def require_on_demand_execution
+      return if @project.apple_verification_on_demand?
 
       raise Pundit::NotAuthorizedError
     end
