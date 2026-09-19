@@ -36,7 +36,12 @@
 
   <% if can_manage_workspace %>
     <div class="mt-2 sm:mt-4 <%= "hidden" unless chat_session.container_ready? %>" data-chat-capability-ready-only="true">
-      <%= form_with url: clone_project_chat_session_path(chat_session), method: :post, class: "flex flex-col gap-2 sm:flex-row sm:items-end" do |form| %>
+      <%# Keep the clone controls on one line at every breakpoint. On the
+          viewport-bound mobile chat page, stacking these controls consumes
+          enough of the open Workspace disclosure to violate the transcript's
+          18rem floor. The select can shrink while the submit control remains
+          reachable. (@spec CHAT-API-009) %>
+      <%= form_with url: clone_project_chat_session_path(chat_session), method: :post, class: "flex items-end gap-2" do |form| %>
         <div class="min-w-0 flex-1">
           <%= form.label :project_id, "Clone another project", for: "project_id#{dom_id_suffix}", class: "block text-xs font-medium text-gray-600" %>
           <%= form.select :project_id,
@@ -46,7 +51,7 @@
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <%= form.submit "Clone into workspace",
-                        class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-100" %>
+                        class: "inline-flex shrink-0 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-100" %>
       <% end %>
     </div>
   <% end %>

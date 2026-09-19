@@ -528,6 +528,13 @@ RSpec.describe "ChatSessions" do
         expect(mobile_capability_panel["class"].split).to include("p-3", "sm:p-4")
         expect(mobile_capability_panel.at_css("[data-chat-capability-ready-only='true']")["class"].split).to include("mt-2", "sm:mt-4")
 
+        # The open Workspace disclosure retains its recovery controls on
+        # mobile, but its clone controls must not stack and steal the
+        # transcript's guaranteed 18rem of height.
+        clone_form = mobile_capability_panel.at_css("form[action$='/clone_project']")
+        expect(clone_form["class"].split).to include("flex", "items-end", "gap-2")
+        expect(clone_form["class"].split).not_to include("flex-col")
+
         expect(desktop_header["class"].split).to include("hidden", "xl:block")
       end
 
