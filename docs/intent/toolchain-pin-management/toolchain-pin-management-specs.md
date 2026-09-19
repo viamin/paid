@@ -107,8 +107,10 @@
 
 - [x] **TOOLCHAIN-PIN-032** — When a newer `agent-harness` release exists,
   `bin/update` SHALL update the gem's version pin, because the gem dependency
-  is the only lever Paid controls over contract-owned versions. Because the pin
-  is an exact version that `bundle update` cannot move, a run that already owns
+  is the only lever Paid controls over contract-owned versions. The version pin
+  MAY carry an immutable upstream git ref for a verified unreleased correction;
+  the pin parser SHALL still recognize its release version. Because a version
+  pin cannot be moved by a plain `bundle update`, a run that already owns
   the lockfile SHALL reinstall so `Gemfile.lock` does not trail the rewritten
   pin; a run that does not SHALL report that reinstall as the next step.
   *Tests:* `spec/config/toolchain_pins_spec.rb`.
