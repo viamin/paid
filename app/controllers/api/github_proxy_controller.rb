@@ -8,7 +8,7 @@ module Api
     # Review-body marker is owned by Github::ReviewMarker so the injection here
     # and the reconciliation consumer can't drift apart.
     REVIEW_COMMENT_MARKER = Github::ReviewMarker::PAID_REVIEW_MARKER
-    REVIEW_HEADER = "## Code Review"
+    REVIEW_HEADER = Github::ReviewMarker::REVIEW_HEADER
     STALE_REVIEW_DISMISSAL_MESSAGE = "Subsequent review found no remaining actionable issues."
     PENDING_REVIEW_ERROR_PATTERN = /one pending review per pull request/i
     GITHUB_ERROR_BODY_LOG_LIMIT = 2_000
