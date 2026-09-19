@@ -55,6 +55,14 @@ Simulator screen; macOS uses an application window. Structured results identify
 launch, readiness, action, selection, or export failure instead of collapsing
 them into a generic capture error.
 
+## Control-plane dispatch
+
+`AppleVerification::ExecuteGuestJob` is the gated control-plane entry point for
+a submitted guest manifest. It refuses work unless the project has the
+`apple_verification_workers` rollout enabled, selects an active image belonging
+to the project's account, and dispatches the manifest through the closed guest
+executor vocabulary. An account with no active image cannot dispatch work.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternative rejected |
