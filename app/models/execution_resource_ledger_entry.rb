@@ -62,7 +62,7 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
   belongs_to :agent_run, optional: true
   belongs_to :apple_verification_attempt, optional: true
 
-  before_validation :assign_account_from_project
+  before_validation :assign_ownership_from_project_or_apple_verification_attempt
   before_validation :normalize_tags_and_handle
 
   validates :project, presence: true, on: :create
@@ -180,8 +180,9 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
 
   private
 
-  def assign_account_from_project
-    self.account ||= project&.account
+  def assign_ownership_from_project_or_apple_verification_attempt
+    self.project ||= apple_verification_attempt&.project
+    self.account ||= project&.account || apple_verification_attempt&.account
   end
 
   def normalize_tags_and_handle
@@ -212,9 +213,11 @@ class ExecutionResourceLedgerEntry < ApplicationRecord
   end
 
   def project_matches_apple_verification_attempt
-    return unless project && apple_verification_attempt
+    return unless apple_verification_attempt
 
-    errors.add(:project, "must match the Apple verification attempt's project") if project_id != apple_verification_attempt.project_id
+    if project && project_id != apple_verification_attempt.project_id
+      errors.add(:project, "must match the Apple verification attempt's project")
+    end
     errors.add(:account, "must match the Apple verification attempt's account") if account_id != apple_verification_attempt.account_id
   end
 
