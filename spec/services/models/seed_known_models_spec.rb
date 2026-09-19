@@ -16,6 +16,15 @@ RSpec.describe Models::SeedKnownModels do
       expect { described_class.call }.to change(LlmModel, :count).by(described_class::KNOWN_MODELS.size)
     end
 
+    # @spec MODEL-SELECTION-005
+    it "keeps GPT-5.6 tier variants active across scheduled syncs" do
+      2.times { described_class.call }
+
+      { "gpt-5.6-luna" => "low", "gpt-5.6-terra" => "mid", "gpt-5.6-sol" => "high" }.each do |id, tier|
+        expect(LlmModel.find_by!(model_id: id)).to have_attributes(active: true, tier: tier)
+      end
+    end
+
     it "refreshes the registry before reading models" do
       described_class.call
 

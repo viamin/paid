@@ -243,10 +243,12 @@ RSpec.describe ToolchainPins, :no_db do
     # contract-owned agent CLI.
     #
     # @spec TOOLCHAIN-PIN-032
-    it "locates the agent-harness version pin in the Gemfile" do
-      pinned = Rails.root.join("Gemfile").read[described_class::AGENT_HARNESS_PATTERN, 2]
+    it "locates the agent-harness version pin when the Gemfile also has an immutable git ref" do
+      gemfile = Rails.root.join("Gemfile").read
+      pinned = gemfile[described_class::AGENT_HARNESS_PATTERN, 2]
 
       expect(pinned).to match(/\A\d+\.\d+\.\d+\z/)
+      expect(gemfile).to match(described_class::AGENT_HARNESS_PATTERN)
     end
   end
 
