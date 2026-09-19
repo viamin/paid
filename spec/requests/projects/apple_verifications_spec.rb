@@ -77,5 +77,33 @@ RSpec.describe "Projects::AppleVerifications" do
 
       expect(response).to redirect_to(root_path)
     end
+
+    context "when the project mode permits on-demand execution" do
+      let(:project) { create(:project, account:, apple_verification_settings: { "mode" => "on_demand" }) }
+
+      it "queues a rerun for an approved workflow revision" do
+        revision = create(:apple_verification_workflow_revision, :approved, project:)
+        attempt = create(:apple_verification_attempt, project:, workflow_revision: revision, state: "failed")
+
+        expect {
+          post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+        }.to change(AppleVerificationAttempt, :count).by(1)
+
+        expect(response).to redirect_to(project_apple_verification_path(project))
+      end
+
+      it "rejects a rerun for a disabled workflow revision" do
+        revision = create(:apple_verification_workflow_revision, project:, state: "disabled")
+        attempt = create(:apple_verification_attempt, project:, workflow_revision: revision, state: "failed")
+
+        expect {
+          post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+        }.not_to change(AppleVerificationAttempt, :count)
+
+        expect(response).to redirect_to(project_apple_verification_path(project))
+        follow_redirect!
+        expect(response.body).to include("cannot rerun a disabled workflow revision")
+      end
+    end
   end
 end

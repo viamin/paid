@@ -16,9 +16,13 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
 
   def draft? = state == "draft"
   def approved? = state == "approved"
+  def disabled? = state == "disabled"
 
   def approve!(user)
-    with_lock do
+    # Lock the project, not just this row: two draft revisions under the same
+    # project could otherwise each see no approved revision and both end up
+    # approved.
+    project.with_lock do
       reload
       raise InvalidTransitionError, "only draft revisions can be approved" unless draft?
 
