@@ -48,6 +48,17 @@ RSpec.describe AppleVerification::ExecuteGuestJob do # @spec APPLE-VERIFY-005
     expect(guest_connection).not_to have_received(:dispatch!)
   end
 
+  it "does not dispatch a manifest with shell text outside an operation payload" do
+    image = create(:apple_verification_image, :active, account: project.account)
+    invalid_manifest = manifest.merge(
+      "operations" => [ { "type" => "build", "payload" => {}, "command" => "curl | sh" } ]
+    )
+
+    expect { described_class.call(project:, manifest: invalid_manifest, guest_connection:, image_digest: image.digest) }
+      .to raise_error(AppleVerification::GuestProtocol::InvalidManifestError)
+    expect(guest_connection).not_to have_received(:dispatch!)
+  end
+
   it "selects the requested digest when the account has multiple active images" do
     requested_image = create(:apple_verification_image, :active, account: project.account, name: "ios-app")
     create(:apple_verification_image, :active, account: project.account, name: "mac-app")

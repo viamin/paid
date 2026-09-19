@@ -37,6 +37,15 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
       expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "steps" => [ [ { "command" => "rm -rf /" } ] ] } } ]) }.to raise_error(described_class::ArbitraryShellError)
       expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "steps" => [ [ [ { "command" => "rm -rf /" } ] ] ] } } ]) }.to raise_error(described_class::ArbitraryShellError)
     end
+
+    it "rejects fields outside the closed manifest and operation schemas" do
+      expect { described_class.validate!("version" => 1, "operations" => [], "command" => "curl | sh") }
+        .to raise_error(described_class::InvalidManifestError)
+      expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => {}, "command" => "curl | sh" } ]) }
+        .to raise_error(described_class::InvalidManifestError)
+      expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "unknown" => "value" } } ]) }
+        .to raise_error(described_class::InvalidManifestError)
+    end
   end
 
   describe ".capture_failure" do

@@ -42,10 +42,12 @@ Swift package resolution, Xcode inspection, build, test, Simulator boot,
 application launch, declarative UI actions, captures, diagnostics, and artifact
 export.
 
-An operation has a named type and a typed payload. The protocol rejects unknown
-versions, unknown operation names, non-object payloads, and shell-like fields
-(`command`, `shell`, `script`, and `executable`). This deliberately prevents a
-repository configuration from turning the trusted executor into a remote shell.
+An operation has exactly a named type and a typed payload; each operation type
+has its own closed set of payload fields. The protocol rejects unexpected
+manifest, operation, and payload fields, as well as unknown versions, unknown
+operation names, non-object payloads, and shell-like fields (`command`,
+`shell`, `script`, and `executable`). This deliberately prevents a repository
+configuration from turning the trusted executor into a remote shell.
 The executor may invoke Xcode or Simulator tools for an allowed operation; any
 repository build phase, test target, XCUITest, script, or helper launched by
 those tools is untrusted project code and runs only in the VM.

@@ -9,6 +9,22 @@ module AppleVerification
     SHELL_FIELDS = %w[command shell script executable].freeze
     UI_ACTIONS = %w[tap type select wait_for_accessibility_id rotate_simulator resize_window].freeze
     CAPTURE_STAGES = %w[launch readiness action selection export].freeze
+    ROOT_FIELDS = %w[version operations].freeze
+    OPERATION_FIELDS = %w[type payload].freeze
+    PAYLOAD_FIELDS = {
+      "materialize_source" => %w[digest],
+      "resolve_swift_packages" => [],
+      "inspect_xcode" => %w[scheme],
+      "build" => %w[scheme],
+      "test" => %w[scheme],
+      "boot_simulator" => %w[destination],
+      "install_app" => %w[bundle_id],
+      "launch_app" => %w[bundle_id],
+      "ui_action" => %w[action accessibility_id text value orientation width height],
+      "capture" => %w[platform target name],
+      "collect_diagnostics" => [],
+      "export_artifacts" => []
+    }.freeze
 
     UnsupportedVersionError = Class.new(ArgumentError)
     UnsupportedOperationError = Class.new(ArgumentError)
@@ -31,6 +47,7 @@ module AppleVerification
 
       def validate_root!(manifest)
         raise InvalidManifestError, "manifest must be an object" unless manifest.is_a?(Hash)
+        validate_fields!(manifest, ROOT_FIELDS, "manifest")
         raise UnsupportedVersionError, "unsupported guest protocol version" unless manifest["version"] == VERSION
         raise InvalidManifestError, "operations must be an array" unless manifest["operations"].is_a?(Array)
       end
@@ -40,14 +57,24 @@ module AppleVerification
 
         type = operation["type"]
         raise UnsupportedOperationError, "unsupported guest operation #{type.inspect}" unless OPERATION_TYPES.include?(type)
-        validate_payload!(operation["payload"])
+        validate_fields!(operation, OPERATION_FIELDS, "operation")
+        validate_payload!(type, operation["payload"])
         validate_ui_action!(operation.fetch("payload")) if type == "ui_action"
         validate_capture_payload!(operation.fetch("payload")) if type == "capture"
       end
 
-      def validate_payload!(payload)
+      def validate_payload!(type, payload)
         raise InvalidManifestError, "operation payload must be an object" unless payload.is_a?(Hash)
         raise ArbitraryShellError, "guest operations cannot contain shell text" if shell_field?(payload)
+
+        validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload")
+      end
+
+      def validate_fields!(value, allowed_fields, name)
+        unexpected_fields = value.keys.map(&:to_s) - allowed_fields
+        return if unexpected_fields.empty?
+
+        raise InvalidManifestError, "#{name} contains unsupported fields: #{unexpected_fields.join(', ')}"
       end
 
       def shell_field?(value)

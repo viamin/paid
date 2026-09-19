@@ -19,7 +19,8 @@
 
 - [x] **APPLE-VERIFY-003** — When a guest receives a verification job, it
   SHALL accept only protocol version 1 typed operations from the approved
-  vocabulary and SHALL reject unknown operations, malformed payloads, and
+  vocabulary with only that operation's defined payload fields and SHALL reject
+  unknown manifest, operation, or payload fields, malformed payloads, and
   arbitrary shell-text fields.
   *Tests:* `spec/lib/apple_verification/guest_protocol_spec.rb`.
   *Code:* `AppleVerification::GuestProtocol`.
