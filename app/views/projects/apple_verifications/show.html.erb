@@ -32,7 +32,7 @@
         <dt>Required checks</dt><dd><%= revision.checks.to_json %></dd>
         <dt>Lifecycle gate</dt><dd><%= revision.lifecycle_gate || "advisory" %></dd>
       </dl>
-      <% if revision.state == "draft" && policy(@project).update? %>
+      <% if revision.state == "draft" && policy(@project).manage_apple_verifications? %>
         <%= button_to "Approve revision", approve_project_apple_verification_path(@project, revision_id: revision.id) %>
       <% end %>
     </article>
@@ -59,7 +59,7 @@
         <% end %>
         <% if attempt.queued? || attempt.running? %><%= button_to "Cancel", cancel_project_apple_verification_path(@project, attempt_id: attempt.id) %><% end %>
       <% end %>
-      <% if policy(@project).update? %>
+      <% if policy(@project).manage_apple_verifications? %>
         <% if attempt.failed? && attempt.required? %>
           <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id) do |form| %><%= form.label :reason, "Waiver reason" %><%= form.text_field :reason, required: true %><%= form.submit "Waive attempt" %><% end %>
         <% end %>

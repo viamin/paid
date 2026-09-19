@@ -19,7 +19,7 @@ module Projects
     end
 
     def approve
-      authorize @project, :update?
+      authorize @project, :manage_apple_verifications?
       revision.approve!(current_user)
       redirect_to project_apple_verification_path(@project), notice: "Workflow revision approved."
     rescue AppleVerificationWorkflowRevision::InvalidTransitionError => e
@@ -43,7 +43,7 @@ module Projects
     end
 
     def waive
-      authorize @project, :update?
+      authorize @project, :manage_apple_verifications?
       attempt.waive!(current_user, params.require(:reason))
       redirect_to project_apple_verification_path(@project), notice: "Attempt waived."
     rescue AppleVerificationAttempt::InvalidTransitionError => e
@@ -51,7 +51,7 @@ module Projects
     end
 
     def destroy_retained_vm
-      authorize @project, :update?
+      authorize @project, :manage_apple_verifications?
       attempt.record_retained_vm_destruction!
       redirect_to project_apple_verification_path(@project), notice: "Retained VM destruction recorded."
     rescue AppleVerificationAttempt::InvalidTransitionError => e
@@ -85,7 +85,7 @@ module Projects
     end
 
     def settings_params
-      params.require(:project).permit(:mode, profiles: {}).to_h.deep_stringify_keys
+      params.require(:project).permit(:mode).to_h.deep_stringify_keys
     end
   end
 end
