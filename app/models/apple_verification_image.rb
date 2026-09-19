@@ -151,6 +151,7 @@ class AppleVerificationImage < ApplicationRecord
     errors.add(:deprecation_reason, "is required when deprecated") if deprecated? && deprecation_reason.blank?
     errors.add(:deprecated_at, "is required when deprecated") if deprecated? && deprecated_at.blank?
     errors.add(:retirement_at, "is required when retired") if retired? && retirement_at.blank?
+    errors.add(:retirement_at, "must have passed before the image can be retired") if retired? && retirement_at.present? && retirement_at.future?
     errors.add(:revocation_reason, "is required when revoked") if revoked? && revocation_reason.blank?
     errors.add(:revoked_at, "is required when revoked") if revoked? && revoked_at.blank?
   end

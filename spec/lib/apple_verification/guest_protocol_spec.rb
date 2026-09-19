@@ -31,6 +31,12 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
       expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => "App" } ]) }.to raise_error(described_class::InvalidManifestError)
       expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "command" => "rm -rf /" } } ]) }.to raise_error(described_class::ArbitraryShellError)
     end
+
+    it "rejects shell text nested at any depth of hashes and arrays" do
+      expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "steps" => [ { "command" => "rm -rf /" } ] } } ]) }.to raise_error(described_class::ArbitraryShellError)
+      expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "steps" => [ [ { "command" => "rm -rf /" } ] ] } } ]) }.to raise_error(described_class::ArbitraryShellError)
+      expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "steps" => [ [ [ { "command" => "rm -rf /" } ] ] ] } } ]) }.to raise_error(described_class::ArbitraryShellError)
+    end
   end
 
   describe ".capture_failure" do

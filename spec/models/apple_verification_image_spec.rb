@@ -60,6 +60,15 @@ RSpec.describe AppleVerificationImage, type: :model do # @spec APPLE-VERIFY-001,
     expect(revoked_image.errors[:revoked_at]).to include("is required when revoked")
   end
 
+  it "rejects a direct status update to retired before the scheduled retirement deadline" do
+    image = create(:apple_verification_image, :active)
+    image.deprecate!(reason: "Xcode successor", retirement_at: 2.weeks.from_now)
+
+    expect(image.update(status: "retired", deprecation_reason: "migration complete")).to be(false)
+    expect(image.errors[:retirement_at]).to include("must have passed before the image can be retired")
+    expect(image.reload).to be_deprecated
+  end
+
   it "allows only the documented lifecycle transitions" do
     image = create(:apple_verification_image)
 
