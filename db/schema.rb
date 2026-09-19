@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_19_072132) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_19_080433) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -423,9 +423,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_072132) do
     t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
-    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying, 'completion_verification'::character varying, 'pull_request_verification'::character varying]::text[])", name: "chk_apple_attempts_gate"
+    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_attempts_gate"
     t.check_constraint "retry_number >= 0", name: "chk_apple_attempts_retry_nonnegative"
-    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying, 'provisioning'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'unavailable'::character varying]::text[])", name: "chk_apple_attempts_status"
+    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'provisioning'::character varying::text, 'running'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'unavailable'::character varying::text])", name: "chk_apple_attempts_status"
   end
 
   create_table "apple_verification_waivers", comment: "One-attempt administrator waivers for required Apple verification checks.", force: :cascade do |t|
@@ -446,7 +446,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_072132) do
     t.index ["apple_verification_workflow_revision_id"], name: "idx_on_apple_verification_workflow_revision_id_12adb79e42"
     t.index ["created_by_id"], name: "index_apple_verification_waivers_on_created_by_id"
     t.index ["project_id"], name: "index_apple_verification_waivers_on_project_id"
-    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying, 'completion_verification'::character varying, 'pull_request_verification'::character varying]::text[])", name: "chk_apple_waivers_gate"
+    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_waivers_gate"
   end
 
   create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
@@ -469,9 +469,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_072132) do
     t.index ["approved_by_id"], name: "index_apple_verification_workflow_revisions_on_approved_by_id"
     t.index ["project_id", "revision"], name: "idx_apple_workflow_revisions_project_revision", unique: true
     t.index ["project_id", "status"], name: "idx_on_project_id_status_309d97d26e"
+    t.index ["project_id"], name: "idx_apple_workflow_revisions_one_approved_per_project", unique: true, where: "((status)::text = 'approved'::text)"
     t.index ["project_id"], name: "index_apple_verification_workflow_revisions_on_project_id"
-    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying, 'completion_verification'::character varying, 'pull_request_verification'::character varying]::text[])", name: "chk_apple_workflow_revisions_gate"
-    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying, 'approved'::character varying, 'superseded'::character varying, 'disabled'::character varying]::text[])", name: "chk_apple_workflow_revisions_status"
+    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_workflow_revisions_gate"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'approved'::character varying::text, 'superseded'::character varying::text, 'disabled'::character varying::text])", name: "chk_apple_workflow_revisions_status"
   end
 
   create_table "apple_worker_profiles", comment: "Immutable provider-neutral Apple verification worker profiles.", force: :cascade do |t|
@@ -487,7 +488,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_072132) do
     t.index ["account_id", "name"], name: "index_apple_worker_profiles_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_apple_worker_profiles_on_account_id"
     t.index ["created_by_id"], name: "index_apple_worker_profiles_on_created_by_id"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'deprecated'::character varying, 'revoked'::character varying]::text[])", name: "chk_apple_worker_profiles_status"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'deprecated'::character varying::text, 'revoked'::character varying::text])", name: "chk_apple_worker_profiles_status"
   end
 
   create_table "auto_merge_attempts", comment: "Sanitized history of auto-merge decisions and blockers for pull requests.", force: :cascade do |t|
@@ -2735,7 +2736,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_072132) do
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
     t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
     t.index ["scheduler_paused_at"], name: "index_projects_on_scheduler_paused_at", where: "(scheduler_paused_at IS NOT NULL)"
-    t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying, 'on_demand'::character varying, 'automatic'::character varying]::text[])", name: "chk_projects_apple_verification_mode"
+    t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying::text, 'on_demand'::character varying::text, 'automatic'::character varying::text])", name: "chk_projects_apple_verification_mode"
     t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
   end
 

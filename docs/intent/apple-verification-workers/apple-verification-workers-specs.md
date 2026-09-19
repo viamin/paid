@@ -4,17 +4,20 @@
   platform constraints unsupported by its immutable profile, the system SHALL
   reject it before provisioning and SHALL use provider-neutral capability names.
 - [x] **APPLE-WORKER-002** — Input and output manifests SHALL use RDR-057
-  transfer lanes and SHALL reject host paths, provider lifecycle fields, and raw
-  credential values.
+  transfer lanes with allowlisted fields and SHALL reject host paths, provider
+  lifecycle fields, and raw or secret-shaped credential values.
 - [x] **APPLE-WORKER-003** — Each project SHALL persist exactly one Apple
   verification mode of `off`, `on_demand`, or `automatic`.
 - [x] **APPLE-WORKER-004** — Workflow revisions SHALL have `draft`, `approved`,
-  `superseded`, or `disabled` state; approval SHALL bind committed content,
-  verification files, profile, gate, and required/advisory checks immutably.
+  `superseded`, or `disabled` state; only a project administrator MAY approve a
+  revision, and approval SHALL bind committed content, verification files,
+  profile, gate, and required/advisory checks immutably. At most one revision
+  per project SHALL be approved at a time.
 - [x] **APPLE-WORKER-005** — Each attempt SHALL bind account, project, source,
   workflow, profile, and gate and SHALL use an explicit lifecycle state.
 - [x] **APPLE-WORKER-006** — A waiver SHALL apply to exactly one attempt and
-  SHALL bind its actor, reason, expiry, source, workflow, gate, and checks.
+  SHALL bind its project-administrator actor, reason, expiry, source, workflow,
+  gate, and checks.
 - [x] **APPLE-WORKER-007** — Audit events and resource-ledger entries linked to
   an Apple attempt SHALL have matching account/project ownership; external VMs
   SHALL use the ledger's `verification_vm` resource kind.
