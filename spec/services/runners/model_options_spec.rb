@@ -77,7 +77,7 @@ RSpec.describe Runners::ModelOptions do
       let(:api_provider) { "openai" }
 
       before do
-        create(:llm_model, :openai, model_id: "gpt-5.6-preview", family: "gpt-5", tier: "high", capability_score: 9.9)
+        create(:llm_model, :openai, model_id: "gpt-5.5-pro", family: "gpt-5", tier: "high", capability_score: 9.9)
         create(:llm_model, :openai, model_id: "gpt-5.2-codex", family: "gpt-5", tier: "high", capability_score: 9.0)
       end
 
@@ -88,12 +88,12 @@ RSpec.describe Runners::ModelOptions do
 
       it "keeps the same model under a compatible auth mode" do
         result = described_class.call(runner_key: "codex", api_provider: "openai", auth_type: "api_key")
-        expect(result.select(&:model?).map(&:value)).to include("gpt-5.6-preview")
+        expect(result.select(&:model?).map(&:value)).to include("gpt-5.5-pro")
       end
 
       it "keeps unknown-compatibility models selectable" do
         expect(described_class.call(runner_key: "opencode", api_provider: "openai", auth_type: "api_key")
-          .select(&:model?).map(&:value)).to include("gpt-5.6-preview", "gpt-5.2-codex")
+          .select(&:model?).map(&:value)).to include("gpt-5.5-pro", "gpt-5.2-codex")
       end
     end
 
@@ -186,7 +186,7 @@ RSpec.describe Runners::ModelOptions do
     before do
       create(:llm_model, model_id: "claude-opus-4-5", display_name: "Claude Opus 4.5", provider: "anthropic",
         family: "claude-4", tier: "high", capability_score: 10.0)
-      create(:llm_model, :openai, model_id: "gpt-5.6-preview", family: "gpt-5", tier: "high", capability_score: 9.9)
+      create(:llm_model, :openai, model_id: "gpt-5.5-pro", family: "gpt-5", tier: "high", capability_score: 9.9)
     end
 
     it "returns the same entries per provider as calling .call individually" do # @spec RUNNER-MODEL-OPTIONS-006

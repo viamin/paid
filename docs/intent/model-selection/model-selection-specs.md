@@ -29,5 +29,6 @@
 - [x] **MODEL-SELECTION-005** — When Codex subscription auth is used, the
   system SHALL filter known ChatGPT-Codex-incompatible catalog models before
   default tier selection so queued runs do not dispatch a model the Codex CLI
-  rejects at preflight.
+  rejects at preflight. GPT-5.6 Sol SHALL remain active across catalog syncs
+  and selectable under the harness subscription compatibility contract.
   *Code:* `Runners::ModelCompatibility`, `Runners::DefaultTierModelIds`.

@@ -129,17 +129,26 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
+      context "with subscription auth and GPT-5.6 Sol" do # @spec MODEL-SELECTION-005
+        let(:model_id) { "gpt-5.6-sol" }
+
+        it "uses the verified harness subscription contract" do
+          expect(result).to be_supported
+          expect(result.source).to eq("agent_harness")
+        end
+      end
+
       context "with subscription auth and a gpt-5.6-family model" do # @spec MODEL-SELECTION-005
-        let(:model_id) { "gpt-5.6-orbit" }
+        let(:model_id) { "gpt-5.6" }
 
         it "returns unsupported before dispatch can preflight the bad model", :aggregate_failures do
           expect(result).to have_attributes(
             supported: false,
             incompatibility_type: :auth_mode_gated_for_model,
             replacement_model_id: "gpt-5.2-codex",
-            source: "paid_static_contract"
+            source: "agent_harness"
           )
-          expect(result.reason).to include("Codex subscription")
+          expect(result.reason).to include("subscription")
         end
       end
 

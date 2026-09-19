@@ -16,6 +16,12 @@ RSpec.describe Models::SeedKnownModels do
       expect { described_class.call }.to change(LlmModel, :count).by(described_class::KNOWN_MODELS.size)
     end
 
+    it "keeps GPT-5.6 Sol active across scheduled syncs" do # @spec MODEL-SELECTION-005
+      2.times { described_class.call }
+
+      expect(LlmModel.find_by!(model_id: "gpt-5.6-sol")).to be_active
+    end
+
     it "refreshes the registry before reading models" do
       described_class.call
 
