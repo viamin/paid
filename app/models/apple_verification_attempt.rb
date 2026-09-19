@@ -18,6 +18,7 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def queued? = state == "queued"
   def running? = state == "running"
+  def passed? = state == "passed"
   def failed? = state == "failed"
   def waived? = state == "waived"
 

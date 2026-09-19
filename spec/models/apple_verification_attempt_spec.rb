@@ -15,6 +15,10 @@ RSpec.describe AppleVerificationAttempt do
     expect(build(:apple_verification_attempt, failure_class: "compile")).to be_valid
   end
 
+  it "exposes a predicate for passed attempts" do # @spec APPLE-VERIFY-003
+    expect(build(:apple_verification_attempt, state: "passed")).to be_passed
+  end
+
   describe "lifecycle transitions" do
     it "cancels active attempts with a cancellation classification" do # @spec APPLE-VERIFY-003
       attempt = create(:apple_verification_attempt, state: "running")
