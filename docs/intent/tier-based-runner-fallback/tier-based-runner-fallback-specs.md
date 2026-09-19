@@ -13,7 +13,9 @@
   for the requested tier, the system SHALL record the resolved model/provider
   metadata on the attempt entry persisted in `agent_run.runners_attempted`
   and SHALL pass that model explicitly to preflight and execution, including
-  subscription-authenticated runners.
+  subscription-authenticated runners. When a run has no model-selection record
+  and the runner has an explicit mid-tier model, the system SHALL resolve and
+  pass that model through the same compatibility checks and attempt logging.
   *Code:* `Activities::RunAgentActivity`, `Runners::ResolveTierModel`.
 
 - [x] **RUNNER-FALLBACK-003** — When a container abort originates from a CLI

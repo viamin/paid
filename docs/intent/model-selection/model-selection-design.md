@@ -57,6 +57,8 @@ currently eligible candidate pool. The candidate pool is constrained by:
 - project exclusions,
 - and the initial tier derived from the rules-based complexity estimate.
 
+Codex subscription runs participate in normal model selection and persist the
+selected tier; subscription authentication must not bypass selection.
 Codex subscription runners use the agent-harness compatibility contract for
 model/authentication checks. GPT-5.6 Luna, Terra, and Sol are active catalog models with default low, mid,
 and high tiers respectively, and support explicit subscription runner pins.

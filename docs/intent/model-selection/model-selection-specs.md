@@ -31,5 +31,6 @@
   default tier selection so queued runs do not dispatch a model the Codex CLI
   rejects at preflight. GPT-5.6 Luna, Terra, and Sol SHALL remain active across catalog
   syncs, default to low, mid, and high tiers respectively, and remain selectable
-  under the harness subscription compatibility contract.
+  under the harness subscription compatibility contract. Subscription runs SHALL
+  participate in normal model selection and persist the selected tier.
   *Code:* `Runners::ModelCompatibility`, `Runners::DefaultTierModelIds`.

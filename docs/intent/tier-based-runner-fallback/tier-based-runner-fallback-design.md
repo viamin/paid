@@ -31,7 +31,9 @@ and records the resolved attempt metadata on `agent_run.runners_attempted`.
 The resolved model is passed explicitly to both preflight and execution through
 agent-harness, including subscription-authenticated runners. Authentication
 isolation remains in place; container defaults must not override the resolved
-model.
+model. When a run has no model-selection record, an explicitly configured
+mid-tier runner model supplies the execution default through the same
+compatibility checks and attempt logging.
 
 Each attempt can capture:
 

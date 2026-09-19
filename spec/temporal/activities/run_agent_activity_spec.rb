@@ -1176,6 +1176,23 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     # @spec RUNNER-FALLBACK-002
+    it "pins the configured mid-tier model without a model-selection record" do
+      model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => model.model_id })
+      expect(agent_run.model_selection).to be_nil
+
+      [ "codex", runner.routing_key ].each do |candidate|
+        context = described_class::CommandContext.new(runner_candidate: candidate, runner: "codex", user: user)
+        command = activity.send(:build_command, context, "Reply with exactly OK.", agent_run: agent_run)
+
+        expect(command[2]).to include("--model gpt-5.6-terra", "PAID_CODEX_SUBSCRIPTION_AUTH")
+        resolved = activity.send(:resolve_tier_model_for, candidate, agent_run, user)
+        expect(activity.send(:resolved_model_info_for, resolved)).to include(resolved_model_id: model.model_id)
+      end
+    end
+
+    # @spec RUNNER-FALLBACK-002
     it "pins the resolved subscription model in fallback and preflight commands for a bare key" do
       model = create(:llm_model, :openai, model_id: "gpt-6-astra", tier: "mid")
       create(:runner, user: user, runner_key: "codex", auth_type: "subscription",

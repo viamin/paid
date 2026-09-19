@@ -967,6 +967,7 @@ module Activities
     def resolve_tier_model_for(runner_candidate, agent_run, user)
       # @spec RUNNER-FALLBACK-002
       tier = requested_tier_for(agent_run)
+      tier ||= configured_mid_tier_for(runner_candidate, user) if agent_run
       return nil if tier.blank?
 
       @resolved_tier_model_cache ||= {}
@@ -980,6 +981,14 @@ module Activities
         tier: tier,
         user: user
       )
+    end
+
+    def configured_mid_tier_for(runner_candidate, user)
+      entry = runner_entry_for(runner_candidate, user)
+      entry ||= Runner.for_identifier(user, RunnerSupport.runner_key_for_agent_type(runner_candidate)) if user
+      return unless entry&.tier_model_ids&.dig("mid").present? || entry&.tier_models&.dig("mid").present?
+
+      "mid"
     end
 
     def resolution_runner_cache_key(runner_candidate)
