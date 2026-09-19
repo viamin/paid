@@ -72,5 +72,23 @@ RSpec.describe AppleVerificationAttempt do
 
       expect(attempt.reload.retained_vm_destroyed_at).to be_present
     end
+
+    it "queues a retry attempt for the same workflow revision" do # @spec APPLE-VERIFY-003
+      attempt = create(:apple_verification_attempt, state: "failed")
+
+      retry_attempt = attempt.retry!
+
+      expect(retry_attempt).to have_attributes(project: attempt.project, workflow_revision: attempt.workflow_revision, retry_of: attempt)
+    end
+
+    it "refuses to retry a disabled workflow revision" do # @spec APPLE-VERIFY-003
+      revision = create(:apple_verification_workflow_revision, state: "disabled")
+      attempt = create(:apple_verification_attempt, project: revision.project, workflow_revision: revision, state: "failed")
+
+      expect { attempt.retry! }
+        .to raise_error(described_class::InvalidTransitionError, "cannot rerun a disabled workflow revision")
+
+      expect(described_class.count).to eq(1)
+    end
   end
 end

@@ -29,9 +29,10 @@ module Projects
     def rerun
       authorize @project, :run_agent?
       require_on_demand_execution
-      source = attempt
-      @project.apple_verification_attempts.create!(workflow_revision: source.workflow_revision, retry_of: source, queue_position: source.queue_position)
+      attempt.retry!
       redirect_to project_apple_verification_path(@project), notice: "Verification rerun queued."
+    rescue AppleVerificationAttempt::InvalidTransitionError => e
+      redirect_to project_apple_verification_path(@project), alert: e.message
     end
 
     def cancel
