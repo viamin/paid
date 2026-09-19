@@ -58,7 +58,7 @@ An Apple verification VM is not another paid-agent runner. It does not host an L
 
 ### Feasibility pilot
 
-A manual pilot validated the core technical assumptions on the intended basement MacBook Pro:
+A manual pilot validated the core technical assumptions on the intended macOS host:
 
 | Item | Pilot result |
 |---|---|
@@ -536,7 +536,7 @@ The implementation must preserve all of these invariants:
 
 ## Alternatives Considered
 
-### Run Xcode directly on the basement MacBook Pro
+### Run Xcode directly on the macOS host
 
 Rejected. This gives untrusted repository build phases and tests access to the host security boundary and violates the central requirement that Paid-written code never execute on the host.
 
