@@ -3767,7 +3767,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_105106) do
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "execution_audit_events", "accounts"
   add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
-  add_foreign_key "execution_audit_events", "apple_verification_attempts"
+  add_foreign_key "execution_audit_events", "apple_verification_attempts", on_delete: :nullify
   add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
   add_foreign_key "execution_controls", "accounts"
   add_foreign_key "execution_controls", "docker_hosts"
