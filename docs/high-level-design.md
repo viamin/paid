@@ -172,6 +172,12 @@ between them.
    (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, and others) and the
    single interface for all application-level LLM calls.
 
+Apple platform verification is an additional, explicitly gated execution
+boundary: the control plane may request fixed VM lifecycle operations from an
+authenticated macOS host service, but project code executes only in disposable
+guests. The host API is provider-neutral; its first implementation maps to Tart
+and Softnet. See `docs/intent/apple-verification-workers/` and RDR-068.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
