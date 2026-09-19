@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Projects
+  # @spec APPLE-VERIFY-001
   class AppleVerificationsController < ApplicationController
     before_action :set_project
     before_action :require_feature
@@ -13,7 +14,7 @@ module Projects
 
     def update
       authorize @project, :update?
-      @project.update!(apple_verification_settings: settings_params)
+      @project.update!(apple_verification_settings: @project.apple_verification_settings.merge(settings_params))
       redirect_to project_apple_verification_path(@project), notice: "Apple verification settings updated."
     end
 
