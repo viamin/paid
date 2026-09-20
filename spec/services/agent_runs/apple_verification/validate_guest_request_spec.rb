@@ -11,7 +11,7 @@ RSpec.describe AgentRuns::AppleVerification::ValidateGuestRequest do
   let(:contract) do
     AgentRuns::AppleVerification::GuestContract.new(
       proxy: { host: "paid-proxy", port: 3000 },
-      destinations: [ { host: "github.com", port: 443 }, { host: "api.github.com", port: nil } ],
+      destinations: [ { host: "github.com", port: 443, scheme: "https" }, { host: "api.github.com", port: nil } ],
       egress_profile: "locked"
     )
   end
@@ -164,6 +164,12 @@ RSpec.describe AgentRuns::AppleVerification::ValidateGuestRequest do
 
   context "with a destination matching the contract host but the wrong port" do
     let(:denied_request) { request(host: "github.com", port: 22) }
+
+    it_behaves_like "a denied request", matched_rule_pattern: /not in guest contract/
+  end
+
+  context "with a destination matching the contract host and port but the wrong scheme" do
+    let(:denied_request) { request(scheme: "http") }
 
     it_behaves_like "a denied request", matched_rule_pattern: /not in guest contract/
   end

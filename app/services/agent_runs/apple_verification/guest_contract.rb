@@ -46,7 +46,9 @@ module AgentRuns
       private_class_method :proxy_destination
 
       def self.allowed_destinations(snapshot)
-        snapshot.destinations.map { |destination| { host: destination["host"], port: destination["port"] } }
+        snapshot.destinations.map do |destination|
+          { host: destination["host"], port: destination["port"], scheme: destination["scheme"] }.compact
+        end
       end
       private_class_method :allowed_destinations
     end

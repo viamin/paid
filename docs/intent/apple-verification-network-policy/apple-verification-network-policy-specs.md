@@ -21,9 +21,9 @@
 
 - [x] **APPLE-NETWORK-002** — The guest contract SHALL require Paid DNS and
   Paid proxy routing, deny a direct external route and host services, and
-  permit only HTTP(S) destinations that match the resolved snapshot; direct
-  IPs, alternate DNS, proxy overrides, and unsupported protocols SHALL be
-  rejected.
+  permit only HTTP(S) destinations that match the resolved snapshot, including
+  any destination port and scheme restriction; direct IPs, alternate DNS,
+  proxy overrides, and unsupported protocols SHALL be rejected.
   *Tests:* `spec/services/agent_runs/apple_verification/validate_guest_request_spec.rb`
   *Code:* `AgentRuns::AppleVerification::ValidateGuestRequest`,
   `AgentRuns::AppleVerification::GuestNetworkRequest`

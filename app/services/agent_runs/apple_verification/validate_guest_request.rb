@@ -54,7 +54,8 @@ module AgentRuns
       def allowed_destination?
         contract.destinations.any? do |destination|
           AgentRuns::EgressPolicy::HostPattern.matches?(destination[:host], request.host) &&
-            (destination[:port].nil? || destination[:port] == request.port)
+            (destination[:port].nil? || destination[:port] == request.port) &&
+            (destination[:scheme].nil? || destination[:scheme] == request.scheme)
         end
       end
 

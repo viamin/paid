@@ -47,7 +47,7 @@ tests the policy decision layer those future call sites will use.
 
 The contract matches exact and leading-wildcard hosts from the persisted
 snapshot (reusing `AgentRuns::EgressPolicy::HostPattern`) and applies the
-destination port restriction when present. Invalid hosts, IP literals,
+destination port and scheme restrictions when present. Invalid hosts, IP literals,
 disallowed protocols, and unmatched destinations are denied before they can be
 represented as allowed guest traffic.
 
