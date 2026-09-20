@@ -13,6 +13,7 @@
 # @spec EXECUTION-AUDIT-001
 # @spec EXECUTION-AUDIT-002
 # @spec EXECUTION-AUDIT-003
+# @spec APPLE-WORKER-007
 class ExecutionAuditEvent < ApplicationRecord
   include SecretSafeMetadata
 
@@ -40,9 +41,10 @@ class ExecutionAuditEvent < ApplicationRecord
   belongs_to :account
   belongs_to :project, optional: true
   belongs_to :agent_run, optional: true
+  belongs_to :apple_verification_attempt, optional: true
 
-  before_validation :assign_project_from_agent_run
-  before_validation :assign_account_from_project_or_run
+  before_validation :assign_project_from_agent_run_or_apple_verification_attempt
+  before_validation :assign_account_from_project_run_or_apple_verification_attempt
   before_validation :assign_occurred_at
   before_validation :normalize_credential_classes
   before_validation :enforce_metadata_secret_safety
@@ -65,6 +67,7 @@ class ExecutionAuditEvent < ApplicationRecord
   validate :network_policy_is_object
   validate :network_policy_secret_safety
   validate :project_matches_agent_run
+  validate :project_matches_apple_verification_attempt
   validate :account_matches_project
   validate :no_secret_shaped_string_attributes
 
@@ -88,12 +91,12 @@ class ExecutionAuditEvent < ApplicationRecord
 
   private
 
-  def assign_project_from_agent_run
-    self.project ||= agent_run&.project
+  def assign_project_from_agent_run_or_apple_verification_attempt
+    self.project ||= agent_run&.project || apple_verification_attempt&.project
   end
 
-  def assign_account_from_project_or_run
-    self.account ||= project&.account
+  def assign_account_from_project_run_or_apple_verification_attempt
+    self.account ||= project&.account || apple_verification_attempt&.account
   end
 
   def assign_occurred_at
@@ -128,6 +131,15 @@ class ExecutionAuditEvent < ApplicationRecord
     return unless project && agent_run
 
     errors.add(:project, "must match the agent run's project") if project_id != agent_run.project_id
+  end
+
+  def project_matches_apple_verification_attempt
+    return unless apple_verification_attempt
+
+    if project && project_id != apple_verification_attempt.project_id
+      errors.add(:project, "must match the Apple verification attempt's project")
+    end
+    errors.add(:account, "must match the Apple verification attempt's account") if account_id != apple_verification_attempt.account_id
   end
 
   # The denormalized account_id is the RLS tenant key (see the
