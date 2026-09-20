@@ -10,8 +10,10 @@ never receives project paths, mounts, commands, or executable text.
 Tart and Softnet adapters. `AppleVerification::Lifecycle` records a
 provisioning intent and an external-resource ledger entry before clone, then
 persists an opaque handle after start. It persists a request ID as a lifecycle
-idempotency key scoped to its agent run, and leaves a created intent
-reconcileable if a later lifecycle step fails. Each Rails process builds the
+idempotency key scoped to its agent run. A failed start leaves its created VM
+and ledger entry in a retryable provisioning state; a repeat request resumes
+start from the recorded provider ID, while an abandoned created intent remains
+reconcileable. Each Rails process builds the
 Apple cleanup adapter from `APPLE_VERIFICATION_HOST_URL` and
 `APPLE_VERIFICATION_HOST_TOKEN` during boot, so the durable cleanup queue can
 recover a VM after the original request process exits. The host boundary returns

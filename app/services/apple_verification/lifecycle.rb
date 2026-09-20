@@ -23,16 +23,13 @@ module AppleVerification
 
       tags = ownership_tags_for(intent)
       entry = resource_entry_for(agent_run:, tags:)
-      clone = request("clone", "request_id" => request_id, "image_id" => image_id, "ownership_tags" => tags)
-      ledger.link_created(intent, provider_resource_id: clone.fetch("vm_id"), host: nil)
-      entry.update!(provider_resource_id: clone.fetch("vm_id"))
-      started = request("start", "request_id" => "#{request_id}:start", "vm_id" => clone.fetch("vm_id"), "profile_id" => profile_id)
-      handle = handle_for(vm_id: clone.fetch("vm_id"), response: started)
+      vm_id = intent.provider_resource_id || clone_vm(ledger:, intent:, entry:, payload: clone_payload(request_id:, image_id:, tags:))
+      started = request("start", "request_id" => "#{request_id}:start", "vm_id" => vm_id, "profile_id" => profile_id)
+      handle = handle_for(vm_id:, response: started)
       ledger.link_handle(intent, handle)
       entry.activate!(provider_resource_id: handle.identifier, runner_handle: handle.to_storage)
       handle
     rescue StandardError
-      entry&.request_cleanup! if entry&.provider_resource_id.present?
       ledger&.mark_failed(intent) if intent&.pending?
       raise
     end
@@ -87,6 +84,18 @@ module AppleVerification
 
       intent.update!(ownership_tags: tags)
       tags
+    end
+
+    def clone_vm(ledger:, intent:, entry:, payload:)
+      clone = request("clone", payload)
+      vm_id = clone.fetch("vm_id")
+      ledger.link_created(intent, provider_resource_id: vm_id, host: nil)
+      entry.update!(provider_resource_id: vm_id)
+      vm_id
+    end
+
+    def clone_payload(request_id:, image_id:, tags:)
+      { "request_id" => request_id, "image_id" => image_id, "ownership_tags" => tags }
     end
 
     def request(operation, payload)

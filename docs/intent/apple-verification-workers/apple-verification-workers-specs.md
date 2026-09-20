@@ -17,7 +17,8 @@
   persist Paid ownership metadata in the provisioning and external-resource
   ledgers, register a configured cleanup and inventory adapter before recording
   the provisioning intent, make lifecycle retries idempotent by request ID within
-  the resource ownership scope,
+  the resource ownership scope by retrying a failed start from its recorded VM
+  while retaining a retryable provisioning ledger state,
   and retain created resources for reconciliation until cleanup succeeds.
   *Tests:* `spec/services/apple_verification/tart_provider_spec.rb`,
   `spec/services/apple_verification/lifecycle_spec.rb`

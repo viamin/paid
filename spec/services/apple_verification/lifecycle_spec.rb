@@ -83,6 +83,32 @@ RSpec.describe AppleVerification::Lifecycle do
     expect(ExecutionResourceLedgerEntry.last).to have_attributes(status: "deleted", provider_resource_id: "paid-vm-1")
   end
 
+  it "retries a failed start using the recorded VM" do
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "clone", token: "host-token", payload: hash_including("image_id" => "paid-macos")
+    ).once.and_return("vm_id" => "paid-vm-1")
+    start_attempts = 0
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "start", token: "host-token", payload: hash_including("vm_id" => "paid-vm-1")
+    ) do
+      start_attempts += 1
+      raise Timeout::Error if start_attempts == 1
+
+      { "vm_id" => "paid-vm-1", "connection" => { "ready" => true } }
+    end
+
+    lifecycle = described_class.new(host:, token: "host-token")
+    request = { agent_run:, image_id: "paid-macos", profile_id: "ios-standard", request_id: "request-1" }
+
+    expect { lifecycle.provision(**request) }.to raise_error(Timeout::Error)
+
+    handle = lifecycle.provision(**request)
+
+    expect(handle.identifier).to eq("paid-vm-1")
+    expect(ProvisioningIntent.last).to have_attributes(status: "linked", provider_resource_id: "paid-vm-1")
+    expect(ExecutionResourceLedgerEntry.last).to have_attributes(status: "active", provider_resource_id: "paid-vm-1")
+  end
+
   it "links and deletes the pre-created ledger entry after a post-clone crash" do
     configure_reconciliation_runner
     stub_cleanup_requests
