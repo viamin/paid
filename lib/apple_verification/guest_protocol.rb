@@ -7,7 +7,6 @@ module AppleVerification
     VERSION = 1
     OPERATION_TYPES = %w[materialize_source resolve_swift_packages inspect_xcode build test boot_simulator install_app launch_app ui_action capture collect_diagnostics export_artifacts].freeze
     SHELL_FIELDS = %w[command shell script executable].freeze
-    UI_ACTIONS = %w[tap type select wait_for_accessibility_id rotate_simulator resize_window].freeze
     CAPTURE_STAGES = %w[launch readiness action selection export].freeze
     ROOT_FIELDS = %w[version operations].freeze
     OPERATION_FIELDS = %w[type payload].freeze
@@ -20,10 +19,18 @@ module AppleVerification
       "boot_simulator" => %w[destination],
       "install_app" => %w[bundle_id],
       "launch_app" => %w[bundle_id],
-      "ui_action" => %w[action accessibility_id text value orientation width height],
       "capture" => %w[platform target name],
       "collect_diagnostics" => [],
       "export_artifacts" => []
+    }.freeze
+    # Fields required in addition to "action", specific to each declarative UI action.
+    UI_ACTION_FIELDS = {
+      "tap" => %w[accessibility_id],
+      "type" => %w[accessibility_id text],
+      "select" => %w[accessibility_id value],
+      "wait_for_accessibility_id" => %w[accessibility_id],
+      "rotate_simulator" => %w[orientation],
+      "resize_window" => %w[width height]
     }.freeze
 
     UnsupportedVersionError = Class.new(ArgumentError)
@@ -59,13 +66,14 @@ module AppleVerification
         raise UnsupportedOperationError, "unsupported guest operation #{type.inspect}" unless OPERATION_TYPES.include?(type)
         validate_fields!(operation, OPERATION_FIELDS, "operation")
         validate_payload!(type, operation["payload"])
-        validate_ui_action!(operation.fetch("payload")) if type == "ui_action"
         validate_capture_payload!(operation.fetch("payload")) if type == "capture"
       end
 
       def validate_payload!(type, payload)
         raise InvalidManifestError, "operation payload must be an object" unless payload.is_a?(Hash)
         raise ArbitraryShellError, "guest operations cannot contain shell text" if shell_field?(payload)
+
+        return validate_ui_action_payload!(payload) if type == "ui_action"
 
         validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload")
       end
@@ -93,8 +101,11 @@ module AppleVerification
         end
       end
 
-      def validate_ui_action!(payload)
-        raise InvalidManifestError, "unsupported declarative UI action" unless UI_ACTIONS.include?(payload["action"])
+      def validate_ui_action_payload!(payload)
+        action = payload["action"]
+        raise InvalidManifestError, "unsupported declarative UI action" unless UI_ACTION_FIELDS.key?(action)
+
+        validate_fields!(payload, %w[action] + UI_ACTION_FIELDS.fetch(action), "ui_action payload for #{action}")
       end
 
       def validate_capture_payload!(payload)
