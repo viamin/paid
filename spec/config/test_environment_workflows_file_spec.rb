@@ -218,4 +218,11 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
       ), "expected #{path} test env blocks to pin libpq credentials explicitly"
     end
   end
+
+  it "allocates enough shared memory for the CI test database" do
+    postgres = workflow_config(".github/workflows/ci.yml")
+      .fetch("jobs").fetch("test").fetch("services").fetch("postgres")
+
+    expect(postgres.fetch("options")).to include("--shm-size=512m")
+  end
 end
