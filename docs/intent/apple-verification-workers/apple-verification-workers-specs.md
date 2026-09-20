@@ -6,7 +6,7 @@
   image, the system SHALL persist its immutable digest, macOS and Xcode
   versions/builds, SDKs, Simulator runtimes, executor version, resource
   envelope, network capability, dedicated GUI-account posture, and smoke-test
-  result plus an HTTPS guest-executor endpoint.
+  result plus a credential-free HTTPS guest-executor endpoint.
   *Tests:* `spec/models/apple_verification_image_spec.rb`.
   *Code:* `AppleVerificationImage`.
 

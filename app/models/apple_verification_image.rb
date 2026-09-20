@@ -130,11 +130,11 @@ class AppleVerificationImage < ApplicationRecord
 
   def guest_executor_url_is_valid
     uri = URI.parse(provenance.fetch("guest_executor_url"))
-    return if uri.is_a?(URI::HTTPS) && uri.host.present? && uri.userinfo.blank?
+    return if uri.is_a?(URI::HTTPS) && uri.host.present? && uri.userinfo.blank? && uri.query.nil? && uri.fragment.nil?
 
-    errors.add(:provenance, "must include an HTTPS guest executor URL without credentials")
+    errors.add(:provenance, "must include a credential-free HTTPS guest executor URL")
   rescue KeyError, TypeError, URI::InvalidURIError
-    errors.add(:provenance, "must include an HTTPS guest executor URL without credentials")
+    errors.add(:provenance, "must include a credential-free HTTPS guest executor URL")
   end
 
   def immutable_facts_after_publication

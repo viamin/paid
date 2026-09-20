@@ -12,11 +12,13 @@ RSpec.describe AppleVerificationImage, type: :model do # @spec APPLE-VERIFY-001,
     expect(image.gui_account).to include("admin" => false, "apple_id" => false, "persistent_secret_keychain" => false)
   end
 
-  it "requires immutable HTTPS guest-executor provenance without credentials" do
-    image.provenance.delete("guest_executor_url")
+  it "requires immutable credential-free HTTPS guest-executor provenance" do
+    [ nil, "https://executor.example/v1/jobs?access_token=secret", "https://executor.example/v1/jobs#access_token=secret" ].each do |url|
+      image.provenance["guest_executor_url"] = url
 
-    expect(image).not_to be_valid
-    expect(image.errors[:provenance]).to include("must include an HTTPS guest executor URL without credentials")
+      expect(image).not_to be_valid
+      expect(image.errors[:provenance]).to include("must include a credential-free HTTPS guest executor URL")
+    end
   end
 
   it "requires every dedicated guest-account isolation assertion" do
