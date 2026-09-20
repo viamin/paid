@@ -540,6 +540,22 @@
                   class="ml-7 grid grid-cols-2 gap-3 transition-all duration-200 ease-in-out <%= paid["enabled"] ? "max-h-[2000px] opacity-100" : "max-h-0 overflow-hidden opacity-0" %>"
                   <% unless paid["enabled"] %>inert<% end %>
                   data-collapsible-panel-target="panel">
+                  <div class="col-span-2">
+                    <label for="review_paid_agent_review_depth" class="block text-xs font-medium text-gray-600">Review Depth Preset</label>
+                    <select name="project[review_settings][methods][paid_agent][review_depth]" id="review_paid_agent_review_depth"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600">
+                      <% Project::REVIEW_DEPTH_OPTIONS.each do |label, value| %>
+                        <option value="<%= value %>" <% if paid["review_depth"] == value %>selected<% end %>><%= label %></option>
+                      <% end %>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">
+                      Controls how broadly Paid's own reviewer investigates beyond the always-on correctness and security floor.
+                      <strong>Focused</strong> narrows review to actionable correctness and security findings only.
+                      <strong>Balanced</strong> (default) adds material performance, maintainability, and project-convention issues.
+                      <strong>Thorough</strong> also investigates caller compatibility and removed safeguards.
+                      The evidence bar is identical across all three presets.
+                    </p>
+                  </div>
                   <div>
                     <label for="review_paid_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
                     <input type="number" name="project[review_settings][methods][paid_agent][termination][max_review_rounds]" id="review_paid_max_rounds"

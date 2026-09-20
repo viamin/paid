@@ -69,6 +69,10 @@ module Activities
         count_toward_draft_review_round: count_toward_draft_review_round,
         expected_draft_review_count: expected_draft_review_count,
         focus: focus,
+        # @spec REVIEW-DEPTH-006 — snapshot the project's effective
+        # review_depth preset at creation time so later project changes
+        # cannot retroactively alter the run's review behavior.
+        review_depth_snapshot: project.effective_review_depth,
         prompt_version: prompt_version,
         external_metadata: build_external_metadata(plan_docs: plan_docs),
         status: "queued",

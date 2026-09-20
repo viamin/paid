@@ -647,6 +647,7 @@ class ProjectsController < ApplicationController
 
   TERMINATION_KEYS = %i[max_review_rounds max_review_goal_retries stop_when_no_comments quality_threshold timeout_minutes].freeze
 
+  # @spec REVIEW-DEPTH-003
   def build_review_settings
     termination_permit = { termination: TERMINATION_KEYS }
     rs = params.require(:project).permit(
@@ -654,7 +655,7 @@ class ProjectsController < ApplicationController
         :enabled, :wait_for_reviews, :address_all_bot_reviews,
         { methods: {
           copilot: [ :enabled, termination_permit ],
-          paid_agent: [ :enabled, termination_permit ],
+          paid_agent: [ :enabled, :review_depth, termination_permit ],
           ci_action: [ :enabled, :action_name, termination_permit ],
           manual: [ :enabled, :reviewer_login, termination_permit ],
           codex: [ :enabled, termination_permit ]
@@ -680,6 +681,20 @@ class ProjectsController < ApplicationController
         config["enabled"] = ActiveModel::Type::Boolean.new.cast(config["enabled"]) if config.key?("enabled")
         config["action_name"] = config["action_name"].presence if config.key?("action_name")
         config["reviewer_login"] = config["reviewer_login"].presence if config.key?("reviewer_login")
+        # @spec REVIEW-DEPTH-003 — coerce blank review_depth submissions by
+        # removing the key entirely so the default ("balanced") can take over
+        # without persisting a literal nil. Values outside the known
+        # vocabulary pass through unchanged so the model's validation can
+        # reject them with a clear error rather than silently coercing.
+        if config.key?("review_depth")
+          depth = config["review_depth"]
+          normalized = depth.is_a?(String) ? depth.strip.presence : depth
+          if normalized.nil?
+            config.delete("review_depth")
+          else
+            config["review_depth"] = normalized
+          end
+        end
         next unless config["termination"].is_a?(Hash)
 
         term = config["termination"]

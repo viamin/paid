@@ -1497,6 +1497,87 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "review_depth preset in review-goal prompt" do # @spec REVIEW-DEPTH-007
+    before do
+      allow(Prompt).to receive(:resolve).and_return(nil)
+    end
+
+    it "names focused limitations to correctness and security findings only" do
+      run = create(:agent_run, :review_goal, project: project,
+        source_pull_request_number: 101, review_depth_snapshot: "focused")
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(prompt).to include("Review Depth: Focused")
+      expect(prompt).to include("actionable correctness and security")
+      expect(prompt).not_to include("Review Depth: Thorough")
+    end
+
+    it "names the balanced preset and includes the additional categories" do
+      run = create(:agent_run, :review_goal, project: project,
+        source_pull_request_number: 102, review_depth_snapshot: "balanced")
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(prompt).to include("Review Depth: Balanced")
+      expect(prompt).to include("Performance")
+      expect(prompt).to include("Maintainability")
+    end
+
+    it "names the thorough preset and includes the deeper investigation categories" do
+      run = create(:agent_run, :review_goal, project: project,
+        source_pull_request_number: 103, review_depth_snapshot: "thorough")
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(prompt).to include("Review Depth: Thorough")
+      expect(prompt).to include("caller compatibility")
+      expect(prompt).to include("removed safeguards")
+    end
+
+    it "falls back to the balanced section when the snapshot is blank" do
+      run = create(:agent_run, :review_goal, project: project,
+        source_pull_request_number: 104)
+
+      blank_section = activity.send(:review_depth_scope_section, nil)
+      garbage_section = activity.send(:review_depth_scope_section, "nonsense")
+
+      expect(blank_section).to include("Review Depth: Balanced")
+      expect(garbage_section).to include("Review Depth: Balanced")
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+      expect(prompt).to include("Review Depth: Balanced")
+    end
+
+    it "appends the depth scope after A/B variant resolution so variant runs keep their preset" do
+      run = create(:agent_run, :review_goal, project: project,
+        source_pull_request_number: 105, review_depth_snapshot: "thorough")
+      create_ab_test_assignment(
+        slug: described_class::REVIEW_GOAL_PROMPT_SLUG,
+        agent_run: run,
+        variant_template: "variant {{base_prompt}} {{repo}} {{pr_number}}"
+      )
+
+      prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+      expect(prompt).to include("variant Review the branch #{project.full_name} 105")
+      expect(prompt).to include("Review Depth: Thorough")
+      expect(prompt).not_to include("Review Depth: Balanced")
+    end
+
+    it "uses the same evidence bar and JSON / payload rules across every preset" do
+      %w[focused balanced thorough].each_with_index do |preset, i|
+        run = create(:agent_run, :review_goal, project: project,
+          source_pull_request_number: 110 + i, review_depth_snapshot: preset)
+        prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
+
+        expect(prompt).to include("Inline comments are reserved")
+        expect(prompt).to include("data-binary @file")
+        expect(prompt).to include("\"event\": \"COMMENT\"")
+      end
+    end
+  end
+
   describe "#augment_prompt_for_issue_goal knowledge injection" do
     before do
       allow(Prompt).to receive(:resolve).and_return(nil)
@@ -1677,7 +1758,8 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_review_goal, run, "Review the branch")
 
-      expect(prompt).to eq("review Review the branch #{project.full_name} #{run.source_pull_request_number}")
+      expect(prompt).to start_with("review Review the branch #{project.full_name} #{run.source_pull_request_number}")
+      expect(prompt).to include("Review Depth: Balanced")
       expect(run.reload.prompt_version).to eq(variant_version)
     end
 

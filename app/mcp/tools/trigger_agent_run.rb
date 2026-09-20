@@ -74,6 +74,10 @@ module Tools
         agent_type: agent_type,
         goal: goal,
         custom_prompt: custom_prompt,
+        # @spec REVIEW-DEPTH-006 — snapshot the project's effective
+        # review_depth preset at creation time so later project changes
+        # cannot retroactively alter the run's review behavior.
+        review_depth_snapshot: project.effective_review_depth,
         external_metadata: external_metadata,
         status: "queued",
         trigger_type: "manual"

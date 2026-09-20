@@ -54,6 +54,81 @@ RSpec.describe Project do
       expect(project.tdd_mode).to eq("off")
     end
 
+    describe "review_depth presets" do # @spec REVIEW-DEPTH-001, REVIEW-DEPTH-002, REVIEW-DEPTH-004, REVIEW-DEPTH-008
+      it "defaults effective_review_depth to balanced" do
+        project = build(:project)
+
+        expect(project.review_depth).to be_nil
+        expect(project.effective_review_depth).to eq("balanced")
+      end
+
+      it "exposes the three named presets in REVIEW_DEPTHS" do
+        expect(described_class::REVIEW_DEPTHS).to contain_exactly("focused", "balanced", "thorough")
+        expect(described_class::REVIEW_DEPTH_LABELS).to eq(
+          "focused" => "Focused",
+          "balanced" => "Balanced",
+          "thorough" => "Thorough"
+        )
+        expect(described_class::REVIEW_DEPTH_OPTIONS).to contain_exactly(
+          [ "Focused", "focused" ],
+          [ "Balanced", "balanced" ],
+          [ "Thorough", "thorough" ]
+        )
+      end
+
+      it "returns the persisted preset through review_depth" do
+        project = build(:project, review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "thorough" } }
+        })
+
+        expect(project.review_depth).to eq("thorough")
+        expect(project.effective_review_depth).to eq("thorough")
+      end
+
+      it "merges the default review_depth into effective_review_settings" do
+        project = build(:project, review_settings: { "methods" => { "paid_agent" => { "enabled" => true } } })
+
+        expect(project.effective_review_settings.dig("methods", "paid_agent", "review_depth")).to eq("balanced")
+      end
+
+      it "accepts each value in Project::REVIEW_DEPTHS" do
+        described_class::REVIEW_DEPTHS.each do |preset|
+          project = build(:project, review_settings: {
+            "methods" => { "paid_agent" => { "review_depth" => preset } }
+          })
+          expect(project).to be_valid, "expected review_depth=#{preset.inspect} to be valid"
+        end
+      end
+
+      it "rejects an unknown review_depth value" do
+        project = build(:project, review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "extremely-thorough" } }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("review_depth")
+      end
+
+      it "rejects a non-string review_depth value" do
+        project = build(:project, review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => 99 } }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("review_depth")
+      end
+
+      it "persists review_depth through a round-trip" do
+        project = create(:project, review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "focused" } }
+        })
+        reloaded = described_class.find(project.id)
+
+        expect(reloaded.review_depth).to eq("focused")
+        expect(reloaded.effective_review_depth).to eq("focused")
+      end
+    end
+
     it "accepts each value in Project::TDD_MODES" do # @spec TDD-MODE-002
       described_class::TDD_MODES.each do |mode|
         project = build(:project, tdd_mode: mode)
