@@ -442,6 +442,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
     t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'provisioning'::character varying::text, 'running'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'unavailable'::character varying::text])", name: "chk_apple_attempts_status"
   end
 
+  create_table "apple_verification_images", comment: "Operator-published immutable macOS guest images for Apple verification.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account whose operator-approved worker catalog contains this image."
+    t.datetime "created_at", null: false
+    t.datetime "deprecated_at", comment: "Time the image was deprecated."
+    t.text "deprecation_reason", comment: "Reason and migration guidance for deprecation or retirement."
+    t.string "digest", null: false, comment: "Immutable sha256 content digest of the macOS VM image."
+    t.jsonb "gui_account", default: {}, null: false, comment: "Dedicated verification-account security posture."
+    t.jsonb "log_data", comment: "Logidze change history for Apple verification image lifecycle transitions."
+    t.string "name", null: false, comment: "Operator-visible logical worker profile name."
+    t.jsonb "network_capability", default: {}, null: false, comment: "Guest network mechanism and policy-enforcement declaration."
+    t.datetime "promoted_at", comment: "Time a smoke-tested candidate was promoted."
+    t.jsonb "provenance", default: {}, null: false, comment: "Non-secret operator build provenance and runbook references."
+    t.jsonb "resources", default: {}, null: false, comment: "Approved guest CPU, memory, and disk envelope."
+    t.datetime "retirement_at", comment: "Scheduled or completed retirement time."
+    t.text "revocation_reason", comment: "Security or operational reason for immediate revocation."
+    t.datetime "revoked_at", comment: "Time an operator immediately revoked the image."
+    t.jsonb "smoke_test", default: {}, null: false, comment: "Isolation and toolchain smoke-test result used for promotion."
+    t.string "status", default: "candidate", null: false, comment: "candidate, active, deprecated, retired, or revoked; only active images accept new work."
+    t.jsonb "toolchain", default: {}, null: false, comment: "macOS, Xcode, SDK, Simulator runtime, and executor versions."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "digest"], name: "idx_apple_verification_images_identity", unique: true
+    t.index ["account_id", "name", "status"], name: "idx_apple_verification_images_catalog"
+    t.index ["account_id"], name: "index_apple_verification_images_on_account_id"
+  end
+
   create_table "apple_verification_waivers", comment: "One-attempt administrator waivers for required Apple verification checks.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "apple_verification_attempt_id", null: false
@@ -3689,6 +3714,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
   add_foreign_key "apple_verification_attempts", "apple_verification_workflow_revisions"
   add_foreign_key "apple_verification_attempts", "apple_worker_profiles"
   add_foreign_key "apple_verification_attempts", "projects"
+  add_foreign_key "apple_verification_images", "accounts"
   add_foreign_key "apple_verification_waivers", "accounts"
   add_foreign_key "apple_verification_waivers", "apple_verification_attempts"
   add_foreign_key "apple_verification_waivers", "apple_verification_workflow_revisions"
@@ -4799,6 +4825,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
 
   create_trigger :logidze_on_agent_images, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_agent_images BEFORE INSERT OR UPDATE ON public.agent_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_apple_verification_images, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_apple_verification_images BEFORE INSERT OR UPDATE ON public.apple_verification_images FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_billing_invoices, sql_definition: <<-SQL

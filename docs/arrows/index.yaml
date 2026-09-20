@@ -60,6 +60,14 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-09-19
+  apple-guest-execution:
+    title: Apple Guest Execution
+    path: docs/intent/apple-guest-execution/apple-guest-execution-design.md
+    specs: docs/intent/apple-guest-execution/apple-guest-execution-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-19
   apple-verification-workers:
     title: Apple Verification Workers
     path: docs/intent/apple-verification-workers/apple-verification-workers-design.md
