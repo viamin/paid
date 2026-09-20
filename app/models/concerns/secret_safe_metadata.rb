@@ -61,20 +61,21 @@ module SecretSafeMetadata
     /\ABasic\s+[A-Za-z0-9+\/=]{8,}\z/i         # HTTP Basic auth header
   ].freeze
 
+  # Returns true if `value` looks like a secret that must never be persisted
+  # in telemetry/audit metadata. Expects a scalar; structured values are
+  # walked recursively by `scan_metadata_for_secrets` before this is called.
+  def self.secret_like?(value)
+    return false if value.nil?
+
+    text = value.to_s
+    return false if text.empty?
+
+    SECRET_VALUE_PATTERNS.any? { |pattern| text.match?(pattern) }
+  end
+
   class_methods do
-    # Returns true if `value` looks like a secret that must never be
-    # persisted in telemetry/audit metadata. Exposed so callers (and tests)
-    # can preflight metadata before passing it in. Expects a scalar;
-    # structured values are walked recursively by `scan_metadata_for_secrets`
-    # before this is called, so treating a Hash/Array as "secret-like" would
-    # mask scalars nested inside.
     def secret_like?(value)
-      return false if value.nil?
-
-      text = value.to_s
-      return false if text.empty?
-
-      SECRET_VALUE_PATTERNS.any? { |pattern| text.match?(pattern) }
+      SecretSafeMetadata.secret_like?(value)
     end
   end
 
