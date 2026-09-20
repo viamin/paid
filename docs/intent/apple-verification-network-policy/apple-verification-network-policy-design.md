@@ -15,11 +15,11 @@ those guests; it does not create an Apple-specific allowlist.
 
 `AgentRuns::AppleVerification::ResolveGuestContract` resolves the run's
 existing egress policy using `AgentRuns::EgressPolicy::Resolve` with a forced
-proxy-restricted (`:proxy_only`) networking intent. The resulting snapshot
-remains the authoritative combination of platform, tenant, operator, project,
-and run decisions and is persisted before the guest starts. Resolution is
-gated on the project's `apple_verification_workers` flag: when the flag is
-off, `ResolveGuestContract` raises `WorkersDisabledError` without persisting
+proxy-restricted (`:proxy_only`) networking intent. Once #3933 supplies the
+authenticated host-service start operation, its admission flow will persist the
+resulting snapshot before it starts a guest. Resolution is gated on the
+project's `apple_verification_workers` flag: when the flag is off,
+`ResolveGuestContract` raises `WorkersDisabledError` without persisting
 anything or producing a contract.
 
 When the flag is on, `AgentRuns::AppleVerification::GuestContract.from_snapshot`
@@ -35,13 +35,14 @@ traffic.
 
 The future Apple verification control-plane entry point SHALL send this
 contract only to the authenticated, narrow host-service start operation,
-which SHALL install it before it starts the VM. The concrete Tart/Softnet
-transport that carries the contract onto a real guest, and the guest-start
-lifecycle registration, belong to #3933. Until that authenticated host
-implementation exists, nothing in Paid calls `ResolveGuestContract` or
-`ValidateGuestRequest` from a guest-admission path, so Paid still does not
-expose or admit Apple verification guests — this segment only builds and
-tests the policy decision layer those future call sites will use.
+which SHALL install it before it starts the VM and route guest requests through
+`ValidateGuestRequest`. The concrete Tart/Softnet transport that carries the
+contract onto a real guest, and the guest-start lifecycle registration, belong
+to #3933. Until that authenticated host implementation exists, nothing in Paid
+calls `ResolveGuestContract` or `ValidateGuestRequest` from a guest-admission
+path, so Paid still does not expose or admit Apple verification guests. This
+segment supplies tested policy building blocks only; its EARS requirements are
+deferred and it does not close #3935.
 
 ## Decisions and audit
 
