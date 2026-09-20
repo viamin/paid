@@ -37,7 +37,12 @@ module AgentRuns
       attr_reader :agent_run, :contract, :request
 
       def denial_reason
-        return "unsupported protocol #{request.scheme.inspect}" unless GuestContract::SCHEMES.include?(request.scheme.to_s)
+        # The raw scheme is guest-controlled and never interpolated here: it
+        # could carry embedded URL userinfo (e.g. "ftp://user:pass@host"),
+        # and this reason string is persisted verbatim into the immutable
+        # EgressSecurityEvent#matched_rule column and ExecutionAuditEvent
+        # metadata, neither of which pattern-scans free text for credentials.
+        return "unsupported protocol" unless GuestContract::SCHEMES.include?(request.scheme.to_s)
         return "alternate DNS server not permitted" if request.dns_server.present?
         return "proxy override not permitted" if request.proxy_override.present?
         return "direct IP access not permitted" if AgentRuns::EgressPolicy::HostPattern.ip_literal?(request.host.to_s)
@@ -106,7 +111,7 @@ module AgentRuns
           metadata: {
             destination_host: safe_destination_host,
             destination_port: safe_destination_port,
-            scheme: request.scheme,
+            scheme: safe_scheme,
             decision: "denied",
             reason: reason
           }

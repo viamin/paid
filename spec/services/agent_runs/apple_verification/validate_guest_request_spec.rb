@@ -64,6 +64,32 @@ RSpec.describe AgentRuns::AppleVerification::ValidateGuestRequest do
     let(:denied_request) { request(scheme: "ftp") }
 
     it_behaves_like "a denied request", matched_rule_pattern: /unsupported protocol/
+
+    it "omits the unsupported scheme from both audit writes" do
+      expect { call(denied_request) }.to raise_error(AgentRuns::AppleVerification::NetworkPolicyError)
+
+      event = EgressSecurityEvent.last
+      expect(event.scheme).to be_nil
+
+      audit_event = ExecutionAuditEvent.where(agent_run: agent_run, event_name: "apple_guest.network_policy.denied").last
+      expect(audit_event.metadata["scheme"]).to be_nil
+    end
+
+    context "when the rejected scheme carries embedded URL userinfo" do
+      let(:denied_request) { request(scheme: "ftp://user:password@host") }
+
+      it "does not persist the raw scheme value into the audit trail" do
+        expect { call(denied_request) }.to raise_error(AgentRuns::AppleVerification::NetworkPolicyError)
+
+        event = EgressSecurityEvent.last
+        expect(event.scheme).to be_nil
+        expect(event.matched_rule).not_to include("password")
+
+        audit_event = ExecutionAuditEvent.where(agent_run: agent_run, event_name: "apple_guest.network_policy.denied").last
+        expect(audit_event.metadata["scheme"]).to be_nil
+        expect(audit_event.metadata.to_s).not_to include("password")
+      end
+    end
   end
 
   context "with an alternate DNS server" do
