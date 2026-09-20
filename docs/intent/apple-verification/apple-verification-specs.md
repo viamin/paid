@@ -8,9 +8,11 @@
   Paid SHALL retain its content digest, verification files, worker profile,
   checks, and gate, and supersede the prior approval; non-draft revisions SHALL
   be rejected.
-- [x] **APPLE-VERIFY-003** — Each presented attempt SHALL retain its explicit
-  lifecycle state, retry number, source digest, commit identity, workflow,
-  profile, gate, and failure classification.
+- [x] **APPLE-VERIFY-003** — Each presented attempt SHALL retain and present
+  its explicit lifecycle state, retry number, source digest, commit identity,
+  workflow, profile, gate, and failure classification; its structured build,
+  test, coverage, and policy-decision results with the source of each result;
+  and its execution audit evidence.
 - [x] **APPLE-VERIFY-004** — Screenshots and recordings SHALL be presented as
   protected artifacts rather than embedded public content, through an
   authorized endpoint that issues a time-limited storage URL.

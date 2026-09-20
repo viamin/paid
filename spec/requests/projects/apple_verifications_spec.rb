@@ -16,20 +16,16 @@ RSpec.describe "Projects::AppleVerifications" do
   end
 
   describe "GET /projects/:project_id/apple_verification" do
-    it "presents workflows, attempts, and protected artifacts" do # @spec APPLE-VERIFY-001 # @spec APPLE-VERIFY-004
+    it "presents workflows, attempt results, audit evidence, and protected artifacts" do # @spec APPLE-VERIFY-001 # @spec APPLE-VERIFY-003 # @spec APPLE-VERIFY-004
       attempt = create(:apple_verification_attempt, project:)
       artifact = create_artifact(attempt)
+      create_result_artifact(attempt)
+      create_audit_event(attempt)
 
       get project_apple_verification_path(project)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include(
-        attempt.apple_verification_workflow_revision.content_digest,
-        "Worker constraints",
-        "platforms",
-        artifact_project_apple_verification_path(project, artifact_id: artifact.id),
-        "Protected artifact"
-      )
+      expect(response.body).to include(*presented_attempt_evidence(attempt, artifact))
     end
 
     it "presents the mode without an update control to account viewers" do # @spec APPLE-VERIFY-001
@@ -196,6 +192,43 @@ RSpec.describe "Projects::AppleVerifications" do
       kind: "screenshot",
       storage_key: "apple-verification/#{attempt.id}/screenshot.png"
     )
+  end
+
+  def create_result_artifact(attempt)
+    AppleVerificationArtifact.create!(
+      apple_verification_attempt: attempt,
+      kind: "result",
+      storage_key: "apple-verification/#{attempt.id}/result.json",
+      metadata: {
+        "results" => {
+          "build" => { "outcome" => "succeeded", "source" => "xcodebuild build" },
+          "test" => { "outcome" => "succeeded", "source" => "xcodebuild test" },
+          "coverage" => { "outcome" => "92.4%", "source" => "xccov view" },
+          "policy" => { "outcome" => "allowed", "source" => "required checks" }
+        }
+      }
+    )
+  end
+
+  def create_audit_event(attempt)
+    ExecutionAuditEvent.create!(
+      apple_verification_attempt: attempt,
+      event_name: "verification.completed",
+      actor_type: "guest_executor",
+      actor_id: "apple-worker-1",
+      backend: "Guest executor",
+      metadata: { "result_source" => "guest executor response" }
+    )
+  end
+
+  def presented_attempt_evidence(attempt, artifact)
+    [
+      attempt.apple_verification_workflow_revision.content_digest,
+      "Worker constraints", "platforms", "Build result", "succeeded", "xcodebuild build",
+      "Test result", "xcodebuild test", "Coverage", "92.4%", "xccov view",
+      "Policy decision", "allowed", "required checks", "verification.completed", "Guest executor",
+      artifact_project_apple_verification_path(project, artifact_id: artifact.id), "Protected artifact"
+    ]
   end
 
   def sign_in_project_administrator

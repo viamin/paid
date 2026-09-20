@@ -9,7 +9,7 @@ module Projects
     def show
       authorize @project, :show?
       @revisions = @project.apple_verification_workflow_revisions.includes(:apple_worker_profile).order(created_at: :desc)
-      @attempts = @project.apple_verification_attempts.includes(:apple_verification_workflow_revision, :apple_verification_artifacts, :apple_verification_waivers, :execution_resource_ledger_entries).order(created_at: :desc)
+      @attempts = @project.apple_verification_attempts.includes(:apple_verification_workflow_revision, :apple_verification_artifacts, :apple_verification_waivers, :execution_audit_events, :execution_resource_ledger_entries).order(created_at: :desc)
     end
 
     def compare

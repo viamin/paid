@@ -65,6 +65,38 @@
       <p>Retry: <%= attempt.retry_number %> · Commit: <%= attempt.commit_sha || "not recorded" %></p>
       <p>Failure classification: <%= attempt.failure_classification || "none" %></p>
       <p>Source digest: <code><%= attempt.source_digest %></code> · Lifecycle gate: <%= attempt.lifecycle_gate %></p>
+      <% result_artifacts = attempt.apple_verification_artifacts.select(&:result?) %>
+      <% if result_artifacts.any? %>
+        <section>
+          <h4>Attempt results</h4>
+          <% result_artifacts.each do |artifact| %>
+            <dl>
+              <% artifact.result_details.each do |name, details| %>
+                <dt><%= artifact.result_label_for(name) %></dt>
+                <dd><%= details.fetch("outcome", "not recorded") %> · Source: <%= details.fetch("source", "not recorded") %></dd>
+              <% end %>
+            </dl>
+          <% end %>
+        </section>
+      <% end %>
+      <% if attempt.execution_audit_events.any? %>
+        <section>
+          <h4>Execution audit</h4>
+          <ul>
+            <% attempt.execution_audit_events.each do |event| %>
+              <li>
+                <strong><%= event.event_name %></strong> · <%= event.occurred_at %>
+                <% if event.backend.present? %>
+                  · Source: <%= event.backend %>
+                <% end %>
+                <% if event.metadata.present? %>
+                  · <code><%= event.metadata.to_json %></code>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        </section>
+      <% end %>
       <% if policy(@project).manage_apple_verifications? %>
         <div>
           <% if attempt.terminal? %>

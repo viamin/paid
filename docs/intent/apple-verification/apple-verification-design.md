@@ -21,9 +21,11 @@ they do not duplicate execution-provider operations in the UI.
 
 Capture artifacts are never embedded in the page. Screenshot and recording
 entries link to an authenticated project-scoped endpoint, which authorizes the
-viewer before issuing a time-limited storage URL. Result JSON retains build,
-test, capture, policy, provenance, and failure data without collapsing the
-failure taxonomy.
+viewer before issuing a time-limited storage URL. Result artifacts retain
+structured build, test, coverage, and policy-decision outcomes with the source
+of each result; the project page presents those outcomes alongside the
+attempt's execution audit evidence. Result JSON also retains capture,
+provenance, and failure data without collapsing the failure taxonomy.
 
 Authorized users can compare any two revisions belonging to the same project.
 The comparison presents fields whose values differ, including digest,
