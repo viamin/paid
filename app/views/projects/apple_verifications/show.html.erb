@@ -14,7 +14,7 @@
   <h3>Inferred repository profiles</h3>
   <% profiles = Array(@project.apple_verification_settings["profiles"]) %>
   <% if profiles.any? %>
-    <ul><% profiles.each { |profile| %><li><%= profile["name"] || profile[:name] || profile %></li><% } %></ul>
+    <ul><% profiles.each { |profile| %><li><%= profile.is_a?(Hash) ? profile["name"] || profile[:name] : profile %></li><% } %></ul>
   <% else %>
     <p>No inferred profiles have been recorded.</p>
   <% end %>
@@ -22,6 +22,15 @@
 
 <section>
   <h2>Workflow revisions</h2>
+  <% if @revisions.many? %>
+    <%= form_with url: compare_project_apple_verification_path(@project), method: :get do %>
+      <%= label_tag :revision_id, "Revision" %>
+      <%= select_tag :revision_id, options_for_select(@revisions.map { |revision| [ "#{revision.profile_name} · #{revision.source_digest}", revision.id ] }) %>
+      <%= label_tag :compare_to_id, "Compare with" %>
+      <%= select_tag :compare_to_id, options_for_select(@revisions.map { |revision| [ "#{revision.profile_name} · #{revision.source_digest}", revision.id ] }) %>
+      <%= submit_tag "Compare revisions" %>
+    <% end %>
+  <% end %>
   <% @revisions.each do |revision| %>
     <article id="workflow-revision-<%= revision.id %>">
       <h3><%= revision.profile_name %> · <%= revision.state %></h3>
@@ -50,7 +59,14 @@
       <p>Provenance: <%= attempt.provenance.to_json %></p>
       <ul>
         <% attempt.artifacts.each do |artifact| %>
-          <li><%= artifact.kind %>: <%= artifact.protected_capture? ? "Protected artifact" : artifact.storage_key %></li>
+          <li>
+            <%= artifact.kind %>:
+            <% if artifact.protected_capture? %>
+              <%= link_to "Protected artifact", artifact_project_apple_verification_path(@project, artifact_id: artifact.id) %>
+            <% else %>
+              <%= artifact.storage_key %>
+            <% end %>
+          </li>
         <% end %>
       </ul>
       <% if policy(@project).run_agent? %>

@@ -20,7 +20,12 @@ rules are enforced by record transitions, not only by the page controls. A
 rerun creates a queued attempt; it is not dispatched until the worker lifecycle
 can execute it and ingest a terminal result.
 
-Capture artifacts are never embedded in the page: screenshot and recording
-entries are explicitly labelled protected. Result JSON retains build, test,
-capture, policy, provenance, and failure data without collapsing the failure
-taxonomy.
+Capture artifacts are never embedded in the page. Screenshot and recording
+entries link to an authenticated project-scoped endpoint, which authorizes the
+viewer before issuing a time-limited storage URL. Result JSON retains build,
+test, capture, policy, provenance, and failure data without collapsing the
+failure taxonomy.
+
+Authorized users can compare any two revisions belonging to the same project.
+The comparison presents fields whose values differ, including digest,
+referenced files, constraints, checks, lifecycle gate, and state.

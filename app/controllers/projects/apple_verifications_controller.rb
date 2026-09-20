@@ -12,6 +12,18 @@ module Projects
       @attempts = @project.apple_verification_attempts.includes(:workflow_revision, :artifacts, :retry_of).order(created_at: :desc)
     end
 
+    def compare
+      authorize @project, :show?
+      @revision = revision
+      @comparison_revision = comparison_revision
+      @differences = @revision.differences_from(@comparison_revision)
+    end
+
+    def artifact
+      authorize @project, :show?
+      redirect_to ArtifactStorage.new.signed_url(verification_artifact.storage_key), allow_other_host: true
+    end
+
     def update
       authorize @project, :update?
       if @project.update(apple_verification_settings: @project.apple_verification_settings.merge(settings_params))
@@ -84,8 +96,18 @@ module Projects
       @project.apple_verification_workflow_revisions.find(params.require(:revision_id))
     end
 
+    def comparison_revision
+      @project.apple_verification_workflow_revisions.find(params.require(:compare_to_id))
+    end
+
     def attempt
       @project.apple_verification_attempts.find(params.require(:attempt_id))
+    end
+
+    def verification_artifact
+      AppleVerificationArtifact.joins(:attempt)
+        .where(apple_verification_attempts: { project_id: @project.id })
+        .find(params.require(:artifact_id))
     end
 
     def settings_params

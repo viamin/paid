@@ -232,6 +232,8 @@ Rails.application.routes.draw do
   # Projects management
   resources :projects do
     resource :apple_verification, only: [ :show, :update ], controller: "projects/apple_verifications" do
+      get :compare
+      get :artifact
       post :approve
       post :rerun
       post :cancel

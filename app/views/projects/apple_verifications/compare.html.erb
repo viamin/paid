@@ -1,0 +1,21 @@
+<%# @spec APPLE-VERIFY-005 %>
+<% content_for :title, "Compare Apple verification revisions · #{@project.name}" %>
+
+<h1>Compare workflow revisions</h1>
+<p><%= @revision.profile_name %> compared with <%= @comparison_revision.profile_name %>.</p>
+
+<% if @differences.any? %>
+  <dl>
+    <% @differences.each do |label, values| %>
+      <dt><%= label %></dt>
+      <dd>
+        <strong>Revision:</strong> <%= values[:revision].is_a?(String) ? values[:revision] : values[:revision].to_json %><br>
+        <strong>Comparison:</strong> <%= values[:comparison].is_a?(String) ? values[:comparison] : values[:comparison].to_json %>
+      </dd>
+    <% end %>
+  </dl>
+<% else %>
+  <p>The selected revisions have no workflow differences.</p>
+<% end %>
+
+<p><%= link_to "Back to Apple verification", project_apple_verification_path(@project) %></p>

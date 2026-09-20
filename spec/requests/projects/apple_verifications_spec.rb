@@ -12,6 +12,74 @@ RSpec.describe "Projects::AppleVerifications" do
     sign_in user
   end
 
+  describe "GET /projects/:project_id/apple_verification/compare" do
+    it "presents the fields that differ between two project revisions" do # @spec APPLE-VERIFY-005
+      revision = create(:apple_verification_workflow_revision, project:, source_digest: "sha256:before", checks: { "build" => "required" })
+      comparison_revision = create(:apple_verification_workflow_revision, project:, source_digest: "sha256:after", checks: { "build" => "advisory" })
+
+      get compare_project_apple_verification_path(project), params: { revision_id: revision.id, compare_to_id: comparison_revision.id }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Source digest", "sha256:before", "sha256:after", "Required checks")
+    end
+
+    it "does not compare a revision from another project" do # @spec APPLE-VERIFY-005
+      revision = create(:apple_verification_workflow_revision, project:)
+      other_revision = create(:apple_verification_workflow_revision)
+
+      get compare_project_apple_verification_path(project), params: { revision_id: revision.id, compare_to_id: other_revision.id }
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "GET /projects/:project_id/apple_verification/artifact" do
+    it "renders protected artifact links in the verification page" do # @spec APPLE-VERIFY-004
+      artifact = AppleVerificationArtifact.create!(
+        attempt: create(:apple_verification_attempt, project:),
+        kind: "recording",
+        storage_key: "apple-verification/capture.webm"
+      )
+
+      get project_apple_verification_path(project)
+
+      expect(response.body).to include("Protected artifact", artifact_project_apple_verification_path(project, artifact_id: artifact.id))
+    end
+
+    it "authorizes the project before redirecting to a protected artifact URL" do # @spec APPLE-VERIFY-004
+      artifact = AppleVerificationArtifact.create!(
+        attempt: create(:apple_verification_attempt, project:),
+        kind: "screenshot",
+        storage_key: "apple-verification/capture.png"
+      )
+      storage = instance_double(ArtifactStorage, signed_url: "https://artifacts.example.test/capture")
+      allow(ArtifactStorage).to receive(:new).and_return(storage)
+
+      get artifact_project_apple_verification_path(project), params: { artifact_id: artifact.id }
+
+      expect(response).to redirect_to("https://artifacts.example.test/capture")
+      expect(storage).to have_received(:signed_url).with(artifact.storage_key)
+    end
+
+    it "does not issue a protected URL to a user outside the project account" do # @spec APPLE-VERIFY-004 # @spec TENANT-ACCESS-001
+      artifact = AppleVerificationArtifact.create!(
+        attempt: create(:apple_verification_attempt, project:),
+        kind: "screenshot",
+        storage_key: "apple-verification/capture.png"
+      )
+      storage = instance_double(ArtifactStorage)
+      allow(ArtifactStorage).to receive(:new).and_return(storage)
+      allow(storage).to receive(:signed_url)
+      sign_out user
+      sign_in create(:user, :owner)
+
+      get artifact_project_apple_verification_path(project), params: { artifact_id: artifact.id }
+
+      expect(response).to have_http_status(:not_found)
+      expect(storage).not_to have_received(:signed_url)
+    end
+  end
+
   describe "PATCH /projects/:project_id/apple_verification" do
     # @spec APPLE-VERIFY-001
     it "preserves inferred profiles when updating the verification mode" do

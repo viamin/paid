@@ -17,4 +17,8 @@
   failed attempts without a recorded destruction may record retained-VM
   destruction.
 - [x] **APPLE-VERIFY-004** — Screenshots and recordings SHALL be presented as
-  protected artifacts rather than embedded public content.
+  protected artifacts rather than embedded public content, through an
+  authorized endpoint that issues a time-limited storage URL.
+- [x] **APPLE-VERIFY-005** — When an authorized user selects two workflow
+  revisions from the same project, Paid SHALL present every workflow field
+  whose values differ.

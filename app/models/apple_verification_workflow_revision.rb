@@ -6,6 +6,15 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
 
   STATES = %w[draft approved superseded disabled].freeze
   LIFECYCLE_GATES = %w[agent_iteration completion_verification pull_request_verification].freeze
+  COMPARISON_ATTRIBUTES = {
+    profile_name: "Profile name",
+    source_digest: "Source digest",
+    referenced_files: "Referenced files",
+    worker_constraints: "Worker constraints",
+    checks: "Required checks",
+    lifecycle_gate: "Lifecycle gate",
+    state: "State"
+  }.freeze
   belongs_to :project
   belongs_to :approved_by, class_name: "User", optional: true
   has_many :attempts, class_name: "AppleVerificationAttempt", foreign_key: :workflow_revision_id, dependent: :restrict_with_exception
@@ -17,6 +26,15 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   def draft? = state == "draft"
   def approved? = state == "approved"
   def disabled? = state == "disabled"
+
+  # @spec APPLE-VERIFY-005
+  def differences_from(other)
+    COMPARISON_ATTRIBUTES.filter_map do |attribute, label|
+      next if public_send(attribute) == other.public_send(attribute)
+
+      [ label, { revision: public_send(attribute), comparison: other.public_send(attribute) } ]
+    end.to_h
+  end
 
   def approve!(user)
     # Lock the project, not just this row: two draft revisions under the same
