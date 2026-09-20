@@ -6,6 +6,9 @@ RSpec.describe "Projects::AppleVerifications" do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account:) }
   let(:project) { create(:project, account:, apple_verification_mode: "off") }
+  let(:project_administrator) do
+    create(:user, :viewer, account:).tap { |administrator| administrator.add_role(:project_admin, project) }
+  end
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
@@ -106,11 +109,8 @@ RSpec.describe "Projects::AppleVerifications" do
 
   describe "POST /projects/:project_id/apple_verification/approve" do
     it "approves a draft revision for a project administrator" do # @spec APPLE-VERIFY-002
-      project_admin = create(:user, :viewer, account:)
-      project_admin.add_role(:project_admin, project)
       revision = create(:apple_verification_workflow_revision, project:)
-      sign_out user
-      sign_in project_admin
+      sign_in_project_administrator
 
       post approve_project_apple_verification_path(project), params: { revision_id: revision.id }
 
@@ -123,7 +123,7 @@ RSpec.describe "Projects::AppleVerifications" do
 
       post approve_project_apple_verification_path(project), params: { revision_id: revision.id }
 
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to redirect_to(root_path)
       expect(revision.reload).to be_draft
     end
   end
@@ -131,6 +131,7 @@ RSpec.describe "Projects::AppleVerifications" do
   describe "POST /projects/:project_id/apple_verification/rerun" do
     it "queues a retry of an attempt for an authorized user" do # @spec APPLE-VERIFY-006
       attempt = create(:apple_verification_attempt, project:, status: "failed", retry_number: 2)
+      sign_in_project_administrator
 
       post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
 
@@ -144,6 +145,7 @@ RSpec.describe "Projects::AppleVerifications" do
   describe "POST /projects/:project_id/apple_verification/cancel" do
     it "cancels an active attempt for an authorized user" do # @spec APPLE-VERIFY-006
       attempt = create(:apple_verification_attempt, project:, status: "running")
+      sign_in_project_administrator
 
       post cancel_project_apple_verification_path(project), params: { attempt_id: attempt.id }
 
@@ -155,6 +157,7 @@ RSpec.describe "Projects::AppleVerifications" do
   describe "POST /projects/:project_id/apple_verification/waive" do
     it "waives the selected required check with a reason" do # @spec APPLE-VERIFY-006
       attempt = create(:apple_verification_attempt, project:, status: "failed")
+      sign_in_project_administrator
 
       post waive_project_apple_verification_path(project), params: {
         attempt_id: attempt.id,
@@ -163,7 +166,7 @@ RSpec.describe "Projects::AppleVerifications" do
 
       waiver = AppleVerificationWaiver.last
       expect(response).to redirect_to(project_apple_verification_path(project))
-      expect(waiver).to have_attributes(apple_verification_attempt: attempt, created_by: user, reason: "Known simulator outage")
+      expect(waiver).to have_attributes(apple_verification_attempt: attempt, created_by: project_administrator, reason: "Known simulator outage")
     end
   end
 
@@ -178,6 +181,7 @@ RSpec.describe "Projects::AppleVerifications" do
         tags: {},
         runner_handle: {}
       )
+      sign_in_project_administrator
 
       post destroy_retained_vm_project_apple_verification_path(project), params: { attempt_id: attempt.id }
 
@@ -192,6 +196,11 @@ RSpec.describe "Projects::AppleVerifications" do
       kind: "screenshot",
       storage_key: "apple-verification/#{attempt.id}/screenshot.png"
     )
+  end
+
+  def sign_in_project_administrator
+    sign_out user
+    sign_in project_administrator
   end
 
   def digest(character)
