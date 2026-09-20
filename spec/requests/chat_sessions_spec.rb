@@ -534,8 +534,9 @@ RSpec.describe "ChatSessions" do
         # (title + "Session details" toggle). All session settings sit inside
         # a <details> closed by default. No `max-h-[45%]` cap is needed
         # because the always-visible chrome is a single compact line by
-        # design; opening the disclosure is the user's choice and lets the
-        # header grow for as long as the user keeps it open.
+        # design. A workspace disclosure may still be taller than a short
+        # viewport, so its header scrolls within a 75% panel cap rather than
+        # letting the conversation flex item cover its controls.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -545,7 +546,8 @@ RSpec.describe "ChatSessions" do
         expect(header).to be_present
 
         classes = header["class"].split
-        expect(classes).not_to include("max-h-[45%]", "has-[details[open]]:max-h-[75%]", "overflow-y-auto")
+        expect(classes).to include("max-h-[75%]", "overflow-y-auto")
+        expect(classes).not_to include("max-h-[45%]", "has-[details[open]]:max-h-[75%]")
 
         disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
 
