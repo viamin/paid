@@ -39,9 +39,9 @@
       nested disclosure on mobile, however: keeping them open makes the
       390×844 chat panel lose the CHAT-API-009 18rem transcript floor.
       Wide layouts show this content directly. %>
-  <details class="group mt-2 sm:mt-4" data-chat-workspace-options>
+  <details class="group/workspace-options mt-2 sm:mt-4" data-chat-workspace-options>
     <summary class="cursor-pointer text-xs font-semibold text-gray-600 sm:hidden">Workspace options</summary>
-    <div class="hidden group-open:block sm:block!">
+    <div class="hidden group-open/workspace-options:block sm:block!">
       <% if can_manage_workspace %>
         <div class="mt-2 <%= "hidden" unless chat_session.container_ready? %>" data-chat-capability-ready-only="true">
           <%# Keep the clone controls on one line at every breakpoint. The
