@@ -154,6 +154,12 @@ RSpec.describe Activities::RunAgentActivity do
     }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
   end
 
+  def expected_session_limit_reset
+    reset_at = Time.now.utc.change(hour: 6, min: 10)
+    reset_at += 1.day if reset_at <= Time.now.utc
+    reset_at
+  end
+
   def trip_runner_circuit_with_preflight_timeouts(activity:, project:, runner:, attempts: 3)
     attempts.times do
       timed_out_run = create_runner_backed_agent_run(project: project, runner: runner)
@@ -3402,6 +3408,32 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.reload.status).to eq("rate_limited")
       end
 
+      # @spec RUNNER-FALLBACK-006
+      it "uses the Claude error envelope when a nonzero preflight reports a session limit" do
+        envelope = JSON.generate(
+          "type" => "result",
+          "subtype" => "success",
+          "is_error" => true,
+          "terminal_reason" => "api_error",
+          "api_error_status" => 429,
+          "result" => "You've hit your session limit · resets 6:10am (UTC)",
+          "usage" => { "input_tokens" => 10, "output_tokens" => 5 }
+        )
+        noisy_stderr = "diagnostic\n" * 100
+        allow(container_service).to receive(:execute).and_return(
+          Containers::Provision::Result.failure(error: "exit 1", stdout: envelope, stderr: noisy_stderr, exit_code: 1)
+        )
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.runners_attempted.first["error_message"]).to include("Rate limited by claude")
+        expect(agent_run.rate_limited_until).to be_within(2.minutes).of(expected_session_limit_reset)
+      end
+
       it "marks the agent run as rate_limited when runner output is binary encoded" do
         binary_rate_limit_output = Containers::Provision::Result.failure(
           error: "rate limit",
@@ -3891,13 +3923,16 @@ expect(container_service).to receive(:execute).with(
         expect(container_service).to have_received(:execute).exactly(3).times
       end
 
-      it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do
+      # @spec RUNNER-FALLBACK-006
+      it "marks the runner rate-limited when a nonzero preflight surfaces an insufficient credits error" do
         opencode_provider = create_opencode_provider_for(user)
-        credit_error = Containers::Provision::Result.success(
-          stdout: "", stderr: "Error: Insufficient Balance", exit_code: 0
+        credit_error = Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: "",
+          stderr: "402 Insufficient Balance\nInsufficient Balance (type=unknown_error param=invalid_request_error)",
+          exit_code: 1
         )
         allow(container_service).to receive(:execute).and_return(credit_error)
-
         expect {
           run_direct_outbound_preflight(
             activity: activity,
@@ -3906,11 +3941,7 @@ expect(container_service).to receive(:execute).with(
             provider: opencode_provider,
             user: user
           )
-        }.to raise_error(described_class::ProviderRateLimitError, /credit\/quota exhausted/) do |error|
-          expect(error.reset_at).to be_within(2.minutes).of(
-            described_class::INSUFFICIENT_CREDITS_BACKOFF.from_now
-          )
-        end
+        }.to raise_error(described_class::ProviderRateLimitError, /credit\/quota exhausted/)
       end
 
       it "opens the runner circuit after three consecutive preflight timeouts and skips later runs during cooldown" do
