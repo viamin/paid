@@ -70,10 +70,7 @@
     <% end %>
   </header>
 
-  <%# A workspace disclosure can be taller than the panel on a short desktop
-      viewport. Keep its controls in the header's scrollable region instead
-      of allowing the conversation flex item to cover them. (@spec CHAT-API-009) %>
-  <header class="relative z-10 hidden max-h-[75%] shrink-0 overflow-y-auto border-b border-gray-200 px-4 sm:px-6 xl:block" data-chat-header="desktop">
+  <header class="relative z-10 hidden shrink-0 border-b border-gray-200 px-4 sm:px-6 xl:block" data-chat-header="desktop">
     <details class="group">
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 py-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
