@@ -1286,6 +1286,10 @@ RSpec.describe "ChatSessions" do
     workspace_options = mobile_capability_panel.at_css("details[data-chat-workspace-options]")
     expect(workspace_options).to be_present
     expect(workspace_options["open"]).to be_nil
+    expect(workspace_options["class"].split).to include("group/workspace-options")
+
+    workspace_options_body = workspace_options.at_xpath("./div")
+    expect(workspace_options_body["class"].split).to include("group-open/workspace-options:block")
     expect(mobile_capability_panel.at_css("[data-chat-capability-ready-only='true']")["class"].split).to include("mt-2")
 
     # The open Workspace disclosure retains recovery controls on mobile. Its
