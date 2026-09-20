@@ -14,7 +14,7 @@ class Account < ApplicationRecord
 
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
-  before_destroy :destroy_apple_verification_waivers
+  before_destroy :destroy_apple_verification_records
 
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
@@ -219,8 +219,15 @@ class Account < ApplicationRecord
 
   private
 
-  def destroy_apple_verification_waivers
+  # Runs before the `users` association's dependent: :destroy so that approvers
+  # (User#approved_apple_verification_workflow_revisions, dependent: :restrict_with_exception)
+  # can be destroyed without hitting a still-referenced, permanently-approved revision.
+  # Order matters: waivers and attempts restrict workflow revision deletion, so both
+  # must be cleared before the revisions themselves are destroyed.
+  def destroy_apple_verification_records
     apple_verification_waivers.destroy_all
+    apple_verification_attempts.destroy_all
+    apple_verification_workflow_revisions.destroy_all
   end
 
   def normalized_remediation_policy

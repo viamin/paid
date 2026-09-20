@@ -345,6 +345,29 @@ RSpec.describe "Apple verification persistence", type: :model do
       .and change { User.where(id: administrator.id).count }.from(1).to(0)
   end
 
+  it "refuses to delete an approver whose approval is still retained" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    revision = create(:apple_verification_workflow_revision, project:, account: project.account)
+    revision.approve!(actor: administrator)
+
+    expect { administrator.destroy! }.to raise_error(ActiveRecord::DeleteRestrictionError)
+    expect(revision.reload).to have_attributes(approved_by_id: administrator.id, status: "approved")
+  end
+
+  it "destroys approved workflow revisions before their approvers during account teardown" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    revision = create(:apple_verification_workflow_revision, project:, account: project.account)
+    revision.approve!(actor: administrator)
+
+    expect { project.account.destroy! }
+      .to change(AppleVerificationWorkflowRevision, :count).by(-1)
+      .and change { User.where(id: administrator.id).count }.from(1).to(0)
+  end
+
   it "rejects Apple audit and VM-ledger records with another account" do # @spec APPLE-WORKER-007
     attempt = create(:apple_verification_attempt)
     other_account = create(:account)
