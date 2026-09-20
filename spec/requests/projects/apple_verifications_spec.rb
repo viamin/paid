@@ -22,6 +22,8 @@ RSpec.describe "Projects::AppleVerifications" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include(
         attempt.apple_verification_workflow_revision.content_digest,
+        "Worker constraints",
+        "platforms",
         artifact_project_apple_verification_path(project, artifact_id: artifact.id),
         "Protected artifact"
       )
@@ -114,6 +116,73 @@ RSpec.describe "Projects::AppleVerifications" do
 
       expect(response).to redirect_to(project_apple_verification_path(project))
       expect(revision.reload).to be_approved
+    end
+
+    it "does not approve a draft revision for an account owner without a project role" do # @spec APPLE-VERIFY-002
+      revision = create(:apple_verification_workflow_revision, project:)
+
+      post approve_project_apple_verification_path(project), params: { revision_id: revision.id }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(revision.reload).to be_draft
+    end
+  end
+
+  describe "POST /projects/:project_id/apple_verification/rerun" do
+    it "queues a retry of an attempt for an authorized user" do # @spec APPLE-VERIFY-006
+      attempt = create(:apple_verification_attempt, project:, status: "failed", retry_number: 2)
+
+      post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+
+      expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(project.apple_verification_attempts.order(:created_at).last).to have_attributes(
+        status: "queued", retry_number: 3, source_digest: attempt.source_digest
+      )
+    end
+  end
+
+  describe "POST /projects/:project_id/apple_verification/cancel" do
+    it "cancels an active attempt for an authorized user" do # @spec APPLE-VERIFY-006
+      attempt = create(:apple_verification_attempt, project:, status: "running")
+
+      post cancel_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+
+      expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(attempt.reload.status).to eq("cancelled")
+    end
+  end
+
+  describe "POST /projects/:project_id/apple_verification/waive" do
+    it "waives the selected required check with a reason" do # @spec APPLE-VERIFY-006
+      attempt = create(:apple_verification_attempt, project:, status: "failed")
+
+      post waive_project_apple_verification_path(project), params: {
+        attempt_id: attempt.id,
+        waiver: { check_ids: [ "test" ], reason: "Known simulator outage", expires_at: 1.hour.from_now.iso8601 }
+      }
+
+      waiver = AppleVerificationWaiver.last
+      expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(waiver).to have_attributes(apple_verification_attempt: attempt, created_by: user, reason: "Known simulator outage")
+    end
+  end
+
+  describe "POST /projects/:project_id/apple_verification/destroy_retained_vm" do
+    it "requests cleanup of a retained failed verification VM" do # @spec APPLE-VERIFY-006
+      attempt = create(:apple_verification_attempt, project:, status: "failed")
+      resource = ExecutionResourceLedgerEntry.create!(
+        apple_verification_attempt: attempt,
+        runner_type: "apple_worker",
+        resource_kind: "verification_vm",
+        status: "active",
+        tags: {},
+        runner_handle: {}
+      )
+
+      post destroy_retained_vm_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+
+      expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(resource.reload).to be_cleanup_pending
     end
   end
 

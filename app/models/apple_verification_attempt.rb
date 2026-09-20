@@ -33,6 +33,18 @@ class AppleVerificationAttempt < ApplicationRecord
     TERMINAL_STATES.include?(status)
   end
 
+  def cancellable?
+    !terminal?
+  end
+
+  def failed?
+    status == "failed"
+  end
+
+  def retained_vm?
+    execution_resource_ledger_entries.any? { |resource| resource.resource_kind == "verification_vm" && resource.status.in?(%w[active cleanup_failed orphaned]) }
+  end
+
   private
 
   def ownership_matches_workflow

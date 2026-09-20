@@ -18,7 +18,11 @@
   <h3>Inferred repository profiles</h3>
   <% profiles = @revisions.map(&:apple_worker_profile).uniq %>
   <% if profiles.any? %>
-    <ul><% profiles.each { |profile| %><li><%= profile.name %></li><% } %></ul>
+    <ul>
+      <% profiles.each do |profile| %>
+        <li><%= profile.name %> · Constraints: <code><%= profile.constraints.to_json %></code></li>
+      <% end %>
+    </ul>
   <% else %>
     <p>No inferred profiles have been recorded.</p>
   <% end %>
@@ -44,6 +48,7 @@
         <dt>Required checks</dt><dd><%= revision.required_checks.to_json %></dd>
         <dt>Advisory checks</dt><dd><%= revision.advisory_checks.to_json %></dd>
         <dt>Lifecycle gate</dt><dd><%= revision.lifecycle_gate %></dd>
+        <dt>Worker constraints</dt><dd><code><%= revision.apple_worker_profile.constraints.to_json %></code></dd>
       </dl>
       <% if revision.draft? && policy(@project).manage_apple_verifications? %>
         <%= button_to "Approve revision", approve_project_apple_verification_path(@project, revision_id: revision.id) %>
@@ -60,6 +65,35 @@
       <p>Retry: <%= attempt.retry_number %> · Commit: <%= attempt.commit_sha || "not recorded" %></p>
       <p>Failure classification: <%= attempt.failure_classification || "none" %></p>
       <p>Source digest: <code><%= attempt.source_digest %></code> · Lifecycle gate: <%= attempt.lifecycle_gate %></p>
+      <% if policy(@project).manage_apple_verifications? %>
+        <div>
+          <% if attempt.terminal? %>
+            <%= button_to "Rerun", rerun_project_apple_verification_path(@project, attempt_id: attempt.id) %>
+          <% end %>
+          <% if attempt.cancellable? %>
+            <%= button_to "Cancel", cancel_project_apple_verification_path(@project, attempt_id: attempt.id) %>
+          <% end %>
+          <% if attempt.failed? && attempt.retained_vm? %>
+            <%= button_to "Destroy retained VM", destroy_retained_vm_project_apple_verification_path(@project, attempt_id: attempt.id) %>
+          <% end %>
+        </div>
+        <% if attempt.failed? && attempt.apple_verification_waivers.empty? %>
+          <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id) do |form| %>
+            <fieldset>
+              <legend>Waive required checks</legend>
+              <% attempt.apple_verification_workflow_revision.required_checks.each do |check| %>
+                <%= check_box_tag "waiver[check_ids][]", check, false, id: "waiver_check_#{attempt.id}_#{check}" %>
+                <%= label_tag "waiver_check_#{attempt.id}_#{check}", check %>
+              <% end %>
+              <%= form.label :reason, "Waiver reason" %>
+              <%= form.text_area :reason, required: true %>
+              <%= form.label :expires_at, "Waiver expires at" %>
+              <%= form.datetime_local_field :expires_at, required: true %>
+              <%= form.submit "Waive attempt" %>
+            </fieldset>
+          <% end %>
+        <% end %>
+      <% end %>
       <ul>
         <% attempt.apple_verification_artifacts.each do |artifact| %>
           <li>

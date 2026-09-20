@@ -31,7 +31,7 @@ class ProjectPolicy < ApplicationPolicy
   def manage_apple_verifications?
     return false unless user_in_account?
 
-    has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
+    user.has_role?(:project_admin, record)
   end
 
   private

@@ -18,3 +18,6 @@
   revisions from the same project, Paid SHALL present every digest,
   verification-file, check, gate, revision, or status field whose values
   differ.
+- [x] **APPLE-VERIFY-006** — Project administrators SHALL be able to rerun or
+  cancel an attempt, waive required checks for one failed attempt with a
+  reason and expiry, and request early cleanup of a retained failed VM.
