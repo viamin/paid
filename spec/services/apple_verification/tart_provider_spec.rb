@@ -146,5 +146,23 @@ RSpec.describe AppleVerification::TartProvider do
     } ])
   end
 
+  it "matches presence filters for reconciliation ownership tags" do
+    tart.resources = [ {
+      "vm_id" => "paid-vm-9",
+      "tags" => tags.merge(
+        "paid.account_id" => "3",
+        "paid.project_id" => "5",
+        "paid.created_at" => "2026-09-20T00:00:00Z"
+      ),
+      "state" => "running",
+      "image_id" => "paid-macos"
+    } ]
+    filters = ExecutionRunners::REQUIRED_RECONCILIATION_TAG_NAMES.to_h { |name| [ "paid.#{name}", nil ] }
+
+    resources = provider.inventory(ownership_tags: filters)
+
+    expect(resources).to contain_exactly(include("vm_id" => "paid-vm-9"))
+  end
+
   def tags(run_id = "7") = { "paid.run_id" => run_id, "paid.resource" => "apple_vm" }
 end

@@ -49,7 +49,8 @@ module AppleVerification
     end
 
     def inventory(ownership_tags:)
-      tart.inventory(ownership_tags:).map do |resource|
+      tags = ownership_tags.stringify_keys
+      tart.inventory(ownership_tags: inventory_query_tags(tags)).select { |resource| matches_tags?(resource, tags) }.map do |resource|
         {
           "vm_id" => resource.fetch("vm_id"),
           "tags" => resource.fetch("tags", {}),
@@ -83,6 +84,16 @@ module AppleVerification
       return clones.first if clones.one?
 
       raise ArgumentError, "Multiple Apple VMs exist for lifecycle request: #{request_id}"
+    end
+
+    def inventory_query_tags(tags)
+      tags.compact.presence || { "paid.resource" => "apple_vm" }
+    end
+
+    def matches_tags?(resource, tags)
+      resource.fetch("tags", {}).stringify_keys.then do |resource_tags|
+        tags.all? { |key, value| value.nil? ? resource_tags.key?(key) : resource_tags[key] == value }
+      end
     end
 
     def running_vm(vm_id)
