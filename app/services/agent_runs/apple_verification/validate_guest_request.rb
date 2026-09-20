@@ -13,6 +13,8 @@ module AgentRuns
     # @spec APPLE-NETWORK-002
     # @spec APPLE-NETWORK-003
     class ValidateGuestRequest
+      REDACTED_IP_LITERAL = "[redacted-ip-literal]"
+
       def self.call(agent_run:, contract:, request:)
         new(agent_run: agent_run, contract: contract, request: request).call
       end
@@ -65,8 +67,8 @@ module AgentRuns
           event_kind: "denied_egress",
           severity: "warn",
           source_layer: "apple_guest",
-          destination_host: request.host,
-          destination_port: request.port,
+          destination_host: safe_destination_host,
+          destination_port: safe_destination_port,
           scheme: safe_scheme,
           matched_rule: reason,
           occurred_at: Time.current
@@ -79,6 +81,21 @@ module AgentRuns
         request.scheme if GuestContract::SCHEMES.include?(request.scheme.to_s)
       end
 
+      # Raw IP literals are never recorded (RDR-068): a direct-IP denial must
+      # not persist the literal itself into the audit trail meant to flag it.
+      def safe_destination_host
+        return REDACTED_IP_LITERAL if AgentRuns::EgressPolicy::HostPattern.ip_literal?(request.host.to_s)
+
+        request.host
+      end
+
+      # +destination_port+ requires 1..65535; an out-of-range or malformed
+      # port must not block recording the denial itself.
+      def safe_destination_port
+        port = request.port
+        port if port.is_a?(Integer) && port.between?(1, 65_535)
+      end
+
       def record_audit_event(reason)
         ExecutionAuditEvents::Lifecycle.record(
           event_name: "apple_guest.network_policy.denied",
@@ -87,8 +104,8 @@ module AgentRuns
           agent_run: agent_run,
           project: agent_run.project,
           metadata: {
-            destination_host: request.host,
-            destination_port: request.port,
+            destination_host: safe_destination_host,
+            destination_port: safe_destination_port,
             scheme: request.scheme,
             decision: "denied",
             reason: reason

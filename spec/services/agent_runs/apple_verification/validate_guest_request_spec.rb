@@ -82,6 +82,34 @@ RSpec.describe AgentRuns::AppleVerification::ValidateGuestRequest do
     let(:denied_request) { request(host: "93.184.216.34") }
 
     it_behaves_like "a denied request", matched_rule_pattern: /direct IP/
+
+    it "redacts the raw IP literal from both audit writes" do
+      expect { call(denied_request) }.to raise_error(AgentRuns::AppleVerification::NetworkPolicyError)
+
+      event = EgressSecurityEvent.last
+      expect(event.destination_host).to eq("[redacted-ip-literal]")
+      expect(event.destination_host).not_to eq("93.184.216.34")
+
+      audit_event = ExecutionAuditEvent.where(agent_run: agent_run, event_name: "apple_guest.network_policy.denied").last
+      expect(audit_event.metadata["destination_host"]).to eq("[redacted-ip-literal]")
+      expect(audit_event.metadata["destination_host"]).not_to eq("93.184.216.34")
+    end
+  end
+
+  context "with a destination outside the contract using an invalid port" do
+    let(:denied_request) { request(host: "attacker.example.com", port: 0) }
+
+    it_behaves_like "a denied request", matched_rule_pattern: /not in guest contract/
+
+    it "omits the invalid port instead of failing to persist the denial" do
+      expect { call(denied_request) }.to raise_error(AgentRuns::AppleVerification::NetworkPolicyError)
+
+      event = EgressSecurityEvent.last
+      expect(event.destination_port).to be_nil
+
+      audit_event = ExecutionAuditEvent.where(agent_run: agent_run, event_name: "apple_guest.network_policy.denied").last
+      expect(audit_event.metadata["destination_port"]).to be_nil
+    end
   end
 
   context "with a destination outside the contract" do
