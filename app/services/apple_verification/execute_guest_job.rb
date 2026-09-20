@@ -4,6 +4,16 @@ module AppleVerification
   # Selects an approved image before handing a closed-protocol job to the
   # provider's guest connection. Provider code owns the executor transport;
   # this control-plane boundary owns admission and image selection.
+  #
+  # This is the dispatch primitive for APPLE-VERIFY-005, not a submission
+  # endpoint. Per the RDR-068 issue tree (#3930), the caller that decides a
+  # manifest, project, and image digest ("verification work is submitted")
+  # is built by later, dependent issues: scheduling/admission (#3936),
+  # source/artifact transport (#3937), workflow approval (#3938), and the
+  # semantic MCP tools/lifecycle gates (#3940). Wiring a controller or job
+  # here now would mean inventing those unbuilt concepts ahead of their
+  # issues. This class and its spec cover the dispatch contract in
+  # isolation; integration is deferred to #3940.
   # @spec APPLE-VERIFY-005
   class ExecuteGuestJob
     Result = Data.define(:image, :operations)
