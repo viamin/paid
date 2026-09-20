@@ -50,4 +50,17 @@ RSpec.describe AppleVerificationWorkers do
       )
     end.to raise_error(described_class::InvalidManifest, /credentials/)
   end
+
+  it "rejects manifests carrying a schema_version other than the supported one" do # @spec APPLE-WORKER-002
+    expect do
+      described_class::InputManifest.new(
+        schema_version: "remote_execution.apple_verification.v2",
+        source: { "digest" => "sha256:#{'a' * 64}" }, verification: {}, profile: { "digest" => "sha256:#{'b' * 64}" }, lanes: {}
+      )
+    end.to raise_error(described_class::InvalidManifest, /schema_version/)
+
+    expect do
+      described_class::OutputManifest.new(schema_version: "remote_execution.apple_verification.v2", attempt: {}, result: {}, artifacts: {}, lanes: {})
+    end.to raise_error(described_class::InvalidManifest, /schema_version/)
+  end
 end

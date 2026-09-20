@@ -91,6 +91,7 @@ module AppleVerificationWorkers
 
   def self.validate_manifest!(manifest, allowed_fields:, section_fields:)
     validate_object!(manifest)
+    validate_schema_version!(manifest)
     validate_allowed_fields!(manifest, allowed_fields, "manifest")
     validate_section_fields!(manifest, section_fields)
     validate_no_forbidden_keys!(manifest.except("lanes"))
@@ -100,6 +101,12 @@ module AppleVerificationWorkers
 
   def self.validate_object!(value)
     raise InvalidManifest, "manifest must be an object" unless value.is_a?(Hash)
+  end
+
+  def self.validate_schema_version!(manifest)
+    return if manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
+
+    raise InvalidManifest, "unsupported manifest schema_version #{manifest["schema_version"].inspect}"
   end
 
   def self.validate_no_forbidden_keys!(value)
