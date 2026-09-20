@@ -12,7 +12,8 @@
 
 - [x] **APPLE-VERIFY-002** — When an Apple verification image is promoted,
   deprecated, retired, or revoked, the system SHALL enforce the documented
-  lifecycle transition and require a passing smoke test before promotion;
+  lifecycle transition, require a future retirement time while deprecating an
+  image, and require a passing smoke test before promotion;
   only active images SHALL be schedulable for new work.
   *Tests:* `spec/models/apple_verification_image_spec.rb`.
   *Code:* `AppleVerificationImage`.

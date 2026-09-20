@@ -23,8 +23,9 @@ immutable after publication; correcting or rebuilding an image creates another
 record with another digest.
 
 An image begins as `candidate`. `promote!` permits `candidate -> active` only
-after a passing smoke test. Operators can deprecate an active image with a
-migration window, retire it after that window, or revoke it immediately for a
+after a passing smoke test. Operators can deprecate an active image only with a
+future retirement time that establishes a migration window, retire it after
+that window, or revoke it immediately for a
 security incident. Active images are schedulable; all other states remain
 visible for audit but are unavailable to new attempts. Lifecycle changes are
 tracked by Logidze.
