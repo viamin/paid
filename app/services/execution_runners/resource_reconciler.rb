@@ -7,6 +7,7 @@ module ExecutionRunners
   # @spec CONTAINER-RUNTIME-035
   # @spec CONTAINER-RUNTIME-036
   # @spec APPLE-WORKER-003
+  # @spec APPLE-WORKER-010
   class ResourceReconciler
     RETRY_DELAYS = [
       5.minutes,
@@ -55,7 +56,7 @@ module ExecutionRunners
           resource_kind: runner.resource_kind
         )
         orphaned_resources_for(resources).sum do |resource|
-          enqueue_cleanup(resource)
+          enqueue_cleanup(resource, provisioning_intent: provisioning_intent_for(resource))
         end
       end
     end
@@ -100,6 +101,14 @@ module ExecutionRunners
       )
       request.save! if request.changed?
       1
+    end
+
+    def provisioning_intent_for(resource)
+      ProvisioningIntent.reconcileable.find_by(
+        runner_type: resource.runner_type,
+        resource_kind: resource.resource_kind,
+        ownership_tags: resource.ownership_tags
+      )
     end
 
     def drain_cleanup_queue
@@ -180,6 +189,8 @@ module ExecutionRunners
     end
 
     def associate_pre_created_ledger_entries!(request)
+      intent = request.provisioning_intent
+      intent.update!(provider_resource_id: request.provider_resource_id) if intent&.provider_resource_id.blank?
       ledger_entries_for(request).where(provider_resource_id: nil).find_each do |entry|
         entry.update!(provider_resource_id: request.provider_resource_id)
       end

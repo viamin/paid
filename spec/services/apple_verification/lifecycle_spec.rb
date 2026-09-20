@@ -120,6 +120,18 @@ RSpec.describe AppleVerification::Lifecycle do
     expect(entry.reload).to have_attributes(status: "deleted", provider_resource_id: "paid-vm-1")
   end
 
+  it "reconciles a tag-discovered VM with its pre-clone intent and ledger entry" do
+    configure_reconciliation_runner
+    intent, entry = create_pre_clone_crash_records
+    stub_tag_discovered_cleanup_requests(intent)
+
+    expect { ExecutionRunners::ResourceReconciler.new.call }.to change(ExecutionResourceCleanup, :count).by(1)
+
+    expect(ExecutionResourceCleanup.last.provisioning_intent).to eq(intent)
+    expect(intent.reload).to have_attributes(status: "failed", provider_resource_id: "paid-vm-1")
+    expect(entry.reload).to have_attributes(status: "deleted", provider_resource_id: "paid-vm-1")
+  end
+
   def create_post_clone_crash_records
     intent = create(:provisioning_intent,
       agent_run:,
@@ -137,6 +149,12 @@ RSpec.describe AppleVerification::Lifecycle do
       backend: "tart",
       resource_kind: "primary_environment",
       tags: intent.ownership_tags)
+    [ intent, entry ]
+  end
+
+  def create_pre_clone_crash_records
+    intent, entry = create_post_clone_crash_records
+    intent.update!(provider_resource_id: nil, status: "pending")
     [ intent, entry ]
   end
 
@@ -162,6 +180,13 @@ RSpec.describe AppleVerification::Lifecycle do
     allow(host).to receive(:call).with(
       version: "v1", operation: "inventory", token: "host-token", payload: hash_including("ownership_tags")
     ).and_return([])
+  end
+
+  def stub_tag_discovered_cleanup_requests(intent)
+    stub_cleanup_requests
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "inventory", token: "host-token", payload: hash_including("ownership_tags")
+    ).and_return([ { "vm_id" => "paid-vm-1", "tags" => intent.ownership_tags } ])
   end
 
   def configure_reconciliation_runner
