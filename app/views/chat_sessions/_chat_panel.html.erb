@@ -35,7 +35,7 @@
       details` disclosure. The `Workspace` disclosure remains a sibling
       and keeps its existing open-by-default rule for non-inline chats
       so the recovery path stays reachable. (@spec CHAT-API-009, #3925) %>
-  <header class="relative z-10 shrink-0 border-b border-gray-200 px-4 py-2 xl:hidden" data-chat-header="mobile">
+  <header class="relative z-20 shrink-0 border-b border-gray-200 px-4 py-2 xl:hidden" data-chat-header="mobile">
     <details class="group">
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
@@ -70,7 +70,7 @@
     <% end %>
   </header>
 
-  <header class="relative z-10 hidden shrink-0 border-b border-gray-200 px-4 sm:px-6 xl:block" data-chat-header="desktop">
+  <header class="relative z-20 hidden shrink-0 border-b border-gray-200 px-4 sm:px-6 xl:block" data-chat-header="desktop">
     <details class="group">
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 py-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
@@ -114,7 +114,7 @@
     <% end %>
   </header>
 
-  <div class="min-h-0 flex-1 overflow-hidden px-4 pb-1 pt-1 sm:px-6 sm:pt-5">
+  <div class="relative z-0 min-h-0 flex-1 overflow-hidden px-4 pb-1 pt-1 sm:px-6 sm:pt-5">
     <%= render "conversation",
                chat_session: chat_session,
                chat_messages: chat_messages,
