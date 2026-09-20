@@ -10,7 +10,7 @@ FactoryBot.define do
     network_capability { { "mechanism" => "paid_proxy", "egress_enforced" => true } }
     gui_account { { "admin" => false, "apple_id" => false, "personal_data" => false, "host_credentials" => false, "persistent_secret_keychain" => false, "ready_gui_session" => true } }
     smoke_test { { "passed" => false, "completed_at" => Time.current.iso8601 } }
-    provenance { { "build_id" => "operator-build-1" } }
+    provenance { { "build_id" => "operator-build-1", "guest_executor_url" => "https://apple-executor.example.test/v1/jobs" } }
 
     trait :active do
       smoke_test { { "passed" => true, "completed_at" => Time.current.iso8601 } }

@@ -70,6 +70,12 @@ hold operation adapters or execute project work. An account with no active
 image matching that digest cannot dispatch work. This keeps worker-profile
 selection deterministic when an account has multiple active images.
 
+The image provenance records the HTTPS guest-executor endpoint as an immutable
+build fact. `GuestConnection` posts the selected digest and validated manifest
+to that endpoint with the deployment-owned bearer token; it rejects missing
+credentials, authentication failures, non-success responses, and malformed
+executor results. The token is never persisted in image metadata.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternative rejected |

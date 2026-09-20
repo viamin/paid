@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 # @spec APPLE-VERIFY-001
 # @spec APPLE-VERIFY-002
 class AppleVerificationImage < ApplicationRecord
@@ -32,6 +34,7 @@ class AppleVerificationImage < ApplicationRecord
   validate :network_capability_is_complete
   validate :gui_account_is_isolated
   validate :smoke_test_is_recorded
+  validate :guest_executor_url_is_valid
   validate :immutable_facts_after_publication, on: :update
   validate :status_transition_is_allowed
   validate :active_image_is_smoke_tested
@@ -123,6 +126,15 @@ class AppleVerificationImage < ApplicationRecord
 
   def smoke_test_is_recorded
     errors.add(:smoke_test, "must record a boolean passed result") unless smoke_test.is_a?(Hash) && [ true, false ].include?(smoke_test["passed"])
+  end
+
+  def guest_executor_url_is_valid
+    uri = URI.parse(provenance.fetch("guest_executor_url"))
+    return if uri.is_a?(URI::HTTPS) && uri.host.present? && uri.userinfo.blank?
+
+    errors.add(:provenance, "must include an HTTPS guest executor URL without credentials")
+  rescue KeyError, TypeError, URI::InvalidURIError
+    errors.add(:provenance, "must include an HTTPS guest executor URL without credentials")
   end
 
   def immutable_facts_after_publication

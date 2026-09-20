@@ -6,7 +6,7 @@
   image, the system SHALL persist its immutable digest, macOS and Xcode
   versions/builds, SDKs, Simulator runtimes, executor version, resource
   envelope, network capability, dedicated GUI-account posture, and smoke-test
-  result.
+  result plus an HTTPS guest-executor endpoint.
   *Tests:* `spec/models/apple_verification_image_spec.rb`.
   *Code:* `AppleVerificationImage`.
 
@@ -36,9 +36,11 @@
   feature-enabled project with a control-plane-selected immutable image digest,
   the control plane SHALL select only that account's active image matching the
   digest and dispatch only a protocol-valid manifest through the provider-owned
-  guest connection to that image's guest executor;
+  authenticated guest connection to that image's HTTPS guest executor;
   disabled projects and accounts without a matching active image SHALL not
-  dispatch work.
-  *Tests:* `spec/services/apple_verification/execute_guest_job_spec.rb`.
+  dispatch work, and missing credentials or an executor authentication failure
+  SHALL fail without accepting the job.
+  *Tests:* `spec/services/apple_verification/execute_guest_job_spec.rb`,
+  `spec/lib/apple_verification/guest_connection_spec.rb`.
   *Code:* `AppleVerification::ExecuteGuestJob`,
   `AppleVerification::GuestConnection`.

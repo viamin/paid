@@ -15,7 +15,7 @@ module AppleVerification
       new(...).call
     end
 
-    def initialize(project:, manifest:, guest_connection:, image_digest:)
+    def initialize(project:, manifest:, guest_connection: GuestConnection.new, image_digest:)
       @project = project
       @manifest = manifest
       @guest_connection = guest_connection
