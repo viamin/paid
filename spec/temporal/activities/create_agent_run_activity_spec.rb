@@ -1175,6 +1175,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
     before do
       allow(Prompts::BuildForCreateFeature).to receive(:call).and_return("feature prompt")
+      stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
+        .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments}).to_return(status: 200, body: "{}")
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/labels}).to_return(status: 200, body: "[]")
       allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
@@ -1202,6 +1204,27 @@ RSpec.describe Activities::CreateAgentRunActivity do
         a_string_matching(/constraints/),
         a_string_matching(/scope/)
       )
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-007
+    it "reconciles a posted clarification round instead of posting it again" do
+      round_id = "clarification-round"
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue,
+        external_metadata: {
+          "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" },
+          "feature_clarification_round_id" => round_id
+        })
+      stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
+        .to_return(
+          status: 200,
+          body: [ { body: "<!-- paid:create-feature-clarification:#{round_id} -->" } ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(a_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments})).not_to have_been_made
+      expect(feature_issue.reload.needs_input_questions).to be_present
     end
 
     # @spec GH-LABELS-001

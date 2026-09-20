@@ -734,24 +734,11 @@ module Activities
     # Posts intent-focused clarifying questions on the feature's GitHub issue,
     # applies the needs-input label, and pauses the run so the user can answer
     # before the agent begins work.
+    # @spec TEMPORAL-ORCHESTRATION-007
     def initiate_feature_needs_input!(agent_run, project, issue)
-      question_comment = build_feature_clarifying_questions_comment
       client = project.client
 
-      if client
-        client.add_comment(project.full_name, issue.github_number, question_comment)
-        label = project.enhance_issue_needs_input_label_name
-        Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
-        client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
-        # Persist the parsed questions locally so the dashboard needs-input
-        # queue can render them without a per-issue GitHub API round-trip.
-        questions = ClarifyingQuestions::Parse.call(comment_body: question_comment)
-        issue.update!(
-          paid_state: "needs_input",
-          labels: Array(issue.labels) | [ label ],
-          needs_input_questions: questions
-        )
-      end
+      persist_feature_needs_input!(agent_run, project, issue, client) if client
 
       agent_run.update!(status: "paused", paused_at: Time.current)
 
@@ -763,13 +750,69 @@ module Activities
       )
     end
 
+    def persist_feature_needs_input!(agent_run, project, issue, client)
+      return if clarification_already_pending?(issue)
+
+      round_id = feature_clarification_round_id(agent_run)
+      question_comment = build_feature_clarifying_questions_comment(round_id: round_id)
+      post_clarification_comment_unless_present!(client, project, issue, question_comment, round_id)
+      persist_needs_input_state!(project, issue, client, question_comment)
+    end
+
+    def clarification_already_pending?(issue)
+      issue.paid_state == "needs_input" && issue.needs_input_questions.present?
+    end
+
+    def feature_clarification_round_id(agent_run)
+      return agent_run.external_metadata[AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY] if
+        agent_run.external_metadata[AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY].present?
+
+      round_id = SecureRandom.uuid
+      agent_run.update!(external_metadata: agent_run.external_metadata.merge(
+        AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY => round_id
+      ))
+      round_id
+    end
+
+    def post_clarification_comment_unless_present!(client, project, issue, question_comment, round_id)
+      return if clarification_comment_posted?(client, project, issue, round_id)
+
+      client.add_comment(project.full_name, issue.github_number, question_comment)
+    end
+
+    def clarification_comment_posted?(client, project, issue, round_id)
+      marker = "<!-- paid:create-feature-clarification:#{round_id} -->"
+      Array(client.issue_comments(project.full_name, issue.github_number)).any? do |comment|
+        comment_body(comment).include?(marker)
+      end
+    end
+
+    def comment_body(comment)
+      return comment.body.to_s if comment.respond_to?(:body)
+      return comment.to_s unless comment.respond_to?(:fetch)
+
+      comment.fetch("body", "").to_s
+    end
+
+    def persist_needs_input_state!(project, issue, client, question_comment)
+      label = project.enhance_issue_needs_input_label_name
+      Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
+      client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+      issue.update!(
+        paid_state: "needs_input",
+        labels: Array(issue.labels) | [ label ],
+        needs_input_questions: ClarifyingQuestions::Parse.call(comment_body: question_comment)
+      )
+    end
+
     # Builds a clarifying questions comment for a create_feature run.
     # The questions follow the intent-focused pattern from RDR-051,
     # covering problem, desired behavior, constraints, alternatives,
     # scope, and done-ness — the fields that make up a complete
     # feature brief (RDR-053 §2).
-    def build_feature_clarifying_questions_comment
+    def build_feature_clarifying_questions_comment(round_id: nil)
       marker = "<!-- paid:enhance-issue -->"
+      round_marker = "<!-- paid:create-feature-clarification:#{round_id} -->" if round_id
       questions = [
         "What is the desired behavior? Describe what the feature should do from the user's perspective.",
         "What constraints must be respected? List any technical, design, or business constraints.",
@@ -781,6 +824,7 @@ module Activities
 
       <<~COMMENT
         #{marker}
+        #{round_marker}
 
         ## Clarifying questions
 

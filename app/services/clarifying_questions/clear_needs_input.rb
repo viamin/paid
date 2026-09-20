@@ -93,6 +93,7 @@ module ClarifyingQuestions
       brief = assemble_feature_brief_from_answers(issue)
       existing = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata : {}
       agent_run.update!(external_metadata: existing.merge("feature_brief" => brief))
+      agent_run.clear_feature_clarification_round!
       # For a needs_input source, paid_state stays as-is (the run is
       # resuming, not being reset to "new"), so the paid_state-change
       # callback on Issue does NOT fire — the issue is no longer waiting on
