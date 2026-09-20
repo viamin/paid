@@ -217,6 +217,34 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:focus]).to eq("ci_fix")
     end
 
+    describe "review_depth_snapshot" do # @spec REVIEW-DEPTH-006
+      it "snapshots the project's review_depth preset onto a review run" do
+        project.update!(review_settings: {
+          "methods" => { "paid_agent" => { "review_depth" => "focused" } }
+        })
+
+        result = activity.execute(
+          project_id: project.id,
+          goal: "review",
+          source_pull_request_number: 42
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.review_depth_snapshot).to eq("focused")
+      end
+
+      it "snapshots balanced as the default preset when the project has none" do
+        result = activity.execute(
+          project_id: project.id,
+          goal: "review",
+          source_pull_request_number: 42
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.review_depth_snapshot).to eq("balanced")
+      end
+    end
+
     it "uses the configured primary runner when agent type is omitted" do
       codex_runner = create(:runner, user: project.created_by, runner_key: "codex")
       project.created_by.settings.update!(default_agent_runner: codex_runner.routing_key)

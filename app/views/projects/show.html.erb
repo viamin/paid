@@ -274,6 +274,12 @@
               <span class="ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.wait_for_reviews? ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600' %>">
                 <%= @project.wait_for_reviews? ? "Waits for reviews" : "Non-blocking" %>
               </span>
+              <%# @spec REVIEW-DEPTH-009 — name Paid's own reviewer preset in the review summary %>
+              <% if @project.review_method_enabled?("paid_agent") %>
+                <span class="ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.effective_review_depth == 'balanced' ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-700' %>">
+                  Review depth: <%= Project::REVIEW_DEPTH_LABELS.fetch(@project.effective_review_depth, @project.effective_review_depth) %>
+                </span>
+              <% end %>
               <% if @project.enabled_review_methods.any? %>
                 <div class="mt-2 flex flex-wrap gap-1">
                   <% review_method_labels = { "copilot" => "GitHub Copilot", "paid_agent" => "Paid Agent", "ci_action" => "CI Action", "manual" => "Manual" } %>

@@ -39,6 +39,9 @@ module OrchestrationStrategies
           "paid_agent" => {
             "enabled" => false,
             "independent_verification" => false,
+            # @spec REVIEW-DEPTH-001 — keep the persisted orchestration
+            # strategy default aligned with Project::DEFAULT_REVIEW_SETTINGS.
+            "review_depth" => "balanced",
             "termination" => {
               "max_review_rounds" => 15,
               "max_review_goal_retries" => 3,

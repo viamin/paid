@@ -606,6 +606,51 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "renders the review depth badge in the review summary when paid_agent review is enabled" do # @spec REVIEW-DEPTH-009
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true, "review_depth" => "thorough" }
+          }
+        })
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Review depth: Thorough")
+      end
+
+      it "renders the effective balanced review depth badge for an unconfigured preset" do # @spec REVIEW-DEPTH-009
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true }
+          }
+        })
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Review depth: Balanced")
+      end
+
+      it "omits the review depth badge when the paid_agent review method is disabled" do # @spec REVIEW-DEPTH-009
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => false, "review_depth" => "thorough" },
+            "manual" => { "enabled" => true, "reviewer_login" => "alice" }
+          }
+        })
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include("Review depth:")
+      end
+
       it "hides the OKF export link when the project has no effectively exportable knowledge" do
         project = create(:project, account: account, github_token: github_token)
         project_version = create(:project_version, project:)
@@ -1733,6 +1778,32 @@ RSpec.describe "Projects" do
         expect(panel["class"]).to include("max-h-[2000px]")
       end
 
+      it "renders the review_depth preset selector inside the paid_agent settings" do # @spec REVIEW-DEPTH-002
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        project = create(:project, account: account, github_token: github_token, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "review_depth" => "thorough",
+              "termination" => { "max_review_rounds" => 2, "stop_when_no_comments" => true }
+            }
+          }
+        })
+
+        get edit_project_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        select = doc.at_css("select[name='project[review_settings][methods][paid_agent][review_depth]']")
+
+        expect(select).to be_present
+        selected = doc.css("select[name='project[review_settings][methods][paid_agent][review_depth]'] option[selected]")
+        expect(selected.map { |opt| opt["value"] }).to include("thorough")
+        expect(doc.css("option[value='focused']")).not_to be_empty
+        expect(doc.css("option[value='balanced']")).not_to be_empty
+        expect(doc.css("option[value='thorough']")).not_to be_empty
+      end
+
       it "shows screenshot settings preview and repo conflicts" do
         project = create(:project, account: account, github_token: github_token, screenshot_settings: {
           "enabled" => true,
@@ -2274,6 +2345,47 @@ RSpec.describe "Projects" do
 
           expect(response).to redirect_to(project_path(project))
           expect(project.reload.review_settings).to include("address_all_bot_reviews" => true)
+        end
+      end
+
+      describe "review_depth persistence" do # @spec REVIEW-DEPTH-003, REVIEW-DEPTH-004
+        let(:project) { create(:project, account: account, github_token: github_token) }
+
+        before do
+          allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+        end
+
+        it "persists the paid_agent review_depth preset" do
+          params = { enabled: "1", wait_for_reviews: "1",
+                     methods: { paid_agent: { enabled: "1", review_depth: "thorough",
+                                               termination: { max_review_rounds: "3", stop_when_no_comments: "1",
+                                                              quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params } }
+
+          expect(response).to redirect_to(project_path(project))
+          expect(project.reload.review_settings.dig("methods", "paid_agent", "review_depth")).to eq("thorough")
+        end
+
+        it "normalizes a blank paid_agent review_depth submission to nil" do
+          params = { enabled: "1", wait_for_reviews: "1",
+                     methods: { paid_agent: { enabled: "1", review_depth: "",
+                                               termination: { max_review_rounds: "3", stop_when_no_comments: "1",
+                                                              quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params } }
+
+          expect(response).to redirect_to(project_path(project))
+          expect(project.reload.review_settings.dig("methods", "paid_agent")).not_to have_key("review_depth")
+        end
+
+        it "re-renders form when an unknown review_depth preset is submitted" do
+          params = { enabled: "1", wait_for_reviews: "1",
+                     methods: { paid_agent: { enabled: "1", review_depth: "extremely-thorough",
+                                               termination: { max_review_rounds: "3", stop_when_no_comments: "1",
+                                                              quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: params } }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(project.reload.review_settings).to eq({})
         end
       end
     end
