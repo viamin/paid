@@ -30,7 +30,12 @@ module TartProviderSpecSupport
     end
 
     def inspect(vm_id:) = resources.find { |resource| resource.fetch("vm_id") == vm_id }.slice("vm_id", "state")
-    def stop(vm_id:) = stopped << vm_id
+    def stop(vm_id:)
+      raise ArgumentError, "VM already stopped: #{vm_id}" if inspect(vm_id:).fetch("state") == "stopped"
+
+      stopped << vm_id
+      resources.find { |resource| resource.fetch("vm_id") == vm_id }&.store("state", "stopped")
+    end
     def destroy(vm_id:)
       resources.delete_at(resources.index { |resource| resource.fetch("vm_id") == vm_id } || raise(ArgumentError, "VM not found: #{vm_id}"))
       @destroys += 1
@@ -128,13 +133,29 @@ RSpec.describe AppleVerification::TartProvider do
   it "recovers stop and destroy after partial provisioning" do
     vm = provider.clone(request_id: "clone", image_id: "paid-macos", ownership_tags: tags).fetch("vm_id")
 
-    provider.stop(request_id: "stop", vm_id: vm)
+    response = provider.stop(request_id: "stop", vm_id: vm)
     provider.destroy(request_id: "destroy", vm_id: vm)
     provider.destroy(request_id: "destroy", vm_id: vm)
 
-    expect(tart.stopped).to include(vm)
+    expect(response).to eq("vm_id" => vm, "state" => "stopped")
+    expect(tart.stopped).to be_empty
     expect(tart.destroyed).to include(vm)
     expect(tart.destroys).to eq(1)
+  end
+
+  it "recovers a stop request after a host restart without stopping the VM twice" do
+    vm = provider.clone(request_id: "clone", image_id: "paid-macos", ownership_tags: tags).fetch("vm_id")
+    provider.start(request_id: "start", vm_id: vm, profile_id: "ios-standard")
+    provider.stop(request_id: "stop", vm_id: vm)
+    restarted_provider = described_class.new(
+      tart:, softnet:,
+      profiles: { "ios-standard" => { cpu_cores: 2, memory_mib: 4096, disk_gb: 40, network: "paid-egress" } }
+    )
+
+    response = restarted_provider.stop(request_id: "stop", vm_id: vm)
+
+    expect(response).to eq("vm_id" => vm, "state" => "stopped")
+    expect(tart.stopped).to eq([ vm ])
   end
 
   it "recovers a destroy request after a host restart" do

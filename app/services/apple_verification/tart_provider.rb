@@ -41,7 +41,7 @@ module AppleVerification
     end
 
     def stop(request_id:, vm_id:)
-      idempotently("stop", request_id, vm_id) { tart.stop(vm_id:); { "vm_id" => vm_id, "state" => "stopped" } }
+      idempotently("stop", request_id, vm_id) { stopped_vm(vm_id) || stop_vm(vm_id) }
     end
 
     def destroy(request_id:, vm_id:)
@@ -99,6 +99,16 @@ module AppleVerification
     def running_vm(vm_id)
       resource = tart.inspect(vm_id:)
       resource if resource["state"] == "running"
+    end
+
+    def stopped_vm(vm_id)
+      resource = tart.inspect(vm_id:)
+      resource if resource["state"] == "stopped"
+    end
+
+    def stop_vm(vm_id)
+      tart.stop(vm_id:)
+      { "vm_id" => vm_id, "state" => "stopped" }
     end
 
     def destroy_vm(vm_id)
