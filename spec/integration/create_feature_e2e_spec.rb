@@ -127,6 +127,11 @@ RSpec.describe "CreateFeature E2E", type: :model do
   # Needs-input path
   # ---------------------------------------------------------------------------
   describe "needs-input path" do
+    # @spec FEATURE-CREATION-001
+    let(:clarifying_question) do
+      "The feature description asks for dark mode but does not define its default. Should it follow the operating-system preference until a user chooses an override?"
+    end
+
     let(:feature_issue) do
       create(:issue, :needs_input, project: project,
              title: "[Feature] Add dark mode", body: "Need dark mode",
@@ -144,9 +149,16 @@ RSpec.describe "CreateFeature E2E", type: :model do
         .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
       stub_request(:post, %r{api\.github\.com/repos/[^/]+/[^/]+/labels})
         .to_return(status: 201, body: "{}", headers: { "Content-Type" => "application/json" })
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(
+          ready: false,
+          questions: [ clarifying_question ],
+          feature_brief: sparse_feature_brief
+        )
+      )
     end
 
-    it "pauses when feature brief is sparse" do
+    it "pauses when semantic assessment identifies unresolved feature intent" do
       agent_run = create(
         :agent_run, :queued, :create_feature_goal,
         project: project, issue: feature_issue,
@@ -160,7 +172,7 @@ RSpec.describe "CreateFeature E2E", type: :model do
       expect(agent_run.reload.status).to eq("paused")
     end
 
-    it "persists clarifying questions locally after pausing" do
+    it "persists feature-specific clarifying questions locally after pausing" do
       agent_run = create(
         :agent_run, :queued, :create_feature_goal,
         project: project, issue: feature_issue,
@@ -171,12 +183,10 @@ RSpec.describe "CreateFeature E2E", type: :model do
       activity.execute(agent_run_id: agent_run.id)
 
       expect(feature_issue.reload.needs_input_questions).to be_an(Array)
-      expect(feature_issue.needs_input_questions).to include(
-        a_string_matching(/desired behavior/)
-      )
+      expect(feature_issue.needs_input_questions).to eq([ clarifying_question ])
     end
 
-    it "does not pause when feature brief has all required fields" do
+    it "does not pause when semantic assessment finds detailed prose ready" do
       agent_run = create(
         :agent_run, :queued, :create_feature_goal,
         project: project, issue: feature_issue,
@@ -184,6 +194,13 @@ RSpec.describe "CreateFeature E2E", type: :model do
       )
 
       activity = Activities::CreateAgentRunActivity.new
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(
+          ready: true,
+          questions: [],
+          feature_brief: complete_feature_brief
+        )
+      )
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:paused]).to be_falsey
