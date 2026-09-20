@@ -61,6 +61,25 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(revision.errors[:base]).to include("approved workflow binding is immutable")
   end
 
+  it "does not permit clearing an approval record to rewrite the binding across two saves" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    revision = create(:apple_verification_workflow_revision, project:, account: project.account)
+    revision.approve!(actor: administrator)
+
+    revision.assign_attributes(status: "draft", approved_by: nil, approved_at: nil)
+
+    expect(revision).not_to be_valid
+    expect(revision.errors[:base]).to include("approval actor and timestamp are immutable once set")
+
+    revision.reload
+    revision.assign_attributes(status: "superseded", approved_by: nil, approved_at: nil)
+
+    expect(revision).not_to be_valid
+    expect(revision.errors[:base]).to include("approval actor and timestamp are immutable once set")
+  end
+
   it "does not permit an approved workflow revision to move to another project" do # @spec APPLE-WORKER-004
     project = create(:project)
     other_project = create(:project, account: project.account)

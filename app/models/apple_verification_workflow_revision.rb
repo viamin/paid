@@ -25,6 +25,7 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   validate :approver_is_project_administrator
   validate :approval_requires_active_profile
   validate :approval_binding_is_immutable, on: :update
+  validate :approval_record_is_permanent, on: :update
 
   def draft?
     status == "draft"
@@ -104,5 +105,16 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
     return unless will_save_change_to_project_id? || will_save_change_to_content_digest? || will_save_change_to_verification_files? || will_save_change_to_apple_worker_profile_id? || will_save_change_to_lifecycle_gate? || will_save_change_to_required_checks? || will_save_change_to_advisory_checks?
 
     errors.add(:base, "approved workflow binding is immutable")
+  end
+
+  # A revision that was ever approved must keep its approval actor/timestamp forever, even once
+  # status later moves to superseded/disabled/draft. Without this, clearing approved_at/approved_by
+  # in one save (permitted because no binding field changes) resets approval_binding_is_immutable's
+  # database-derived guard, letting a second save rewrite the previously-approved binding.
+  def approval_record_is_permanent
+    return unless approved_at_in_database.present?
+    return unless will_save_change_to_approved_at? || will_save_change_to_approved_by_id?
+
+    errors.add(:base, "approval actor and timestamp are immutable once set")
   end
 end
