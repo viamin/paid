@@ -23,10 +23,29 @@ module AppleVerificationWorkers
     "verification" => %w[operations workflow_digest],
     "profile" => %w[digest platform xcode_version]
   }.freeze
+  INPUT_SECTION_SHAPES = {
+    "source" => { "digest" => :digest, "commit_sha" => :string, "bundle_digest" => :digest },
+    "verification" => { "operations" => :capabilities, "workflow_digest" => :digest },
+    "profile" => { "digest" => :digest, "platform" => :platform, "xcode_version" => :string }
+  }.freeze
   OUTPUT_SECTION_FIELDS = {
     "attempt" => %w[id source_digest workflow_revision lifecycle_gate profile_digest],
     "result" => %w[status timings retry_lineage failure_classification required_checks advisory_checks screenshot_metadata network_policy audit_event_references ledger_entry_references],
     "artifacts" => %w[xcresult build_logs screenshots diagnostics references]
+  }.freeze
+  OUTPUT_SECTION_SHAPES = {
+    "attempt" => { "id" => :identifier, "source_digest" => :digest, "workflow_revision" => :identifier, "lifecycle_gate" => :lifecycle_gate, "profile_digest" => :digest },
+    "result" => { "status" => :string, "timings" => :timings, "retry_lineage" => :identifier_array, "failure_classification" => :string, "required_checks" => :string_array, "advisory_checks" => :string_array, "screenshot_metadata" => :reference_array, "network_policy" => :network_policy, "audit_event_references" => :reference_array, "ledger_entry_references" => :reference_array },
+    "artifacts" => { "xcresult" => :reference_array, "build_logs" => :reference_array, "screenshots" => :reference_array, "diagnostics" => :reference_array, "references" => :reference_array }
+  }.freeze
+  DIGEST_PATTERN = /\Asha256:[a-f0-9]{64}\z/
+  TIMING_FIELDS = %w[queued_ms provisioning_ms running_ms total_ms].freeze
+  NETWORK_POLICY_FIELDS = %w[mode egress_profile].freeze
+  LOCATOR_FIELDS = {
+    "git" => %w[repository_id repo_full_name commit_sha ref bundle_digest],
+    "control_plane_api" => %w[id project_id workflow_revision_id attempt_id artifact_id audit_event_id],
+    "object_storage" => %w[id key digest sha256 url],
+    "credentials" => %w[credential_id name project_id account_id repository_id integration_credential_id github_token_id]
   }.freeze
 
   class UnsupportedCapability < StandardError; end
@@ -82,19 +101,20 @@ module AppleVerificationWorkers
   end
 
   def self.validate_input_manifest!(manifest)
-    validate_manifest!(manifest, allowed_fields: INPUT_MANIFEST_FIELDS, section_fields: INPUT_SECTION_FIELDS)
+    validate_manifest!(manifest, allowed_fields: INPUT_MANIFEST_FIELDS, section_fields: INPUT_SECTION_FIELDS, section_shapes: INPUT_SECTION_SHAPES)
   end
 
   def self.validate_output_manifest!(manifest)
-    validate_manifest!(manifest, allowed_fields: OUTPUT_MANIFEST_FIELDS, section_fields: OUTPUT_SECTION_FIELDS)
+    validate_manifest!(manifest, allowed_fields: OUTPUT_MANIFEST_FIELDS, section_fields: OUTPUT_SECTION_FIELDS, section_shapes: OUTPUT_SECTION_SHAPES)
   end
 
-  def self.validate_manifest!(manifest, allowed_fields:, section_fields:)
+  def self.validate_manifest!(manifest, allowed_fields:, section_fields:, section_shapes:)
     validate_object!(manifest)
     validate_schema_version!(manifest)
     validate_allowed_fields!(manifest, allowed_fields, "manifest")
     validate_section_fields!(manifest, section_fields)
     validate_no_forbidden_keys!(manifest.except("lanes"))
+    validate_section_shapes!(manifest, section_shapes)
     validate_no_secret_shaped_values!(manifest)
     validate_lanes!(manifest.fetch("lanes"))
   end
@@ -136,6 +156,31 @@ module AppleVerificationWorkers
     end
   end
 
+  def self.validate_section_shapes!(manifest, section_shapes)
+    section_shapes.each do |section, fields|
+      manifest.fetch(section).each do |field, value|
+        validate_field_shape!(value, fields.fetch(field.to_s))
+      end
+    end
+  end
+
+  def self.validate_field_shape!(value, shape)
+    valid = case shape
+    when :digest then value.is_a?(String) && value.match?(DIGEST_PATTERN)
+    when :string then value.is_a?(String)
+    when :identifier then value.is_a?(String) || value.is_a?(Integer)
+    when :platform then value.is_a?(String) && PLATFORMS.include?(value)
+    when :lifecycle_gate then AppleVerificationWorkflowRevision::LIFECYCLE_GATES.include?(value)
+    when :capabilities then value.is_a?(Array) && value.all? { |entry| entry.is_a?(String) && CAPABILITIES.include?(entry.to_sym) }
+    when :string_array then value.is_a?(Array) && value.all? { |entry| entry.is_a?(String) }
+    when :identifier_array then value.is_a?(Array) && value.all? { |entry| entry.is_a?(String) || entry.is_a?(Integer) }
+    when :reference_array then value.is_a?(Array) && value.all? { |entry| lane_reference?(entry) }
+    when :timings then timings?(value)
+    when :network_policy then network_policy?(value)
+    end
+    raise InvalidManifest, "manifest field has an invalid shape" unless valid
+  end
+
   def self.validate_no_secret_shaped_values!(value)
     case value
     when Hash
@@ -151,11 +196,25 @@ module AppleVerificationWorkers
     raise InvalidManifest, "manifest lanes must be an object" unless lanes.is_a?(Hash)
     validate_allowed_fields!(lanes, LANE_NAMES, "manifest lanes")
     raise InvalidManifest, "manifest lanes must contain arrays" unless lanes.values.all? { |entries| entries.is_a?(Array) }
-    lanes.each_value { |entries| validate_no_forbidden_keys!(entries) }
-    raise InvalidManifest, "credential lane must contain references only" if Array(lanes["credentials"]).any? { |entry| !credential_reference?(entry) }
+    lanes.each do |lane, entries|
+      raise InvalidManifest, "manifest lane must contain references only" unless entries.all? { |entry| lane_reference?(entry, lane:) }
+    end
   end
 
-  def self.credential_reference?(entry)
-    entry.is_a?(Hash) && entry["lane"] == "credentials" && entry["kind"].present? && entry["locator"].is_a?(Hash) && entry.keys.all? { |key| %w[lane kind locator].include?(key.to_s) }
+  def self.lane_reference?(entry, lane: nil)
+    return false unless entry.is_a?(Hash) && entry["lane"].in?(LANE_NAMES) && entry["kind"].is_a?(String) && entry["kind"].present?
+    return false unless lane.nil? || entry["lane"] == lane
+    return false unless entry.keys.all? { |key| %w[lane kind locator].include?(key.to_s) }
+
+    locator = entry["locator"]
+    locator.is_a?(Hash) && locator.present? && locator.keys.all? { |key| LOCATOR_FIELDS.fetch(entry["lane"]).include?(key.to_s) } && locator.values.all? { |value| value.is_a?(String) || value.is_a?(Integer) }
+  end
+
+  def self.timings?(value)
+    value.is_a?(Hash) && (value.keys.map(&:to_s) - TIMING_FIELDS).empty? && value.values.all? { |duration| duration.is_a?(Numeric) && duration >= 0 }
+  end
+
+  def self.network_policy?(value)
+    value.is_a?(Hash) && (value.keys.map(&:to_s) - NETWORK_POLICY_FIELDS).empty? && value.values.all? { |policy| policy.is_a?(String) }
   end
 end

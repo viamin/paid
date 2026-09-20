@@ -76,6 +76,21 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(revision.errors[:base]).to include("approved workflow binding is immutable")
   end
 
+  it "keeps a superseded revision's approved binding immutable" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    old_revision = create(:apple_verification_workflow_revision, project:, account: project.account)
+    replacement = create(:apple_verification_workflow_revision, project:, account: project.account)
+
+    old_revision.approve!(actor: administrator)
+    replacement.approve!(actor: administrator)
+    old_revision.content_digest = digest
+
+    expect(old_revision).not_to be_valid
+    expect(old_revision.errors[:base]).to include("approved workflow binding is immutable")
+  end
+
   it "requires a project administrator to approve a workflow revision" do # @spec APPLE-WORKER-004
     project = create(:project)
     revision = create(:apple_verification_workflow_revision, project:)
@@ -172,6 +187,16 @@ RSpec.describe "Apple verification persistence", type: :model do
 
     expect(attempt).not_to be_valid
     expect(attempt.errors[:lifecycle_gate]).to include("must match the workflow gate")
+  end
+
+  it "keeps an attempt's execution binding immutable while allowing lifecycle updates" do # @spec APPLE-WORKER-005
+    attempt = create(:apple_verification_attempt)
+
+    attempt.update!(status: "running", started_at: Time.current)
+    attempt.source_digest = digest
+
+    expect(attempt).not_to be_valid
+    expect(attempt.errors[:base]).to include("attempt execution binding is immutable")
   end
 
   it "allows an attempt to bind a draft workflow during agent iteration" do # @spec APPLE-WORKER-005

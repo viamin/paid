@@ -100,7 +100,7 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   end
 
   def approval_binding_is_immutable
-    return unless approved? || status_in_database == "approved"
+    return unless approved_at_in_database.present? || status_in_database == "approved"
     return unless will_save_change_to_project_id? || will_save_change_to_content_digest? || will_save_change_to_verification_files? || will_save_change_to_apple_worker_profile_id? || will_save_change_to_lifecycle_gate? || will_save_change_to_required_checks? || will_save_change_to_advisory_checks?
 
     errors.add(:base, "approved workflow binding is immutable")

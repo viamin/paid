@@ -26,6 +26,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validate :profile_is_not_revoked
   validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
+  validate :execution_binding_is_immutable, on: :update
 
   def terminal?
     TERMINAL_STATES.include?(status)
@@ -71,5 +72,18 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def agent_run_matches_project
     errors.add(:agent_run, "must match the attempt project") if agent_run && agent_run.project_id != project_id
+  end
+
+  def execution_binding_is_immutable
+    return unless execution_binding_changed?
+
+    errors.add(:base, "attempt execution binding is immutable")
+  end
+
+  def execution_binding_changed?
+    will_save_change_to_account_id? || will_save_change_to_project_id? || will_save_change_to_agent_run_id? ||
+      will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
+      will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
+      will_save_change_to_retry_number?
   end
 end

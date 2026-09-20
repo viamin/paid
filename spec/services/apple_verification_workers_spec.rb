@@ -51,6 +51,23 @@ RSpec.describe AppleVerificationWorkers do
     end.to raise_error(described_class::InvalidManifest, /credentials/)
   end
 
+  it "rejects nested values that do not match an input field's contract" do # @spec APPLE-WORKER-002
+    expect do
+      described_class::InputManifest.new(
+        source: { "digest" => { "accessToken" => "opaque-credential-value" } }, verification: {}, profile: {}, lanes: {}
+      )
+    end.to raise_error(described_class::InvalidManifest, /invalid shape/)
+  end
+
+  it "allows only reference locators in transfer lanes" do # @spec APPLE-WORKER-002
+    expect do
+      described_class::InputManifest.new(
+        source: {}, verification: {}, profile: {},
+        lanes: { "credentials" => [ { "lane" => "credentials", "kind" => "github_installation", "locator" => { "accessToken" => "opaque-credential-value" } } ] }
+      )
+    end.to raise_error(described_class::InvalidManifest, /references only/)
+  end
+
   it "rejects manifests carrying a schema_version other than the supported one" do # @spec APPLE-WORKER-002
     expect do
       described_class::InputManifest.new(
