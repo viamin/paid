@@ -41,7 +41,7 @@
       Wide layouts show this content directly. %>
   <details class="group/workspace-options mt-2 sm:mt-4" data-chat-workspace-options>
     <summary class="cursor-pointer text-xs font-semibold text-gray-600 sm:hidden">Workspace options</summary>
-    <div class="hidden group-open/workspace-options:block sm:block!">
+    <div class="hidden group-open/workspace-options:block sm:!block">
       <% if can_manage_workspace %>
         <div class="mt-2 <%= "hidden" unless chat_session.container_ready? %>" data-chat-capability-ready-only="true">
           <%# Keep the clone controls on one line at every breakpoint. The
