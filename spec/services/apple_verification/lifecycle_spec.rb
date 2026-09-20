@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec APPLE-WORKER-003
+# @spec APPLE-WORKER-010
 RSpec.describe AppleVerification::Lifecycle do
   let(:agent_run) { create(:agent_run) }
   let(:host) { instance_double(AppleVerification::HostService) }

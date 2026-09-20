@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  apple-verification-workers:
+    title: Apple Verification Workers
+    path: docs/intent/apple-verification-workers/apple-verification-workers-design.md
+    specs: docs/intent/apple-verification-workers/apple-verification-workers-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-19
   auto-pick-queue:
     title: Auto-Pick Queue
     path: docs/intent/auto-pick-queue/auto-pick-queue-design.md
@@ -168,14 +176,6 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-08-04
-  apple-verification-workers:
-    title: Apple Verification Workers
-    path: docs/intent/apple-verification-workers/apple-verification-workers-design.md
-    specs: docs/intent/apple-verification-workers/apple-verification-workers-specs.md
-    parent: PAID
-    taxonomy: runtime
-    status: OK
-    audited: 2026-09-19
   account-queue-fairness:
     title: Account Queue Fairness
     path: docs/intent/account-queue-fairness/account-queue-fairness-design.md

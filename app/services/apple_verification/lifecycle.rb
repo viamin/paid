@@ -3,7 +3,7 @@
 module AppleVerification
   # Control-plane lifecycle that records the crash-window intent before clone
   # and stores only the opaque VM handle after successful start.
-  # @spec APPLE-WORKER-003
+  # @spec APPLE-WORKER-010
   class Lifecycle
     RUNNER_TYPE = "apple_tart"
     RESOURCE_KIND = "apple_vm"

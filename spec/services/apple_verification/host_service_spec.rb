@@ -2,8 +2,8 @@
 
 require "rails_helper"
 
-# @spec APPLE-WORKER-001
-# @spec APPLE-WORKER-002
+# @spec APPLE-WORKER-008
+# @spec APPLE-WORKER-009
 RSpec.describe AppleVerification::HostService do
   let(:provider) { instance_double(AppleVerification::TartProvider) }
   let(:service) do

@@ -3,8 +3,8 @@
 module AppleVerification
   # Authenticated, fixed-vocabulary boundary deployed on the macOS worker.
   # Its input deliberately cannot describe host commands, paths, or mounts.
-  # @spec APPLE-WORKER-001
-  # @spec APPLE-WORKER-002
+  # @spec APPLE-WORKER-008
+  # @spec APPLE-WORKER-009
   class HostService
     API_VERSION = "v1"
     OPERATIONS = %w[readiness clone start inspect stop destroy inventory].freeze

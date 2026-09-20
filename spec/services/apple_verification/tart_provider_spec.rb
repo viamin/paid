@@ -49,7 +49,7 @@ module TartProviderSpecSupport
   end
 end
 
-# @spec APPLE-WORKER-003
+# @spec APPLE-WORKER-010
 RSpec.describe AppleVerification::TartProvider do
   let(:tart) { TartProviderSpecSupport::FakeTart.new }
   let(:softnet) { TartProviderSpecSupport::FakeSoftnet.new }

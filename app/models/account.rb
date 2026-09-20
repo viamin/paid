@@ -14,12 +14,18 @@ class Account < ApplicationRecord
 
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
+  before_destroy :destroy_apple_verification_records
+
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
   has_many :account_activity_events, dependent: :destroy
   has_many :members, through: :account_memberships, source: :user
   has_many :provider_api_keys, through: :users
   has_many :projects, dependent: :destroy
+  has_many :apple_worker_profiles, dependent: :destroy
+  has_many :apple_verification_workflow_revisions, dependent: :destroy
+  has_many :apple_verification_attempts, dependent: :destroy
+  has_many :apple_verification_waivers, dependent: :destroy
   has_many :roi_benchmarks, through: :projects
   has_many :github_tokens, dependent: :destroy
   has_many :github_installations, dependent: :destroy
@@ -212,6 +218,17 @@ class Account < ApplicationRecord
   end
 
   private
+
+  # Runs before the `users` association's dependent: :destroy so that approvers
+  # (User#approved_apple_verification_workflow_revisions, dependent: :restrict_with_exception)
+  # can be destroyed without hitting a still-referenced, permanently-approved revision.
+  # Order matters: waivers and attempts restrict workflow revision deletion, so both
+  # must be cleared before the revisions themselves are destroyed.
+  def destroy_apple_verification_records
+    apple_verification_waivers.destroy_all
+    apple_verification_attempts.destroy_all
+    apple_verification_workflow_revisions.destroy_all
+  end
 
   def normalized_remediation_policy
     (remediation_policy.is_a?(Hash) ? remediation_policy : {})

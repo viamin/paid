@@ -3,7 +3,7 @@
 module AppleVerification
   # Reconciliation-only runner for Apple VMs. It deliberately exposes only
   # provider-neutral inventory and cleanup operations to the control plane.
-  # @spec APPLE-WORKER-003
+  # @spec APPLE-WORKER-010
   class TartRunner < ExecutionRunners::Base
     RUNNER_TYPE = :apple_tart
     RESOURCE_KIND = "apple_vm"

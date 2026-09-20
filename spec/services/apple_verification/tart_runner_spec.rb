@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec APPLE-WORKER-003
+# @spec APPLE-WORKER-010
 RSpec.describe AppleVerification::TartRunner do
   after { ExecutionRunners.unregister_reconciliation_runner(:apple_tart) }
 

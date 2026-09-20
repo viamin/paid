@@ -5,7 +5,7 @@ require "json"
 module AppleVerification
   # Authenticated transport for the versioned macOS host-service boundary.
   # The configured endpoint is the lifecycle API root, not a project endpoint.
-  # @spec APPLE-WORKER-001
+  # @spec APPLE-WORKER-008
   class HostClient
     def initialize(endpoint:, connection: nil)
       @connection = connection || Faraday.new(url: endpoint)

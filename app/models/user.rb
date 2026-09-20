@@ -13,6 +13,9 @@ class User < ApplicationRecord
   has_many :created_login_sessions, class_name: "LoginSession", foreign_key: :created_by_id, dependent: :destroy, inverse_of: :created_by
   has_many :created_runner_credentials, class_name: "RunnerCredential", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
+  has_many :created_apple_worker_profiles, class_name: "AppleWorkerProfile", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
+  has_many :approved_apple_verification_workflow_revisions, class_name: "AppleVerificationWorkflowRevision", foreign_key: :approved_by_id, dependent: :restrict_with_exception, inverse_of: :approved_by
+  has_many :created_apple_verification_waivers, class_name: "AppleVerificationWaiver", foreign_key: :created_by_id, dependent: :restrict_with_exception, inverse_of: :created_by
   has_one :user_setting, dependent: :destroy
   has_many :runner_states, dependent: :destroy
   has_many :provider_states, class_name: "ProviderState", dependent: :destroy

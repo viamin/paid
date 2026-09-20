@@ -3,7 +3,7 @@
 module AppleVerification
   # Provider-neutral Apple worker implementation. Tart and Softnet adapters are
   # injected so project-controlled input can never become a host command.
-  # @spec APPLE-WORKER-003
+  # @spec APPLE-WORKER-010
   class TartProvider
     PROVIDER_NAME = "tart"
     REQUEST_ID_TAG = "paid.request_id"
