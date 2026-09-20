@@ -9,16 +9,13 @@ Apple verification is exposed only when the `apple_verification_workers`
 feature flag is enabled for the project. The project setting independently
 selects `off`, `on_demand`, or `automatic`; the flag does not change that mode.
 
-The project page presents inferred profiles, committed workflow revisions, and
-attempts from the same structured records used by execution clients. Approval
-is bound to the stored source digest, referenced files, worker constraints,
-checks, and lifecycle gate. Only draft revisions can be approved. Project
-administrators may waive one failed, required attempt with a reason or destroy
-one retained failed VM. Members may rerun when the project mode permits
-on-demand execution, or cancel their active project attempts. These lifecycle
-rules are enforced by record transitions, not only by the page controls. A
-rerun creates a queued attempt; it is not dispatched until the worker lifecycle
-can execute it and ingest a terminal result.
+The project page presents configured mode, worker profiles, committed workflow
+revisions, and attempts from the same structured records used by execution
+clients. Approval is bound to the stored content digest, verification files,
+worker profile, checks, and lifecycle gate. Only draft revisions can be
+approved by a project administrator. Attempt execution controls and waivers
+remain worker-lifecycle responsibilities; this UI presents their durable
+records without duplicating lifecycle transitions.
 
 Capture artifacts are never embedded in the page. Screenshot and recording
 entries link to an authenticated project-scoped endpoint, which authorizes the
@@ -28,4 +25,4 @@ failure taxonomy.
 
 Authorized users can compare any two revisions belonging to the same project.
 The comparison presents fields whose values differ, including digest,
-referenced files, constraints, checks, lifecycle gate, and state.
+verification files, checks, lifecycle gate, and status.

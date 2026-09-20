@@ -27,7 +27,7 @@ RSpec.describe Project do
       project = create(:project)
       attempt = create(:apple_verification_attempt, project:)
       artifact = AppleVerificationArtifact.create!(
-        attempt:,
+        apple_verification_attempt: attempt,
         kind: "screenshot",
         storage_key: "apple-verification/#{attempt.id}/screenshot.png"
       )

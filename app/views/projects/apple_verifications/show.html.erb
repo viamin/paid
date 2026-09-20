@@ -12,9 +12,9 @@
     <%= form.submit "Save mode" %>
   <% end %>
   <h3>Inferred repository profiles</h3>
-  <% profiles = Array(@project.apple_verification_settings["profiles"]) %>
+  <% profiles = @revisions.map(&:apple_worker_profile).uniq %>
   <% if profiles.any? %>
-    <ul><% profiles.each { |profile| %><li><%= profile.is_a?(Hash) ? profile["name"] || profile[:name] : profile %></li><% } %></ul>
+    <ul><% profiles.each { |profile| %><li><%= profile.name %></li><% } %></ul>
   <% else %>
     <p>No inferred profiles have been recorded.</p>
   <% end %>
@@ -25,23 +25,23 @@
   <% if @revisions.many? %>
     <%= form_with url: compare_project_apple_verification_path(@project), method: :get do %>
       <%= label_tag :revision_id, "Revision" %>
-      <%= select_tag :revision_id, options_for_select(@revisions.map { |revision| [ "#{revision.profile_name} · #{revision.source_digest}", revision.id ] }) %>
+      <%= select_tag :revision_id, options_for_select(@revisions.map { |revision| [ "#{revision.apple_worker_profile.name} · #{revision.content_digest}", revision.id ] }) %>
       <%= label_tag :compare_to_id, "Compare with" %>
-      <%= select_tag :compare_to_id, options_for_select(@revisions.map { |revision| [ "#{revision.profile_name} · #{revision.source_digest}", revision.id ] }) %>
+      <%= select_tag :compare_to_id, options_for_select(@revisions.map { |revision| [ "#{revision.apple_worker_profile.name} · #{revision.content_digest}", revision.id ] }) %>
       <%= submit_tag "Compare revisions" %>
     <% end %>
   <% end %>
   <% @revisions.each do |revision| %>
     <article id="workflow-revision-<%= revision.id %>">
-      <h3><%= revision.profile_name %> · <%= revision.state %></h3>
+      <h3><%= revision.apple_worker_profile.name %> · <%= revision.status %></h3>
       <dl>
-        <dt>Committed digest</dt><dd><code><%= revision.source_digest %></code></dd>
-        <dt>Referenced files</dt><dd><%= revision.referenced_files.join(", ") %></dd>
-        <dt>Worker constraints</dt><dd><%= revision.worker_constraints.to_json %></dd>
-        <dt>Required checks</dt><dd><%= revision.checks.to_json %></dd>
-        <dt>Lifecycle gate</dt><dd><%= revision.lifecycle_gate || "advisory" %></dd>
+        <dt>Committed digest</dt><dd><code><%= revision.content_digest %></code></dd>
+        <dt>Verification files</dt><dd><%= revision.verification_files.to_json %></dd>
+        <dt>Required checks</dt><dd><%= revision.required_checks.to_json %></dd>
+        <dt>Advisory checks</dt><dd><%= revision.advisory_checks.to_json %></dd>
+        <dt>Lifecycle gate</dt><dd><%= revision.lifecycle_gate %></dd>
       </dl>
-      <% if revision.state == "draft" && policy(@project).manage_apple_verifications? %>
+      <% if revision.draft? && policy(@project).manage_apple_verifications? %>
         <%= button_to "Approve revision", approve_project_apple_verification_path(@project, revision_id: revision.id) %>
       <% end %>
     </article>
@@ -52,13 +52,12 @@
   <h2>Verification attempts</h2>
   <% @attempts.each do |attempt| %>
     <article id="apple-verification-attempt-<%= attempt.id %>">
-      <h3><%= attempt.workflow_revision.profile_name %> · <%= attempt.state %></h3>
-      <p>Queue position: <%= attempt.queue_position || "not queued" %> · Retry lineage: <%= attempt.retry_of_id || "original" %></p>
-      <p>Failure class: <%= attempt.failure_class || "none" %></p>
-      <p>Build/test/capture results: <%= attempt.result.to_json %></p>
-      <p>Provenance: <%= attempt.provenance.to_json %></p>
+      <h3><%= attempt.apple_verification_workflow_revision.apple_worker_profile.name %> · <%= attempt.status %></h3>
+      <p>Retry: <%= attempt.retry_number %> · Commit: <%= attempt.commit_sha || "not recorded" %></p>
+      <p>Failure classification: <%= attempt.failure_classification || "none" %></p>
+      <p>Source digest: <code><%= attempt.source_digest %></code> · Lifecycle gate: <%= attempt.lifecycle_gate %></p>
       <ul>
-        <% attempt.artifacts.each do |artifact| %>
+        <% attempt.apple_verification_artifacts.each do |artifact| %>
           <li>
             <%= artifact.kind %>:
             <% if artifact.protected_capture? %>
@@ -69,18 +68,6 @@
           </li>
         <% end %>
       </ul>
-      <% if policy(@project).run_agent? %>
-        <% if @project.apple_verification_on_demand? %>
-          <%= button_to "Rerun", rerun_project_apple_verification_path(@project, attempt_id: attempt.id) %>
-        <% end %>
-        <% if attempt.queued? || attempt.running? %><%= button_to "Cancel", cancel_project_apple_verification_path(@project, attempt_id: attempt.id) %><% end %>
-      <% end %>
-      <% if policy(@project).manage_apple_verifications? %>
-        <% if attempt.failed? && attempt.required? %>
-          <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id) do |form| %><%= form.label :reason, "Waiver reason" %><%= form.text_field :reason, required: true %><%= form.submit "Waive attempt" %><% end %>
-        <% end %>
-        <% if attempt.failed? && attempt.retained_vm_destroyed_at.nil? %><%= button_to "Destroy retained VM", destroy_retained_vm_project_apple_verification_path(@project, attempt_id: attempt.id) %><% end %>
-      <% end %>
     </article>
   <% end %>
 </section>

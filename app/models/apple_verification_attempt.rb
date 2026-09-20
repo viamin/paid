@@ -1,76 +1,90 @@
 # frozen_string_literal: true
 
-# @spec APPLE-VERIFY-003
+# One immutable-source execution of a workflow revision in an Apple worker.
+# @spec APPLE-WORKER-005
 class AppleVerificationAttempt < ApplicationRecord
-  class InvalidTransitionError < StandardError; end
+  STATES = %w[queued provisioning running succeeded failed cancelled timed_out unavailable].freeze
+  TERMINAL_STATES = %w[succeeded failed cancelled timed_out unavailable].freeze
+  LIFECYCLE_GATES = AppleVerificationWorkflowRevision::LIFECYCLE_GATES
 
-  STATES = %w[queued running passed failed cancelled waived].freeze
-  FAILURE_CLASSES = %w[project compile test launch capture policy capacity infrastructure timeout cancellation].freeze
+  belongs_to :account
   belongs_to :project
-  belongs_to :workflow_revision, class_name: "AppleVerificationWorkflowRevision"
-  belongs_to :retry_of, class_name: "AppleVerificationAttempt", optional: true
-  belongs_to :waived_by, class_name: "User", optional: true
-  has_many :retries, class_name: "AppleVerificationAttempt", foreign_key: :retry_of_id, dependent: :nullify
-  has_many :artifacts, class_name: "AppleVerificationArtifact", foreign_key: :attempt_id, dependent: :destroy
-  validates :state, inclusion: { in: STATES }
-  validates :failure_class, inclusion: { in: FAILURE_CLASSES }, allow_nil: true
-  validates :waiver_reason, presence: true, if: :waived?
+  belongs_to :agent_run, optional: true
+  belongs_to :apple_verification_workflow_revision
+  belongs_to :apple_worker_profile
+  has_many :apple_verification_waivers, dependent: :restrict_with_exception
+  has_many :apple_verification_artifacts, dependent: :destroy
+  has_many :execution_audit_events, dependent: :nullify
+  has_many :execution_resource_ledger_entries, dependent: :nullify
 
-  def queued? = state == "queued"
-  def running? = state == "running"
-  def passed? = state == "passed"
-  def failed? = state == "failed"
-  def cancelled? = state == "cancelled"
-  def waived? = state == "waived"
+  validates :source_digest, format: { with: /\Asha256:[a-f0-9]{64}\z/ }
+  validates :status, inclusion: { in: STATES }
+  validates :lifecycle_gate, inclusion: { in: LIFECYCLE_GATES }
+  validates :retry_number, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :ownership_matches_workflow
+  validate :workflow_is_eligible_for_gate
+  validate :profile_matches_workflow
+  validate :profile_is_not_revoked
+  validate :lifecycle_gate_matches_workflow
+  validate :agent_run_matches_project
+  validate :execution_binding_is_immutable, on: :update
 
-  def cancel!
-    transition!("only queued or running attempts can be cancelled") do
-      AppleVerificationAttempts::Cancel.call(attempt: self) if queued? || running?
-    end
-  end
-
-  def waive!(user, reason)
-    transition!("only failed required attempts can be waived") do
-      update!(state: "waived", waived_by: user, waiver_reason: reason) if failed? && required?
-    end
-  end
-
-  def record_retained_vm_destruction!
-    transition!("only failed attempts can have retained VMs destroyed") do
-      AppleVerificationAttempts::DestroyRetainedWorker.call(attempt: self) if failed? && retained_vm_destroyed_at.nil?
-    end
-  end
-
-  def retry!
-    raise InvalidTransitionError, "cannot rerun a disabled workflow revision" if workflow_revision.disabled?
-    raise InvalidTransitionError, "on-demand verification is not enabled for this project" unless project.apple_verification_on_demand?
-
-    project.apple_verification_attempts.create!(workflow_revision:, retry_of: self, queue_position:)
-  end
-
-  def mark_cancelled!
-    update!(state: "cancelled", failure_class: "cancellation", cancelled_at: Time.current)
-  end
-
-  def mark_retained_vm_destroyed!
-    update!(retained_vm_destroyed_at: Time.current)
-  end
-
-  def required?
-    workflow_revision.approved? && required_checks?
+  def terminal?
+    TERMINAL_STATES.include?(status)
   end
 
   private
 
-  def transition!(error_message)
-    with_lock do
-      reload
-      raise InvalidTransitionError, error_message unless yield
-    end
+  def ownership_matches_workflow
+    return unless apple_verification_workflow_revision
+
+    errors.add(:project, "must match the workflow project") if project_id != apple_verification_workflow_revision.project_id
+    errors.add(:account, "must match the workflow account") if account_id != apple_verification_workflow_revision.account_id
   end
 
-  def required_checks?
-    checks = workflow_revision.checks
-    checks.dig("tests", "required") == true || Array(checks["captures"]).any? { _1["required"] == true }
+  def workflow_is_eligible_for_gate
+    return unless apple_verification_workflow_revision
+    return if apple_verification_workflow_revision.approved? || advisory_draft?
+
+    errors.add(:apple_verification_workflow_revision, "must be approved")
+  end
+
+  def advisory_draft?
+    apple_verification_workflow_revision.draft? && apple_verification_workflow_revision.lifecycle_gate == "agent_iteration"
+  end
+
+  def profile_matches_workflow
+    return unless apple_verification_workflow_revision
+
+    errors.add(:apple_worker_profile, "must match the workflow profile") if apple_worker_profile_id != apple_verification_workflow_revision.apple_worker_profile_id
+  end
+
+  def profile_is_not_revoked
+    return unless apple_worker_profile&.revoked?
+
+    errors.add(:apple_worker_profile, "must not be revoked")
+  end
+
+  def lifecycle_gate_matches_workflow
+    return unless apple_verification_workflow_revision
+
+    errors.add(:lifecycle_gate, "must match the workflow gate") if lifecycle_gate != apple_verification_workflow_revision.lifecycle_gate
+  end
+
+  def agent_run_matches_project
+    errors.add(:agent_run, "must match the attempt project") if agent_run && agent_run.project_id != project_id
+  end
+
+  def execution_binding_is_immutable
+    return unless execution_binding_changed?
+
+    errors.add(:base, "attempt execution binding is immutable")
+  end
+
+  def execution_binding_changed?
+    will_save_change_to_account_id? || will_save_change_to_project_id? || will_save_change_to_agent_run_id? ||
+      will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
+      will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
+      will_save_change_to_retry_number?
   end
 end

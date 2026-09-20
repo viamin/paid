@@ -60,6 +60,14 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-09-19
+  apple-verification-workers:
+    title: Apple Verification Workers
+    path: docs/intent/apple-verification-workers/apple-verification-workers-design.md
+    specs: docs/intent/apple-verification-workers/apple-verification-workers-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-19
   auto-pick-queue:
     title: Auto-Pick Queue
     path: docs/intent/auto-pick-queue/auto-pick-queue-design.md

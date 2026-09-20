@@ -8,8 +8,8 @@ module Projects
 
     def show
       authorize @project, :show?
-      @revisions = @project.apple_verification_workflow_revisions.order(created_at: :desc)
-      @attempts = @project.apple_verification_attempts.includes(:workflow_revision, :artifacts, :retry_of).order(created_at: :desc)
+      @revisions = @project.apple_verification_workflow_revisions.includes(:apple_worker_profile).order(created_at: :desc)
+      @attempts = @project.apple_verification_attempts.includes(:apple_verification_workflow_revision, :apple_verification_artifacts).order(created_at: :desc)
     end
 
     def compare
@@ -26,7 +26,7 @@ module Projects
 
     def update
       authorize @project, :update?
-      if @project.update(apple_verification_settings: @project.apple_verification_settings.merge(settings_params))
+      if @project.update(apple_verification_mode: settings_params[:mode])
         redirect_to project_apple_verification_path(@project), notice: "Apple verification settings updated."
       else
         redirect_to project_apple_verification_path(@project), alert: @project.errors.full_messages.to_sentence
@@ -35,42 +35,9 @@ module Projects
 
     def approve
       authorize @project, :manage_apple_verifications?
-      revision.approve!(current_user)
+      revision.approve!(actor: current_user)
       redirect_to project_apple_verification_path(@project), notice: "Workflow revision approved."
-    rescue AppleVerificationWorkflowRevision::InvalidTransitionError => e
-      redirect_to project_apple_verification_path(@project), alert: e.message
-    end
-
-    def rerun
-      authorize @project, :run_agent?
-      require_on_demand_execution
-      attempt.retry!
-      redirect_to project_apple_verification_path(@project), notice: "Verification rerun queued."
-    rescue AppleVerificationAttempt::InvalidTransitionError => e
-      redirect_to project_apple_verification_path(@project), alert: e.message
-    end
-
-    def cancel
-      authorize @project, :run_agent?
-      attempt.cancel!
-      redirect_to project_apple_verification_path(@project), notice: "Verification cancelled."
-    rescue AppleVerificationAttempt::InvalidTransitionError => e
-      redirect_to project_apple_verification_path(@project), alert: e.message
-    end
-
-    def waive
-      authorize @project, :manage_apple_verifications?
-      attempt.waive!(current_user, params.require(:reason))
-      redirect_to project_apple_verification_path(@project), notice: "Attempt waived."
-    rescue AppleVerificationAttempt::InvalidTransitionError => e
-      redirect_to project_apple_verification_path(@project), alert: e.message
-    end
-
-    def destroy_retained_vm
-      authorize @project, :manage_apple_verifications?
-      attempt.record_retained_vm_destruction!
-      redirect_to project_apple_verification_path(@project), notice: "Retained VM destruction recorded."
-    rescue AppleVerificationAttempt::InvalidTransitionError => e
+    rescue ArgumentError => e
       redirect_to project_apple_verification_path(@project), alert: e.message
     end
 
@@ -86,12 +53,6 @@ module Projects
       raise Pundit::NotAuthorizedError
     end
 
-    def require_on_demand_execution
-      return if @project.apple_verification_on_demand?
-
-      raise Pundit::NotAuthorizedError
-    end
-
     def revision
       @project.apple_verification_workflow_revisions.find(params.require(:revision_id))
     end
@@ -100,18 +61,14 @@ module Projects
       @project.apple_verification_workflow_revisions.find(params.require(:compare_to_id))
     end
 
-    def attempt
-      @project.apple_verification_attempts.find(params.require(:attempt_id))
-    end
-
     def verification_artifact
-      AppleVerificationArtifact.joins(:attempt)
+      AppleVerificationArtifact.joins(:apple_verification_attempt)
         .where(apple_verification_attempts: { project_id: @project.id })
         .find(params.require(:artifact_id))
     end
 
     def settings_params
-      params.require(:project).permit(:mode).to_h.deep_stringify_keys
+      params.require(:project).permit(:mode)
     end
   end
 end

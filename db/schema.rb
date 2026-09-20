@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -402,8 +402,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
-  create_table "apple_verification_artifacts", comment: "Private Apple verification artifacts with protected storage references.", force: :cascade do |t|
-    t.bigint "attempt_id", null: false
+  create_table "apple_verification_artifacts", comment: "Protected Apple verification result artifacts.", force: :cascade do |t|
+    t.bigint "apple_verification_attempt_id", null: false
     t.string "content_type"
     t.datetime "created_at", null: false
     t.datetime "expires_at"
@@ -411,50 +411,98 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.jsonb "metadata", default: {}, null: false
     t.string "storage_key", null: false
     t.datetime "updated_at", null: false
-    t.index ["attempt_id", "kind"], name: "index_apple_verification_artifacts_on_attempt_id_and_kind"
-    t.index ["attempt_id"], name: "index_apple_verification_artifacts_on_attempt_id"
+    t.index ["apple_verification_attempt_id", "kind"], name: "idx_on_apple_verification_attempt_id_kind_82be1ab43b"
+    t.index ["apple_verification_attempt_id"], name: "idx_on_apple_verification_attempt_id_0873cc6e26"
   end
 
-  create_table "apple_verification_attempts", comment: "Apple verification queue, execution, and outcome state.", force: :cascade do |t|
-    t.datetime "cancelled_at"
+  create_table "apple_verification_attempts", comment: "Apple verification attempt lifecycle and source provenance.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id"
+    t.bigint "apple_verification_workflow_revision_id", null: false
+    t.bigint "apple_worker_profile_id", null: false
+    t.string "commit_sha"
     t.datetime "created_at", null: false
-    t.string "failure_class"
+    t.string "failure_classification"
+    t.datetime "finished_at"
+    t.string "lifecycle_gate", null: false
     t.bigint "project_id", null: false
-    t.jsonb "provenance", default: {}, null: false
-    t.integer "queue_position"
-    t.jsonb "result", default: {}, null: false
-    t.datetime "retained_vm_destroyed_at"
-    t.bigint "retry_of_id"
-    t.string "state", default: "queued", null: false
-    t.string "temporal_workflow_id", comment: "Durable worker workflow owning this attempt."
-    t.datetime "updated_at", null: false
-    t.bigint "waived_by_id"
-    t.text "waiver_reason"
-    t.jsonb "worker_handle", default: {}, null: false, comment: "Opaque provider handle used for worker lifecycle control."
-    t.bigint "workflow_revision_id", null: false
-    t.index ["project_id", "state", "created_at"], name: "index_apple_attempts_on_project_state_created"
-    t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
-    t.index ["retry_of_id"], name: "index_apple_verification_attempts_on_retry_of_id"
-    t.index ["waived_by_id"], name: "index_apple_verification_attempts_on_waived_by_id"
-    t.index ["workflow_revision_id"], name: "index_apple_verification_attempts_on_workflow_revision_id"
-  end
-
-  create_table "apple_verification_workflow_revisions", comment: "Committed Apple verification workflow revisions and digest-bound approvals.", force: :cascade do |t|
-    t.datetime "approved_at"
-    t.bigint "approved_by_id"
-    t.jsonb "checks", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.string "lifecycle_gate"
-    t.string "profile_name", null: false
-    t.bigint "project_id", null: false
-    t.jsonb "referenced_files", default: [], null: false
+    t.integer "retry_number", default: 0, null: false
     t.string "source_digest", null: false
-    t.string "state", default: "draft", null: false
+    t.datetime "started_at"
+    t.string "status", default: "queued", null: false
     t.datetime "updated_at", null: false
-    t.jsonb "worker_constraints", default: {}, null: false
+    t.index ["account_id"], name: "index_apple_verification_attempts_on_account_id"
+    t.index ["agent_run_id"], name: "index_apple_verification_attempts_on_agent_run_id"
+    t.index ["apple_verification_workflow_revision_id"], name: "idx_on_apple_verification_workflow_revision_id_af6c72353a"
+    t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"
+    t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
+    t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
+    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_attempts_gate"
+    t.check_constraint "retry_number >= 0", name: "chk_apple_attempts_retry_nonnegative"
+    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'provisioning'::character varying::text, 'running'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'unavailable'::character varying::text])", name: "chk_apple_attempts_status"
+  end
+
+  create_table "apple_verification_waivers", comment: "One-attempt administrator waivers for required Apple verification checks.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "apple_verification_attempt_id", null: false
+    t.bigint "apple_verification_workflow_revision_id", null: false
+    t.jsonb "check_ids", default: [], null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false
+    t.datetime "expires_at", null: false
+    t.string "lifecycle_gate", null: false
+    t.bigint "project_id", null: false
+    t.text "reason", null: false
+    t.string "source_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_apple_verification_waivers_on_account_id"
+    t.index ["apple_verification_attempt_id"], name: "idx_on_apple_verification_attempt_id_5c22a16122", unique: true
+    t.index ["apple_verification_workflow_revision_id"], name: "idx_on_apple_verification_workflow_revision_id_12adb79e42"
+    t.index ["created_by_id"], name: "index_apple_verification_waivers_on_created_by_id"
+    t.index ["project_id"], name: "index_apple_verification_waivers_on_project_id"
+    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_waivers_gate"
+  end
+
+  create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "advisory_checks", default: [], null: false
+    t.bigint "apple_worker_profile_id", null: false
+    t.datetime "approved_at"
+    t.bigint "approved_by_id", comment: "Project administrator that approved this revision."
+    t.string "content_digest", null: false, comment: "SHA-256 digest of committed workflow content."
+    t.datetime "created_at", null: false
+    t.string "lifecycle_gate", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "required_checks", default: [], null: false
+    t.integer "revision", null: false
+    t.string "status", default: "draft", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "verification_files", default: [], null: false, comment: "Digest-addressed committed verification file references."
+    t.index ["account_id"], name: "index_apple_verification_workflow_revisions_on_account_id"
+    t.index ["apple_worker_profile_id"], name: "idx_on_apple_worker_profile_id_2e5f94b25f"
     t.index ["approved_by_id"], name: "index_apple_verification_workflow_revisions_on_approved_by_id"
-    t.index ["project_id", "profile_name", "created_at"], name: "index_apple_workflows_on_project_profile_created"
+    t.index ["project_id", "revision"], name: "idx_apple_workflow_revisions_project_revision", unique: true
+    t.index ["project_id", "status"], name: "idx_on_project_id_status_309d97d26e"
+    t.index ["project_id"], name: "idx_apple_workflow_revisions_one_approved_per_project", unique: true, where: "((status)::text = 'approved'::text)"
     t.index ["project_id"], name: "index_apple_verification_workflow_revisions_on_project_id"
+    t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_workflow_revisions_gate"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'approved'::character varying::text, 'superseded'::character varying::text, 'disabled'::character varying::text])", name: "chk_apple_workflow_revisions_status"
+  end
+
+  create_table "apple_worker_profiles", comment: "Immutable provider-neutral Apple verification worker profiles.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "capabilities", default: {}, null: false, comment: "Provider-neutral capability inventory."
+    t.jsonb "constraints", default: {}, null: false, comment: "Immutable platform, Xcode, runtime, and resource constraints."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", comment: "Operator that registered the profile."
+    t.string "image_digest", null: false, comment: "Approved immutable guest image digest."
+    t.string "name", null: false
+    t.string "status", default: "active", null: false, comment: "active, deprecated, or revoked."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "name"], name: "index_apple_worker_profiles_on_account_id_and_name", unique: true
+    t.index ["account_id"], name: "index_apple_worker_profiles_on_account_id"
+    t.index ["created_by_id"], name: "index_apple_worker_profiles_on_created_by_id"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'deprecated'::character varying::text, 'revoked'::character varying::text])", name: "chk_apple_worker_profiles_status"
   end
 
   create_table "auto_merge_attempts", comment: "Sanitized history of auto-merge decisions and blockers for pull requests.", force: :cascade do |t|
@@ -1232,6 +1280,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.string "actor_id", limit: 100, comment: "Actor identifier within actor_type; free text so system actors don't need a users row."
     t.string "actor_type", limit: 50, comment: "Actor category: user, system, agent, job, runner."
     t.bigint "agent_run_id", comment: "Agent run the event concerns, when the event is run-scoped."
+    t.bigint "apple_verification_attempt_id", comment: "Apple verification attempt the append-only event concerns."
     t.string "backend", limit: 64, comment: "Container backend identifier that executed or was targeted by the event."
     t.string "correlation_id", limit: 255, comment: "Cross-system correlation id (e.g. Temporal workflow id) for tracing an event across subsystems."
     t.datetime "created_at", null: false
@@ -1250,6 +1299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.string "runner_key", limit: 64, comment: "Provider/runner key (claude, codex, gemini, copilot), when the event is runner-specific."
     t.index ["account_id", "created_at"], name: "idx_execution_audit_events_account_created"
     t.index ["agent_run_id"], name: "index_execution_audit_events_on_agent_run_id"
+    t.index ["apple_verification_attempt_id"], name: "index_execution_audit_events_on_apple_verification_attempt_id"
     t.index ["correlation_id"], name: "idx_execution_audit_events_correlation_id"
     t.index ["created_at"], name: "idx_execution_audit_events_created_at_brin", using: :brin
     t.index ["event_name"], name: "idx_execution_audit_events_event_name"
@@ -1316,6 +1366,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.bigint "account_id", null: false
     t.datetime "activated_at", comment: "When the resource transitioned to active."
     t.bigint "agent_run_id"
+    t.bigint "apple_verification_attempt_id", comment: "Apple verification attempt that owns this external resource."
     t.string "backend", limit: 64, comment: "Backend or provider identifier for the runner, e.g. local, ecs, gke."
     t.integer "cleanup_attempts", default: 0, null: false, comment: "Number of cleanup attempts made for this resource."
     t.datetime "cleanup_failed_at", comment: "When the most recent cleanup attempt failed."
@@ -1336,12 +1387,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "idx_execution_resource_ledger_account_recent", order: { created_at: :desc }
     t.index ["agent_run_id"], name: "index_execution_resource_ledger_entries_on_agent_run_id"
+    t.index ["apple_verification_attempt_id"], name: "idx_on_apple_verification_attempt_id_e813c02e05"
     t.index ["project_id"], name: "index_execution_resource_ledger_entries_on_project_id"
     t.index ["resource_kind"], name: "index_execution_resource_ledger_entries_on_resource_kind"
     t.index ["runner_type", "backend", "provider_resource_id"], name: "idx_execution_resource_ledger_provider_identity", unique: true, where: "(provider_resource_id IS NOT NULL)", nulls_not_distinct: true
     t.index ["status"], name: "index_execution_resource_ledger_entries_on_status"
     t.check_constraint "cleanup_attempts >= 0", name: "chk_execution_resource_ledger_cleanup_attempts_nonneg"
-    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying::text, 'service'::character varying::text, 'sidecar'::character varying::text, 'workspace'::character varying::text, 'network'::character varying::text, 'preview_tunnel'::character varying::text, 'temporary_storage'::character varying::text])", name: "chk_execution_resource_ledger_kind_valid"
+    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying::text, 'service'::character varying::text, 'sidecar'::character varying::text, 'workspace'::character varying::text, 'network'::character varying::text, 'preview_tunnel'::character varying::text, 'temporary_storage'::character varying::text, 'verification_vm'::character varying::text])", name: "chk_execution_resource_ledger_kind_valid"
     t.check_constraint "status::text = ANY (ARRAY['provisioning'::character varying::text, 'active'::character varying::text, 'cleanup_pending'::character varying::text, 'deleted'::character varying::text, 'orphaned'::character varying::text, 'cleanup_failed'::character varying::text])", name: "chk_execution_resource_ledger_status_valid"
   end
 
@@ -2600,7 +2652,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.integer "agent_runs_count", default: 0, null: false, comment: "Counter cache for total agent runs"
     t.boolean "allow_bot_authored_pr_auto_merge", default: false, null: false, comment: "When true, PRs authored by the project's own GitHub App bot may auto-merge without explicit owner approval"
     t.jsonb "allowed_github_usernames", default: [], null: false
-    t.jsonb "apple_verification_settings", default: {}, null: false, comment: "Apple verification mode and inferred repository profiles (RDR-068)."
+    t.string "apple_verification_mode", default: "off", null: false, comment: "Apple verification scheduling mode: off, on_demand, or automatic."
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_enhance_enabled", default: false, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
@@ -2698,6 +2750,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
     t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
     t.index ["scheduler_paused_at"], name: "index_projects_on_scheduler_paused_at", where: "(scheduler_paused_at IS NOT NULL)"
+    t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying::text, 'on_demand'::character varying::text, 'automatic'::character varying::text])", name: "chk_projects_apple_verification_mode"
     t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
   end
 
@@ -3630,13 +3683,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
-  add_foreign_key "apple_verification_artifacts", "apple_verification_attempts", column: "attempt_id"
-  add_foreign_key "apple_verification_attempts", "apple_verification_attempts", column: "retry_of_id"
-  add_foreign_key "apple_verification_attempts", "apple_verification_workflow_revisions", column: "workflow_revision_id"
+  add_foreign_key "apple_verification_artifacts", "apple_verification_attempts"
+  add_foreign_key "apple_verification_attempts", "accounts"
+  add_foreign_key "apple_verification_attempts", "agent_runs", on_delete: :nullify
+  add_foreign_key "apple_verification_attempts", "apple_verification_workflow_revisions"
+  add_foreign_key "apple_verification_attempts", "apple_worker_profiles"
   add_foreign_key "apple_verification_attempts", "projects"
-  add_foreign_key "apple_verification_attempts", "users", column: "waived_by_id"
+  add_foreign_key "apple_verification_waivers", "accounts"
+  add_foreign_key "apple_verification_waivers", "apple_verification_attempts"
+  add_foreign_key "apple_verification_waivers", "apple_verification_workflow_revisions"
+  add_foreign_key "apple_verification_waivers", "projects"
+  add_foreign_key "apple_verification_waivers", "users", column: "created_by_id"
+  add_foreign_key "apple_verification_workflow_revisions", "accounts"
+  add_foreign_key "apple_verification_workflow_revisions", "apple_worker_profiles"
   add_foreign_key "apple_verification_workflow_revisions", "projects"
   add_foreign_key "apple_verification_workflow_revisions", "users", column: "approved_by_id"
+  add_foreign_key "apple_worker_profiles", "accounts"
+  add_foreign_key "apple_worker_profiles", "users", column: "created_by_id"
   add_foreign_key "auto_merge_attempts", "issues"
   add_foreign_key "auto_merge_attempts", "projects"
   add_foreign_key "billing_invoices", "accounts"
@@ -3719,6 +3782,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "execution_audit_events", "accounts"
   add_foreign_key "execution_audit_events", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_audit_events", "apple_verification_attempts", on_delete: :nullify
   add_foreign_key "execution_audit_events", "projects", on_delete: :nullify
   add_foreign_key "execution_controls", "accounts"
   add_foreign_key "execution_controls", "docker_hosts"
@@ -3730,6 +3794,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_081258) do
   add_foreign_key "execution_resource_cleanups", "provisioning_intents", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "accounts", on_delete: :cascade
   add_foreign_key "execution_resource_ledger_entries", "agent_runs", on_delete: :nullify
+  add_foreign_key "execution_resource_ledger_entries", "apple_verification_attempts", on_delete: :nullify
   add_foreign_key "execution_resource_ledger_entries", "projects", on_delete: :nullify
   add_foreign_key "execution_resources", "accounts", on_delete: :nullify
   add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify

@@ -5,20 +5,16 @@
   workflow revisions, and attempts; when disabled, the UI SHALL not expose the
   capability.
 - [x] **APPLE-VERIFY-002** — When an administrator approves a draft workflow,
-  Paid SHALL retain its digest, referenced files, constraints, checks, and
-  gate, and supersede the prior approval; non-draft revisions SHALL be
-  rejected.
-- [x] **APPLE-VERIFY-003** — Each attempt SHALL retain queue, retry lineage,
-  outcome, provenance, explicit failure class, cancellation, rerun, and
-  one-attempt waiver state. Reruns SHALL require an on-demand-capable project
-  mode and create a queued attempt without dispatching until a worker lifecycle
-  can execute it and ingest a terminal result; only queued or running attempts
-  may be cancelled; only failed required attempts may be waived; and only
-  failed attempts without a recorded destruction may record retained-VM
-  destruction.
+  Paid SHALL retain its content digest, verification files, worker profile,
+  checks, and gate, and supersede the prior approval; non-draft revisions SHALL
+  be rejected.
+- [x] **APPLE-VERIFY-003** — Each presented attempt SHALL retain its explicit
+  lifecycle state, retry number, source digest, commit identity, workflow,
+  profile, gate, and failure classification.
 - [x] **APPLE-VERIFY-004** — Screenshots and recordings SHALL be presented as
   protected artifacts rather than embedded public content, through an
   authorized endpoint that issues a time-limited storage URL.
 - [x] **APPLE-VERIFY-005** — When an authorized user selects two workflow
-  revisions from the same project, Paid SHALL present every workflow field
-  whose values differ.
+  revisions from the same project, Paid SHALL present every digest,
+  verification-file, check, gate, revision, or status field whose values
+  differ.

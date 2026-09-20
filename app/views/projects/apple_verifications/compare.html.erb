@@ -2,7 +2,7 @@
 <% content_for :title, "Compare Apple verification revisions · #{@project.name}" %>
 
 <h1>Compare workflow revisions</h1>
-<p><%= @revision.profile_name %> compared with <%= @comparison_revision.profile_name %>.</p>
+<p><%= @revision.apple_worker_profile.name %> compared with <%= @comparison_revision.apple_worker_profile.name %>.</p>
 
 <% if @differences.any? %>
   <dl>
