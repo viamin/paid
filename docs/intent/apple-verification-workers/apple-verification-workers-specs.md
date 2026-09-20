@@ -1,46 +1,26 @@
 # EARS Specs: Apple Verification Workers
 
-> Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
-
-- [x] **APPLE-VERIFY-001** — When an operator publishes an Apple verification
-  image, the system SHALL persist its immutable digest, macOS and Xcode
-  versions/builds, SDKs, Simulator runtimes, executor version, resource
-  envelope, network capability, dedicated GUI-account posture, and smoke-test
-  result plus a credential-free HTTPS guest-executor endpoint.
-  *Tests:* `spec/models/apple_verification_image_spec.rb`.
-  *Code:* `AppleVerificationImage`.
-
-- [x] **APPLE-VERIFY-002** — When an Apple verification image is promoted,
-  deprecated, retired, or revoked, the system SHALL enforce the documented
-  lifecycle transition, require a future retirement time while deprecating an
-  image, and require a passing smoke test before promotion;
-  only active images SHALL be schedulable for new work.
-  *Tests:* `spec/models/apple_verification_image_spec.rb`.
-  *Code:* `AppleVerificationImage`.
-
-- [x] **APPLE-VERIFY-003** — When a guest receives a verification job, it
-  SHALL accept only protocol version 1 typed operations from the approved
-  vocabulary with only that operation's defined payload fields and SHALL reject
-  unknown manifest, operation, or payload fields, malformed payloads, and
-  arbitrary shell-text fields.
-  *Tests:* `spec/lib/apple_verification/guest_protocol_spec.rb`.
-  *Code:* `AppleVerification::GuestProtocol`.
-
-- [x] **APPLE-VERIFY-004** — When a capture operation fails, the guest result
-  SHALL classify the failure as launch, readiness, action, selection, or export
-  and SHALL retain the selected platform and capture target.
-  *Tests:* `spec/lib/apple_verification/guest_protocol_spec.rb`.
-  *Code:* `AppleVerification::GuestProtocol`.
-
-- [x] **APPLE-VERIFY-005** — When Apple verification work is submitted for a
-  feature-enabled project with a control-plane-selected immutable image digest,
-  the control plane SHALL select only that account's active image matching the
-  digest and dispatch only a protocol-valid manifest through the provider-owned
-  authenticated guest connection to that image's HTTPS guest executor;
-  disabled projects and accounts without a matching active image SHALL not
-  dispatch work, and missing credentials or an executor authentication failure
-  SHALL fail without accepting the job.
-  *Tests:* `spec/services/apple_verification/execute_guest_job_spec.rb`,
-  `spec/lib/apple_verification/guest_connection_spec.rb`.
-  *Code:* `AppleVerification::ExecuteGuestJob`,
-  `AppleVerification::GuestConnection`.
+- [x] **APPLE-WORKER-001** — When a verification request names capabilities or
+  platform constraints unsupported by its immutable profile, the system SHALL
+  reject it before provisioning and SHALL use provider-neutral capability names.
+- [x] **APPLE-WORKER-002** — Input and output manifests SHALL use RDR-057
+  transfer lanes with allowlisted fields and SHALL reject host paths, provider
+  lifecycle fields, and raw or secret-shaped credential values.
+- [x] **APPLE-WORKER-003** — Each project SHALL persist exactly one Apple
+  verification mode of `off`, `on_demand`, or `automatic`.
+- [x] **APPLE-WORKER-004** — Workflow revisions SHALL have `draft`, `approved`,
+  `superseded`, or `disabled` state; only a project administrator MAY approve a
+  revision with an active profile, and approval SHALL bind committed content,
+  verification files, profile, gate, and required/advisory checks immutably. At
+  most one revision per project SHALL be approved at a time.
+- [x] **APPLE-WORKER-005** — Each attempt SHALL bind account, project, source,
+  workflow, profile, and gate; its profile and gate SHALL match its workflow;
+  it SHALL use an explicit lifecycle state; and a draft workflow MAY run only
+  at the advisory `agent_iteration` gate, while enforcement gates require an
+  approved workflow. An attempt SHALL reject a revoked profile.
+- [x] **APPLE-WORKER-006** — A waiver SHALL apply to exactly one attempt and
+  SHALL bind its project-administrator actor, reason, expiry, source, workflow,
+  gate, and checks.
+- [x] **APPLE-WORKER-007** — Audit events and resource-ledger entries linked to
+  an Apple attempt SHALL have matching account/project ownership; external VMs
+  SHALL use the ledger's `verification_vm` resource kind.
