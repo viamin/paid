@@ -15,7 +15,7 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
           { "type" => "test", "payload" => { "scheme" => "App" } },
           { "type" => "boot_simulator", "payload" => { "destination" => "iPhone 17" } },
           { "type" => "launch_app", "payload" => { "bundle_id" => "test.App" } },
-          { "type" => "ui_action", "payload" => { "action" => "tap", "accessibility_id" => "continue" } },
+          { "type" => "ui_action", "payload" => { "action" => "tap", "accessibility_id" => "continue", "text" => "Continue", "value" => "1", "orientation" => "portrait", "width" => 390, "height" => 844 } },
           { "type" => "capture", "payload" => { "platform" => "ios", "target" => "simulator_screen", "name" => "initial" } },
           { "type" => "collect_diagnostics", "payload" => {} },
           { "type" => "export_artifacts", "payload" => {} }
@@ -45,6 +45,13 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
         .to raise_error(described_class::InvalidManifestError)
       expect { described_class.validate!("version" => 1, "operations" => [ { "type" => "build", "payload" => { "unknown" => "value" } } ]) }
         .to raise_error(described_class::InvalidManifestError)
+    end
+
+    it "rejects payloads that omit fields required by their operation type" do
+      manifest = { "version" => 1, "operations" => [ { "type" => "build", "payload" => {} } ] }
+
+      expect { described_class.validate!(manifest) }
+        .to raise_error(described_class::InvalidManifestError, "build payload is missing required fields: scheme")
     end
   end
 

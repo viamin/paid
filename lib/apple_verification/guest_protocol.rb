@@ -72,9 +72,14 @@ module AppleVerification
 
       def validate_fields!(value, allowed_fields, name)
         unexpected_fields = value.keys.map(&:to_s) - allowed_fields
-        return if unexpected_fields.empty?
+        missing_fields = allowed_fields - value.keys.map(&:to_s)
+        return if unexpected_fields.empty? && missing_fields.empty?
 
-        raise InvalidManifestError, "#{name} contains unsupported fields: #{unexpected_fields.join(', ')}"
+        if unexpected_fields.any?
+          raise InvalidManifestError, "#{name} contains unsupported fields: #{unexpected_fields.join(', ')}"
+        end
+
+        raise InvalidManifestError, "#{name} is missing required fields: #{missing_fields.join(', ')}"
       end
 
       def shell_field?(value)
