@@ -90,6 +90,37 @@ RSpec.describe Tools::TriggerAgentRun do
       }.to raise_error(ArgumentError, "An agent run is already queued or in progress for this issue")
     end
 
+    context "with review depth snapshotting" do
+      before { allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true) }
+
+      it "snapshots the project's effective review depth preset onto the run" do # @spec REVIEW-DEPTH-006
+        project.update!(review_settings: {
+          "enabled" => true,
+          "methods" => { "paid_agent" => { "enabled" => true, "review_depth" => "focused" } }
+        })
+
+        result = tool.call(
+          project_id: project.id,
+          goal: "create_issue",
+          custom_prompt: "Investigate flaky review depth coverage.",
+          confirmed: true
+        )
+
+        expect(AgentRun.find(result[:id]).review_depth_snapshot).to eq("focused")
+      end
+
+      it "snapshots the balanced default for unconfigured projects" do # @spec REVIEW-DEPTH-006
+        result = tool.call(
+          project_id: project.id,
+          goal: "create_issue",
+          custom_prompt: "Investigate flaky review depth coverage.",
+          confirmed: true
+        )
+
+        expect(AgentRun.find(result[:id]).review_depth_snapshot).to eq("balanced")
+      end
+    end
+
     context "with goal create_issue and no issue_id" do
       it "creates an agent run from custom_prompt alone" do
         result = tool.call(
