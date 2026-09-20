@@ -188,7 +188,10 @@ runners: the control plane sends source and provider-neutral manifests to a
 disposable macOS guest, where a deterministic executor runs project build and
 verification operations. The host lifecycle service never receives project
 paths or commands; workflows become blocking only through digest-bound project
-approval. See `docs/intent/apple-verification-workers/`.
+approval. See `docs/intent/apple-verification-workers/` for the worker
+contract (profiles, workflow revisions, attempts, waivers) and
+`docs/intent/apple-guest-execution/` for the immutable guest image catalog and
+guest protocol those attempts run against.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
