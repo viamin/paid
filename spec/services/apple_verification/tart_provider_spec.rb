@@ -5,10 +5,11 @@ require "rails_helper"
 module TartProviderSpecSupport
   class FakeTart
     attr_accessor :resources
-    attr_reader :clones, :stopped, :destroyed, :destroys
+    attr_reader :clones, :starts, :stopped, :destroyed, :destroys
 
     def initialize
       @clones = 0
+      @starts = []
       @destroys = 0
       @stopped = []
       @destroyed = []
@@ -17,16 +18,18 @@ module TartProviderSpecSupport
 
     def clone(image_id:, ownership_tags:)
       @clones += 1
-      resource = { "vm_id" => "paid-vm-#{clones}", "image_id" => image_id, "tags" => ownership_tags }
+      resource = { "vm_id" => "paid-vm-#{clones}", "image_id" => image_id, "tags" => ownership_tags, "state" => "stopped" }
       resources << resource
       resource
     end
 
     def start(vm_id:, cpu_cores:, memory_mib:, disk_gb:)
+      starts << vm_id
+      resources.find { |resource| resource.fetch("vm_id") == vm_id }&.store("state", "running")
       { "vm_id" => vm_id, "state" => "running", "cpu_cores" => cpu_cores, "memory_mib" => memory_mib, "disk_gb" => disk_gb }
     end
 
-    def inspect(vm_id:) = { "vm_id" => vm_id, "state" => "running" }
+    def inspect(vm_id:) = resources.find { |resource| resource.fetch("vm_id") == vm_id }.slice("vm_id", "state")
     def stop(vm_id:) = stopped << vm_id
     def destroy(vm_id:) = (@destroys += 1; destroyed << vm_id)
     def inventory(ownership_tags:)
@@ -79,6 +82,22 @@ RSpec.describe AppleVerification::TartProvider do
     expect(second).to eq(first)
     expect(tart.clones).to eq(1)
     expect(first.fetch("tags")).to include("paid.request_id" => "request-1")
+  end
+
+  it "rediscovers an already-running VM after a host restart" do
+    vm_id = provider.clone(request_id: "request-1", image_id: "paid-macos", ownership_tags: tags).fetch("vm_id")
+    provider.start(request_id: "request-2", vm_id:, profile_id: "ios-standard")
+    restarted_softnet = TartProviderSpecSupport::FakeSoftnet.new
+    restarted_provider = described_class.new(
+      tart:, softnet: restarted_softnet,
+      profiles: { "ios-standard" => { cpu_cores: 2, memory_mib: 4096, disk_gb: 40, network: "paid-egress" } }
+    )
+
+    response = restarted_provider.start(request_id: "request-2", vm_id:, profile_id: "ios-standard")
+
+    expect(response).to eq("vm_id" => vm_id, "state" => "running")
+    expect(tart.starts).to eq([ vm_id ])
+    expect(restarted_softnet.configured).to be_empty
   end
 
   it "isolates identical request IDs by owning run before and after a host restart" do

@@ -29,10 +29,10 @@ module AppleVerification
     end
 
     def start(request_id:, vm_id:, profile_id:)
+      profile = profiles.fetch(profile_id.to_s) { raise ArgumentError, "Unknown Apple worker profile: #{profile_id}" }
+
       idempotently("start", request_id, vm_id) do
-        profile = profiles.fetch(profile_id.to_s) { raise ArgumentError, "Unknown Apple worker profile: #{profile_id}" }
-        softnet.configure(vm_id:, network: profile.fetch("network"))
-        tart.start(vm_id:, **profile.slice("cpu_cores", "memory_mib", "disk_gb").symbolize_keys)
+        running_vm(vm_id) || start_vm(vm_id:, profile:)
       end
     end
 
@@ -83,6 +83,16 @@ module AppleVerification
       return clones.first if clones.one?
 
       raise ArgumentError, "Multiple Apple VMs exist for lifecycle request: #{request_id}"
+    end
+
+    def running_vm(vm_id)
+      resource = tart.inspect(vm_id:)
+      resource if resource["state"] == "running"
+    end
+
+    def start_vm(vm_id:, profile:)
+      softnet.configure(vm_id:, network: profile.fetch("network"))
+      tart.start(vm_id:, **profile.slice("cpu_cores", "memory_mib", "disk_gb").symbolize_keys)
     end
   end
 end
