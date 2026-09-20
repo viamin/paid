@@ -70,6 +70,17 @@ adds an automated review pass, but the authority over whether a change lands
 always rests with a human — exercised per-PR by default, or through the
 auto-merge configuration when the owner has enabled it.
 
+Paid's own reviewer follows the same human-final-say posture at the
+comment-policy level: every preset on the project-level `review_depth`
+control (`Focused`, `Balanced`, `Thorough`, default `Balanced`) enforces the
+same evidence bar and the same "comments reserved exclusively for
+actionable changes" rule. What the preset varies is **investigation depth**
+— how far beyond the obvious correctness and security floor the reviewer
+looks before deciding a comment is warranted — never the bar for posting
+one. The effective preset is snapshotted onto each review run at creation
+time so a later project change cannot retroactively alter an in-flight
+review's behavior. See `docs/intent/review-depth-presets/`.
+
 Human attention can also move earlier in the lifecycle. The
 `human_led_feature_factory` project operating mode ([RDR-066](rdrs/RDR-066-feature-intent-approval-lifecycle.md))
 makes human approval of a feature's design the boundary before

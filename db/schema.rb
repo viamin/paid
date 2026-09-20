@@ -343,6 +343,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
     t.datetime "queue_entered_at", comment: "Most recent time this run entered queued status so queue latency metrics reflect the current queue episode."
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
+    t.string "review_depth_snapshot", limit: 32, default: "balanced", null: false, comment: "Effective review_depth preset snapshotted at run creation. Focused/Balanced/Thorough."
     t.datetime "review_posted_at"
     t.jsonb "review_proxy_diagnostics", default: {}, null: false, comment: "Latest known outcome of the review-creation proxy POST for this run (outcome: attempted/timeout/connection_failed/upstream_error/succeeded, plus http_status/error_class/error_message/recorded_at when available). Lets CompleteReviewGoalActivity explain review-goal failures without raw log inspection (#2779). Not part of run history/state."
     t.string "review_url", limit: 500
@@ -1379,7 +1380,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
     t.index ["runner_type", "backend", "provider_resource_id"], name: "idx_execution_resource_ledger_provider_identity", unique: true, where: "(provider_resource_id IS NOT NULL)", nulls_not_distinct: true
     t.index ["status"], name: "index_execution_resource_ledger_entries_on_status"
     t.check_constraint "cleanup_attempts >= 0", name: "chk_execution_resource_ledger_cleanup_attempts_nonneg"
-    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying, 'service'::character varying, 'sidecar'::character varying, 'workspace'::character varying, 'network'::character varying, 'preview_tunnel'::character varying, 'temporary_storage'::character varying, 'verification_vm'::character varying]::text[])", name: "chk_execution_resource_ledger_kind_valid"
+    t.check_constraint "resource_kind::text = ANY (ARRAY['primary_environment'::character varying::text, 'service'::character varying::text, 'sidecar'::character varying::text, 'workspace'::character varying::text, 'network'::character varying::text, 'preview_tunnel'::character varying::text, 'temporary_storage'::character varying::text, 'verification_vm'::character varying::text])", name: "chk_execution_resource_ledger_kind_valid"
     t.check_constraint "status::text = ANY (ARRAY['provisioning'::character varying::text, 'active'::character varying::text, 'cleanup_pending'::character varying::text, 'deleted'::character varying::text, 'orphaned'::character varying::text, 'cleanup_failed'::character varying::text])", name: "chk_execution_resource_ledger_status_valid"
   end
 
