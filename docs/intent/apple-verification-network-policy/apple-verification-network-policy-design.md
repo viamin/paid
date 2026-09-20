@@ -13,39 +13,50 @@ those guests; it does not create an Apple-specific allowlist.
 
 ## Resolution and enforcement contract
 
-An Apple verification attempt resolves the run's existing egress policy using
-`AgentRuns::EgressPolicy::Resolve` with a forced proxy-restricted networking
-intent. The resulting snapshot remains the authoritative combination of
-platform, tenant, operator, project, and run decisions and is persisted before
-the guest starts.
+`AgentRuns::AppleVerification::ResolveGuestContract` resolves the run's
+existing egress policy using `AgentRuns::EgressPolicy::Resolve` with a forced
+proxy-restricted (`:proxy_only`) networking intent. The resulting snapshot
+remains the authoritative combination of platform, tenant, operator, project,
+and run decisions and is persisted before the guest starts. Resolution is
+gated on the project's `apple_verification_workers` flag: when the flag is
+off, `ResolveGuestContract` raises `WorkersDisabledError` without persisting
+anything or producing a contract.
 
-The future Apple verification control-plane entry point SHALL translate that
-snapshot into a credential-free host/guest contract and send it only to the
-authenticated, narrow host-service start operation. That operation SHALL
-install the contract before it starts the VM: no direct external route, DNS
-only through the Paid resolver, and HTTP(S) only through the Paid proxy. The
-guest receives the proxy endpoint but no proxy userinfo, password, token, or
-alternate DNS configuration. The provider SHALL reject guest traffic that does
-not use this path, including direct IP, non-Paid DNS, proxy override, and
-non-HTTP(S) protocols.
+When the flag is on, `AgentRuns::AppleVerification::GuestContract.from_snapshot`
+translates the snapshot into a credential-free host/guest contract: the Paid
+DNS marker, the proxy endpoint (host/port only — no userinfo, password, or
+token), and the snapshot's destinations. `AgentRuns::AppleVerification::ValidateGuestRequest`
+is the enforcement decision point: given a `GuestNetworkRequest` (host, port,
+scheme, and any reported alternate DNS server or proxy override), it permits
+only HTTP(S) destinations that match the contract and denies everything else
+— direct IP, non-Paid DNS, proxy override, non-HTTP(S) protocols, and
+unmatched host/port pairs — before it can be represented as allowed guest
+traffic.
 
-The contract is deliberately declarative. The concrete Tart/Softnet transport
-implementation belongs to #3933, which must also register the guest-start
-lifecycle. Until that authenticated host implementation is available, Paid
-must not expose or admit Apple verification guests.
+The future Apple verification control-plane entry point SHALL send this
+contract only to the authenticated, narrow host-service start operation,
+which SHALL install it before it starts the VM. The concrete Tart/Softnet
+transport that carries the contract onto a real guest, and the guest-start
+lifecycle registration, belong to #3933. Until that authenticated host
+implementation exists, nothing in Paid calls `ResolveGuestContract` or
+`ValidateGuestRequest` from a guest-admission path, so Paid still does not
+expose or admit Apple verification guests — this segment only builds and
+tests the policy decision layer those future call sites will use.
 
 ## Decisions and audit
 
 The contract matches exact and leading-wildcard hosts from the persisted
-snapshot and applies the destination port restriction when present. Invalid
-hosts, IP literals, disallowed protocols, and unmatched destinations are
-denied before they can be represented as allowed guest traffic.
+snapshot (reusing `AgentRuns::EgressPolicy::HostPattern`) and applies the
+destination port restriction when present. Invalid hosts, IP literals,
+disallowed protocols, and unmatched destinations are denied before they can be
+represented as allowed guest traffic.
 
-Each denial is recorded as an `EgressSecurityEvent` and an execution audit
+Each denial is recorded as an `EgressSecurityEvent` (`source_layer:
+"apple_guest"`) and an `apple_guest.network_policy.denied` execution audit
 event with a sanitized destination, scheme, port, decision reason, and policy
 mode. Payloads, proxy credentials, and raw IP literals are never recorded.
-`NetworkPolicyError` carries a `network_policy` failure category so callers do
-not mistake a boundary failure for build, test, or worker infrastructure work.
+`NetworkPolicyError` carries a `network_policy` category so callers do not
+mistake a boundary failure for build, test, or worker infrastructure work.
 
 ## Rollout
 

@@ -278,8 +278,8 @@ arrows:
     specs: docs/intent/apple-verification-network-policy/apple-verification-network-policy-specs.md
     parent: PAID
     taxonomy: security
-    status: DEFERRED
-    audited: 2026-09-19
+    status: OK
+    audited: 2026-09-20
   github-sync-and-auth:
     title: GitHub Sync and Auth
     path: docs/intent/github-sync-and-auth/github-sync-and-auth-design.md
