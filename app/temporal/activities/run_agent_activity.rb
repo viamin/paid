@@ -862,8 +862,6 @@ module Activities
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
       configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
-      return nil if codex_subscription_auth_runtime?(runner_entry) ||
-        codex_subscription_auth_candidate?(runner_candidate, user)
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
@@ -898,30 +896,6 @@ module Activities
         unset_env: configured_runtime.unset_env,
         metadata: configured_runtime.metadata
       )
-    end
-
-    def codex_subscription_auth_runtime?(runner_entry)
-      runner_entry&.runner_key == "codex" && runner_entry&.subscription?
-    end
-
-    # Backstop for fallback chains that pass the bare runner key ("codex")
-    # rather than a routing key. runner_entry_for returns nil for bare keys,
-    # so codex_subscription_auth_runtime? would otherwise miss the guard
-    # and a stale tier_model (e.g. gpt-4o, which the Codex subscription
-    # /v1/responses endpoint rejects) would flow into --model. Look up the
-    # user's Codex runner record directly when the candidate is the bare
-    # "codex" key so subscription auth is honored regardless of how the
-    # runner is referenced. The lookup is memoized per user because the
-    # runner loop can revisit "codex" multiple times in a single attempt.
-    def codex_subscription_auth_candidate?(runner_candidate, user)
-      return false unless user
-      return false unless runner_candidate.is_a?(String) && runner_candidate == "codex"
-
-      @codex_subscription_lookup_cache ||= {}
-      cached = @codex_subscription_lookup_cache.fetch(user.id) do
-        @codex_subscription_lookup_cache[user.id] = Runner.for_identifier(user, "codex")&.subscription? == true
-      end
-      cached
     end
 
     def runtime_cache_key(runtime)
@@ -993,19 +967,64 @@ module Activities
     def resolve_tier_model_for(runner_candidate, agent_run, user)
       # @spec RUNNER-FALLBACK-002
       tier = requested_tier_for(agent_run)
+      tier ||= configured_mid_tier_for(runner_candidate, user) if agent_run
       return nil if tier.blank?
 
       @resolved_tier_model_cache ||= {}
-      cache_key = [ user&.id, resolution_runner_cache_key(runner_candidate), tier ]
+      cache_key = [ user&.id, agent_run&.id, resolution_runner_cache_key(runner_candidate), tier ]
       return @resolved_tier_model_cache[cache_key] if @resolved_tier_model_cache.key?(cache_key)
 
-      runner_entry = runner_entry_for(runner_candidate, user)
-      resolution_runner = runner_entry || Runner.new(runner_key: RunnerSupport.runner_key_for_agent_type(runner_candidate))
-      @resolved_tier_model_cache[cache_key] = Runners::ResolveTierModel.call(
+      resolution_runner = resolved_runner_for(runner_candidate, user)
+      resolved = Runners::ResolveTierModel.call(
         runner: resolution_runner,
         tier: tier,
         user: user
       )
+      validate_recovery_model!(resolved, agent_run) if agent_run && requested_tier_for(agent_run).blank?
+      @resolved_tier_model_cache[cache_key] = resolved
+    end
+
+    # @spec RUNNER-FALLBACK-002
+    def validate_recovery_model!(resolved, agent_run)
+      return unless resolved.success?
+
+      project = agent_run.project
+      preferences = project.model_preferences
+      model = LlmModel.find_by(model_id: resolved.model_id)
+      excluded = Array(preferences["excluded_model_ids"]).include?(resolved.model_id)
+      required = preferences["required_model_id"]
+      provider_blocked = project.llm_provider_routing_restricted? &&
+        (model.nil? || project.llm_provider_blocked?(model.provider))
+      reason = if model && !model.active?
+        "configured model is inactive"
+      elsif excluded || (required.present? && required != resolved.model_id) || provider_blocked
+        "configured model violates project model policy"
+      end
+      return unless reason
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Cannot recover missing model selection with #{resolved.model_id}: #{reason}",
+        type: "ModelSelectionPolicyViolation", non_retryable: true
+      )
+    end
+
+    def configured_mid_tier_for(runner_candidate, user)
+      entry = resolved_runner_for(runner_candidate, user)
+      return unless entry.persisted? && (entry.tier_model_ids&.dig("mid").present? || entry.tier_models&.dig("mid").present?)
+
+      "mid"
+    end
+
+    # Resolves the persisted Runner record for a candidate, falling back from a
+    # non-routing-key identifier (e.g. bare "codex") to a lookup by runner_key so
+    # a user's configured tier_model_ids are used instead of an unconfigured
+    # in-memory Runner.new placeholder. Falls back to that placeholder only when
+    # no persisted Runner exists.
+    def resolved_runner_for(runner_candidate, user)
+      runner_key = RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      runner_entry_for(runner_candidate, user) ||
+        (user && Runner.for_identifier(user, runner_key)) ||
+        Runner.new(runner_key: runner_key)
     end
 
     def resolution_runner_cache_key(runner_candidate)
@@ -3847,7 +3866,86 @@ module Activities
         fallback_template: FALLBACK_REVIEW_GOAL_PROMPT
       )
 
-      maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
+      # @spec REVIEW-DEPTH-007 — the depth scope is a runtime-must-have section,
+      # so it is appended after A/B variant resolution: maybe_assign_ab_test_variant
+      # re-renders the variant from vars and would silently discard a section
+      # appended to the pre-variant render. append_prompt_section keeps this
+      # idempotent if a variant template already renders the section itself.
+      rendered = maybe_assign_ab_test_variant(agent_run, REVIEW_GOAL_PROMPT_SLUG, rendered, vars)
+      append_review_depth_scope(agent_run, rendered)
+    end
+
+    # @spec REVIEW-DEPTH-007 — append the investigation-scope section for the
+    # run's effective review_depth preset. Always-on comment and JSON /
+    # payload rules remain in the base template; this method only varies the
+    # named categories so a focused run still has to back every comment with
+    # the same evidence a thorough run does, and a thorough run cannot
+    # publish speculative findings.
+    def append_review_depth_scope(agent_run, rendered)
+      section = review_depth_scope_section(agent_run.review_depth_snapshot)
+      append_prompt_section(rendered, section)
+    end
+
+    def review_depth_scope_section(depth)
+      preset = AgentRun::REVIEW_DEPTHS.include?(depth) ? depth : Project::DEFAULT_REVIEW_DEPTH
+
+      case preset
+      when "focused"
+        <<~SCOPE.strip
+          # Review Depth: Focused
+
+          Investigation scope is intentionally narrow for this rule. Look for
+          actionable correctness and security findings only. Each finding
+          must include a concrete failure scenario (input, code path, and
+          observed vs. expected behavior) backed by file:line references.
+
+          Do not post performance, maintainability, convention, or
+          caller-compat findings under this preset. If you discover a
+          severe problem in another category while reviewing for the named
+          scope, you may still report it — the evidence bar is the same
+          regardless of category — but do not seek it out.
+        SCOPE
+      when "thorough"
+        <<~SCOPE.strip
+          # Review Depth: Thorough
+
+          Investigation scope is intentionally broad for this rule. Beyond
+          the Balanced scope, also investigate caller compatibility and
+          removed safeguards:
+          - Caller compatibility: did this change break any other call site
+            in the repo? Search the codebase for symbols you are modifying
+            and follow each call.
+          - Removed safeguards: was something protecting an invariant that is
+            now gone (validation, transaction, lock, exception handler, env
+            var check)? If the diff deletes a guard, look at what depended
+            on it.
+          - Optional extra search effort: where the question warrants it,
+            spend additional budget on knowledge-base or repo-wide searches
+            before deciding a comment is unwarranted.
+
+          The evidence bar is identical to Focused and Balanced — every
+          finding still needs concrete failure scenarios and file:line
+          references. Thorough means deeper investigation, not more
+          speculative comments.
+        SCOPE
+      else
+        <<~SCOPE.strip
+          # Review Depth: Balanced
+
+          Investigation scope for this rule covers actionable:
+          - Correctness and security findings with concrete failure scenarios.
+          - Performance issues (algorithmic complexity, N+1 queries,
+            unnecessary allocations, missing caching).
+          - Maintainability concerns (clarity of intent, dead code,
+            error-handling shape).
+          - Project conventions the project has already declared through
+            conventions, style guides, or prior reviews on this PR's
+            neighborhood.
+
+          Do not seek caller-compat or removed-safeguard investigations
+          under this preset — those belong to Thorough.
+        SCOPE
+      end
     end
 
     def augment_prompt_for_enhance_issue_goal(agent_run, prompt)

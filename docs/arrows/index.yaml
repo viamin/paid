@@ -304,6 +304,12 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-09-17
+  review-depth-presets:
+    title: Project-Level Review Depth Presets
+    path: docs/intent/review-depth-presets/review-depth-presets-design.md
+    specs: docs/intent/review-depth-presets/review-depth-presets-specs.md
+    parent: PAID
+    taxonomy: automation
   billing-aggregation:
     title: Billing Aggregation
     path: docs/intent/billing-aggregation/billing-aggregation-design.md

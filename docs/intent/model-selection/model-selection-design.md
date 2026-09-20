@@ -57,11 +57,12 @@ currently eligible candidate pool. The candidate pool is constrained by:
 - project exclusions,
 - and the initial tier derived from the rules-based complexity estimate.
 
-Codex subscription runners also apply Paid's compatibility denylist for the
-`gpt-5.6*` catalog family observed to be unavailable to ChatGPT Codex
-accounts. This guard runs before default tier selection so a newly synced or
-manually seeded OpenAI model cannot become the highest-scored default merely
-because it exists in the catalog.
+Codex subscription runs participate in normal model selection and persist the
+selected tier; subscription authentication must not bypass selection.
+Codex subscription runners use the agent-harness compatibility contract for
+model/authentication checks. GPT-5.6 Luna, Terra, and Sol are active catalog models with default low, mid,
+and high tiers respectively, and support explicit subscription runner pins.
+Scheduled catalog sync retains their active status. Other models remain subject to the harness contract.
 
 When only one candidate remains, the selector skips the LLM round trip and
 returns that candidate directly.
