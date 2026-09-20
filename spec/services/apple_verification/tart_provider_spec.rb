@@ -31,7 +31,11 @@ module TartProviderSpecSupport
 
     def inspect(vm_id:) = resources.find { |resource| resource.fetch("vm_id") == vm_id }.slice("vm_id", "state")
     def stop(vm_id:) = stopped << vm_id
-    def destroy(vm_id:) = (@destroys += 1; destroyed << vm_id)
+    def destroy(vm_id:)
+      resources.delete_at(resources.index { |resource| resource.fetch("vm_id") == vm_id } || raise(ArgumentError, "VM not found: #{vm_id}"))
+      @destroys += 1
+      destroyed << vm_id
+    end
     def inventory(ownership_tags:)
       resources.select { |resource| matching_tags?(resource, ownership_tags) }
     end
@@ -130,6 +134,20 @@ RSpec.describe AppleVerification::TartProvider do
 
     expect(tart.stopped).to include(vm)
     expect(tart.destroyed).to include(vm)
+    expect(tart.destroys).to eq(1)
+  end
+
+  it "recovers a destroy request after a host restart" do
+    vm = provider.clone(request_id: "clone", image_id: "paid-macos", ownership_tags: tags).fetch("vm_id")
+    provider.destroy(request_id: "destroy", vm_id: vm)
+    restarted_provider = described_class.new(
+      tart:, softnet:,
+      profiles: { "ios-standard" => { cpu_cores: 2, memory_mib: 4096, disk_gb: 40, network: "paid-egress" } }
+    )
+
+    response = restarted_provider.destroy(request_id: "destroy", vm_id: vm)
+
+    expect(response).to eq("vm_id" => vm, "state" => "destroyed")
     expect(tart.destroys).to eq(1)
   end
 

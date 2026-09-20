@@ -45,7 +45,7 @@ module AppleVerification
     end
 
     def destroy(request_id:, vm_id:)
-      idempotently("destroy", request_id, vm_id) { tart.destroy(vm_id:); { "vm_id" => vm_id, "state" => "destroyed" } }
+      idempotently("destroy", request_id, vm_id) { destroy_vm(vm_id) }
     end
 
     def inventory(ownership_tags:)
@@ -99,6 +99,15 @@ module AppleVerification
     def running_vm(vm_id)
       resource = tart.inspect(vm_id:)
       resource if resource["state"] == "running"
+    end
+
+    def destroy_vm(vm_id)
+      tart.destroy(vm_id:) if paid_vm?(vm_id)
+      { "vm_id" => vm_id, "state" => "destroyed" }
+    end
+
+    def paid_vm?(vm_id)
+      tart.inventory(ownership_tags: { "paid.resource" => "apple_vm" }).any? { |resource| resource.fetch("vm_id") == vm_id }
     end
 
     def start_vm(vm_id:, profile:)
