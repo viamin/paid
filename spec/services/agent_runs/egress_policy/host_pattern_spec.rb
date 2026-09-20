@@ -45,6 +45,25 @@ RSpec.describe AgentRuns::EgressPolicy::HostPattern do
     end
   end
 
+  describe ".ip_literal?" do
+    it "matches IPv4 literals" do
+      expect(described_class.ip_literal?("93.184.216.34")).to be(true)
+      expect(described_class.ip_literal?("169.254.169.254")).to be(true)
+    end
+
+    it "matches IPv6 literals, including bracketed and zone-ID forms" do
+      expect(described_class.ip_literal?("2001:db8::1")).to be(true)
+      expect(described_class.ip_literal?("::1")).to be(true)
+      expect(described_class.ip_literal?("[::1]")).to be(true)
+      expect(described_class.ip_literal?("fe80::1%eth0")).to be(true)
+    end
+
+    it "does not match hostnames" do
+      expect(described_class.ip_literal?("api.example.com")).to be(false)
+      expect(described_class.ip_literal?("not:a:valid:ipv6:address:at:all:really")).to be(false)
+    end
+  end
+
   describe ".matches?" do
     it "matches exact hosts case-insensitively" do
       expect(described_class.matches?("api.example.com", "API.EXAMPLE.COM")).to be(true)

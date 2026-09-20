@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "ipaddr"
+
 module AgentRuns
   module EgressPolicy
     # Shared host-pattern validation for tenant-managed egress allowlist
@@ -80,7 +82,21 @@ module AgentRuns
       end
 
       def ip_literal?(host)
-        IPV4_SHAPE_REGEX.match?(host)
+        IPV4_SHAPE_REGEX.match?(host) || ipv6_literal?(host)
+      end
+
+      # IPv4 uses a shape check (above) so even malformed-but-IP-shaped
+      # patterns fail closed; IPv6's address space is too irregular for a
+      # shape regex, so this parses for real. Brackets and a zone ID
+      # (+fe80::1%eth0+) are stripped first since both are valid ways to
+      # write an IPv6 literal that +IPAddr+ itself won't accept.
+      def ipv6_literal?(host)
+        return false unless host.include?(":")
+
+        candidate = host.delete_prefix("[").delete_suffix("]").split("%", 2).first
+        IPAddr.new(candidate).ipv6?
+      rescue IPAddr::Error
+        false
       end
 
       def embedded_ip_literal?(labels)
