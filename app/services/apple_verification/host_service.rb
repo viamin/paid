@@ -56,6 +56,7 @@ module AppleVerification
       validate_payload_keys!(operation.to_s, payload.stringify_keys)
       reject_forbidden_content!(payload)
       validate_image!(payload) if operation.to_s == "clone"
+      validate_clone!(payload) if operation.to_s == "clone"
       validate_inventory!(payload) if operation.to_s == "inventory"
     end
 
@@ -86,6 +87,12 @@ module AppleVerification
       raise UnsafeRequestError, "Host request image is not approved" unless approved_images.include?(image_id)
     end
 
+    def validate_clone!(payload)
+      return if paid_reconciliation_ownership_tags?(payload["ownership_tags"])
+
+      raise UnsafeRequestError, "Host clone must use the Paid reconciliation tag set"
+    end
+
     def validate_inventory!(payload)
       ownership_tags = payload["ownership_tags"]
       return if ownership_tags.is_a?(Hash) && paid_reconciliation_tags?(ownership_tags)
@@ -97,6 +104,11 @@ module AppleVerification
       tag_names = ownership_tags.keys.map(&:to_s)
       tag_names.all? { |name| name.start_with?(PAID_TAG_PREFIX) } &&
         REQUIRED_INVENTORY_TAGS.all? { |name| tag_names.include?(name) }
+    end
+
+    def paid_reconciliation_ownership_tags?(ownership_tags)
+      ownership_tags.is_a?(Hash) && paid_reconciliation_tags?(ownership_tags) &&
+        REQUIRED_INVENTORY_TAGS.all? { |name| ownership_tags[name].present? }
     end
 
     def dispatch(operation, payload)

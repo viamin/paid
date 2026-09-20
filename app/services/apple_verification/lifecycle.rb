@@ -3,6 +3,7 @@
 module AppleVerification
   # Control-plane lifecycle that records the crash-window intent before clone
   # and stores only the opaque VM handle after successful start.
+  # @spec APPLE-WORKER-007
   # @spec APPLE-WORKER-010
   class Lifecycle
     RUNNER_TYPE = "apple_tart"
@@ -73,7 +74,7 @@ module AppleVerification
       ExecutionResourceLedgerEntry.find_or_create_by!(agent_run:, runner_type: RUNNER_TYPE, tags:) do |entry|
         entry.assign_attributes(
           account: agent_run.project.account, project: agent_run.project, agent_run:, runner_type: RUNNER_TYPE,
-          backend: TartProvider::PROVIDER_NAME, resource_kind: "primary_environment", tags:, runner_handle: {}, status: "provisioning"
+          backend: TartProvider::PROVIDER_NAME, resource_kind: "verification_vm", tags:, runner_handle: {}, status: "provisioning"
         )
       end
     end

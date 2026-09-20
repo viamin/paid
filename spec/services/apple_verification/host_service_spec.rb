@@ -40,26 +40,39 @@ RSpec.describe AppleVerification::HostService do
     expect(provider).not_to have_received(:clone)
   end
 
-  it "passes only approved clone fields to the provider" do
+  it "passes approved clone fields with reconciliation ownership to the provider" do
     allow(provider).to receive(:clone).and_return({ "vm_id" => "paid-vm-1" })
+    ownership_tags = reconciliation_ownership_tags
 
     result = service.call(
       version: "v1", operation: "clone",
-      payload: { "request_id" => "request-1", "image_id" => "paid-macos-26.0", "ownership_tags" => { "paid.run_id" => "7" } },
+      payload: { "request_id" => "request-1", "image_id" => "paid-macos-26.0", "ownership_tags" => ownership_tags },
       token: "host-token"
     )
 
     expect(result).to eq("vm_id" => "paid-vm-1")
     expect(provider).to have_received(:clone).with(
-      request_id: "request-1", image_id: "paid-macos-26.0", ownership_tags: { "paid.run_id" => "7" }
+      request_id: "request-1", image_id: "paid-macos-26.0", ownership_tags: ownership_tags
     )
+  end
+
+  it "rejects clone ownership tags outside the Paid reconciliation boundary" do
+    allow(provider).to receive(:clone)
+
+    expect {
+      service.call(
+        version: "v1", operation: "clone",
+        payload: { "request_id" => "request-1", "image_id" => "paid-macos-26.0", "ownership_tags" => { "paid.run_id" => "7" } },
+        token: "host-token"
+      )
+    }.to raise_error(AppleVerification::HostService::UnsafeRequestError, "Host clone must use the Paid reconciliation tag set")
+
+    expect(provider).not_to have_received(:clone)
   end
 
   it "limits inventory to the Paid reconciliation tag set" do
     allow(provider).to receive(:inventory).and_return([])
-    reconciliation_tags = ExecutionRunners::REQUIRED_RECONCILIATION_TAG_NAMES.to_h do |name|
-      [ "paid.#{name}", nil ]
-    end
+    reconciliation_tags = reconciliation_ownership_tags.transform_values { nil }
 
     result = service.call(
       version: "v1", operation: "inventory",
@@ -84,5 +97,14 @@ RSpec.describe AppleVerification::HostService do
     end
 
     expect(provider).not_to have_received(:inventory)
+  end
+
+  def reconciliation_ownership_tags
+    {
+      "paid.account_id" => "1",
+      "paid.project_id" => "2",
+      "paid.run_id" => "7",
+      "paid.created_at" => "2026-09-20T00:00:00Z"
+    }
   end
 end

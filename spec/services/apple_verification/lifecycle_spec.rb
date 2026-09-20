@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec APPLE-WORKER-007
 # @spec APPLE-WORKER-010
 RSpec.describe AppleVerification::Lifecycle do
   let(:agent_run) { create(:agent_run) }
@@ -27,7 +28,9 @@ RSpec.describe AppleVerification::Lifecycle do
       runner_type: "apple_tart", resource_kind: "apple_vm", request_id: "request-1", status: "linked"
     )
     expect(ProvisioningIntent.last.ownership_tags).to include("paid.request_id" => "request-1")
-    expect(ExecutionResourceLedgerEntry.last).to have_attributes(backend: "tart", status: "active", provider_resource_id: "paid-vm-1")
+    expect(ExecutionResourceLedgerEntry.last).to have_attributes(
+      backend: "tart", resource_kind: "verification_vm", status: "active", provider_resource_id: "paid-vm-1"
+    )
   end
 
   it "reuses the persisted handle and ledger records for a duplicate request" do
@@ -147,7 +150,7 @@ RSpec.describe AppleVerification::Lifecycle do
       agent_run:,
       runner_type: "apple_tart",
       backend: "tart",
-      resource_kind: "primary_environment",
+      resource_kind: "verification_vm",
       tags: intent.ownership_tags)
     [ intent, entry ]
   end
