@@ -26,6 +26,17 @@ RSpec.describe "Projects::AppleVerifications" do
         "Protected artifact"
       )
     end
+
+    it "presents the mode without an update control to account viewers" do # @spec APPLE-VERIFY-001
+      sign_out user
+      sign_in create(:user, :viewer, account:)
+
+      get project_apple_verification_path(project)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Mode: Off")
+      expect(response.body).not_to include("Save mode", "project[mode]")
+    end
   end
 
   describe "GET /projects/:project_id/apple_verification/compare" do

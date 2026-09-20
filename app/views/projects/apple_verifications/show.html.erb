@@ -6,10 +6,14 @@
 
 <section>
   <h2>Project settings</h2>
-  <%= form_with model: @project, url: project_apple_verification_path(@project), method: :patch do |form| %>
-    <%= form.label :mode, "Mode" %>
-    <%= select_tag "project[mode]", options_for_select(Project::APPLE_VERIFICATION_MODES.map { |mode| [mode.humanize, mode] }, @project.apple_verification_mode) %>
-    <%= form.submit "Save mode" %>
+  <% if policy(@project).update? %>
+    <%= form_with model: @project, url: project_apple_verification_path(@project), method: :patch do |form| %>
+      <%= form.label :mode, "Mode" %>
+      <%= select_tag "project[mode]", options_for_select(Project::APPLE_VERIFICATION_MODES.map { |mode| [mode.humanize, mode] }, @project.apple_verification_mode) %>
+      <%= form.submit "Save mode" %>
+    <% end %>
+  <% else %>
+    <p>Mode: <%= @project.apple_verification_mode.humanize %></p>
   <% end %>
   <h3>Inferred repository profiles</h3>
   <% profiles = @revisions.map(&:apple_worker_profile).uniq %>
