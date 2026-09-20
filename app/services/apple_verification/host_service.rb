@@ -5,6 +5,7 @@ module AppleVerification
   # Its input deliberately cannot describe host commands, paths, or mounts.
   # @spec APPLE-WORKER-008
   # @spec APPLE-WORKER-009
+  # @spec APPLE-WORKER-010
   class HostService
     API_VERSION = "v1"
     OPERATIONS = %w[readiness clone start inspect stop destroy inventory].freeze
@@ -18,6 +19,8 @@ module AppleVerification
     VM_KEYS = %w[request_id vm_id].freeze
     INVENTORY_KEYS = %w[ownership_tags].freeze
     PAID_TAG_PREFIX = "paid."
+    RESOURCE_TAG = "paid.resource"
+    APPLE_VM_RESOURCE = "apple_vm"
     REQUIRED_INVENTORY_TAGS = ExecutionRunners::REQUIRED_RECONCILIATION_TAG_NAMES.map do |name|
       "#{PAID_TAG_PREFIX}#{name}"
     end.freeze
@@ -107,8 +110,10 @@ module AppleVerification
     end
 
     def paid_reconciliation_ownership_tags?(ownership_tags)
-      ownership_tags.is_a?(Hash) && paid_reconciliation_tags?(ownership_tags) &&
-        REQUIRED_INVENTORY_TAGS.all? { |name| ownership_tags[name].present? }
+      return false unless ownership_tags.is_a?(Hash) && paid_reconciliation_tags?(ownership_tags)
+
+      tags = ownership_tags.stringify_keys
+      REQUIRED_INVENTORY_TAGS.all? { |name| tags[name].present? } && tags[RESOURCE_TAG] == APPLE_VM_RESOURCE
     end
 
     def dispatch(operation, payload)

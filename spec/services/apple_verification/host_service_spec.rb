@@ -4,6 +4,7 @@ require "rails_helper"
 
 # @spec APPLE-WORKER-008
 # @spec APPLE-WORKER-009
+# @spec APPLE-WORKER-010
 RSpec.describe AppleVerification::HostService do
   let(:provider) { instance_double(AppleVerification::TartProvider) }
   let(:service) do
@@ -70,6 +71,38 @@ RSpec.describe AppleVerification::HostService do
     expect(provider).not_to have_received(:clone)
   end
 
+  it "rejects clone ownership tags without the Apple VM resource marker" do
+    allow(provider).to receive(:clone)
+
+    expect {
+      service.call(
+        version: "v1", operation: "clone",
+        payload: {
+          "request_id" => "request-1", "image_id" => "paid-macos-26.0",
+          "ownership_tags" => reconciliation_ownership_tags.except("paid.resource")
+        }, token: "host-token"
+      )
+    }.to raise_error(AppleVerification::HostService::UnsafeRequestError, "Host clone must use the Paid reconciliation tag set")
+
+    expect(provider).not_to have_received(:clone)
+  end
+
+  it "rejects clone ownership tags for a different resource" do
+    allow(provider).to receive(:clone)
+
+    expect {
+      service.call(
+        version: "v1", operation: "clone",
+        payload: {
+          "request_id" => "request-1", "image_id" => "paid-macos-26.0",
+          "ownership_tags" => reconciliation_ownership_tags.merge("paid.resource" => "container")
+        }, token: "host-token"
+      )
+    }.to raise_error(AppleVerification::HostService::UnsafeRequestError, "Host clone must use the Paid reconciliation tag set")
+
+    expect(provider).not_to have_received(:clone)
+  end
+
   it "limits inventory to the Paid reconciliation tag set" do
     allow(provider).to receive(:inventory).and_return([])
     reconciliation_tags = reconciliation_ownership_tags.transform_values { nil }
@@ -104,7 +137,8 @@ RSpec.describe AppleVerification::HostService do
       "paid.account_id" => "1",
       "paid.project_id" => "2",
       "paid.run_id" => "7",
-      "paid.created_at" => "2026-09-20T00:00:00Z"
+      "paid.created_at" => "2026-09-20T00:00:00Z",
+      "paid.resource" => "apple_vm"
     }
   end
 end
