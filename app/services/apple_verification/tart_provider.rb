@@ -7,6 +7,7 @@ module AppleVerification
   class TartProvider
     PROVIDER_NAME = "tart"
     REQUEST_ID_TAG = "paid.request_id"
+    RUN_ID_TAG = "paid.run_id"
 
     def initialize(tart:, softnet:, profiles:)
       @tart = tart
@@ -21,13 +22,14 @@ module AppleVerification
     end
 
     def clone(request_id:, image_id:, ownership_tags:)
-      idempotently("clone", request_id) do
-        clone_for_request(request_id:, image_id:, ownership_tags:)
+      tags = ownership_tags.stringify_keys
+      idempotently("clone", request_id, tags.fetch(RUN_ID_TAG)) do
+        clone_for_request(request_id:, image_id:, ownership_tags: tags)
       end
     end
 
     def start(request_id:, vm_id:, profile_id:)
-      idempotently("start", request_id) do
+      idempotently("start", request_id, vm_id) do
         profile = profiles.fetch(profile_id.to_s) { raise ArgumentError, "Unknown Apple worker profile: #{profile_id}" }
         softnet.configure(vm_id:, network: profile.fetch("network"))
         tart.start(vm_id:, **profile.slice("cpu_cores", "memory_mib", "disk_gb").symbolize_keys)
@@ -35,15 +37,15 @@ module AppleVerification
     end
 
     def inspect(request_id:, vm_id:)
-      idempotently("inspect", request_id) { tart.inspect(vm_id:) }
+      idempotently("inspect", request_id, vm_id) { tart.inspect(vm_id:) }
     end
 
     def stop(request_id:, vm_id:)
-      idempotently("stop", request_id) { tart.stop(vm_id:); { "vm_id" => vm_id, "state" => "stopped" } }
+      idempotently("stop", request_id, vm_id) { tart.stop(vm_id:); { "vm_id" => vm_id, "state" => "stopped" } }
     end
 
     def destroy(request_id:, vm_id:)
-      idempotently("destroy", request_id) { tart.destroy(vm_id:); { "vm_id" => vm_id, "state" => "destroyed" } }
+      idempotently("destroy", request_id, vm_id) { tart.destroy(vm_id:); { "vm_id" => vm_id, "state" => "destroyed" } }
     end
 
     def inventory(ownership_tags:)
@@ -61,22 +63,22 @@ module AppleVerification
 
     attr_reader :tart, :softnet, :profiles, :responses, :response_lock
 
-    def idempotently(operation, request_id)
+    def idempotently(operation, request_id, scope)
       request_key = request_id.to_s
       raise ArgumentError, "Host lifecycle request id is required" if request_key.blank?
 
       response_lock.synchronize do
-        key = [ operation, request_key ]
+        key = [ operation, request_key, scope.to_s ]
         responses.fetch(key) { responses[key] = yield }
       end
     end
 
     def clone_for_request(request_id:, image_id:, ownership_tags:)
-      existing_clone(request_id) || tart.clone(image_id:, ownership_tags: ownership_tags.merge(REQUEST_ID_TAG => request_id.to_s))
+      existing_clone(request_id, ownership_tags) || tart.clone(image_id:, ownership_tags: ownership_tags.merge(REQUEST_ID_TAG => request_id.to_s))
     end
 
-    def existing_clone(request_id)
-      clones = tart.inventory(ownership_tags: { REQUEST_ID_TAG => request_id.to_s })
+    def existing_clone(request_id, ownership_tags)
+      clones = tart.inventory(ownership_tags: ownership_tags.merge(REQUEST_ID_TAG => request_id.to_s))
       return if clones.empty?
       return clones.first if clones.one?
 

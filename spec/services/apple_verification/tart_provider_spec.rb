@@ -81,6 +81,27 @@ RSpec.describe AppleVerification::TartProvider do
     expect(first.fetch("tags")).to include("paid.request_id" => "request-1")
   end
 
+  it "isolates identical request IDs by owning run before and after a host restart" do
+    first = provider.clone(request_id: "request-1", image_id: "paid-macos", ownership_tags: tags)
+    second = provider.clone(request_id: "request-1", image_id: "paid-macos", ownership_tags: tags("8"))
+    provider.start(request_id: "request-1:start", vm_id: first.fetch("vm_id"), profile_id: "ios-standard")
+    provider.start(request_id: "request-1:start", vm_id: second.fetch("vm_id"), profile_id: "ios-standard")
+    restarted_provider = described_class.new(
+      tart:, softnet:,
+      profiles: { "ios-standard" => { cpu_cores: 2, memory_mib: 4096, disk_gb: 40, network: "paid-egress" } }
+    )
+
+    rediscovered = restarted_provider.clone(request_id: "request-1", image_id: "paid-macos", ownership_tags: tags("8"))
+
+    expect([ first.fetch("vm_id"), second.fetch("vm_id") ]).to contain_exactly("paid-vm-1", "paid-vm-2")
+    expect(rediscovered).to eq(second)
+    expect(tart.clones).to eq(2)
+    expect(softnet.configured).to contain_exactly(
+      [ first.fetch("vm_id"), "paid-egress" ],
+      [ second.fetch("vm_id"), "paid-egress" ]
+    )
+  end
+
   it "recovers stop and destroy after partial provisioning" do
     vm = provider.clone(request_id: "clone", image_id: "paid-macos", ownership_tags: tags).fetch("vm_id")
 
@@ -106,5 +127,5 @@ RSpec.describe AppleVerification::TartProvider do
     } ])
   end
 
-  def tags = { "paid.run_id" => "7", "paid.resource" => "apple_vm" }
+  def tags(run_id = "7") = { "paid.run_id" => run_id, "paid.resource" => "apple_vm" }
 end
