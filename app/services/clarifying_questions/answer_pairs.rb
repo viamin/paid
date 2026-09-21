@@ -2,7 +2,11 @@
 
 module ClarifyingQuestions
   module AnswerPairs
-    QUESTION_ANSWER_PATTERN = /\*\*Q\d+:\s*(.+?)\*\*\s*\n\*\*A\d+:\*\*\s*(.+?)(?=\n\n\*\*Q|\z)/m.freeze
+    # Each answer terminates at the next paired-question start (`\n\n**Q`),
+    # the freeform-notes marker that SubmitAnswers emits (`\n<!--`), or end
+    # of string — so the trailing `<!-- paid:clarifying-answers:freeform-notes -->`
+    # block does not get folded into the previous answer's body.
+    QUESTION_ANSWER_PATTERN = /\*\*Q\d+:\s*(.+?)\*\*\s*\n\*\*A\d+:\*\*\s*(.+?)(?=\n\n\*\*Q|\n<!--|\z)/m.freeze
 
     module_function
 

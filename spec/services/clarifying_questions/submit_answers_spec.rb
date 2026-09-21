@@ -196,5 +196,85 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         )
       end
     end
+
+    context "with a freeform note" do
+      it "appends the note after the Q/A pairs under a stable marker so it is identifiable" do
+        questions_and_answers = [ { question: "Q1?", answer: "A1" } ]
+        freeform_note = "Cross-cutting context that touches every answer."
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: questions_and_answers,
+          freeform_note: freeform_note
+        )
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("<!-- paid:clarifying-answers:freeform-notes -->")
+            .and(a_string_including(freeform_note))
+        )
+      end
+
+      it "does not block submission when the freeform note is blank" do
+        questions_and_answers = [ { question: "Q1?", answer: "A1" } ]
+
+        expect {
+          described_class.call(
+            project: project,
+            issue: issue,
+            questions_and_answers: questions_and_answers,
+            freeform_note: "   "
+          )
+        }.not_to raise_error
+      end
+
+      it "omits the freeform-notes section entirely when the note is blank" do
+        questions_and_answers = [ { question: "Q1?", answer: "A1" } ]
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: questions_and_answers,
+          freeform_note: ""
+        )
+
+        expect(github_client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).not_to include("<!-- paid:clarifying-answers:freeform-notes -->")
+        end
+      end
+
+      it "omits the freeform-notes section when no note is provided at all" do
+        questions_and_answers = [ { question: "Q1?", answer: "A1" } ]
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: questions_and_answers
+        )
+
+        expect(github_client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).not_to include("<!-- paid:clarifying-answers:freeform-notes -->")
+        end
+      end
+
+      it "places the freeform-notes marker on its own line directly after the last A line" do
+        questions_and_answers = [ { question: "Q1?", answer: "A1" } ]
+        freeform_note = "Operator-wide context."
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: questions_and_answers,
+          freeform_note: freeform_note
+        )
+
+        expect(github_client).to have_received(:add_comment).with(
+          anything, anything,
+          a_string_matching(/\*\*A1:\*\* A1\n<!-- paid:clarifying-answers:freeform-notes -->/)
+        )
+      end
+    end
   end
 end
