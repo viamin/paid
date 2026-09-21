@@ -55,22 +55,33 @@ module AppleVerification
       AgentRuns::AppleVerification::ResolveGuestContract.call(agent_run: @agent_run)
     end
 
+    # The contract is built from the resolved egress snapshot, which already
+    # rejects unsafe allowlist entries and bad hosts at resolution time. This
+    # check is a second-line invariant: if a regression or a future code path
+    # lets an invalid destination reach the contract, abort dispatch with the
+    # same +network_policy+ error category so the audit trail records a single
+    # boundary failure rather than letting the guest receive a contract we
+    # could not enforce. A direct IP entry would route around every gateway
+    # rule (the gateway cannot resolve a literal), and a non-HTTP(S) scheme
+    # is not a shape {ValidateGuestRequest} accepts at request time.
     def validate_contract_destinations!(contract)
-      contract.destinations.select { |destination| external_destination?(destination) }.each do |destination|
-        AgentRuns::AppleVerification::ValidateGuestRequest.call(
-          agent_run: @agent_run,
-          contract: contract,
-          request: AgentRuns::AppleVerification::GuestNetworkRequest.new(**destination.merge(scheme: destination[:scheme] || "https"))
-        )
+      contract.destinations.each do |destination|
+        reject_ip_literal_destination!(destination)
+        reject_invalid_scheme_destination!(destination)
       end
     end
 
-    # Paid's proxy and egress-gateway aliases are internal routing hops, not
-    # guest-controlled external destinations. HostPattern intentionally
-    # rejects their single-label names, so request validation applies only to
-    # the external routes the guest may ask the gateway to reach.
-    def external_destination?(destination)
-      AgentRuns::EgressPolicy::HostPattern.invalid_reason(destination[:host]).nil?
+    def reject_ip_literal_destination!(destination)
+      return unless AgentRuns::EgressPolicy::HostPattern.ip_literal?(destination[:host].to_s)
+
+      raise AgentRuns::AppleVerification::NetworkPolicyError, "apple guest contract destination must not be an IP literal"
+    end
+
+    def reject_invalid_scheme_destination!(destination)
+      scheme = destination[:scheme]
+      return if scheme.nil? || AgentRuns::AppleVerification::GuestContract::SCHEMES.include?(scheme)
+
+      raise AgentRuns::AppleVerification::NetworkPolicyError, "apple guest contract destination has invalid scheme: #{scheme.inspect}"
     end
 
     def project

@@ -25,21 +25,25 @@ anything or producing a contract.
 When the flag is on, `AgentRuns::AppleVerification::GuestContract.from_snapshot`
 translates the snapshot into a credential-free host/guest contract: the Paid
 DNS marker, the proxy endpoint (host/port only — no userinfo, password, or
-token), and the snapshot's destinations. `AgentRuns::AppleVerification::ValidateGuestRequest`
-is the enforcement decision point: given a `GuestNetworkRequest` (host, port,
-scheme, and any reported alternate DNS server or proxy override), it permits
-only HTTP(S) destinations that match the contract and denies everything else
-— direct IP, non-Paid DNS, proxy override, non-HTTP(S) protocols, and
-unmatched host/port pairs — before it can be represented as allowed guest
-traffic.
+token), and the snapshot's destinations. The proxy endpoint is the egress
+gateway (RDR-055 step 5 — the only component that filters the guest's
+CONNECT/HTTP requests against the per-run allowlist), not the secrets proxy
+(which is a Paid-internal destination the executor / harness reach directly).
+`AgentRuns::AppleVerification::ValidateGuestRequest` is the enforcement
+decision point: given a `GuestNetworkRequest` (host, port, scheme, and any
+reported alternate DNS server or proxy override), it permits only HTTP(S)
+destinations that match the contract and denies everything else — direct IP,
+non-Paid DNS, proxy override, non-HTTP(S) protocols, and unmatched host/port
+pairs — before it can be represented as allowed guest traffic.
 
-`ExecuteGuestJob` validates every destination it admits against the resolved
-contract, then sends the contract with the manifest to the authenticated guest
-executor. The serialized contract explicitly denies the default route and host
-services, requires Paid-only DNS and proxy routing, blocks proxy overrides, and
-contains only the resolved HTTP(S) destinations. The executor must install that
-contract before accepting work; a failed resolution or validation prevents the
-dispatch request altogether.
+`ExecuteGuestJob` validates that every destination in the resolved contract is
+a non-IP-literal hostname with a supported scheme, then sends the contract
+with the manifest to the authenticated guest executor. The serialized contract
+explicitly denies the default route and host services, requires Paid-only DNS
+and proxy routing through the egress gateway, blocks proxy overrides, and
+contains only the resolved HTTP(S) destinations. The executor must install
+that contract before accepting work; a failed resolution or validation prevents
+the dispatch request altogether.
 
 ## Decisions and audit
 

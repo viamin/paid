@@ -89,6 +89,48 @@ RSpec.describe AppleVerification::ExecuteGuestJob do # @spec APPLE-VERIFY-005
     expect(result.image).to eq(requested_image)
   end
 
+  it "does not dispatch when the resolved contract contains an IP literal destination" do
+    image = create(:apple_verification_image, :active, account: project.account)
+    bad_contract = AgentRuns::AppleVerification::GuestContract.new(
+      proxy: { host: "egress-gateway", port: 3128 },
+      destinations: [ { host: "169.254.169.254", port: 80 } ],
+      egress_profile: "locked"
+    )
+    allow(AgentRuns::AppleVerification::ResolveGuestContract).to receive(:call).and_return(bad_contract)
+
+    expect { described_class.call(agent_run:, manifest:, guest_connection:, image_digest: image.digest) }
+      .to raise_error(AgentRuns::AppleVerification::NetworkPolicyError, /IP literal/)
+    expect(transport).not_to have_received(:post)
+  end
+
+  it "does not dispatch when the resolved contract contains an IPv6 literal destination" do
+    image = create(:apple_verification_image, :active, account: project.account)
+    bad_contract = AgentRuns::AppleVerification::GuestContract.new(
+      proxy: { host: "egress-gateway", port: 3128 },
+      destinations: [ { host: "2001:db8::1", port: 80 } ],
+      egress_profile: "locked"
+    )
+    allow(AgentRuns::AppleVerification::ResolveGuestContract).to receive(:call).and_return(bad_contract)
+
+    expect { described_class.call(agent_run:, manifest:, guest_connection:, image_digest: image.digest) }
+      .to raise_error(AgentRuns::AppleVerification::NetworkPolicyError, /IP literal/)
+    expect(transport).not_to have_received(:post)
+  end
+
+  it "does not dispatch when the resolved contract contains a destination with an unsupported scheme" do
+    image = create(:apple_verification_image, :active, account: project.account)
+    bad_contract = AgentRuns::AppleVerification::GuestContract.new(
+      proxy: { host: "egress-gateway", port: 3128 },
+      destinations: [ { host: "api.example.com", port: 443, scheme: "ftp" } ],
+      egress_profile: "locked"
+    )
+    allow(AgentRuns::AppleVerification::ResolveGuestContract).to receive(:call).and_return(bad_contract)
+
+    expect { described_class.call(agent_run:, manifest:, guest_connection:, image_digest: image.digest) }
+      .to raise_error(AgentRuns::AppleVerification::NetworkPolicyError, /invalid scheme/)
+    expect(transport).not_to have_received(:post)
+  end
+
   def response(code:, body:)
     AppleVerification::GuestConnection::Response.new(code:, body:)
   end

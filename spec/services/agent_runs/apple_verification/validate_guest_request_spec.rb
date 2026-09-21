@@ -10,7 +10,7 @@ RSpec.describe AgentRuns::AppleVerification::ValidateGuestRequest do
   let(:agent_run) { create(:agent_run, project: project) }
   let(:contract) do
     AgentRuns::AppleVerification::GuestContract.new(
-      proxy: { host: "paid-proxy", port: 3000 },
+      proxy: { host: "egress-gateway", port: 3128 },
       destinations: [ { host: "github.com", port: 443, scheme: "https" }, { host: "api.github.com", port: nil } ],
       egress_profile: "locked"
     )

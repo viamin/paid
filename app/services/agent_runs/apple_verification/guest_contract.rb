@@ -53,9 +53,16 @@ module AgentRuns
         }
       end
 
+      # The guest's HTTP_PROXY must be the egress gateway: it is the only
+      # component that filters the guest's CONNECT/HTTP requests against the
+      # per-run allowlist. The secrets-proxy (paid-proxy) is a Paid-internal
+      # destination the executor / harness reach directly, not a proxy the
+      # guest's tooling should be pointed at — sending guest dependency traffic
+      # through it would bypass gateway policy enforcement. The secrets-proxy
+      # entry stays in +snapshot.destinations+ as an allowed internal hop.
       def self.proxy_destination(snapshot)
-        entry = snapshot.required_destinations.find { |destination| destination["reason"] == "secrets_proxy" }
-        raise NetworkPolicyError, "resolved snapshot is missing the required secrets-proxy destination" unless entry
+        entry = snapshot.required_destinations.find { |destination| destination["reason"] == "egress_gateway" }
+        raise NetworkPolicyError, "resolved snapshot is missing the required egress-gateway destination" unless entry
 
         { host: entry.fetch("host"), port: entry.fetch("port") }
       end

@@ -9,7 +9,7 @@ RSpec.describe AppleVerification::GuestConnection do # @spec APPLE-VERIFY-005
   let(:manifest) { { "version" => 1, "operations" => [] } }
   let(:network_contract) do
     AgentRuns::AppleVerification::GuestContract.new(
-      proxy: { host: "paid-proxy", port: 3000 },
+      proxy: { host: "egress-gateway", port: 3128 },
       destinations: [ { host: "api.example.test", port: 443, scheme: "https" } ],
       egress_profile: "locked"
     )
