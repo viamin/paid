@@ -153,6 +153,11 @@ module Models
           lines << "**Catalogued models no longer in registry (likely retired):**"
           drift[:deprecated_models].each { |id| lines << "- `#{id}`" }
         end
+        availability_drift = Array(drift[:availability_drift])
+        unless availability_drift.empty?
+          lines << "**Inactive catalog rows the registry still lists (automatic exclusion, not an operator disable):**"
+          availability_drift.each { |id| lines << "- `#{id}`" }
+        end
       end
       lines.join("\n")
     end
@@ -192,8 +197,15 @@ module Models
       <<~MD.strip
         ## Remediation
 
-        - **Catalog drift** — update `Models::SeedKnownModels::KNOWN_MODELS` with current model ids
-          (tier/category/capability_score are judgment calls); the registry merge backfills pricing/context.
+        - **Catalog drift** — update `Models::SeedKnownModels::KNOWN_MODELS` with current model ids. Tier,
+          category, and capability_score are judgment calls — do not infer them from the model name and do not
+          default every new variant to `mid`; the registry merge backfills pricing/context.
+        - **Availability drift** — a row is inactive but the registry still lists it: either the exclusion is
+          stale (call `LlmModel#operator_enable!` if it's actually usable, or leave it if a runner contract
+          genuinely still rejects it), or an operator should pin it inactive via `#operator_disable!` so
+          scheduled sync stops re-evaluating it. Never assume a single model id (e.g. `gpt-5.2-codex`) is a
+          universal safe fallback for every rejected model — `Models::PolicyEligibleReplacement` ranks
+          candidates per rejection instead.
         - **Catalog contract drift (RDR-040)** — active catalog rows are incompatible with the installed
           runner contracts (CLI version, auth mode, provider mismatch, etc.). Either:
           - mark the model `active: false` in the catalog until the runner contract catches up, or
