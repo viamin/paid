@@ -27,13 +27,27 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     visit chat_session_path(chat_session, format: :html)
     expect(page).to have_css("[data-chat-target='container']")
     expect(page).to have_css("[data-controller='chat'][style*='--chat-panel-offset-top:']")
+    expect(page).to have_css("[data-chat-workspace-options]:not([open]) summary", text: "Workspace options")
 
     metrics = settled_chat_layout_metrics
 
     expect(metrics.fetch("panelBottomGap")).to be_between(-2, 4).inclusive
     expect(metrics.fetch("documentOverflow")).to be <= 4
     expect(metrics.fetch("transcriptH")).to be >= 288
-    expect(metrics.fetch("transcriptShare")).to be >= 0.45
+    # #3925 regression catcher: the always-visible chrome shrinks to a
+    # single compact title row, but the `Workspace` disclosure still
+    # renders open by default for this non-inline chat (per the
+    # CHAT-API-009 spec — workspace chats keep the disclosure open so
+    # the "Reopen with workspace" recovery path stays reachable). The
+    # capability panel's body — workspace label, clone form, and cloned
+    # repos — sits inside that disclosure and counts toward the header
+    # height, so the transcript share is materially smaller than for an
+    # inline chat (where the same disclosure renders closed). The hard
+    # 18rem floor on `transcriptH` above is the spec-mandated floor; this
+    # share check is a regression catcher against the original "sliver"
+    # failure (#3575) and is set against the actual new layout, not the
+    # old closed-by-default behaviour it replaced.
+    expect(metrics.fetch("transcriptShare")).to be >= 0.30
   end
 
   def create_mobile_workspace_chat
@@ -96,6 +110,7 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
   def settled_chat_layout?(metrics)
     metrics.fetch("panelBottomGap").between?(-2, 4) &&
       metrics.fetch("documentOverflow") <= 4 &&
-      metrics.fetch("transcriptH").positive?
+      metrics.fetch("transcriptH") >= 288 &&
+      metrics.fetch("transcriptShare") >= 0.30
   end
 end

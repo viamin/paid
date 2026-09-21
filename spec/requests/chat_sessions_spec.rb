@@ -495,6 +495,7 @@ RSpec.describe "ChatSessions" do
           disclosure = desktop_workspace_disclosure_in(response.body)
 
           expect(disclosure).to be_present, "no workspace disclosure for #{capability}"
+          expect(disclosure["data-chat-workspace-disclosure"]).to eq("true")
           expect(disclosure["open"]).not_to be_nil, "workspace disclosure folded shut for #{capability}"
         end
       end
@@ -505,6 +506,8 @@ RSpec.describe "ChatSessions" do
         # viewport-bound panel, navbar, history toggle, and composer. Render a
         # separate compact header below `xl` and keep the transcript-dominating
         # desktop header out of that layout entirely.
+        chat_session.update!(container_capability: "ready")
+
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -519,17 +522,26 @@ RSpec.describe "ChatSessions" do
         expect(mobile_header["class"].split).to include("xl:hidden")
         expect(mobile_header.text).to include("Session details")
         expect(mobile_header.text).to include("Workspace")
+        expect(mobile_header.xpath("./details").last["open"]).not_to be_nil
+
+        expect_compact_mobile_workspace_options(mobile_header)
+
+        desktop_capability_panel = desktop_header.at_css("[data-chat-target='capabilityPanel']")
+        desktop_mobile_options = desktop_capability_panel.at_css("details[data-chat-workspace-options]")
+        expect(desktop_mobile_options["class"].split).to include("sm:hidden")
+        expect(desktop_capability_panel.at_css("[data-chat-workspace-options-desktop]")).to be_present
 
         expect(desktop_header["class"].split).to include("hidden", "xl:block")
       end
 
-      it "bounds the desktop chat panel header so the transcript keeps usable height" do
+      it "collapses the desktop session-details disclosure by default so the chat stays chat-first" do
         # @spec CHAT-API-009
-        # Structural backstop: no combination of long titles, badges, or
-        # workspace state may push the header past its share of the panel.
-        # `overflow-y-auto` also zeroes the header's automatic minimum size
-        # so it can actually shrink when the panel is short, and
-        # `overflow-x-hidden` stops that from computing the x axis to `auto`.
+        # #3925: the always-visible desktop chrome is a single compact line
+        # (title + "Session details" toggle). All session settings sit inside
+        # a <details> closed by default. No `max-h-[45%]` cap is needed
+        # because the always-visible chrome is a single compact line by
+        # design. The user chooses whether to expand a disclosure, so it
+        # remains uncapped rather than clipping the controls they just opened.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -539,25 +551,132 @@ RSpec.describe "ChatSessions" do
         expect(header).to be_present
 
         classes = header["class"].split
+        expect(classes).not_to include(
+          "max-h-[45%]",
+          "max-h-[75%]",
+          "has-[details[open]]:max-h-[75%]",
+          "overflow-y-auto"
+        )
 
-        expect(classes).to include("max-h-[45%]")
-        expect(classes).to include("overflow-y-auto")
-        expect(classes).to include("overflow-x-hidden")
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+
+        expect(disclosure).to be_present
+        expect(disclosure["open"]).to be_nil
       end
 
-      it "relaxes the desktop header cap while the workspace disclosure is open" do
+      it "places runner/model/token-usage/archive controls inside the desktop session-details disclosure" do
         # @spec CHAT-API-009
-        # Clipping content the user just chose to expand is worse than a
-        # temporarily shorter transcript: without the relaxed cap, opening
-        # Workspace on a 900px viewport hid ~84px of the panel below the
-        # header's clipped edge with no visible hint that it scrolled.
+        # #3925: the right column of the old desktop header (runner/model
+        # selectors, token usage tile, archive/unarchive buttons) and the
+        # project/updated metadata under the title now live inside the
+        # Session details disclosure. They are not part of the always-visible
+        # chrome and must not appear at the top of the desktop header.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
         doc = Nokogiri::HTML(response.body)
         header = desktop_header_in(doc)
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+        summary = disclosure&.at_xpath("./summary")
 
-        expect(header["class"].split).to include("has-[details[open]]:max-h-[75%]")
+        expect(disclosure).to be_present
+        expect(summary).to be_present
+
+        runner_select = disclosure.at_xpath(".//select[@name='chat_session[runner_id]']")
+        model_select = disclosure.at_xpath(".//select[@name='chat_session[model]']")
+        token_usage = disclosure.at_xpath(".//span[@data-chat-target='tokenUsage']")
+
+        expect(runner_select).to be_present
+        expect(model_select).to be_present
+        expect(token_usage).to be_present
+
+        # The runner/model/token usage elements must live in the disclosure
+        # body, not the always-visible summary line.
+        expect(summary.at_xpath(".//select[@name='chat_session[runner_id]']")).to be_nil
+        expect(summary.at_xpath(".//select[@name='chat_session[model]']")).to be_nil
+        expect(summary.at_xpath(".//span[@data-chat-target='tokenUsage']")).to be_nil
+      end
+
+      it "does not render the redundant Active/Inline status badges in the desktop chat header" do
+        # @spec CHAT-API-009
+        # #3925: chat_session_status_badge (Active/Idle/Closed/Archived)
+        # duplicates the per-row state on the chat list and the Active vs
+        # Archived tabs on the chat page. chat_mode_badge (Inline/Container)
+        # is opaque to most users. Both helpers are removed from the chat
+        # panel header; they remain on the popup and the sidebar card.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        header = desktop_header_in(doc)
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+        summary = disclosure&.at_xpath("./summary")
+
+        # CHAT_SESSION_STATUS_STYLES["active"] -> bg-green-100 text-green-700,
+        # but CHAT_CONTAINER_CAPABILITY_STYLES["ready"] reuses the same classes
+        # for the workspace capability badge, which lives inside the Session
+        # details disclosure body (still inside this <header>). Scope the lookup
+        # to spans outside the always-visible chrome (the disclosure summary)
+        # and exclude spans that are the workspace capability badge, identified
+        # by its `data-chat-target="capabilityBadge"` stimulus target.
+        chrome_spans = summary ? summary.css("span") : []
+        off_chrome = header.css("span").to_a - chrome_spans
+        non_capability = off_chrome.reject { |span| span["data-chat-target"] == "capabilityBadge" }
+        expect(non_capability.select { |span| (span["class"] || "").split.include?("bg-green-100") && (span["class"] || "").split.include?("text-green-700") }).to be_empty
+
+        # CHAT_MODE_STYLES["inline"] -> bg-blue-100 text-blue-700. The capability
+        # palette does not use blue, so the simple CSS check stays safe.
+        expect(header.css("span.bg-blue-100.text-blue-700")).to be_empty
+      end
+
+      it "does not render the redundant Active/Inline status badges when the workspace capability is ready" do
+        # @spec CHAT-API-009
+        # #3925 regression: CHAT_CONTAINER_CAPABILITY_STYLES["ready"] reuses
+        # the same green classes as CHAT_SESSION_STATUS_STYLES["active"], so
+        # a naive CSS lookup against the desktop header would match the
+        # workspace capability badge (which lives inside the Session details
+        # disclosure body, still inside <header>) and report a false-positive
+        # "Active badge reappeared" failure. Drive a workspace chat so the
+        # green capability badge is actually rendered, then confirm the
+        # redundant status/mode badges are still absent and that the
+        # capability badge is the only green span in the header.
+        chat_session = create(:chat_session, :workspace, account: account, created_by: user)
+
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        header = desktop_header_in(doc)
+        disclosure = header.at_xpath(".//details[summary[contains(., 'Session details')]]")
+        summary = disclosure&.at_xpath("./summary")
+
+        # Sanity: the workspace capability badge really is present in green,
+        # otherwise this regression test would not be exercising the
+        # collision between the two badge palettes.
+        capability_badge = header.at_xpath(".//span[@data-chat-target='capabilityBadge']")
+        expect(capability_badge).to be_present
+        expect(capability_badge["class"].to_s.split).to include("bg-green-100", "text-green-700")
+
+        # Apply the same scoping the primary test uses: only spans outside
+        # the always-visible chrome and not the capability badge may carry
+        # the green status classes. If a future change reintroduces the
+        # status badge, the assertion below will fail; if the green-CSS
+        # check ever drifts back to a header-wide lookup, this test will
+        # fail with the original false-positive message.
+        chrome_spans = summary ? summary.css("span") : []
+        off_chrome = header.css("span").to_a - chrome_spans
+        non_capability = off_chrome.reject { |span| span["data-chat-target"] == "capabilityBadge" }
+        expect(non_capability.select { |span| (span["class"] || "").split.include?("bg-green-100") && (span["class"] || "").split.include?("text-green-700") }).to be_empty
+
+        # The green workspace capability badge is the *only* green span in
+        # the header — i.e., it never competes with another badge for the
+        # same classes from a different palette.
+        green_spans = header.css("span.bg-green-100.text-green-700").to_a
+        expect(green_spans.map { |span| span["data-chat-target"] }).to eq([ "capabilityBadge" ])
+
+        # CHAT_MODE_STYLES does not collide with the capability palette, so
+        # the CSS check stays safe.
+        expect(header.css("span.bg-blue-100.text-blue-700")).to be_empty
       end
 
       it "keeps the measured viewport height bound when the show page renders a flash banner" do
@@ -1165,6 +1284,30 @@ RSpec.describe "ChatSessions" do
 
   def desktop_header_in(doc)
     doc.xpath("//div[@data-controller='chat']/header").last
+  end
+
+  def expect_compact_mobile_workspace_options(mobile_header)
+    # @spec CHAT-API-009
+    # Workspace chats render their outer disclosure open so recovery controls
+    # do not depend on JavaScript. The potentially tall clone configuration is
+    # nested, preserving the transcript's 18rem floor while keeping it
+    # reachable.
+    mobile_capability_panel = mobile_header.at_css("[data-chat-target='capabilityPanel']")
+    expect(mobile_capability_panel["class"].split).to include("p-3", "sm:p-4")
+    workspace_options = mobile_capability_panel.at_css("details[data-chat-workspace-options]")
+    expect(workspace_options).to be_present
+    expect(workspace_options["open"]).to be_nil
+    expect(workspace_options["class"].split).to include("group/workspace-options")
+
+    workspace_options_body = workspace_options.at_xpath("./div")
+    expect(workspace_options_body["class"].split).to include("group-open/workspace-options:block")
+    expect(mobile_capability_panel.at_css("[data-chat-capability-ready-only='true']")["class"].split).to include("mt-2")
+
+    # The open Workspace disclosure retains recovery controls on mobile. Its
+    # nested clone controls must not stack when the user opens them.
+    clone_form = mobile_capability_panel.at_css("form[action$='/clone_project']")
+    expect(clone_form["class"].split).to include("flex", "items-end", "gap-2")
+    expect(clone_form["class"].split).not_to include("flex-col")
   end
 
   def desktop_workspace_disclosure_in(body)
