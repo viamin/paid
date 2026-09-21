@@ -495,6 +495,7 @@ RSpec.describe "ChatSessions" do
           disclosure = desktop_workspace_disclosure_in(response.body)
 
           expect(disclosure).to be_present, "no workspace disclosure for #{capability}"
+          expect(disclosure["data-chat-workspace-disclosure"]).to eq("true")
           expect(disclosure["open"]).not_to be_nil, "workspace disclosure folded shut for #{capability}"
         end
       end

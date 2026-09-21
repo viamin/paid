@@ -57,6 +57,7 @@
     </details>
 
     <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
+                    data: { chat_workspace_disclosure: true },
                     open: !chat_session.inline_only? do %>
       <summary class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
         <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
@@ -101,6 +102,7 @@
         unrecoverable. Open by default (not on click) so it works
         before, and without, JavaScript. (@spec CHAT-API-009) %>
     <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
+                    data: { chat_workspace_disclosure: true },
                     open: !chat_session.inline_only? do %>
       <summary class="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
         <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">

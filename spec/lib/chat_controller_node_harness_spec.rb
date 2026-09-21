@@ -748,7 +748,7 @@ class ChatControllerNodeHarness
       const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
       const reopenForm = {
         classList: { contains: (cls) => cls === "hidden", toggle: () => {} },
-        closest: (selector) => (selector === "details" ? details : null)
+        closest: (selector) => (selector === "[data-chat-workspace-disclosure]" ? details : null)
       };
       const { controller } = makeController({
         element: {
@@ -772,7 +772,7 @@ class ChatControllerNodeHarness
       const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
       const cloneForm = {
         classList: { contains: () => false, toggle: () => {} },
-        closest: () => details
+        closest: (selector) => (selector === "[data-chat-workspace-disclosure]" ? details : null)
       };
       const { controller } = makeController({
         element: {
@@ -798,7 +798,7 @@ class ChatControllerNodeHarness
       const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
       const alreadyVisibleForm = {
         classList: { contains: () => false, toggle: () => {} },
-        closest: (selector) => (selector === "details" ? details : null)
+        closest: (selector) => (selector === "[data-chat-workspace-disclosure]" ? details : null)
       };
       const { controller } = makeController({
         element: {
