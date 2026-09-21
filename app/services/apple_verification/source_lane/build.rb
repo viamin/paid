@@ -12,8 +12,11 @@ module AppleVerification
     # content-addressed workspace bundle, an empty `credentials` lane, and the
     # same `git` lane shape with no `commit_sha`. The builder rejects host
     # paths, bind mounts, and writable cross-project caches in either branch,
-    # and refuses to build an uncommitted lane when the originating paid-agent
-    # container has a write-host mount bound into its workspace.
+    # and refuses to build any lane when the originating paid-agent container
+    # has a write-host mount bound into its workspace (the caller-supplied
+    # `host_mount_check` inspects the originating container; passing it is
+    # required because the executor is the only party that can resolve the
+    # container's bind/mount table).
     #
     # @spec APPLE-TRANSFER-001
     # @spec APPLE-TRANSFER-003
@@ -28,7 +31,7 @@ module AppleVerification
         new(...).call
       end
 
-      def initialize(attempt:, host_mount_check: ->(_agent_run) { false })
+      def initialize(attempt:, host_mount_check:)
         @attempt = attempt
         @host_mount_check = host_mount_check
       end
@@ -72,6 +75,12 @@ module AppleVerification
         agent_run = attempt.agent_run
         return unless agent_run
 
+        # `host_mount_check` is required: APPLE-TRANSFER-003 makes the
+        # write-host-mount guard a hard requirement and the executor that
+        # drives the source lane owns the authoritative container/mount
+        # inspection. Defaulting to a permissive lambda would silently disable
+        # the guard for callers that forget to wire it up, which is the exact
+        # failure mode RDR-068 was written to prevent.
         raise HostMountPresentError, "apple verification rejects paid-agent containers with a write host mount" if host_mount_check.call(agent_run)
       end
 

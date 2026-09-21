@@ -95,7 +95,7 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
     end
   end
 
-  it "rejects symlinks that escape the workspace root" do
+  it "raises WorkspaceInvalidError when a symlink escapes the workspace root" do
     outside = File.join(Dir.mktmpdir("apple-outside-"), "secret.txt")
     File.binwrite(outside, "outside")
     link_path = File.join(workspace_root, "link_to_outside")
@@ -104,9 +104,38 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
 
     expect {
       described_class.call(workspace_root: workspace_root, output_path: output_path)
-    }.not_to raise_error
+    }.to raise_error(described_class::WorkspaceInvalidError, /escapes the workspace root/)
 
     FileUtils.remove_entry(File.dirname(outside))
+  end
+
+  it "raises WorkspaceInvalidError when a symlink chain escapes the workspace root" do
+    outside_dir = Dir.mktmpdir("apple-outside-")
+    outside = File.join(outside_dir, "secret.txt")
+    File.binwrite(outside, "outside")
+    inner_link = File.join(workspace_root, "inside")
+    FileUtils.mkdir_p(inner_link)
+    inside_link_target = File.join(inner_link, "link_b")
+    File.symlink(outside, inside_link_target)
+    chain_link = File.join(workspace_root, "link_a")
+    File.symlink(File.join(inner_link, "link_b"), chain_link)
+    write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+
+    expect {
+      described_class.call(workspace_root: workspace_root, output_path: output_path)
+    }.to raise_error(described_class::WorkspaceInvalidError, /escapes the workspace root/)
+
+    FileUtils.remove_entry(outside_dir)
+  end
+
+  it "follows symlinks that resolve inside the workspace root" do
+    write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+    internal_link = File.join(workspace_root, "Sources", "Linked.swift")
+    File.symlink(File.join(workspace_root, "Sources", "App.swift"), internal_link)
+
+    result = described_class.call(workspace_root: workspace_root, output_path: output_path)
+
+    expect(result.manifest["files"].map { |entry| entry["path"] }).to include("Sources/Linked.swift")
   end
 
   it "raises WorkspaceInvalidError when the workspace root does not exist" do

@@ -104,6 +104,10 @@ module AppleVerification
         @artifact_storage.signed_url(key)
       end
 
+      def delete_key(key)
+        @artifact_storage.delete(key)
+      end
+
       def delete_prefix(prefix)
         @artifact_storage.delete_prefix(prefix)
       end

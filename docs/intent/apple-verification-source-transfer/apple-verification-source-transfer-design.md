@@ -71,15 +71,24 @@ streams a SHA-256 digester, and produces the bundle alongside a
 summary. Tar entries preserve each included file's permission bits so
 executable build-phase scripts survive extraction in the guest. The bundle
 digest is `sha256:` + the digester's final hex output.
-Bundles larger than the configured cap (default 2 GiB) are rejected with
-`BundleTooLargeError` before upload.
 
-The builder rejects attempts where `AgentRuns::Research::SecretGuard` would
-flag the workspace, where the bundle already exists with a different digest,
-or where the agent run has a write-host mount bound into its container (the
-manifest's `mounts`/workspace section would expose one). Bundles are
-content-addressed: a duplicate digest reuses the existing object-storage key
-instead of re-uploading.
+The builder rejects the bundle when:
+
+- any included file matches a secret-shaped pattern from
+  {SecretSafeMetadata::SECRET_VALUE_PATTERNS} after the exclusion pass;
+- the resulting bundle exceeds `max_bytes` (default 2 GiB)
+  (`BundleTooLargeError`);
+- the workspace contains a symlink whose target, resolved through the entire
+  symlink chain via `File.realpath`, sits outside the workspace root
+  (`WorkspaceInvalidError`).
+
+[ ] **Gap:** A host-mount guard at the source-lane level
+(`AppleVerification::SourceLane::Build#ensure_no_host_mounts!`) rejects
+attempts whose originating paid-agent container has a write host mount bound
+into its workspace; the executor that drives the source lane is the only
+party that can resolve the container's bind/mount table, so the guard takes
+a required `host_mount_check:` callable and refuses to run without it. The
+bundle builder itself does not inspect container mounts.
 
 ## Credential lane
 
@@ -89,7 +98,12 @@ from the project's active GitHub App installation. It calls
 reference whose locator carries `installation_id`, `repository_id`, and
 `ttl_seconds`. The credentials lane rejects an installation that is suspended,
 revoked, or attached to an account other than the project's, and rejects
-attempts whose `commit_sha` is missing or non-SHA-1.
+attempts whose `commit_sha` is missing.
+
+[ ] **Gap:** The credentials lane currently rejects an attempt whose
+`commit_sha` is blank but does not validate the SHA-1 (40-hex) shape. A
+follow-up should tighten `CredentialLane#committed?` (or the attempt model)
+to reject non-SHA-1 values, matching the documented contract.
 
 The token value is never serialized into the manifest — it is delivered to
 the guest through the authenticated `GuestConnection` channel when the
@@ -139,8 +153,20 @@ disagrees with those bytes is rejected (`DigestMismatchError`).
 The ingester enforces the RDR's retention policy: durable records (manifest
 metadata, attempt metadata, audit references) are kept forever, while binary
 artifacts follow the configured retention (default 30 days, configurable per
-account). Expired artifacts are deleted by `AppleVerification::Artifacts::RetentionSweep`,
-which deletes binaries by key prefix while preserving durable metadata rows.
+account, see `AppleVerification::ArtifactIngestion::Storage::DEFAULT_BINARY_RETENTION_DAYS`).
+
+[ ] **Gap:** A dedicated artifact-binary retention sweep is not part of this
+segment; this PR only ships the workspace-bundle retention sweep
+(`AppleVerification::Bundles::RetentionSweep`, see Revocation and deletion
+rules below). A follow-up should add an `AppleVerification::Artifacts::RetentionSweep`
+that deletes only the per-kind artifact keys (`.xcresult`, build logs,
+screenshots, diagnostics) at their configured expiry while preserving the
+durable metadata rows, mirroring the bundle-sweep shape.
+
+[ ] **Gap:** The `DEFAULT_BINARY_RETENTION_DAYS` constant is defined but not
+yet wired into a sweep — artifact binaries are retained until that sweep
+lands. This is a follow-up rather than a bug: artifact retention must not
+shorten below the bundle retention window.
 
 ## Revocation and deletion rules
 
@@ -156,11 +182,19 @@ which deletes binaries by key prefix while preserving durable metadata rows.
   same audit event and credential revocation.
 - A workspace bundle is retained for the configured window after the attempt
   completes (default 7 days, configurable per account). The retention window
-  is recorded on the attempt as `bundle_retained_until`. An expired bundle
-  is deleted by `AppleVerification::Bundles::RetentionSweep` which lists
-  prefixes under `apple-verification/{account_id}/{project_id}/{attempt_id}/`
-  and removes expired keys, preserving the bundle metadata row (digest, safe
-  manifest summary, lineage).
+  is recorded on the attempt as `bundle_retained_until`; uncommitted
+  successful attempts persist the deadline from
+  {AppleVerification::Revocation::Enforce}, while committed successful
+  attempts leave it `NULL` because they ship no bundle. An expired bundle is
+  deleted by `AppleVerification::Bundles::RetentionSweep`, which deletes
+  only the bundle key
+  (`AppleVerification::ArtifactIngestion::Storage.bundle_key` → `source.tar`)
+  so the sibling artifact keys (`.xcresult`, build logs, screenshots,
+  diagnostics) uploaded by
+  {AppleVerification::ArtifactIngestion::Ingest} are preserved for their own
+  retention window. The sweep then clears `bundle_retained_until` on the
+  attempt so the durable manifest, audit events, and ledger entries remain
+  attributable while the binary artifact is gone.
 - The attempt record, manifest, audit events, ledger entries, and
   durable metadata survive binary expiry: retention deletion only removes
   the binary artifact keys, never the metadata rows that reference them.

@@ -8,6 +8,7 @@ RSpec.describe AppleVerification::SourceLane::Build do
   let(:account) { create(:account) }
   let(:project) { create(:project, :with_github_installation, account: account) }
   let(:workflow_revision) { create(:apple_verification_workflow_revision, project: project, account: account) }
+  let(:host_mount_check) { ->(_agent_run) { false } }
 
   around do |example|
     FeatureFlags.enable!(:apple_verification_workers, project: project)
@@ -20,7 +21,7 @@ RSpec.describe AppleVerification::SourceLane::Build do
     let(:attempt) { create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account) }
 
     it "builds git and credentials lane entries and leaves object_storage empty" do
-      result = described_class.call(attempt: attempt)
+      result = described_class.call(attempt: attempt, host_mount_check: host_mount_check)
 
       expect(result.git).to include(
         "lane" => "git",
@@ -36,7 +37,7 @@ RSpec.describe AppleVerification::SourceLane::Build do
     let(:attempt) { create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account) }
 
     it "builds an object-storage workspace bundle lane and leaves credentials empty" do
-      result = described_class.call(attempt: attempt)
+      result = described_class.call(attempt: attempt, host_mount_check: host_mount_check)
 
       expect(result.git.first["locator"]).not_to have_key("commit_sha")
       expect(result.git.first["locator"]).to include("bundle_digest" => attempt.source_digest)
@@ -60,7 +61,7 @@ RSpec.describe AppleVerification::SourceLane::Build do
     end
 
     it "raises FeatureDisabledError without building any lane entry" do
-      expect { described_class.call(attempt: attempt) }
+      expect { described_class.call(attempt: attempt, host_mount_check: host_mount_check) }
         .to raise_error(AppleVerification::ExecuteGuestJob::FeatureDisabledError)
     end
   end
@@ -85,8 +86,17 @@ RSpec.describe AppleVerification::SourceLane::Build do
 
     it "raises BundlesNotSupportedError" do
       allow(attempt).to receive(:source_digest).and_return(nil)
-      expect { described_class.call(attempt: attempt) }
+      expect { described_class.call(attempt: attempt, host_mount_check: host_mount_check) }
         .to raise_error(described_class::BundlesNotSupportedError)
+    end
+  end
+
+  context "when host_mount_check is missing" do
+    let(:attempt) { create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account) }
+
+    it "raises ArgumentError so the guard fails closed" do
+      expect { described_class.call(attempt: attempt) }
+        .to raise_error(ArgumentError)
     end
   end
 end

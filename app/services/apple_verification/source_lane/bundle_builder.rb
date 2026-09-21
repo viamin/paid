@@ -15,8 +15,6 @@ module AppleVerification
     # digest, the exclusion summary, and the secret-scan verdict. The builder
     # rejects the bundle when:
     #
-    # - the originating paid-agent container has a write host mount bound
-    #   into its workspace (caller-supplied via `host_mount_check`);
     # - any included file matches a secret-shaped pattern from
     #   {SecretSafeMetadata::SECRET_VALUE_PATTERNS};
     # - the resulting bundle exceeds `max_bytes` (default 2 GiB);
@@ -160,17 +158,24 @@ module AppleVerification
       def walk_workspace(&block)
         Dir.glob(File.join(@workspace_root, "**", "*"), File::FNM_DOTMATCH).sort.each do |path|
           next if File.directory?(path)
-          next if File.symlink?(path) && symlink_escapes?(path)
+          if File.symlink?(path) && symlink_escapes?(path)
+            raise WorkspaceInvalidError, "workspace contains a symlink that escapes the workspace root: #{path}"
+          end
 
           relative = path.sub(/\A#{Regexp.escape(@workspace_root)}\/?/, "")
           yield(path, relative)
         end
       end
 
+      # Resolves the symlink target through the entire chain so a chain like
+      # `link_a -> inside/link_b -> /outside/host_secret.txt` cannot bypass
+      # the guard by resolving one hop at a time. The check rejects any
+      # symlink whose realpath sits outside the workspace root; a missing
+      # realpath also counts as escaping to fail closed.
       def symlink_escapes?(path)
-        target = File.readlink(path)
-        absolute = File.absolute_path?(target) ? target : File.expand_path(target, File.dirname(path))
-        !absolute.start_with?(@workspace_root + "/")
+        !File.realpath(path).start_with?(@workspace_root + "/")
+      rescue Errno::ENOENT
+        true
       end
 
       def exclusion_reason(relative_path)

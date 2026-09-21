@@ -29,8 +29,12 @@
 
 - [x] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
   reference a host path, a bind mount, or a writable cross-project cache, and
-  the bundle builder SHALL refuse to build a bundle when the originating
-  paid-agent container has a write-host mount bound into its workspace.
+  the source lane builder SHALL refuse to build any lane when the originating
+  paid-agent container has a write-host mount bound into its workspace (the
+  caller-supplied `host_mount_check` is required because the executor is the
+  only party that can resolve the container's bind/mount table); the bundle
+  builder SHALL refuse to build a bundle when the workspace contains a
+  symlink whose target escapes the workspace root.
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`,
   `spec/services/apple_verification/source_lane/build_spec.rb`
   *Code:* `AppleVerification::SourceLane::Build`,

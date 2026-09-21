@@ -16,13 +16,31 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     attempt.update!(status: "succeeded")
 
     expect {
-      described_class.call(attempt: attempt, credential_lane: credential_lane)
+      described_class.call(attempt: attempt, credential_lane: credential_lane, bundle_retention_days: 7)
     }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }.by(1)
       .and change { ExecutionAuditEvent.where(event_name: "apple_credential.revoked").count }.by(1)
 
     expect(credential_lane).to have_received(:revoke!)
     expect(attempt.reload.container_retained_until).to be_nil
-    expect(attempt.bundle_retained_until).to be_nil
+    expect(attempt.bundle_retained_until).to be_within(2.seconds).of(7.days.from_now)
+  end
+
+  it "persists the bundle retention deadline for an uncommitted successful attempt" do
+    uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
+    uncommitted.update!(status: "succeeded")
+
+    described_class.call(attempt: uncommitted, credential_lane: credential_lane, bundle_retention_days: 7)
+
+    expect(uncommitted.reload.bundle_retained_until).to be_within(2.seconds).of(7.days.from_now)
+  end
+
+  it "leaves bundle_retained_until nil for a committed successful attempt" do
+    committed = create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
+    committed.update!(status: "succeeded")
+
+    described_class.call(attempt: committed, credential_lane: credential_lane, bundle_retention_days: 7)
+
+    expect(committed.reload.bundle_retained_until).to be_nil
   end
 
   it "retains the failed VM and persists the retention deadline" do

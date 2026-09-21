@@ -6,17 +6,22 @@ module AppleVerification
     # (RDR-068 § Revocation and deletion rules).
     #
     # For each attempt whose +bundle_retained_until+ has passed and whose
-    # bundle is still present in object storage, the sweep deletes every key
-    # under the attempt's namespace and clears the attempt's retention
+    # bundle is still present in object storage, the sweep deletes the
+    # attempt's source bundle key and clears the attempt's retention
     # deadline so the durable manifest, audit events, and ledger entries
-    # remain attributable while the binary artifact is gone. For each
+    # remain attributable while the binary artifact is gone. Only the
+    # bundle key is deleted: the artifact binaries (`.xcresult`, build logs,
+    # screenshots, diagnostics) uploaded by
+    # {AppleVerification::ArtifactIngestion::Ingest} live under sibling keys
+    # in the same namespace and follow their own retention window. For each
     # attempt whose +container_retained_until+ has passed and whose VM is
     # still active, the sweep invokes {Revocation::Enforce#revoke_retained!}
     # to destroy the VM and revoke the credential lane entry.
     #
     # The sweep is idempotent: an attempt whose retention deadline is in
-    # the future is skipped, and an attempt whose retention deadline is
-    # already cleared is also skipped.
+    # the future is skipped, an attempt whose retention deadline is
+    # already cleared is also skipped, and the underlying
+    # {ArtifactStorage#delete} call is a no-op when the key is missing.
     #
     # @spec APPLE-TRANSFER-006
     class RetentionSweep
@@ -72,12 +77,12 @@ module AppleVerification
       end
 
       def delete_bundle!(attempt)
-        prefix = AppleVerification::ArtifactIngestion::Storage.namespace_prefix(
+        key = AppleVerification::ArtifactIngestion::Storage.bundle_key(
           account_id: attempt.account_id,
           project_id: attempt.project_id,
           attempt_id: attempt.id
         )
-        storage.delete_prefix(prefix)
+        storage.delete_key(key)
         attempt.update!(bundle_retained_until: nil)
         true
       rescue Aws::S3::Errors::ServiceError => error

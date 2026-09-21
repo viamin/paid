@@ -59,6 +59,7 @@ module AppleVerification
         when "succeeded"
           record_vm_destroyed!
           revoke_credential!
+          persist_bundle_retained_until!
           Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, audit_event: nil)
         when "failed", "cancelled", "timed_out", "unavailable"
           retain_failure_window!
@@ -121,6 +122,21 @@ module AppleVerification
           event_name: "apple_credential.revoked",
           metadata: { "attempt_id" => attempt.id, "action" => "credential_revoked" }
         )
+      end
+
+      # Committed attempts have no workspace bundle in object storage, so the
+      # retention sweep has nothing to delete; uncommitted attempts ship a
+      # bundle under `apple-verification/.../source.tar` that must be retained
+      # for the configured window so the sweep can pick it up and only the
+      # bundle key is deleted, not the attempt's artifact namespace. The
+      # committed/uncommitted distinction lives on `commit_sha` (per
+      # {AppleVerification::SourceLane::Build#committed?}), not on
+      # `source_digest`, which is set on every attempt as the workflow
+      # revision's content digest.
+      def persist_bundle_retained_until!
+        return if attempt.commit_sha.present?
+
+        attempt.update!(bundle_retained_until: bundle_retained_until)
       end
 
       def record_event!(event_name:, metadata: {})

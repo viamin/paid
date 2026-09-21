@@ -12,13 +12,13 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
   let(:revocation) { instance_double(AppleVerification::Revocation::Enforce) }
 
   before do
-    allow(storage).to receive(:delete_prefix).and_return(7)
+    allow(storage).to receive(:delete_key)
     allow(revocation).to receive(:revoke_retained!).and_return(
       AppleVerification::Revocation::Enforce::Result.new(outcome: "verification_vm_revoked", retained_until: nil, audit_event: nil)
     )
   end
 
-  it "deletes the bundle prefix and clears the retention deadline when expired" do
+  it "deletes only the bundle key and clears the retention deadline when expired" do
     attempt = create(:apple_verification_attempt,
       apple_verification_workflow_revision: workflow_revision,
       project: project,
@@ -28,11 +28,12 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
     result = described_class.call(storage: storage, revocation: revocation)
 
     expect(result.bundles_deleted).to eq(1)
-    expect(storage).to have_received(:delete_prefix).with(
-      AppleVerification::ArtifactIngestion::Storage.namespace_prefix(
+    expect(storage).to have_received(:delete_key).with(
+      AppleVerification::ArtifactIngestion::Storage.bundle_key(
         account_id: attempt.account_id, project_id: attempt.project_id, attempt_id: attempt.id
       )
     )
+    expect(storage).not_to have_received(:delete_prefix) if storage.respond_to?(:delete_prefix)
     expect(attempt.reload.bundle_retained_until).to be_nil
   end
 
@@ -68,12 +69,12 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
 
     expect(result.bundles_deleted).to eq(0)
     expect(result.vms_revoked).to eq(0)
-    expect(storage).not_to have_received(:delete_prefix)
+    expect(storage).not_to have_received(:delete_key)
     expect(revocation).not_to have_received(:revoke_retained!)
   end
 
   it "is idempotent across repeated invocations" do
-    attempt = create(:apple_verification_attempt,
+    create(:apple_verification_attempt,
       apple_verification_workflow_revision: workflow_revision,
       project: project,
       account: account,
@@ -83,6 +84,6 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
     second = described_class.call(storage: storage, revocation: revocation)
 
     expect(second.bundles_deleted).to eq(0)
-    expect(storage).to have_received(:delete_prefix).once
+    expect(storage).to have_received(:delete_key).once
   end
 end
