@@ -31,8 +31,8 @@
   default tier selection so queued runs do not dispatch a model the Codex CLI
   rejects at preflight. GPT-5.6 Luna, Terra, and Sol are api_key-only under
   the current agent-harness Codex subscription contract, so the snapshot marks
-  them `active: false` to clear the catalog contract drift detector (RDR-040,
-  #3965); their tier labels (low/mid/high respectively) still back-fill from
+them `active: false` to clear the catalog contract drift detector (RDR-040,
+`#3965`); their tier labels (low/mid/high respectively) still back-fill from
   `KNOWN_MODELS` so the api_key auth path can rank them once the runner
   contract catches up. Subscription runs SHALL participate in normal model
   selection and persist the selected tier.
