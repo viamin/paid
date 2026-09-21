@@ -33,7 +33,7 @@ RSpec.describe Runners::TestAgent do
 
   # @spec RUNNER-FALLBACK-005
   describe "subscription smoke-test model" do
-    let(:model) { create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid") }
+    let(:model) { create(:llm_model, :openai, model_id: "gpt-5-mini", tier: "mid") }
     let(:codex_runner) do
       create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
         tier_model_ids: { "mid" => model.model_id })
@@ -42,7 +42,7 @@ RSpec.describe Runners::TestAgent do
     it "tests the configured mid-tier model with subscription credentials" do
       runtime = described_class.new(runner: codex_runner).send(:container_provider_runtime)
 
-      expect(runtime.model).to eq("gpt-5.6-terra")
+      expect(runtime.model).to eq("gpt-5-mini")
       expect(runtime.unset_env).to include("OPENAI_API_KEY")
     end
 

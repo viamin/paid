@@ -417,4 +417,56 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       expect(activity.send(:deterministic_runner_config_error?, "")).to be(false)
     end
   end
+
+  describe "#codex_model_rejection" do
+    let(:activity) { described_class.new }
+
+    # @spec RUNNER-FALLBACK-006
+    it "uses the harness contract for a nested Codex unsupported-model response" do
+      rejection = activity.send(
+        :codex_model_rejection,
+        "codex",
+        nil,
+        nil,
+        '{"error":{"message":"The \'gpt-5.6\' model is not supported when using Codex with a ChatGPT account."}}'
+      )
+
+      expect(rejection).to include(type: :subscription_model_rejected, model: "gpt-5.6")
+    end
+
+    it "does not classify a nested error copied from Codex tool output" do
+      event = JSON.generate(
+        "type" => "item.completed",
+        "item" => {
+          "type" => "command_execution",
+          "aggregated_output" => '{"error":{"message":"The \'gpt-5.6\' model is not supported when using Codex with a ChatGPT account."}}'
+        }
+      )
+      output = activity.send(:redact_tool_output_for_classification, "codex", event)
+
+      expect(activity.send(:codex_model_rejection, "codex", nil, nil, output)).to be_nil
+    end
+  end
+
+  describe "#claude_session_limit_error?" do
+    let(:activity) { described_class.new }
+
+    # @spec RUNNER-FALLBACK-006
+    it "trusts the explicit error envelope over Claude's success subtype" do
+      envelope = JSON.generate(
+        "type" => "result",
+        "subtype" => "success",
+        "is_error" => true,
+        "terminal_reason" => "api_error",
+        "api_error_status" => 429,
+        "result" => "You've hit your session limit · resets 6:10am (UTC)"
+      )
+
+      expect(activity.send(:claude_session_limit_error?, "claude", envelope, "diagnostic\n" * 100)).to be(true)
+    end
+
+    it "does not treat ordinary Claude prose as a session limit" do
+      expect(activity.send(:claude_session_limit_error?, "claude", "I hit your session limit in a test fixture.", "")).to be(false)
+    end
+  end
 end

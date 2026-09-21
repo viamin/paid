@@ -55,3 +55,16 @@
   silently testing the CLI default.
   *Code:* `Runners::TestAgent`.
   *Test:* `spec/services/runners/test_agent_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-006** — When a runner's preflight, completed transport,
+  or streaming abort reports a provider-state failure, the system SHALL classify
+  the provider's structured error before diagnostics are truncated: credit
+  exhaustion SHALL use the billing backoff path regardless of exit status;
+  a Claude `is_error` session-limit envelope SHALL record rate-limited state and
+  its harness-parsed reset time even if `subtype` is `success`; and a Codex
+  structured subscription-model rejection SHALL be recorded as a configuration
+  error without opening the transient circuit breaker. Tool output, prompt
+  echoes, fixtures, and ordinary agent prose SHALL not create provider state.
+  *Code:* `Activities::RunAgentActivity#raise_classified_provider_state!`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_no_db_spec.rb`.
