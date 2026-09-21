@@ -1183,7 +1183,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     # @spec RUNNER-FALLBACK-002
     it "pins the configured mid-tier model without a model-selection record" do
-      model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+      model = create(:llm_model, :openai, model_id: "gpt-5-mini", tier: "mid")
       runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
         tier_model_ids: { "mid" => model.model_id })
       expect(agent_run.model_selection).to be_nil
@@ -1192,7 +1192,7 @@ RSpec.describe Activities::RunAgentActivity do
         context = described_class::CommandContext.new(runner_candidate: candidate, runner: "codex", user: user)
         command = activity.send(:build_command, context, "Reply with exactly OK.", agent_run: agent_run)
 
-        expect(command[2]).to include("--model gpt-5.6-terra", "PAID_CODEX_SUBSCRIPTION_AUTH")
+        expect(command[2]).to include("--model gpt-5-mini", "PAID_CODEX_SUBSCRIPTION_AUTH")
         resolved = activity.send(:resolve_tier_model_for, candidate, agent_run, user)
         expect(activity.send(:resolved_model_info_for, resolved)).to include(resolved_model_id: model.model_id)
       end
@@ -1200,7 +1200,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     # @spec RUNNER-FALLBACK-002
     it "uses the user's configured mid-tier model for a bare runner key when it differs from the catalog default" do
-      configured_model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid", capability_score: 3.0)
+      configured_model = create(:llm_model, :openai, model_id: "gpt-5-mini", tier: "mid", capability_score: 3.0)
       catalog_default_model = create(:llm_model, :openai, model_id: "gpt-5.4", tier: "mid", capability_score: 9.0)
       create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
         tier_model_ids: { "mid" => configured_model.model_id })
@@ -1215,13 +1215,13 @@ RSpec.describe Activities::RunAgentActivity do
     # @spec RUNNER-FALLBACK-002
     context "when recovering a missing model selection" do
       let(:recovery_runner) do
-        model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+        model = create(:llm_model, :openai, model_id: "gpt-5-mini", tier: "mid")
         create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
           tier_model_ids: { "mid" => model.model_id })
       end
 
       [
-        { "excluded_model_ids" => [ "gpt-5.6-terra" ] },
+        { "excluded_model_ids" => [ "gpt-5-mini" ] },
         { "required_model_id" => "gpt-5.6-sol" },
         { "llm_providers" => { "blocklist" => [ "openai" ] } },
         { "llm_providers" => { "allowlist" => [ "anthropic" ] } }
@@ -1237,18 +1237,18 @@ RSpec.describe Activities::RunAgentActivity do
 
       it "allows recovery when the configured model satisfies project policy" do
         project.update!(model_preferences: {
-          "required_model_id" => "gpt-5.6-terra",
+          "required_model_id" => "gpt-5-mini",
           "llm_providers" => { "allowlist" => [ "openai" ] }
         })
 
         runtime = activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
 
-        expect(runtime.model).to eq("gpt-5.6-terra")
+        expect(runtime.model).to eq("gpt-5-mini")
       end
 
       it "does not revive an inactive catalog model" do
         recovery_runner
-        LlmModel.find_by!(model_id: "gpt-5.6-terra").update!(active: false)
+        LlmModel.find_by!(model_id: "gpt-5-mini").update!(active: false)
 
         expect do
           activity.send(:selected_runner_runtime, recovery_runner, user, agent_run)
@@ -1295,7 +1295,7 @@ RSpec.describe Activities::RunAgentActivity do
       # key, so resolution must look the persisted runner up by runner_key
       # instead of building a blank in-memory Runner.new placeholder, or a
       # user's configured tier_model_ids are silently dropped.
-      model = create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
+      model = create(:llm_model, :openai, model_id: "gpt-5-mini", tier: "mid")
       runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
         tier_model_ids: { "mid" => model.model_id })
 
