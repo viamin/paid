@@ -151,6 +151,7 @@ class TenantConfigurationsController < ApplicationController
       chat_settings: %i[
         chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations
         chat_max_cloned_repos chat_clone_timeout chat_shell_enabled chat_eager_provisioning
+        chat_auto_resume_rate_limited
       ]
     )[:chat_settings].to_h
 

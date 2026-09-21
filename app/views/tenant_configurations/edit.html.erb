@@ -286,6 +286,12 @@
         Provision chat workspace containers in the background (RDR-037)
       </label>
       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">When enabled (default), a container is provisioned as soon as a session requests one, so the first message is never blocked. Disable to defer provisioning until a container-only tool is invoked.</p>
+      <label class="mt-4 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+        <%= hidden_field_tag "tenant_setting[chat_settings][chat_auto_resume_rate_limited]", "0" %>
+        <%= check_box_tag "tenant_setting[chat_settings][chat_auto_resume_rate_limited]", "1", chat["chat_auto_resume_rate_limited"] %>
+        Automatically resume chats paused by a runner rate limit
+      </label>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">When enabled (default), a chat paused because its runner hit a rate limit resends the message that failed once the rate limit clears, without user intervention.</p>
     </section>
 
     <div class="flex justify-end">

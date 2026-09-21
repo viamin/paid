@@ -123,6 +123,27 @@ RSpec.describe ChatSession do
         expect(described_class.awaiting_container).to contain_exactly(pending_session, provisioning_session)
       end
     end
+
+    describe ".rate_limited" do
+      it "returns only sessions with a rate_limited_until set" do
+        # @spec CHAT-API-017
+        paused = create(:chat_session, account: account, created_by: user, rate_limited_until: 1.hour.from_now)
+        create(:chat_session, account: account, created_by: user)
+
+        expect(described_class.rate_limited).to eq([ paused ])
+      end
+    end
+
+    describe ".rate_limited_due" do
+      it "returns rate-limited sessions whose recovery window has elapsed" do
+        # @spec CHAT-API-017
+        due = create(:chat_session, account: account, created_by: user, rate_limited_until: 1.minute.ago)
+        create(:chat_session, account: account, created_by: user, rate_limited_until: 1.hour.from_now)
+        create(:chat_session, account: account, created_by: user)
+
+        expect(described_class.rate_limited_due).to eq([ due ])
+      end
+    end
   end
 
   describe "container capability predicates" do
@@ -148,6 +169,69 @@ RSpec.describe ChatSession do
 
     it "treats stopped as stopped" do
       expect(build(:chat_session, container_capability: "stopped")).to be_container_stopped
+    end
+  end
+
+  describe "rate limit pause" do
+    # @spec CHAT-API-017
+    describe "#rate_limited?" do
+      it "is true when rate_limited_until is in the future" do
+        expect(build(:chat_session, rate_limited_until: 1.hour.from_now)).to be_rate_limited
+      end
+
+      it "is false when rate_limited_until has elapsed" do
+        expect(build(:chat_session, rate_limited_until: 1.minute.ago)).not_to be_rate_limited
+      end
+
+      it "is false when rate_limited_until is nil" do
+        expect(build(:chat_session, rate_limited_until: nil)).not_to be_rate_limited
+      end
+    end
+
+    describe "#mark_rate_limited!" do
+      it "sets rate_limited_until to the given reset time" do
+        session = create(:chat_session)
+        reset_at = 10.minutes.from_now
+
+        session.mark_rate_limited!(reset_at: reset_at)
+
+        expect(session.reload.rate_limited_until).to be_within(1.second).of(reset_at)
+      end
+
+      it "defaults to RATE_LIMIT_DEFAULT_RESET when no reset time is given" do
+        session = create(:chat_session)
+
+        session.mark_rate_limited!
+
+        expect(session.reload.rate_limited_until).to be_within(1.second)
+          .of(ChatSession::RATE_LIMIT_DEFAULT_RESET.from_now)
+      end
+    end
+
+    describe "#clear_rate_limit!" do
+      it "clears rate_limited_until" do
+        session = create(:chat_session, rate_limited_until: 1.hour.from_now)
+
+        session.clear_rate_limit!
+
+        expect(session.reload.rate_limited_until).to be_nil
+      end
+    end
+
+    describe "#auto_resume_rate_limited?" do
+      it "defaults to true when the account has no tenant setting" do
+        session = build(:chat_session)
+
+        expect(session.auto_resume_rate_limited?).to be(true)
+      end
+
+      it "reflects the account's tenant setting when configured" do
+        account = create(:account)
+        create(:tenant_setting, account: account, features: { "chat_settings" => { "chat_auto_resume_rate_limited" => false } })
+        session = build(:chat_session, account: account)
+
+        expect(session.auto_resume_rate_limited?).to be(false)
+      end
     end
   end
 
