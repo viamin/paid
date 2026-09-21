@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2091,6 +2091,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
     t.integer "max_output_tokens"
     t.jsonb "metadata", default: {}, null: false
     t.string "model_id", null: false
+    t.boolean "operator_active_override", comment: "Explicit operator active/inactive decision. When set, scheduled catalog sync must preserve this value instead of reapplying the snapshot default."
     t.decimal "output_cost_per_million", precision: 10, scale: 4
     t.string "pricing_tier", default: "paid", null: false, comment: "Pricing availability for this model: paid, free, or freemium."
     t.string "provider", limit: 50, null: false
@@ -2241,6 +2242,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
     t.index ["account_id", "enabled"], name: "index_mcp_server_definitions_on_account_id_and_enabled"
     t.index ["account_id", "name"], name: "index_mcp_server_definitions_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_mcp_server_definitions_on_account_id"
+  end
+
+  create_table "model_availability_checks", comment: "Per (model, runner, auth, account) availability evidence from reconciliation, kept distinct from the global LlmModel catalog so a scheduled sync cannot silently undo a validated availability change or a structured runtime rejection.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Null means an account-agnostic (global) reconciliation context."
+    t.string "attempted_model_id", comment: "The model id actually attempted, which may differ from llm_model_id's model_id."
+    t.string "auth_type", null: false
+    t.datetime "checked_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", comment: "Bounds how long this evidence is trusted before reconciliation must refresh it."
+    t.string "incompatibility_type"
+    t.bigint "llm_model_id", null: false
+    t.text "reason"
+    t.string "replacement_model_id", comment: "Policy-eligible candidate suggested at the time of a rejection, never a hardcoded universal fallback."
+    t.integer "retry_count", default: 0, null: false
+    t.string "runner_key", null: false
+    t.string "source", null: false, comment: "What produced this evidence, e.g. agent_harness_compat or runtime_rejection."
+    t.string "status", null: false, comment: "available or unavailable, as of checked_at."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_model_availability_checks_on_account_id"
+    t.index ["llm_model_id", "runner_key", "auth_type", "account_id"], name: "idx_availability_checks_unique_scoped", unique: true, where: "(account_id IS NOT NULL)"
+    t.index ["llm_model_id", "runner_key", "auth_type"], name: "idx_availability_checks_unique_global", unique: true, where: "(account_id IS NULL)"
+    t.index ["llm_model_id"], name: "index_model_availability_checks_on_llm_model_id"
+    t.index ["status"], name: "index_model_availability_checks_on_status"
   end
 
   create_table "model_selections", force: :cascade do |t|
@@ -3872,6 +3896,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_19_143424) do
   add_foreign_key "marketplace_entry_rules", "marketplace_entries"
   add_foreign_key "marketplace_entry_versions", "marketplace_entries"
   add_foreign_key "mcp_server_definitions", "accounts"
+  add_foreign_key "model_availability_checks", "accounts"
+  add_foreign_key "model_availability_checks", "llm_models"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notification_rule_states", "accounts"

@@ -205,4 +205,41 @@ RSpec.describe LlmModel do
       expect(described_class.where(model_id: "MiniMax-M3").count).to eq(1)
     end
   end
+
+  # @spec MODEL-AVAILABILITY-002
+  describe "operator active override" do
+    it "is not operator-managed by default" do
+      model = create(:llm_model)
+
+      expect(model.operator_managed_active?).to be(false)
+    end
+
+    it "#operator_disable! sets active false and marks the override" do
+      model = create(:llm_model, active: true)
+
+      model.operator_disable!
+
+      expect(model.reload).to have_attributes(active: false, operator_active_override: false)
+      expect(model.operator_managed_active?).to be(true)
+    end
+
+    it "#operator_enable! sets active true and marks the override" do
+      model = create(:llm_model, active: false)
+
+      model.operator_enable!
+
+      expect(model.reload).to have_attributes(active: true, operator_active_override: true)
+      expect(model.operator_managed_active?).to be(true)
+    end
+
+    it "#clear_operator_override! returns the row to scheduled-sync management" do
+      model = create(:llm_model)
+      model.operator_disable!
+
+      model.clear_operator_override!
+
+      expect(model.reload.operator_active_override).to be_nil
+      expect(model.operator_managed_active?).to be(false)
+    end
+  end
 end

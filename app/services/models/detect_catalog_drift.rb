@@ -50,7 +50,7 @@ module Models
 
     def call
       providers = @providers.index_with { |provider| drift_for(provider) }
-        .reject { |_provider, drift| drift[:new_models].empty? && drift[:deprecated_models].empty? }
+        .reject { |_provider, drift| drift.values.all?(&:empty?) }
 
       Result.new(providers: providers, registry_fetched: @registry.fetched?)
     end
@@ -79,8 +79,28 @@ module Models
 
       {
         new_models: new_models_for(chat_by_base, catalog_bases, baseline),
-        deprecated_models: deprecated_models_for(provider)
+        deprecated_models: deprecated_models_for(provider),
+        availability_drift: availability_drift_for(provider, chat_by_base)
       }
+    end
+
+    # Catalog rows that scheduled sync (or an earlier reconciliation) marked
+    # inactive, that no operator explicitly disabled, but that a healthy
+    # registry fetch still lists — an automatic exclusion current evidence
+    # contradicts, distinct from a brand-new or a genuinely retired model.
+    # @spec MODEL-AVAILABILITY-007
+    def availability_drift_for(provider, chat_by_base)
+      return [] unless @registry.healthy?(provider)
+
+      inactive_automatically_excluded_ids(provider)
+        .select { |id| chat_by_base.key?(base_id(id)) }
+        .sort
+    end
+
+    def inactive_automatically_excluded_ids(provider)
+      LlmModel.where(provider: provider, active: false)
+        .where("operator_active_override IS DISTINCT FROM false")
+        .pluck(:model_id)
     end
 
     def new_models_for(chat_by_base, catalog_bases, baseline)
@@ -164,11 +184,16 @@ module Models
         @providers.sum { |_provider, drift| drift[:deprecated_models].size }
       end
 
+      def availability_drift_count
+        @providers.sum { |_provider, drift| drift[:availability_drift].size }
+      end
+
       # Stable digest of the finding set, used to dedup the filed issue.
       def fingerprint
         tokens = @providers.flat_map do |provider, drift|
           drift[:new_models].map { |entry| "new:#{provider}:#{entry[:representative]}" } +
-            drift[:deprecated_models].map { |id| "dep:#{provider}:#{id}" }
+            drift[:deprecated_models].map { |id| "dep:#{provider}:#{id}" } +
+            drift[:availability_drift].map { |id| "avail:#{provider}:#{id}" }
         end
         Digest::SHA256.hexdigest(tokens.sort.join("|"))
       end

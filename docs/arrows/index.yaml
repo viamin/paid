@@ -154,6 +154,14 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-27
+  model-availability-reconciliation:
+    title: Model Availability Reconciliation
+    path: docs/intent/model-availability-reconciliation/model-availability-reconciliation-design.md
+    specs: docs/intent/model-availability-reconciliation/model-availability-reconciliation-specs.md
+    parent: PAID
+    taxonomy: catalog
+    status: OK
+    audited: 2026-09-21
   rails-control-plane:
     title: Rails Control Plane
     path: docs/intent/rails-control-plane/rails-control-plane-design.md
