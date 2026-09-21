@@ -28,6 +28,18 @@ RSpec.describe "Projects::AppleVerifications" do
       expect(response.body).to include(*presented_attempt_evidence(attempt, artifact))
     end
 
+    it "preloads worker profiles across distinct workflow revisions in a single query" do # @spec APPLE-VERIFY-001
+      3.times { create_attempt_with_distinct_revision.call }
+
+      queries = capture_queries { get project_apple_verification_path(project) }
+      worker_profile_queries = queries.select { |sql| sql.include?(%(FROM "apple_worker_profiles")) }
+
+      expect(response).to have_http_status(:ok)
+      # One batched query for @revisions' direct apple_worker_profile preload, one for @attempts'
+      # nested apple_verification_workflow_revision.apple_worker_profile preload — not one per revision.
+      expect(worker_profile_queries.size).to eq(2)
+    end
+
     it "presents the mode without an update control to account viewers" do # @spec APPLE-VERIFY-001
       sign_out user
       sign_in create(:user, :viewer, account:)
@@ -185,6 +197,13 @@ RSpec.describe "Projects::AppleVerifications" do
 
       expect(response).to redirect_to(project_apple_verification_path(project))
       expect(resource.reload).to be_cleanup_pending
+    end
+  end
+
+  def create_attempt_with_distinct_revision
+    lambda do
+      revision = create(:apple_verification_workflow_revision, project:, apple_worker_profile: create(:apple_worker_profile, account:))
+      create(:apple_verification_attempt, project:, apple_verification_workflow_revision: revision)
     end
   end
 
