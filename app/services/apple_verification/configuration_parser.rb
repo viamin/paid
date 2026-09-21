@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "psych"
-require "digest"
 
 module AppleVerification
   # Parses and typed-validates `.paid/apple-verification.yml`. Rejects any
@@ -166,7 +165,11 @@ module AppleVerification
         raise ConfigurationError, "profile #{name} captures must be an array"
       end
 
-      value.map.with_index { |capture, index| build_capture(name, index, capture) }
+      captures = value.map.with_index { |capture, index| build_capture(name, index, capture) }
+      duplicates = captures.group_by(&:id).filter_map { |id, group| id if group.size > 1 }
+      raise ConfigurationError, "profile #{name} captures must have unique ids: #{duplicates.join(', ')}" if duplicates.any?
+
+      captures
     end
 
     def build_capture(profile_name, index, value)

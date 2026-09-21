@@ -6,8 +6,6 @@ module AppleVerification
   # and commit; it is never parsed as approved configuration on its own.
   # @spec APPLE-WORKER-012
   class InferConfiguration
-    PROJECT_PATTERN = %r{\A(.+?\.xcodeproj)/}
-    WORKSPACE_PATTERN = %r{\A(.+?\.xcworkspace)/}
     SCHEME_PATTERN = %r{\A(.+?\.(?:xcodeproj|xcworkspace))/xcshareddata/xcschemes/(.+)\.xcscheme\z}
     TEST_PLAN_PATTERN = /\.xctestplan\z/
     PACKAGE_MANIFEST = "Package.swift"
@@ -31,7 +29,12 @@ module AppleVerification
     def call
       raise ConfigurationParser::ConfigurationError, unsupported_bootstrap_message if unsupported_bootstrap? && xcode_targets.empty?
 
-      { "version" => ConfigurationParser::SUPPORTED_VERSION, "profiles" => xcode_targets.to_h { |target| [ profile_name(target), profile_attributes(target) ] } }
+      profiles = xcode_targets.each_with_object({}) do |target, memo|
+        name = profile_name(target)
+        name = "#{name}-#{File.dirname(target[:target_path]).parameterize}" while memo.key?(name)
+        memo[name] = profile_attributes(target)
+      end
+      { "version" => ConfigurationParser::SUPPORTED_VERSION, "profiles" => profiles }
     end
 
     private
@@ -79,7 +82,9 @@ module AppleVerification
     end
 
     def has_tests?(target)
-      paths.any? { |path| path.start_with?(File.dirname(target[:target_path])) && path.match?(/Tests?\//i) }
+      prefix = File.dirname(target[:target_path])
+      scope = prefix == "." ? "" : "#{prefix}/"
+      paths.any? { |path| path.start_with?(scope) && path.match?(/Tests?\//i) }
     end
 
     def default_capture

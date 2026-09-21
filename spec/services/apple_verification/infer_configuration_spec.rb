@@ -66,4 +66,50 @@ RSpec.describe AppleVerification::InferConfiguration do
 
     expect(result["profiles"]).to have_key("app")
   end
+
+  it "detects a test target inside a root-level Xcode project" do # @spec APPLE-WORKER-012
+    paths = %w[
+      App.xcodeproj/xcshareddata/xcschemes/App.xcscheme
+      AppTests/AppTests.swift
+    ]
+
+    result = described_class.call(paths:)
+
+    expect(result["profiles"].fetch("app")["tests"]["required"]).to be(true)
+  end
+
+  it "detects a test target inside a nested Xcode project" do # @spec APPLE-WORKER-012
+    paths = %w[
+      iOS/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme
+      iOS/AppTests/AppTests.swift
+    ]
+
+    result = described_class.call(paths:)
+
+    expect(result["profiles"].fetch("app")["tests"]["required"]).to be(true)
+  end
+
+  it "does not match sibling directories that share a prefix with the project" do # @spec APPLE-WORKER-012
+    paths = %w[
+      iOS/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme
+      iOSOther/AppTests/AppTests.swift
+    ]
+
+    result = described_class.call(paths:)
+
+    expect(result["profiles"].fetch("app")["tests"]["required"]).to be(false)
+  end
+
+  it "disambiguates profiles when two projects share a scheme name" do # @spec APPLE-WORKER-012
+    paths = %w[
+      iOS/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme
+      Mac/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme
+    ]
+
+    result = described_class.call(paths:)
+
+    expect(result["profiles"].values.map { |profile| profile["xcode"]["project"] })
+      .to contain_exactly("iOS/App.xcodeproj", "Mac/App.xcodeproj")
+    expect(result["profiles"].keys.uniq.size).to eq(2)
+  end
 end

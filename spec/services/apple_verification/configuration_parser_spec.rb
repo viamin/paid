@@ -223,4 +223,28 @@ RSpec.describe AppleVerification::ConfigurationParser do
     expect(configuration.profiles.first.captures).to eq([])
     expect(configuration.required_checks).to eq([ "cli-tool.tests" ])
   end
+
+  it "rejects duplicate capture ids within a profile" do # @spec APPLE-WORKER-011
+    yaml = <<~YAML
+      version: 1
+      profiles:
+        ios-app:
+          platform: ios
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+          captures:
+            - id: shot
+              required: true
+              flow:
+                - launch_app: {}
+            - id: shot
+              required: false
+              flow:
+                - launch_app: {}
+    YAML
+
+    expect { described_class.call(content: yaml) }
+      .to raise_error(described_class::ConfigurationError, /captures must have unique ids: shot/)
+  end
 end
