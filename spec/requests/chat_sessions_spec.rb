@@ -526,6 +526,11 @@ RSpec.describe "ChatSessions" do
 
         expect_compact_mobile_workspace_options(mobile_header)
 
+        desktop_capability_panel = desktop_header.at_css("[data-chat-target='capabilityPanel']")
+        desktop_mobile_options = desktop_capability_panel.at_css("details[data-chat-workspace-options]")
+        expect(desktop_mobile_options["class"].split).to include("sm:hidden")
+        expect(desktop_capability_panel.at_css("[data-chat-workspace-options-desktop]")).to be_present
+
         expect(desktop_header["class"].split).to include("hidden", "xl:block")
       end
 
