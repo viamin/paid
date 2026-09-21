@@ -327,3 +327,32 @@
   *Code:* `ChatMessage#display_content`,
   `app/views/chat_messages/_bubble.html.erb`,
   `app/javascript/controllers/chat_message_controller.js`.
+
+- [x] **CHAT-API-017** — When every configured runner for a chat session (the
+  primary runner and all fallbacks from CHAT-API-006) is exhausted by a
+  provider rate limit, the system SHALL record the recovery time on the
+  session, persist a durable system-role `ChatMessage` explaining the pause
+  and whether it will resume automatically, and — once that recovery time has
+  elapsed — automatically resend the unanswered message and resume normal
+  operation without user intervention, unless the account has disabled
+  automatic resumption via `TenantSetting#chat_auto_resume_rate_limited`
+  (default enabled). A session whose retried resend still hits a rate limit
+  SHALL be re-paused with the new recovery time rather than left stuck
+  forever.
+  *Tests:* `spec/models/chat_session_spec.rb`,
+  `spec/models/tenant_setting_spec.rb`,
+  `spec/services/chat_sessions/mark_rate_limited_spec.rb`,
+  `spec/services/chat_sessions/resume_rate_limited_spec.rb`,
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`,
+  `spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb`,
+  `spec/jobs/chat_sessions/resume_rate_limited_job_spec.rb`,
+  `spec/jobs/chat_sessions/auto_resume_rate_limited_sweep_job_spec.rb`,
+  `spec/requests/tenant_configurations_spec.rb`.
+  *Code:* `ChatSession#mark_rate_limited!`, `ChatSession#rate_limited?`,
+  `ChatSession#auto_resume_rate_limited?`, `ChatSession.rate_limited_due`,
+  `ChatSessions::MarkRateLimited`, `ChatSessions::ResumeRateLimited`,
+  `ChatSessions::RateLimitPauseMessage`, `ChatMessage#rate_limit_paused?`,
+  `ChatSessions::ProcessMessageJob`, `ChatSessions::ResolveToolCallJob`,
+  `ChatSessions::ResumeRateLimitedJob`,
+  `ChatSessions::AutoResumeRateLimitedSweepJob`,
+  `TenantSetting#chat_auto_resume_rate_limited`.

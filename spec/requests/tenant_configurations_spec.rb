@@ -161,6 +161,43 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.chat_eager_provisioning).to be(false)
     end
 
+    # @spec CHAT-API-017
+    it "updates the tenant chat_auto_resume_rate_limited opt-out via the admin form" do
+      account.tenant_setting!.update!(chat_settings: { "chat_auto_resume_rate_limited" => true })
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          chat_settings: {
+            chat_max_tool_iterations: "50",
+            chat_session_token_limit: "100000",
+            chat_monthly_token_limit: "",
+            chat_auto_resume_rate_limited: "0"
+          }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.chat_auto_resume_rate_limited).to be(false)
+    end
+
+    it "re-enables chat_auto_resume_rate_limited when the checkbox is checked" do
+      account.tenant_setting!.update!(chat_settings: { "chat_auto_resume_rate_limited" => false })
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          chat_settings: {
+            chat_max_tool_iterations: "50",
+            chat_session_token_limit: "100000",
+            chat_monthly_token_limit: "",
+            chat_auto_resume_rate_limited: "1"
+          }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.chat_auto_resume_rate_limited).to be(true)
+    end
+
     it "updates the tenant marketplace auto-attach override" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 
