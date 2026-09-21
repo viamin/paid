@@ -73,6 +73,11 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- rate-limited sessions are resumed by a maintenance sweep after their recorded
+  reset time; a renewed rate limit records the new reset time, while another
+  provider error creates a durable transcript notice and requires a user to
+  correct the runner configuration or resend rather than retrying a permanent
+  authentication or configuration failure indefinitely
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default

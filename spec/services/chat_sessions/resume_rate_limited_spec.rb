@@ -62,5 +62,54 @@ RSpec.describe ChatSessions::ResumeRateLimited do
         }.to change { chat_session.messages.where(role: "system").count }.by(1)
       end
     end
+
+    context "when the retried runner has another provider error" do
+      let(:llm_client) do
+        Class.new do
+          def call(*)
+            raise AgentHarness::ProviderError, "provider unavailable"
+          end
+        end.new
+      end
+
+      it "clears the rate-limit pause and persists a visible explanation" do
+        result = described_class.call(chat_session: chat_session, llm_client: llm_client)
+
+        expect(result).to be_nil
+        expect(chat_session.reload.rate_limited_until).to be_nil
+        expect(chat_session.messages.last).to have_attributes(
+          role: "system",
+          content: include("provider unavailable"),
+          metadata: include("provider_error_notice" => true)
+        )
+        expect(chat_session.messages.last).to be_provider_error_notice
+      end
+
+      it "publishes the persisted notice to connected clients" do
+        persisted_messages = []
+
+        described_class.call(
+          chat_session: chat_session,
+          llm_client: llm_client,
+          on_message_persisted: ->(message, **) { persisted_messages << message }
+        )
+
+        expect(persisted_messages).to contain_exactly(chat_session.messages.last)
+      end
+
+      it "handles authentication errors without re-pausing the session" do
+        auth_client = Class.new do
+          def call(*)
+            raise AgentHarness::AuthenticationError.new("invalid token", provider: "anthropic")
+          end
+        end.new
+
+        result = described_class.call(chat_session: chat_session, llm_client: auth_client)
+
+        expect(result).to be_nil
+        expect(chat_session.reload).not_to be_rate_limited
+        expect(chat_session.messages.last).to be_provider_error_notice
+      end
+    end
   end
 end

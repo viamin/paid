@@ -2,6 +2,8 @@
   <%= render "chat_messages/token_limit_error", message: message %>
 <% elsif message.rate_limit_paused? %>
   <%= render "chat_messages/rate_limit_paused", message: message %>
+<% elsif message.provider_error_notice? %>
+  <%= render "chat_messages/provider_error_notice", message: message %>
 <% elsif message.role == "system" %>
   <details class="group">
     <summary class="mx-auto flex cursor-pointer items-center justify-center gap-2 rounded-md bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200 hover:bg-gray-100">

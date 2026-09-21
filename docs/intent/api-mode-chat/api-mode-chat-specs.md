@@ -338,10 +338,17 @@
   automatic resumption via `TenantSetting#chat_auto_resume_rate_limited`
   (default enabled). A session whose retried resend still hits a rate limit
   SHALL be re-paused with the new recovery time rather than left stuck
-  forever.
+  forever. When the retried resend exhausts its fallbacks with another
+  `AgentHarness::Error`, the system SHALL persist a durable provider-failure
+  notice rather than silently clearing the pending session state; it SHALL
+  not treat authentication or configuration failures as rate limits eligible
+  for automatic retry.
   *Tests:* `spec/models/chat_session_spec.rb`,
+  `spec/models/chat_message_spec.rb`,
   `spec/models/tenant_setting_spec.rb`,
   `spec/services/chat_sessions/mark_rate_limited_spec.rb`,
+  `spec/services/chat_sessions/provider_error_notice_spec.rb`,
+  `spec/services/chat_sessions/record_provider_error_spec.rb`,
   `spec/services/chat_sessions/resume_rate_limited_spec.rb`,
   `spec/jobs/chat_sessions/process_message_job_spec.rb`,
   `spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb`,
@@ -351,7 +358,11 @@
   *Code:* `ChatSession#mark_rate_limited!`, `ChatSession#rate_limited?`,
   `ChatSession#auto_resume_rate_limited?`, `ChatSession.rate_limited_due`,
   `ChatSessions::MarkRateLimited`, `ChatSessions::ResumeRateLimited`,
+  `ChatSessions::RecordProviderError`, `ChatSessions::ProviderErrorNotice`,
   `ChatSessions::RateLimitPauseMessage`, `ChatMessage#rate_limit_paused?`,
+  `ChatMessage#provider_error_notice?`,
+  `app/views/chat_messages/_rate_limit_paused.html.erb`,
+  `app/views/chat_messages/_provider_error_notice.html.erb`,
   `ChatSessions::ProcessMessageJob`, `ChatSessions::ResolveToolCallJob`,
   `ChatSessions::ResumeRateLimitedJob`,
   `ChatSessions::AutoResumeRateLimitedSweepJob`,

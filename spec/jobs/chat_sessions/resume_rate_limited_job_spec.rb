@@ -78,4 +78,16 @@ RSpec.describe ChatSessions::ResumeRateLimitedJob, type: :job do
       described_class.perform_now(chat_session_id: chat_session.id)
     }.not_to raise_error
   end
+
+  it "broadcasts the persisted provider-error notice and does not repause the session" do
+    notice = create(:chat_message, :system, chat_session: chat_session,
+      metadata: { "provider_error_notice" => true },
+      content: "Chat could not resume: provider unavailable")
+    allow(ChatSessions::ResumeRateLimited).to receive(:call).and_return(notice)
+
+    described_class.perform_now(chat_session_id: chat_session.id)
+
+    expect(chat_session.reload).not_to be_rate_limited
+    expect(notice.reload).to be_provider_error_notice
+  end
 end

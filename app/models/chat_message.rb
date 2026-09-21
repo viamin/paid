@@ -61,6 +61,13 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["rate_limit_paused"] == true
   end
 
+  # @spec CHAT-API-017
+  # A durable, non-collapsed notice for a provider error encountered while
+  # automatically resuming a previously rate-limited session.
+  def provider_error_notice?
+    metadata.is_a?(Hash) && metadata["provider_error_notice"] == true
+  end
+
   private
 
   def tool_result_message?

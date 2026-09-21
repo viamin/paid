@@ -8,6 +8,9 @@ module ChatSessions
   # pause on success. If the runner (and every fallback) still rate-limits the
   # retry, the session is re-paused with the new reset time instead of
   # bubbling the error, since this runs unattended from a background sweep.
+  # Other exhausted provider errors leave the rate-limit state cleared but
+  # persist a durable explanation so clearing the original pause cannot leave
+  # the user's pending message silently stranded.
   #
   # Mirrors ChatSessions::ResolveToolCall's use of FallbackLoop: neither host
   # persists a new user message, they just resume the loop.
@@ -34,6 +37,10 @@ module ChatSessions
       run_with_fallbacks
     rescue AgentHarness::RateLimitError => e
       MarkRateLimited.call(chat_session: chat_session, error: e)
+      nil
+    rescue AgentHarness::Error => e
+      notice = RecordProviderError.call(chat_session: chat_session, error: e)
+      on_message_persisted&.call(notice, stream_message_id: stream_message_id)
       nil
     end
   end
