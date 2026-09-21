@@ -13,7 +13,7 @@ class EgressSecurityEvent < ApplicationRecord
 
   EVENT_KINDS = %w[denied_egress redacted_secret_extraction allowlist_match].freeze
   SEVERITIES = %w[info warn critical].freeze
-  SOURCE_LAYERS = %w[gateway broker firewall].freeze
+  SOURCE_LAYERS = %w[gateway broker firewall apple_guest].freeze
   SCHEMES = EgressAllowlistEntry::SCHEMES
 
   belongs_to :project, optional: true

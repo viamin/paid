@@ -61,20 +61,22 @@ them into a generic capture error.
 ## Control-plane dispatch
 
 `AppleVerification::ExecuteGuestJob` is the gated control-plane entry point for
-a submitted guest manifest. It refuses work unless the project has the
+a submitted guest manifest. It refuses work unless the run's project has the
 `apple_verification_workers` rollout enabled, selects the active image matching
 the immutable digest chosen by the control plane for the project's account, and
-validates the manifest before sending it through the provider-owned guest
+validates the manifest and every admitted network destination before sending it
+with the resolved fail-closed network contract through the provider-owned guest
 connection to the closed guest executor vocabulary. The control plane does not
-hold operation adapters or execute project work. An account with no active
-image matching that digest cannot dispatch work. This keeps worker-profile
-selection deterministic when an account has multiple active images.
+hold operation adapters or execute project work. An account with no active image
+matching that digest cannot dispatch work. This keeps worker-profile selection
+deterministic when an account has multiple active images.
 
 The image provenance records the HTTPS guest-executor endpoint as an immutable
-build fact. `GuestConnection` posts the selected digest and validated manifest
-to that endpoint with the deployment-owned bearer token; it rejects missing
-credentials, authentication failures, non-success responses, and malformed
-executor results. The token is never persisted in image metadata.
+build fact. `GuestConnection` posts the selected digest, validated manifest,
+and credential-free network contract to that endpoint with the deployment-owned
+bearer token; it rejects missing credentials, authentication failures,
+non-success responses, and malformed executor results. The token is never
+persisted in image metadata.
 
 ## Relationship to Apple Verification Workers
 

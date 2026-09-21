@@ -35,7 +35,8 @@
 - [x] **APPLE-VERIFY-005** — When Apple verification work is submitted for a
   feature-enabled project with a control-plane-selected immutable image digest,
   the control plane SHALL select only that account's active image matching the
-  digest and dispatch only a protocol-valid manifest through the provider-owned
+  digest and dispatch only a protocol-valid manifest with a resolved,
+  validated, fail-closed Paid network contract through the provider-owned
   authenticated guest connection to that image's HTTPS guest executor;
   disabled projects and accounts without a matching active image SHALL not
   dispatch work, and missing credentials or an executor authentication failure

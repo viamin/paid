@@ -67,8 +67,8 @@ class FeatureFlags
     apple_verification_workers: Definition.new(
       name: :apple_verification_workers,
       owner: "apple-verification",
-      intent: "Gate the RDR-068 macOS verification-worker capability while immutable images, network policy, and isolation smoke tests are piloted.",
-      rollout_plan: "Default-off; operators opt in selected pilot projects only after the approved worker profile and isolation smoke test are ready.",
+      intent: "Gate RDR-068 macOS guest verification until immutable images and the Paid-controlled network boundary pass pilot isolation checks.",
+      rollout_plan: "Default-off; operators opt in selected pilot projects only after the approved worker profile, proxy, DNS, and isolation smoke tests pass.",
       cleanup_criteria: "Remove only after the RDR-068 closeout audit approves broad Apple-worker enablement."
     )
   }.freeze

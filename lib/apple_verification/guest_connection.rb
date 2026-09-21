@@ -40,9 +40,9 @@ module AppleVerification
       @transport = transport
     end
 
-    def dispatch!(image:, manifest:)
+    def dispatch!(image:, manifest:, network_contract:)
       GuestProtocol.validate!(manifest)
-      response = @transport.post(uri: executor_uri(image), headers: headers, body: request_body(image, manifest))
+      response = @transport.post(uri: executor_uri(image), headers: headers, body: request_body(image, manifest, network_contract))
       return operations_from(response) if success?(response)
 
       raise AuthenticationError, "guest executor rejected credentials" if response.code.in?([ 401, 403 ])
@@ -67,8 +67,8 @@ module AppleVerification
       { "Authorization" => "Bearer #{@token}", "Content-Type" => "application/json" }
     end
 
-    def request_body(image, manifest)
-      { image_digest: image.digest, manifest: }.to_json
+    def request_body(image, manifest, network_contract)
+      { image_digest: image.digest, manifest:, network_contract: network_contract.to_h }.to_json
     end
 
     def success?(response)
