@@ -61,9 +61,15 @@ plans — but the result is always advisory until a user reviews and commits
 it; inference never creates an approved revision.
 `AppleVerificationWorkflowRevisions::SyncFromConfiguration` parses committed
 configuration content, resolves an active worker profile compatible with
-every declared platform, and creates or updates the project's current draft
-revision with the file's content digest and the required/advisory checks
-derived from the configuration. It only ever touches a draft; an approved
+every declared platform, Xcode version constraint, and simulator constraint,
+and creates or updates the project's current draft revision with the file's
+content digest and the required/advisory checks derived from the
+configuration. `AppleVerificationWorkers::VersionRequirement` parses Xcode
+constraints such as ">= 26.0, < 27.0" and "~> 26.0"; a profile binds only
+when its advertised Xcode range falls within every declared `worker.xcode`
+constraint and each declared `worker.simulator` appears in the profile's
+advertised simulator runtimes, so a constraint mismatch fails at sync time
+before any worker is provisioned. Sync only ever touches a draft; an approved
 revision's binding is immutable, so a functional change always lands in a new
 or updated draft, never in place.
 

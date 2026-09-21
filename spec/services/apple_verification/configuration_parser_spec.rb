@@ -205,6 +205,38 @@ RSpec.describe AppleVerification::ConfigurationParser do
     expect { described_class.call(content: "- 1\n- 2\n") }.to raise_error(described_class::ConfigurationError, /YAML mapping/)
   end
 
+  it "rejects YAML anchors, aliases, and merge keys with a deterministic diagnostic" do # @spec APPLE-WORKER-011
+    yaml = <<~YAML
+      version: 1
+      profiles:
+        ios-app: &ios_profile
+          platform: ios
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+        mac-app:
+          <<: *ios_profile
+          platform: macos
+    YAML
+
+    expect { described_class.call(content: yaml) }
+      .to raise_error(described_class::ConfigurationError, /anchors or aliases/)
+  end
+
+  it "rejects a malformed worker.xcode constraint with a deterministic diagnostic" do # @spec APPLE-WORKER-011
+    yaml = ios_yaml.sub('xcode: ">= 26.0, < 27.0"', "xcode: latest")
+
+    expect { described_class.call(content: yaml) }
+      .to raise_error(described_class::ConfigurationError, /worker\.xcode/)
+  end
+
+  it "rejects non-string worker constraints with a deterministic diagnostic" do # @spec APPLE-WORKER-011
+    yaml = ios_yaml.sub('simulator: "iPhone 17"', "simulator: 17")
+
+    expect { described_class.call(content: yaml) }
+      .to raise_error(described_class::ConfigurationError, /worker\.simulator/)
+  end
+
   it "builds a profile without screenshot requirements for build/test-only profiles" do # @spec APPLE-WORKER-011
     yaml = <<~YAML
       version: 1

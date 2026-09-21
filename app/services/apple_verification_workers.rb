@@ -50,6 +50,7 @@ module AppleVerificationWorkers
 
   class UnsupportedCapability < StandardError; end
   class InvalidManifest < StandardError; end
+  class InvalidVersionConstraint < ArgumentError; end
 
   ProfileConstraints = Data.define(:platforms, :xcode_version, :simulator_runtimes, :capabilities) do
     def initialize(platforms:, xcode_version:, simulator_runtimes: [], capabilities: [])
@@ -59,8 +60,9 @@ module AppleVerificationWorkers
         simulator_runtimes: Array(simulator_runtimes).map(&:to_s).uniq,
         capabilities: normalize_capabilities(capabilities)
       )
-      raise UnsupportedCapability, "unsupported Apple platform" unless (self.platforms - PLATFORMS).empty?
-      raise ArgumentError, "xcode version constraint is required" if self.xcode_version.blank?
+    raise UnsupportedCapability, "unsupported Apple platform" unless (self.platforms - PLATFORMS).empty?
+    raise ArgumentError, "xcode version constraint is required" if self.xcode_version.blank?
+    VersionRequirement.parse(self.xcode_version)
     end
 
     def supports?(platform:, required_capabilities:)

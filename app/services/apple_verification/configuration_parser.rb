@@ -56,6 +56,8 @@ module AppleVerification
       parsed.deep_stringify_keys
     rescue Psych::DisallowedClass => e
       raise ConfigurationError, "#{CONFIG_PATH} contains unsupported YAML types: #{e.message}"
+    rescue Psych::BadAlias => e
+      raise ConfigurationError, "#{CONFIG_PATH} must not use YAML anchors or aliases: #{e.message}"
     rescue Psych::SyntaxError => e
       raise ConfigurationError, "invalid YAML in #{CONFIG_PATH}: #{e.message}"
     end
@@ -106,7 +108,28 @@ module AppleVerification
       end
 
       validate_unknown_keys!("profile #{name} worker", value, VALID_WORKER_KEYS)
-      Configuration::WorkerConstraint.new(xcode: value["xcode"], simulator: value["simulator"])
+      Configuration::WorkerConstraint.new(
+        xcode: validate_xcode_constraint!(name, value["xcode"]),
+        simulator: validate_string_constraint!(name, "simulator", value["simulator"])
+      )
+    end
+
+    # Constraint syntax is validated at parse time so an invalid declaration
+    # carries a deterministic diagnostic before any worker is provisioned.
+    def validate_xcode_constraint!(name, value)
+      return nil if value.nil?
+
+      validate_string_constraint!(name, "xcode", value)
+      AppleVerificationWorkers::VersionRequirement.parse(value)
+      value
+    rescue AppleVerificationWorkers::InvalidVersionConstraint => e
+      raise ConfigurationError, "profile #{name} worker.xcode #{e.message}"
+    end
+
+    def validate_string_constraint!(name, key, value)
+      return value if value.is_a?(String) && value.present?
+
+      raise ConfigurationError, "profile #{name} worker.#{key} must be a non-empty string"
     end
 
     def build_xcode(name, value)
