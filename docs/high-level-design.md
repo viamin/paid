@@ -191,7 +191,8 @@ paths or commands; workflows become blocking only through digest-bound project
 approval. See `docs/intent/apple-verification-workers/` for the worker
 contract (profiles, workflow revisions, attempts, waivers) and
 `docs/intent/apple-guest-execution/` for the immutable guest image catalog and
-guest protocol those attempts run against.
+guest protocol those attempts run against. The lifecycle API is provider-neutral;
+its first implementation maps to Tart and Softnet. See RDR-068.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
