@@ -110,6 +110,7 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
   def settled_chat_layout?(metrics)
     metrics.fetch("panelBottomGap").between?(-2, 4) &&
       metrics.fetch("documentOverflow") <= 4 &&
-      metrics.fetch("transcriptH").positive?
+      metrics.fetch("transcriptH") >= 288 &&
+      metrics.fetch("transcriptShare") >= 0.30
   end
 end
