@@ -796,6 +796,81 @@ RSpec.describe Activities::RunAgentActivity do
       expect(env).to eq("PAID_PROVIDER_ID" => runner.id.to_s)
     end
 
+    # @spec RUNNER-FALLBACK-002
+    it "pins the specific routing-key runner's tier model, not another runner sharing the same runner_key" do
+      # Regression: build_command's api_key/subscription-auth branches passed
+      # command_context.runner (the bare app-level key, e.g. "codex") instead
+      # of the already-resolved runner_entry into harness_execution_plan_for.
+      # selected_runner_runtime then re-derived the runner via
+      # Runner.for_identifier(user, "codex"), which is ambiguous whenever a
+      # user has more than one runner sharing that runner_key — it silently
+      # picked a *different* runner's tier model (or none) instead of the one
+      # actually selected for this attempt.
+      other_model = create(:llm_model, :openai, model_id: "gpt-other-entry", tier: "mid")
+      selected_model = create(:llm_model, :openai, model_id: "gpt-selected-entry", tier: "mid")
+      other_api_key = create(:runner_api_key, user: user, api_service_type: "openai", api_key: "sk-openai-secret-1")
+      selected_api_key = create(:runner_api_key, user: user, api_service_type: "openai", api_key: "sk-openai-secret-2")
+      create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: other_api_key,
+        tier_model_ids: { "mid" => other_model.model_id })
+      selected_runner = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: selected_api_key,
+        tier_model_ids: { "mid" => selected_model.model_id })
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
+      context = described_class::CommandContext.new(
+        runner_candidate: selected_runner.routing_key,
+        runner: "codex",
+        user: user
+      )
+
+      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
+
+      expect(command[2]).to include("--model #{selected_model.model_id}")
+      expect(command[2]).not_to include(other_model.model_id)
+    end
+
+    # @spec RUNNER-FALLBACK-002
+    it "does not pin a tier model that has since become incompatible for a bare-key subscription runner" do
+      # A configured model can become incompatible after configuration time
+      # (e.g. the CLI drops support for it) without Paid revalidating the
+      # stored tier_model_ids, so resolution must still reject it rather than
+      # pinning a model the CLI will refuse.
+      now_incompatible_model = create(:llm_model, :openai, model_id: "gpt-6-retired", tier: "mid")
+      create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+        tier_model_ids: { "mid" => now_incompatible_model.model_id })
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
+      context = described_class::CommandContext.new(runner_candidate: "codex", runner: "codex", user: user)
+      allow(Runners::ModelCompatibility).to receive(:call)
+        .with(hash_including(model_id: now_incompatible_model.model_id))
+        .and_return(Runners::ModelCompatibility::Result.new(supported: false, reason: "retired", source: "test"))
+
+      resolved = activity.send(:resolve_tier_model_for, "codex", agent_run, user)
+      expect(resolved).to be_failure
+
+      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
+
+      expect(command[2]).not_to include("--model")
+      expect(command[2]).not_to include(now_incompatible_model.model_id)
+    end
+
+    # @spec RUNNER-FALLBACK-002
+    it "omits --model instead of raising when no compatible model can be resolved for a routing-key runner" do
+      runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
+      # No codex/openai catalog model exists for tier "mid", so no configured
+      # entry, provider tier_models, nor catalog default can resolve.
+      context = described_class::CommandContext.new(runner_candidate: runner.routing_key, runner: "codex", user: user)
+
+      resolved = activity.send(:resolve_tier_model_for, runner, agent_run, user)
+      expect(resolved).to be_failure
+      expect(activity.send(:resolved_model_info_for, resolved)).not_to have_key(:resolved_model_id)
+
+      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
+
+      expect(command[2]).not_to include("--model")
+    end
+
     it "builds an API-key wrapper for Google-backed fallback entries without injecting the runner key" do
       api_key = create(:runner_api_key, user: user, api_service_type: "google", api_key: "google-secret")
       runner = create(:runner, :api_key, user: user, runner_key: "gemini", provider_api_key: api_key)
