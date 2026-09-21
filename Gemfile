@@ -78,8 +78,14 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-# Temporary immutable pin for verified GPT-5.6 subscription support and
-# structured subscription-model rejection classification; replace after upstream release.
+# Temporary immutable pin pending viamin/agent-harness#415 (subscription auth
+# for GPT-5.6 Luna/Terra/Sol). The current ref (c7f52b3, the 0.37.0 commit)
+# ships PR #414's subscription-aware discovery but still marks Luna/Terra/Sol
+# as api_key-only in MODEL_COMPATIBILITY_FACTS, so dropping the Git pin in
+# favor of a published 0.37.x release would regress Paid's subscription model
+# selection. PR #415 remains open and no RubyGems release contains its
+# subscription-compatibility fix yet; per the release prerequisite in #3952,
+# leave this issue blocked until such a release is published and installable.
 gem "agent-harness", "0.36.24", github: "viamin/agent-harness", ref: "c7f52b32bb00f8ba988cd0656749b70546043b78"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
