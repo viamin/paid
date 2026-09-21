@@ -1,0 +1,46 @@
+<%# @spec CHAT-API-009 CHAT-SESSION-REOPEN-006 %>
+<%# Shared workspace configuration. The surrounding layout chooses whether
+    this renders inside the mobile disclosure or as ordinary desktop content;
+    forcing a closed <details> body visible at desktop overlaps the transcript
+    because browsers do not include that body in the disclosure's layout. %>
+<% if can_manage_workspace %>
+  <div class="mt-2 <%= "hidden" unless chat_session.container_ready? %>" data-chat-capability-ready-only="true">
+    <%= form_with url: clone_project_chat_session_path(chat_session), method: :post, class: "flex items-end gap-2" do |form| %>
+      <div class="min-w-0 flex-1">
+        <%= form.label :project_id, "Clone another project", for: "project_id#{dom_id_suffix}", class: "block text-xs font-medium text-gray-600" %>
+        <%= form.select :project_id,
+                        options_from_collection_for_select(policy_scope(Project).order(:name), :id, :name),
+                        { include_blank: "Choose a project" },
+                        id: "project_id#{dom_id_suffix}",
+                        class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+      </div>
+      <%= form.submit "Clone into workspace",
+                      class: "inline-flex shrink-0 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-100" %>
+    <% end %>
+  </div>
+<% end %>
+
+<div class="mt-2 sm:mt-4">
+  <p class="text-xs font-medium text-gray-600">Cloned repos</p>
+  <div class="mt-2 space-y-2" data-chat-target="capabilityRepos">
+    <% if snapshot[:cloned_repos].any? %>
+      <% snapshot[:cloned_repos].each do |repo| %>
+        <div class="rounded-md bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
+          <div class="flex items-center justify-between gap-2">
+            <p class="font-medium text-gray-900"><%= repo[:project_full_name].presence || repo[:project_name] %></p>
+            <% if repo[:stale] %>
+              <span class="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">stale</span>
+            <% end %>
+          </div>
+          <p class="mt-1 font-mono text-xs text-gray-500"><%= repo[:path] %></p>
+          <p class="mt-1 text-xs text-gray-500">Clone identity: <%= repo[:token_identity].presence || "unknown" %></p>
+          <% if repo[:stale_reason].present? %>
+            <p class="mt-1 text-xs text-rose-600"><%= repo[:stale_reason].humanize %></p>
+          <% end %>
+        </div>
+      <% end %>
+    <% else %>
+      <p class="rounded-md bg-white px-3 py-2 text-sm text-gray-500 ring-1 ring-gray-200" data-chat-target="capabilityReposEmpty">No repos cloned yet.</p>
+    <% end %>
+  </div>
+</div>

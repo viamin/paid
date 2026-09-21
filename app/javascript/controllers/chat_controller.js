@@ -533,8 +533,11 @@ export default class extends Controller {
   }
 
   // Revealing an action inside a collapsed disclosure reveals nothing, so
-  // unfold the surrounding <details> with it. Without this a workspace that
+  // unfold the Workspace <details> with it. Without this a workspace that
   // stops mid-session hides its own "Reopen with workspace" recovery button.
+  // The ready-only clone control is nested inside Workspace options; opening
+  // only that nested disclosure still leaves it unreachable when Workspace is
+  // collapsed.
   // Only unfold on an actual hidden -> shown transition — same-state snapshot
   // broadcasts (e.g. a clone_manifest rebroadcast that still carries
   // container_capability: "ready") would otherwise force a disclosure the user
@@ -543,7 +546,7 @@ export default class extends Controller {
     this.element.querySelectorAll(selector).forEach((element) => {
       const wasHidden = element.classList.contains("hidden")
       element.classList.toggle("hidden", !show)
-      if (show && wasHidden) element.closest("details")?.setAttribute("open", "")
+      if (show && wasHidden) element.closest("[data-chat-workspace-disclosure]")?.setAttribute("open", "")
     })
   }
 

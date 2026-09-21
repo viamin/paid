@@ -96,10 +96,18 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     expect(page).to have_text("Workspace ready")
   end
 
-  it "clones another project from the header affordance" do
+  it "clones another project from the header affordance", :js, system_driver: :paid_cuprite do
+    # @spec CHAT-SESSION-REOPEN-006
+    skip "Chromium is not available for Cuprite" unless chromium_path
+
     session = create(:chat_session, :workspace, account:, created_by: user)
     stub_clone_project_for(session, project)
 
+    # The clone form is visibly expanded by the wide layout and initially
+    # folded into Workspace options on mobile. Exercise the desktop affordance
+    # with a real browser so visibility follows the responsive disclosure
+    # behavior rather than rack_test's static interpretation of <details>.
+    page.current_window.resize_to(1440, 900)
     visit chat_session_path(session, format: :html)
     within("[data-chat-header='desktop']") do
       select project.name, from: "project_id"
