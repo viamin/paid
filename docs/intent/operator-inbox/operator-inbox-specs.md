@@ -352,3 +352,33 @@
   `spec/services/clarifying_questions/answer_pairs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-013** — When a clarifying-questions answer form is
+  rendered — both the inbox detail pane (`clarifying_questions` and
+  `manual_review` lanes) and the standalone
+  `Projects::ClarifyingQuestionsController#show` wizard — the system SHALL
+  render an additional optional freeform textarea at the bottom of the form,
+  labeled for cross-cutting context that does not fit any single question
+  (#3955). The field SHALL be optional (no `required` attribute), SHALL NOT
+  be tied to any individual question, and SHALL be empty by default. On
+  submit, the controller SHALL pass a stripped `freeform_note` (nil when
+  blank) to `ClarifyingQuestions::SubmitAnswers`; the service SHALL only emit
+  a `<!-- paid:clarifying-answers:freeform-notes -->` section in the posted
+  GitHub comment when the note is non-blank, and SHALL NOT block submission
+  when it is blank. The marker also acts as the regex boundary that stops
+  `ClarifyingQuestions::AnswerPairs::QUESTION_ANSWER_PATTERN` from folding
+  the notes block into the last Q/A answer — the pattern recognises `\n<!--`
+  in addition to its existing `\n\n**Q` / `\z` terminators. On validation or
+  GitHub-post failure from the inbox pane, the freeform note SHALL be
+  repopulated from a one-shot flash (`inbox_pending_freeform_notes`,
+  keyed by issue id, byte-capped to
+  `MAX_PENDING_FREEFORM_NOTE_BYTES` to keep the session cookie within its
+  ceiling) so the operator does not retype it.
+  *Code:* `app/views/projects/clarifying_questions/show.html.erb`,
+  `app/views/dashboard/_inbox_clarifying_answer_form.html.erb`,
+  `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/services/clarifying_questions/submit_answers.rb`,
+  `app/services/clarifying_questions/answer_pairs.rb`.
+  *Test:* `spec/requests/projects/clarifying_questions_spec.rb`,
+  `spec/services/clarifying_questions/submit_answers_spec.rb`,
+  `spec/services/clarifying_questions/answer_pairs_spec.rb`.

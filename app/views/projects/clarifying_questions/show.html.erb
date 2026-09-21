@@ -115,6 +115,32 @@
           </div>
         </div>
       <% end %>
+
+      <%# @spec OPERATOR-INBOX-013
+          A final freeform textarea at the bottom of every clarifying-questions
+          answer form. It is intentionally optional and never tied to any
+          single question, so the operator can leave cross-cutting context,
+          caveats, or follow-ups without shoehorning them into one answer.
+          Empty submissions never block the form, and the contents ride
+          through ClarifyingQuestions::SubmitAnswers under a stable HTML
+          marker so the receiving comment is unambiguous. %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:p-6">
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Anything else?</h3>
+          <p class="mb-4 text-sm text-gray-600">
+            Use this space for context that crosses several answers or doesn't fit
+            any single question. Leave blank to skip.
+          </p>
+          <label for="freeform_note_wizard" class="block text-sm font-medium text-gray-700 mb-1">
+            Additional notes (optional)
+          </label>
+          <%= text_area_tag :freeform_note, nil,
+                id: "freeform_note_wizard",
+                rows: 5,
+                placeholder: "Anything else the agent should know...",
+                class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+        </div>
+      </div>
     <% end %>
   </div>
 </div>
