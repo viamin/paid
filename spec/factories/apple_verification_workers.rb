@@ -37,6 +37,20 @@ FactoryBot.define do
     apple_worker_profile { apple_verification_workflow_revision.apple_worker_profile }
     source_digest { "sha256:#{'d' * 64}" }
     lifecycle_gate { apple_verification_workflow_revision.lifecycle_gate }
+
+    trait :committed do
+      commit_sha { "0123456789abcdef0123456789abcdef01234567" }
+    end
+
+    trait :failed do
+      status { "failed" }
+      finished_at { Time.current }
+    end
+
+    trait :succeeded do
+      status { "succeeded" }
+      finished_at { Time.current }
+    end
   end
 
   factory :apple_verification_waiver do

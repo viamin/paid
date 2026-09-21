@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -420,7 +420,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.bigint "agent_run_id"
     t.bigint "apple_verification_workflow_revision_id", null: false
     t.bigint "apple_worker_profile_id", null: false
+    t.datetime "bundle_retained_until", comment: "Deadline until which the workspace bundle binary is retained; null when no bundle was created."
     t.string "commit_sha"
+    t.datetime "container_retained_until", comment: "Deadline until which a failed Apple VM is retained before destroy; null when destroyed promptly or never retained."
     t.datetime "created_at", null: false
     t.string "failure_classification"
     t.datetime "finished_at"
