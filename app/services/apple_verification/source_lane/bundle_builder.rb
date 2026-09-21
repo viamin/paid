@@ -36,8 +36,8 @@ module AppleVerification
       # Substring-match patterns for scanning workspace files for embedded
       # credentials. {SecretSafeMetadata::SECRET_VALUE_PATTERNS} anchors its
       # patterns with `\A...\z` so a known token string alone matches; bundle
-      # scanning needs to find tokens anywhere in a file's first chunk, so
-      # the same shapes are mirrored here without anchors.
+      # scanning needs to find tokens anywhere in a file, so the same
+      # shapes are mirrored here without anchors.
       SECRET_SUBSTRING_PATTERNS = [
         /sk-[A-Za-z0-9_-]{8,}/,
         /ghp_[A-Za-z0-9]{36,}/,
@@ -187,7 +187,7 @@ module AppleVerification
       def secret_shaped?(relative_path, bytes)
         return false unless text_file?(relative_path)
 
-        sample = bytes[0, 8192].to_s.dup.force_encoding(Encoding::UTF_8)
+        sample = bytes.to_s.dup.force_encoding(Encoding::UTF_8)
         return false unless sample.valid_encoding?
 
         SECRET_SUBSTRING_PATTERNS.any? { |pattern| sample.match?(pattern) }

@@ -12,7 +12,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
 
   before { allow(credential_lane).to receive(:revoke!) }
 
-  it "destroys the VM immediately and revokes credentials on success" do
+  it "records the VM destruction audit event and revokes credentials on success" do
     attempt.update!(status: "succeeded")
 
     expect {
@@ -38,7 +38,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(credential_lane).to have_received(:revoke!)
   end
 
-  it "revokes a retained VM and clears its retention deadline" do
+  it "records the VM destruction audit event and clears the retention deadline for a retained VM" do
     attempt.update!(status: "failed", finished_at: Time.current, container_retained_until: 1.minute.ago)
 
     expect {

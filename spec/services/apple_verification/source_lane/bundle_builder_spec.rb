@@ -54,6 +54,16 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
     }.to raise_error(described_class::SecretFoundError, /secret-shaped file/)
   end
 
+  it "raises SecretFoundError when a secret is embedded past the first 8 KiB of a file" do
+    padding = "let padding = \"hello world\"; let n = 0\n" * 400
+    secret = "let ghp = \"ghp_supersecrettoken1234567890123456789012345\"\n"
+    write_file("Sources/Big.swift", padding + secret)
+
+    expect {
+      described_class.call(workspace_root: workspace_root, output_path: output_path)
+    }.to raise_error(described_class::SecretFoundError, /secret-shaped file/)
+  end
+
   it "raises BundleTooLargeError when the bundle exceeds the configured cap" do
     write_file("Sources/App.swift", "a" * 1024)
     write_file("Sources/Helpers/Big.swift", "b" * 1024)
