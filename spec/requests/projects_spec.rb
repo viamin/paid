@@ -606,6 +606,24 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "shows the Apple verification link when the feature is enabled" do # @spec APPLE-VERIFY-001
+        project = create(:project, account: account, github_token: github_token)
+        FeatureFlags.enable!(:apple_verification_workers, project:)
+
+        get project_path(project)
+
+        expect(response.body).to include(project_apple_verification_path(project))
+        expect(response.body).to include("Apple Verification")
+      end
+
+      it "hides the Apple verification link when the feature is disabled" do # @spec APPLE-VERIFY-001
+        project = create(:project, account: account, github_token: github_token)
+
+        get project_path(project)
+
+        expect(response.body).not_to include(project_apple_verification_path(project))
+      end
+
       it "renders the review depth badge in the review summary when paid_agent review is enabled" do # @spec REVIEW-DEPTH-009
         allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
         project = create(:project, account: account, github_token: github_token, review_settings: {

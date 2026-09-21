@@ -40,6 +40,7 @@ class Project < ApplicationRecord
   # human-led feature factory workflow is strictly opt-in, and the column is
   # the RDR's rollout-guard config gate (never silently flipped by migration).
   OPERATING_MODES = %w[standard human_led_feature_factory].freeze
+  APPLE_VERIFICATION_MODES = %w[off on_demand automatic].freeze
   TDD_MODE_LABELS = {
     "off" => "Off",
     "non_strict" => "Non-strict",
@@ -238,7 +239,7 @@ class Project < ApplicationRecord
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy
 
-  validates :apple_verification_mode, inclusion: { in: %w[off on_demand automatic] }
+  validates :apple_verification_mode, inclusion: { in: APPLE_VERIFICATION_MODES }
   has_many :preview_sessions, dependent: :destroy
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy

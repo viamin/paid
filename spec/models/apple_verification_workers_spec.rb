@@ -345,6 +345,22 @@ RSpec.describe "Apple verification persistence", type: :model do
       .and change { User.where(id: administrator.id).count }.from(1).to(0)
   end
 
+  it "destroys retry descendants before source attempts during account teardown" do # @spec APPLE-VERIFY-006
+    source_attempt = create(:apple_verification_attempt, status: "failed")
+    create(:apple_verification_attempt,
+      account: source_attempt.account,
+      project: source_attempt.project,
+      apple_verification_workflow_revision: source_attempt.apple_verification_workflow_revision,
+      apple_worker_profile: source_attempt.apple_worker_profile,
+      source_digest: source_attempt.source_digest,
+      lifecycle_gate: source_attempt.lifecycle_gate,
+      retry_number: 1,
+      retry_of_attempt: source_attempt)
+
+    expect { source_attempt.account.destroy! }
+      .to change(AppleVerificationAttempt, :count).by(-2)
+  end
+
   it "refuses to delete an approver whose approval is still retained" do # @spec APPLE-WORKER-004
     project = create(:project)
     administrator = create(:user, account: project.account)

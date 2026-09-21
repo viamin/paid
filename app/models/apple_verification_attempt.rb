@@ -12,7 +12,15 @@ class AppleVerificationAttempt < ApplicationRecord
   belongs_to :agent_run, optional: true
   belongs_to :apple_verification_workflow_revision
   belongs_to :apple_worker_profile
+  belongs_to :retry_of_attempt, class_name: "AppleVerificationAttempt", optional: true
+  # @spec APPLE-VERIFY-006
+  has_one :retry_attempt,
+    class_name: "AppleVerificationAttempt",
+    foreign_key: :retry_of_attempt_id,
+    dependent: :destroy,
+    inverse_of: :retry_of_attempt
   has_many :apple_verification_waivers, dependent: :restrict_with_exception
+  has_many :apple_verification_artifacts, dependent: :destroy
   has_many :execution_audit_events, dependent: :nullify
   has_many :execution_resource_ledger_entries, dependent: :nullify
 
@@ -30,6 +38,18 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def terminal?
     TERMINAL_STATES.include?(status)
+  end
+
+  def cancellable?
+    !terminal?
+  end
+
+  def failed?
+    status == "failed"
+  end
+
+  def retained_vm?
+    execution_resource_ledger_entries.any? { |resource| resource.resource_kind == "verification_vm" && resource.status.in?(%w[active cleanup_failed orphaned]) }
   end
 
   private
@@ -84,6 +104,6 @@ class AppleVerificationAttempt < ApplicationRecord
     will_save_change_to_account_id? || will_save_change_to_project_id? || will_save_change_to_agent_run_id? ||
       will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
       will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
-      will_save_change_to_retry_number?
+      will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
   end
 end

@@ -402,6 +402,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
+  create_table "apple_verification_artifacts", comment: "Protected Apple verification result artifacts.", force: :cascade do |t|
+    t.bigint "apple_verification_attempt_id", null: false
+    t.string "content_type"
+    t.datetime "created_at", null: false
+    t.datetime "expires_at"
+    t.string "kind", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "storage_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["apple_verification_attempt_id", "kind"], name: "idx_on_apple_verification_attempt_id_kind_82be1ab43b"
+    t.index ["apple_verification_attempt_id"], name: "idx_on_apple_verification_attempt_id_0873cc6e26"
+  end
+
   create_table "apple_verification_attempts", comment: "Apple verification attempt lifecycle and source provenance.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "agent_run_id"
@@ -414,6 +427,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.string "lifecycle_gate", null: false
     t.bigint "project_id", null: false
     t.integer "retry_number", default: 0, null: false
+    t.bigint "retry_of_attempt_id", comment: "Terminal attempt this queued retry reruns."
     t.string "source_digest", null: false
     t.datetime "started_at"
     t.string "status", default: "queued", null: false
@@ -424,6 +438,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
+    t.index ["retry_of_attempt_id"], name: "idx_apple_attempts_one_retry_per_source", unique: true
     t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_attempts_gate"
     t.check_constraint "retry_number >= 0", name: "chk_apple_attempts_retry_nonnegative"
     t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'provisioning'::character varying::text, 'running'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'unavailable'::character varying::text])", name: "chk_apple_attempts_status"
@@ -3723,8 +3738,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
+  add_foreign_key "apple_verification_artifacts", "apple_verification_attempts"
   add_foreign_key "apple_verification_attempts", "accounts"
   add_foreign_key "apple_verification_attempts", "agent_runs", on_delete: :nullify
+  add_foreign_key "apple_verification_attempts", "apple_verification_attempts", column: "retry_of_attempt_id"
   add_foreign_key "apple_verification_attempts", "apple_verification_workflow_revisions"
   add_foreign_key "apple_verification_attempts", "apple_worker_profiles"
   add_foreign_key "apple_verification_attempts", "projects"

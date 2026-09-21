@@ -31,9 +31,9 @@ FactoryBot.define do
   end
 
   factory :apple_verification_attempt do
-    association :apple_verification_workflow_revision, :approved
-    project { apple_verification_workflow_revision.project }
-    account { apple_verification_workflow_revision.account }
+    project
+    account { project.account }
+    apple_verification_workflow_revision { association :apple_verification_workflow_revision, :approved, project:, account: }
     apple_worker_profile { apple_verification_workflow_revision.apple_worker_profile }
     source_digest { "sha256:#{'d' * 64}" }
     lifecycle_gate { apple_verification_workflow_revision.lifecycle_gate }
