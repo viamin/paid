@@ -237,16 +237,46 @@ module ExecutionRunners
   def self.for_type(runner_type)
     case runner_type.to_s
     when "local_docker" then LocalDockerRunner.new
-    else
-      raise ArgumentError, "Unknown execution runner type: #{runner_type.inspect}"
+    else reconciliation_runner_for(runner_type)
     end
+  end
+
+  # Registers a configured runner that can clean up resources produced by a
+  # provider-specific lifecycle outside the normal Docker execution path.
+  def self.register_reconciliation_runner(runner)
+    runner_type = runner.runner_type.to_s
+    raise ArgumentError, "Reconciliation runner type is required" if runner_type.blank?
+
+    reconciliation_runner_lock.synchronize { configured_reconciliation_runners[runner_type] = runner }
+  end
+
+  def self.unregister_reconciliation_runner(runner_type)
+    reconciliation_runner_lock.synchronize { configured_reconciliation_runners.delete(runner_type.to_s) }
+  end
+
+  def self.reconciliation_runner_for(runner_type)
+    reconciliation_runner_lock.synchronize { configured_reconciliation_runners.fetch(runner_type.to_s) }
+  rescue KeyError
+    raise ArgumentError, "Unknown execution runner type: #{runner_type.inspect}"
+  end
+
+  private_class_method def self.configured_reconciliation_runners
+    @configured_reconciliation_runners ||= {}
+  end
+
+  private_class_method def self.reconciliation_runner_lock
+    @reconciliation_runner_lock ||= Mutex.new
+  end
+
+  private_class_method def self.configured_reconciliation_runner_values
+    reconciliation_runner_lock.synchronize { configured_reconciliation_runners.values }
   end
 
   # Runners whose reconciliation hooks should be polled periodically. Docker's
   # legacy broad orphan sweeps remain owned by DockerOrphanCleanupJob, but the
   # runner still participates in direct cleanup of crash-window orphan intents.
   def self.reconciliation_runners
-    [ LocalDockerRunner.new ]
+    [ LocalDockerRunner.new, *configured_reconciliation_runner_values ]
   end
 
   # Provider-neutral execution resource request carried on the runner

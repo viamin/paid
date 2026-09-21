@@ -1,0 +1,128 @@
+# frozen_string_literal: true
+
+module AppleVerification
+  # Provider-neutral Apple worker implementation. Tart and Softnet adapters are
+  # injected so project-controlled input can never become a host command.
+  # @spec APPLE-WORKER-010
+  class TartProvider
+    PROVIDER_NAME = "tart"
+    REQUEST_ID_TAG = "paid.request_id"
+    RUN_ID_TAG = "paid.run_id"
+
+    def initialize(tart:, softnet:, profiles:)
+      @tart = tart
+      @softnet = softnet
+      @profiles = profiles.deep_stringify_keys.freeze
+      @responses = {}
+      @response_lock = Mutex.new
+    end
+
+    def readiness
+      tart.readiness.slice("cpu", "memory", "disk", "images", "network", "guest_connection")
+    end
+
+    def clone(request_id:, image_id:, ownership_tags:)
+      tags = ownership_tags.stringify_keys
+      idempotently("clone", request_id, tags.fetch(RUN_ID_TAG)) do
+        clone_for_request(request_id:, image_id:, ownership_tags: tags)
+      end
+    end
+
+    def start(request_id:, vm_id:, profile_id:)
+      profile = profiles.fetch(profile_id.to_s) { raise ArgumentError, "Unknown Apple worker profile: #{profile_id}" }
+
+      idempotently("start", request_id, vm_id) do
+        running_vm(vm_id) || start_vm(vm_id:, profile:)
+      end
+    end
+
+    def inspect(request_id:, vm_id:)
+      idempotently("inspect", request_id, vm_id) { tart.inspect(vm_id:) }
+    end
+
+    def stop(request_id:, vm_id:)
+      idempotently("stop", request_id, vm_id) { stopped_vm(vm_id) || stop_vm(vm_id) }
+    end
+
+    def destroy(request_id:, vm_id:)
+      idempotently("destroy", request_id, vm_id) { destroy_vm(vm_id) }
+    end
+
+    def inventory(ownership_tags:)
+      tags = ownership_tags.stringify_keys
+      tart.inventory(ownership_tags: inventory_query_tags(tags)).select { |resource| matches_tags?(resource, tags) }.map do |resource|
+        {
+          "vm_id" => resource.fetch("vm_id"),
+          "tags" => resource.fetch("tags", {}),
+          "state" => resource["state"],
+          "image_id" => resource["image_id"]
+        }
+      end
+    end
+
+    private
+
+    attr_reader :tart, :softnet, :profiles, :responses, :response_lock
+
+    def idempotently(operation, request_id, scope)
+      request_key = request_id.to_s
+      raise ArgumentError, "Host lifecycle request id is required" if request_key.blank?
+
+      response_lock.synchronize do
+        key = [ operation, request_key, scope.to_s ]
+        responses.fetch(key) { responses[key] = yield }
+      end
+    end
+
+    def clone_for_request(request_id:, image_id:, ownership_tags:)
+      existing_clone(request_id, ownership_tags) || tart.clone(image_id:, ownership_tags: ownership_tags.merge(REQUEST_ID_TAG => request_id.to_s))
+    end
+
+    def existing_clone(request_id, ownership_tags)
+      clones = tart.inventory(ownership_tags: ownership_tags.merge(REQUEST_ID_TAG => request_id.to_s))
+      return if clones.empty?
+      return clones.first if clones.one?
+
+      raise ArgumentError, "Multiple Apple VMs exist for lifecycle request: #{request_id}"
+    end
+
+    def inventory_query_tags(tags)
+      tags.compact.presence || { "paid.resource" => "apple_vm" }
+    end
+
+    def matches_tags?(resource, tags)
+      resource.fetch("tags", {}).stringify_keys.then do |resource_tags|
+        tags.all? { |key, value| value.nil? ? resource_tags.key?(key) : resource_tags[key] == value }
+      end
+    end
+
+    def running_vm(vm_id)
+      resource = tart.inspect(vm_id:)
+      resource if resource["state"] == "running"
+    end
+
+    def stopped_vm(vm_id)
+      resource = tart.inspect(vm_id:)
+      resource if resource["state"] == "stopped"
+    end
+
+    def stop_vm(vm_id)
+      tart.stop(vm_id:)
+      { "vm_id" => vm_id, "state" => "stopped" }
+    end
+
+    def destroy_vm(vm_id)
+      tart.destroy(vm_id:) if paid_vm?(vm_id)
+      { "vm_id" => vm_id, "state" => "destroyed" }
+    end
+
+    def paid_vm?(vm_id)
+      tart.inventory(ownership_tags: { "paid.resource" => "apple_vm" }).any? { |resource| resource.fetch("vm_id") == vm_id }
+    end
+
+    def start_vm(vm_id:, profile:)
+      softnet.configure(vm_id:, network: profile.fetch("network"))
+      tart.start(vm_id:, **profile.slice("cpu_cores", "memory_mib", "disk_gb").symbolize_keys)
+    end
+  end
+end

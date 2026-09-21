@@ -37,6 +37,17 @@ RSpec.describe ProvisioningIntent do
     end
   end
 
+  describe "Apple lifecycle request IDs" do
+    it "enforces uniqueness per agent run and runner type" do
+      agent_run = create(:agent_run)
+      create(:provisioning_intent, agent_run:, runner_type: "apple_tart", request_id: "request-1", attempt: 0)
+
+      expect {
+        create(:provisioning_intent, agent_run:, runner_type: "apple_tart", request_id: "request-1", attempt: 1)
+      }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
+
   describe "#orphaned?" do
     it "is true when created with a resource id but no linked handle (the crash window)" do
       intent = create(:provisioning_intent, status: "created", provider_resource_id: "abc123")
