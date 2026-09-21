@@ -91,7 +91,7 @@ module AppleVerification
           content_type: content_type
         )
 
-        build_reference(kind:, name:, key:, digest:, bytesize: body.bytesize)
+        build_reference(kind:, key:, digest:)
       end
 
       def validate_kind!(kind)
@@ -112,17 +112,10 @@ module AppleVerification
         raise EmptyArtifactError, "artifact #{descriptor['name']} for #{descriptor['kind']} has no payload"
       end
 
-      def build_reference(kind:, name:, key:, digest:, bytesize:)
+      def build_reference(kind:, key:, digest:)
         locator = { "key" => key, "url" => storage.signed_url(key) }
         locator["sha256"] = digest if digest.present?
-        {
-          "lane" => "object_storage",
-          "kind" => kind,
-          "name" => name,
-          "content_type" => Storage.content_type_for(kind),
-          "bytesize" => bytesize,
-          "locator" => locator
-        }
+        { "lane" => "object_storage", "kind" => kind, "locator" => locator }
       end
 
       def account_id

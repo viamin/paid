@@ -31,21 +31,23 @@ RSpec.describe AppleVerification::ArtifactIngestion::Ingest do
     result = described_class.call(
       attempt: attempt,
       descriptors: [
-        { "kind" => "xcresult", "name" => "App.xcresult", "bytes" => "binary-xcresult" },
+        { "kind" => "xcresult", "name" => "App.xcresult", "bytes" => "binary-xcresult", "digest" => "sha256:#{'a' * 64}" },
         { "kind" => "build_log", "name" => "build.log", "bytes" => "Build succeeded" },
         { "kind" => "screenshot", "name" => "first.png", "bytes" => "PNG" }
       ],
       storage: storage
     )
 
+    reference = result.references.first
     expect(result.references.length).to eq(3)
-    expect(result.references.first).to include(
-      "lane" => "object_storage",
-      "kind" => "xcresult",
-      "name" => "App.xcresult",
-      "content_type" => "application/x-xcresult"
+    expect(reference.keys).to contain_exactly("lane", "kind", "locator")
+    expect(reference).to include("lane" => "object_storage", "kind" => "xcresult")
+    expect(reference["locator"]).to include(
+      "key" => "apple-verification/#{attempt.account_id}/#{attempt.project_id}/#{attempt.id}/xcresult/App.xcresult",
+      "url" => "https://example.com/key",
+      "sha256" => "sha256:#{'a' * 64}"
     )
-    expect(result.references.first["locator"]).to include("url" => "https://example.com/key")
+    expect(AppleVerificationWorkers).to be_lane_reference(reference, lane: "object_storage")
   end
 
   it "rejects host path or host mount fields in any descriptor" do
