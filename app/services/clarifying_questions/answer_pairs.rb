@@ -2,11 +2,20 @@
 
 module ClarifyingQuestions
   module AnswerPairs
+    # Local alias to the freeform-notes marker so the regex below matches the
+    # exact HTML comment that SubmitAnswers emits, instead of any `<!--` opener.
+    # A broader pattern (e.g. `\n<!--`) would silently truncate operator answers
+    # that happen to contain pasted code, documentation, or any other multiline
+    # content starting with an HTML comment at the beginning of a line.
+    FREEFORM_NOTES_MARKER = SubmitAnswers::FREEFORM_NOTES_MARKER
+
     # Each answer terminates at the next paired-question start (`\n\n**Q`),
-    # the freeform-notes marker that SubmitAnswers emits (`\n<!--`), or end
-    # of string — so the trailing `<!-- paid:clarifying-answers:freeform-notes -->`
-    # block does not get folded into the previous answer's body.
-    QUESTION_ANSWER_PATTERN = /\*\*Q\d+:\s*(.+?)\*\*\s*\n\*\*A\d+:\*\*\s*(.+?)(?=\n\n\*\*Q|\n<!--|\z)/m.freeze
+    # the exact `FREEFORM_NOTES_MARKER` that SubmitAnswers emits after the last
+    # Q/A pair, or end of string — so the trailing
+    # `<!-- paid:clarifying-answers:freeform-notes -->` block is not folded into
+    # the previous answer's body, and arbitrary `<!--` sequences inside an
+    # answer body are left untouched.
+    QUESTION_ANSWER_PATTERN = /\*\*Q\d+:\s*(.+?)\*\*\s*\n\*\*A\d+:\*\*\s*(.+?)(?=\n\n\*\*Q|\n#{Regexp.escape(FREEFORM_NOTES_MARKER)}|\z)/m.freeze
 
     module_function
 

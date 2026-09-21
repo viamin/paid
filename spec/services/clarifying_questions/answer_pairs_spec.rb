@@ -103,5 +103,45 @@ RSpec.describe ClarifyingQuestions::AnswerPairs, :no_db do
         "Chrome (primary browser)\nOther: Safari for the design team"
       ])
     end
+
+    it "does not truncate an answer that contains an arbitrary HTML comment at the start of a line" do
+      question = "What is the expected behavior?"
+      first_answer_with_comment = "First answer line 1\n<!-- comment inside answer --> rest of first answer"
+      second_answer = "Second answer"
+      body = <<~COMMENT
+        **Q1: #{question}**
+        **A1:** #{first_answer_with_comment}
+
+        **Q2: Anything else?**
+        **A2:** #{second_answer}
+      COMMENT
+
+      parsed = described_class.parse(body)
+
+      expect(parsed.size).to eq(2)
+      expect(parsed.map { |pair| pair[:answer] }).to eq([ first_answer_with_comment, second_answer ])
+    end
+
+    it "does not truncate answers when the comment body contains a similar but non-matching opener" do
+      question = "What is the expected behavior?"
+      answer_with_similar_marker = <<~ANSWER.strip
+        Cross-cutting context the operator pasted
+        <!-- a comment that is not the freeform-notes marker -->
+        More body text
+      ANSWER
+      body = <<~COMMENT
+        **Q1: #{question}**
+        **A1:** #{answer_with_similar_marker}
+
+        <!-- paid:clarifying-answers:freeform-notes -->
+
+        Operator freeform note.
+      COMMENT
+
+      parsed = described_class.parse(body)
+
+      expect(parsed.size).to eq(1)
+      expect(parsed.first[:answer]).to eq(answer_with_similar_marker)
+    end
   end
 end
