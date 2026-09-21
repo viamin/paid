@@ -15,10 +15,10 @@ those guests; it does not create an Apple-specific allowlist.
 
 `AgentRuns::AppleVerification::ResolveGuestContract` resolves the run's
 existing egress policy using `AgentRuns::EgressPolicy::Resolve` with a forced
-proxy-restricted (`:proxy_only`) networking intent. Once #3933 supplies the
-authenticated host-service start operation, its admission flow will persist the
-resulting snapshot before it starts a guest. Resolution is gated on the
-project's `apple_verification_workers` flag: when the flag is off,
+proxy-restricted (`:proxy_only`) networking intent. `AppleVerification::ExecuteGuestJob`
+is the guest-admission boundary: it resolves and persists the snapshot before
+sending a manifest to the authenticated guest executor. Resolution is gated on
+the project's `apple_verification_workers` flag: when the flag is off,
 `ResolveGuestContract` raises `WorkersDisabledError` without persisting
 anything or producing a contract.
 
@@ -33,16 +33,13 @@ only HTTP(S) destinations that match the contract and denies everything else
 unmatched host/port pairs — before it can be represented as allowed guest
 traffic.
 
-The future Apple verification control-plane entry point SHALL send this
-contract only to the authenticated, narrow host-service start operation,
-which SHALL install it before it starts the VM and route guest requests through
-`ValidateGuestRequest`. The concrete Tart/Softnet transport that carries the
-contract onto a real guest, and the guest-start lifecycle registration, belong
-to #3933. Until that authenticated host implementation exists, nothing in Paid
-calls `ResolveGuestContract` or `ValidateGuestRequest` from a guest-admission
-path, so Paid still does not expose or admit Apple verification guests. This
-segment supplies tested policy building blocks only; its EARS requirements are
-deferred and it does not close #3935.
+`ExecuteGuestJob` validates every destination it admits against the resolved
+contract, then sends the contract with the manifest to the authenticated guest
+executor. The serialized contract explicitly denies the default route and host
+services, requires Paid-only DNS and proxy routing, blocks proxy overrides, and
+contains only the resolved HTTP(S) destinations. The executor must install that
+contract before accepting work; a failed resolution or validation prevents the
+dispatch request altogether.
 
 ## Decisions and audit
 

@@ -5,16 +5,12 @@ module AppleVerification
   # provider's guest connection. Provider code owns the executor transport;
   # this control-plane boundary owns admission and image selection.
   #
-  # This is the dispatch primitive for APPLE-VERIFY-005, not a submission
-  # endpoint. Per the RDR-068 issue tree (#3930), the caller that decides a
-  # manifest, project, and image digest ("verification work is submitted")
-  # is built by later, dependent issues: scheduling/admission (#3936),
-  # source/artifact transport (#3937), workflow approval (#3938), and the
-  # semantic MCP tools/lifecycle gates (#3940). Wiring a controller or job
-  # here now would mean inventing those unbuilt concepts ahead of their
-  # issues. This class and its spec cover the dispatch contract in
-  # isolation; integration is deferred to #3940.
+  # This is the guest-admission boundary. It resolves and installs the Paid
+  # network contract before the executor receives a manifest, so a guest job
+  # cannot start with an implicit or caller-controlled network policy.
   # @spec APPLE-VERIFY-005
+  # @spec APPLE-NETWORK-001
+  # @spec APPLE-NETWORK-002
   class ExecuteGuestJob
     Result = Data.define(:image, :operations)
 
@@ -25,8 +21,8 @@ module AppleVerification
       new(...).call
     end
 
-    def initialize(project:, manifest:, guest_connection: GuestConnection.new, image_digest:)
-      @project = project
+    def initialize(agent_run:, manifest:, guest_connection: GuestConnection.new, image_digest:)
+      @agent_run = agent_run
       @manifest = manifest
       @guest_connection = guest_connection
       @image_digest = image_digest
@@ -36,21 +32,49 @@ module AppleVerification
       ensure_feature_enabled!
       image = active_image!
       GuestProtocol.validate!(@manifest)
-      operations = @guest_connection.dispatch!(image:, manifest: @manifest)
+      contract = resolve_guest_contract
+      validate_contract_destinations!(contract)
+      operations = @guest_connection.dispatch!(image:, manifest: @manifest, network_contract: contract)
       Result.new(image:, operations:)
     end
 
     private
 
     def ensure_feature_enabled!
-      return if FeatureFlags.enabled?(:apple_verification_workers, project: @project)
+      return if FeatureFlags.enabled?(:apple_verification_workers, project: project)
 
       raise FeatureDisabledError, "Apple verification workers are not enabled for this project"
     end
 
     def active_image!
-      AppleVerificationImage.schedulable.find_by(account: @project.account, digest: @image_digest) ||
+      AppleVerificationImage.schedulable.find_by(account: project.account, digest: @image_digest) ||
         raise(NoActiveImageError, "the requested active Apple verification image is unavailable for this account")
+    end
+
+    def resolve_guest_contract
+      AgentRuns::AppleVerification::ResolveGuestContract.call(agent_run: @agent_run)
+    end
+
+    def validate_contract_destinations!(contract)
+      contract.destinations.select { |destination| external_destination?(destination) }.each do |destination|
+        AgentRuns::AppleVerification::ValidateGuestRequest.call(
+          agent_run: @agent_run,
+          contract: contract,
+          request: AgentRuns::AppleVerification::GuestNetworkRequest.new(**destination.merge(scheme: destination[:scheme] || "https"))
+        )
+      end
+    end
+
+    # Paid's proxy and egress-gateway aliases are internal routing hops, not
+    # guest-controlled external destinations. HostPattern intentionally
+    # rejects their single-label names, so request validation applies only to
+    # the external routes the guest may ask the gateway to reach.
+    def external_destination?(destination)
+      AgentRuns::EgressPolicy::HostPattern.invalid_reason(destination[:host]).nil?
+    end
+
+    def project
+      @agent_run.project
     end
   end
 end

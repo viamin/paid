@@ -37,6 +37,22 @@ module AgentRuns
         )
       end
 
+      # The executor receives a complete, declarative policy rather than a
+      # handful of optional settings. This makes the deny-by-default route,
+      # host-service isolation, Paid DNS, and proxy-only posture explicit at
+      # the admission boundary.
+      def to_h
+        {
+          "default_route" => "deny",
+          "host_services" => "deny",
+          "dns" => { "mode" => "paid_only" },
+          "proxy" => proxy.stringify_keys.merge("override" => "blocked"),
+          "protocols" => SCHEMES,
+          "destinations" => destinations.map(&:stringify_keys),
+          "egress_profile" => egress_profile
+        }
+      end
+
       def self.proxy_destination(snapshot)
         entry = snapshot.required_destinations.find { |destination| destination["reason"] == "secrets_proxy" }
         raise NetworkPolicyError, "resolved snapshot is missing the required secrets-proxy destination" unless entry
