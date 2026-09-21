@@ -24,7 +24,7 @@ module AgentRuns
       def initialize(proxy:, destinations:, egress_profile:)
         @dns = DNS
         @proxy = proxy.freeze
-        @destinations = destinations.freeze
+        @destinations = destinations.map(&:freeze).freeze
         @egress_profile = egress_profile
         freeze
       end
