@@ -1,24 +1,34 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module AppleVerification
   module ArtifactIngestion
     # Ingests the structured artifacts produced by an Apple verification guest
     # (RDR-068 § Results and Artifacts).
     #
-    # Each artifact descriptor is uploaded through the shared
-    # {AppleVerification::ArtifactIngestion::Storage} under the attempt's
-    # namespace, then returned as an `object_storage` lane reference ready to
-    # embed in the output manifest. The ingester rejects descriptors that name
-    # a host path, a kind outside the supported vocabulary, or an empty file,
-    # and rejects attempts whose workflow profile has been revoked.
+    # Descriptors are untrusted guest input: each one carries its payload
+    # inline (`bytes`), and the ingester uploads those bytes through the
+    # shared {AppleVerification::ArtifactIngestion::Storage} under the
+    # attempt's namespace before returning an `object_storage` lane reference
+    # ready to embed in the output manifest. Artifact bytes are never read
+    # from the Rails host filesystem. The ingester rejects descriptors that
+    # name a host path (`host_path`, `host_mount`, or `file_path`), a kind
+    # outside the supported vocabulary, or an empty payload; rejects a
+    # guest-reported digest that disagrees with the uploaded bytes (the
+    # locator digest is always computed server-side); and rejects attempts
+    # whose workflow profile has been revoked.
     #
     # @spec APPLE-TRANSFER-005
     class Ingest
       Result = Data.define(:references)
 
+      FORBIDDEN_DESCRIPTOR_KEYS = %w[host_path host_mount file_path].freeze
+
       UnsupportedKindError = Class.new(StandardError)
       EmptyArtifactError = Class.new(StandardError)
       HostPathError = Class.new(StandardError)
+      DigestMismatchError = Class.new(StandardError)
       RevokedProfileError = Class.new(StandardError)
       DisabledError = Class.new(StandardError)
 
@@ -60,8 +70,9 @@ module AppleVerification
       def ensure_no_host_paths!
         @descriptors.each do |descriptor|
           descriptor_hash = descriptor.is_a?(Hash) ? descriptor.deep_stringify_keys : {}
-          raise HostPathError, "artifact descriptor must not include host_path" if descriptor_hash.key?("host_path")
-          raise HostPathError, "artifact descriptor must not include host_mount" if descriptor_hash.key?("host_mount")
+          FORBIDDEN_DESCRIPTOR_KEYS.each do |key|
+            raise HostPathError, "artifact descriptor must not include #{key}" if descriptor_hash.key?(key)
+          end
         end
       end
 
@@ -70,19 +81,20 @@ module AppleVerification
         kind = descriptor_hash["kind"].to_s
         name = descriptor_hash["name"].to_s
         bytes = descriptor_hash["bytes"]
-        file_path = descriptor_hash["file_path"].presence
         content_type = descriptor_hash["content_type"].presence
-        digest = descriptor_hash["digest"].to_s.presence
+        reported_digest = descriptor_hash["digest"].to_s.presence
 
         validate_kind!(kind)
         validate_name!(name)
-        ensure_artifact_payload!(descriptor_hash, bytes:, file_path:)
+        ensure_artifact_payload!(descriptor_hash, bytes:)
 
-        body = bytes || File.binread(file_path)
-        raise EmptyArtifactError, "artifact #{name} for #{kind} is empty" if body.to_s.bytesize.zero?
+        raise EmptyArtifactError, "artifact #{name} for #{kind} is empty" if bytes.bytesize.zero?
+
+        computed_digest = Digest::SHA256.hexdigest(bytes)
+        verify_reported_digest!(reported_digest, computed: computed_digest, name: name, kind: kind)
 
         key = storage.upload_bytes(
-          bytes: body,
+          bytes: bytes,
           account_id: account_id,
           project_id: project_id,
           attempt_id: attempt.id,
@@ -91,7 +103,7 @@ module AppleVerification
           content_type: content_type
         )
 
-        build_reference(kind:, key:, digest:)
+        build_reference(kind:, key:, sha256: "sha256:#{computed_digest}")
       end
 
       def validate_kind!(kind)
@@ -105,16 +117,21 @@ module AppleVerification
         raise HostPathError, "artifact name must not be a host path" if name.include?("/") || name.start_with?("..")
       end
 
-      def ensure_artifact_payload!(descriptor, bytes:, file_path:)
+      def ensure_artifact_payload!(descriptor, bytes:)
         return if bytes.is_a?(String)
-        return if file_path.is_a?(String) && File.exist?(file_path)
 
         raise EmptyArtifactError, "artifact #{descriptor['name']} for #{descriptor['kind']} has no payload"
       end
 
-      def build_reference(kind:, key:, digest:)
-        locator = { "key" => key, "url" => storage.signed_url(key) }
-        locator["sha256"] = digest if digest.present?
+      def verify_reported_digest!(reported, computed:, name:, kind:)
+        return if reported.blank?
+        return if reported.sub(/\Asha256:/, "").downcase == computed
+
+        raise DigestMismatchError, "artifact #{name} for #{kind} reported digest #{reported} but bytes hash to sha256:#{computed}"
+      end
+
+      def build_reference(kind:, key:, sha256:)
+        locator = { "key" => key, "url" => storage.signed_url(key), "sha256" => sha256 }
         { "lane" => "object_storage", "kind" => kind, "locator" => locator }
       end
 

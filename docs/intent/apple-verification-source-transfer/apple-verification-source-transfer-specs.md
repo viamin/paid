@@ -20,8 +20,10 @@
   the builder SHALL exclude credentials, package and dependency caches,
   build outputs, paid-agent host artifacts, and any file matching
   `SecretSafeMetadata::SECRET_VALUE_PATTERNS`; excluded paths SHALL be
-  recorded in the bundle manifest and the bundle SHALL be rejected if any
-  included file matches a secret-shaped pattern after the exclusion pass.
+  recorded in the bundle manifest, the bundle SHALL be rejected if any
+  included file matches a secret-shaped pattern after the exclusion pass,
+  and each included file's permission bits SHALL be preserved in the
+  bundle's tar entries so executable scripts survive extraction.
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`
   *Code:* `AppleVerification::SourceLane::BundleBuilder`
 
@@ -48,9 +50,14 @@
 - [x] **APPLE-TRANSFER-005** — `.xcresult`, build logs, screenshots, and
   diagnostics produced by an attempt SHALL be uploaded through the shared
   `ArtifactStorage` under a per-account/per-project/per-attempt namespace and
-  SHALL be addressed in the output manifest as object-storage references; the
-  durable manifest metadata, attempt record, audit events, and ledger entries
-  SHALL survive the binary retention window.
+  SHALL be addressed in the output manifest as object-storage references
+  whose locator digest is computed server-side from the uploaded bytes;
+  artifact descriptors are untrusted guest input, SHALL carry their payload
+  inline, any descriptor naming a host file path (`host_path`, `host_mount`,
+  or `file_path`) SHALL be rejected, and a guest-reported digest that
+  disagrees with the uploaded bytes SHALL be rejected; the durable manifest
+  metadata, attempt record, audit events, and ledger entries SHALL survive
+  the binary retention window.
   *Tests:* `spec/services/apple_verification/artifact_ingestion/ingest_spec.rb`
   *Code:* `AppleVerification::ArtifactIngestion::Ingest`
 

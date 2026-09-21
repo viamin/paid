@@ -109,7 +109,7 @@ module AppleVerification
                   raise SecretFoundError, "workspace bundle includes a secret-shaped file at #{relative}"
                 end
 
-                write_entry(tar, relative, bytes)
+                write_entry(tar, relative, absolute_path, bytes)
                 digester << relative << "\0" << file_digest << "\0"
                 bytesize += bytes.bytesize
                 if bytesize > @max_bytes
@@ -201,15 +201,13 @@ module AppleVerification
         true
       end
 
-      def write_entry(tar, relative_path, bytes)
-        stat = stat_for(bytes)
-        tar.add_file_simple(relative_path, stat.mode, stat.size) do |entry|
+      # Preserves the source file's permission bits so executable build-phase
+      # scripts survive extraction in the guest.
+      def write_entry(tar, relative_path, absolute_path, bytes)
+        mode = File.stat(absolute_path).mode & 0o777
+        tar.add_file_simple(relative_path, mode, bytes.bytesize) do |entry|
           entry.write(bytes)
         end
-      end
-
-      def stat_for(bytes)
-        Struct.new(:mode, :size).new(0o644, bytes.bytesize)
       end
     end
   end

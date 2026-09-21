@@ -28,10 +28,11 @@ RSpec.describe AppleVerification::ArtifactIngestion::Ingest do
   end
 
   it "ingests each descriptor into a typed object-storage lane reference" do
+    payload = "binary-xcresult"
     result = described_class.call(
       attempt: attempt,
       descriptors: [
-        { "kind" => "xcresult", "name" => "App.xcresult", "bytes" => "binary-xcresult", "digest" => "sha256:#{'a' * 64}" },
+        { "kind" => "xcresult", "name" => "App.xcresult", "bytes" => payload, "digest" => "sha256:#{Digest::SHA256.hexdigest(payload)}" },
         { "kind" => "build_log", "name" => "build.log", "bytes" => "Build succeeded" },
         { "kind" => "screenshot", "name" => "first.png", "bytes" => "PNG" }
       ],
@@ -45,9 +46,29 @@ RSpec.describe AppleVerification::ArtifactIngestion::Ingest do
     expect(reference["locator"]).to include(
       "key" => "apple-verification/#{attempt.account_id}/#{attempt.project_id}/#{attempt.id}/xcresult/App.xcresult",
       "url" => "https://example.com/key",
-      "sha256" => "sha256:#{'a' * 64}"
+      "sha256" => "sha256:#{Digest::SHA256.hexdigest(payload)}"
     )
     expect(AppleVerificationWorkers).to be_lane_reference(reference, lane: "object_storage")
+  end
+
+  it "computes the locator digest from the uploaded bytes, not guest input" do
+    result = described_class.call(
+      attempt: attempt,
+      descriptors: [ { "kind" => "build_log", "name" => "build.log", "bytes" => "Build succeeded" } ],
+      storage: storage
+    )
+
+    expect(result.references.first["locator"]["sha256"]).to eq("sha256:#{Digest::SHA256.hexdigest('Build succeeded')}")
+  end
+
+  it "rejects a guest-reported digest that disagrees with the uploaded bytes" do
+    expect {
+      described_class.call(
+        attempt: attempt,
+        descriptors: [ { "kind" => "xcresult", "name" => "App.xcresult", "bytes" => "binary-xcresult", "digest" => "sha256:#{'a' * 64}" } ],
+        storage: storage
+      )
+    }.to raise_error(described_class::DigestMismatchError, /digest/)
   end
 
   it "rejects host path or host mount fields in any descriptor" do
@@ -58,6 +79,16 @@ RSpec.describe AppleVerification::ArtifactIngestion::Ingest do
         storage: storage
       )
     }.to raise_error(described_class::HostPathError, /host_path/)
+  end
+
+  it "rejects descriptors that reference a host file path for their payload" do
+    expect {
+      described_class.call(
+        attempt: attempt,
+        descriptors: [ { "kind" => "xcresult", "name" => "leak", "file_path" => "/app/config/master.key" } ],
+        storage: storage
+      )
+    }.to raise_error(described_class::HostPathError, /file_path/)
   end
 
   it "rejects descriptors with empty payloads" do

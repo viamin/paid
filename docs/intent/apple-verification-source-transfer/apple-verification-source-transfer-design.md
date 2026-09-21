@@ -68,7 +68,9 @@ Excluded paths are recorded in the manifest's `excluded_paths` array and the
 bundle's tar stream omits them. The builder then walks the remaining tree,
 streams a SHA-256 digester, and produces the bundle alongside a
 `manifest.json` listing every included file's digest and the exclusion
-summary. The bundle digest is `sha256:` + the digester's final hex output.
+summary. Tar entries preserve each included file's permission bits so
+executable build-phase scripts survive extraction in the guest. The bundle
+digest is `sha256:` + the digester's final hex output.
 Bundles larger than the configured cap (default 2 GiB) are rejected with
 `BundleTooLargeError` before upload.
 
@@ -126,6 +128,13 @@ diagnostics), and returns the validated object-storage references for the
 output manifest. Each artifact's key is namespaced under
 `apple-verification/{account_id}/{project_id}/{attempt_id}/{kind}/{name}` so
 the key cannot collide with screenshot, run, or knowledge namespaces.
+
+Descriptors are untrusted guest input and carry their payload inline
+(`bytes`). Any descriptor naming a host path — `host_path`, `host_mount`, or
+`file_path` — is rejected before upload, so artifact bytes are never read
+from the Rails host filesystem. The locator's `sha256` digest is computed
+server-side from the uploaded bytes, and a guest-reported digest that
+disagrees with those bytes is rejected (`DigestMismatchError`).
 
 The ingester enforces the RDR's retention policy: durable records (manifest
 metadata, attempt metadata, audit references) are kept forever, while binary

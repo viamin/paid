@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "rubygems/package"
 require "tmpdir"
+require "zlib"
 
 # @spec APPLE-TRANSFER-002
 # @spec APPLE-TRANSFER-003
@@ -71,6 +73,26 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
     expect {
       described_class.call(workspace_root: workspace_root, output_path: output_path, max_bytes: 1024)
     }.to raise_error(described_class::BundleTooLargeError, /exceeds/)
+  end
+
+  it "preserves each included file's permission bits in the tar entries" do
+    script = write_file("Scripts/build.sh", "#!/bin/sh\nexit 0\n")
+    File.chmod(0o755, script)
+    write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+
+    result = described_class.call(workspace_root: workspace_root, output_path: output_path)
+    modes = tar_entry_modes(result.bundle_path)
+
+    expect(modes["Scripts/build.sh"]).to eq(0o755)
+    expect(modes["Sources/App.swift"]).to eq(0o644)
+  end
+
+  def tar_entry_modes(bundle_path)
+    Zlib::GzipReader.open(bundle_path) do |gz|
+      Gem::Package::TarReader.new(gz).each_with_object({}) do |entry, modes|
+        modes[entry.full_name] = entry.header.mode
+      end
+    end
   end
 
   it "rejects symlinks that escape the workspace root" do
