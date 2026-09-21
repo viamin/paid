@@ -2819,6 +2819,7 @@ module Activities
       worker.value unless interrupted
     end
 
+    # @spec RUNNER-FALLBACK-002
     def build_command(command_context, prompt, agent_run: nil)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
 
@@ -2828,13 +2829,13 @@ module Activities
         plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry, user: command_context.user, agent_run: agent_run)
         runner_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif runner_entry&.api_key?
-        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
+        plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry, user: command_context.user, agent_run: agent_run)
         api_key_auth_command(runner_entry, plan.command[0..-2], prompt)
       elsif RunnerSupport.subscription_auth_unset_vars_for(command_context.runner).any?
-        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
+        plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry, user: command_context.user, agent_run: agent_run)
         subscription_auth_command(command_context.runner, plan.command[0..-2], prompt)
       else
-        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
+        plan = harness_execution_plan_for(command_context.runner, prompt, runner_entry: runner_entry, user: command_context.user, agent_run: agent_run)
         plan.command[0..-2] + [ plan.command.last ]
       end
     end
@@ -2939,6 +2940,7 @@ module Activities
       env
     end
 
+    # @spec RUNNER-FALLBACK-002
     def command_preparation_for(command_context, prompt, agent_run: nil)
       runner_entry = runner_entry_for(command_context.runner_candidate, command_context.user)
       return direct_outbound_execution_plan(runner_entry, prompt, agent_run: agent_run).preparation if runner_entry&.agent_harness_runtime?
@@ -2957,6 +2959,7 @@ module Activities
       harness_execution_plan_for(
         command_context.runner,
         prompt,
+        runner_entry: runner_entry,
         user: command_context.user,
         agent_run: agent_run
       ).preparation
