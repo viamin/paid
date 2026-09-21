@@ -18,6 +18,11 @@ module Projects
     # sessions have a ~4KB ceiling; we leave generous headroom so we never
     # overflow and silently drop the prefill rather than corrupt the cookie.
     MAX_PENDING_ANSWERS_BYTES = 1_500
+    # Byte cap applied to the optional freeform note before it is committed to
+    # the session cookie. Same CookieStore ceiling concern as the answer
+    # budget; trimming mid multi-byte characters is scrubbed so the JSON
+    # encoder never sees invalid UTF-8.
+    MAX_PENDING_FREEFORM_NOTE_BYTES = 1_000
 
     before_action :authenticate_user!
     before_action :set_project
@@ -38,11 +43,13 @@ module Projects
     def create
       next_issue = next_queue_issue if queue_mode?
       questions_and_answers = build_questions_and_answers(questions: current_questions)
+      freeform_note = submitted_freeform_note
 
       ClarifyingQuestions::SubmitAnswers.call(
         project: @project,
         issue: @issue,
-        questions_and_answers: questions_and_answers
+        questions_and_answers: questions_and_answers,
+        freeform_note: freeform_note
       )
 
       if inbox_mode?
@@ -350,11 +357,18 @@ module Projects
     # repopulate them in place instead of forcing the operator to retype.
     # The cookie session has a ~4KB ceiling, so we cap the payload and fall
     # back to the empty form (current behavior) if it would overflow rather
-    # than risk corrupting the session.
+    # than risk corrupting the session. The optional freeform note rides on
+    # its own flash key with the same per-string cap, so the textarea is
+    # repopulated in lockstep with the per-question answers.
     def remember_pending_inbox_answers
       return unless inbox_mode?
       return if @issue.blank?
 
+      remember_pending_inbox_answers_payload
+      remember_pending_inbox_freeform_note
+    end
+
+    def remember_pending_inbox_answers_payload
       submitted = Array(params[:answers]).map(&:to_s)
       return if submitted.empty?
 
@@ -364,6 +378,25 @@ module Projects
       pending = flash[:inbox_pending_answers] || {}
       pending[@issue.id.to_s] = trimmed
       flash[:inbox_pending_answers] = pending
+    end
+
+    def remember_pending_inbox_freeform_note
+      raw = params[:freeform_note].to_s
+      return if raw.empty?
+
+      trimmed = raw.byteslice(0, MAX_PENDING_FREEFORM_NOTE_BYTES).scrub("")
+      return if ActiveSupport::JSON.encode(trimmed).bytesize > MAX_PENDING_FREEFORM_NOTE_BYTES
+
+      pending = flash[:inbox_pending_freeform_notes] || {}
+      pending[@issue.id.to_s] = trimmed
+      flash[:inbox_pending_freeform_notes] = pending
+    end
+
+    # Strips the submitted freeform note and returns nil when blank so the
+    # downstream service can decide whether to emit the notes section at all.
+    def submitted_freeform_note
+      raw = params[:freeform_note].to_s.strip
+      raw.empty? ? nil : raw
     end
   end
 end
