@@ -15,13 +15,14 @@ RSpec.describe Models::FileModelHealthIssue do
     )
   end
 
-  def drift_result(new_models: { "openai" => { new_models: [ { base: "gpt-5.5", representative: "gpt-5.5", variants: 1 } ], deprecated_models: [] } }, fingerprint: "drift-fp")
+  def drift_result(new_models: { "openai" => { new_models: [ { base: "gpt-5.5", representative: "gpt-5.5", variants: 1 } ], deprecated_models: [], availability_drift: [] } }, fingerprint: "drift-fp")
     instance_double(
       Models::DetectCatalogDrift::Result,
       drift?: new_models.any?,
       providers: new_models,
       new_model_count: new_models.sum { |_p, d| d[:new_models].size },
       deprecated_model_count: new_models.sum { |_p, d| d[:deprecated_models].size },
+      availability_drift_count: new_models.sum { |_p, d| Array(d[:availability_drift]).size },
       fingerprint: fingerprint
     )
   end
@@ -94,6 +95,29 @@ RSpec.describe Models::FileModelHealthIssue do
     described_class.call(
       project: project,
       drift: drift_result,
+      broken: broken_result,
+      contract_drift: contract_drift_result,
+      client: client
+    )
+
+    expect(client).to have_received(:create_issue)
+  end
+
+  # @spec MODEL-AVAILABILITY-007
+  it "renders availability drift and its remediation guidance" do
+    allow(client).to receive(:issues).and_return([])
+    allow(client).to receive(:create_issue) do |_repo, title:, body:, labels:|
+      expect(body).to include("Inactive catalog rows the registry still lists")
+      expect(body).to include("gpt-5.6-quiet")
+      expect(body).to include("operator_disable!")
+      OpenStruct.new(number: 7)
+    end
+
+    described_class.call(
+      project: project,
+      drift: drift_result(new_models: {
+        "openai" => { new_models: [], deprecated_models: [], availability_drift: [ "gpt-5.6-quiet" ] }
+      }),
       broken: broken_result,
       contract_drift: contract_drift_result,
       client: client

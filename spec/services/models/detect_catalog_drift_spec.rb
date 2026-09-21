@@ -168,6 +168,55 @@ RSpec.describe Models::DetectCatalogDrift do
     )
   end
 
+  # @spec MODEL-AVAILABILITY-007
+  it "reports an inactive catalogued model the registry still lists as availability drift" do
+    LlmModel.create!(model_id: "gpt-5.9-quiet", display_name: "Quiet", provider: "openai", category: "coding", tier: "mid", active: false)
+
+    registry = fake_registry(
+      "openai" => [
+        reg_model(id: "gpt-5.1", provider: "openai", created_at: nov_2025),
+        reg_model(id: "gpt-5.9-quiet", provider: "openai", created_at: nov_2025)
+      ]
+    )
+
+    result = described_class.call(providers: %w[openai], registry: registry)
+
+    expect(result.providers["openai"][:availability_drift]).to eq(%w[gpt-5.9-quiet])
+    expect(result.availability_drift_count).to eq(1)
+  end
+
+  # @spec MODEL-AVAILABILITY-007
+  it "does not report an operator-disabled model as availability drift" do
+    model = LlmModel.create!(model_id: "gpt-5.9-quiet", display_name: "Quiet", provider: "openai", category: "coding", tier: "mid", active: true)
+    model.operator_disable!
+
+    registry = fake_registry(
+      "openai" => [
+        reg_model(id: "gpt-5.1", provider: "openai", created_at: nov_2025),
+        reg_model(id: "gpt-5.9-quiet", provider: "openai", created_at: nov_2025)
+      ]
+    )
+
+    result = described_class.call(providers: %w[openai], registry: registry)
+
+    expect(result.providers.fetch("openai", { availability_drift: [] })[:availability_drift]).to eq([])
+  end
+
+  # @spec MODEL-AVAILABILITY-007
+  it "suppresses availability drift when the registry fetch is unhealthy" do
+    LlmModel.create!(model_id: "gpt-5.9-quiet", display_name: "Quiet", provider: "openai", category: "coding", tier: "mid", active: false)
+
+    registry = fake_registry(
+      { "openai" => [ reg_model(id: "gpt-5.9-quiet", provider: "openai", created_at: nov_2025) ] },
+      true,
+      false
+    )
+
+    result = described_class.call(providers: %w[openai], registry: registry)
+
+    expect(result.providers).to be_empty
+  end
+
   it "produces a stable fingerprint for the same finding set" do
     registry = fake_registry(
       "openai" => [
