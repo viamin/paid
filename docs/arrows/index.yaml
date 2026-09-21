@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  apple-verification:
+    title: Apple Verification Presentation
+    path: docs/intent/apple-verification/apple-verification-design.md
+    specs: docs/intent/apple-verification/apple-verification-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-19
   apple-guest-execution:
     title: Apple Guest Execution
     path: docs/intent/apple-guest-execution/apple-guest-execution-design.md

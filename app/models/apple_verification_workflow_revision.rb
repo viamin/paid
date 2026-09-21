@@ -43,6 +43,15 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
     status == "disabled"
   end
 
+  # @spec APPLE-VERIFY-005
+  def differences_from(other)
+    comparison_attributes.filter_map do |attribute, label|
+      next if public_send(attribute) == other.public_send(attribute)
+
+      [ label, { revision: public_send(attribute), comparison: other.public_send(attribute) } ]
+    end.to_h
+  end
+
   def approve!(actor:)
     project.with_lock do
       reload
@@ -70,6 +79,19 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
   end
 
   private
+
+  def comparison_attributes
+    {
+      revision: "Revision",
+      content_digest: "Content digest",
+      verification_files: "Verification files",
+      apple_worker_profile_id: "Worker profile",
+      lifecycle_gate: "Lifecycle gate",
+      required_checks: "Required checks",
+      advisory_checks: "Advisory checks",
+      status: "Status"
+    }
+  end
 
   def account_matches_project
     errors.add(:account, "must match the project's account") if project && account_id != project.account_id
