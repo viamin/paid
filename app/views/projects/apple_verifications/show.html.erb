@@ -110,7 +110,7 @@
           <% end %>
         </div>
         <% if attempt.failed? && attempt.apple_verification_waivers.empty? %>
-          <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id) do |form| %>
+          <%= form_with url: waive_project_apple_verification_path(@project, attempt_id: attempt.id), scope: :waiver do |form| %>
             <fieldset>
               <legend>Waive required checks</legend>
               <% attempt.apple_verification_workflow_revision.required_checks.each do |check| %>

@@ -50,6 +50,17 @@ RSpec.describe "Projects::AppleVerifications" do
       expect(response.body).to include("Mode: Off")
       expect(response.body).not_to include("Save mode", "project[mode]")
     end
+
+    it "namespaces waiver form inputs under the waiver scope" do # @spec APPLE-VERIFY-006
+      attempt = create(:apple_verification_attempt, project:, status: "failed")
+      sign_in_project_administrator
+
+      get project_apple_verification_path(project)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('name="waiver[reason]"')
+      expect(response.body).to include('name="waiver[expires_at]"')
+    end
   end
 
   describe "GET /projects/:project_id/apple_verification/compare" do
