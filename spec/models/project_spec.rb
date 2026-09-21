@@ -23,6 +23,22 @@ RSpec.describe Project do
   end
 
   describe "Apple verification records" do
+    it "destroys retry descendants before their source attempts" do # @spec APPLE-VERIFY-006
+      source_attempt = create(:apple_verification_attempt, status: "failed")
+      create(:apple_verification_attempt,
+        account: source_attempt.account,
+        project: source_attempt.project,
+        apple_verification_workflow_revision: source_attempt.apple_verification_workflow_revision,
+        apple_worker_profile: source_attempt.apple_worker_profile,
+        source_digest: source_attempt.source_digest,
+        lifecycle_gate: source_attempt.lifecycle_gate,
+        retry_number: 1,
+        retry_of_attempt: source_attempt)
+
+      expect { source_attempt.project.destroy! }
+        .to change(AppleVerificationAttempt, :count).by(-2)
+    end
+
     it "destroys attempts and their artifacts before workflow revisions" do # @spec APPLE-VERIFY-003
       project = create(:project)
       attempt = create(:apple_verification_attempt, project:)

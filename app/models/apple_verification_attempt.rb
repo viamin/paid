@@ -13,10 +13,11 @@ class AppleVerificationAttempt < ApplicationRecord
   belongs_to :apple_verification_workflow_revision
   belongs_to :apple_worker_profile
   belongs_to :retry_of_attempt, class_name: "AppleVerificationAttempt", optional: true
+  # @spec APPLE-VERIFY-006
   has_one :retry_attempt,
     class_name: "AppleVerificationAttempt",
     foreign_key: :retry_of_attempt_id,
-    dependent: :restrict_with_exception,
+    dependent: :destroy,
     inverse_of: :retry_of_attempt
   has_many :apple_verification_waivers, dependent: :restrict_with_exception
   has_many :apple_verification_artifacts, dependent: :destroy
