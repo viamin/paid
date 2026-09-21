@@ -125,15 +125,17 @@ RSpec.describe "Projects::AppleVerifications" do
   end
 
   describe "POST /projects/:project_id/apple_verification/rerun" do
-    it "queues a retry of an attempt for an authorized user" do # @spec APPLE-VERIFY-006
+    it "queues one retry when an authorized user submits the rerun twice" do # @spec APPLE-VERIFY-006
       attempt = create(:apple_verification_attempt, project:, status: "failed", retry_number: 2)
       sign_in_project_administrator
 
       post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+      post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
 
       expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(project.apple_verification_attempts.count).to eq(2)
       expect(project.apple_verification_attempts.order(:created_at).last).to have_attributes(
-        status: "queued", retry_number: 3, source_digest: attempt.source_digest
+        status: "queued", retry_number: 3, source_digest: attempt.source_digest, retry_of_attempt: attempt
       )
     end
   end

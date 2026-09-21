@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_21_005251) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -427,6 +427,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
     t.string "lifecycle_gate", null: false
     t.bigint "project_id", null: false
     t.integer "retry_number", default: 0, null: false
+    t.bigint "retry_of_attempt_id", comment: "Terminal attempt this queued retry reruns."
     t.string "source_digest", null: false
     t.datetime "started_at"
     t.string "status", default: "queued", null: false
@@ -437,6 +438,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
     t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
+    t.index ["retry_of_attempt_id"], name: "idx_apple_attempts_one_retry_per_source", unique: true
     t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_attempts_gate"
     t.check_constraint "retry_number >= 0", name: "chk_apple_attempts_retry_nonnegative"
     t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'provisioning'::character varying::text, 'running'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'unavailable'::character varying::text])", name: "chk_apple_attempts_status"
@@ -3711,6 +3713,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_20_173056) do
   add_foreign_key "apple_verification_artifacts", "apple_verification_attempts"
   add_foreign_key "apple_verification_attempts", "accounts"
   add_foreign_key "apple_verification_attempts", "agent_runs", on_delete: :nullify
+  add_foreign_key "apple_verification_attempts", "apple_verification_attempts", column: "retry_of_attempt_id"
   add_foreign_key "apple_verification_attempts", "apple_verification_workflow_revisions"
   add_foreign_key "apple_verification_attempts", "apple_worker_profiles"
   add_foreign_key "apple_verification_attempts", "projects"

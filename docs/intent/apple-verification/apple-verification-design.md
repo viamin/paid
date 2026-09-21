@@ -19,6 +19,10 @@ expiry, and request early cleanup of a retained failed VM. These controls
 delegate lifecycle state changes to the Apple verification attempt capability;
 they do not duplicate execution-provider operations in the UI.
 
+A rerun is idempotent for its terminal source attempt. Paid persists the retry
+parent and returns the already queued retry when the same rerun is submitted
+again, including concurrently.
+
 Capture artifacts are never embedded in the page. Screenshot and recording
 entries link to an authenticated project-scoped endpoint, which authorizes the
 viewer before issuing a time-limited storage URL. Result artifacts retain

@@ -12,6 +12,12 @@ class AppleVerificationAttempt < ApplicationRecord
   belongs_to :agent_run, optional: true
   belongs_to :apple_verification_workflow_revision
   belongs_to :apple_worker_profile
+  belongs_to :retry_of_attempt, class_name: "AppleVerificationAttempt", optional: true
+  has_one :retry_attempt,
+    class_name: "AppleVerificationAttempt",
+    foreign_key: :retry_of_attempt_id,
+    dependent: :restrict_with_exception,
+    inverse_of: :retry_of_attempt
   has_many :apple_verification_waivers, dependent: :restrict_with_exception
   has_many :apple_verification_artifacts, dependent: :destroy
   has_many :execution_audit_events, dependent: :nullify
@@ -97,6 +103,6 @@ class AppleVerificationAttempt < ApplicationRecord
     will_save_change_to_account_id? || will_save_change_to_project_id? || will_save_change_to_agent_run_id? ||
       will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
       will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
-      will_save_change_to_retry_number?
+      will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
   end
 end

@@ -22,4 +22,6 @@
   differ.
 - [x] **APPLE-VERIFY-006** — Project administrators SHALL be able to rerun or
   cancel an attempt, waive required checks for one failed attempt with a
-  reason and expiry, and request early cleanup of a retained failed VM.
+  reason and expiry, and request early cleanup of a retained failed VM. A
+  rerun SHALL be idempotent per terminal source attempt and retain its retry
+  parent.
