@@ -162,6 +162,24 @@ RSpec.describe AgentRuns::AppleVerification::ValidateGuestRequest do
     it_behaves_like "a denied request", matched_rule_pattern: /not in guest contract/
   end
 
+  context "with a destination host carrying URL userinfo" do
+    let(:denied_request) { request(host: "https://user:password@attacker.example.com") }
+
+    it_behaves_like "a denied request", matched_rule_pattern: /not in guest contract/
+
+    it "redacts the invalid host from both audit writes" do
+      expect { call(denied_request) }.to raise_error(AgentRuns::AppleVerification::NetworkPolicyError)
+
+      event = EgressSecurityEvent.last
+      expect(event.destination_host).to eq("[redacted-invalid-host]")
+      expect(event.destination_host).not_to include("password")
+
+      audit_event = ExecutionAuditEvent.where(agent_run: agent_run, event_name: "apple_guest.network_policy.denied").last
+      expect(audit_event.metadata["destination_host"]).to eq("[redacted-invalid-host]")
+      expect(audit_event.metadata.to_s).not_to include("password")
+    end
+  end
+
   context "with a destination matching the contract host but the wrong port" do
     let(:denied_request) { request(host: "github.com", port: 22) }
 

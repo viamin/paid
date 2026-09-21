@@ -14,6 +14,7 @@ module AgentRuns
     # @spec APPLE-NETWORK-003
     class ValidateGuestRequest
       REDACTED_IP_LITERAL = "[redacted-ip-literal]"
+      REDACTED_INVALID_HOST = "[redacted-invalid-host]"
 
       def self.call(agent_run:, contract:, request:)
         new(agent_run: agent_run, contract: contract, request: request).call
@@ -89,10 +90,18 @@ module AgentRuns
 
       # Raw IP literals are never recorded (RDR-068): a direct-IP denial must
       # not persist the literal itself into the audit trail meant to flag it.
+      # Invalid host strings are likewise redacted rather than potentially
+      # preserving URL userinfo in immutable audit records.
       def safe_destination_host
-        return REDACTED_IP_LITERAL if AgentRuns::EgressPolicy::HostPattern.ip_literal?(request.host.to_s)
+        host = normalized_destination_host
+        return REDACTED_IP_LITERAL if AgentRuns::EgressPolicy::HostPattern.ip_literal?(host)
+        return REDACTED_INVALID_HOST if AgentRuns::EgressPolicy::HostPattern.invalid_reason(host)
 
-        request.host
+        host
+      end
+
+      def normalized_destination_host
+        request.host.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "").strip.downcase
       end
 
       # +destination_port+ requires 1..65535; an out-of-range or malformed
