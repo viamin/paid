@@ -578,6 +578,24 @@ module Activities
                 fallback_remaining: runners[(index + 1)..].to_a
               )
             end
+          rescue RunnerModelRejectedError => e
+            last_error = "configuration_error"
+            attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
+            logger.error(
+              message: "agent_execution.model_rejected",
+              runner: runner,
+              agent_run_id: agent_run.id,
+              error: e.message,
+              duration_seconds: attempt_duration
+            )
+            agent_run.record_runner_attempt(
+              attempt_label,
+              success: false,
+              error_type: "configuration_error",
+              error_message: e.message,
+              duration_seconds: attempt_duration,
+              **resolved_run_info
+            )
           rescue RunnerExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -757,6 +775,7 @@ module Activities
     end
 
     class RunnerExecutionError < StandardError; end
+    class RunnerModelRejectedError < RunnerExecutionError; end
     class PreflightTimeoutError < RunnerExecutionError; end
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
@@ -1653,6 +1672,18 @@ module Activities
       end
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
+      classification_output = [ stderr, redact_tool_output_for_classification(runner, stdout) ].compact.join("\n").strip
+      sanitized_output = strip_prompt_echo(classification_output, prompt)
+
+      raise_classified_provider_state!(
+        agent_run: agent_run,
+        runner: runner,
+        runner_candidate: runner_candidate,
+        user: user_settings.user,
+        stdout: stdout,
+        stderr: stderr,
+        sanitized_output: sanitized_output
+      )
 
       if result.success?
         # Detect runner credit/quota errors that slip through as successful
@@ -1671,14 +1702,6 @@ module Activities
         if successful_exit_rate_limit_error?(sanitized_output, runner_key: runner)
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
-        end
-
-        if insufficient_credits_error?(sanitized_output)
-          raise_credit_exhausted!(
-            agent_run: agent_run,
-            runner: runner,
-            sanitized_output: sanitized_output
-          )
         end
 
         if runner_model_not_found_error?(sanitized_output)
@@ -1764,6 +1787,15 @@ module Activities
       )
     rescue Containers::Provision::OutputAbortError => e
       detail = e.detail.to_s
+      raise_classified_provider_state!(
+        agent_run: agent_run,
+        runner: runner,
+        runner_candidate: runner_candidate,
+        user: user_settings.user,
+        stdout: "",
+        stderr: detail.presence || e.matched_output.to_s,
+        sanitized_output: detail.presence || e.matched_output.to_s
+      )
       if output_abort_rate_limit_error?(e) || (detail.present? && rate_limit_error?(detail, runner_key: runner))
         # Either a configured quota/rate-limit pattern matched stderr, or the
         # streaming event's own payload carries a rate-limit signal (a real
@@ -1855,6 +1887,16 @@ module Activities
 
       sanitized_output = smoke_output(result, prompt)
 
+      raise_classified_provider_state!(
+        agent_run: agent_run,
+        runner: runner,
+        runner_candidate: command_context.runner_candidate,
+        user: command_context.user,
+        stdout: result[:stdout],
+        stderr: result[:stderr],
+        sanitized_output: sanitized_output
+      )
+
       if result.success?
         # Keep the same precedence as the main execution path so preflight
         # retryable limits do not degrade into generic provider failures.
@@ -1862,14 +1904,6 @@ module Activities
           reset_at = rate_limit_reset_at(runner, sanitized_output)
           log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
           raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
-        end
-
-        if insufficient_credits_error?(sanitized_output)
-          raise_credit_exhausted!(
-            agent_run: agent_run,
-            runner: runner,
-            sanitized_output: sanitized_output
-          )
         end
 
         if runner_model_not_found_error?(sanitized_output)
@@ -1901,6 +1935,15 @@ module Activities
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       detail = e.detail.to_s
+      raise_classified_provider_state!(
+        agent_run: agent_run,
+        runner: runner,
+        runner_candidate: command_context.runner_candidate,
+        user: command_context.user,
+        stdout: "",
+        stderr: detail.presence || e.matched_output.to_s,
+        sanitized_output: detail.presence || e.matched_output.to_s
+      )
       if output_abort_rate_limit_error?(e) || (detail.present? && rate_limit_error?(detail, runner_key: runner))
         reset_at = rate_limit_reset_at(runner, detail.presence || e.matched_output.to_s)
         log_preflight_failure(agent_run: agent_run, runner: runner, reason: "Rate limited by #{runner} during preflight")
@@ -2102,6 +2145,45 @@ module Activities
 
       RunnerSupport.aggregated_error_classification_patterns(:quota)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    # @spec RUNNER-FALLBACK-006
+    # The harness owns provider-specific envelope parsing and model-rejection
+    # semantics.  Keep Paid's role to applying the returned classification to
+    # runner state, before any diagnostic truncation can discard the signal.
+    def raise_classified_provider_state!(agent_run:, runner:, runner_candidate:, user:, stdout:, stderr:, sanitized_output:)
+      if claude_session_limit_error?(runner, stdout, stderr)
+        reset_at = rate_limit_reset_at(runner, sanitized_output)
+        raise ProviderRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
+      end
+
+      if insufficient_credits_error?(sanitized_output)
+        raise_credit_exhausted!(agent_run: agent_run, runner: runner, sanitized_output: sanitized_output)
+      end
+
+      rejection = codex_model_rejection(runner, runner_candidate, user, sanitized_output)
+      return unless rejection
+
+      raise RunnerModelRejectedError,
+        "Runner model rejected by #{runner}: #{rejection.fetch(:model, 'configured model')}"
+    end
+
+    def claude_session_limit_error?(runner, stdout, stderr)
+      return false unless RunnerSupport.runner_key_for_agent_type(runner) == "claude"
+
+      [ stdout, stderr ].any? do |output|
+        envelope = AgentHarness::Providers::Anthropic.parse_cli_json_envelope(output)
+        envelope&.fetch(:error, nil) == "Rate limit exceeded"
+      end
+    end
+
+    def codex_model_rejection(runner, runner_candidate, user, output)
+      return unless RunnerSupport.runner_key_for_agent_type(runner) == "codex"
+
+      AgentHarness::Providers::Codex.classify_model_rejection(
+        output,
+        configured_model: runner_runtime_model(runner_candidate, user)
+      )
     end
 
     # Detects short standalone rate-limit responses that some providers surface

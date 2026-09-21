@@ -346,15 +346,15 @@ RSpec.describe Models::Select do
       let(:agent_run) { create(:agent_run, project: project, provider: codex_provider, agent_type: "codex") }
 
       before do
-        create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid")
-        project.update!(model_preferences: { "required_model_id" => "gpt-5.6-terra" })
+        create(:llm_model, :openai, model_id: "gpt-5-mini", tier: "mid")
+        project.update!(model_preferences: { "required_model_id" => "gpt-5-mini" })
       end
 
       it "persists the compatible subscription model and tier" do
         selection = described_class.call(agent_run: agent_run)
 
         expect(selection).to have_attributes(tier: "mid")
-        expect(selection.llm_model.model_id).to eq("gpt-5.6-terra")
+        expect(selection.llm_model.model_id).to eq("gpt-5-mini")
         expect(agent_run.reload.model_selection).to eq(selection)
       end
 
