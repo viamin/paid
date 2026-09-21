@@ -696,6 +696,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.string "model"
     t.bigint "project_id"
     t.string "proxy_token", limit: 64
+    t.datetime "rate_limited_until", comment: "When a runner rate limit that paused this chat session is expected to clear. Set when a chat turn exhausts every fallback runner with an AgentHarness::RateLimitError; cleared on a successful resend."
     t.bigint "runner_id"
     t.string "status", default: "active", null: false
     t.text "system_prompt"
@@ -708,6 +709,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
     t.index ["project_id"], name: "index_chat_sessions_on_project_id"
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
+    t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
   end

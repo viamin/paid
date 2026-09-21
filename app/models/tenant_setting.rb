@@ -35,7 +35,11 @@ class TenantSetting < ApplicationRecord
     # When true (default), a container is provisioned in the background as soon
     # as a session requests one, so the first message is never blocked. When
     # false, provisioning is deferred until a container-only tool is invoked.
-    "chat_eager_provisioning" => true
+    "chat_eager_provisioning" => true,
+    # When true (default), a chat session paused by a runner rate limit
+    # (CHAT-API-017) is automatically resumed — the message that hit the
+    # rate limit is resent — once the runner's rate limit window clears.
+    "chat_auto_resume_rate_limited" => true
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -351,6 +355,11 @@ class TenantSetting < ApplicationRecord
 
   def chat_eager_provisioning
     ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_eager_provisioning"])
+  end
+
+  # @spec CHAT-API-017
+  def chat_auto_resume_rate_limited
+    ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_auto_resume_rate_limited"])
   end
 
   def chat_settings=(value)
@@ -744,6 +753,9 @@ class TenantSetting < ApplicationRecord
       end
       normalized["chat_shell_enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_shell_enabled"]) if normalized.key?("chat_shell_enabled")
       normalized["chat_eager_provisioning"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_eager_provisioning"]) if normalized.key?("chat_eager_provisioning")
+      if normalized.key?("chat_auto_resume_rate_limited")
+        normalized["chat_auto_resume_rate_limited"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_auto_resume_rate_limited"])
+      end
     end
   end
 

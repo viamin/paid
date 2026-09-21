@@ -149,6 +149,29 @@ RSpec.describe TenantSetting do
     end
   end
 
+  describe "#chat_auto_resume_rate_limited" do
+    # @spec CHAT-API-017
+    it "defaults to true" do
+      setting = build(:tenant_setting)
+
+      expect(setting.chat_auto_resume_rate_limited).to be(true)
+    end
+
+    it "reflects an explicit opt-out via chat_settings" do
+      setting = build(:tenant_setting, features: { "chat_settings" => { "chat_auto_resume_rate_limited" => false } })
+
+      expect(setting.chat_auto_resume_rate_limited).to be(false)
+    end
+
+    it "normalizes truthy/falsy strings when set through chat_settings=" do
+      setting = build(:tenant_setting)
+
+      setting.chat_settings = { "chat_auto_resume_rate_limited" => "0" }
+
+      expect(setting.chat_auto_resume_rate_limited).to be(false)
+    end
+  end
+
   describe "queue fairness mode" do
     it "treats fair_share as the default resolved mode" do
       setting = build(:tenant_setting, queue_fairness_mode: nil)
