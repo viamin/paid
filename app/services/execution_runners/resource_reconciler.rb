@@ -190,7 +190,9 @@ module ExecutionRunners
 
     def associate_pre_created_ledger_entries!(request)
       intent = request.provisioning_intent
-      intent.update!(provider_resource_id: request.provider_resource_id) if intent&.provider_resource_id.blank?
+      return unless intent
+
+      intent.update!(provider_resource_id: request.provider_resource_id) if intent.provider_resource_id.blank?
       ledger_entries_for(request).where(provider_resource_id: nil).find_each do |entry|
         entry.update!(provider_resource_id: request.provider_resource_id)
       end
