@@ -277,6 +277,11 @@ Rails.application.configure do
       class: "ChatSessions::IdleReaperJob",
       description: "Close idle chat sessions past their timeout"
     },
+    chat_auto_resume_rate_limited_sweep: {
+      cron: "1-59/5 * * * *",
+      class: "ChatSessions::AutoResumeRateLimitedSweepJob",
+      description: "Resend the last message for chat sessions whose runner rate-limit pause has elapsed (#3953)"
+    },
     preview_session_expiry_reaper: {
       cron: "*/5 * * * *",
       class: "PreviewSessions::ExpireJob",

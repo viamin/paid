@@ -6,6 +6,28 @@
 
 ## Clarifying-question flow
 
+- [x] **FEATURE-CREATION-001** — When a directly triggered `create_feature`
+  run evaluates a feature brief, the system SHALL use `agent_harness` to assess
+  the supplied description, admitted prior answers, and relevant repository
+  knowledge before deciding whether input is needed. Missing fields in the
+  stored JSON shape alone SHALL NOT cause a pause. The analysis SHALL either
+  return a complete brief or a bounded set of feature-specific, self-contained
+  questions; analysis or contract failures SHALL fail the run rather than post
+  a generic fallback questionnaire (#3957).
+  *Tests:* `spec/services/features/clarifying_questions/analyze_spec.rb`,
+  `spec/temporal/activities/create_agent_run_activity_spec.rb`.
+  *Code:* `app/services/features/clarifying_questions/analyze.rb`,
+  `app/temporal/activities/create_agent_run_activity.rb`.
+
+- [x] **FEATURE-CREATION-002** — When a `create_feature` run receives answers
+  to adaptive clarification questions, the system SHALL preserve the original
+  brief and re-run the semantic assessment with only trusted human comments
+  and Paid-authored marker comments admitted. The resulting brief SHALL not
+  depend on a fixed question wording or order (#3957).
+  *Tests:* `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
+  *Code:* `app/services/clarifying_questions/clear_needs_input.rb`,
+  `app/services/features/clarifying_questions/analyze.rb`.
+
 - [x] **ISSUE-ENHANCEMENT-001** — When issue enhancement determines that an
   issue lacks implementation-ready context, the system SHALL ask clarifying
   questions in plain language about the problem, desired behavior, constraints,

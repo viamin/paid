@@ -199,6 +199,88 @@ RSpec.describe Models::SeedKnownModels do
       expect(LlmModel.find_by!(model_id: "gpt-5.3-codex").active).to be(false)
     end
 
+    # @spec MODEL-AVAILABILITY-002
+    it "preserves an operator's explicit disable across scheduled sync" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.1",
+        display_name: "GPT-5.1",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+      model.operator_disable!
+
+      described_class.call
+
+      expect(model.reload.active).to be(false)
+    end
+
+    # @spec MODEL-AVAILABILITY-002
+    it "preserves an operator's explicit enable across scheduled sync, even over a snapshot exclusion" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: false
+      )
+      model.operator_enable!
+
+      described_class.call
+
+      expect(model.reload.active).to be(true)
+    end
+
+    # @spec MODEL-AVAILABILITY-003
+    it "does not reapply a stale snapshot exclusion over validated availability evidence" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+      ModelAvailabilityCheck.create!(
+        llm_model: model,
+        runner_key: "codex",
+        auth_type: "subscription",
+        status: "available",
+        source: "agent_harness_compat",
+        checked_at: Time.current
+      )
+
+      described_class.call
+
+      expect(model.reload.active).to be(true)
+    end
+
+    # @spec MODEL-AVAILABILITY-003
+    it "reapplies the snapshot exclusion when availability evidence is stale" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+      ModelAvailabilityCheck.create!(
+        llm_model: model,
+        runner_key: "codex",
+        auth_type: "subscription",
+        status: "available",
+        source: "agent_harness_compat",
+        checked_at: (ModelAvailabilityCheck::DEFAULT_TTL + 1.hour).ago
+      )
+
+      described_class.call
+
+      expect(model.reload.active).to be(false)
+    end
+
     # @spec DIRECT-OUTBOUND-CATALOG-001
     it "gives every direct-outbound provider a dropdown-eligible catalog row (RDR-065)" do
       described_class.call

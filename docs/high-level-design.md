@@ -58,6 +58,12 @@ Isolation is the precondition for running multiple agents in parallel and for
 giving an agent broad permissions inside its container without broad
 permissions on the system.
 
+Specialized verification environments follow the same boundary. Apple project
+code executes in disposable macOS guests, never on their host; guest egress is
+resolved through the same Paid authority and network-policy path as agent
+containers, with Paid-controlled DNS and proxy enforcement rather than guest
+or repository-managed credentials.
+
 ## Approach: Human Final Say
 
 Every code change goes through a pull request. By default a human merges each
@@ -191,7 +197,8 @@ paths or commands; workflows become blocking only through digest-bound project
 approval. See `docs/intent/apple-verification-workers/` for the worker
 contract (profiles, workflow revisions, attempts, waivers) and
 `docs/intent/apple-guest-execution/` for the immutable guest image catalog and
-guest protocol those attempts run against.
+guest protocol those attempts run against. The lifecycle API is provider-neutral;
+its first implementation maps to Tart and Softnet. See RDR-068.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container

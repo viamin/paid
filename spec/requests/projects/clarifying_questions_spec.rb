@@ -108,6 +108,18 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           "issue_id" => issue.id
         )
       end
+
+      # OPERATOR-INBOX-013: a freeform note textarea appears at the bottom of
+      # the standalone clarifying-questions wizard so the operator can add
+      # cross-cutting context without forcing it into any one answer.
+      it "renders a freeform notes textarea below the per-question answers" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        expect(response).to have_http_status(:ok)
+        textarea = Nokogiri::HTML(response.body).at_css("textarea[name='freeform_note']")
+        expect(textarea).to be_present
+        expect(textarea["required"]).to be_nil
+      end
     end
 
     context "when a question contains markdown" do
@@ -515,7 +527,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
-      def submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: nil, inbox_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+      def submit_inbox_answers(issue:, questions:, answers:, inbox_project_id: nil, inbox_kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, extra: {})
         params = {
           questions: questions,
           answers: answers,
@@ -526,6 +538,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           inbox_kind: inbox_kind.nil? ? "" : inbox_kind,
           inbox_project_id: inbox_project_id
         }.compact
+        params.merge!(extra) if extra.any?
         post project_issue_clarifying_questions_path(project, issue), params: params
       end
 
@@ -664,6 +677,65 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(textareas.size).to eq(2)
         expect(textareas[0].text).to include("X is a feature")
         expect(textareas[1].text.strip).to eq("")
+      end
+
+      it "forwards the freeform note to SubmitAnswers and posts it under the stable marker" do
+        project.update!(auto_pick_enabled: true, active: true)
+        freeform_note = "Cross-cutting context the operator added outside the questions."
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "X is a feature", "Yes, by default" ],
+          inbox_project_id: project.id,
+          extra: { freeform_note: freeform_note }
+        )
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("<!-- paid:clarifying-answers:freeform-notes -->")
+            .and(a_string_including(freeform_note))
+        )
+      end
+
+      it "submits successfully when the freeform note is left blank" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "X is a feature", "Yes, by default" ],
+          inbox_project_id: project.id,
+          extra: { freeform_note: "" }
+        )
+
+        expect(github_client).to have_received(:add_comment) do |_repo, _number, body|
+          expect(body).not_to include("<!-- paid:clarifying-answers:freeform-notes -->")
+        end
+        expect(response).to be_redirect
+      end
+
+      it "repopulates the freeform textarea from flash when validation fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        freeform_note = "Theme across both questions: keep the change reversible."
+
+        submit_inbox_answers(
+          issue:,
+          questions:,
+          answers: [ "X is a feature", "" ],
+          inbox_project_id: project.id,
+          extra: { freeform_note: freeform_note }
+        )
+
+        follow_redirect!
+
+        freeform_textarea = Nokogiri::HTML(response.body)
+          .at_css("turbo-frame#inbox-detail")
+          .at_css("textarea[name='freeform_note']")
+
+        expect(freeform_textarea).to be_present
+        expect(freeform_textarea.text).to include(freeform_note)
       end
 
       it "repopulates the inbox textareas from flash when the GitHub post fails" do

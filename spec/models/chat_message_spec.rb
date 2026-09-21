@@ -47,6 +47,32 @@ RSpec.describe ChatMessage do
     end
   end
 
+  describe "#rate_limit_paused?" do
+    # @spec CHAT-API-017
+    it "is true for a system message flagged as a rate-limit pause" do
+      message = build(:chat_message, :system, metadata: { "rate_limit_paused" => true })
+      expect(message.rate_limit_paused?).to be true
+    end
+
+    it "is false for a regular system message" do
+      message = build(:chat_message, :system)
+      expect(message.rate_limit_paused?).to be false
+    end
+  end
+
+  describe "#provider_error_notice?" do
+    # @spec CHAT-API-017
+    it "is true for a system message flagged as a provider-error notice" do
+      message = build(:chat_message, :system, metadata: { "provider_error_notice" => true })
+      expect(message.provider_error_notice?).to be true
+    end
+
+    it "is false for a regular system message" do
+      message = build(:chat_message, :system)
+      expect(message.provider_error_notice?).to be false
+    end
+  end
+
   describe "#display_content" do
     # @spec CHAT-API-016
     it "hides a leading reasoning block while keeping the answer and stored content" do
