@@ -38,6 +38,21 @@ Temporal workflow. Provisioning, setup, and preflight consume worker/container
 capacity, so operators and capacity controls must see that work as active
 rather than as ordinary waiting queue depth.
 
+## Human-input pauses and stale recovery
+
+Stale recovery distinguishes a recoverable execution pause from a deliberate
+`create_feature` clarification wait. A paused `create_feature` run whose issue
+is in `needs_input` is owned by the human-answer flow, not the stale-run
+detector: it remains paused regardless of age until that flow or another
+explicit supported action requeues it. Other paused runs retain the bounded
+stale-recovery policy.
+
+Each clarification round has a run-persisted identity embedded in its GitHub
+comment. The identity is saved before posting. A retry or restarted workflow
+first reconciles issue comments with that identity, then persists the local
+needs-input state without reposting if GitHub already accepted the comment.
+Answering clears the identity, allowing a later genuinely new round to post.
+
 ## Worker Capacity Model
 
 Temporal worker configuration derives the minimum Active Record pool size from

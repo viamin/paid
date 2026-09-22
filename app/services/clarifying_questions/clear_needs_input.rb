@@ -91,6 +91,7 @@ module ClarifyingQuestions
     # need a wording- or position-dependent answer mapping here.
     # @spec FEATURE-CREATION-002
     def assemble_and_resume_create_feature!(agent_run, issue, label)
+      agent_run.clear_feature_clarification_round!
       # For a needs_input source, paid_state stays as-is (the run is
       # resuming, not being reset to "new"), so the paid_state-change
       # callback on Issue does NOT fire — the issue is no longer waiting on

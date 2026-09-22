@@ -204,6 +204,17 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         expect(issue.reload.needs_input_questions).to be_nil
       end
 
+      # @spec TEMPORAL-ORCHESTRATION-007
+      it "clears the clarification round identity so a later round can post" do
+        agent_run.update!(external_metadata: agent_run.external_metadata.merge(
+          "feature_clarification_round_id" => "clarification-round"
+        ))
+
+        described_class.call(project: project, issue: issue)
+
+        expect(agent_run.reload.external_metadata).not_to have_key("feature_clarification_round_id")
+      end
+
       it "drops the needs-input label locally" do
         described_class.call(project: project, issue: issue)
 
