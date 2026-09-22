@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -99,6 +99,15 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-09-19
+  apple-verification-live-validation:
+    title: Apple Verification Live Validation
+    path: docs/intent/apple-verification-live-validation/apple-verification-live-validation-design.md
+    specs: docs/intent/apple-verification-live-validation/apple-verification-live-validation-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-09-22
+    blockedBy: [apple-verification-workers, apple-guest-execution, apple-verification-network-policy]
   auto-pick-queue:
     title: Auto-Pick Queue
     path: docs/intent/auto-pick-queue/auto-pick-queue-design.md

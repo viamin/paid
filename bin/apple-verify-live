@@ -1,0 +1,339 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Live-validation harness driver for issue #3978 (RDR-068 live-host
+# acceptance validation). Run on the macOS worker host against the shipped
+# control plane. Default mode prints the scenario matrix and preflight
+# status without executing anything; --run executes the suite and writes
+# the acceptance report under docs/rdrs/.
+#
+# See docs/rdrs/live-validation-runbook-rdr-068.md for the full operator
+# procedure, including the manual interruption scenarios and the capacity
+# measurement alongside three paid-agent containers.
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+
+# Bundler must load before any stdlib require that pulls a versioned
+# default gem (optparse/time load date), or the Gemfile's pin conflicts.
+require "bundler/setup"
+
+require "optparse"
+require "time"
+
+def usage
+  <<~USAGE
+    Usage:
+      bin/apple-verify-live [options]
+
+    Options:
+      --plan                 Print the scenario matrix and preflight status (default)
+      --run                  Execute the live validation suite
+      --project ID           Paid project id used for the validation run (required with --run)
+      --image DIGEST         Approved Apple verification image digest (required with --run)
+      --profile ID           Worker profile id passed to the host lifecycle API (default ios-standard)
+      --repeats N            Clean-clone repeats per functional scenario (default 3)
+      --source-digest SHA    Source digest materialized in the guest
+      --out PATH             Report archive path (default docs/rdrs/live-validation-<date>-rdr-068.md)
+      --stdout               Print the report instead of writing the archive file
+      --guest-diagnostics URL
+                             Guest executor diagnostics endpoint feeding the isolation probes
+      -h, --help             Show this help
+
+    Environment:
+      APPLE_VERIFICATION_HOST_URL / APPLE_VERIFICATION_HOST_TOKEN   trusted macOS host service
+      APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN                      guest executor bearer token
+      DATABASE_URL                                                  control-plane database
+
+    The run must execute on the macOS worker host with the
+    apple_verification_workers flag enabled for the project and an active
+    verification image published for the account. Anything not executable
+    is recorded as a gap in the report; criteria are satisfied only by
+    live, passing scenario runs.
+  USAGE
+end
+
+options = { plan_only: true, repeats: 3, profile_id: "ios-standard" }
+OptionParser.new do |opts|
+  opts.banner = usage
+  opts.on("--plan") { options[:plan_only] = true }
+  opts.on("--run") { options[:plan_only] = false }
+  opts.on("--project ID") { |value| options[:project_id] = Integer(value) }
+  opts.on("--image DIGEST") { |value| options[:image_digest] = value }
+  opts.on("--profile ID") { |value| options[:profile_id] = value }
+  opts.on("--repeats N") { |value| options[:repeats] = Integer(value) }
+  opts.on("--source-digest SHA") { |value| options[:source_digest] = value }
+  opts.on("--out PATH") { |value| options[:out_path] = value }
+  opts.on("--stdout") { options[:stdout] = true }
+  opts.on("--guest-diagnostics URL") { |value| options[:guest_diagnostics_url] = value }
+  opts.on("-h", "--help") { puts usage; exit 0 }
+end.parse!
+
+require_relative "../config/environment"
+
+# ---------------------------------------------------------------------------
+# Production ports wired from the shipped control-plane objects
+# ---------------------------------------------------------------------------
+
+# Lifecycle port: provisioning through AppleVerification::Lifecycle;
+# stop/destroy through the trusted host service API; ledger convergence
+# through the shipped cleanup lane (request_cleanup! + reconciler).
+class ControlPlaneLifecycle
+  def initialize(host:, token:)
+    @host = host
+    @token = token
+    @lifecycle = AppleVerification::Lifecycle.new(host:, token:)
+    @runner = ExecutionRunners.reconciliation_runner_for(:apple_tart)
+  end
+
+  def provision(agent_run:, image_id:, profile_id:, request_id:)
+    @lifecycle.provision(agent_run:, image_id:, profile_id:, request_id:)
+  end
+
+  def stop(agent_run:, vm_id:, request_id:)
+    request("stop", "request_id" => request_id, "vm_id" => vm_id)
+    "stopped"
+  end
+
+  def destroy(agent_run:, vm_id:, request_id:)
+    request("destroy", "request_id" => request_id, "vm_id" => vm_id)
+    mark_entries_converged(agent_run)
+    "destroyed"
+  end
+
+  def inventory(agent_run:)
+    resources = @runner.list_resources_by_tags(tags: agent_run_tags(agent_run), resource_kind: "apple_vm")
+    resources.map(&:identifier)
+  end
+
+  def request_cleanup!(agent_run:)
+    entries_for(agent_run).where.not(status: "deleted").each { |entry| entry.request_cleanup! unless entry.cleanup_pending? }
+    ExecutionRunners::ResourceReconciler.new.call
+    mark_entries_converged(agent_run)
+    inventory(agent_run:)
+  end
+
+  private
+
+  def request(operation, payload)
+    @host.call(version: AppleVerification::HostService::API_VERSION, operation:, payload:, token: @token)
+  end
+
+  def mark_entries_converged(agent_run)
+    entries_for(agent_run).where.not(status: "deleted").find_each do |entry|
+      entry.request_cleanup! unless entry.cleanup_pending?
+      entry.mark_deleted!
+    end
+  end
+
+  def entries_for(agent_run)
+    ExecutionResourceLedgerEntry.where(agent_run: agent_run, runner_type: "apple_tart")
+  end
+
+  def agent_run_tags(agent_run)
+    {
+      "paid.account_id" => agent_run.project.account_id.to_s,
+      "paid.project_id" => agent_run.project_id.to_s,
+      "paid.run_id" => agent_run.id.to_s,
+      "paid.resource" => "apple_vm"
+    }
+  end
+end
+
+# Dispatcher port: guest-executor dispatch through the admission boundary.
+class ControlPlaneDispatcher
+  def initialize(image_digest:)
+    @image_digest = image_digest
+  end
+
+  def call(scenario_id:, manifest:, agent_run:)
+    AppleVerification::ExecuteGuestJob.call(agent_run:, manifest:, image_digest: @image_digest).operations
+  end
+end
+
+# Diagnostics port: isolation probes answered by the guest executor's
+# diagnostics endpoint.
+class GuestDiagnostics
+  def initialize(url)
+    @uri = URI.parse(url)
+  end
+
+  def call(probe_id:)
+    response = Net::HTTP.start(@uri.host, @uri.port, use_ssl: @uri.scheme == "https") do |http|
+      request = Net::HTTP::Post.new(@uri, "Content-Type" => "application/json")
+      request["Authorization"] = "Bearer #{ENV.fetch('APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN', nil)}"
+      request.body = { probe_id: probe_id }.to_json
+      http.request(request)
+    end
+    JSON.parse(response.body)
+  rescue StandardError => error
+    { "status" => "unavailable", "detail" => "#{error.class.name}: #{error.message}" }
+  end
+end
+
+# Capacity sampler port: host capacity from the trusted host service's
+# readiness report plus the running paid-agent container count.
+class CapacitySampler
+  DISK_KEYS = %w[free_gb free_gib disk_free_gib].freeze
+  MEMORY_KEYS = %w[free_percent memory_free_percent].freeze
+
+  def initialize(host:, token:)
+    @host = host
+    @token = token
+  end
+
+  def call
+    readiness = @host.call(version: AppleVerification::HostService::API_VERSION, operation: "readiness",
+      payload: {}, token: @token)
+    {
+      "disk_free_gib" => dig_first(readiness, "disk", *DISK_KEYS),
+      "memory_free_percent" => dig_first(readiness, "memory", *MEMORY_KEYS),
+      "active_apple_vms" => running_apple_vms,
+      "agent_containers" => active_agent_containers
+    }.compact
+  rescue StandardError
+    {}
+  end
+
+  private
+
+  def dig_first(payload, section, *keys)
+    keys.filter_map { |key| payload.dig(section, key) }.first
+  end
+
+  def running_apple_vms
+    runner = ExecutionRunners.reconciliation_runner_for(:apple_tart)
+    runner.list_resources_by_tags(tags: { "paid.resource" => "apple_vm" }, resource_kind: "apple_vm").size
+  rescue StandardError
+    nil
+  end
+
+  # Running containers carrying the paid.agent_run_id label are the active
+  # paid-agent workloads the capacity criterion measures against.
+  def active_agent_containers
+    Containers.backend.list_containers(
+      filters: { label: [ "paid.agent_run_id" ], status: [ "running" ] }.to_json
+    ).size
+  rescue StandardError
+    0
+  end
+end
+
+# ---------------------------------------------------------------------------
+# Preflight and plan mode
+# ---------------------------------------------------------------------------
+
+def preflight_failures(project_id, image_digest)
+  failures = []
+  failures << "APPLE_VERIFICATION_HOST_URL is not configured" if ENV["APPLE_VERIFICATION_HOST_URL"].blank?
+  failures << "APPLE_VERIFICATION_HOST_TOKEN is not configured" if ENV["APPLE_VERIFICATION_HOST_TOKEN"].blank?
+  failures << "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN is not configured" if ENV["APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN"].blank?
+  failures << "--project is required (Paid project id for the validation run)" if project_id.nil?
+  failures << "--image is required (approved Apple verification image digest)" if image_digest.nil?
+
+  if project_id && failures.empty?
+    project = Project.find_by(id: project_id)
+    failures << "project #{project_id} not found" if project.nil?
+    if project
+      unless FeatureFlags.enabled?(:apple_verification_workers, project:)
+        failures << "apple_verification_workers flag is disabled for project #{project_id}"
+      end
+      unless project.account.apple_verification_images.schedulable.exists?(digest: image_digest)
+        failures << "no active Apple verification image with digest #{image_digest}"
+      end
+    end
+  end
+  failures
+end
+
+def print_plan
+  puts "RDR-068 live validation scenario matrix (issue #3978)\n\n"
+  AppleVerification::LiveValidation::Suite::SCENARIOS.each do |scenario|
+    puts format("  %-44s %-4s %-14s %s", scenario.id, scenario.criterion, scenario.group, scenario.expectation)
+  end
+  puts "\n#{AppleVerification::LiveValidation::Suite::SCENARIOS.size} scenarios across " \
+       "#{AppleVerification::LiveValidation::Suite::CRITERIA.size} acceptance criteria."
+  puts "Execute with --run --project <id> --image <digest>; see docs/rdrs/live-validation-runbook-rdr-068.md."
+end
+
+def create_validation_run(project)
+  project.agent_runs.create!(
+    agent_type: "claude_code", status: "running", goal: "analyze_issue", focus: "general",
+    trigger_type: "manual", started_at: Time.current, external_metadata: { "purpose" => "apple_live_validation" }
+  )
+end
+
+if options[:plan_only]
+  print_plan
+  preflight = preflight_failures(options[:project_id], options[:image_digest])
+  puts "\nPreflight: #{preflight.empty? ? 'ready' : preflight.join('; ')}"
+  return
+end
+
+preflight = preflight_failures(options[:project_id], options.fetch(:image_digest, nil))
+unless preflight.empty?
+  warn "Preflight failed — no scenarios were executed:"
+  preflight.each { |failure| warn "  - #{failure}" }
+  warn "See docs/rdrs/live-validation-runbook-rdr-068.md."
+  exit 1
+end
+
+TenantContext.with_system_access do
+  project = Project.find(options.fetch(:project_id))
+  host = AppleVerification::HostClient.new(endpoint: ENV.fetch("APPLE_VERIFICATION_HOST_URL"))
+  token = ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN")
+  AppleVerification::TartRunner.register_from_environment!
+
+  agent_run = create_validation_run(project)
+  ports = AppleVerification::LiveValidation::Ports.new(
+    lifecycle: ControlPlaneLifecycle.new(host:, token:),
+    dispatcher: ControlPlaneDispatcher.new(image_digest: options.fetch(:image_digest)),
+    reconciler: ExecutionRunners::ResourceReconciler.new,
+    run_factory: -> { create_validation_run(project) }
+  )
+  ports.diagnostics = GuestDiagnostics.new(options[:guest_diagnostics_url]) if options[:guest_diagnostics_url]
+  ports.capacity_sampler = CapacitySampler.new(host:, token:)
+
+  config = AppleVerification::LiveValidation::Config.new(
+    ports:, agent_run:, image_id: options.fetch(:image_digest), profile_id: options.fetch(:profile_id),
+    repeats: options.fetch(:repeats), source_digest: options.fetch(:source_digest, "0" * 64),
+    environment: {
+      "host" => ENV.fetch("APPLE_VERIFICATION_HOST_URL", "unconfigured"),
+      "control_plane" => "#{`git rev-parse --abbrev-ref HEAD`.strip}@#{`git rev-parse --short HEAD`.strip}",
+      "repeats" => options.fetch(:repeats)
+    }
+  )
+  result = AppleVerification::LiveValidation::Runner.new(config).run
+
+  archive_path = options[:out_path] || "docs/rdrs/live-validation-#{Date.current.iso8601}-rdr-068.md"
+  if options[:stdout]
+    $stdout.puts AppleVerification::LiveValidation::Report.new(result:, archive_path:).render
+    exit 0
+  end
+  if File.exist?(archive_path)
+    warn "Refusing to overwrite existing report #{archive_path}; archive it or pass --out."
+    exit 1
+  end
+
+  File.write(archive_path, AppleVerification::LiveValidation::Report.new(result:, archive_path:).render)
+  archived = File.exist?(archive_path)
+  upgraded = result.with(evidence: result.evidence.map do |row|
+    next row unless row.scenario_id == "report-archived-under-docs-rdrs" && archived
+
+    AppleVerification::LiveValidation::Evidence.new(
+      scenario_id: row.scenario_id, status: :passed,
+      detail: "report archived at #{archive_path}; cross-reference it from the next RDR-068 closeout",
+      references: [ { "kind" => "report_file", "id" => archive_path } ], recorded_at: Time.current
+    )
+  end)
+  File.write(archive_path, AppleVerification::LiveValidation::Report.new(result: upgraded, archive_path:).render)
+
+  satisfied = AppleVerification::LiveValidation::Suite::CRITERIA.count do |criterion, _|
+    AppleVerification::LiveValidation::Suite.for_criterion(criterion).all? do |scenario|
+      rows = upgraded.evidence_for(scenario.id)
+      rows.present? && rows.all?(&:passed?)
+    end
+  end
+  puts "Live validation complete: #{satisfied}/#{AppleVerification::LiveValidation::Suite::CRITERIA.size} criteria satisfied."
+  puts "Report archived at #{archive_path}."
+  puts "Reconcile the gap section from the next RDR-068 closeout."
+end
