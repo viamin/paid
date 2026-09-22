@@ -123,10 +123,18 @@ clone. Operator action:
    ```bash
    tart clone ghcr.io/cirruslabs/macos-ventura-base:latest paid-macos-base
    ```
-2. Confirm the local digest matches the expected `sha256:` value:
+2. Confirm the local directory digest matches the expected `sha256:`
+   value. `tart list` does not emit image digests; the preflight
+   recursively SHA-256-hashes every non-hidden file under
+   `<TART_HOME>/vms/paid-macos-base/` and compares it against the
+   published `AppleVerificationImage#digest`. The same verification can
+   be run by hand:
    ```bash
-   shasum -a 256 paid-macos-base
-   # Compare against the value in the worker profile definition.
+   find "$TART_HOME/vms/paid-macos-base" -type f ! -name '.*' \
+     -print0 | sort -z \
+     | xargs -0 shasum -a 256 \
+     | shasum -a 256
+   # Must print the same sha256: value published in the worker profile.
    ```
 3. Publish the `AppleVerificationImage` row in the admin UI (or via
    `bin/rails runner 'AppleVerificationImage.create!(...)'`), filling
@@ -363,7 +371,7 @@ Operator responsibilities are limited to:
 | Preflight reports a `gap` on `virtualization_permission`. | The toggle has not been enabled for the host-service account, or the host has not been rebooted. | Re-enable the toggle, reboot, re-run `--preflight`. |
 | Preflight reports a `gap` on `tart_binary`. | Tart is older than major 2, or not on `PATH`. | `brew upgrade cirruslabs/cli/tart`, confirm with `tart --version`. |
 | Preflight reports a `gap` on `softnet`. | `sudo tart softnet start` has not been run, or the daemon was unloaded at boot. | Run `sudo tart softnet start`, confirm with `tart softnet status`. |
-| Preflight reports a `gap` on `approved_image`. | The local `paid-macos-base` digest does not match the published `AppleVerificationImage#digest`. | Re-clone or republish; both must report the same `sha256:<hex>`. |
+| Preflight reports a `gap` on `approved_image`. | The local `paid-macos-base` directory digest does not match the published `AppleVerificationImage#digest` (the preflight SHA-256-hashes every non-hidden file under `<TART_HOME>/vms/paid-macos-base/` and compares it). | Re-clone or republish; both must report the same `sha256:<hex>`. |
 | Preflight reports a `gap` on `xcode_toolchain`. | Xcode license not accepted, or `xcode-select` points at a non-developer directory. | `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer && sudo xcodebuild -license accept`. |
 | Preflight reports a `gap` on `simulator_runtimes`. | The iOS Simulator runtime has not been downloaded for the current Xcode. | `xcodebuild -downloadPlatform iOS`; repeat for every runtime the worker profile declares. |
 | Preflight reports a `gap` on `guest_gui_account`. | The `paidguest` account is missing, has admin group membership, or is iCloud-linked. | Re-create the account via `sysadminctl -addUser` (no Apple ID, no admin group), re-run `--preflight`. |

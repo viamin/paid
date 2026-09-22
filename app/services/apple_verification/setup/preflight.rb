@@ -163,17 +163,20 @@ module AppleVerification
       end
 
       def check_approved_image
-        result = shell.run("tart", "list")
-        return gap(:approved_image, "tart list failed: #{result.stderr.to_s.strip.presence || 'unknown error'}",
-          "Install Tart and confirm the immutable base image is reachable, then run: tart list.") unless result.success?
+        vm_names = shell.local_tart_vm_names
+        if vm_names.empty?
+          return gap(:approved_image,
+            "no local Tart VM directories found under #{shell.tart_home_dir}/vms",
+            "Clone the immutable image: tart clone <source-image> paid-macos-base, then publish the matching AppleVerificationImage row via the admin UI with the exact digest.")
+        end
 
-        joined = result.stdout_lines.join(" ")
-        matched = approved_image_digests.find { |digest| joined.include?(digest_prefix(digest)) }
-        if matched
-          pass(:approved_image, "approved image digest #{matched} is available locally")
+        match = find_matching_image(vm_names)
+        if match
+          pass(:approved_image,
+            "approved image digest #{match[:approved]} matches local VM #{match[:name]} (sha256:#{match[:computed]})")
         else
           gap(:approved_image,
-            "no approved image matched; approved digests=#{approved_image_digests.inspect}, local output=#{result.stdout_lines.first(5).inspect}",
+            "no approved image matched a local Tart VM; approved digests=#{approved_image_digests.inspect}, local VMs=#{vm_names.inspect}",
             "Clone the immutable image: tart clone <source-image> paid-macos-base, then publish the matching AppleVerificationImage row via the admin UI with the exact digest.")
         end
       end
@@ -343,8 +346,23 @@ module AppleVerification
         result.stdout_lines.count { |line| line.start_with?("paid-vm") || line.include?("paid-vm") }
       end
 
-      def digest_prefix(digest)
-        digest.to_s.delete_prefix("sha256:")[0, 12]
+      def find_matching_image(vm_names)
+        vm_names.each do |name|
+          computed = shell.vm_dir_digest(name)
+          next if computed.nil?
+
+          approved = approved_image_digests.find { |digest| digests_match?(digest, computed) }
+          return { name:, approved:, computed: } if approved
+        end
+        nil
+      end
+
+      def digests_match?(approved, computed)
+        normalize_digest(approved) == normalize_digest(computed)
+      end
+
+      def normalize_digest(digest)
+        digest.to_s.delete_prefix("sha256:").downcase
       end
 
       def pass(id, detail)

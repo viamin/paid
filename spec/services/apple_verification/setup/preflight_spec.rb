@@ -20,6 +20,9 @@ RSpec.describe AppleVerification::Setup::Preflight do
   end
 
   let(:command_responses) { default_responses }
+  let(:approved_image_digest) { "sha256:#{'a' * 64}" }
+  let(:local_tart_vm_names) { [ "paid-macos-base" ] }
+  let(:vm_dir_digests) { { "paid-macos-base" => approved_image_digest.delete_prefix("sha256:") } }
 
   def default_responses
     {
@@ -27,7 +30,7 @@ RSpec.describe AppleVerification::Setup::Preflight do
       [ "which", "tart" ] => [ "/opt/homebrew/bin/tart", "", status(0) ],
       [ "tart", "--version" ] => [ "2.37.0", "", status(0) ],
       [ "tart", "softnet", "status" ] => [ "softnet running", "", status(0) ],
-      [ "tart", "list" ] => [ "paid-macos-base sha256:abcdef1234567890\n", "", status(0) ],
+      [ "tart", "list" ] => [ "", "", status(0) ],
       [ "xcode-select", "-p" ] => [ "/Applications/Xcode.app/Contents/Developer", "", status(0) ],
       [ "xcodebuild", "-version" ] => [ "Xcode 26.6\nBuild version 17F113", "", status(0) ],
       [ "xcrun", "simctl", "list", "runtimes" ] => [ "iOS 17.0\nmacOS 14.0", "", status(0) ],
@@ -74,6 +77,13 @@ RSpec.describe AppleVerification::Setup::Preflight do
         "network" => { "proxy_relay" => "paid-egress" }
       }
     )
+    allow(shell).to receive_messages(
+      tart_home_dir: "/tmp/paid-tart-home",
+      local_tart_vm_names: local_tart_vm_names
+    )
+    allow(shell).to receive(:vm_dir_digest) do |name|
+      vm_dir_digests.fetch(name.to_s, nil)
+    end
   end
 
   describe "#call" do
@@ -81,7 +91,7 @@ RSpec.describe AppleVerification::Setup::Preflight do
       report = described_class.call(
         shell:,
         profile_id: "ios-standard",
-        approved_image_digests: [ "sha256:abcdef1234567890" ],
+        approved_image_digests: [ approved_image_digest ],
         host_url: "https://macos-worker.example/lifecycle",
         host_token: "host-token"
       )
@@ -139,11 +149,11 @@ RSpec.describe AppleVerification::Setup::Preflight do
     end
 
     it "records a gap when no approved image digest matches a local Tart image" do
-      command_responses[[ "tart", "list" ]] = [ "unrelated-image\n", "", status(0) ]
+      allow(shell).to receive(:vm_dir_digest).with("paid-macos-base").and_return("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 
       report = described_class.call(
         shell:,
-        approved_image_digests: [ "sha256:abcdef1234567890" ],
+        approved_image_digests: [ approved_image_digest ],
         host_url: "https://macos-worker.example/lifecycle",
         host_token: "host-token"
       )
@@ -151,6 +161,65 @@ RSpec.describe AppleVerification::Setup::Preflight do
       check = report.results.find { |result| result.id == :approved_image }
       expect(check.status).to eq(:gap)
       expect(check.fix).to include("tart clone <source-image> paid-macos-base")
+    end
+
+    it "records a gap when there are no local Tart VM directories" do
+      allow(shell).to receive(:local_tart_vm_names).and_return([])
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [ approved_image_digest ],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :approved_image }
+      expect(check.status).to eq(:gap)
+      expect(check.detail).to include("/tmp/paid-tart-home/vms")
+    end
+
+    it "rejects digest matches that share only a prefix" do
+      prefix = approved_image_digest[0, 16]
+      allow(shell).to receive(:vm_dir_digest).with("paid-macos-base").and_return(prefix.delete_prefix("sha256:") + "deadbeef")
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [ approved_image_digest ],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :approved_image }
+      expect(check.status).to eq(:gap)
+    end
+
+    it "passes when the local VM directory digest matches an approved digest exactly" do
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [ approved_image_digest ],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :approved_image }
+      expect(check.status).to eq(:pass)
+      expect(check.detail).to include("paid-macos-base")
+      expect(check.detail).to include(approved_image_digest.delete_prefix("sha256:"))
+    end
+
+    it "compares approved and computed digests case-insensitively" do
+      allow(shell).to receive(:vm_dir_digest).with("paid-macos-base")
+        .and_return(approved_image_digest.delete_prefix("sha256:").upcase)
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [ approved_image_digest.downcase ],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :approved_image }
+      expect(check.status).to eq(:pass)
     end
 
     it "records a gap when Xcode license is not accepted" do
@@ -308,7 +377,7 @@ RSpec.describe AppleVerification::Setup::Preflight do
     it "marks the report ready when every check passes" do
       report = described_class.call(
         shell:,
-        approved_image_digests: [ "sha256:abcdef1234567890" ],
+        approved_image_digests: [ approved_image_digest ],
         host_url: "https://macos-worker.example/lifecycle",
         host_token: "host-token"
       )

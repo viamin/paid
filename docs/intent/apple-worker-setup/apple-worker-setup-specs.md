@@ -12,15 +12,19 @@
 - [x] **APPLE-SETUP-002** — When preflight runs, the system SHALL validate
   macOS virtualization permission (`sysctl kern.hv_vmm_present`),
   Tart binary presence and major version, Softnet reachability, the
-  approved immutable image identity (`AppleWorkerProfile#image_digest`
-  against `tart list`), the Xcode toolchain and accepted license,
-  installed Simulator runtimes, the dedicated non-admin guest GUI account
-  posture, host-service authentication via
-  `APPLE_VERIFICATION_HOST_URL`/`APPLE_VERIFICATION_HOST_TOKEN`, proxy
-  enforcement, and operator-configurable capacity (free disk, free
-  memory, active Apple VM count, projected guest disk).
-  *Tests:* `spec/services/apple_verification/setup/preflight_spec.rb`
-  *Code:* `AppleVerification::Setup::Preflight`
+  approved immutable image identity (recursive SHA-256 over every
+  non-hidden file under `<TART_HOME>/vms/<name>/` matched against the
+  full `AppleWorkerProfile#image_digest` — `tart list` does not emit
+  digests), the Xcode toolchain and accepted license, installed
+  Simulator runtimes, the dedicated non-admin guest GUI account posture,
+  host-service authentication via `APPLE_VERIFICATION_HOST_URL`/
+  `APPLE_VERIFICATION_HOST_TOKEN`, proxy enforcement, and
+  operator-configurable capacity (free disk, free memory, active Apple
+  VM count, projected guest disk).
+  *Tests:* `spec/services/apple_verification/setup/preflight_spec.rb`,
+  `spec/services/apple_verification/setup/shell_spec.rb`
+  *Code:* `AppleVerification::Setup::Preflight`,
+  `AppleVerification::Setup::Shell`
 - [x] **APPLE-SETUP-003** — When the setup command runs in `--smoke` mode,
   the system SHALL exercise only the shipped control-plane boundaries
   (`AppleVerification::Lifecycle`, `AppleVerification::HostService`,
