@@ -33,6 +33,28 @@ RSpec.describe AppleVerification::Lifecycle do
     )
   end
 
+  it "links the ledger entry to the supplied apple verification attempt so destroy can find it" do
+    stub_clone_and_start_responses
+    project = agent_run.project
+    account = project.account
+    attempt = create(:apple_verification_attempt,
+      apple_verification_workflow_revision: create(:apple_verification_workflow_revision, project:, account:),
+      project:,
+      account:)
+
+    described_class.new(host:, token: "host-token").provision(
+      agent_run:,
+      image_id: "paid-macos",
+      profile_id: "ios-standard",
+      request_id: "request-1",
+      apple_verification_attempt: attempt
+    )
+
+    expect(ExecutionResourceLedgerEntry.last).to have_attributes(
+      apple_verification_attempt_id: attempt.id, status: "active", provider_resource_id: "paid-vm-1"
+    )
+  end
+
   it "reuses the persisted handle and ledger records for a duplicate request" do
     allow(host).to receive(:call).with(
       version: "v1", operation: "clone", token: "host-token", payload: hash_including("image_id" => "paid-macos")
@@ -263,6 +285,15 @@ RSpec.describe AppleVerification::Lifecycle do
     allow(host).to receive(:call).with(
       version: "v1", operation: "inventory", token: "host-token", payload: hash_including("ownership_tags")
     ).and_return([])
+  end
+
+  def stub_clone_and_start_responses
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "clone", token: "host-token", payload: hash_including("image_id" => "paid-macos")
+    ).and_return("vm_id" => "paid-vm-1")
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "start", token: "host-token", payload: hash_including("vm_id" => "paid-vm-1")
+    ).and_return("vm_id" => "paid-vm-1", "connection" => { "ready" => true })
   end
 
   def stub_cleanup_requests
