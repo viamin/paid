@@ -45,6 +45,13 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(unsupported_platform.errors[:base]).to include("unsupported Apple platform")
   end
 
+  it "rejects a persisted profile with a malformed Xcode version constraint" do # @spec APPLE-WORKER-001
+    profile = build(:apple_worker_profile, constraints: { "platforms" => [ "ios" ], "xcode_version" => "latest" })
+
+    expect(profile).not_to be_valid
+    expect(profile.errors[:base]).to include(/not a valid version constraint/)
+  end
+
   it "binds and freezes approval inputs while superseding the prior approval" do # @spec APPLE-WORKER-004
     project = create(:project)
     actor = create(:user, account: project.account)

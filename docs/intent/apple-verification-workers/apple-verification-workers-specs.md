@@ -46,3 +46,29 @@
   `spec/services/apple_verification/lifecycle_spec.rb`
   *Code:* `AppleVerification::TartProvider`, `AppleVerification::Lifecycle`,
   `AppleVerification::TartRunner`, `ExecutionRunners::ResourceReconciler`
+- [x] **APPLE-WORKER-011** — When Paid parses `.paid/apple-verification.yml`,
+  the system SHALL accept only typed fields describing Xcode projects or
+  workspaces, shared schemes, test plans, Swift Package Manager dependency
+  resolution, iOS/iPadOS Simulator destinations, and native macOS profiles,
+  and SHALL reject an unknown declarative flow operation or an unsupported
+  dependency bootstrap system with a deterministic diagnostic before any
+  worker is provisioned.
+  *Tests:* `spec/services/apple_verification/configuration_parser_spec.rb`
+  *Code:* `AppleVerification::ConfigurationParser`, `AppleVerification::Configuration`
+- [x] **APPLE-WORKER-012** — When Paid infers a starting configuration from
+  repository contents, it SHALL derive candidate profiles only from detected
+  Xcode projects/workspaces, shared schemes, test plans, and Swift Package
+  Manager manifests, and the inferred configuration SHALL remain advisory
+  until a user confirms it.
+  *Tests:* `spec/services/apple_verification/infer_configuration_spec.rb`
+  *Code:* `AppleVerification::InferConfiguration`
+- [x] **APPLE-WORKER-013** — When repository configuration is synced for a
+  project, the system SHALL bind a draft workflow revision to the exact file
+  content digest, an active worker profile compatible with every declared
+  platform, Xcode version constraint, and simulator constraint, and
+  required/advisory checks derived from the configuration, and SHALL never
+  mutate an approved revision's binding.
+  *Tests:* `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`,
+  `spec/services/apple_verification_workers/version_requirement_spec.rb`
+  *Code:* `AppleVerificationWorkflowRevisions::SyncFromConfiguration`,
+  `AppleVerificationWorkers::VersionRequirement`
