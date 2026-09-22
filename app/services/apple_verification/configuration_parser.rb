@@ -110,7 +110,7 @@ module AppleVerification
       validate_unknown_keys!("profile #{name} worker", value, VALID_WORKER_KEYS)
       Configuration::WorkerConstraint.new(
         xcode: validate_xcode_constraint!(name, value["xcode"]),
-        simulator: validate_string_constraint!(name, "simulator", value["simulator"])
+        simulator: validate_optional_string!("profile #{name} worker.simulator", value["simulator"])
       )
     end
 
@@ -139,8 +139,8 @@ module AppleVerification
 
       validate_unknown_keys!("profile #{name} xcode", value, VALID_XCODE_KEYS)
 
-      project = value["project"]
-      workspace = value["workspace"]
+      project = validate_optional_string!("profile #{name} xcode.project", value["project"])
+      workspace = validate_optional_string!("profile #{name} xcode.workspace", value["workspace"])
       unless [ project, workspace ].compact.size == 1
         raise ConfigurationError, "profile #{name} xcode must declare exactly one of project or workspace"
       end
@@ -150,7 +150,19 @@ module AppleVerification
         raise ConfigurationError, "profile #{name} xcode.scheme is required"
       end
 
-      Configuration::XcodeTarget.new(project:, workspace:, scheme:, test_plan: value["test_plan"])
+      Configuration::XcodeTarget.new(
+        project:,
+        workspace:,
+        scheme:,
+        test_plan: validate_optional_string!("profile #{name} xcode.test_plan", value["test_plan"])
+      )
+    end
+
+    def validate_optional_string!(context, value)
+      return nil if value.nil?
+      return value if value.is_a?(String) && value.present?
+
+      raise ConfigurationError, "#{context} must be a non-empty string"
     end
 
     def validate_bootstrap!(name, value)

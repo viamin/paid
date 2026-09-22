@@ -56,7 +56,7 @@ module AppleVerificationWorkers
         return candidate unless current
 
         comparison = candidate.version <=> current.version
-        return candidate if (side == :lower ? comparison.positive? : comparison.negative?)
+        return candidate if side == :lower ? comparison.positive? : comparison.negative?
         return current unless comparison.zero?
 
         candidate.exclusive ? candidate : current

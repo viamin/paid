@@ -237,6 +237,27 @@ RSpec.describe AppleVerification::ConfigurationParser do
       .to raise_error(described_class::ConfigurationError, /worker\.simulator/)
   end
 
+  it "accepts a worker constraint that omits simulator (macOS profiles need no simulator)" do # @spec APPLE-WORKER-011
+    configuration = described_class.call(content: mac_yaml)
+
+    expect(configuration.profiles.first.worker.simulator).to be_nil
+    expect(configuration.profiles.first.worker.xcode).to eq("~> 26.0")
+  end
+
+  it "rejects non-string xcode paths with a deterministic diagnostic" do # @spec APPLE-WORKER-011
+    expect {
+      described_class.call(content: ios_yaml.sub("iOS/ColorMatchingLPS.xcodeproj", "42"))
+    }.to raise_error(described_class::ConfigurationError, /xcode\.project/)
+
+    expect {
+      described_class.call(content: mac_yaml.sub("Example.xcworkspace", "42"))
+    }.to raise_error(described_class::ConfigurationError, /xcode\.workspace/)
+
+    expect {
+      described_class.call(content: mac_yaml.sub("Example.xctestplan", "42"))
+    }.to raise_error(described_class::ConfigurationError, /xcode\.test_plan/)
+  end
+
   it "builds a profile without screenshot requirements for build/test-only profiles" do # @spec APPLE-WORKER-011
     yaml = <<~YAML
       version: 1
