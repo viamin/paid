@@ -198,6 +198,21 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Chat")
       end
 
+      # @spec RUNNER-USAGE-011
+      it "does not offer runners disabled for agent runs in the fallback order list" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
+        user.runners.create!(runner_key: "cursor", name: "Agent Fallback", enabled_for_agent_runs: true,
+          enabled_for_fallback: true)
+        user.runners.create!(runner_key: "codex", name: "Chat Only Fallback", enabled_for_agent_runs: false,
+          enabled_for_chat: true, enabled_for_fallback: true)
+
+        get runners_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Enable Agent Fallback as fallback")
+        expect(response.body).not_to include("Enable Chat Only Fallback as fallback")
+      end
+
       # @spec RUNNERS-INDEX-001
       it "renders Status immediately after Runner in the index table" do
         get runners_path
@@ -494,9 +509,11 @@ RSpec.describe "Runners" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
     end
 
-    it "updates runner priority settings from the providers page" do
+    # @spec RUNNER-USAGE-001
+    it "updates runner priority settings and drops agent-run-disabled runners from the fallback order" do
       cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false, enabled_for_chat: true,
+        enabled_for_fallback: true)
       claude = user.runners.find_by!(runner_key: "claude")
 
       patch settings_runners_path, params: {
@@ -513,7 +530,8 @@ RSpec.describe "Runners" do
       expect(settings.default_agent_runner).to eq(cursor.routing_key)
       expect(settings.default_agent_runners_by_goal).to eq("create_pr" => cursor.routing_key, "review" => claude.routing_key)
       expect(settings.fallback_enabled).to be(true)
-      expect(settings.fallback_runners).to eq([ claude.routing_key, codex.routing_key ])
+      expect(settings.fallback_runners).to eq([ claude.routing_key ])
+      expect(settings.fallback_runners).not_to include(codex.routing_key)
     end
 
     it "drops goal-specific defaults whose providers are no longer enabled during reconciliation" do
@@ -562,6 +580,25 @@ RSpec.describe "Runners" do
       expect(user.reload.settings.default_agent_runners_by_goal).to eq(
         "review" => claude.routing_key
       )
+    end
+
+    # @spec RUNNER-USAGE-011
+    it "preserves the fallback flag of runners disabled for agent runs when reconciling flags" do
+      chat_only = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false,
+        enabled_for_chat: true, enabled_for_fallback: true)
+      user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      patch settings_runners_path, params: {
+        user_setting: {
+          default_agent_runner: "claude",
+          fallback_enabled: true,
+          fallback_runners: %w[claude cursor].to_json,
+          enabled_fallback_runner_keys: %w[claude cursor].to_json
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      expect(chat_only.reload.enabled_for_fallback?).to be(true)
     end
 
     it "disables fallback for providers not in enabled_fallback_runner_keys" do
@@ -1594,6 +1631,23 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include('data-runner-form-auth-type-value="api_key"')
       expect(response.body).not_to include('name="runner[auth_type]"')
+    end
+
+    # @spec RUNNER-USAGE-012
+    it "renders usage-permission labels and fallback help text" do
+      runner = user.runners.find_by!(runner_key: "claude")
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Use for agent runs")
+      expect(response.body).to include("Allow this runner for agent runs, including fallback when enabled.")
+      expect(response.body).to include("Use for chat")
+      expect(response.body).to include("Allow this runner for chat sessions, including fallback when enabled.")
+      expect(response.body).to include("Allow fallback for enabled uses")
+      expect(response.body).to include(
+        "Allow this runner as a fallback only for the uses selected above. This does not enable agent runs or chat on its own."
+      )
     end
 
     it "renders the monthly token budget field for API-key runners" do

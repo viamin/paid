@@ -5368,27 +5368,75 @@ expect(container_service).to receive(:execute).with(
         expect(runner_state&.circuit_state).not_to eq("open")
       end
 
-      it "includes configured fallback-only runners even when saved fallback order is empty" do
-        user.runners.find_by!(runner_key: "cursor").update!(
-          enabled_for_agent_runs: false,
-          enabled_for_fallback: true
-        )
+      # Regression for run 7417 (#3974): a chat-only fallback runner
+      # (agent runs disabled, chat + fallback enabled) must not be attempted
+      # for an agent run even when saved in the fallback order.
+      # @spec RUNNER-USAGE-002
+      it "does not attempt runners disabled for agent runs as fallback" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode cursor])
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        chat_only = create(:runner, :api_key, user: user, runner_key: "opencode", name: "OpenRouter Free Chat",
+          provider_api_key: api_key, enabled_for_agent_runs: false, enabled_for_chat: true,
+          enabled_for_fallback: true,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
+        cursor = user.runners.find_by!(runner_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ chat_only.routing_key, cursor.routing_key ])
+
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          call_count == 1 ? rate_limit_failure : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_runner]).to eq("cursor")
+        expect(agent_run.reload.runners_attempted.map { |attempt| attempt["runner"] }).not_to include(chat_only.routing_key)
+      end
+
+      # @spec RUNNER-USAGE-003
+      it "does not insert rate-limit fallbacks disabled for agent runs" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+        chat_only = user.runners.create!(runner_key: "claude", auth_type: "api_key", provider_api_key: api_key,
+          fallback_role: "rate_limit_fallback", enabled_for_agent_runs: false, enabled_for_chat: true,
+          enabled_for_fallback: true)
         user.settings.update!(fallback_enabled: true, fallback_runners: [])
 
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
           call_count += 1
-          if call_count == 1
-            rate_limit_failure
-          else
-            exec_success
-          end
+          call_count == 1 ? rate_limit_failure : exec_success
         end
 
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:success]).to be true
         expect(result[:final_runner]).to eq("copilot")
+        expect(agent_run.reload.runners_attempted.map { |attempt| attempt["runner"] }).not_to include(chat_only.routing_key)
+      end
+
+      # @spec RUNNER-USAGE-004
+      it "skips runners disabled for agent runs after queuing" do
+        pinned = user.runners.find_by!(runner_key: "cursor")
+        agent_run.update!(runner: pinned)
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ user.runners.find_by!(runner_key: "copilot").routing_key ]
+        )
+        pinned.update!(enabled_for_agent_runs: false)
+
+        allow(container_service).to receive(:execute).and_return(exec_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_runner]).to eq("copilot")
+        # Subscription entries are recorded under their runner key
+        # (see #runner_attempt_label).
+        expect(agent_run.reload.runners_attempted).to include(
+          hash_including("runner" => "cursor", "success" => false, "error_type" => "unavailable")
+        )
       end
 
       it "records runner switch when falling back" do
@@ -5935,13 +5983,6 @@ expect(container_service).to receive(:execute).with(
 
       it "executes a rate-limit fallback entry for the same runner key" do
         fallback_provider = create_claude_rate_limit_fallback_provider
-
-        expect_same_provider_rate_limit_fallback_execution(fallback_provider)
-      end
-
-      it "executes a rate-limit fallback entry even when enabled_for_agent_runs is false" do
-        fallback_provider = create_claude_rate_limit_fallback_provider
-        fallback_provider.update!(enabled_for_agent_runs: false)
 
         expect_same_provider_rate_limit_fallback_execution(fallback_provider)
       end

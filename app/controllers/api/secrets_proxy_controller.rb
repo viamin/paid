@@ -285,8 +285,10 @@ module Api
         &.api_key
     end
 
+    # @spec RUNNER-USAGE-005 — the fallback flag never unlocks agent-run key
+    # material on its own; entries must be enabled for agent runs.
     def available_runner_entries(runner_entries)
-      runner_entries.for_agent_runs.or(runner_entries.for_fallback)
+      runner_entries.for_agent_runs
     end
 
     def allowed_knowledge_run_runner_keys

@@ -630,19 +630,28 @@
   </div>
 
   <div class="space-y-3 rounded-lg border border-gray-200 p-4">
-    <div class="flex items-center">
-      <%= form.check_box :enabled_for_agent_runs, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
-      <%= form.label :enabled_for_agent_runs, "Enable for agent runs", class: "ml-3 block text-sm font-medium text-gray-900" %>
+    <div>
+      <div class="flex items-center">
+        <%= form.check_box :enabled_for_agent_runs, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+        <%= form.label :enabled_for_agent_runs, "Use for agent runs", class: "ml-3 block text-sm font-medium text-gray-900" %>
+      </div>
+      <p class="mt-1 ml-7 text-xs text-gray-500">Allow this runner for agent runs, including fallback when enabled.</p>
     </div>
 
-    <div class="flex items-center">
-      <%= form.check_box :enabled_for_chat, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
-      <%= form.label :enabled_for_chat, "Enable for chat sessions", class: "ml-3 block text-sm font-medium text-gray-900" %>
+    <div>
+      <div class="flex items-center">
+        <%= form.check_box :enabled_for_chat, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+        <%= form.label :enabled_for_chat, "Use for chat", class: "ml-3 block text-sm font-medium text-gray-900" %>
+      </div>
+      <p class="mt-1 ml-7 text-xs text-gray-500">Allow this runner for chat sessions, including fallback when enabled.</p>
     </div>
 
-    <div class="flex items-center">
-      <%= form.check_box :enabled_for_fallback, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
-      <%= form.label :enabled_for_fallback, "Allow as fallback runner", class: "ml-3 block text-sm font-medium text-gray-900" %>
+    <div>
+      <div class="flex items-center">
+        <%= form.check_box :enabled_for_fallback, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+        <%= form.label :enabled_for_fallback, "Allow fallback for enabled uses", class: "ml-3 block text-sm font-medium text-gray-900" %>
+      </div>
+      <p class="mt-1 ml-7 text-xs text-gray-500">Allow this runner as a fallback only for the uses selected above. This does not enable agent runs or chat on its own.</p>
     </div>
   </div>
 

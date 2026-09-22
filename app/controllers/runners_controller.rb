@@ -527,9 +527,12 @@ class RunnersController < ApplicationController
 
     # Derive enabled/fallback identifiers from the already-loaded @runners
     # collection to avoid 2 extra queries.
+    # @spec RUNNER-USAGE-011 — the agent fallback list offers only runners
+    # enabled for agent runs; a chat-only fallback runner is managed per
+    # runner, not from this list.
     executable_keys = resource_container_executable_keys.to_set
     enabled_runners = @runners.select { |r| r.enabled_for_agent_runs? && executable_keys.include?(r.runner_key) }
-    fallback_runners = @runners.select { |r| r.enabled_for_fallback? && executable_keys.include?(r.runner_key) }
+    fallback_runners = @runners.select { |r| r.enabled_for_agent_runs? && r.enabled_for_fallback? && executable_keys.include?(r.runner_key) }
 
     @enabled_agent_runners = UserSetting.runner_identifiers_for(enabled_runners, identifiers: true)
     @run_enabled_runners = run_enabled_runners_in_identifier_order(@enabled_agent_runners)
@@ -907,7 +910,9 @@ class RunnersController < ApplicationController
 
   def fallback_candidate_runner_identifiers
     executable_keys = resource_container_executable_keys
-    runners = resource_records.kept_only.for_fallback.where(runner_key: executable_keys).ordered
+    # @spec RUNNER-USAGE-001 — agent fallback candidates require both usage
+    # and fallback permission.
+    runners = resource_records.kept_only.for_agent_runs.for_fallback.where(runner_key: executable_keys).ordered
     UserSetting.runner_identifiers_for(runners, identifiers: true)
   end
 

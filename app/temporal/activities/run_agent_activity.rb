@@ -244,6 +244,23 @@ module Activities
 
           runner = runner_command_key(runner_candidate, agent_run, user_settings.user)
           attempt_label = runner_attempt_label(runner_candidate, agent_run, user_settings.user)
+
+          # @spec RUNNER-USAGE-004 — usage permissions are necessary conditions
+          # at attempt time: a pinned routing key or a fallback order built
+          # before the runner was disabled for agent runs must not bypass the
+          # flag (#3974).
+          runner_entry = runner_entry_for(runner_candidate, user_settings.user)
+          if runner_entry && !runner_entry.enabled_for_agent_runs?
+            agent_run.record_runner_attempt(
+              attempt_label,
+              success: false,
+              error_type: "unavailable",
+              error_message: "Skipped because runner is disabled for agent runs"
+            )
+            index += 1
+            next
+          end
+
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
           resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
           if resolved_model&.failure?
@@ -3104,7 +3121,9 @@ module Activities
 
       executable_keys = RunnerSupport.container_executable_runner_keys
 
-      user.runners.api_key.rate_limit_fallback.for_fallback
+      # @spec RUNNER-USAGE-003 — rate-limit fallback roles cannot bypass the
+      # agent-run usage permission.
+      user.runners.api_key.rate_limit_fallback.for_agent_runs.for_fallback
         .where(runner_key: executable_keys)
         .ordered
         .group_by(&:runner_key)

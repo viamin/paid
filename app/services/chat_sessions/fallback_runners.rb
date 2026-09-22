@@ -30,7 +30,7 @@ module ChatSessions
 
       automatic_candidates = user.runners.kept_only.for_fallback.api_key
         .includes(:provider_api_key, :integration_credential)
-        .where(enabled_for_chat: true).ordered.filter_map do |runner|
+        .for_chat.ordered.filter_map do |runner|
         next unless usable_runner?(runner)
         next if excluded_ids.include?(runner.id)
 
@@ -62,15 +62,19 @@ module ChatSessions
       BuildLlmClient.usable_runner?(runner)
     end
 
+    # @spec RUNNER-USAGE-006
+    # Chat fallback requires both the chat usage permission and the fallback
+    # modifier — fallback never unlocks chat on its own.
     def runner_for_identifier(user, identifier, excluding_ids:)
       if Runner.routing_key?(identifier)
         runner = Runner.for_identifier(user, identifier)
         return nil if runner && excluding_ids.include?(runner.id)
+        return nil unless runner&.enabled_for_chat?
         return nil unless runner&.enabled_for_fallback?
 
         runner
       else
-        user.runners.kept_only.for_fallback.where(runner_key: identifier).ordered.find do |runner|
+        user.runners.kept_only.for_chat.for_fallback.where(runner_key: identifier).ordered.find do |runner|
           usable_runner?(runner) && !excluding_ids.include?(runner.id)
         end
       end
