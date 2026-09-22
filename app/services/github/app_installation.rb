@@ -73,6 +73,8 @@ module Github
       end
 
       parse_response(response)
+    rescue Faraday::Error => e
+      raise Error, "GitHub App installation revoke request failed: #{e.message}"
     end
 
     private
@@ -88,6 +90,8 @@ module Github
       end
 
       parse_response(response)
+    rescue Faraday::Error => e
+      raise Error, "GitHub App installation token request failed: #{e.message}"
     end
 
     def connection

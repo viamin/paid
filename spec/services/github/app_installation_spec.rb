@@ -115,6 +115,18 @@ RSpec.describe Github::AppInstallation do
       expect(stub).not_to have_been_requested
       expect(Rails.cache).to have_received(:delete).with(cache_key)
     end
+
+    it "wraps a transient Faraday failure in Github::AppInstallation::Error and still clears the cache" do
+      allow(Rails.cache).to receive(:read).with(cache_key).and_return(fake_token)
+      allow(Rails.cache).to receive(:delete).with(cache_key)
+      stub_request(:delete, %r{/installation/token}).to_timeout
+
+      expect {
+        described_class.revoke_token(installation_id: installation_id, repo_full_name: repo_full_name)
+      }.to raise_error(Github::AppInstallation::Error, /revoke request failed/)
+
+      expect(Rails.cache).to have_received(:delete).with(cache_key)
+    end
   end
 
   describe "#mint" do
@@ -152,6 +164,18 @@ RSpec.describe Github::AppInstallation do
         expect {
           described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
         }.to raise_error(Github::AppInstallation::Error, /token.*missing/i)
+      end
+    end
+
+    context "when the request fails at the transport level" do
+      before do
+        stub_request(:post, %r{/app/installations/\d+/access_tokens}).to_timeout
+      end
+
+      it "wraps the Faraday error in Github::AppInstallation::Error instead of raising it raw" do
+        expect {
+          described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
+        }.to raise_error(Github::AppInstallation::Error, /token request failed/)
       end
     end
   end
