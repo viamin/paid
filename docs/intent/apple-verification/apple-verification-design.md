@@ -34,3 +34,8 @@ provenance, and failure data without collapsing the failure taxonomy.
 Authorized users can compare any two revisions belonging to the same project.
 The comparison presents fields whose values differ, including digest,
 verification files, checks, lifecycle gate, and status.
+
+This segment renders the records other Apple segments produce; the structured
+result and artifact-ingestion contract behind these views is defined in
+`docs/intent/apple-verification-results/`, and attempt execution in
+`docs/intent/apple-verification-attempts/`.

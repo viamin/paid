@@ -48,7 +48,10 @@ durable external VM identity.
 
 The `apple_verification_workers` feature flag remains default-off. This phase
 implements the trusted host lifecycle boundary; it does not schedule project
-verification or execute guest jobs.
+verification or execute guest jobs. Attempt admission, execution ordering,
+failure classification, gate enforcement, and recovery intent live in
+`docs/intent/apple-verification-attempts/`; the structured results and
+artifact contract lives in `docs/intent/apple-verification-results/`.
 
 *HLD:* `docs/high-level-design.md` → isolation by default and portable providers.
 *RDR:* `docs/rdrs/RDR-068-apple-platform-verification-workers.md`.
