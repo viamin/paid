@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "ostruct"
 require "securerandom"
 
 module AppleVerification
@@ -77,7 +76,8 @@ module AppleVerification
         host_url: ENV["APPLE_VERIFICATION_HOST_URL"].to_s,
         host_token: ENV["APPLE_VERIFICATION_HOST_TOKEN"].to_s,
         guest_executor_token: ENV["APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN"].to_s,
-        image_digest: nil, profile_id: "ios-standard", source_digest: nil)
+        image_digest: nil, profile_id: "ios-standard", source_digest: nil,
+        project_id: nil, attempt_factory: nil)
         @lifecycle = lifecycle
         @dispatcher = dispatcher
         @diagnostics = diagnostics
@@ -87,6 +87,8 @@ module AppleVerification
         @image_digest = image_digest
         @profile_id = profile_id
         @source_digest = source_digest || ("0" * 64)
+        @project_id = project_id
+        @attempt_factory = attempt_factory
       end
 
       def call
@@ -98,7 +100,8 @@ module AppleVerification
       private
 
       attr_reader :lifecycle, :dispatcher, :diagnostics, :host_url, :host_token,
-        :guest_executor_token, :image_digest, :profile_id, :source_digest
+        :guest_executor_token, :image_digest, :profile_id, :source_digest,
+        :project_id, :attempt_factory
 
       def run_scenario(scenario)
         send("run_#{scenario.expectation}", scenario)
@@ -111,15 +114,18 @@ module AppleVerification
         return gap(scenario, "image digest is required to provision a guest") if image_digest.blank?
 
         agent_run = smoke_agent_run
-        return gap(scenario, "no Paid project available for the smoke agent run; provision the host with at least one project before smoke runs") unless agent_run
+        return gap(scenario, "no Paid project matches project_id=#{project_id.inspect}; pass --project with a Paid project id and ensure the project exists before smoke runs") unless agent_run
+
+        attempt = smoke_attempt(agent_run)
+        return gap(scenario, "no Apple verification attempt was constructed for the smoke run; provide attempt_factory or pre-create an AppleVerificationAttempt") unless attempt
 
         request_id = "setup-smoke:dependency:#{smoke_request_id(agent_run)}"
-        begin
-          lifecycle.provision(agent_run:, image_id: image_digest, profile_id:, request_id:)
-          passed(scenario, "dependency probe permitted through Paid egress gateway (no EgressSecurityEvent observed)")
-        ensure
-          teardown_lifecycle(agent_run, request_id)
-        end
+        lifecycle.provision(
+          agent_run:, image_id: image_digest, profile_id:, request_id:, apple_verification_attempt: attempt
+        )
+        passed(scenario, "dependency probe permitted through Paid egress gateway (no EgressSecurityEvent observed)")
+      ensure
+        teardown_lifecycle(attempt, request_id) if defined?(request_id) && defined?(attempt) && attempt
       end
 
       def run_isolation_probes_denied(scenario)
@@ -140,7 +146,7 @@ module AppleVerification
 
         manifest = Smoke::Manifests.colormatching_ios(source_digest:)
         result = dispatcher.call(scenario_id: "build-test-colormatching-ios", manifest:, agent_run: smoke_agent_run)
-        if result.dig("build_outcome") == "succeeded" && result.dig("test_outcome") == "succeeded"
+        if result["build_outcome"] == "succeeded" && result["test_outcome"] == "succeeded"
           passed(scenario, "viamin/ColorMatching-iOS built and tested; .xcresult reference present")
         else
           failed(scenario, "build or test did not succeed: #{result.inspect}")
@@ -152,7 +158,7 @@ module AppleVerification
 
         manifest = Smoke::Manifests.smoke_ios_app(source_digest:)
         result = dispatcher.call(scenario_id: "smoke-ios-app-launch", manifest:, agent_run: smoke_agent_run)
-        if result.dig("launch_outcome") == "succeeded"
+        if result["launch_outcome"] == "succeeded"
           passed(scenario, "smoke iOS app launch succeeded; first screenshot artifact stored")
         else
           failed(scenario, "launch did not succeed: #{result.inspect}")
@@ -186,28 +192,50 @@ module AppleVerification
 
       def smoke_agent_run
         TenantContext.with_system_access do
-          project = Project.first
+          project = Project.find_by(id: project_id)
           return nil if project.nil?
 
           project.agent_runs.create!(
             agent_type: "claude_code", status: "running", goal: "create_pr", focus: "general",
             trigger_type: "manual", started_at: Time.current, custom_prompt: "Apple worker setup smoke",
-            external_metadata: { "purpose" => "apple_setup_smoke", "smoke" => true }
+            external_metadata: { "purpose" => "apple_setup_smoke", "smoke" => true, "project_id" => project.id }
           )
         end
+      end
+
+      # The smoke harness must mirror the production lifecycle: each guest
+      # provisioning call is anchored to an Apple verification attempt so the
+      # +lifecycle.destroy+ teardown can locate the ledger entry to roll back.
+      # The factory is supplied by the driver (bin/apple-worker-setup) which
+      # knows how to spin up a project-side workflow revision + profile for
+      # the smoke run; we delegate rather than construct it here so the
+      # production workflow gate (approval, gating requirements) still owns
+      # the lifecycle decision. Returns nil when no factory is configured;
+      # the caller records that as a gap so the operator knows the missing
+      # wiring rather than silently leaking the VM.
+      def smoke_attempt(agent_run)
+        return nil if attempt_factory.nil? || agent_run.nil?
+
+        attempt_factory.call(agent_run: agent_run)
+      rescue StandardError => error
+        Rails.logger.warn(
+          message: "apple_setup.smoke_attempt_factory_failed",
+          agent_run_id: agent_run&.id,
+          error_class: error.class.name,
+          error: error.message
+        )
+        nil
       end
 
       def smoke_request_id(agent_run)
         agent_run&.id&.to_s || SecureRandom.hex(8)
       end
 
-      def teardown_lifecycle(agent_run, request_id)
+      def teardown_lifecycle(attempt, request_id)
+        return unless attempt.is_a?(AppleVerificationAttempt)
         return unless lifecycle.respond_to?(:destroy)
-        return unless agent_run.is_a?(AgentRun)
 
-        lifecycle.destroy(attempt: agent_run, request_id: "#{request_id}:destroy")
-      rescue StandardError
-        nil
+        lifecycle.destroy(attempt: attempt, request_id: "#{request_id}:destroy")
       end
     end
   end

@@ -35,7 +35,7 @@ module AppleVerification
       new(host: HostClient.new(endpoint:), token:)
     end
 
-    def provision(agent_run:, image_id:, profile_id:, request_id:)
+    def provision(agent_run:, image_id:, profile_id:, request_id:, apple_verification_attempt: nil)
       require_enabled!(agent_run.project)
       require_request_id!(request_id)
       ledger = provisioning_ledger
@@ -43,7 +43,7 @@ module AppleVerification
       return ExecutionRunners::RunnerHandle.from_json(intent.runner_handle) if intent.linked?
 
       tags = ownership_tags_for(intent)
-      entry = resource_entry_for(agent_run:, tags:)
+      entry = resource_entry_for(agent_run:, tags:, apple_verification_attempt:)
       vm_id = intent.provider_resource_id || clone_vm(ledger:, intent:, entry:, payload: clone_payload(request_id:, image_id:, tags:))
       started = request("start", "request_id" => "#{request_id}:start", "vm_id" => vm_id, "profile_id" => profile_id)
       handle = handle_for(vm_id:, response: started)
@@ -115,13 +115,20 @@ module AppleVerification
       ProvisioningIntent.find_by(agent_run:, runner_type: RUNNER_TYPE, request_id:)
     end
 
-    def resource_entry_for(agent_run:, tags:)
-      ExecutionResourceLedgerEntry.find_or_create_by!(agent_run:, runner_type: RUNNER_TYPE, tags:) do |entry|
-        entry.assign_attributes(
-          account: agent_run.project.account, project: agent_run.project, agent_run:, runner_type: RUNNER_TYPE,
-          backend: TartProvider::PROVIDER_NAME, resource_kind: "verification_vm", tags:, runner_handle: {}, status: "provisioning"
-        )
+    def resource_entry_for(agent_run:, tags:, apple_verification_attempt: nil)
+      attrs = {
+        account: agent_run.project.account, project: agent_run.project, agent_run:, runner_type: RUNNER_TYPE,
+        backend: TartProvider::PROVIDER_NAME, resource_kind: "verification_vm", tags:,
+        runner_handle: {}, status: "provisioning"
+      }
+      attrs[:apple_verification_attempt] = apple_verification_attempt if apple_verification_attempt
+      entry = ExecutionResourceLedgerEntry.find_or_create_by!(agent_run:, runner_type: RUNNER_TYPE, tags:) do |row|
+        row.assign_attributes(attrs)
       end
+      if apple_verification_attempt && entry.apple_verification_attempt_id != apple_verification_attempt.id
+        entry.update!(apple_verification_attempt:)
+      end
+      entry
     end
 
     def resource_entry_for_attempt(attempt)

@@ -82,6 +82,40 @@ module AppleVerification
         def capture_operation(capture, target)
           { "type" => "capture", "payload" => capture.merge("name" => target.fetch(:capture_name)) }
         end
+
+        # Reduces the executor's operations list into the top-level outcome
+        # hash the {AppleVerification::Setup::SmokeTests} scenarios assert
+        # against. The closed GuestProtocol vocabulary returns each operation
+        # as { "type" => "...", "status" => "...", optional "payload" /
+        # "outcome" }, so we surface the relevant per-scenario outcome at the
+        # top level (build/test/launch_app) and pull the captured PNG byte
+        # count into +artifacts.app_window_png_bytes+ when the run included a
+        # +capture+ operation. Outcomes without a +status+ or +outcome+ field
+        # are recorded as +missing+ rather than silently reporting success.
+        def synthesize_outcomes(operations, _scenario_id)
+          return {} unless operations.is_a?(Array) && operations.any?
+
+          {
+            "build_outcome" => outcome_for(operations, "build"),
+            "test_outcome" => outcome_for(operations, "test"),
+            "launch_outcome" => outcome_for(operations, "launch_app"),
+            "artifacts" => { "app_window_png_bytes" => capture_bytes(operations) }
+          }
+        end
+
+        def outcome_for(operations, type)
+          op = operations.find { |entry| entry.is_a?(Hash) && entry["type"] == type }
+          return "missing" if op.nil?
+
+          op["outcome"].presence || op["status"].to_s.presence || "missing"
+        end
+
+        def capture_bytes(operations)
+          capture = operations.find { |entry| entry.is_a?(Hash) && entry["type"] == "capture" }
+          return 0 if capture.nil?
+
+          capture.dig("payload", "bytes").to_i
+        end
       end
     end
   end

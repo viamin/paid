@@ -48,4 +48,48 @@ RSpec.describe AppleVerification::Setup::Smoke::Manifests do
       end
     end
   end
+
+  describe ".synthesize_outcomes" do
+    it "returns an empty hash when no operations are returned" do
+      expect(described_class.synthesize_outcomes([], "build-test-colormatching-ios")).to eq({})
+      expect(described_class.synthesize_outcomes(nil, "build-test-colormatching-ios")).to eq({})
+    end
+
+    it "surfaces build and test outcomes from the operations list" do
+      operations = [
+        { "type" => "build", "outcome" => "succeeded" },
+        { "type" => "test", "outcome" => "succeeded" }
+      ]
+      result = described_class.synthesize_outcomes(operations, "build-test-colormatching-ios")
+      expect(result).to include(
+        "build_outcome" => "succeeded",
+        "test_outcome" => "succeeded",
+        "launch_outcome" => "missing"
+      )
+    end
+
+    it "falls back to status when the operation has no outcome key" do
+      operations = [
+        { "type" => "launch_app", "status" => "succeeded" }
+      ]
+      result = described_class.synthesize_outcomes(operations, "smoke-ios-app-launch")
+      expect(result["launch_outcome"]).to eq("succeeded")
+    end
+
+    it "pulls the PNG byte count from the capture operation's payload" do
+      operations = [
+        { "type" => "capture", "payload" => { "bytes" => 4242 } }
+      ]
+      result = described_class.synthesize_outcomes(operations, "macos-app-screenshot")
+      expect(result.dig("artifacts", "app_window_png_bytes")).to eq(4242)
+    end
+
+    it "records missing when the expected operation did not run" do
+      result = described_class.synthesize_outcomes(
+        [ { "type" => "build", "status" => "succeeded" } ],
+        "build-test-colormatching-ios"
+      )
+      expect(result["test_outcome"]).to eq("missing")
+    end
+  end
 end

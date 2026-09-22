@@ -6,7 +6,8 @@
 # action plan; `--smoke` runs the automated smoke scenarios through the
 # shipped control-plane boundaries; `--report PATH` archives the Markdown
 # report. The driver never mutates host state, never writes to the
-# application database, and never shells into the guest.
+# application database without a project the operator authorized via
+# `--project`, and never shells into the guest.
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 
@@ -21,6 +22,7 @@ Dir.chdir(APP_ROOT)
 require "bundler/setup"
 
 require "optparse"
+require "securerandom"
 require "time"
 
 def usage
@@ -36,11 +38,12 @@ def usage
 
     Smoke options (used with --smoke or --all):
       --project ID            Paid project id used for smoke provisioning
+                             (required; must resolve to an existing project)
       --image DIGEST          Approved Apple verification image digest
+                             (required)
       --profile ID            Worker profile id (default ios-standard)
       --source-digest SHA     Source digest materialized in the guest
       --guest-diagnostics URL Guest executor diagnostics endpoint
-      --repeats N             Repeat functional scenarios N times (default 1)
 
     Output:
       --report PATH           Write a Markdown report to PATH (stdout if omitted)
@@ -59,7 +62,144 @@ def usage
   USAGE
 end
 
-options = { mode: :preflight, repeats: 1, profile_id: "ios-standard" }
+# Resolve --project/--image into a Project (or warn and return nil). Runs
+# inside the system access window because the project lookup crosses the
+# RLS tenant policy on projects + their account-scoped joins.
+def resolve_smoke_project(options)
+  if options[:project_id].nil?
+    warn "Smoke mode requires --project and --image."
+    nil
+  elsif options[:image_digest].blank?
+    warn "Smoke mode requires --image."
+    nil
+  else
+    TenantContext.with_system_access do
+      project = Project.find_by(id: options[:project_id])
+      if project.nil?
+        warn "project #{options[:project_id]} not found"
+        nil
+      else
+        project
+      end
+    end
+  end
+end
+
+def build_smoke_attempt_factory(project, image_digest, profile_id)
+  lambda do |agent_run:|
+    TenantContext.with_system_access do
+      profile = AppleWorkerProfile.find_or_create_by!(account: project.account, name: profile_id) do |profile|
+        profile.created_by_id = nil
+        profile.image_digest = image_digest
+        profile.capabilities = { "capabilities" => %w[build test launch ui_flow screenshot] }
+        profile.constraints = { "platforms" => [ "ios" ], "xcode_version" => ">= 26.0, < 27.0" }
+      end
+
+      revision = AppleVerificationWorkflowRevision
+        .where(project: project, account: project.account, apple_worker_profile: profile)
+        .order(revision: :desc)
+        .first
+      revision ||= begin
+        next_number = AppleVerificationWorkflowRevision
+          .where(project: project).maximum(:revision).to_i + 1
+        AppleVerificationWorkflowRevision.create!(
+          project: project,
+          account: project.account,
+          apple_worker_profile: profile,
+          revision: next_number,
+          content_digest: "sha256:#{'0' * 64}",
+          verification_files: [
+            { "path" => ".paid/apple-verification.yml", "digest" => "sha256:#{'0' * 64}" }
+          ],
+          lifecycle_gate: "agent_iteration",
+          required_checks: [ "test" ],
+          advisory_checks: [ "screenshot" ]
+        )
+      end
+
+      if revision.draft?
+        administrator = project.memberships.first&.user
+        revision.approve!(actor: administrator) if administrator
+        revision.reload
+      end
+
+      AppleVerificationAttempt.create!(
+        project: project,
+        account: project.account,
+        apple_verification_workflow_revision: revision,
+        apple_worker_profile: profile,
+        agent_run: agent_run,
+        source_digest: "sha256:#{'0' * 64}",
+        lifecycle_gate: revision.lifecycle_gate,
+        retry_number: 0
+      )
+    end
+  end
+end
+
+def run_smoke(options, project)
+  host_client = AppleVerification::HostClient.new(endpoint: ENV.fetch("APPLE_VERIFICATION_HOST_URL"))
+  token = ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN")
+  lifecycle = AppleVerification::Lifecycle.new(host: host_client, token:)
+  diagnostics = options[:guest_diagnostics_url] ? SmokeDiagnostics.new(options[:guest_diagnostics_url]) : nil
+  dispatcher = SmokeDispatcher.new(image_digest: options.fetch(:image_digest))
+
+  AppleVerification::Setup::SmokeTests.call(
+    lifecycle:,
+    dispatcher:,
+    diagnostics:,
+    image_digest: options.fetch(:image_digest),
+    profile_id: options.fetch(:profile_id),
+    source_digest: options[:source_digest],
+    project_id: project.id,
+    attempt_factory: build_smoke_attempt_factory(project, options.fetch(:image_digest), options.fetch(:profile_id))
+  )
+end
+
+# Minimal dispatcher that asks the executor admission boundary to record
+# the scenario outcome. The executor returns an operations Array (each entry
+# shaped like {"type" => "...", "status" => "succeeded"}); the harness needs
+# the smoke-specific top-level outcome keys, so this dispatcher maps the
+# raw operations list into the contract {SmokeTests} asserts against. When
+# the executor isn't wired in (no host service yet, or the call raises), the
+# synthesized hash carries an empty outcome so the scenarios record a
+# fail-closed +:failed+ rather than falsely reporting +:passed+.
+class SmokeDispatcher
+  def initialize(image_digest:)
+    @image_digest = image_digest
+  end
+
+  def call(scenario_id:, manifest:, agent_run:)
+    result = AppleVerification::ExecuteGuestJob.call(
+      agent_run:,
+      manifest:,
+      image_digest: @image_digest
+    )
+    AppleVerification::Setup::Smoke::Manifests.synthesize_outcomes(result.operations || [], scenario_id)
+  rescue StandardError => error
+    { "dispatch_error" => "#{error.class.name}: #{error.message}" }
+  end
+end
+
+class SmokeDiagnostics
+  def initialize(url)
+    @uri = URI.parse(url)
+  end
+
+  def call(probe_id:)
+    response = Net::HTTP.start(@uri.host, @uri.port, use_ssl: @uri.scheme == "https") do |http|
+      request = Net::HTTP::Post.new(@uri, "Content-Type" => "application/json")
+      request["Authorization"] = "Bearer #{ENV.fetch('APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN', nil)}"
+      request.body = { probe_id: probe_id }.to_json
+      http.request(request)
+    end
+    JSON.parse(response.body)
+  rescue StandardError => error
+    { "status" => "unavailable", "detail" => "#{error.class.name}: #{error.message}" }
+  end
+end
+
+options = { mode: :preflight, profile_id: "ios-standard" }
 parser = OptionParser.new do |opts|
   opts.banner = usage
   opts.on("--preflight") { options[:mode] = :preflight }
@@ -71,31 +211,30 @@ parser = OptionParser.new do |opts|
   opts.on("--profile ID") { |value| options[:profile_id] = value }
   opts.on("--source-digest SHA") { |value| options[:source_digest] = value }
   opts.on("--guest-diagnostics URL") { |value| options[:guest_diagnostics_url] = value }
-  opts.on("--repeats N") { |value| options[:repeats] = Integer(value) }
   opts.on("--report PATH") { |value| options[:report_path] = value }
   opts.on("--stdout") { |_value| options[:report_path] = nil }
   opts.on("-h", "--help") { puts usage; exit 0 }
 end.parse!
 
+require_relative "../config/environment"
+
+smoke_project = nil
 if options[:mode] == :smoke || options[:mode] == :all
-  if options[:project_id].nil? || options[:image_digest].blank?
-    warn "Smoke mode requires --project and --image."
+  smoke_project = resolve_smoke_project(options) || begin
     warn usage
     exit 2
   end
 end
 
-require_relative "../config/environment"
-
 preflight_report = AppleVerification::Setup::Preflight.call(
-  profile_id: options[:profile_id], account_id: nil,
+  profile_id: options[:profile_id], account_id: smoke_project&.account_id,
   approved_image_digests: Array(options[:image_digest])
 )
 plan_actions = preflight_report.gapped? ? AppleVerification::Setup::Plan.new(preflight_report).call : []
 
 smoke_summary = nil
 if options[:mode] == :smoke || options[:mode] == :all
-  smoke_summary = run_smoke(options)
+  smoke_summary = run_smoke(options, smoke_project)
 end
 
 if smoke_summary.nil?
@@ -126,57 +265,3 @@ else
 end
 
 exit exit_code
-
-def run_smoke(options)
-  host_client = AppleVerification::HostClient.new(endpoint: ENV.fetch("APPLE_VERIFICATION_HOST_URL"))
-  token = ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN")
-  lifecycle = AppleVerification::Lifecycle.new(host: host_client, token:)
-  diagnostics = options[:guest_diagnostics_url] ? SmokeDiagnostics.new(options[:guest_diagnostics_url]) : nil
-  dispatcher = SmokeDispatcher.new(image_digest: options.fetch(:image_digest))
-
-  AppleVerification::Setup::SmokeTests.call(
-    lifecycle:,
-    dispatcher:,
-    diagnostics:,
-    image_digest: options.fetch(:image_digest),
-    profile_id: options.fetch(:profile_id),
-    source_digest: options[:source_digest]
-  )
-end
-
-# Minimal dispatcher that asks the executor admission boundary to record
-# the scenario outcome; without the executor deployed the boundary reports a
-# gap, which the smoke harness surfaces faithfully.
-class SmokeDispatcher
-  def initialize(image_digest:)
-    @image_digest = image_digest
-  end
-
-  def call(scenario_id:, manifest:, agent_run:)
-    AppleVerification::ExecuteGuestJob.call(
-      agent_run:,
-      manifest: manifest,
-      image_digest: @image_digest
-    ).operations || {}
-  rescue StandardError => error
-    { "error" => "#{error.class.name}: #{error.message}" }
-  end
-end
-
-class SmokeDiagnostics
-  def initialize(url)
-    @uri = URI.parse(url)
-  end
-
-  def call(probe_id:)
-    response = Net::HTTP.start(@uri.host, @uri.port, use_ssl: @uri.scheme == "https") do |http|
-      request = Net::HTTP::Post.new(@uri, "Content-Type" => "application/json")
-      request["Authorization"] = "Bearer #{ENV.fetch('APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN', nil)}"
-      request.body = { probe_id: probe_id }.to_json
-      http.request(request)
-    end
-    JSON.parse(response.body)
-  rescue StandardError => error
-    { "status" => "unavailable", "detail" => "#{error.class.name}: #{error.message}" }
-  end
-end
