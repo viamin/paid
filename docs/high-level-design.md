@@ -194,11 +194,21 @@ runners: the control plane sends source and provider-neutral manifests to a
 disposable macOS guest, where a deterministic executor runs project build and
 verification operations. The host lifecycle service never receives project
 paths or commands; workflows become blocking only through digest-bound project
-approval. See `docs/intent/apple-verification-workers/` for the worker
-contract (profiles, workflow revisions, attempts, waivers) and
-`docs/intent/apple-guest-execution/` for the immutable guest image catalog and
-guest protocol those attempts run against. The lifecycle API is provider-neutral;
-its first implementation maps to Tart and Softnet. See RDR-068.
+approval. Attempts queue behind operator-configured admission thresholds,
+classify failures into a closed taxonomy that separates infrastructure results
+from code defects, and enforce their approved lifecycle gates — required
+verification stays pending until it runs or is waived, never silently skipped
+and never fallen back to host execution. Structured results and screenshots
+return through the artifact lane as private, retained project artifacts. See
+`docs/intent/apple-verification-workers/` for the worker contract (profiles,
+workflow revisions, attempts, waivers), `docs/intent/apple-guest-execution/`
+for the immutable guest image catalog and guest protocol, and
+`docs/intent/apple-verification-attempts/`,
+`docs/intent/apple-verification-network-policy/`, and
+`docs/intent/apple-verification-results/` for the attempt execution,
+guest network, and results-and-artifacts contracts those attempts follow. The
+lifecycle API is provider-neutral; its first implementation maps to Tart and
+Softnet. See RDR-068.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
