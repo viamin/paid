@@ -886,9 +886,14 @@ class Runner < ApplicationRecord
 
   # Updates the enabled_for_fallback flag on each of the user's runners
   # based on the given set of enabled runner identifiers.
+  # @spec RUNNER-USAGE-009
+  # Only runners enabled for agent runs are reconciled: the agent settings
+  # page's fallback list is agent-scoped, so a runner disabled for agent runs
+  # (e.g. a chat-only fallback) must keep its fallback flag for its remaining
+  # enabled contexts.
   def self.update_fallback_flags(user, enabled_keys)
     user.runners.kept_only.transaction do
-      user.runners.kept_only.find_each do |runner|
+      user.runners.kept_only.for_agent_runs.find_each do |runner|
         new_value = enabled_keys.any? { |identifier| runner.matches_identifier?(identifier) }
         next if runner.enabled_for_fallback? == new_value
 

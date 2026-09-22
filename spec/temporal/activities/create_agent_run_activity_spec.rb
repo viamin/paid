@@ -554,7 +554,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:runner_attempt_count]).to eq(3)
     end
 
-    it "counts configured fallback-only providers even when not explicitly ordered yet" do
+    # @spec RUNNER-USAGE-002
+    it "does not count fallback-only providers disabled for agent runs" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
       project.created_by.runners.find_or_create_by!(
         runner_key: "cursor",
@@ -565,7 +566,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
-      expect(result[:runner_attempt_count]).to eq(2)
+      expect(result[:runner_attempt_count]).to eq(1)
     end
 
     it "returns one attempt for an explicitly selected runner when fallback is disabled" do
@@ -588,7 +589,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:runner_attempt_count]).to eq(2)
     end
 
-    it "includes rate-limit fallback entries in runner_attempt_count" do
+    # @spec RUNNER-USAGE-003
+    it "includes rate-limit fallback entries enabled for agent runs in runner_attempt_count" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
       api_key = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic")
       project.created_by.runners.create!(
@@ -596,7 +598,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
         auth_type: "api_key",
         provider_api_key: api_key,
         fallback_role: "rate_limit_fallback",
-        enabled_for_agent_runs: false,
+        enabled_for_agent_runs: true,
         enabled_for_fallback: true
       )
       project.created_by.runners.find_or_create_by!(runner_key: "cursor")

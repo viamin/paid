@@ -3067,7 +3067,9 @@ module Containers
     end
 
     def rate_limit_fallback_runners_require_direct_outbound?(settings)
-      rate_limit_fallback_runners = settings.user.runners.api_key.rate_limit_fallback.for_fallback
+      # @spec RUNNER-USAGE-003 — rate-limit fallback roles cannot bypass the
+      # agent-run usage permission.
+      rate_limit_fallback_runners = settings.user.runners.api_key.rate_limit_fallback.for_agent_runs.for_fallback
       rate_limit_fallback_runners.any?(&:requires_direct_outbound?)
     end
 

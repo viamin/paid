@@ -130,11 +130,13 @@ RSpec.describe "Api::SecretsProxy" do # @spec SECRETS-PROXY-001 # @spec SECRETS-
           .with(headers: { "x-api-key" => "sk-account-anthropic-key" })
       end
 
-      it "uses a fallback-only runner API key when a runner id header is present" do
+      # @spec RUNNER-USAGE-005
+      it "rejects runner ids that are disabled for agent runs even when fallback is enabled" do
         runner = create_anthropic_api_key_provider(
           :rate_limit_fallback,
           api_key: "sk-fallback-anthropic-key",
           enabled_for_agent_runs: false,
+          enabled_for_chat: true,
           enabled_for_fallback: true
         )
 
@@ -145,8 +147,8 @@ RSpec.describe "Api::SecretsProxy" do # @spec SECRETS-PROXY-001 # @spec SECRETS-
             "x-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
 
-        expect(WebMock).to have_requested(:post, target_url)
-          .with(headers: { "x-api-key" => "sk-fallback-anthropic-key" })
+        expect(response).to have_http_status(:forbidden)
+        expect(WebMock).not_to have_requested(:post, target_url)
       end
 
       it "rejects runner ids that are disabled for agent runs and fallback" do

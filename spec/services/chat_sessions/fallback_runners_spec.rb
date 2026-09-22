@@ -67,6 +67,39 @@ RSpec.describe ChatSessions::FallbackRunners do
 
       expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([])
     end
+
+    # @spec RUNNER-USAGE-006
+    it "does not use configured chat fallback runners disabled for chat" do
+      chat_disabled = create_openrouter_runner(name: "Chat Disabled")
+      chat_disabled.update!(enabled_for_chat: false, enabled_for_fallback: true)
+      user.settings.update_columns(kb_chat_fallback_runners: [ chat_disabled.routing_key ])
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([])
+    end
+
+    # @spec RUNNER-USAGE-006
+    it "does not use configured chat fallback runners disabled for chat when referenced by runner key" do
+      chat_disabled = create_openrouter_runner(name: "Chat Disabled")
+      chat_disabled.update!(enabled_for_chat: false, enabled_for_fallback: true)
+      user.settings.update_columns(kb_chat_fallback_runners: [ "opencode" ])
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([])
+    end
+
+    # @spec RUNNER-USAGE-007
+    it "does not automatically use chat fallback runners disabled for chat" do
+      create_openrouter_runner(name: "Automatic Chat Disabled").update!(enabled_for_chat: false, enabled_for_fallback: true)
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([])
+    end
+
+    # @spec RUNNER-USAGE-009
+    it "keeps chat fallback eligibility when agent runs are disabled" do
+      agent_disabled = create_openrouter_runner(name: "Chat Only")
+      agent_disabled.update!(enabled_for_agent_runs: false, enabled_for_chat: true, enabled_for_fallback: true)
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([ agent_disabled ])
+    end
   end
 
   describe ".notice_for" do

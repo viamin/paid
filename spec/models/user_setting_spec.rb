@@ -192,10 +192,19 @@ RSpec.describe UserSetting do
   describe ".fallback_candidate_providers" do
     let(:user) { create(:user) }
 
+    # @spec RUNNER-USAGE-001
+    it "requires both agent-run and fallback permission for fallback candidates" do
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
+      user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: true)
+
+      expect(described_class.fallback_candidate_providers(user)).to contain_exactly("claude", "cursor")
+    end
+
     it "returns configured fallback runners filtered to container-executable" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
-      user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
-      user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true, enabled_for_fallback: true)
 
       expect(described_class.fallback_candidate_providers(user)).to contain_exactly("claude", "cursor")
     end
@@ -231,6 +240,22 @@ RSpec.describe UserSetting do
       )
 
       expect(described_class.rate_limit_fallback_runners(user)).to eq([ "claude" ])
+    end
+
+    # @spec RUNNER-USAGE-003
+    it "excludes rate-limit fallback runners disabled for agent runs" do
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude])
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      user.runners.create!(
+        runner_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        fallback_role: "rate_limit_fallback",
+        enabled_for_agent_runs: false,
+        enabled_for_fallback: true
+      )
+
+      expect(described_class.rate_limit_fallback_runners(user)).to eq([])
     end
   end
 
@@ -562,15 +587,30 @@ RSpec.describe UserSetting do
       expect(setting.provider_priority).to eq(%w[claude cursor codex])
     end
 
-    it "includes fallback-only runners in the runtime priority" do
+    # @spec RUNNER-USAGE-002
+    it "excludes runners disabled for agent runs from the runtime priority even when fallback is enabled" do
       user.runners.find_by!(runner_key: "cursor").update!(
         enabled_for_agent_runs: false,
+        enabled_for_chat: true,
         enabled_for_fallback: true
       )
 
       setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: [])
 
-      expect(setting.provider_priority).to eq(%w[claude codex cursor])
+      expect(setting.provider_priority).to eq(%w[claude codex])
+    end
+
+    # @spec RUNNER-USAGE-008
+    it "keeps runners eligible as primary when fallback is disabled" do
+      user.runners.find_by!(runner_key: "cursor").update!(enabled_for_fallback: false)
+      user.runners.find_by!(runner_key: "codex").update!(enabled_for_fallback: false)
+
+      setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: %w[cursor codex])
+      expect(setting.provider_priority).to eq(%w[claude])
+
+      cursor_default = build(:user_setting, user: user, default_agent_runner: "cursor", fallback_runners: [])
+      expect(cursor_default).to be_valid
+      expect(cursor_default.provider_priority).to eq(%w[cursor claude])
     end
   end
 
@@ -807,12 +847,15 @@ RSpec.describe UserSetting do
       expect(setting).to be_valid
     end
 
-    it "accepts runners that are fallback-only" do
-      cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
+    # @spec RUNNER-USAGE-001
+    it "drops runners disabled for agent runs from the saved fallback order" do
+      cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false, enabled_for_chat: true,
+        enabled_for_fallback: true)
       setting = build(:user_setting, user: user, fallback_runners: %w[claude cursor])
 
       expect(setting).to be_valid
-      expect(setting.fallback_runners).to eq([ user.runners.find_by!(runner_key: "claude").routing_key, cursor.routing_key ])
+      expect(setting.fallback_runners).to eq([ user.runners.find_by!(runner_key: "claude").routing_key ])
+      expect(setting.fallback_runners).not_to include(cursor.routing_key)
     end
 
     it "sanitizes unknown runners" do

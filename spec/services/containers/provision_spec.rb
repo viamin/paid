@@ -1984,12 +1984,33 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      # @spec RUNNER-USAGE-001
+      it "stays on the restricted network when a direct-outbound fallback is disabled for agent runs" do
+        create(
+          :runner,
+          user: project.created_by,
+          runner_key: "kilocode",
+          enabled_for_agent_runs: false,
+          enabled_for_chat: true,
+          enabled_for_fallback: true
+        )
+        direct_outbound_runner.update!(enabled_for_fallback: false)
+        settings.update!(fallback_enabled: true, fallback_runners: [])
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "uses the infrastructure network when kilocode is configured as a fallback" do
         kilocode_runner = create(
           :runner,
           user: project.created_by,
           runner_key: "kilocode",
-          enabled_for_agent_runs: false,
+          enabled_for_agent_runs: true,
           enabled_for_fallback: true
         )
         direct_outbound_runner.update!(enabled_for_fallback: false)
@@ -2010,7 +2031,6 @@ RSpec.describe Containers::Provision do
       it "uses the infrastructure network when a rate-limit fallback requires direct outbound" do
         settings.update!(fallback_enabled: false, fallback_runners: [])
         direct_outbound_runner.update!(
-          enabled_for_agent_runs: false,
           fallback_role: "rate_limit_fallback"
         )
 
