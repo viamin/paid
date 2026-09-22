@@ -262,7 +262,7 @@ module AppleVerification
           operation: "readiness", payload: {}, token: host_token)
         network = response["network"] || {}
         proxy = network["proxy_relay"] || network["proxyRelay"] || network["egress_proxy"]
-        if proxy.to_s.include?("paid-egress")
+        if proxy.to_s.strip == "paid-egress"
           pass(:proxy_enforcement, "host service declares proxy relay=#{proxy}")
         else
           gap(:proxy_enforcement, "host service did not declare a Paid-controlled proxy relay",
@@ -317,7 +317,7 @@ module AppleVerification
 
         parts = line.split
         raw = parts[3].to_s
-        raw.to_i if raw.match?(/\A\d+(?:\.\d+)?[KMGT]?\z/) && raw.end_with?("G")
+        raw.to_i if raw.match?(/\A\d+(?:\.\d+)?\z/)
       end
 
       def read_memory_percent

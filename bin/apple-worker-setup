@@ -118,7 +118,7 @@ def build_smoke_attempt_factory(project, image_digest, profile_id)
       end
 
       if revision.draft?
-        administrator = project.memberships.first&.user
+        administrator = project.project_memberships.first&.user
         revision.approve!(actor: administrator) if administrator
         revision.reload
       end
@@ -137,9 +137,20 @@ def build_smoke_attempt_factory(project, image_digest, profile_id)
   end
 end
 
+def require_smoke_environment!
+  host_url = ENV["APPLE_VERIFICATION_HOST_URL"].to_s
+  token = ENV["APPLE_VERIFICATION_HOST_TOKEN"].to_s
+  return if host_url.present? && token.present?
+
+  warn "--smoke requires APPLE_VERIFICATION_HOST_URL and APPLE_VERIFICATION_HOST_TOKEN."
+  warn usage
+  exit 2
+end
+
 def run_smoke(options, project)
-  host_client = AppleVerification::HostClient.new(endpoint: ENV.fetch("APPLE_VERIFICATION_HOST_URL"))
-  token = ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN")
+  host_url = ENV["APPLE_VERIFICATION_HOST_URL"].to_s
+  token = ENV["APPLE_VERIFICATION_HOST_TOKEN"].to_s
+  host_client = AppleVerification::HostClient.new(endpoint: host_url)
   lifecycle = AppleVerification::Lifecycle.new(host: host_client, token:)
   diagnostics = options[:guest_diagnostics_url] ? SmokeDiagnostics.new(options[:guest_diagnostics_url]) : nil
   dispatcher = SmokeDispatcher.new(image_digest: options.fetch(:image_digest))
@@ -220,6 +231,7 @@ require_relative "../config/environment"
 
 smoke_project = nil
 if options[:mode] == :smoke || options[:mode] == :all
+  require_smoke_environment!
   smoke_project = resolve_smoke_project(options) || begin
     warn usage
     exit 2

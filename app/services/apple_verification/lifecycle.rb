@@ -122,13 +122,9 @@ module AppleVerification
         runner_handle: {}, status: "provisioning"
       }
       attrs[:apple_verification_attempt] = apple_verification_attempt if apple_verification_attempt
-      entry = ExecutionResourceLedgerEntry.find_or_create_by!(agent_run:, runner_type: RUNNER_TYPE, tags:) do |row|
+      ExecutionResourceLedgerEntry.find_or_create_by!(agent_run:, runner_type: RUNNER_TYPE, tags:) do |row|
         row.assign_attributes(attrs)
       end
-      if apple_verification_attempt && entry.apple_verification_attempt_id != apple_verification_attempt.id
-        entry.update!(apple_verification_attempt:)
-      end
-      entry
     end
 
     def resource_entry_for_attempt(attempt)

@@ -27,9 +27,16 @@ RSpec.describe "bin/apple-worker-setup" do # rubocop:disable RSpec/DescribeClass
     end
 
     it "exits 2 when --smoke is used without --project or --image" do
-      _stdout, stderr, status = run_setup("--smoke")
+      _stdout, stderr, status = run_setup("--smoke", env: { "APPLE_VERIFICATION_HOST_URL" => "https://macos-worker.example.test/lifecycle", "APPLE_VERIFICATION_HOST_TOKEN" => "host-token" })
       expect(status.exitstatus).to eq(2), -> { "stderr: #{stderr}" }
       expect(stderr).to include("--project and --image")
+    end
+
+    it "exits 2 with usage when --smoke is missing APPLE_VERIFICATION_HOST_URL or HOST_TOKEN" do
+      _stdout, stderr, status = run_setup("--smoke", "--project", "1", "--image", "sha256:abc")
+      expect(status.exitstatus).to eq(2), -> { "stderr: #{stderr}" }
+      expect(stderr).to include("--smoke requires APPLE_VERIFICATION_HOST_URL")
+      expect(stderr).to include("Usage:")
     end
 
     it "exits 0 or 1 in preflight mode and prints a Markdown report" do
@@ -43,8 +50,8 @@ RSpec.describe "bin/apple-worker-setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  def run_setup(*args)
-    env = {
+  def run_setup(*args, env: {})
+    base_env = {
       "BUNDLE_GEMFILE" => File.expand_path("../../Gemfile", __dir__),
       "DATABASE_URL" => ENV.fetch("DATABASE_URL"),
       "DB_HOST" => ENV.fetch("DB_HOST", "paid-svc-a3-s1-postgres"),
@@ -56,8 +63,8 @@ RSpec.describe "bin/apple-worker-setup" do # rubocop:disable RSpec/DescribeClass
     }
 
     Dir.mktmpdir("apple-worker-setup-spec") do |dir|
-      env["HOME"] = dir
-      Open3.capture3(env, script_path, *args, chdir: dir)
+      base_env["HOME"] = dir
+      Open3.capture3(base_env.merge(env), script_path, *args, chdir: dir)
     end
   end
 end

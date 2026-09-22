@@ -32,7 +32,7 @@ RSpec.describe AppleVerification::Setup::Preflight do
       [ "xcodebuild", "-version" ] => [ "Xcode 26.6\nBuild version 17F113", "", status(0) ],
       [ "xcrun", "simctl", "list", "runtimes" ] => [ "iOS 17.0\nmacOS 14.0", "", status(0) ],
       [ "dscl", ".", "-list", "/Users" ] => [ "root\npaidguest\n", "", status(0) ],
-      [ "df", "-g", "/" ] => [ "/dev/disk1s1  500G  200G  300G  50%  /", "", status(0) ],
+      [ "df", "-g", "/" ] => [ "/dev/disk1s1  500G  200G  300  50%  /", "", status(0) ],
       [ "vm_stat" ] => [ "Pages free: 12345.\nPages active: 12000.\nPages inactive: 8000.\n", "", status(0) ]
     }
   end
@@ -254,8 +254,29 @@ RSpec.describe AppleVerification::Setup::Preflight do
       expect(check.fix).to include("paid-egress")
     end
 
+    it "rejects proxy_relay values that merely substring-match paid-egress" do
+      stub_host_service(
+        readiness: {
+          "cpu" => { "available_cores" => 4 },
+          "memory" => { "free_percent" => 50 },
+          "disk" => { "free_gib" => 200 },
+          "network" => { "proxy_relay" => "malicious-paid-egress-relay" }
+        }
+      )
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :proxy_enforcement }
+      expect(check.status).to eq(:gap)
+    end
+
     it "records a gap when free host disk is below the operator minimum" do
-      command_responses[[ "df", "-g", "/" ]] = [ "/dev/disk1s1  500G  450G  50G  90%  /", "", status(0) ]
+      command_responses[[ "df", "-g", "/" ]] = [ "/dev/disk1s1  500G  450G  50  90%  /", "", status(0) ]
 
       report = described_class.call(
         shell:,
@@ -267,6 +288,21 @@ RSpec.describe AppleVerification::Setup::Preflight do
       check = report.results.find { |result| result.id == :capacity }
       expect(check.status).to eq(:gap)
       expect(check.fix).to include("60 GiB")
+    end
+
+    it "parses df -g output with unit-less Available values (the modern macOS shape)" do
+      command_responses[[ "df", "-g", "/" ]] = [ "/dev/disk1s1  500G  200G  300  50%  /", "", status(0) ]
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :capacity }
+      expect(check.status).to eq(:pass)
+      expect(check.detail).to include("300 GiB")
     end
 
     it "marks the report ready when every check passes" do
