@@ -5,13 +5,97 @@
 ## Metadata
 
 - **Date**: 2026-09-18
-- **Status**: Accepted
+- **Status**: Partially Implemented
 - **Type**: Architecture + Security + Verification
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation Strategy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) (Live Web App Preview and Interactive Agent Verification), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) (Polyglot Language Detection and Test Execution), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation), [RDR-059](RDR-059-immutable-agent-runtime-images.md) (Immutable Agent Runtime Images), [RDR-060](RDR-060-external-execution-resource-ledger.md) (External Execution Resource Ledger), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (Infrastructure Safety Rails and Execution Audit Events), [RDR-062](RDR-062-execution-network-policy-intent.md) (Provider-Neutral Execution Network Policy Intent)
-- **Related Intent**: To be created under the execution and verification design trees before implementation
-- **Related Issues**: TBD; create a dependency-ordered issue tree after this RDR is accepted
-- **Related Tests**: TBD
+- **Related Intent**: `docs/intent/apple-verification-workers/` (profiles, workflow revisions, attempts, waivers, host lifecycle), `docs/intent/apple-guest-execution/` (image catalog, guest protocol, guest dispatch), `docs/intent/apple-verification-network-policy/` (guest network contract), `docs/intent/apple-verification/` (project UI presentation)
+- **Related Issues**: #3930 (umbrella implementation chain, open), #3929 (RDR acceptance PR), #3938 (Apple verification configuration and approval lifecycle — closed by PR #3975), #3936 (scheduling, admission, lockdown, timeout, quarantine — open), #3937 (source/result/artifact transport — open), #3940 (agent MCP tools and lifecycle gates — open), #3941 (operator setup guide and guided preflight — open), #3942 (2026-09-22 closeout — open; tracks rather than closes), #3978 (live-host acceptance validation — open; filed from this audit)
+- **Related Tests**: `spec/models/apple_verification_workers_spec.rb`, `spec/models/apple_verification_image_spec.rb`, `spec/services/apple_verification_workers_spec.rb`, `spec/services/apple_verification_workers/version_requirement_spec.rb`, `spec/services/apple_verification/`, `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`, `spec/services/agent_runs/apple_verification/`, `spec/lib/apple_verification/`, `spec/requests/projects/apple_verifications_spec.rb`
+
+## Implementation Status
+
+Partially implemented as of Tuesday, September 22, 2026 (see the
+[2026-09-22 Closeout](#2026-09-22-closeout) and the
+[audit report](audit-report-2026-09-22-rdr-068.md)).
+
+What shipped under #3930 through the #3938–#3941 chain, all behind the
+default-off `apple_verification_workers` flag with passing adversarial specs:
+
+- Contracts and persistence: immutable `AppleWorkerProfile`s, project modes,
+  RDR-057 input/output manifest validation with forbidden host/credential
+  fields and secret-shaped value rejection, digest-bound workflow revisions
+  with admin-only approval and immutable approved bindings, attempts with
+  gate/binding invariants and revoked-profile rejection, one-attempt waivers,
+  protected artifacts (tenant RLS), and audit-event/ledger linkages using the
+  `verification_vm` resource kind.
+- Trusted host boundary (control-plane side): the authenticated versioned
+  `AppleVerification::HostService` fixed-vocabulary lifecycle API that cannot
+  express commands, paths, or mounts; Tart/Softnet translation with idempotent
+  lifecycle operations, ownership-tag inventory, and restart/orphan recovery;
+  the reconciliation-only `TartRunner` configured from environment.
+- Guest execution (control-plane side): the immutable `AppleVerificationImage`
+  catalog with smoke-test-gated promotion and GUI-account posture validation;
+  the closed protocol-v1 guest vocabulary; the HTTPS guest-executor
+  connection; and the `ExecuteGuestJob` admission boundary.
+- Guest network policy: flag-gated resolution of a proxy-restricted per-run
+  egress snapshot into a credential-free declarative guest contract, with
+  request-time enforcement and audited denials for direct IP, alternate DNS,
+  proxy overrides, and unsupported protocols.
+- Repository configuration (under #3938 / PR #3975):
+  `.paid/apple-verification.yml` parsing, typed validation, version
+  requirement constraints, digest-bound sync from committed configuration,
+  and user-confirmed inference from shared schemes and test plans.
+- Project UI: mode settings, revision review/comparison/approval, attempt
+  status with protected artifact links, rerun/cancel/waive/early-destroy
+  controls under `manage_apple_verifications?` policy.
+
+What remains open (each bullet maps to an existing open tracker under
+umbrella #3930 — see the [2026-09-22 audit report](audit-report-2026-09-22-rdr-068.md)
+§Gaps for the reconciliation):
+
+- Sequential multi-profile execution (parsing shipped under #3938 / PR #3975)
+  — **#3936**.
+- Scheduling and resource admission: fair queueing, the one-VM/disk/memory
+  thresholds, attempt timeout, and cancellation that converges the VM ledger
+  — **#3936**.
+- Agent-facing semantic MCP tools and the uncommitted-bundle draft-iteration
+  lane; lifecycle-gate enforcement against agent completion and PR
+  verification — **#3940**.
+- Retained-failure lockdown with credential revocation and timed destruction;
+  worker quarantine and smoke-test-gated return to service — **#3936**
+  (mechanism; #3941 covers the operator runbook).
+- Result ingestion populating the failure taxonomy — **#3937**.
+- The operator setup guide and guided preflight command — **#3941**.
+- All live-VM acceptance evidence: repeated clean-clone builds, tests,
+  launches, and captures of the smoke iOS app, `viamin/ColorMatching-iOS`,
+  and a native macOS GUI app; live isolation and capacity measurements
+  alongside three paid-agent containers — **#3978** (filed from this audit).
+
+## 2026-09-22 Closeout
+
+Closeout issue #3942 ran the [RDR Closeout Checklist](closeout-checklist.md)
+against `main`; the full criterion-by-criterion evidence tables live in
+[audit-report-2026-09-22-rdr-068.md](audit-report-2026-09-22-rdr-068.md).
+Test evidence was re-run (299 Apple-related examples, 0 failures) and
+`bin/coherence-check.mjs` reports no Apple-related findings.
+
+Decision: **Partially Implemented** — the control-plane contracts, trusted
+host boundary, guest protocol/admission, network-policy contract, user UI,
+and (under #3938 / PR #3975) the `.paid/apple-verification.yml` parser ship
+with strong adversarial coverage, but the agent-interface, scheduling/
+admission/lockdown/quarantine/timeout, gate-enforcement, operator-guide,
+and live-host acceptance criteria are unmet. The remaining gaps are
+tracked by the existing open issues under umbrella #3930 — issue #3936
+(scheduling, admission, lockdown, quarantine, timeout, and sequential
+multi-profile execution), #3937 (result ingestion and failure taxonomy),
+`#3940` (agent MCP tools and lifecycle-gate enforcement), #3941 (operator
+setup guide and guided preflight) — plus the live-host acceptance issue
+`#3978` (filed from this audit; see the audit report's §Gaps reconciliation
+for the mapping). The design baseline is preserved unchanged: no design
+deltas were found, and `apple_verification_workers` remains default-off —
+broad enablement and flag cleanup wait on the live validation evidence.
+Umbrella #3930 stays open (this closeout tracks it rather than closing it).
 
 ## Problem Statement
 
