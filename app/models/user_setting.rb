@@ -320,15 +320,18 @@ class UserSetting < ApplicationRecord
   end
 
   # Returns runners that can be used as fallback for a user.
-  # Filtered to container-executable runners only, since non-executable
-  # runners would cause immediate failures during fallback in RunAgentActivity.
+  # @spec RUNNER-USAGE-001
+  # Fallback is a modifier of the agent-run usage permission, never a bypass:
+  # candidates must be enabled for both agent runs and fallback. Filtered to
+  # container-executable runners only, since non-executable runners would cause
+  # immediate failures during fallback in RunAgentActivity.
   def self.fallback_candidate_runners(user, identifiers: false)
     executable_keys = RunnerSupport.container_executable_runner_keys
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
     runner_identifiers_for(
-      user.runners.kept_only.for_fallback.where(runner_key: executable_keys).ordered,
+      user.runners.kept_only.for_agent_runs.for_fallback.where(runner_key: executable_keys).ordered,
       identifiers: identifiers
     )
   end
@@ -923,7 +926,7 @@ class UserSetting < ApplicationRecord
 
     executable_keys = RunnerSupport.container_executable_runner_keys
     self.class.runner_identifiers_for(
-      user.runners.kept_only.for_fallback.where(runner_key: executable_keys).ordered,
+      user.runners.kept_only.for_agent_runs.for_fallback.where(runner_key: executable_keys).ordered,
       identifiers: true
     )
   end

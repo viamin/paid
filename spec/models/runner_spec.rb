@@ -4,6 +4,29 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe ".update_fallback_flags" do
+    let(:user) { create(:user) }
+
+    # @spec RUNNER-USAGE-011
+    it "reconciles fallback flags for runners enabled for agent runs" do
+      agent_runner = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+      described_class.update_fallback_flags(user, [ agent_runner.routing_key ])
+
+      expect(agent_runner.reload.enabled_for_fallback?).to be(true)
+    end
+
+    # @spec RUNNER-USAGE-009
+    it "does not clear the fallback flag of runners disabled for agent runs" do
+      chat_only = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false,
+        enabled_for_chat: true, enabled_for_fallback: true)
+
+      described_class.update_fallback_flags(user, [])
+
+      expect(chat_only.reload.enabled_for_fallback?).to be(true)
+    end
+  end
+
   describe "#effective_api_secret" do
     it "returns the integration credential secret for active account-managed runners" do
       account = create(:account)
