@@ -56,12 +56,15 @@ class ChatSessions::ResolveToolCallJob < ApplicationJob
   rescue ChatSessions::TokenLimitExceededError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue AgentHarness::RateLimitError => e
+    # @spec CHAT-API-017
     Rails.logger.warn(
       message: "chat_resolve_tool_call_job.rate_limited",
       chat_session_id: chat_session_id,
       error_class: e.class.name,
       error: e.message
     )
+    pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
     Rails.logger.error(

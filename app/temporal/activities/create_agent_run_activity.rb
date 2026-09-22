@@ -123,9 +123,12 @@ module Activities
         },
         started_at: agent_run.created_at
       ) do
-        if goal == "create_feature" && issue.present? && feature_brief_sparse?(agent_run)
-          initiate_feature_needs_input!(agent_run, project, issue)
-          next build_result(agent_run, user_settings, project, scope_result, paused: true)
+        if goal == "create_feature" && issue.present?
+          assessment = assess_feature_brief!(agent_run, project, issue)
+          unless assessment.ready?
+            initiate_feature_needs_input!(agent_run, project, issue, assessment.questions)
+            next build_result(agent_run, user_settings, project, scope_result, paused: true)
+          end
         end
 
         issue&.update!(paid_state: "in_progress")
@@ -325,18 +328,19 @@ module Activities
         )
       end
 
-      # RDR-053: If this is a create_feature run with a sparse brief,
-      # post clarifying questions and pause before the agent begins work.
-      if agent_run.create_feature_goal? && agent_run.issue.present? && feature_brief_sparse?(agent_run)
-        initiate_feature_needs_input!(agent_run, agent_run.project, agent_run.issue)
-        return {
-          agent_run_id: agent_run.id,
-          focus: agent_run.focus,
-          runner_attempt_count: 1,
-          agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT,
-          max_execution_seconds: effective_max_execution_seconds(agent_run.project, nil),
-          paused: true
-        }
+      if agent_run.create_feature_goal? && agent_run.issue.present?
+        assessment = assess_feature_brief!(agent_run, agent_run.project, agent_run.issue)
+        unless assessment.ready?
+          initiate_feature_needs_input!(agent_run, agent_run.project, agent_run.issue, assessment.questions)
+          return {
+            agent_run_id: agent_run.id,
+            focus: agent_run.focus,
+            runner_attempt_count: 1,
+            agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT,
+            max_execution_seconds: effective_max_execution_seconds(agent_run.project, nil),
+            paused: true
+          }
+        end
       end
 
       agent_run.issue&.update!(paid_state: "in_progress")
@@ -719,26 +723,33 @@ module Activities
       }
     end
 
-    # A feature brief is considered sparse when it lacks the structured fields
-    # beyond the initial title/problem. The user provided only a description;
-    # the run should pause and ask clarifying questions before proceeding.
-    def feature_brief_sparse?(agent_run)
-      brief = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata["feature_brief"] : nil
-      return true if brief.blank?
-
-      # If the brief only has title and a free-text description, it's sparse.
-      required_fields = %w[desired_behavior constraints scope done_criteria]
-      required_fields.any? { |field| brief[field].blank? }
+    # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002
+    def assess_feature_brief!(agent_run, project, issue)
+      metadata = agent_run.external_metadata.is_a?(Hash) ? agent_run.external_metadata : {}
+      assessment = Features::ClarifyingQuestions::Analyze.call(
+        project: project,
+        issue: issue,
+        feature_brief: metadata.fetch("feature_brief", {}),
+        agent_run: agent_run
+      )
+      agent_run.update!(external_metadata: metadata.merge("feature_brief" => assessment.feature_brief))
+      assessment
+    rescue Features::ClarifyingQuestions::Analyze::InvalidResponse => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "FeatureClarificationAnalysisFailed",
+        non_retryable: true
+      )
     end
 
-    # Posts intent-focused clarifying questions on the feature's GitHub issue,
+    # Posts adaptive clarifying questions on the feature's GitHub issue,
     # applies the needs-input label, and pauses the run so the user can answer
     # before the agent begins work.
     # @spec TEMPORAL-ORCHESTRATION-007
-    def initiate_feature_needs_input!(agent_run, project, issue)
+    def initiate_feature_needs_input!(agent_run, project, issue, questions)
       client = project.client
 
-      persist_feature_needs_input!(agent_run, project, issue, client) if client
+      persist_feature_needs_input!(agent_run, project, issue, client, questions) if client
 
       agent_run.update!(status: "paused", paused_at: Time.current)
 
@@ -750,11 +761,11 @@ module Activities
       )
     end
 
-    def persist_feature_needs_input!(agent_run, project, issue, client)
+    def persist_feature_needs_input!(agent_run, project, issue, client, questions)
       return if clarification_already_pending?(issue)
 
       round_id = feature_clarification_round_id(agent_run)
-      question_comment = build_feature_clarifying_questions_comment(round_id: round_id)
+      question_comment = build_feature_clarifying_questions_comment(questions, round_id: round_id)
       post_clarification_comment_unless_present!(client, project, issue, question_comment, round_id)
       persist_needs_input_state!(project, issue, client, question_comment)
     end
@@ -805,21 +816,11 @@ module Activities
       )
     end
 
-    # Builds a clarifying questions comment for a create_feature run.
-    # The questions follow the intent-focused pattern from RDR-051,
-    # covering problem, desired behavior, constraints, alternatives,
-    # scope, and done-ness — the fields that make up a complete
-    # feature brief (RDR-053 §2).
-    def build_feature_clarifying_questions_comment(round_id: nil)
+    # Builds the existing enhancement-marker comment shape around questions
+    # generated by the semantic feature-brief assessment.
+    def build_feature_clarifying_questions_comment(questions, round_id: nil)
       marker = "<!-- paid:enhance-issue -->"
       round_marker = "<!-- paid:create-feature-clarification:#{round_id} -->" if round_id
-      questions = [
-        "What is the desired behavior? Describe what the feature should do from the user's perspective.",
-        "What constraints must be respected? List any technical, design, or business constraints.",
-        "What alternatives have been considered and rejected? This helps avoid re-litigating decisions.",
-        "What is in scope and out of scope? Be explicit about boundaries.",
-        "How will we know it's done? Define concrete acceptance criteria."
-      ]
       question_lines = questions.each_with_index.map { |q, i| "#{i + 1}. #{q}" }.join("\n")
 
       <<~COMMENT
@@ -828,9 +829,11 @@ module Activities
 
         ## Clarifying questions
 
-        Thanks for the feature description! Before I research and write a full specification, I need a bit more detail to make sure I design the right thing.
+        I reviewed the supplied feature brief and available project context. I need the following decisions before I can write a reliable specification.
 
         #{question_lines}
+
+        ## Next steps
 
         Please reply to this issue with your answers. Once all questions are addressed, the agent will resume and create the feature specification.
       COMMENT

@@ -9,6 +9,9 @@ class ChatSession < ApplicationRecord
   REQUESTABLE_CONTAINER_CAPABILITIES = %w[none pending].freeze
   CONTAINER_REQUESTED_CAPABILITIES = %w[pending provisioning ready failed stopped].freeze
   IDLE_TIMEOUT_DURATION = 30.minutes
+  # Fallback pause window when a provider rate-limit error does not report a
+  # reset time (AgentHarness::RateLimitError#reset_time is nil).
+  RATE_LIMIT_DEFAULT_RESET = 5.minutes
 
   CloneManifestEntry = Data.define(:project_id, :cloned_at, :path, :token_identity) do
     def self.coerce(entry)
@@ -90,6 +93,11 @@ class ChatSession < ApplicationRecord
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
   scope :with_container, -> { where.not(container_capability: "none") }
   scope :awaiting_container, -> { where(container_capability: %w[pending provisioning]) }
+  scope :rate_limited, -> { where.not(rate_limited_until: nil) }
+  # Rate-limited sessions whose recovery window has elapsed and are therefore
+  # due to have their last unanswered message automatically resent.
+  # ChatSessions::AutoResumeRateLimitedSweepJob reactivates these.
+  scope :rate_limited_due, ->(now = Time.current) { rate_limited.where(rate_limited_until: ..now) }
   scope :with_preview_content, lambda {
     preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")
       .where.not(role: "system")
@@ -132,6 +140,29 @@ class ChatSession < ApplicationRecord
 
   def container_stopped?
     container_capability == "stopped"
+  end
+
+  # True while this session is paused waiting on a runner rate limit to clear
+  # (CHAT-API-017). Distinct from +status+, which stays "active" — the
+  # session itself is fine, only sending is blocked.
+  def rate_limited?
+    rate_limited_until.present? && rate_limited_until > Time.current
+  end
+
+  # @param reset_at [Time, nil] When the rate limit is expected to clear.
+  #   Defaults to RATE_LIMIT_DEFAULT_RESET when the provider did not report one.
+  def mark_rate_limited!(reset_at: nil)
+    update!(rate_limited_until: reset_at || RATE_LIMIT_DEFAULT_RESET.from_now)
+  end
+
+  def clear_rate_limit!
+    update!(rate_limited_until: nil)
+  end
+
+  # Account-level opt-out for CHAT-API-017 auto-resume. Defaults to enabled
+  # when the account has no explicit tenant setting.
+  def auto_resume_rate_limited?
+    account.tenant_setting&.chat_auto_resume_rate_limited != false
   end
 
   def request_container_provision!

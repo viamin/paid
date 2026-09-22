@@ -347,6 +347,12 @@ module Models
         tier: "mid",
         active: false
       },
+      # GPT-5.6 Luna, Sol, and Terra are api_key-only under the current
+      # agent-harness Codex contract (UNSUPPORTED_AUTH_MODE_FOR_MODEL_REASON
+      # for subscription auth), so a ChatGPT-Codex run would preflight-reject
+      # them. Marked `active: false` to clear the catalog contract drift
+      # detector (RDR-040); re-enable via `LlmModel#operator_enable!` once
+      # the harness contract catches up.
       {
         model_id: "gpt-5.6-luna",
         display_name: "GPT-5.6 Luna",
@@ -361,7 +367,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "low"
+        tier: "low",
+        active: false
       },
       {
         model_id: "gpt-5.6-sol",
@@ -377,7 +384,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "high"
+        tier: "high",
+        active: false
       },
       {
         model_id: "gpt-5.6-terra",
@@ -393,7 +401,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 9.0,
-        tier: "mid"
+        tier: "mid",
+        active: false
       },
       {
         model_id: "gpt-5-mini",
@@ -787,12 +796,13 @@ module Models
     def call
       synced = 0
       registry_models = registry_models_by_id
+      validated_model_ids = validated_available_model_ids
 
       KNOWN_MODELS.each do |snapshot_attrs|
         model = LlmModel.find_or_initialize_by(model_id: snapshot_attrs[:model_id])
         model.assign_attributes(merged_attributes(snapshot_attrs, registry_models))
         model.tier ||= snapshot_attrs[:tier]
-        model.active = snapshot_attrs.fetch(:active, true)
+        model.active = resolve_active(model, snapshot_attrs, validated_model_ids)
         model.save!
         synced += 1
       end
@@ -805,6 +815,29 @@ module Models
     end
 
     private
+
+    # @spec MODEL-AVAILABILITY-002
+    # @spec MODEL-AVAILABILITY-003
+    def resolve_active(model, snapshot_attrs, validated_model_ids)
+      return model.operator_active_override unless model.operator_active_override.nil?
+      return true if snapshot_attrs.fetch(:active, true) == false && validated_model_ids.include?(snapshot_attrs[:model_id])
+
+      snapshot_attrs.fetch(:active, true)
+    end
+
+    # Global (account-agnostic) evidence that a model is currently usable for
+    # at least one runner/auth context, within ModelAvailabilityCheck's
+    # freshness window. Scheduled sync must not reapply a stale snapshot
+    # exclusion over this — see Models::ReconcileAvailability.
+    def validated_available_model_ids
+      ModelAvailabilityCheck.global.available
+        .where("model_availability_checks.expires_at IS NULL OR model_availability_checks.expires_at > ?", Time.current)
+        .where("model_availability_checks.checked_at > ?", ModelAvailabilityCheck::DEFAULT_TTL.ago)
+        .joins(:llm_model)
+        .distinct
+        .pluck("llm_models.model_id")
+        .to_set
+    end
 
     def retire_stale_seeded_models
       desired_ids = KNOWN_MODELS.filter_map { |attrs| attrs[:model_id] }

@@ -319,6 +319,36 @@ RSpec.describe ProjectPolicy do # @spec TENANT-ACCESS-001 # @spec TENANT-ACCESS-
       end
     end
 
+    describe "#manage_apple_verifications?" do
+      it "permits a viewer with the project_admin role" do # @spec APPLE-VERIFY-002 # @spec APPLE-VERIFY-003
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account)
+        viewer.add_role(:project_admin, project)
+
+        expect(described_class.new(viewer, project)).to be_manage_apple_verifications
+      end
+
+      it "does not permit a project member" do # @spec APPLE-VERIFY-002 # @spec APPLE-VERIFY-003
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account)
+        viewer.add_role(:project_member, project)
+
+        expect(described_class.new(viewer, project)).not_to be_manage_apple_verifications
+      end
+
+      it "does not permit an account owner without the project administrator role" do # @spec APPLE-VERIFY-002 # @spec APPLE-VERIFY-003
+        account = create(:account)
+        owner = create(:user, :owner, account:)
+        project = create(:project, account:)
+
+        expect(described_class.new(owner, project)).not_to be_manage_apple_verifications
+      end
+    end
+
     describe "#manage_issues?" do
       it "permits owner" do
         account = create(:account)

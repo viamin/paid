@@ -17,11 +17,16 @@ RSpec.describe Models::SeedKnownModels do
     end
 
     # @spec MODEL-SELECTION-005
-    it "keeps GPT-5.6 tier variants active across scheduled syncs" do
+    # GPT-5.6 Luna/Terra/Sol are api_key-only under the agent-harness Codex
+    # subscription contract (#3965), so the snapshot marks them `active:
+    # false` to clear the catalog contract drift detector. Their tier labels
+    # still back-fill from KNOWN_MODELS so the api_key auth path can rank
+    # them when the runner contract catches up.
+    it "marks GPT-5.6 tier variants inactive under the Codex subscription contract" do
       2.times { described_class.call }
 
       { "gpt-5.6-luna" => "low", "gpt-5.6-terra" => "mid", "gpt-5.6-sol" => "high" }.each do |id, tier|
-        expect(LlmModel.find_by!(model_id: id)).to have_attributes(active: true, tier: tier)
+        expect(LlmModel.find_by!(model_id: id)).to have_attributes(active: false, tier: tier)
       end
     end
 
@@ -197,6 +202,88 @@ RSpec.describe Models::SeedKnownModels do
 
       expect(LlmModel.find_by!(model_id: "gpt-5.5-pro").active).to be(false)
       expect(LlmModel.find_by!(model_id: "gpt-5.3-codex").active).to be(false)
+    end
+
+    # @spec MODEL-AVAILABILITY-002
+    it "preserves an operator's explicit disable across scheduled sync" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.1",
+        display_name: "GPT-5.1",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+      model.operator_disable!
+
+      described_class.call
+
+      expect(model.reload.active).to be(false)
+    end
+
+    # @spec MODEL-AVAILABILITY-002
+    it "preserves an operator's explicit enable across scheduled sync, even over a snapshot exclusion" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: false
+      )
+      model.operator_enable!
+
+      described_class.call
+
+      expect(model.reload.active).to be(true)
+    end
+
+    # @spec MODEL-AVAILABILITY-003
+    it "does not reapply a stale snapshot exclusion over validated availability evidence" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+      ModelAvailabilityCheck.create!(
+        llm_model: model,
+        runner_key: "codex",
+        auth_type: "subscription",
+        status: "available",
+        source: "agent_harness_compat",
+        checked_at: Time.current
+      )
+
+      described_class.call
+
+      expect(model.reload.active).to be(true)
+    end
+
+    # @spec MODEL-AVAILABILITY-003
+    it "reapplies the snapshot exclusion when availability evidence is stale" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+      ModelAvailabilityCheck.create!(
+        llm_model: model,
+        runner_key: "codex",
+        auth_type: "subscription",
+        status: "available",
+        source: "agent_harness_compat",
+        checked_at: (ModelAvailabilityCheck::DEFAULT_TTL + 1.hour).ago
+      )
+
+      described_class.call
+
+      expect(model.reload.active).to be(false)
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-001

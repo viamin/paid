@@ -63,6 +63,13 @@ class FeatureFlags
       intent: "Gate the RDR-067 design-amendment flow (#3869): product-level drift routes through amended RDR/LID PRs, human approval, and merge, with revision-impact pause of affected feature work.",
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
       cleanup_criteria: "Remove once the RDR-066 operating mode setting owns the gate and every amendment-capable project is enrolled through that mode."
+    ),
+    apple_verification_workers: Definition.new(
+      name: :apple_verification_workers,
+      owner: "apple-verification",
+      intent: "Gate RDR-068 macOS guest verification until immutable images and the Paid-controlled network boundary pass pilot isolation checks.",
+      rollout_plan: "Default-off; operators opt in selected pilot projects only after the approved worker profile, proxy, DNS, and isolation smoke tests pass.",
+      cleanup_criteria: "Remove only after the RDR-068 closeout audit approves broad Apple-worker enablement."
     )
   }.freeze
 

@@ -188,7 +188,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         brief = agent_run.reload.external_metadata["feature_brief"]
         expect(brief).to be_present
         expect(brief["title"]).to eq("Add dark mode")
-        expect(brief["problem"]).to eq("Users want dark mode")
+        expect(brief["problem"]).to eq("Need dark theme")
       end
 
       it "does not reset paid_state to new" do
@@ -277,7 +277,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         brief = agent_run.reload.external_metadata["feature_brief"]
         expect(brief).to be_present
         expect(brief["title"]).to eq("Add dark mode")
-        expect(brief["problem"]).to eq("Users want dark mode")
+        expect(brief["problem"]).to eq("Need dark theme")
       end
     end
 
@@ -311,69 +311,6 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         expect(pull_request.needs_input_questions).to be_nil
         expect(pull_request.labels).not_to include(project.enhance_issue_needs_input_label_name)
       end
-    end
-  end
-
-  describe "#assemble_feature_brief_from_answers" do
-    let(:project) { create(:project) }
-    let(:issue) do
-      create(:issue, :needs_input, project: project,
-             title: "[Feature] Add dark mode", body: "Users want dark mode")
-    end
-
-    let(:user_double) { double(login: "viamin") }
-    let(:enhancement_comment) do
-      double(
-        body: +"<!-- paid:enhance-issue -->\n\n## Clarifying questions\n\n" \
-              "1. What is the desired behavior?\n" \
-              "2. What constraints must be respected?\n" \
-              "3. What alternatives have been considered and rejected?\n" \
-              "4. What is in scope and out of scope?\n" \
-              "5. How will we know it's done?",
-        user: user_double,
-        created_at: 1.hour.ago
-      )
-    end
-
-    let(:answer_comment) do
-      double(
-        body: +"<!-- paid:clarifying-answers -->\n\n" \
-              "## Clarifying question answers\n\n" \
-              "**Q1: What is the desired behavior?**\n" \
-              "**A1:** Toggle dark mode in settings\n\n" \
-              "**Q2: What constraints must be respected?**\n" \
-              "**A2:** Must work with SSR\n\n" \
-              "**Q3: What alternatives have been considered and rejected?**\n" \
-              "**A3:** CSS-only approach\n\n" \
-              "**Q4: What is in scope and out of scope?**\n" \
-              "**A4:** Color palette and toggle\n\n" \
-              "**Q5: How will we know it's done?**\n" \
-              "**A5:** Visual regression tests pass",
-        user: user_double,
-        created_at: Time.current
-      )
-    end
-
-    let(:github_client) { instance_double(GithubClient) }
-
-    before do
-      allow(project).to receive(:trusted_github_user?).with("viamin").and_return(true)
-      allow(project).to receive_messages(github_credential_present?: true, client: github_client)
-      allow(github_client).to receive(:issue_comments)
-        .and_return([ enhancement_comment, answer_comment ])
-    end
-
-    it "builds a complete brief from answer pairs" do
-      service = described_class.new(project: project, issue: issue)
-      brief = service.send(:assemble_feature_brief_from_answers, issue)
-
-      expect(brief["title"]).to eq("Add dark mode")
-      expect(brief["problem"]).to eq("Users want dark mode")
-      expect(brief["desired_behavior"]).to eq("Toggle dark mode in settings")
-      expect(brief["constraints"]).to include("Must work with SSR")
-      expect(brief["rejected_alternatives"]).to eq("CSS-only approach")
-      expect(brief["scope"]).to eq({ "in" => "Color palette and toggle", "out" => nil })
-      expect(brief["done_criteria"]).to eq("Visual regression tests pass")
     end
   end
 end

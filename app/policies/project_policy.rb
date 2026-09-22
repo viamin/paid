@@ -12,6 +12,7 @@ class ProjectPolicy < ApplicationPolicy
   # Project-specific permissions:
   # - run_agent?: can trigger agent runs (members + project roles)
   # - manage_issues?: can file and update GitHub issues via MCP tools
+  # - manage_apple_verifications?: can approve workflows and waive attempts
 
   def run_agent?
     return false unless user_in_account?
@@ -23,6 +24,14 @@ class ProjectPolicy < ApplicationPolicy
     return false unless user_in_account?
 
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
+  end
+
+  # @spec APPLE-VERIFY-002
+  # @spec APPLE-VERIFY-003
+  def manage_apple_verifications?
+    return false unless user_in_account?
+
+    user.has_role?(:project_admin, record)
   end
 
   private

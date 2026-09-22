@@ -245,6 +245,24 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .with(hash_including(type: "error", message: "API rate limit exceeded: Weekly/Monthly Limit Exhausted"))
   end
 
+  it "pauses the session and persists a durable pause notice when every runner is rate limited" do
+    # @spec CHAT-API-017
+    error = AgentHarness::RateLimitError.new("API rate limit exceeded", reset_time: 10.minutes.from_now)
+    allow(ChatSessions::SendMessage).to receive(:call).and_raise(error)
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Hello",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "system"))
+
+    expect(chat_session.reload).to be_rate_limited
+    expect(chat_session.messages.where(role: "system").last).to be_rate_limit_paused
+  end
+
   it "broadcasts a fallback notice and continues when a fallback runner is configured" do
     fallback_runner = configure_chat_fallback
     allow(ChatSessions::BuildLlmClient).to receive(:call)

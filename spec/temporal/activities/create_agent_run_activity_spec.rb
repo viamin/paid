@@ -1182,9 +1182,17 @@ RSpec.describe Activities::CreateAgentRunActivity do
       allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
     end
 
-    it "returns paused: true via resume_queued_run when feature brief is sparse" do
+    # @spec FEATURE-CREATION-001
+    it "pauses only when semantic assessment identifies unresolved feature intent" do
       agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
       agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(
+          ready: false,
+          questions: [ "The settings UI already persists preferences. Should dark mode follow the system preference until a user chooses an override?" ],
+          feature_brief: agent_run.external_metadata.fetch("feature_brief")
+        )
+      )
 
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -1193,17 +1201,17 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.reload.status).to eq("paused")
     end
 
-    it "persists clarifying questions locally so the dashboard avoids a per-issue API round-trip" do
+    it "persists tailored clarifying questions locally for the dashboard" do
       agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
       agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+      question = "The application has a settings page but no theme policy. Should a saved user choice override the operating-system preference?"
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(ready: false, questions: [ question ], feature_brief: agent_run.external_metadata.fetch("feature_brief"))
+      )
 
       activity.execute(agent_run_id: agent_run.id)
 
-      expect(feature_issue.reload.needs_input_questions).to be_an(Array).and include(
-        a_string_matching(/desired behavior/),
-        a_string_matching(/constraints/),
-        a_string_matching(/scope/)
-      )
+      expect(feature_issue.reload.needs_input_questions).to eq([ question ])
     end
 
     # @spec TEMPORAL-ORCHESTRATION-007
@@ -1214,6 +1222,13 @@ RSpec.describe Activities::CreateAgentRunActivity do
           "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" },
           "feature_clarification_round_id" => round_id
         })
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(
+          ready: false,
+          questions: [ "The settings UI already persists preferences. Should dark mode follow the system preference until a user chooses an override?" ],
+          feature_brief: agent_run.external_metadata.fetch("feature_brief")
+        )
+      )
       stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
         .to_return(
           status: 200,
@@ -1231,23 +1246,22 @@ RSpec.describe Activities::CreateAgentRunActivity do
     it "syncs the standard label catalog before applying the needs-input label" do
       agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
       agent_run.update!(external_metadata: { "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" } })
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(ready: false, questions: [ "Which users should receive the first rollout?" ], feature_brief: agent_run.external_metadata.fetch("feature_brief"))
+      )
 
       activity.execute(agent_run_id: agent_run.id)
 
       expect(Projects::EnsureStandardLabels).to have_received(:call_best_effort).with(project: project, logger: anything)
     end
 
-    it "does not pause when feature brief has all required fields" do
-      full_brief = {
-        "title" => "Add dark mode",
-        "problem" => "Need dark mode",
-        "desired_behavior" => "Toggle dark mode in settings",
-        "constraints" => [ "Must work with SSR" ],
-        "scope" => { "in" => "Color palette", "out" => "Syntax highlighting" },
-        "done_criteria" => "Visual regression tests pass"
-      }
+    it "continues when a detailed prose description is assessed as ready" do
+      full_brief = { "title" => "Add dark mode", "problem" => "Add a persistent dark-mode setting across all pages, respect system preference by default, and cover visual regression testing." }
       agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue)
       agent_run.update!(external_metadata: { "feature_brief" => full_brief })
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(ready: true, questions: [], feature_brief: full_brief)
+      )
 
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -1255,39 +1269,13 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     describe "#build_feature_clarifying_questions_comment" do
-      it "includes the enhance-issue marker and clarifying questions section" do
-        comment = activity.send(:build_feature_clarifying_questions_comment)
+      it "preserves generated question context in the enhancement comment shape" do
+        question = "The repository uses both account and project owners. Which owner should hold the GitHub App installation?"
+        comment = activity.send(:build_feature_clarifying_questions_comment, [ question ])
 
         expect(comment).to include("<!-- paid:enhance-issue -->")
         expect(comment).to include("## Clarifying questions")
-        expect(comment).to include("desired behavior")
-        expect(comment).to include("constraints")
-        expect(comment).to include("alternatives")
-        expect(comment).to include("scope")
-        expect(comment).to include("done")
-      end
-    end
-
-    describe "#feature_brief_sparse?" do
-      it "returns true when brief is nil" do
-        agent_run = build(:agent_run, :create_feature_goal, external_metadata: {})
-        expect(activity.send(:feature_brief_sparse?, agent_run)).to be true
-      end
-
-      it "returns true when brief lacks required fields" do
-        agent_run = build(:agent_run, :create_feature_goal,
-          external_metadata: { "feature_brief" => { "title" => "Test", "problem" => "Test" } })
-        expect(activity.send(:feature_brief_sparse?, agent_run)).to be true
-      end
-
-      it "returns false when brief has all required fields" do
-        brief = {
-          "title" => "Test", "problem" => "Test",
-          "desired_behavior" => "X", "constraints" => [ "Y" ],
-          "scope" => { "in" => "Z" }, "done_criteria" => "Done"
-        }
-        agent_run = build(:agent_run, :create_feature_goal, external_metadata: { "feature_brief" => brief })
-        expect(activity.send(:feature_brief_sparse?, agent_run)).to be false
+        expect(comment).to include(question)
       end
     end
   end

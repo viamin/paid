@@ -20,6 +20,7 @@ class LlmModel < ApplicationRecord
   belongs_to :free_variant_of, class_name: "LlmModel", optional: true
   has_many :model_selections, dependent: :restrict_with_error
   has_many :configuration_bundles, dependent: :nullify
+  has_many :model_availability_checks, dependent: :destroy
 
   validates :model_id, presence: true, uniqueness: true
   validates :display_name, presence: true
@@ -86,6 +87,28 @@ class LlmModel < ApplicationRecord
 
   def expired?
     expires_at.present? && expires_at <= Time.current
+  end
+
+  # True when an operator has explicitly pinned this row's active state
+  # (via #operator_disable! / #operator_enable!), rather than the value
+  # simply reflecting the last catalog snapshot. Models::SeedKnownModels
+  # consults this so a scheduled sync never silently overrides an explicit
+  # operator decision.
+  # @spec MODEL-AVAILABILITY-002
+  def operator_managed_active?
+    !operator_active_override.nil?
+  end
+
+  def operator_disable!
+    update!(active: false, operator_active_override: false)
+  end
+
+  def operator_enable!
+    update!(active: true, operator_active_override: true)
+  end
+
+  def clear_operator_override!
+    update!(operator_active_override: nil)
   end
 
   def self.default_for_task(category)

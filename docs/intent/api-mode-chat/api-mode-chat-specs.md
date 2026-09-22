@@ -150,60 +150,81 @@
   smallest supported mobile viewport, without making workspace recovery or
   configuration actions unreachable.
 
+  The chat page is chat-first. The always-visible chrome on both the mobile
+  (`<xl`) and the desktop (`xl+`) header SHALL be a single compact line:
+  the session title (truncated, with the full title on hover) and a
+  "Session details" disclosure toggle, with no badges, dropdowns, or
+  buttons rendered outside a disclosure (#3925). Everything else — runner /
+  model selectors, token-usage tile, archive / unarchive buttons, project
+  links, the "Updated …" timestamp, the container-capability badge, and the
+  title editing field — SHALL sit inside a single `Session details`
+  `<details>` element that renders **closed in the server response** on
+  both layouts. The redundant `Active` (chat-session status) and `Inline` /
+  `Container` (chat-mode) badges SHALL NOT be rendered in the chat panel
+  header; the chat list already shows active / idle / closed / archived
+  state per row and the chat page itself has Active vs Archived tabs, so
+  the header badge added no information.
+
   The workspace capability panel — whose cloned-repo list grows without
-  bound — SHALL sit behind a `<details>` disclosure. On the desktop/wide page
-  header, the disclosure SHALL render **open in the server response** for any
-  session that has a workspace (`container_capability` other than `none`), and
-  collapsed only for inline-only chats. On the compact mobile page header, the
-  disclosure MAY render collapsed by default so the transcript remains usable,
-  provided the workspace state stays visible in the header badges and the
-  disclosure summary remains plainly reachable without JavaScript. When a live
-  `capability_changed` broadcast *reveals* one of the actions inside the
-  capability panel — i.e. the action transitions from hidden to shown — the
-  controller SHALL unfold the surrounding `<details>` with it, since un-hiding
-  a control inside a collapsed disclosure reveals nothing; it SHALL NOT unfold
-  the disclosure when it is hiding an action or when the action was already
+  bound — SHALL sit behind its own `<details>` disclosure. On the desktop /
+  wide page header, that disclosure SHALL render **open in the server
+  response** for any session that has a workspace (`container_capability`
+  other than `none`), and collapsed only for inline-only chats. The same
+  rule applies on the mobile page header. When a live `capability_changed`
+  broadcast *reveals* one of the actions inside the capability panel —
+  i.e. the action transitions from hidden to shown — the controller SHALL
+  unfold the surrounding `<details>` with it, since un-hiding a control
+  inside a collapsed disclosure reveals nothing; it SHALL NOT unfold the
+  disclosure when it is hiding an action or when the action was already
   visible before the toggle, or same-state snapshot broadcasts (e.g. a
   `clone_manifest` rebroadcast that still carries `container_capability:
   "ready"`) would fight a user who intentionally collapsed the disclosure.
 
-  Below `xl`, the page SHALL switch to a compact header pattern that keeps the
-  transcript as the dominant region: a short title/token row, a badge row, and
-  collapsed disclosures for session/workspace controls. Runner/model selectors,
-  title editing, and archive controls remain reachable inside the compact
-  session disclosure. On a 390×844 viewport with the panel viewport-bound and a
+  Below `xl`, the page SHALL switch to a compact header pattern that keeps
+  the transcript as the dominant region: the compact single-line chrome
+  described above plus the two disclosures (`Session details` and
+  `Workspace`). Runner / model selectors, title editing, token usage, and
+  archive controls remain reachable inside the `Session details`
+  disclosure. A workspace's status and recovery action remain visible in its
+  open `Workspace` disclosure; on mobile, its potentially tall clone
+  configuration and cloned-repository list SHALL sit in a nested, initially
+  closed `Workspace options` disclosure so they remain reachable without
+  consuming the transcript before the user asks for them. On a 390×844
+  viewport with the panel viewport-bound and a
   visible mobile history toggle, the transcript region
-  (`[data-chat-target="container"]`) SHALL retain at least 18rem of height and
-  the document itself SHALL remain non-scrolling so the transcript stays the
-  real scroll container.
+  (`[data-chat-target="container"]`) SHALL retain at least 18rem of height
+  and the document itself SHALL remain non-scrolling so the transcript
+  stays the real scroll container.
 
-  The header SHALL carry a percentage `max-height` with its own
-  `overflow-y-auto` so no combination of long titles, badges, or workspace
-  state can starve the message list, plus `overflow-x-hidden` so that scroll
-  container does not compute its x axis to `auto` and hang a horizontal
-  scrollbar off the header. The cap SHALL relax while the disclosure is open
-  (`has-[details[open]]`): clipping content the user just chose to expand is
-  worse than a temporarily shorter transcript, and collapsing it again
-  reclaims the space. Without the relaxed cap, opening Workspace on a 900px
-  viewport hid ~84px of the panel below the header's clipped edge with no
-  visible hint that the header scrolled.
+  No `max-height` cap SHALL be applied to the desktop or mobile header:
+  the always-visible chrome is a single compact line by design, so
+  unbounded growth only happens when the user explicitly opens the
+  `Session details` or `Workspace` disclosures, and that is a user choice.
+  Clipping content the user just chose to expand is worse than a
+  temporarily shorter transcript, and collapsing it again reclaims the
+  space.
 
   Without these bounds the header's runner/model controls, token bar, and
   workspace panel consume most of a viewport-bound panel and the transcript
-  renders in a sliver too short to read (#3575).
-  *Tests:* `spec/requests/chat_sessions_spec.rb` ("collapses the workspace
-  disclosure for an inline-only chat", "renders the desktop workspace
-  disclosure open when the chat has a workspace", "uses a compact mobile page
-  header so the transcript remains usable", "bounds the desktop chat panel
-  header so the transcript keeps usable height", "relaxes the desktop header
-  cap while the workspace disclosure is open"), `spec/system/chat_layout_spec.rb`,
+  renders in a sliver too short to read (#3575, #3925).
+  *Tests:* `spec/requests/chat_sessions_spec.rb` ("collapses the desktop
+  session-details disclosure by default so the chat stays chat-first",
+  "places runner/model/token-usage/archive controls inside the desktop
+  session-details disclosure", "does not render the redundant
+  Active/Inline status badges in the desktop chat header", "collapses the
+  workspace disclosure for an inline-only chat", "renders the desktop
+  workspace disclosure open when the chat has a workspace", "uses a
+  compact mobile page header so the transcript remains usable"),
+  `spec/system/chat_layout_spec.rb`,
   `spec/system/chat_workspace_reopen_spec.rb`,
   `spec/lib/chat_controller_node_harness_spec.rb`
   ("testStoppedCapabilityUnfoldsItsDisclosure",
   "testHiddenCapabilityActionLeavesDisclosureAlone",
   "testSameStateBroadcastLeavesDisclosureAlone").
   *Code:* `app/views/chat_sessions/show.html.erb` (panel header),
-  `app/javascript/controllers/chat_controller.js#toggleCapabilityActions`,
+  `app/views/chat_sessions/_chat_panel.html.erb` (mobile + desktop
+  header), `app/views/chat_sessions/_session_details.html.erb` (shared
+  disclosure body), `app/javascript/controllers/chat_controller.js#toggleCapabilityActions`,
   `app/views/chat_sessions/_popup.html.erb` (established pattern).
 
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
@@ -306,3 +327,43 @@
   *Code:* `ChatMessage#display_content`,
   `app/views/chat_messages/_bubble.html.erb`,
   `app/javascript/controllers/chat_message_controller.js`.
+
+- [x] **CHAT-API-017** — When every configured runner for a chat session (the
+  primary runner and all fallbacks from CHAT-API-006) is exhausted by a
+  provider rate limit, the system SHALL record the recovery time on the
+  session, persist a durable system-role `ChatMessage` explaining the pause
+  and whether it will resume automatically, and — once that recovery time has
+  elapsed — automatically resend the unanswered message and resume normal
+  operation without user intervention, unless the account has disabled
+  automatic resumption via `TenantSetting#chat_auto_resume_rate_limited`
+  (default enabled). A session whose retried resend still hits a rate limit
+  SHALL be re-paused with the new recovery time rather than left stuck
+  forever. When the retried resend exhausts its fallbacks with another
+  `AgentHarness::Error`, the system SHALL persist a durable provider-failure
+  notice rather than silently clearing the pending session state; it SHALL
+  not treat authentication or configuration failures as rate limits eligible
+  for automatic retry.
+  *Tests:* `spec/models/chat_session_spec.rb`,
+  `spec/models/chat_message_spec.rb`,
+  `spec/models/tenant_setting_spec.rb`,
+  `spec/services/chat_sessions/mark_rate_limited_spec.rb`,
+  `spec/services/chat_sessions/provider_error_notice_spec.rb`,
+  `spec/services/chat_sessions/record_provider_error_spec.rb`,
+  `spec/services/chat_sessions/resume_rate_limited_spec.rb`,
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`,
+  `spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb`,
+  `spec/jobs/chat_sessions/resume_rate_limited_job_spec.rb`,
+  `spec/jobs/chat_sessions/auto_resume_rate_limited_sweep_job_spec.rb`,
+  `spec/requests/tenant_configurations_spec.rb`.
+  *Code:* `ChatSession#mark_rate_limited!`, `ChatSession#rate_limited?`,
+  `ChatSession#auto_resume_rate_limited?`, `ChatSession.rate_limited_due`,
+  `ChatSessions::MarkRateLimited`, `ChatSessions::ResumeRateLimited`,
+  `ChatSessions::RecordProviderError`, `ChatSessions::ProviderErrorNotice`,
+  `ChatSessions::RateLimitPauseMessage`, `ChatMessage#rate_limit_paused?`,
+  `ChatMessage#provider_error_notice?`,
+  `app/views/chat_messages/_rate_limit_paused.html.erb`,
+  `app/views/chat_messages/_provider_error_notice.html.erb`,
+  `ChatSessions::ProcessMessageJob`, `ChatSessions::ResolveToolCallJob`,
+  `ChatSessions::ResumeRateLimitedJob`,
+  `ChatSessions::AutoResumeRateLimitedSweepJob`,
+  `TenantSetting#chat_auto_resume_rate_limited`.
