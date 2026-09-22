@@ -1217,24 +1217,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
     # @spec TEMPORAL-ORCHESTRATION-007
     it "reconciles a posted clarification round instead of posting it again" do
       round_id = "clarification-round"
+      brief = { "title" => "Add dark mode", "problem" => "Need dark mode" }
       agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue,
-        external_metadata: {
-          "feature_brief" => { "title" => "Add dark mode", "problem" => "Need dark mode" },
-          "feature_clarification_round_id" => round_id
-        })
+        external_metadata: { "feature_brief" => brief, "feature_clarification_round_id" => round_id })
       allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
         Features::ClarifyingQuestions::Analyze::Result.new(
           ready: false,
           questions: [ "The settings UI already persists preferences. Should dark mode follow the system preference until a user chooses an override?" ],
-          feature_brief: agent_run.external_metadata.fetch("feature_brief")
+          feature_brief: brief
         )
       )
       stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
-        .to_return(
-          status: 200,
-          body: [ { body: "<!-- paid:create-feature-clarification:#{round_id} -->" } ].to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
+        .to_return(status: 200, body: [ { body: "<!-- paid:create-feature-clarification:#{round_id} -->" } ].to_json,
+          headers: { "Content-Type" => "application/json" })
 
       activity.execute(agent_run_id: agent_run.id)
 
