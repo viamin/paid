@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-09-19
+last_updated: 2026-09-21
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -60,6 +60,29 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-09-19
+  apple-verification-attempts:
+    title: Apple Verification Attempt Lifecycle
+    path: docs/intent/apple-verification-attempts/apple-verification-attempts-design.md
+    specs: docs/intent/apple-verification-attempts/apple-verification-attempts-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-09-21
+    audited: 2026-09-21
+    blockedBy: [apple-verification-workers, apple-guest-execution, apple-verification-network-policy]
+    blocks: [apple-verification-results]
+    next: "Implement admission, execution, failure classification, gate enforcement, and recovery (RDR-068 phases 4-6)"
+  apple-verification-results:
+    title: Apple Verification Results and Artifacts
+    path: docs/intent/apple-verification-results/apple-verification-results-design.md
+    specs: docs/intent/apple-verification-results/apple-verification-results-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-09-21
+    audited: 2026-09-21
+    blockedBy: [apple-verification-attempts]
+    next: "Implement result assembly, artifact ingestion, protected PR status, and semantic agent operations (RDR-068 phase 6)"
   apple-guest-execution:
     title: Apple Guest Execution
     path: docs/intent/apple-guest-execution/apple-guest-execution-design.md
