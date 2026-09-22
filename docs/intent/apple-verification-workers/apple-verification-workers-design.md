@@ -46,6 +46,33 @@ and RDR-060 resource ledger rows may point to an attempt and must retain
 matching account/project ownership. The ledger's `verification_vm` kind is the
 durable external VM identity.
 
+`AppleVerification::ConfigurationParser` reads `.paid/apple-verification.yml`
+into a typed `AppleVerification::Configuration`: one or more named profiles,
+each with a platform, an optional compatible worker constraint, an Xcode
+project or workspace with scheme and optional test plan, an optional
+dependency bootstrap declaration limited to Swift Package Manager, a tests
+block, and declarative UI-flow captures built from an allowlisted operation
+vocabulary. An unknown flow operation or an unsupported bootstrap system
+(CocoaPods, Carthage, Bazel, Tuist) raises a deterministic diagnostic before
+any provisioning is attempted. `AppleVerification::InferConfiguration`
+derives a best-effort starting configuration from a repository file listing —
+detected `.xcodeproj`/`.xcworkspace` projects, their shared schemes and test
+plans — but the result is always advisory until a user reviews and commits
+it; inference never creates an approved revision.
+`AppleVerificationWorkflowRevisions::SyncFromConfiguration` parses committed
+configuration content, resolves an active worker profile compatible with
+every declared platform, Xcode version constraint, and simulator constraint,
+and creates or updates the project's current draft revision with the file's
+content digest and the required/advisory checks derived from the
+configuration. `AppleVerificationWorkers::VersionRequirement` parses Xcode
+constraints such as ">= 26.0, < 27.0" and "~> 26.0"; a profile binds only
+when its advertised Xcode range falls within every declared `worker.xcode`
+constraint and each declared `worker.simulator` appears in the profile's
+advertised simulator runtimes, so a constraint mismatch fails at sync time
+before any worker is provisioned. Sync only ever touches a draft; an approved
+revision's binding is immutable, so a functional change always lands in a new
+or updated draft, never in place.
+
 The `apple_verification_workers` feature flag remains default-off. This phase
 implements the trusted host lifecycle boundary; it does not schedule project
 verification or execute guest jobs. Attempt admission, execution ordering,
