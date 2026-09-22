@@ -25,13 +25,16 @@ module AppleVerification
     # environment variables — the sweep refuses to record a `destroyed`
     # audit event it cannot back up and leaves +container_retained_until+
     # in place so a later sweep run, once the macOS worker is configured,
-    # picks the attempt up. The sweep is idempotent: an attempt whose
-    # retention deadline is in the future is skipped, an attempt whose
-    # retention deadline is already cleared is also skipped, the underlying
-    # {ArtifactStorage#delete} call is a no-op when the key is missing, and
-    # {AppleVerification::Lifecycle#destroy} returns +:noop+ for attempts
-    # that have no live ledger entry (e.g. failures that never reached
-    # provisioning).
+    # picks the attempt up. The same refusal applies when the lifecycle
+    # reports the destroy as a no-op: {AppleVerification::Lifecycle#destroy}
+    # returns +:noop+ for attempts that have no live ledger entry or no
+    # recorded +vm_id+ (e.g. failures that never reached provisioning), and
+    # the sweep leaves the deadline in place and records no audit event
+    # rather than asserting a destroy that did not happen. The sweep is
+    # idempotent: an attempt whose retention deadline is in the future is
+    # skipped, an attempt whose retention deadline is already cleared is
+    # also skipped, and the underlying {ArtifactStorage#delete} call is a
+    # no-op when the key is missing.
     #
     # @spec APPLE-TRANSFER-006
     class RetentionSweep
@@ -115,16 +118,18 @@ module AppleVerification
       end
 
       def revoke_vm!(attempt)
-        # Drive the real host destroy first; the lifecycle is a no-op for
-        # attempts that have no live ledger entry so a failure that never
-        # provisioned (or that was already destroyed by an earlier sweep
-        # run) still clears the deadline without raising. The macOS worker
-        # must be configured (or a lifecycle must be injected) for the
-        # sweep to drive a real destroy; if neither is available the sweep
-        # refuses to record an `apple_verification_vm.destroyed` audit event
-        # for a VM it did not actually destroy and leaves the deadline in
-        # place so the next sweep run (after the worker is configured)
-        # picks the attempt up.
+        # Drive the real host destroy first so the audit event recorded by
+        # {AppleVerification::Revocation::Enforce#revoke_retained!} reflects
+        # an actual destroy rather than a no-op. The macOS worker must be
+        # configured (or a lifecycle must be injected) for the sweep to
+        # drive a real destroy; if neither is available the sweep refuses
+        # to record an `apple_verification_vm.destroyed` audit event for a
+        # VM it did not actually destroy and leaves the deadline in place
+        # so the next sweep run (after the worker is configured) picks the
+        # attempt up. A destroy that reports +:noop+ (no live ledger entry
+        # or no recorded +vm_id+) gets the same treatment: no audit event,
+        # deadline kept, so a later run retries once the destroy can be
+        # backed by a real host action.
         lifecycle = lifecycle_for(attempt)
         unless lifecycle
           Rails.logger.warn(
@@ -134,6 +139,21 @@ module AppleVerification
           )
           return false
         end
+
+        destroy_request_id = "retention_sweep:destroy:#{attempt.id}"
+        destroy_result = lifecycle.destroy(attempt: attempt, request_id: destroy_request_id)
+        unless destroy_result == :destroyed
+          Rails.logger.warn(
+            message: "apple_verification.vm_retention_sweep_skipped",
+            apple_verification_attempt_id: attempt.id,
+            reason: "destroy_noop"
+          )
+          return false
+        end
+
+        revocation_service_for(attempt).revoke_retained!
+        true
+      end
 
         destroy_request_id = "retention_sweep:destroy:#{attempt.id}"
         lifecycle.destroy(attempt: attempt, request_id: destroy_request_id)

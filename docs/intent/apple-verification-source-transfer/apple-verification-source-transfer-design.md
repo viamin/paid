@@ -112,6 +112,17 @@ revoked by deleting the cached entry in `Github::AppInstallation`; the entry's
 deletion is recorded as an `ExecutionAuditEvent`
 (`event_name: "apple_credential.revoked"`) without the token value.
 
+[ ] **Gap:** The out-of-band per-attempt token delivery is not wired yet.
+The guest executor transport that would mint an attempt-scoped installation
+token (bypassing `Github::AppInstallation`'s project-wide shared cache so a
+later revoke cannot pull a token out from under concurrent GitHub operations)
+and hand it to the guest does not exist in this segment, so
+`CredentialLane` ships no mint entry point — only `#revoke!`, which reads the
+attempt-scoped cache key the future mint path will write. Until that consumer
+lands, the revoke read is always a cache miss and is a safe no-op. A follow-up
+should add the mint call at the executor boundary together with its delivery
+channel.
+
 ## Result manifest
 
 `AppleVerification::ResultManifest::Build` produces the `OutputManifest` after
@@ -185,7 +196,11 @@ shorten below the bundle retention window.
   `ExecutionResourceLedgerEntry` deleted, and is idempotent for attempts
   with no live ledger entry) before recording the
   `apple_verification_vm.destroyed` audit event, so the audit event
-  reflects an actual destroy rather than a no-op.
+  reflects an actual destroy rather than a no-op. A destroy that comes back
+  `:noop` (no live ledger entry or no recorded `vm_id`) records no audit
+  event: the sweep leaves `container_retained_until` in place — mirroring
+  the no-lifecycle branch — so a later run retries once the macOS worker
+  can back the event.
 - A workspace bundle is retained for the configured window after the attempt
   completes (default 7 days, configurable per account). The retention window
   is recorded on the attempt as `bundle_retained_until`; uncommitted

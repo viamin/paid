@@ -136,7 +136,11 @@ module AppleVerification
       end
 
       def bundle_key
-        "apple-verification/#{project.account_id}/#{project_id}/#{attempt.id}/source.tar"
+        AppleVerification::ArtifactIngestion::Storage.bundle_key(
+          account_id: project.account_id,
+          project_id: project_id,
+          attempt_id: attempt.id
+        )
       end
 
       def bundle_url

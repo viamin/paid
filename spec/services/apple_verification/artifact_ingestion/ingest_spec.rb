@@ -71,6 +71,21 @@ RSpec.describe AppleVerification::ArtifactIngestion::Ingest do
     }.to raise_error(described_class::DigestMismatchError, /digest/)
   end
 
+  it "accepts a guest-reported digest whose algorithm prefix or hex digits use uppercase" do
+    payload = "binary-xcresult"
+    digest = Digest::SHA256.hexdigest(payload)
+
+    expect {
+      described_class.call(
+        attempt: attempt,
+        descriptors: [
+          { "kind" => "xcresult", "name" => "App.xcresult", "bytes" => payload, "digest" => "SHA256:#{digest.upcase}" }
+        ],
+        storage: storage
+      )
+    }.not_to raise_error
+  end
+
   it "rejects host path or host mount fields in any descriptor" do
     expect {
       described_class.call(

@@ -45,7 +45,9 @@ RSpec.describe AppleVerification::SourceLane::Build do
       expect(result.object_storage.first["kind"]).to eq("workspace_bundle")
       expect(result.object_storage.first["locator"]).to include(
         "digest" => attempt.source_digest,
-        "key" => a_string_including("apple-verification/")
+        "key" => AppleVerification::ArtifactIngestion::Storage.bundle_key(
+          account_id: account.id, project_id: project.id, attempt_id: attempt.id
+        )
       )
     end
   end

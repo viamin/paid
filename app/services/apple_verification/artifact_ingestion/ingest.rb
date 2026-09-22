@@ -125,7 +125,11 @@ module AppleVerification
 
       def verify_reported_digest!(reported, computed:, name:, kind:)
         return if reported.blank?
-        return if reported.sub(/\Asha256:/, "").downcase == computed
+        # The guest may report the algorithm prefix in either case
+        # (`sha256:` / `SHA256:`); strip it case-insensitively and compare
+        # the hex digits lowercased so a valid mixed-case digest is
+        # accepted while any real mismatch still fails.
+        return if reported.sub(/\Asha256:/i, "").downcase == computed
 
         raise DigestMismatchError, "artifact #{name} for #{kind} reported digest #{reported} but bytes hash to sha256:#{computed}"
       end

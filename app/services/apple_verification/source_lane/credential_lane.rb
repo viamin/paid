@@ -6,12 +6,15 @@ module AppleVerification
     # reference for a committed Apple verification attempt (RDR-068 § Source
     # and Credential Transfer).
     #
-    # The lane entry is a reference, never a value: the resolved installation
-    # token is fetched through {Github::AppInstallation} at manifest-build time
-    # and is delivered to the macOS guest through the authenticated
-    # {AppleVerification::GuestConnection} channel rather than embedded in the
-    # manifest. The token value is never serialized into the attempt record,
-    # the input manifest, the output manifest, or any artifact metadata.
+    # The lane entry is a reference, never a value: the installation token
+    # is delivered to the macOS guest out-of-band through the authenticated
+    # {AppleVerification::GuestConnection} channel rather than embedded in
+    # the manifest. The token value is never serialized into the attempt
+    # record, the input manifest, the output manifest, or any artifact
+    # metadata. The per-attempt mint entry point that feeds {#revoke!}'s
+    # attempt-scoped cache is deferred until the guest executor transport
+    # that delivers the token lands (see the segment design doc's credential
+    # lane gap note).
     #
     # @spec APPLE-TRANSFER-001
     class CredentialLane
@@ -51,45 +54,22 @@ module AppleVerification
         )
       end
 
-      # Mints a token dedicated to this attempt and caches it under an
-      # attempt-scoped key — deliberately bypassing
-      # {Github::AppInstallation.token_for}'s project-wide cache
-      # (keyed only on installation_id + repo_full_name), which is the same
-      # entry {Project#github_credential} draws from. Minting through the
-      # shared cache would mean {#revoke!} later DELETEs a token other
-      # in-flight GitHub operations on the project may still be holding.
-      # Returns the raw token value; the caller (the guest executor
-      # transport) is responsible for never persisting the token value
-      # itself. Used by the revoke path below and by spec helpers that
-      # exercise the boundary.
-      def mint_token!
-        raise MissingCommitError, "committed attempts must bind a commit_sha" unless committed?
-
-        installation = resolve_installation!
-        validate_installation!(installation)
-        Rails.cache.fetch(attempt_token_cache_key(installation), expires_in: DEFAULT_TTL_SECONDS) do
-          @token_provider.new(
-            installation_id: installation.github_installation_id,
-            repo_full_name: project.full_name
-          ).mint
-        end
-      end
-
       # Revokes this attempt's dedicated token at GitHub
       # (DELETE /installation/token, authenticated with the token itself) and
       # then drops the attempt-scoped cache entry. Used by the revocation
       # sweep after an attempt completes (success or failure) so a retained
       # failed VM cannot replay an old token against the GitHub API during
       # the retention window. Reads the token from the attempt-scoped cache
-      # key written by {#mint_token!} — never from the project-wide shared
-      # cache — so this never revokes a token another concurrent attempt or
-      # {Project#github_credential} consumer is still relying on. A cache
-      # miss (no token was ever minted for this attempt, e.g. the guest
-      # channel was never reached) is a no-op: there is nothing to revoke at
-      # GitHub. A GitHub-side revoke failure is logged and swallowed: the
-      # cache entry is still cleared and the credential lane entry is still
-      # considered revoked locally; only the live GitHub revoke is
-      # best-effort.
+      # key the per-attempt mint path will write — never from the
+      # project-wide shared cache {Github::AppInstallation.token_for} draws
+      # from — so this never revokes a token another concurrent attempt or
+      # {Project#github_credential} consumer is still relying on. Until the
+      # mint entry point lands with the guest executor transport, that key
+      # is never written: the read is always a miss and the revoke is a
+      # safe no-op (there is nothing to revoke at GitHub). A GitHub-side
+      # revoke failure is logged and swallowed: the cache entry is still
+      # cleared and the credential lane entry is still considered revoked
+      # locally; only the live GitHub revoke is best-effort.
       def revoke!
         return unless committed?
 
