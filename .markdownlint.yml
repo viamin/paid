@@ -4,6 +4,7 @@
 
 MD013: false # Line length disabled
 MD024: false # Allow duplicate headings (handled semantically by higher-level sections)
+MD031: false # Allow fenced code blocks to sit directly under list items without blank lines (operator-guide convention)
 MD036: false # Emphasis used instead of heading (common in docs)
 MD040: false # Fenced code blocks without language specifier
 MD060: false # Table column style spacing
