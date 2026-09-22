@@ -155,6 +155,24 @@ RSpec.describe AppleVerification::Setup::SmokeTests do
       expect(result.detail).to include("dispatcher is not configured")
     end
 
+    it "records a gap when the dispatcher raises NoActiveImageError (configuration gap, not a guest failure)" do
+      raising = ->(**) { raise AppleVerification::ExecuteGuestJob::NoActiveImageError, "no active image matches --image" }
+      summary = described_class.call(**summary_kwargs.merge(dispatcher: raising))
+
+      result = summary.results.find { |row| row.scenario_id == "build-test-colormatching-ios" }
+      expect(result.status).to eq(:gap)
+      expect(result.detail).to include("NoActiveImageError")
+    end
+
+    it "records a gap when the dispatcher raises FeatureDisabledError (configuration gap, not a guest failure)" do
+      raising = ->(**) { raise AppleVerification::ExecuteGuestJob::FeatureDisabledError, "apple_verification_workers is disabled" }
+      summary = described_class.call(**summary_kwargs.merge(dispatcher: raising))
+
+      result = summary.results.find { |row| row.scenario_id == "build-test-colormatching-ios" }
+      expect(result.status).to eq(:gap)
+      expect(result.detail).to include("FeatureDisabledError")
+    end
+
     it "fails when the synthesized operations are missing the build outcome key" do
       mixed = ->(**) { AppleVerification::Setup::Smoke::Manifests.synthesize_outcomes(
         [ { "type" => "test", "outcome" => "succeeded" } ],

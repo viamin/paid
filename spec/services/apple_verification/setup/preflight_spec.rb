@@ -385,5 +385,109 @@ RSpec.describe AppleVerification::Setup::Preflight do
       expect(report.status).to eq(:ready)
       expect(report.ready?).to be(true)
     end
+
+    it "prefers the host service readiness memory.free_percent over a local vm_stat parse" do
+      command_responses[[ "vm_stat" ]] = [
+        "Pages free: 90000.\nPages active: 100.\nPages inactive: 100.\n", "", status(0)
+      ]
+      stub_host_service(
+        readiness: {
+          "cpu" => { "available_cores" => 4 },
+          "memory" => { "free_percent" => 10 },
+          "disk" => { "free_gib" => 200 },
+          "network" => { "proxy_relay" => "paid-egress" }
+        }
+      )
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :capacity }
+      expect(check.status).to eq(:gap)
+      expect(check.detail).to include("10% < operator minimum 25%")
+    end
+
+    it "ignores a vm_stat reading that contradicts a passing host service readiness payload" do
+      command_responses[[ "vm_stat" ]] = [
+        "Pages free: 1.\nPages active: 9999.\nPages inactive: 9999.\n", "", status(0)
+      ]
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :capacity }
+      expect(check.status).to eq(:pass)
+      expect(check.detail).to include("300 GiB")
+    end
+
+    it "falls back to vm_stat when the host service is not configured" do
+      command_responses[[ "vm_stat" ]] = [
+        "Pages free: 12345.\nPages active: 12000.\nPages inactive: 8000.\n", "", status(0)
+      ]
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "",
+        host_token: ""
+      )
+
+      check = report.results.find { |result| result.id == :capacity }
+      expect(check.status).to eq(:pass)
+      expect(check.detail).to include("300 GiB")
+    end
+
+    it "falls back to vm_stat when the host service returns no memory free_percent" do
+      stub_host_service(
+        readiness: {
+          "cpu" => { "available_cores" => 4 },
+          "disk" => { "free_gib" => 200 },
+          "network" => { "proxy_relay" => "paid-egress" }
+        }
+      )
+      command_responses[[ "vm_stat" ]] = [
+        "Pages free: 12345.\nPages active: 12000.\nPages inactive: 8000.\n", "", status(0)
+      ]
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :capacity }
+      expect(check.status).to eq(:pass)
+      expect(check.detail).to include("300 GiB")
+    end
+
+    it "falls back to vm_stat when the host service readiness fetch raises" do
+      allow(AppleVerification::HostClient).to receive(:new).and_return(
+        Class.new do
+          def call(**) raise AppleVerification::HostService::UnsupportedRequestError, "boom" end
+        end.new
+      )
+      command_responses[[ "vm_stat" ]] = [
+        "Pages free: 12345.\nPages active: 12000.\nPages inactive: 8000.\n", "", status(0)
+      ]
+
+      report = described_class.call(
+        shell:,
+        approved_image_digests: [],
+        host_url: "https://macos-worker.example/lifecycle",
+        host_token: "host-token"
+      )
+
+      check = report.results.find { |result| result.id == :capacity }
+      expect(check.status).to eq(:pass)
+    end
   end
 end

@@ -31,7 +31,7 @@ RSpec.describe AppleVerification::Setup::SmokeAttemptFactory do
       result = attempt_lambda.call(agent_run: agent_run)
 
       expect(result.profile.name).to start_with(described_class::PROFILE_NAME_PREFIX)
-      expect(result.profile.name).to include("ios-standard").or include(image_digest.delete_prefix("sha256")[0, described_class::PROFILE_NAME_DIGEST_FRAGMENT])
+      expect(result.profile.name).to include(image_digest.delete_prefix("sha256:")[0, described_class::PROFILE_NAME_DIGEST_FRAGMENT])
       expect(result.profile.image_digest).to eq(image_digest)
       expect(result.profile.account_id).to eq(account.id)
     end

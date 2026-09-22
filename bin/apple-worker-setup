@@ -134,10 +134,13 @@ end
 # the scenario outcome. The executor returns an operations Array (each entry
 # shaped like {"type" => "...", "status" => "succeeded"}); the harness needs
 # the smoke-specific top-level outcome keys, so this dispatcher maps the
-# raw operations list into the contract {SmokeTests} asserts against. When
-# the executor isn't wired in (no host service yet, or the call raises), the
-# synthesized hash carries an empty outcome so the scenarios record a
-# fail-closed +:failed+ rather than falsely reporting +:passed+.
+# raw operations list into the contract {SmokeTests} asserts against.
+# Configuration-gap errors (`NoActiveImageError`, `FeatureDisabledError`)
+# are re-raised so {SmokeTests#run_scenario} records a `:gap` (the
+# smoke harness reserves it for "the upstream surface isn't wired in")
+# rather than a `:failed`. The wider rescue keeps an unexpected runtime
+# error visible as `:failed` so genuine executor regressions do not
+# silently disappear into the gap bucket.
 class SmokeDispatcher
   def initialize(image_digest:)
     @image_digest = image_digest
@@ -150,6 +153,9 @@ class SmokeDispatcher
       image_digest: @image_digest
     )
     AppleVerification::Setup::Smoke::Manifests.synthesize_outcomes(result.operations || [], scenario_id)
+  rescue AppleVerification::ExecuteGuestJob::NoActiveImageError,
+    AppleVerification::ExecuteGuestJob::FeatureDisabledError
+    raise
   rescue StandardError => error
     { "dispatch_error" => "#{error.class.name}: #{error.message}" }
   end

@@ -292,7 +292,7 @@ module AppleVerification
 
         memory_result =
           if memory.nil?
-            warn(:capacity, "could not determine host memory pressure via vm_stat")
+            warn(:capacity, "could not determine host memory pressure via vm_stat or host service readiness payload")
           elsif memory < min_memory_percent
             gap(:capacity, "free host memory #{memory}% < operator minimum #{min_memory_percent}%",
               "Stop other workloads on the worker host or raise the operator minimum (paid.apple_worker.admission.min_memory_percent) after confirming the additional headroom is real; verify with: vm_stat | awk '/free/ {print $3}'.")
@@ -323,7 +323,27 @@ module AppleVerification
         raw.to_i if raw.match?(/\A\d+(?:\.\d+)?\z/)
       end
 
+      # Prefer the host service's readiness payload (`memory.free_percent`,
+      # computed against the full physical memory) over a local `vm_stat`
+      # parse. `vm_stat`'s `Pages free + active + inactive` sum excludes
+      # wired-down, compressed, and compressor-occupied pages that
+      # routinely account for several GiB of working set on M-series
+      # hosts, so the local parse can overstate free memory by ~20
+      # percentage points and accept hosts the host service would flag.
+      # When the host service is configured but does not publish the
+      # field (older host builds) fall back to vm_stat so the preflight
+      # still produces a result.
       def read_memory_percent
+        readiness = readiness_payload
+        if readiness
+          free = readiness.dig("memory", "free_percent")
+          return free.to_f.round if free
+        end
+
+        read_memory_percent_from_vm_stat
+      end
+
+      def read_memory_percent_from_vm_stat
         result = shell.run("vm_stat")
         return nil unless result.success?
 
@@ -337,6 +357,28 @@ module AppleVerification
         return nil if total.zero?
 
         ((free.to_f / total) * 100).round
+      end
+
+      # Memoised readiness payload fetch. Returns nil when the host
+      # service is not configured (no URL or token) or when the fetch
+      # raises — capacity falls back to vm_stat in that case. The
+      # existing host_service_authentication and proxy_enforcement
+      # checks perform their own fetches because they need to inspect
+      # specific error classes for gap vs warn semantics; they
+      # intentionally re-issue the request rather than share state with
+      # this helper.
+      def readiness_payload
+        @readiness_payload ||= fetch_readiness_payload
+      end
+
+      def fetch_readiness_payload
+        return nil if host_url.blank? || host_token.blank?
+
+        client = AppleVerification::HostClient.new(endpoint: host_url)
+        client.call(version: AppleVerification::HostService::API_VERSION,
+          operation: "readiness", payload: {}, token: host_token)
+      rescue StandardError
+        nil
       end
 
       def read_active_vm_count

@@ -242,6 +242,7 @@ RSpec.describe AppleVerification::Setup::Shell do
         outside_root = File.join(dir, "outside")
         FileUtils.mkdir_p(outside_root)
         File.write(File.join(outside_root, "secret.txt"), "secret-bytes")
+        FileUtils.mkdir_p(File.join(dir, "vms"))
         File.symlink(outside_root, File.join(dir, "vms", "leak"))
 
         expect(shell.vm_dir_digest("leak")).to be_nil
