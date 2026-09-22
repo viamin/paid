@@ -48,14 +48,14 @@ existing artifact storage and retention policy; metadata and provenance remain
 after the binaries expire, so an attempt's outcome stays explainable after
 cleanup. Capture results keep the structured failure detail (launch,
 readiness, action, selection, or export) produced by the guest protocol
-(APPLE-VERIFY-004) instead of collapsing it.
+(`apple-guest-execution` APPLE-VERIFY-004) instead of collapsing it.
 
 ## Privacy and safety
 
 Screenshots and recordings are private project artifacts. PR status links to
 the protected, authorized artifact views owned by the presentation segment
-(APPLE-VERIFY-004); screenshots are not published into public PR comments by
-default. Result metadata and artifact metadata pass the same secret-safe
+(`apple-verification` APPLE-VERIFY-004); screenshots are not published into
+public PR comments by default. Result metadata and artifact metadata pass the same secret-safe
 scanning as manifests (APPLE-WORKER-002) and never contain raw credentials,
 proxy credentials, or payload bodies.
 
