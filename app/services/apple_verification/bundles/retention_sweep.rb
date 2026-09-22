@@ -138,7 +138,6 @@ module AppleVerification
         destroy_request_id = "retention_sweep:destroy:#{attempt.id}"
         lifecycle.destroy(attempt: attempt, request_id: destroy_request_id)
         revocation_service_for(attempt).revoke_retained!
-        attempt.update!(container_retained_until: nil)
         true
       rescue StandardError => error
         Rails.logger.warn(

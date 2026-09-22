@@ -41,24 +41,24 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
 
   it "drives the real VM destroy before recording the revocation audit event" do
     attempt = create(:apple_verification_attempt,
-      apple_verification_workflow_revision: workflow_revision,
-      project: project,
-      account: account,
-      status: "failed",
-      container_retained_until: 1.minute.ago)
+      apple_verification_workflow_revision: workflow_revision, project: project, account: account,
+      status: "failed", container_retained_until: 1.minute.ago)
 
+    credential_lane = instance_double(AppleVerification::SourceLane::CredentialLane)
+    allow(credential_lane).to receive(:revoke!)
+    enforce = AppleVerification::Revocation::Enforce.new(attempt: attempt, credential_lane: credential_lane)
     destroy_order = []
     allow(lifecycle).to receive(:destroy) { destroy_order << :lifecycle_destroy; :destroyed }
-    allow(revocation).to receive(:revoke_retained!) do
+    allow(enforce).to receive(:revoke_retained!).and_wrap_original do |original|
       destroy_order << :revocation_revoke
-      AppleVerification::Revocation::Enforce::Result.new(outcome: "verification_vm_revoked", retained_until: nil, audit_event: nil)
+      original.call
     end
 
-    result = described_class.call(storage: storage, revocation: revocation, lifecycle: lifecycle)
+    result = described_class.call(storage: storage, revocation: enforce, lifecycle: lifecycle)
 
     expect(result.vms_revoked).to eq(1)
     expect(lifecycle).to have_received(:destroy).with(attempt: attempt, request_id: "retention_sweep:destroy:#{attempt.id}")
-    expect(revocation).to have_received(:revoke_retained!)
+    expect(enforce).to have_received(:revoke_retained!)
     expect(destroy_order).to eq([ :lifecycle_destroy, :revocation_revoke ])
     expect(attempt.reload.container_retained_until).to be_nil
   end
