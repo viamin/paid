@@ -188,6 +188,7 @@ class AgentRun < ApplicationRecord
   EXECUTION_INGRESS_METADATA_KEY = "execution_ingress".freeze
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
+  FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY = "feature_clarification_round_id".freeze
 
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
@@ -371,6 +372,12 @@ class AgentRun < ApplicationRecord
   scope :retried, -> { where(status: "retried") }
   scope :auth_expired, -> { where(status: "auth_expired") }
   scope :paused, -> { where(status: "paused") }
+  # A create_feature run in this state is deliberately parked for a human
+  # answer, rather than stalled execution eligible for stale recovery.
+  # @spec TEMPORAL-ORCHESTRATION-006
+  scope :awaiting_human_clarification, -> {
+    joins(:issue).where(goal: "create_feature", issues: { paid_state: "needs_input" })
+  }
   scope :rate_limited, -> { where(status: "rate_limited") }
   # Rate-limited runs whose recovery window has elapsed and are therefore due to
   # be re-queued in place. StaleRunDetectorJob reactivates these — without it,
@@ -900,6 +907,11 @@ class AgentRun < ApplicationRecord
 
   def self.stale_paused_cutoff(now: Time.current)
     now - stale_paused_timeout
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-007
+  def clear_feature_clarification_round!
+    update!(external_metadata: external_metadata.except(FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY))
   end
 
   # Returns true if this user is the fallback owner for orphaned

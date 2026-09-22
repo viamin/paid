@@ -38,6 +38,24 @@
   *Code:* `ProcessRunQueueJob`, `Activities::RunAgentActivity`,
   `AgentRun#start!`.
 
+- [x] **TEMPORAL-ORCHESTRATION-006** — When a paused `create_feature` run is
+  awaiting issue clarification (`paid_state: "needs_input"`), stale recovery
+  SHALL leave it paused regardless of its age. Paused executions not awaiting
+  human clarification SHALL retain their existing bounded stale-recovery
+  behavior.
+  *Tests:* `spec/jobs/stale_run_detector_job_spec.rb`.
+  *Code:* `AgentRun.awaiting_human_clarification`, `StaleRunDetectorJob`.
+
+- [x] **TEMPORAL-ORCHESTRATION-007** — When a `create_feature` clarification
+  comment is retried after GitHub accepted it but before local needs-input
+  persistence completed, the system SHALL reconcile the persisted round
+  identity against issue comments and SHALL not post a duplicate. Answering a
+  round SHALL clear its identity so a later sparse brief can post a new round.
+  *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
+  *Code:* `Activities::CreateAgentRunActivity`,
+  `ClarifyingQuestions::ClearNeedsInput`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.

@@ -514,6 +514,18 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     context "with stale paused runs" do
+      # @spec TEMPORAL-ORCHESTRATION-006
+      it "does not recover a create_feature run awaiting human clarification" do
+        issue = create(:issue, :needs_input, project: create(:project))
+        stale_run = create(:agent_run, :paused, :create_feature_goal, project: issue.project, issue: issue,
+          paused_at: (paused_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        expect(stale_run.reload.status).to eq("paused")
+        expect(stale_run.stale_requeue_count).to eq(0)
+      end
+
       it "requeues a stale paused run that has not exhausted requeue budget" do
         stale_run = create(:agent_run, :paused, paused_at: (paused_threshold + 60).seconds.ago)
 
