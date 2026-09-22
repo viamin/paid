@@ -140,6 +140,8 @@ RSpec.describe "CreateFeature E2E", type: :model do
 
     before do
       allow(Prompts::BuildForCreateFeature).to receive(:call).and_return("feature prompt")
+      stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
+        .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments}).to_return(status: 200, body: "{}")
       stub_request(:post, %r{api\.github\.com/repos/.*/issues/.*/labels}).to_return(status: 200, body: "[]")
       # The needs-input path provisions the Paid-owned label catalog before
