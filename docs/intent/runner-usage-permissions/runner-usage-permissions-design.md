@@ -66,7 +66,7 @@ settings change after queuing cannot bypass the permission flags:
 
 Chat fallback eligibility:
 
-6. **`ChatSessions::FallbackRunners`** — both explicitly configured
+1. **`ChatSessions::FallbackRunners`** — both explicitly configured
    (`kb_chat_fallback_runners`) and automatically discovered candidates
    require `enabled_for_chat` **and** `enabled_for_fallback`.
 
