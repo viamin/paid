@@ -28,3 +28,6 @@ spec/requests/projects_spec.rb:github-pat:1372
 spec/models/execution_audit_event_spec.rb:github-pat:69
 spec/models/execution_audit_event_spec.rb:github-pat:111
 spec/models/execution_audit_event_spec.rb:github-pat:123
+spec/services/apple_verification/source_lane/bundle_builder_spec.rb:github-pat:27
+spec/services/apple_verification/source_lane/bundle_builder_spec.rb:github-pat:63
+spec/services/apple_verification/source_lane/bundle_builder_spec.rb:github-pat:72

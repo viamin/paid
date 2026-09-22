@@ -42,7 +42,9 @@ FactoryBot.define do
 
     trait :with_github_installation do
       github_token { nil }
-      github_installation { association :github_installation, account: account }
+      github_installation do
+        association :github_installation, :covering_project, account: account, project: instance
+      end
     end
 
     trait :with_interop_settings do

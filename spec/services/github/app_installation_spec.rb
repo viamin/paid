@@ -76,6 +76,59 @@ RSpec.describe Github::AppInstallation do
     end
   end
 
+  describe ".revoke_token" do
+    let(:cache_key) { described_class.cache_key(installation_id, repo_full_name) }
+
+    it "calls DELETE /installation/token authenticated with the cached token" do
+      allow(Rails.cache).to receive(:read).with(cache_key).and_return(fake_token)
+      allow(Rails.cache).to receive(:delete).with(cache_key)
+      stub = stub_request(:delete, %r{/installation/token}).to_return(status: 204, body: "")
+
+      described_class.revoke_token(installation_id: installation_id, repo_full_name: repo_full_name)
+
+      expect(stub).to have_been_requested
+      expect(WebMock).to have_requested(:delete, %r{/installation/token})
+        .with(headers: { "Authorization" => "Bearer #{fake_token}" })
+      expect(Rails.cache).to have_received(:delete).with(cache_key)
+    end
+
+    it "clears the cache even when GitHub returns an error" do
+      allow(Rails.cache).to receive(:read).with(cache_key).and_return(fake_token)
+      allow(Rails.cache).to receive(:delete).with(cache_key)
+      stub_request(:delete, %r{/installation/token}).to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+      expect {
+        described_class.revoke_token(installation_id: installation_id, repo_full_name: repo_full_name)
+      }.to raise_error(Github::AppInstallation::Error)
+
+      expect(Rails.cache).to have_received(:delete).with(cache_key)
+    end
+
+    it "is a no-op when no token is cached" do
+      allow(Rails.cache).to receive(:read).with(cache_key).and_return(nil)
+      allow(Rails.cache).to receive(:delete).with(cache_key)
+      stub = stub_request(:delete, %r{/installation/token}).to_return(status: 204, body: "")
+
+      expect {
+        described_class.revoke_token(installation_id: installation_id, repo_full_name: repo_full_name)
+      }.not_to raise_error
+
+      expect(stub).not_to have_been_requested
+      expect(Rails.cache).to have_received(:delete).with(cache_key)
+    end
+
+    it "wraps a transient Faraday failure in Github::AppInstallation::Error and still clears the cache" do
+      allow(Rails.cache).to receive(:read).with(cache_key).and_return(fake_token)
+      allow(Rails.cache).to receive(:delete).with(cache_key)
+      stub_request(:delete, %r{/installation/token}).to_timeout
+
+      expect {
+        described_class.revoke_token(installation_id: installation_id, repo_full_name: repo_full_name)
+      }.to raise_error(Github::AppInstallation::Error, /revoke request failed/)
+
+      expect(Rails.cache).to have_received(:delete).with(cache_key)
+    end
+  end
+
   describe "#mint" do
     context "when App is not configured" do
       before do
@@ -98,6 +151,31 @@ RSpec.describe Github::AppInstallation do
         expect {
           described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
         }.to raise_error(Github::AppInstallation::Error, /401.*Bad credentials/)
+      end
+    end
+
+    context "when API returns a 2xx with a non-JSON body" do
+      before do
+        stub_request(:post, %r{/app/installations/\d+/access_tokens})
+          .to_return(status: 200, body: "not-json-at-all", headers: { "Content-Type" => "text/plain" })
+      end
+
+      it "raises Error with the missing-token contract instead of NoMethodError" do
+        expect {
+          described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
+        }.to raise_error(Github::AppInstallation::Error, /token.*missing/i)
+      end
+    end
+
+    context "when the request fails at the transport level" do
+      before do
+        stub_request(:post, %r{/app/installations/\d+/access_tokens}).to_timeout
+      end
+
+      it "wraps the Faraday error in Github::AppInstallation::Error instead of raising it raw" do
+        expect {
+          described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
+        }.to raise_error(Github::AppInstallation::Error, /token request failed/)
       end
     end
   end
