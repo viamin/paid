@@ -1,5 +1,14 @@
 # Design: Approved Intent Conformance (PR scanner + Inbox surface)
 
+## Policy scope
+
+This document defines the **approval-gated** feature policy. Its whole-feature
+approval, amendment holds and latest-approved-revision rules do not govern
+features explicitly enrolled in the planned [confidence-driven policy](../../rdrs/RDR-071-confidence-driven-issue-delivery.md).
+Those features use issue-level readiness and completion-blocking follow-ups;
+existing features retain their policy until deliberately migrated. Shared
+record types and ordinary CI/security/quality checks remain reusable.
+
 > Segment: approved-intent-conformance · Status: partial (issue #3867 scope)
 > Specs: [approved-intent-conformance-specs.md](approved-intent-conformance-specs.md)
 > RDR: [RDR-067](../../rdrs/RDR-067-approved-intent-conformance.md)

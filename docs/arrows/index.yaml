@@ -52,6 +52,34 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  question-exploration:
+    title: Question-Centered Chat Exploration
+    path: docs/intent/question-exploration/question-exploration-design.md
+    specs: docs/intent/question-exploration/question-exploration-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: MAPPED
+    sampled: 2026-09-22
+    next: "Implement contextual chat, disposable diagrams and durable answers (RDR-069)"
+  facet-confidence:
+    title: Facet Confidence and Adaptive Clarification
+    path: docs/intent/facet-confidence/facet-confidence-design.md
+    specs: docs/intent/facet-confidence/facet-confidence-specs.md
+    parent: PAID
+    taxonomy: intelligence
+    status: MAPPED
+    sampled: 2026-09-22
+    next: "Implement evidence-backed assessments and explicit preferences (RDR-070)"
+  confidence-driven-delivery:
+    title: Confidence-Driven Issue Delivery
+    path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md
+    specs: docs/intent/confidence-driven-delivery/confidence-driven-delivery-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: MAPPED
+    sampled: 2026-09-22
+    blockedBy: [facet-confidence, question-exploration]
+    next: "Implement issue readiness, policy dispatch and completion follow-ups (RDR-071)"
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md
