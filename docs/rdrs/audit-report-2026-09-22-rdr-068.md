@@ -19,21 +19,25 @@ boundaries are shipped and strongly tested (299 passing examples across
 `spec/models/apple_verification*`, `spec/services/apple_verification*`,
 `spec/services/agent_runs/apple_verification*`, `spec/lib/apple_verification*`,
 `spec/requests/projects/apple_verifications_spec.rb`, and
-`spec/migrations/*apple*`). However, several RDR acceptance criteria are not
-met by shipped code — most notably `.paid/apple-verification.yml` parsing,
-agent-facing MCP tools, scheduling/admission/timeout, completion- and
-PR-gate enforcement, retained-VM lockdown expiry, worker quarantine, the
-operator setup guide, and all live-VM acceptance evidence (real builds,
-launches, captures on a macOS host). Because implementation is not complete,
-this closeout does **not** close umbrella issue #3930; gap issues must be
-filed from §7 and the flag must remain default-off.
+`spec/migrations/*apple*`). The `.paid/apple-verification.yml` parser
+shipped under #3938 (PR #3975). However, several RDR acceptance criteria
+are not met by shipped code — most notably agent-facing MCP tools,
+scheduling/admission/timeout, completion- and PR-gate enforcement,
+retained-VM lockdown expiry, worker quarantine, the operator setup guide,
+and all live-VM acceptance evidence (real builds, launches, captures on a
+macOS host). Because implementation is not complete, this closeout does
+**not** close umbrella issue #3930; the remaining gaps are reconciled to
+existing open trackers (#3936, #3937, #3940, #3941) and the live-host
+validation tracker filed from this audit (#3978), and the flag must remain
+default-off.
 
 ## Audit context
 
 - **RDR**: `docs/rdrs/RDR-068-apple-platform-verification-workers.md`
 - **Audit date**: 2026-09-22
-- **Closeout issue**: #3942 (part of umbrella #3930; dependencies #3939,
-  #3940, #3941)
+- **Closeout issue**: #3942 (part of umbrella #3930; declared dependencies
+  #3939, #3940, #3941; tracked-rather-than-closed pending the open children
+  #3936, #3937, #3940, #3941 and the new live-host tracker #3978)
 - **Test evidence run**: `bundle exec rspec` over every Apple-related spec
   path — 299 examples, 0 failures (53 + 246 across two invocations), plus the
   four dbless migration specs.
@@ -101,11 +105,11 @@ shipped, named piece missing) · **G** gap (missing or live-evidence-only).
 | F1 | Clean VM clone repeatedly builds, tests, launches, captures the smoke iOS app | G | Control-plane lifecycle + guest dispatch shipped (see §3), but no live-host run exists. No smoke app harness, no repeat-run evidence artifact, and the guest executor itself ships in the VM image (outside this repo). Nothing in-repo or in docs records a post-acceptance clean-clone run. |
 | F2 | Same for `viamin/ColorMatching-iOS` | G | Same as F1. The 2026-09-18 manual pilot (RDR §Feasibility pilot) predates the shipped control plane; it is design evidence, not acceptance evidence. |
 | F3 | Native macOS GUI app builds, tests, launches, app-window screenshot | G | Protocol supports `capture` platform `macos` target `app_window` (`lib/apple_verification/guest_protocol.rb:115-118`), and `resize_window` UI action exists. No live macOS app run evidence. |
-| F4 | Mixed repository executes multiple iOS/macOS profiles sequentially | G | `.paid/apple-verification.yml` parsing/validation/inference is **not implemented** (no parser exists anywhere in `app/` or `lib/`), so multiple profiles cannot even be declared. Sequential execution scheduler is also missing (see R2/R4). |
-| F5 | Paid-agent runs an uncommitted draft, inspects results, revises, reruns | G | Model layer supports advisory draft attempts at `agent_iteration` (`apple_verification_attempt.rb:71-73`) and idempotent rerun exists (`AppleVerificationAttempts::Rerun`). Missing: content-addressed workspace-bundle creation from the agent container, and the semantic MCP tools an agent would call. No production caller of `ExecuteGuestJob`/`Lifecycle` exists yet. |
-| F6 | Administrator approves a committed digest; required screenshot enforces selected gate | P | Approval is fully shipped and tested (digest-bound, superseding, admin-only). **Enforcement is not wired**: nothing consults an approved revision at `completion_verification`/`pull_request_verification` to block an agent run's success or the PR verification result (grep for those gate names finds only Apple models). |
+| F4 | Mixed repository executes multiple iOS/macOS profiles sequentially | P | `.paid/apple-verification.yml` parsing/validation/inference shipped under #3938 (PR #3975): `app/services/apple_verification/configuration_parser.rb`, `configuration.rb`, `infer_configuration.rb`, `app/services/apple_verification_workers/version_requirement.rb`, plus `app/services/apple_verification_workflow_revisions/sync_from_configuration.rb` for digest binding; specs in `spec/services/apple_verification/configuration_parser_spec.rb`, `infer_configuration_spec.rb`, `version_requirement_spec.rb`, `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`. **Missing**: the sequential multi-profile execution scheduler that consumes a parsed config and runs the profiles one after the other; that piece is part of #3936's scope. |
+| F5 | Paid-agent runs an uncommitted draft, inspects results, revises, reruns | G | Model layer supports advisory draft attempts at `agent_iteration` (`apple_verification_attempt.rb:71-73`) and idempotent rerun exists (`AppleVerificationAttempts::Rerun`). Missing: content-addressed workspace-bundle creation from the agent container, and the semantic MCP tools an agent would call. No production caller of `ExecuteGuestJob`/`Lifecycle` exists yet. Tracked by #3940. |
+| F6 | Administrator approves a committed digest; required screenshot enforces selected gate | P | Approval is fully shipped and tested (digest-bound, superseding, admin-only). **Enforcement is not wired**: nothing consults an approved revision at `completion_verification`/`pull_request_verification` to block an agent run's success or the PR verification result (grep for those gate names finds only Apple models). Tracked by #3940. |
 | F7 | Changing an approved workflow creates a draft and cannot alter the enforced revision | S | Approved bindings are immutable and approval records permanent (`apple_verification_workflow_revision.rb:125-141`); tests "binds and freezes approval inputs while superseding the prior approval", "keeps a superseded revision's approved binding immutable". |
-| F8 | Build/test-only profiles work without screenshot requirements | P | `required_checks`/`advisory_checks` are free-form, so build/test-only revisions are representable, and `GuestProtocol` makes `capture` just another (optional) operation. Without the yml parser (F4) there is no end-to-end proof. |
+| F8 | Build/test-only profiles work without screenshot requirements | P | `required_checks`/`advisory_checks` are free-form, so build/test-only revisions are representable, and `GuestProtocol` makes `capture` just another (optional) operation. The yml parser (F4) is shipped under #3938, so the remaining gap is whether a parsed build/test-only config drives a real run end-to-end — that follows from the sequential scheduler in #3936. |
 
 ### Security
 
@@ -155,9 +159,10 @@ shipped, named piece missing) · **G** gap (missing or live-evidence-only).
 - **Staging the rollout**: this closeout finds the Rollout Guard's enablement
   preconditions **not yet met** — the worker profile, network proxy, and
   isolation smoke test must pass on a live macOS host with the shipped stack
-  before any pilot project is enabled (gaps F1-F3, R5). The flag therefore
-  stays default-off; broad enablement remains blocked on the gap issues below.
-  No flag cleanup is performed (correctly — cleanup criteria are not met).
+  before any pilot project is enabled (gaps F1–F3, R5, all tracked by #3978).
+  The flag therefore stays default-off; broad enablement remains blocked on
+  the gap issues below. No flag cleanup is performed (correctly — cleanup
+  criteria are not met).
 
 ## Capacity and recovery evidence
 
@@ -168,70 +173,79 @@ shipped, named piece missing) · **G** gap (missing or live-evidence-only).
 - **Capacity**: the only quantitative evidence is the manual 2026-09-18 pilot
   (RDR §Feasibility pilot). No measurement exists for the shipped stack, and
   the admission thresholds that would enforce capacity at runtime are not
-  implemented (R4/R5 gaps). Recording live capacity evidence requires a macOS
-  host and is filed as part of the live-validation gap issue.
+  implemented (R4 gap, tracked by #3936). Recording live capacity evidence
+  requires a macOS host and is tracked by the live-validation issue #3978
+  (filed from this audit).
 
-## Gaps and proposed child issues
+## Gaps and reconciliation to existing trackers
 
-Per checklist step 3, each unmet criterion needs its own focused issue. The
-`gh` CLI is unavailable in this environment, so the issues could not be filed
-from here; the bodies below are ready to paste against `viamin/paid`. When
-filing, do not apply any effective auto-pick skip label (`planning`,
-`research`, `waiting`, `tracking`, `epic`, `needs-manual-setup`) — these must
-remain auto-pickable. All live-host issues should carry `needs-manual-setup`
-**only if** the project's effective skip set is intentionally extended to keep
-them out of automation — otherwise leave unlabeled.
+Per checklist step 3, each unmet criterion needs its own focused tracker.
+Eight of the nine proposed gaps below were already filed under umbrella #3930
+before this audit ran; only gap 1 (live-host validation) is genuinely
+untracked and was filed from this audit (issue number recorded at filing).
+Reconciliation so duplicate tracker issues cannot be auto-picked against the
+same scope:
+
+| # | Gap | Existing tracker | Status | Why the existing tracker already covers it |
+|---|---|---|---|---|
+| 1 | Live macOS-host acceptance validation (F1, F2, F3, R5; also collects S1/S3 live evidence) | #3978 | open | Filed from this audit as a child of #3930; none of #3930's pre-existing children cover the live-host run. |
+| 2 | `.paid/apple-verification.yml` parsing, validation, inference, diagnostics (F4, F8) | #3938 | closed (PR #3975) | Closed by PR #3975: `app/services/apple_verification/configuration_parser.rb`, `configuration.rb`, `infer_configuration.rb`, and `app/services/apple_verification_workers/version_requirement.rb` with `spec/services/apple_verification/configuration_parser_spec.rb`, `infer_configuration_spec.rb`, and `version_requirement_spec.rb`. The remaining F4/F8 work (sequential multi-profile execution, end-to-end use of parsed config from a real repository) is now a sub-piece of gap 3. |
+| 3 | Apple verification scheduling, admission, queueing, timeout, and sequential multi-profile execution (F4 tail, R2, R4) | #3936 | open | #3936's scope explicitly covers fair queueing, one-worker admission, quotas, capacity checks (1 active VM, 60 GiB host disk, 25% free memory, 15 GiB guest disk), 45-minute attempt timeout, cancellation, retry classification, and restart/orphan reconciliation. |
+| 4 | Agent-facing MCP tools for Apple verification (F5, P1) | #3940 | open | #3940's scope explicitly covers `verify_apple_project`/`get_apple_verification`/`capture_apple_screenshot`/`stop_apple_verification`-class semantic tools, project-bound agent authorization, and the uncommitted bundle lane for draft iteration. |
+| 5 | Lifecycle-gate enforcement wiring (F6) | #3940 | open | #3940's acceptance criteria explicitly require approved required workflows to block agent-run completion (`completion_verification`) and PR verification (`pull_request_verification`), and to leave verification pending (not skipped) under capacity failure. |
+| 6 | Retained-failure lockdown and timed destruction (S4, R6) | #3936 | open | #3936's acceptance criteria explicitly require failed VMs to lock down (credentials revoked, networking disabled) and expire within the configured window; successful VMs are destroyed promptly; attempt terminal ledger transitions are recorded. |
+| 7 | Worker quarantine and return-to-service (R7) | #3936 | open | #3936's acceptance criteria explicitly require repeated worker health failure to quarantine the worker until an operator passes the isolation smoke test and returns it to service. (#3941 separately covers the operator runbook — see gap 8.) |
+| 8 | Operator setup guide and guided preflight command (P5) | #3941 | open | #3941's scope explicitly covers the read-only preflight command, isolation-smoke validation, and the canonical Markdown guide covering setup, profile updates, deprecation/revocation, quarantine, recovery, cleanup, and troubleshooting. |
+| 9 | Result ingestion and failure taxonomy population (R3, S5 artifact scanning) | #3937 | open | #3937's scope explicitly covers output manifests with failure class, lineage, provenance, and summaries; `.xcresult`/log/screenshot/diagnostics under Paid artifact retention; and the RDR's revocation/deletion rules for retained failed VMs and expired bundles. Artifact-level secret scanning fits as a sub-piece. |
+
+The original nine-row "ready to paste" bodies were retained below for
+reference but are **not** the source of truth — the existing trackers above
+are. Filing each gap as a brand-new auto-pickable issue would have created
+parallel trackers for the same scope, which Paid's auto-pick could then
+assign to two agents simultaneously and make umbrella #3930's completion
+criteria ambiguous across them. The reconciliation above prevents that.
 
 1. **Live RDR-068 acceptance validation on a macOS host** (F1, F2, F3, R5;
    also collects S1/S3 live evidence) — build/test/launch/capture the smoke
    iOS app, `viamin/ColorMatching-iOS`, and a representative native macOS GUI
    app from clean clones through the shipped control plane; record repeat-run
    and capacity-alongside-three-agent evidence; archive the report under
-   `docs/rdrs/`.
+   `docs/rdrs/`. *(Filed from this audit as #3978; tracker recorded above.)*
 2. **`.paid/apple-verification.yml` parsing, validation, inference, and
-   diagnostics** (F4, F8) — typed schema, unknown-operation rejection,
-   multi-profile repositories, user-confirmed inference from shared schemes
-   and test plans.
+   diagnostics** (F4, F8) — superseded by #3938 (closed by PR #3975; see
+   `app/services/apple_verification/configuration_parser.rb` and
+   `configuration.rb`). Remaining F4 multi-profile execution is part of gap 3.
 3. **Apple verification scheduling, admission, queueing, and timeout**
-   (R2, R4) — fair per-account/project queue with position + cancel; the
+   (F4 tail, R2, R4) — already tracked by #3936; see the acceptance criteria
+   for fair per-account/project queue with position + cancel; the
    operator-configurable admission defaults (1 active VM, 60 GiB host disk,
    25% free memory, 15 GiB guest disk); 45-minute attempt timeout; runtime
    rechecks; cancellation that actually stops/destroys the VM and converges
-   the ledger.
-4. **Agent-facing MCP tools for Apple verification** (F5, P1) —
-   `verify_apple_project`, `get_apple_verification`,
-   `capture_apple_screenshot`, `stop_apple_verification` with project-bound
-   authorization and agent-scoped cancellation, plus the uncommitted
-   content-addressed bundle lane for draft iteration.
-5. **Lifecycle-gate enforcement wiring** (F6) — approved required workflows
-   block agent-run success reporting (`completion_verification`) and Paid's PR
-   verification result (`pull_request_verification`); waivers unblock; pending
-   (not skipped) when capacity is unavailable.
-6. **Retained-failure lockdown and timed destruction** (S4, R6) — on failure
-   retention: revoke credentials, disable guest networking, destroy after the
-   configured window (default 1 h); prompt destroy on success; attempt
-   terminal ledger transitions.
-7. **Worker quarantine and return-to-service** (R7) — repeated host-health
-   failures quarantine the worker, revoke credentials, stop scheduling; an
-   operator isolation smoke test gates return to service.
-8. **Operator setup guide and guided preflight command** (P5) — canonical
-   Markdown guide + read-only preflight validating Tart/Softnet, capacity,
-   image registration, and smoke tests; document
-   `APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN` in `.env.example`.
+   the ledger; and sequential multi-profile execution.
+4. **Agent-facing MCP tools for Apple verification** (F5, P1) — already
+   tracked by #3940.
+5. **Lifecycle-gate enforcement wiring** (F6) — already tracked by #3940.
+6. **Retained-failure lockdown and timed destruction** (S4, R6) — already
+   tracked by #3936.
+7. **Worker quarantine and return-to-service** (R7) — already tracked by
+   #3936 (mechanism); operator runbook is part of gap 8 / #3941.
+8. **Operator setup guide and guided preflight command** (P5) — already
+   tracked by #3941.
 9. **Result ingestion and failure taxonomy population** (R3, S5 artifact
-   scanning) — persist structured output manifests, parsed build/test
-   summaries, required/advisory check outcomes, and screenshot metadata onto
-   attempts; run secret scanning over ingested artifacts.
+   scanning) — already tracked by #3937.
 
 ## Status decision
 
 **Partially Implemented.** Roughly the RDR's Phases 1, the control-plane
 halves of 2-4, and the user-facing half of 6 shipped with disciplined,
 adversarial test coverage and coherent LID intent (four segments, all `[x]`
-specs with passing tests). Phases 5's repository-config parsing, 6's agent
-interfaces and gate enforcement, 4's scheduling/admission, the operational
-lockdown/quarantine/timeout behaviors, the operator guide, and all live-host
-acceptance evidence remain open, tracked by the gap issues above.
+specs with passing tests). Phase 5's repository-config parsing shipped
+under #3938 (PR #3975). 6's agent interfaces and gate enforcement
+(#3940), 4's scheduling/admission/lockdown/quarantine/timeout (#3936), the
+result/artifact transport (#3937), the operator guide (#3941), and all
+live-host acceptance evidence (new tracker filed from this audit) remain
+open. The reconciliation in §Gaps maps each remaining gap to its existing
+open tracker so duplicate issues are not auto-picked against the same scope.
 
 Consequences per the closeout checklist:
 
@@ -239,7 +253,7 @@ Consequences per the closeout checklist:
   `2026-09-22 Closeout` section records this audit.
 - `docs/rdrs/README.md` status column updated to match.
 - The closeout PR uses **non-closing** language for umbrella #3930
-  ("Tracks #3930") because implementation is incomplete; #3930 must stay
-  open until the gap issues land.
+  ("Tracks #3930") and for #3942 ("Tracks #3942") because implementation
+  is incomplete; both must stay open until the gap issues land.
 - `apple_verification_workers` stays default-off; broad enablement and flag
-  cleanup wait for the live validation evidence.
+  cleanup wait for the live validation evidence (#3978).
