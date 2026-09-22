@@ -67,19 +67,34 @@ module AppleVerification
         )
       end
 
-      # Drops the cached token so the next mint produces a fresh one. Used
-      # by the revocation sweep after an attempt completes (success or
-      # failure) so a retained failed VM cannot replay an old token.
+      # Revokes the cached GitHub App installation token at GitHub
+      # (DELETE /installation/token, authenticated with the token itself) and
+      # then drops the local cache entry. Used by the revocation sweep after
+      # an attempt completes (success or failure) so a retained failed VM
+      # cannot replay an old token against the GitHub API during the retention
+      # window. A GitHub-side revoke failure is logged and swallowed: the
+      # cache entry is still cleared, the credential lane entry is still
+      # revoked locally, and the audit event is still recorded; only the live
+      # GitHub revoke is best-effort because the cache TTL is shorter than
+      # GitHub's 1-hour token TTL and a cache miss cannot be revoked remotely.
       def revoke!
         return unless committed?
 
         installation = project.github_installation
         return unless installation
 
-        @token_provider.clear_cached_token(
+        @token_provider.revoke_token(
           installation_id: installation.github_installation_id,
           repo_full_name: project.full_name
         )
+      rescue Github::AppInstallation::Error => error
+        Rails.logger.warn(
+          message: "apple_credential.revoke_remote_failed",
+          apple_verification_attempt_id: attempt.id,
+          error_class: error.class.name,
+          error: error.message
+        )
+        nil
       end
 
       # Renders the lane entry used by {AppleVerificationWorkers::InputManifest}.

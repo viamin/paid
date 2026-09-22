@@ -71,4 +71,22 @@ RSpec.describe AppleVerification::ResultManifest::Build do
 
     expect(result.manifest.as_json.dig("result", "retry_lineage")).to eq([ attempt.id.to_s ])
   end
+
+  it "walks the retry_of_attempt chain and excludes unrelated sibling attempts" do
+    original = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision,
+      project: project, account: account, retry_number: 0)
+    retry_one = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision,
+      project: project, account: account, retry_number: 1, retry_of_attempt: original)
+    retry_two = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision,
+      project: project, account: account, retry_number: 2, retry_of_attempt: retry_one)
+    sibling = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision,
+      project: project, account: account, retry_number: 0)
+
+    result = described_class.call(attempt: retry_two)
+
+    expect(result.manifest.as_json.dig("result", "retry_lineage")).to eq(
+      [ original.id.to_s, retry_one.id.to_s, retry_two.id.to_s ]
+    )
+    expect(result.manifest.as_json.dig("result", "retry_lineage")).not_to include(sibling.id.to_s)
+  end
 end

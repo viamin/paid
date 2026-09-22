@@ -109,6 +109,19 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
     FileUtils.remove_entry(File.dirname(outside))
   end
 
+  it "raises WorkspaceInvalidError when a directory symlink escapes the workspace root" do
+    outside_dir = Dir.mktmpdir("apple-outside-")
+    link_path = File.join(workspace_root, "escape_dir")
+    File.symlink(outside_dir, link_path)
+    write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+
+    expect {
+      described_class.call(workspace_root: workspace_root, output_path: output_path)
+    }.to raise_error(described_class::WorkspaceInvalidError, /escapes the workspace root/)
+
+    FileUtils.remove_entry(outside_dir)
+  end
+
   it "raises WorkspaceInvalidError when a symlink chain escapes the workspace root" do
     outside_dir = Dir.mktmpdir("apple-outside-")
     outside = File.join(outside_dir, "secret.txt")

@@ -88,11 +88,11 @@ RSpec.describe AppleVerification::SourceLane::CredentialLane do
   end
 
   describe "#revoke!" do
-    let(:provider) { class_double(Github::AppInstallation, clear_cached_token: nil) }
+    let(:provider) { class_double(Github::AppInstallation, revoke_token: nil) }
 
-    it "clears the cached installation token" do
+    it "revokes the installation token at GitHub and clears the local cache" do
       described_class.new(attempt: attempt, token_provider: provider).revoke!
-      expect(provider).to have_received(:clear_cached_token).with(
+      expect(provider).to have_received(:revoke_token).with(
         installation_id: project.github_installation.github_installation_id,
         repo_full_name: project.full_name
       )
@@ -101,7 +101,15 @@ RSpec.describe AppleVerification::SourceLane::CredentialLane do
     it "is a no-op when the attempt has no commit_sha" do
       uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
       described_class.new(attempt: uncommitted, token_provider: provider).revoke!
-      expect(provider).not_to have_received(:clear_cached_token)
+      expect(provider).not_to have_received(:revoke_token)
+    end
+
+    it "swallows GitHub API errors so the audit trail is still recorded" do
+      provider = class_double(Github::AppInstallation)
+      allow(provider).to receive(:revoke_token).and_raise(Github::AppInstallation::Error, "boom")
+      expect {
+        described_class.new(attempt: attempt, token_provider: provider).revoke!
+      }.not_to raise_error
     end
   end
 

@@ -100,19 +100,21 @@ module AppleVerification
         )
       end
 
+      # Committed attempts have no workspace bundle in object storage, so the
+      # retention sweep has nothing to delete; only uncommitted attempts ship a
+      # bundle under `apple-verification/.../source.tar` that must be retained
+      # for the configured window. The committed/uncommitted distinction lives
+      # on `commit_sha` (per {AppleVerification::SourceLane::Build#committed?}),
+      # mirroring the success-path guard in {#persist_bundle_retained_until!}.
       def retain_failure_window!
+        bundle_deadline = bundle_retained_for_attempt
         attempt.update!(
           container_retained_until: failed_vm_retained_until,
-          bundle_retained_until: bundle_retained_until
+          bundle_retained_until: bundle_deadline
         )
         record_event!(
           event_name: "apple_verification_vm.retained",
-          metadata: {
-            "attempt_id" => attempt.id,
-            "action" => "retain",
-            "retained_until" => failed_vm_retained_until.iso8601,
-            "bundle_retained_until" => bundle_retained_until.iso8601
-          }
+          metadata: retain_failure_window_metadata(bundle_deadline)
         )
       end
 
@@ -168,6 +170,22 @@ module AppleVerification
 
       def bundle_retained_until
         @bundle_retained_until ||= clock.current + bundle_retention_days.days
+      end
+
+      def bundle_retained_for_attempt
+        return nil if attempt.commit_sha.present?
+
+        bundle_retained_until
+      end
+
+      def retain_failure_window_metadata(bundle_deadline)
+        metadata = {
+          "attempt_id" => attempt.id,
+          "action" => "retain",
+          "retained_until" => failed_vm_retained_until.iso8601
+        }
+        metadata["bundle_retained_until"] = bundle_deadline.iso8601 if bundle_deadline
+        metadata
       end
     end
   end

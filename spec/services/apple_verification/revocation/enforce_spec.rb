@@ -56,6 +56,17 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(credential_lane).to have_received(:revoke!)
   end
 
+  it "leaves bundle_retained_until nil for a committed failed attempt" do
+    committed = create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
+    committed.update!(status: "failed", finished_at: Time.current)
+
+    described_class.call(attempt: committed, credential_lane: credential_lane, failed_vm_retention_hours: 1, bundle_retention_days: 7)
+
+    committed.reload
+    expect(committed.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+    expect(committed.bundle_retained_until).to be_nil
+  end
+
   it "records the VM destruction audit event and clears the retention deadline for a retained VM" do
     attempt.update!(status: "failed", finished_at: Time.current, container_retained_until: 1.minute.ago)
 

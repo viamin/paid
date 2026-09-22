@@ -6,6 +6,7 @@ module Github
   class AppInstallation
     TOKEN_TTL = 50.minutes
     API_BASE_URL = "https://api.github.com"
+    REVOKE_PATH = "/installation/token"
 
     class Error < StandardError; end
     class ConfigurationError < Error; end
@@ -22,10 +23,30 @@ module Github
       "github_app_installation_token:#{installation_id}:#{repo_full_name}"
     end
 
+    # Revokes the cached installation token at GitHub (DELETE /installation/token,
+    # authenticated with the token itself) so a retained failed VM cannot replay
+    # it. The cached copy is cleared in the same call whether or not the live
+    # revoke succeeded, since the local cache entry is what callers reach for
+    # and a stale token cannot reach the GitHub API once GitHub acknowledges the
+    # revoke; a token we never cached (cache miss) cannot be revoked at GitHub
+    # and is left to its natural 1-hour expiry.
+    def self.revoke_token(installation_id:, repo_full_name:)
+      cache_key = cache_key(installation_id, repo_full_name)
+      token = Rails.cache.read(cache_key)
+
+      if token.is_a?(String) && token.present?
+        new(installation_id: installation_id, repo_full_name: repo_full_name).revoke(token)
+      end
+    ensure
+      Rails.cache.delete(cache_key)
+    end
+
     # Clears the cached installation token so the next +token_for+ call
     # mints a fresh one. Called by +GithubClient+ when a 401 indicates the
     # cached token is no longer valid (e.g. installation re-suspended and
     # re-activated, or GitHub returned a token with a shorter lifetime).
+    # Callers that want a real revoke should use {.revoke_token}; this method
+    # only forgets the local cache and leaves the GitHub-issued token live.
     def self.clear_cached_token(installation_id:, repo_full_name:)
       Rails.cache.delete(cache_key(installation_id, repo_full_name))
     end
@@ -43,6 +64,15 @@ module Github
       response.fetch("token")
     rescue KeyError => e
       raise Error, "GitHub App installation token response missing #{e.key}"
+    end
+
+    def revoke(token)
+      response = connection.delete(REVOKE_PATH) do |request|
+        request.headers["Accept"] = "application/vnd.github+json"
+        request.headers["Authorization"] = "Bearer #{token}"
+      end
+
+      parse_response(response)
     end
 
     private
@@ -68,13 +98,19 @@ module Github
     end
 
     def parse_response(response)
-      body = JSON.parse(response.body)
+      body = safe_parse(response.body)
       return body if response.success?
 
       message = body.is_a?(Hash) ? body["message"] : response.body
       raise Error, "GitHub App installation request failed (status #{response.status}): #{message}"
+    end
+
+    def safe_parse(body)
+      return {} if body.to_s.strip.empty?
+
+      JSON.parse(body)
     rescue JSON::ParserError
-      raise Error, "GitHub App installation returned invalid JSON (status #{response.status})"
+      nil
     end
   end
 end

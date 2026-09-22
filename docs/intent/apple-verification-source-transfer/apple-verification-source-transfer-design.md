@@ -179,15 +179,21 @@ shorten below the bundle retention window.
   (default 1 hour). The retention window is recorded on the attempt as
   `retained_until`. The VM is destroyed on the earlier of explicit destroy,
   retention expiry, or worker profile revocation; an expired VM triggers the
-  same audit event and credential revocation.
+  same audit event and credential revocation. The sweep drives the real
+  destroy through `AppleVerification::Lifecycle#destroy` (which calls the
+  macOS host service's `destroy` operation, marks the
+  `ExecutionResourceLedgerEntry` deleted, and is idempotent for attempts
+  with no live ledger entry) before recording the
+  `apple_verification_vm.destroyed` audit event, so the audit event
+  reflects an actual destroy rather than a no-op.
 - A workspace bundle is retained for the configured window after the attempt
   completes (default 7 days, configurable per account). The retention window
   is recorded on the attempt as `bundle_retained_until`; uncommitted
-  successful attempts persist the deadline from
-  {AppleVerification::Revocation::Enforce}, while committed successful
-  attempts leave it `NULL` because they ship no bundle. An expired bundle is
-  deleted by `AppleVerification::Bundles::RetentionSweep`, which deletes
-  only the bundle key
+  attempts — successful or failed — persist the deadline from
+  {AppleVerification::Revocation::Enforce}, while committed attempts leave
+  it `NULL` because they ship no bundle. An expired bundle is deleted by
+  `AppleVerification::Bundles::RetentionSweep`, which deletes only the
+  bundle key
   (`AppleVerification::ArtifactIngestion::Storage.bundle_key` → `source.tar`)
   so the sibling artifact keys (`.xcresult`, build logs, screenshots,
   diagnostics) uploaded by
@@ -195,6 +201,11 @@ shorten below the bundle retention window.
   retention window. The sweep then clears `bundle_retained_until` on the
   attempt so the durable manifest, audit events, and ledger entries remain
   attributable while the binary artifact is gone.
+- The credentials lane entry is revoked by
+  `Github::AppInstallation.revoke_token`, which calls
+  `DELETE /installation/token` authenticated with the cached token itself
+  before clearing the local cache, so a retained failed VM cannot replay an
+  old installation token against the GitHub API during the retention window.
 - The attempt record, manifest, audit events, ledger entries, and
   durable metadata survive binary expiry: retention deletion only removes
   the binary artifact keys, never the metadata rows that reference them.

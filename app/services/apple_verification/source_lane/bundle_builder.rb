@@ -99,6 +99,11 @@ module AppleVerification
                   next
                 end
 
+                file_size = File.size(absolute_path)
+                if bytesize + file_size > @max_bytes
+                  raise BundleTooLargeError, "workspace bundle exceeds #{@max_bytes} bytes"
+                end
+
                 bytes = File.binread(absolute_path)
                 file_digest = Digest::SHA256.hexdigest(bytes)
                 if secret_shaped?(relative, bytes)
@@ -110,9 +115,6 @@ module AppleVerification
                 write_entry(tar, relative, absolute_path, bytes)
                 digester << relative << "\0" << file_digest << "\0"
                 bytesize += bytes.bytesize
-                if bytesize > @max_bytes
-                  raise BundleTooLargeError, "workspace bundle exceeds #{@max_bytes} bytes"
-                end
 
                 manifest["files"] << {
                   "path" => relative,
@@ -157,10 +159,16 @@ module AppleVerification
 
       def walk_workspace(&block)
         Dir.glob(File.join(@workspace_root, "**", "*"), File::FNM_DOTMATCH).sort.each do |path|
-          next if File.directory?(path)
-          if File.symlink?(path) && symlink_escapes?(path)
-            raise WorkspaceInvalidError, "workspace contains a symlink that escapes the workspace root: #{path}"
+          # The symlink-escape guard must run before the directory skip:
+          # `File.directory?` follows symlinks, so a workspace containing
+          # `link -> /outside/dir` would be skipped as a directory and the
+          # escape check would never fire. APPLE-TRANSFER-003 forbids any
+          # symlink whose target escapes the workspace root regardless of
+          # whether it resolves to a file or a directory.
+          if File.symlink?(path)
+            raise WorkspaceInvalidError, "workspace contains a symlink that escapes the workspace root: #{path}" if symlink_escapes?(path)
           end
+          next if File.directory?(path)
 
           relative = path.sub(/\A#{Regexp.escape(@workspace_root)}\/?/, "")
           yield(path, relative)

@@ -132,12 +132,25 @@ module AppleVerification
       end
 
       def retry_lineage
-        AppleVerificationAttempt
-          .where(apple_verification_workflow_revision_id: attempt.apple_verification_workflow_revision_id, project_id: attempt.project_id)
-          .where("retry_number <= ?", attempt.retry_number)
-          .order(:retry_number, :id)
-          .pluck(:id)
-          .map(&:to_s)
+        # Walk the +retry_of_attempt_id+ chain to collect only the attempts
+        # the current attempt is actually a retry of, plus the attempt itself.
+        # The chain encodes a one-to-one retry relationship
+        # ({AppleVerificationAttempt#retry_of_attempt}); an unrelated sibling
+        # attempt that shares the workflow revision must not appear in the
+        # lineage even when its +retry_number+ happens to be lower, which a
+        # `retry_number <=` query would otherwise include.
+        ids = []
+        current = attempt
+        while current&.retry_of_attempt_id
+          parent = current.retry_of_attempt
+          break unless parent
+          break if ids.include?(parent.id)
+
+          ids.unshift(parent.id)
+          current = parent
+        end
+        ids << attempt.id
+        ids.map(&:to_s)
       end
 
       def network_policy_payload
