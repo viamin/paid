@@ -132,4 +132,18 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
     expect(revocation).not_to have_received(:revoke_retained!)
     expect(attempt.reload.container_retained_until).to be_present
   end
+
+  it "logs bundle_retention_sweep_failed and keeps the deadline when storage raises StorageError" do
+    attempt = create(:apple_verification_attempt,
+      apple_verification_workflow_revision: workflow_revision,
+      project: project,
+      account: account,
+      bundle_retained_until: 1.minute.ago)
+    allow(storage).to receive(:delete_key).and_raise(ArtifactStorage::StorageError, "S3 delete failed: AccessDenied")
+
+    result = described_class.call(storage: storage, revocation: revocation, lifecycle: lifecycle)
+
+    expect(result.bundles_deleted).to eq(0)
+    expect(attempt.reload.bundle_retained_until).to be_present
+  end
 end

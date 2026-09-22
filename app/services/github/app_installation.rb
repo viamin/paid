@@ -110,7 +110,7 @@ module Github
 
       JSON.parse(body)
     rescue JSON::ParserError
-      nil
+      {}
     end
   end
 end

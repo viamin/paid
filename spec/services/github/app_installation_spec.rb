@@ -141,5 +141,18 @@ RSpec.describe Github::AppInstallation do
         }.to raise_error(Github::AppInstallation::Error, /401.*Bad credentials/)
       end
     end
+
+    context "when API returns a 2xx with a non-JSON body" do
+      before do
+        stub_request(:post, %r{/app/installations/\d+/access_tokens})
+          .to_return(status: 200, body: "not-json-at-all", headers: { "Content-Type" => "text/plain" })
+      end
+
+      it "raises Error with the missing-token contract instead of NoMethodError" do
+        expect {
+          described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
+        }.to raise_error(Github::AppInstallation::Error, /token.*missing/i)
+      end
+    end
   end
 end

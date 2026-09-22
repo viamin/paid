@@ -10,10 +10,16 @@ module AppleVerification
     # installation, and empty `object_storage` / `control_plane_api` lanes.
     # An uncommitted attempt produces an `object_storage` lane referencing a
     # content-addressed workspace bundle, an empty `credentials` lane, and the
-    # same `git` lane shape with no `commit_sha`. The builder rejects host
-    # paths, bind mounts, and writable cross-project caches in either branch,
-    # and refuses to build any lane when the originating paid-agent container
-    # has a write-host mount bound into its workspace (the caller-supplied
+    # same `git` lane shape with no `commit_sha`. For uncommitted attempts
+    # the bundle's content digest is `attempt.source_digest` — the attempt is
+    # expected to have been created with the digest returned by
+    # {AppleVerification::SourceLane::BundleBuilder#call} so the guest's
+    # digest verification ({docs/rdrs/RDR-068-apple-platform-verification-workers.md}
+    # § Uncommitted source) checks the bytes that were actually shipped, not
+    # a stale or unrelated value. The builder rejects host paths, bind
+    # mounts, and writable cross-project caches in either branch, and refuses
+    # to build any lane when the originating paid-agent container has a
+    # write-host mount bound into its workspace (the caller-supplied
     # `host_mount_check` inspects the originating container; passing it is
     # required because the executor is the only party that can resolve the
     # container's bind/mount table).

@@ -104,7 +104,7 @@ module AppleVerification
         storage.delete_key(key)
         attempt.update!(bundle_retained_until: nil)
         true
-      rescue Aws::S3::Errors::ServiceError => error
+      rescue ArtifactStorage::StorageError => error
         Rails.logger.warn(
           message: "apple_verification.bundle_retention_sweep_failed",
           apple_verification_attempt_id: attempt.id,

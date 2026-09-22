@@ -119,6 +119,15 @@ module AppleVerification
       end
 
       def revoke_credential!
+        # Uncommitted attempts never have a credentials lane entry or a
+        # minted installation token, so {CredentialLane#revoke!} early-returns
+        # and no remote revoke happens. Recording the audit event for an
+        # attempt with no `commit_sha` would assert a revocation that did
+        # not occur, polluting the append-only audit trail; mirror the
+        # `CredentialLane#revoke!` commit_sha-present? guard here so the
+        # audit event only fires when a revocation actually took place.
+        return unless attempt.commit_sha.present?
+
         credential_lane.revoke!
         record_event!(
           event_name: "apple_credential.revoked",
@@ -132,9 +141,15 @@ module AppleVerification
       # for the configured window so the sweep can pick it up and only the
       # bundle key is deleted, not the attempt's artifact namespace. The
       # committed/uncommitted distinction lives on `commit_sha` (per
-      # {AppleVerification::SourceLane::Build#committed?}), not on
-      # `source_digest`, which is set on every attempt as the workflow
-      # revision's content digest.
+      # {AppleVerification::SourceLane::Build#committed?}). `source_digest`
+      # is set on every attempt at creation time and means different things
+      # in each branch: for uncommitted attempts it is the workspace
+      # bundle's content digest returned by
+      # {AppleVerification::SourceLane::BundleBuilder#call} (so the guest can
+      # verify the bytes it actually extracts); for committed attempts the
+      # caller records whatever content digest the execution binding is
+      # bound to — the bundle sweep uses `commit_sha` presence, not the
+      # digest value, to decide whether a bundle is in flight.
       def persist_bundle_retained_until!
         return if attempt.commit_sha.present?
 
