@@ -67,6 +67,14 @@
   SHALL exit non-zero when any preflight check is in `gap` state or any
   smoke scenario fails, SHALL print warnings as warnings, and SHALL never
   mutate host state, write to the application database, or shell into
-  the guest.
-  *Tests:* `spec/bin/apple_worker_setup_spec.rb`
-  *Code:* `bin/apple-worker-setup`
+  the guest. The smoke provisioning path SHALL scope its DB-side
+  `AppleWorkerProfile` and `AppleVerificationWorkflowRevision` rows to a
+  smoke-only marker so it cannot find or approve a production draft
+  revision bound to a profile sharing the operator's `--profile` value,
+  and SHALL leave the workflow revision in draft state because the
+  `agent_iteration` lifecycle gate accepts draft revisions without
+  invoking the production approval gate.
+  *Tests:* `spec/bin/apple_worker_setup_spec.rb`,
+  `spec/services/apple_verification/setup/smoke_attempt_factory_spec.rb`
+  *Code:* `bin/apple-worker-setup`,
+  `AppleVerification::Setup::SmokeAttemptFactory`

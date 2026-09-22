@@ -60,16 +60,21 @@ module AppleVerification
 
       # Names of local Tart VMs (directories under <tart_home>/vms that
       # Tart considers initialized). Hidden names and names with path
-      # separators are skipped so the directory walk can never escape the
-      # vms root.
+      # separators are skipped so the directory walk cannot escape the
+      # vms root. Symlinks to directories are also rejected because
+      # File.directory? follows symlinks — without this guard a hostile
+      # entry could make the preflight enumerate an attacker-chosen path
+      # outside the vms root.
       def local_tart_vm_names
         vms_root = File.join(tart_home_dir, "vms")
         return [] unless file_present?(vms_root) && File.directory?(vms_root)
 
         Dir.children(vms_root).sort.filter_map do |name|
           next nil unless safe_tart_vm_name?(name)
+          entry = File.join(vms_root, name)
+          next nil if File.symlink?(entry)
 
-          name if File.directory?(File.join(vms_root, name))
+          name if File.directory?(entry)
         end
       end
 
@@ -79,17 +84,34 @@ module AppleVerification
       # structural addition) produces a different digest. Hidden files,
       # hidden directories, and the files inside them are skipped — Tart
       # uses dotfiles for runtime bookkeeping (e.g. `.explicitly-pulled`)
-      # that is not part of the image content. Returns nil when the
-      # directory is missing or not a directory.
+      # that is not part of the image content. The VM directory itself
+      # must resolve under `<TART_HOME>/vms/`, symlinks are rejected, and
+      # every remaining entry's realpath is anchored back to the vms
+      # root so the walker cannot escape the directory even when an
+      # attacker can drop a symlink under `<TART_HOME>/vms/`. Returns
+      # nil when the directory is missing, is not a directory, or
+      # resolves outside the vms root.
       def vm_dir_digest(name)
-        path = File.join(tart_home_dir, "vms", name.to_s)
+        vms_root = File.join(tart_home_dir, "vms")
+        path = File.join(vms_root, name.to_s)
         return nil unless safe_tart_vm_name?(name.to_s)
         return nil unless file_present?(path) && File.directory?(path)
 
+        real_vms_root = File.realpath(vms_root)
+        real_path = File.realpath(path)
+        return nil unless contained_in?(real_path, real_vms_root)
+
         entries = Dir.glob(File.join(path, "**", "*"), File::FNM_DOTMATCH).sort
         manifest = entries.filter_map do |entry|
+          # File.directory? and Digest::SHA256.file both follow symlinks,
+          # so a direct symlink under the VM directory would otherwise
+          # let an attacker point the digest at content outside the vms
+          # root. Reject symlinks up front and anchor every remaining
+          # entry's realpath back to the vms root for defence in depth.
+          next nil if File.symlink?(entry)
           next nil if File.directory?(entry)
           next nil if hidden_path?(entry, path)
+          next nil unless contained_in?(File.realpath(entry), real_vms_root)
 
           relative = entry.sub("#{path}/", "")
           "#{relative}\t#{Digest::SHA256.file(entry).hexdigest}"
@@ -121,6 +143,16 @@ module AppleVerification
 
       def hidden_path?(entry, root)
         entry.sub(root, "").split("/").any? { |part| part.start_with?(".") }
+      end
+
+      # Anchor the entry's resolved path under the vms root. An entry can
+      # resolve outside the vms root even when the entry itself is not a
+      # symlink — e.g. when a parent directory in the chain is a
+      # symlink. Returning false for entries that cannot be resolved
+      # (Errno::ENOENT/EACCES) keeps the walker conservative under a
+      # hostile or partially-readable vms directory.
+      def contained_in?(resolved_path, real_vms_root)
+        resolved_path.start_with?("#{real_vms_root}/")
       end
     end
   end

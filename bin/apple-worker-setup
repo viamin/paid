@@ -85,56 +85,19 @@ def resolve_smoke_project(options)
   end
 end
 
+# The smoke factory is smoke-scoped so it cannot touch a production
+# workflow revision the operator approved out of band. See
+# {AppleVerification::Setup::SmokeAttemptFactory} for the full scoping
+# contract; in short: the DB-side profile is keyed under a smoke-only
+# marker (so the find-or-create cannot collide with production profiles
+# that share the operator's --profile value), and the revision is left
+# in draft state because the +agent_iteration+ lifecycle gate is
+# advisory and accepts draft revisions without invoking the production
+# approval gate.
 def build_smoke_attempt_factory(project, image_digest, profile_id)
-  lambda do |agent_run:|
-    TenantContext.with_system_access do
-      profile = AppleWorkerProfile.find_or_create_by!(account: project.account, name: profile_id) do |profile|
-        profile.created_by_id = nil
-        profile.image_digest = image_digest
-        profile.capabilities = { "capabilities" => %w[build test launch ui_flow screenshot] }
-        profile.constraints = { "platforms" => [ "ios" ], "xcode_version" => ">= 26.0, < 27.0" }
-      end
-
-      revision = AppleVerificationWorkflowRevision
-        .where(project: project, account: project.account, apple_worker_profile: profile)
-        .order(revision: :desc)
-        .first
-      revision ||= begin
-        next_number = AppleVerificationWorkflowRevision
-          .where(project: project).maximum(:revision).to_i + 1
-        AppleVerificationWorkflowRevision.create!(
-          project: project,
-          account: project.account,
-          apple_worker_profile: profile,
-          revision: next_number,
-          content_digest: "sha256:#{'0' * 64}",
-          verification_files: [
-            { "path" => ".paid/apple-verification.yml", "digest" => "sha256:#{'0' * 64}" }
-          ],
-          lifecycle_gate: "agent_iteration",
-          required_checks: [ "test" ],
-          advisory_checks: [ "screenshot" ]
-        )
-      end
-
-      if revision.draft?
-        administrator = project.project_memberships.first&.user
-        revision.approve!(actor: administrator) if administrator
-        revision.reload
-      end
-
-      AppleVerificationAttempt.create!(
-        project: project,
-        account: project.account,
-        apple_verification_workflow_revision: revision,
-        apple_worker_profile: profile,
-        agent_run: agent_run,
-        source_digest: "sha256:#{'0' * 64}",
-        lifecycle_gate: revision.lifecycle_gate,
-        retry_number: 0
-      )
-    end
-  end
+  AppleVerification::Setup::SmokeAttemptFactory.new(
+    project:, image_digest:, profile_id:
+  ).call
 end
 
 def require_smoke_environment!

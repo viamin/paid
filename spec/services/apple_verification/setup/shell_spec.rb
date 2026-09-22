@@ -116,6 +116,17 @@ RSpec.describe AppleVerification::Setup::Shell do
         expect(shell.local_tart_vm_names).not_to include("..")
       end
     end
+
+    it "skips symlinks that point to directories outside the vms root" do
+      Dir.mktmpdir do |dir|
+        ENV["TART_HOME"] = dir
+        FileUtils.mkdir_p(File.join(dir, "vms", "paid-vm-1"))
+        FileUtils.mkdir_p(File.join(dir, "outside"))
+        File.symlink(File.join(dir, "outside"), File.join(dir, "vms", "escape"))
+
+        expect(shell.local_tart_vm_names).to eq([ "paid-vm-1" ])
+      end
+    end
   end
 
   describe "#vm_dir_digest" do
@@ -185,6 +196,55 @@ RSpec.describe AppleVerification::Setup::Shell do
         File.write(File.join(vm_dir, ".explicitly-pulled"), "")
 
         expect(shell.vm_dir_digest("paid-macos-base")).to eq(baseline)
+      end
+    end
+
+    it "skips a direct symlink that points to a regular file outside the vms root" do
+      Dir.mktmpdir do |dir|
+        ENV["TART_HOME"] = dir
+        outside_root = File.join(dir, "outside")
+        FileUtils.mkdir_p(outside_root)
+        File.write(File.join(outside_root, "secret.txt"), "secret-bytes")
+        vm_dir = File.join(dir, "vms", "paid-macos-base")
+        FileUtils.mkdir_p(vm_dir)
+        File.write(File.join(vm_dir, "config.json"), "{}")
+        File.symlink(File.join(outside_root, "secret.txt"), File.join(vm_dir, "leak"))
+
+        baseline = shell.vm_dir_digest("paid-macos-base")
+
+        File.write(File.join(outside_root, "secret.txt"), "mutated-secret")
+
+        expect(shell.vm_dir_digest("paid-macos-base")).to eq(baseline)
+      end
+    end
+
+    it "skips a directory symlink that resolves outside the vms root" do
+      Dir.mktmpdir do |dir|
+        ENV["TART_HOME"] = dir
+        outside_root = File.join(dir, "outside")
+        FileUtils.mkdir_p(outside_root)
+        File.write(File.join(outside_root, "secret.txt"), "secret-bytes")
+        vm_dir = File.join(dir, "vms", "paid-macos-base")
+        FileUtils.mkdir_p(vm_dir)
+        File.symlink(outside_root, File.join(vm_dir, "linkdir"))
+
+        baseline = shell.vm_dir_digest("paid-macos-base")
+
+        File.write(File.join(outside_root, "secret.txt"), "mutated-secret")
+
+        expect(shell.vm_dir_digest("paid-macos-base")).to eq(baseline)
+      end
+    end
+
+    it "returns nil when the VM directory itself is a symlink that escapes the vms root" do
+      Dir.mktmpdir do |dir|
+        ENV["TART_HOME"] = dir
+        outside_root = File.join(dir, "outside")
+        FileUtils.mkdir_p(outside_root)
+        File.write(File.join(outside_root, "secret.txt"), "secret-bytes")
+        File.symlink(outside_root, File.join(dir, "vms", "leak"))
+
+        expect(shell.vm_dir_digest("leak")).to be_nil
       end
     end
   end
