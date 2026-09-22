@@ -29,13 +29,13 @@ module AppleVerificationWorkers
     "profile" => { "digest" => :digest, "platform" => :platform, "xcode_version" => :string }
   }.freeze
   OUTPUT_SECTION_FIELDS = {
-    "attempt" => %w[id source_digest workflow_revision lifecycle_gate profile_digest],
+    "attempt" => %w[id source_digest commit_sha workflow_revision lifecycle_gate profile_digest],
     "result" => %w[status timings retry_lineage failure_classification required_checks advisory_checks screenshot_metadata network_policy audit_event_references ledger_entry_references],
     "artifacts" => %w[xcresult build_logs screenshots diagnostics references]
   }.freeze
   OUTPUT_SECTION_SHAPES = {
-    "attempt" => { "id" => :identifier, "source_digest" => :digest, "workflow_revision" => :identifier, "lifecycle_gate" => :lifecycle_gate, "profile_digest" => :digest },
-    "result" => { "status" => :string, "timings" => :timings, "retry_lineage" => :identifier_array, "failure_classification" => :string, "required_checks" => :string_array, "advisory_checks" => :string_array, "screenshot_metadata" => :reference_array, "network_policy" => :network_policy, "audit_event_references" => :reference_array, "ledger_entry_references" => :reference_array },
+    "attempt" => { "id" => :identifier, "source_digest" => :digest, "commit_sha" => :string, "workflow_revision" => :identifier, "lifecycle_gate" => :lifecycle_gate, "profile_digest" => :digest },
+    "result" => { "status" => :string, "timings" => :timings, "retry_lineage" => :identifier_array, "failure_classification" => :string, "required_checks" => :string_array, "advisory_checks" => :string_array, "screenshot_metadata" => :string_array, "network_policy" => :network_policy, "audit_event_references" => :identifier_array, "ledger_entry_references" => :identifier_array },
     "artifacts" => { "xcresult" => :reference_array, "build_logs" => :reference_array, "screenshots" => :reference_array, "diagnostics" => :reference_array, "references" => :reference_array }
   }.freeze
   DIGEST_PATTERN = /\Asha256:[a-f0-9]{64}\z/
@@ -45,7 +45,7 @@ module AppleVerificationWorkers
     "git" => %w[repository_id repo_full_name commit_sha ref bundle_digest],
     "control_plane_api" => %w[id project_id workflow_revision_id attempt_id artifact_id audit_event_id],
     "object_storage" => %w[id key digest sha256 url],
-    "credentials" => %w[credential_id name project_id account_id repository_id integration_credential_id github_token_id]
+    "credentials" => %w[credential_id name project_id account_id repository_id integration_credential_id github_token_id installation_id ttl_seconds repo_full_name]
   }.freeze
 
   class UnsupportedCapability < StandardError; end

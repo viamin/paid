@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -420,7 +420,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.bigint "agent_run_id"
     t.bigint "apple_verification_workflow_revision_id", null: false
     t.bigint "apple_worker_profile_id", null: false
+    t.datetime "bundle_retained_until", comment: "Deadline until which the workspace bundle binary is retained; null when no bundle was created."
     t.string "commit_sha"
+    t.datetime "container_retained_until", comment: "Deadline until which a failed Apple VM is retained before destroy; null when destroyed promptly or never retained."
     t.datetime "created_at", null: false
     t.string "failure_classification"
     t.datetime "finished_at"
@@ -436,6 +438,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_031305) do
     t.index ["agent_run_id"], name: "index_apple_verification_attempts_on_agent_run_id"
     t.index ["apple_verification_workflow_revision_id"], name: "idx_on_apple_verification_workflow_revision_id_af6c72353a"
     t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"
+    t.index ["bundle_retained_until"], name: "idx_apple_attempts_bundle_retained_until", where: "(bundle_retained_until IS NOT NULL)"
+    t.index ["container_retained_until"], name: "idx_apple_attempts_container_retained_until", where: "(container_retained_until IS NOT NULL)"
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
     t.index ["retry_of_attempt_id"], name: "idx_apple_attempts_one_retry_per_source", unique: true
