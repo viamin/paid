@@ -191,6 +191,37 @@ RSpec.describe AppleVerification::Lifecycle do
       expect(result).to eq(:noop)
       expect(host).not_to have_received(:call)
     end
+
+    context "when the ledger entry is still provisioning with a cloned vm_id" do
+      # Mirrors #provision failing between clone_vm (which sets
+      # provider_resource_id while still "provisioning") and the "start"
+      # call succeeding: the VM is live at the host but the ledger entry
+      # never reached "active".
+      let!(:ledger_entry) do
+        create(:execution_resource_ledger_entry,
+          account:,
+          project:,
+          agent_run:,
+          apple_verification_attempt: attempt,
+          runner_type: "apple_tart",
+          backend: "tart",
+          resource_kind: "verification_vm",
+          status: "provisioning",
+          provider_resource_id: "paid-vm-1")
+      end
+
+      it "calls host.destroy and marks the ledger entry deleted" do
+        allow(host).to receive(:call).with(
+          version: "v1", operation: "destroy", token: "host-token",
+          payload: { "request_id" => "sweep:1", "vm_id" => "paid-vm-1" }
+        ).and_return("vm_id" => "paid-vm-1", "state" => "destroyed")
+
+        result = described_class.new(host:, token: "host-token").destroy(attempt: attempt, request_id: "sweep:1")
+
+        expect(result).to eq(:destroyed)
+        expect(ledger_entry.reload).to have_attributes(status: "deleted")
+      end
+    end
   end
 
   def create_post_clone_crash_records

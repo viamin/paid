@@ -87,42 +87,87 @@ RSpec.describe AppleVerification::SourceLane::CredentialLane do
     end
   end
 
-  describe "#revoke!" do
-    let(:provider) { class_double(Github::AppInstallation, revoke_token: nil) }
+  describe "#mint_token! and #revoke!" do
+    let(:installation) { project.github_installation }
+    let(:cache_key) { "apple_verification_credential_token:#{installation.github_installation_id}:#{attempt.id}" }
+    let(:provider_instance) { instance_double(Github::AppInstallation, mint: "ghs_attempt_scoped_token", revoke: nil) }
+    let(:provider) { class_double(Github::AppInstallation) }
 
-    it "revokes the installation token at GitHub and clears the local cache" do
-      described_class.new(attempt: attempt, token_provider: provider).revoke!
-      expect(provider).to have_received(:revoke_token).with(
-        installation_id: project.github_installation.github_installation_id,
+    before do
+      allow(provider).to receive(:new).with(
+        installation_id: installation.github_installation_id,
         repo_full_name: project.full_name
-      )
+      ).and_return(provider_instance)
     end
 
-    it "is a no-op when the attempt has no commit_sha" do
-      uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
-      described_class.new(attempt: uncommitted, token_provider: provider).revoke!
-      expect(provider).not_to have_received(:revoke_token)
+    describe "#mint_token!" do
+      it "mints a dedicated per-attempt token instead of using the shared project-wide cache" do
+        token = described_class.new(attempt: attempt, token_provider: provider).mint_token!
+
+        expect(token).to eq("ghs_attempt_scoped_token")
+        expect(provider).to have_received(:new).with(
+          installation_id: installation.github_installation_id,
+          repo_full_name: project.full_name
+        )
+        expect(provider_instance).to have_received(:mint)
+      end
+
+      it "caches the minted token under an attempt-scoped key so a later revoke reads the same value" do
+        allow(Rails.cache).to receive(:fetch).with(cache_key, expires_in: described_class::DEFAULT_TTL_SECONDS).and_yield
+        described_class.new(attempt: attempt, token_provider: provider).mint_token!
+
+        expect(Rails.cache).to have_received(:fetch).with(cache_key, expires_in: described_class::DEFAULT_TTL_SECONDS)
+      end
     end
 
-    it "swallows GitHub API errors so the audit trail is still recorded" do
-      provider = class_double(Github::AppInstallation)
-      allow(provider).to receive(:revoke_token).and_raise(Github::AppInstallation::Error, "boom")
-      expect {
+    describe "#revoke!" do
+      it "revokes only the attempt-scoped token and clears the attempt-scoped cache entry" do
+        allow(Rails.cache).to receive(:read).with(cache_key).and_return("ghs_attempt_scoped_token")
+        allow(Rails.cache).to receive(:delete).with(cache_key)
+
         described_class.new(attempt: attempt, token_provider: provider).revoke!
-      }.not_to raise_error
-    end
-  end
 
-  describe "#mint_token!" do
-    it "delegates to the configured token provider" do
-      provider = class_double(Github::AppInstallation, token_for: "ghs_short_lived_token")
-      token = described_class.new(attempt: attempt, token_provider: provider).mint_token!
+        expect(provider_instance).to have_received(:revoke).with("ghs_attempt_scoped_token")
+        expect(Rails.cache).to have_received(:delete).with(cache_key)
+      end
 
-      expect(token).to eq("ghs_short_lived_token")
-      expect(provider).to have_received(:token_for).with(
-        installation_id: project.github_installation.github_installation_id,
-        repo_full_name: project.full_name
-      )
+      it "never touches Github::AppInstallation's shared project-wide cache or revoke_token" do
+        allow(Rails.cache).to receive(:read).with(cache_key).and_return("ghs_attempt_scoped_token")
+        allow(Rails.cache).to receive(:delete).with(cache_key)
+        allow(Github::AppInstallation).to receive(:revoke_token)
+
+        described_class.new(attempt: attempt, token_provider: provider).revoke!
+
+        expect(Github::AppInstallation).not_to have_received(:revoke_token)
+      end
+
+      it "is a no-op when no token was ever minted for this attempt" do
+        allow(Rails.cache).to receive(:read).with(cache_key).and_return(nil)
+        allow(Rails.cache).to receive(:delete).with(cache_key)
+
+        described_class.new(attempt: attempt, token_provider: provider).revoke!
+
+        expect(provider_instance).not_to have_received(:revoke)
+        expect(Rails.cache).to have_received(:delete).with(cache_key)
+      end
+
+      it "is a no-op when the attempt has no commit_sha" do
+        uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
+        described_class.new(attempt: uncommitted, token_provider: provider).revoke!
+        expect(provider).not_to have_received(:new)
+      end
+
+      it "swallows GitHub API errors so the audit trail is still recorded, and still clears the cache entry" do
+        allow(Rails.cache).to receive(:read).with(cache_key).and_return("ghs_attempt_scoped_token")
+        allow(Rails.cache).to receive(:delete).with(cache_key)
+        allow(provider_instance).to receive(:revoke).and_raise(Github::AppInstallation::Error, "boom")
+
+        expect {
+          described_class.new(attempt: attempt, token_provider: provider).revoke!
+        }.not_to raise_error
+
+        expect(Rails.cache).to have_received(:delete).with(cache_key)
+      end
     end
   end
 end

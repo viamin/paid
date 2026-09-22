@@ -42,4 +42,28 @@ RSpec.describe AppleVerification::ArtifactIngestion::Storage do
       expect(described_class.content_type_for("manifest")).to eq("application/json")
     end
   end
+
+  describe ".bundle_url" do
+    it "returns nil when the bundle has no digest yet" do
+      allow(ArtifactStorage).to receive(:configured?).and_return(true)
+
+      expect(described_class.bundle_url(account_id: 1, project_id: 2, attempt_id: 3, digest: nil)).to be_nil
+    end
+
+    it "returns nil when object storage is not configured" do
+      allow(ArtifactStorage).to receive(:configured?).and_return(false)
+
+      expect(described_class.bundle_url(account_id: 1, project_id: 2, attempt_id: 3, digest: "sha256:abc")).to be_nil
+    end
+
+    it "presigns through the shared ArtifactStorage client instead of building a bare S3 URL" do
+      signed_client = instance_double(ArtifactStorage, signed_url: "https://example.test/apple-verification/1/2/3/source.tar?X-Amz-Signature=abc")
+      allow(ArtifactStorage).to receive_messages(configured?: true, new: signed_client)
+
+      url = described_class.bundle_url(account_id: 1, project_id: 2, attempt_id: 3, digest: "sha256:abc")
+
+      expect(url).to eq("https://example.test/apple-verification/1/2/3/source.tar?X-Amz-Signature=abc")
+      expect(signed_client).to have_received(:signed_url).with("apple-verification/1/2/3/source.tar")
+    end
+  end
 end

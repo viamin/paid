@@ -13,7 +13,7 @@ module AppleVerification
     # gone by reconciliation and a destroy call would either fail or be a
     # no-op against the host. The ledger entry's status transitions are
     # governed by {ExecutionResourceLedgerEntry::ALLOWED_STATUS_TRANSITIONS}.
-    LIVE_VM_STATUSES = %w[active cleanup_pending orphaned cleanup_failed].freeze
+    LIVE_VM_STATUSES = %w[provisioning active cleanup_pending orphaned cleanup_failed].freeze
 
     def initialize(host:, token:, environment: Rails.env)
       @host = host

@@ -47,6 +47,17 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
     expect(excluded_paths).to include(".env", "secrets/id_rsa", "Pods/Pods.xcodeproj/file.pbxproj")
   end
 
+  it "excludes its own output archive and manifest when output_path sits inside workspace_root" do
+    write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+
+    result = described_class.call(workspace_root: workspace_root, output_path: output_path)
+
+    manifest = JSON.parse(File.binread(result.manifest_path))
+    included_paths = manifest["files"].map { |entry| entry["path"] }
+    expect(included_paths).to eq([ "Sources/App.swift" ])
+    expect(included_paths).not_to include("source.tar.gz", "source.manifest.json")
+  end
+
   it "raises SecretFoundError when an included file matches a secret pattern" do
     write_file("Sources/App.swift", "let greeting = \"hello\"\n")
     write_file("Sources/Helpers/App.swift", "let ghp = \"ghp_supersecrettoken1234567890123456789012345\"\n")

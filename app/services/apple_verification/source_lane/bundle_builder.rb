@@ -158,6 +158,8 @@ module AppleVerification
       end
 
       def walk_workspace(&block)
+        own_outputs = [ @output_path, @manifest_path ].compact.map { |path| File.expand_path(path) }
+
         Dir.glob(File.join(@workspace_root, "**", "*"), File::FNM_DOTMATCH).sort.each do |path|
           # The symlink-escape guard must run before the directory skip:
           # `File.directory?` follows symlinks, so a workspace containing
@@ -169,6 +171,13 @@ module AppleVerification
             raise WorkspaceInvalidError, "workspace contains a symlink that escapes the workspace root: #{path}" if symlink_escapes?(path)
           end
           next if File.directory?(path)
+          # The output archive (and its sibling manifest, when written under
+          # the workspace root) are created before this walk runs when
+          # `output_path` sits inside `workspace_root`. Without this guard
+          # the builder bundles its own still-writing archive as a phantom
+          # zero-byte entry, polluting both the file manifest and the
+          # content digest chain.
+          next if own_outputs.include?(File.expand_path(path))
 
           relative = path.sub(/\A#{Regexp.escape(@workspace_root)}\/?/, "")
           yield(path, relative)

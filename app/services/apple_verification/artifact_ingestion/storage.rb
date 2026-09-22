@@ -49,11 +49,19 @@ module AppleVerification
         "#{namespace_prefix(account_id:, project_id:, attempt_id:)}#{kind}/#{name}"
       end
 
+      # Returns a presigned, fetchable GET URL for the workspace bundle, or
+      # nil when object storage is not configured or the bundle has no
+      # digest yet. Must go through the shared {ArtifactStorage} client
+      # (matching {Ingest#build_reference}'s "url" field) rather than
+      # constructing a bare virtual-hosted-style S3 URL: the bucket is
+      # private, so an unsigned URL 403s, and a bare `*.s3.<region>.amazonaws.com`
+      # host does not resolve when `SCREENSHOTS_S3_ENDPOINT` points at an
+      # S3-compatible backend.
+      # @spec APPLE-TRANSFER-005
       def self.bundle_url(account_id:, project_id:, attempt_id:, digest:)
-        bucket, region = storage_config
-        return nil unless bucket && region && digest.present?
+        return nil unless digest.present? && ArtifactStorage.configured?
 
-        "https://#{bucket}.s3.#{region}.amazonaws.com/#{bundle_key(account_id:, project_id:, attempt_id:)}?digest=#{digest}"
+        new.signed_url(bundle_key(account_id:, project_id:, attempt_id:))
       end
 
       def self.content_type_for(kind)
@@ -65,12 +73,6 @@ module AppleVerification
         when "manifest" then "application/json"
         else "application/octet-stream"
         end
-      end
-
-      def self.storage_config
-        return [ nil, nil ] unless ArtifactStorage.configured?
-
-        [ ArtifactStorage.configured_bucket, ArtifactStorage.configured_region ]
       end
 
       def initialize(artifact_storage: ArtifactStorage.new)
