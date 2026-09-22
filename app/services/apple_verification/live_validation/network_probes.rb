@@ -29,11 +29,22 @@ module AppleVerification
       class << self
         def run(agent_run:, contract:, validator: AgentRuns::AppleVerification::ValidateGuestRequest)
           ADVERSARIAL.map { |id, shape| probe(agent_run:, contract:, validator:, id:, shape:, adversarial: true) }
-            .append(probe(agent_run:, contract:, validator:, id: CONTROL_ID, shape: { host_kind: :allowed },
+            .append(probe(agent_run:, contract:, validator:, id: CONTROL_ID, shape: control_shape(contract),
               adversarial: false))
         end
 
         private
+
+        # The control request must match the destination it probes: a
+        # resolved snapshot whose first allowed destination is not
+        # 443/https would otherwise be denied as out-of-contract and
+        # record a false failure for the AC6 control probe.
+        def control_shape(contract)
+          destination = contract.destinations.first
+          return { host_kind: :allowed } if destination.nil?
+
+          { host_kind: :allowed, port: destination[:port], scheme: destination[:scheme] }.compact
+        end
 
         def probe(agent_run:, contract:, validator:, id:, shape:, adversarial:)
           request = request_for(contract, shape)
@@ -51,7 +62,7 @@ module AppleVerification
         def request_for(contract, shape)
           host = shape.fetch(:host_kind) == :ip_literal ? IP_LITERAL_TARGET : allowed_host(contract)
           AgentRuns::AppleVerification::GuestNetworkRequest.new(
-            host: host, port: 443, scheme: shape.fetch(:scheme, "https"),
+            host: host, port: shape.fetch(:port, 443), scheme: shape.fetch(:scheme, "https"),
             dns_server: shape[:dns_server], proxy_override: shape[:proxy_override]
           )
         end

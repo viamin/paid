@@ -96,7 +96,7 @@ class ControlPlaneLifecycle
 
   def destroy(agent_run:, vm_id:, request_id:)
     request("destroy", "request_id" => request_id, "vm_id" => vm_id)
-    mark_entries_converged(agent_run)
+    mark_entries_converged(agent_run) if inventory(agent_run:).empty?
     "destroyed"
   end
 
@@ -108,8 +108,13 @@ class ControlPlaneLifecycle
   def request_cleanup!(agent_run:)
     entries_for(agent_run).where.not(status: "deleted").each { |entry| entry.request_cleanup! unless entry.cleanup_pending? }
     ExecutionRunners::ResourceReconciler.new.call
-    mark_entries_converged(agent_run)
-    inventory(agent_run:)
+    remaining = inventory(agent_run:)
+    # Observe the shipped lane's outcome instead of forcing it: the ledger
+    # is converged only once the inventory confirms the resource is gone,
+    # so a ledger claiming deletion while the VM still runs remains a
+    # divergence the suite's convergence assertions can catch.
+    mark_entries_converged(agent_run) if remaining.empty?
+    remaining
   end
 
   private
@@ -230,15 +235,22 @@ def preflight_failures(project_id, image_digest)
   failures << "--project is required (Paid project id for the validation run)" if project_id.nil?
   failures << "--image is required (approved Apple verification image digest)" if image_digest.nil?
 
-  if project_id && failures.empty?
-    project = Project.find_by(id: project_id)
-    failures << "project #{project_id} not found" if project.nil?
-    if project
-      unless FeatureFlags.enabled?(:apple_verification_workers, project:)
-        failures << "apple_verification_workers flag is disabled for project #{project_id}"
-      end
-      unless project.account.apple_verification_images.schedulable.exists?(digest: image_digest)
-        failures << "no active Apple verification image with digest #{image_digest}"
+  # The project, feature-flag, and image lookups cross the FORCE ROW LEVEL
+  # SECURITY tenant policy on projects (and its account-scoped joins); a
+  # fresh script connection carries neither paid.current_account_id nor
+  # paid.bypass_tenant_rls, so these must run with system access like the
+  # --run path below or every project lookup reads as "not found".
+  TenantContext.with_system_access do
+    if project_id && failures.empty?
+      project = Project.find_by(id: project_id)
+      failures << "project #{project_id} not found" if project.nil?
+      if project
+        unless FeatureFlags.enabled?(:apple_verification_workers, project:)
+          failures << "apple_verification_workers flag is disabled for project #{project_id}"
+        end
+        unless project.account.apple_verification_images.schedulable.exists?(digest: image_digest)
+          failures << "no active Apple verification image with digest #{image_digest}"
+        end
       end
     end
   end
@@ -303,6 +315,9 @@ TenantContext.with_system_access do
     }
   )
   result = AppleVerification::LiveValidation::Runner.new(config).run
+  # The validation run is done: leave the in-flight set so it stops
+  # counting against the project's capacity.
+  agent_run.update!(status: "completed", completed_at: Time.current)
 
   archive_path = options[:out_path] || "docs/rdrs/live-validation-#{Date.current.iso8601}-rdr-068.md"
   if options[:stdout]

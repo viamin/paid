@@ -8,13 +8,17 @@ require "rails_helper"
 # @spec APPLE-LIVE-006
 RSpec.describe AppleVerification::LiveValidation::Runner do
   let(:project) { create(:project) }
-  let(:agent_run) { create(:agent_run, project: project) }
+  let(:agent_run) { create(:agent_run, :running, project: project) }
   let(:lifecycle) { AppleLiveValidationFakes::FakeLifecycle.new(%w[vm-a1 vm-a2 vm-b1 vm-b2 vm-c1 vm-c2 vm-r1 vm-r2 vm-r3 vm-r4 vm-r5 vm-r6]) }
   let(:dispatcher) { AppleLiveValidationFakes::FakeDispatcher.new }
+  # The run factory mirrors bin/apple-verify-live's create_validation_run:
+  # fresh validation runs start status "running", i.e. capacity-in-flight,
+  # so the reconciler lane cannot claim their resources until the
+  # choreography moves them out of the in-flight set.
   let(:ports) do
     AppleVerification::LiveValidation::Ports.new(
       lifecycle: lifecycle, dispatcher: dispatcher, reconciler: AppleLiveValidationFakes::FakeReconciler.new,
-      run_factory: -> { create(:agent_run, project: project) }
+      run_factory: -> { create(:agent_run, :running, project: project) }
     )
   end
   let(:config) do
@@ -117,6 +121,15 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.detail).to include("re-linked")
   end
 
+  it "tears down the re-linked control-plane-restart VM so it cannot leak" do
+    result = described_class.new(config).run
+
+    row = evidence_for(result, "recovery-control-plane-restart").sole
+    expect(row.status).to eq(:passed)
+    expect(row.detail).to include("reconciled after teardown")
+    expect(project.agent_runs.reload.map { |run| lifecycle.inventory(agent_run: run) }).to all(be_empty)
+  end
+
   it "converges a host restart by cleaning the stopped VM through reconciliation" do
     result = described_class.new(config).run
 
@@ -166,6 +179,30 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     result = described_class.new(config).run
 
     expect(evidence_for(result, "capacity-alongside-three-agent-containers").sole).to have_attributes(status: :failed, detail: /three/)
+  end
+
+  it "records a gap instead of raising when every capacity sample is degraded" do
+    ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
+      { "disk_free_gib" => 72.5 },
+      {}
+    ])
+
+    result = described_class.new(config).run
+
+    expect(evidence_for(result, "capacity-alongside-three-agent-containers").sole)
+      .to have_attributes(status: :gap, detail: /degraded/)
+  end
+
+  it "evaluates capacity against complete samples only when some samples are degraded" do
+    ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
+      { "disk_free_gib" => 55.0, "memory_free_percent" => 31.0, "active_apple_vms" => 1, "agent_containers" => 3 },
+      { "disk_free_gib" => 72.5 }
+    ])
+
+    result = described_class.new(config).run
+
+    expect(evidence_for(result, "capacity-alongside-three-agent-containers").sole)
+      .to have_attributes(status: :failed, detail: /60/)
   end
 
   it "leaves the archive reporting scenario as a gap until the report is written" do

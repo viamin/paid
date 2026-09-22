@@ -33,6 +33,30 @@ RSpec.describe AppleVerification::LiveValidation::NetworkProbes do
     expect(control.detail).to include('permitted')
   end
 
+  it "builds the control request from the destination's own port and scheme" do
+    # The resolved snapshot's first allowed destination is not 443/https;
+    # the control probe must adopt its port and scheme instead of the
+    # https/443 defaults, or the shipped validator would deny a compliant
+    # request as out-of-contract.
+    non_default_contract = AgentRuns::AppleVerification::GuestContract.new(
+      proxy: { host: "egress-gateway", port: 3128 },
+      destinations: [ { host: "mirror.internal", port: 8080, scheme: "http" } ],
+      egress_profile: "locked"
+    )
+    requests = []
+    recording_validator = ->(agent_run:, contract:, request:) do
+      requests << request
+      AgentRuns::AppleVerification::ValidateGuestRequest.call(agent_run:, contract:, request:)
+    end
+
+    evidence = described_class.run(agent_run:, contract: non_default_contract, validator: recording_validator)
+
+    control = evidence.find { |row| row.scenario_id == "network-compliant-request" }
+    expect(control.status).to eq(:passed)
+    expect(requests.find { |request| request.host == "mirror.internal" && request.port == 8080 })
+      .to have_attributes(scheme: "http")
+  end
+
   it "records audit references for each denial" do
     evidence = described_class.run(agent_run:, contract:)
 

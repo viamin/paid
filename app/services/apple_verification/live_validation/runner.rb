@@ -14,6 +14,9 @@ module AppleVerification
       MIN_MEMORY_FREE_PERCENT = 25
       MAX_ACTIVE_VMS = 1
       MIN_AGENT_CONTAINERS = 3
+      # A sample missing any of these figures is degraded (incomplete host
+      # readiness) and cannot be compared against the thresholds.
+      CAPACITY_KEYS = %w[agent_containers disk_free_gib memory_free_percent active_apple_vms].freeze
       RUNBOOK = "docs/rdrs/live-validation-runbook-rdr-068.md"
 
       RECOVERY_CHOREOGRAPHY = {
@@ -126,6 +129,11 @@ module AppleVerification
       def converge_cancellation
         run = fresh_run
         provision_recovery_vm(run, "recovery-cancellation")
+        # The reconciler's tag discovery never claims a resource whose run
+        # is still capacity-in-flight, so the choreography must move the run
+        # out of the in-flight set first, mirroring the production
+        # cancellation lane.
+        run.update!(status: "cancelled", completed_at: Time.current)
         ports.lifecycle.request_cleanup!(agent_run: run)
         problem = convergence_problem(run)
         record("recovery-cancellation", problem ? :failed : :passed,
@@ -150,14 +158,23 @@ module AppleVerification
         problem = "re-provision returned #{second} after #{first}" unless first == second
         problem ||= "intent not linked after re-provision" unless intent_linked?(run, request_id)
         problem ||= "ledger entry not active after re-provision" if active_entries(run).empty?
+        # The re-linked VM must not leak: finish the run so the reconciler
+        # can claim the resource, then converge through the cleanup lane.
+        run.update!(status: "completed", completed_at: Time.current)
+        ports.lifecycle.request_cleanup!(agent_run: run)
+        problem ||= convergence_problem(run)
         record("recovery-control-plane-restart", problem ? :failed : :passed,
-          problem || "re-linked #{first}; intent linked; ledger entry active", ledger_references(run))
+          problem || "re-linked #{first}; intent linked; ledger entry active; VM reconciled after teardown",
+          ledger_references(run))
       end
 
       def converge_host_restart
         run = fresh_run
         identifier = provision_recovery_vm(run, "recovery-host-restart")
         ports.lifecycle.stop(agent_run: run, vm_id: identifier, request_id: "#{config.run_key}:recovery-host-restart:stop")
+        # As with cancellation: reconciliation can only claim the stopped
+        # VM once the run leaves the capacity-in-flight set.
+        run.update!(status: "cancelled", completed_at: Time.current)
         ports.lifecycle.request_cleanup!(agent_run: run)
         problem = convergence_problem(run)
         record("recovery-host-restart", problem ? :failed : :passed,
@@ -170,6 +187,9 @@ module AppleVerification
         failure = provisioning_failure_for(run)
         problem = "ledger entries left active" if active_entries(run).any?
         problem ||= inventory_problem_for(run)
+        # No VM exists, but the run must still leave the in-flight set so
+        # it stops counting against the project's capacity.
+        run.update!(status: "failed", completed_at: Time.current)
         record("recovery-partial-provisioning", problem ? :failed : :passed,
           problem || "provisioning failure converged (#{failure.class.name}): no VM left; no active ledger entry",
           ledger_references(run))
@@ -250,12 +270,21 @@ module AppleVerification
           return [ record(scenario.id, :gap, "no capacity samples collected; run functional scenarios with a sampler wired") ]
         end
 
-        problems = threshold_problems
-        record(scenario.id, problems.empty? ? :passed : :failed, "#{capacity_figure}; #{problems.join('; ')}")
+        samples = complete_capacity_samples
+        if samples.empty?
+          return [ record(scenario.id, :gap, "capacity samples were degraded (incomplete host readiness); no complete sample to evaluate") ]
+        end
+
+        problems = threshold_problems(samples)
+        record(scenario.id, problems.empty? ? :passed : :failed, "#{capacity_figure(samples)}; #{problems.join('; ')}")
       end
 
-      def threshold_problems
-        problems = @capacity_samples.filter_map do |sample|
+      def complete_capacity_samples
+        @capacity_samples.select { |sample| CAPACITY_KEYS.all? { |key| sample.key?(key) } }
+      end
+
+      def threshold_problems(samples)
+        problems = samples.filter_map do |sample|
           disk = sample.fetch("disk_free_gib").to_f
           memory = sample.fetch("memory_free_percent").to_f
           vms = sample.fetch("active_apple_vms").to_i
@@ -267,24 +296,24 @@ module AppleVerification
             "#{vms} active Apple VMs exceed the #{MAX_ACTIVE_VMS} VM limit"
           end
         end
-        containers = @capacity_samples.map { |sample| sample.fetch("agent_containers").to_i }.min
+        containers = samples.map { |sample| sample.fetch("agent_containers").to_i }.min
         problems << "only #{containers} agent containers active; three required" if containers < MIN_AGENT_CONTAINERS
         problems
       end
 
-      def capacity_figure
+      def capacity_figure(samples)
         format("agent containers: %s; disk free: %s GiB; memory free: %s%%; active Apple VMs: %s",
-          integer_range("agent_containers"), decimal_range("disk_free_gib"),
-          decimal_range("memory_free_percent"), integer_range("active_apple_vms"))
+          integer_range(samples, "agent_containers"), decimal_range(samples, "disk_free_gib"),
+          decimal_range(samples, "memory_free_percent"), integer_range(samples, "active_apple_vms"))
       end
 
-      def integer_range(key)
-        values = @capacity_samples.map { |sample| sample.fetch(key).to_i }
+      def integer_range(samples, key)
+        values = samples.map { |sample| sample.fetch(key).to_i }
         "#{values.min}-#{values.max}"
       end
 
-      def decimal_range(key)
-        values = @capacity_samples.map { |sample| sample.fetch(key).to_f }
+      def decimal_range(samples, key)
+        values = samples.map { |sample| sample.fetch(key).to_f }
         format("%.1f-%.1f", values.min, values.max)
       end
 

@@ -22,7 +22,9 @@
   against the run's resolved guest contract, the system SHALL deny it
   through the shipped audited validator, record the denial reason and
   the created security/audit event references as evidence, and SHALL
-  permit a compliant control request.
+  permit a compliant control request built from an allowed destination's
+  own port and scheme (never hardcoded 443/https defaults that the
+  contract would reject).
   *Tests:* `spec/services/apple_verification/live_validation/network_probes_spec.rb`
   *Code:* `AppleVerification::LiveValidation::NetworkProbes`
 - [x] **APPLE-LIVE-004** — An isolation scenario SHALL record live
@@ -32,17 +34,23 @@
   *Tests:* `spec/services/apple_verification/live_validation/runner_spec.rb`
   *Code:* `AppleVerification::LiveValidation::Runner`
 - [x] **APPLE-LIVE-005** — When a recovery scenario converges, the
-  system SHALL assert the terminal ledger state through the shipped
-  lifecycle and reconciliation surfaces, and a recovery mechanism the
-  control plane does not provide SHALL be recorded as a gap naming the
-  missing surface rather than failed or skipped.
+  system SHALL first move its validating run out of the
+  capacity-in-flight set (mirroring the production cancellation lane),
+  because the shipped reconciler never claims a resource whose run is
+  still in flight, and SHALL assert the terminal ledger state through
+  the shipped lifecycle and reconciliation surfaces — observing the
+  lane's outcome rather than forcing the ledger to deleted. A recovery
+  mechanism the control plane does not provide SHALL be recorded as a
+  gap naming the missing surface rather than failed or skipped.
   *Tests:* `spec/services/apple_verification/live_validation/runner_spec.rb`
   *Code:* `AppleVerification::LiveValidation::Runner`
 - [x] **APPLE-LIVE-006** — When the capacity scenario executes, the
   system SHALL sample host free disk, free memory, active Apple VMs,
-  and concurrent paid-agent containers, SHALL compare every sample
-  against the RDR-068 admission defaults, and SHALL pass only with at
-  least three agent containers active, recording the measured figure.
+  and concurrent paid-agent containers, SHALL compare every complete
+  sample (degraded samples missing a figure are excluded) against the
+  RDR-068 admission defaults, and SHALL pass only with at least three
+  agent containers active, recording the measured figure; when no
+  complete sample exists the scenario SHALL record a gap, never raise.
   *Tests:* `spec/services/apple_verification/live_validation/runner_spec.rb`
   *Code:* `AppleVerification::LiveValidation::Runner`
 - [x] **APPLE-LIVE-007** — The rendered report SHALL mark a criterion

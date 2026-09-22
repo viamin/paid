@@ -55,12 +55,17 @@ Five groups plus the archival scenario:
 - **Recovery** (`AC4`): cancellation, timeout, control-plane restart,
   host restart, partial provisioning, and orphan-discovery
   choreographies converge through the shipped lifecycle,
-  reconciliation, and ledger surfaces; each asserts the terminal
-  ledger state (intent terminal, entry active or deleted, no orphaned
-  Paid-owned VM left running). A mechanism the control plane does not
-  yet provide (for example the 45-minute attempt timeout tracked by
-  #3936) is recorded as a gap naming the missing surface, never
-  skipped silently and never marked failed.
+  reconciliation, and ledger surfaces; each moves its validating run
+  out of the capacity-in-flight set first (the reconciler never claims
+  an in-flight run's resources), tears down its VM, and asserts the
+  terminal ledger state (intent terminal, entry active or deleted, no
+  orphaned Paid-owned VM left running). The CLI lifecycle port marks
+  ledger entries deleted only after its inventory confirms the
+  resource is gone — it observes the shipped lane's outcome rather
+  than forcing it. A mechanism the control plane does not yet provide
+  (for example the 45-minute attempt timeout tracked by #3936) is
+  recorded as a gap naming the missing surface, never skipped
+  silently and never marked failed.
 - **Isolation** (`AC5`): host SSH, host filesystem, personal data,
   keychain, devices, and container-runtime probes. Evidence comes only
   from a configured guest-diagnostics provider (the guest executor's
@@ -76,10 +81,13 @@ Five groups plus the archival scenario:
   reason and the audit references.
 - **Capacity** (`AC7`): samples host free disk, free memory, active
   Apple VMs, and concurrent paid-agent containers while the functional
-  scenarios run; passes only when every sample meets the RDR-068
-  admission defaults (at least 60 GiB free disk, at least 25% free
-  memory, at most one active Apple VM) with at least three agent
-  containers active. The measured figure is recorded in the evidence.
+  scenarios run; degraded samples (a failed or partial host-readiness
+  report) are excluded, and passes only when every complete sample
+  meets the RDR-068 admission defaults (at least 60 GiB free disk, at
+  least 25% free memory, at most one active Apple VM) with at least
+  three agent containers active. The measured figure is recorded in
+  the evidence; if no complete sample exists the scenario records a
+  gap instead of failing or raising.
 - **Reporting** (`AC8`): the report archival scenario passes only when
   the harness actually wrote the report file under `docs/rdrs/`.
 

@@ -6,7 +6,10 @@
 # request id, fresh identifier otherwise) and the shipped cleanup lane
 # (request_cleanup! then mark_deleted!), and FakeReconciler mirrors the
 # reconciler's tag-discovery convergence for runs that are no longer
-# capacity-in-flight.
+# capacity-in-flight. FakeLifecycle#request_cleanup! encodes the same
+# capacity-in-flight gate as the shipped reconciler, so a choreography
+# that never moves its run out of the in-flight set fails its
+# convergence assertions here instead of leaking the VM live.
 module AppleLiveValidationFakes
   class FakeLifecycle
     attr_reader :destroyed
@@ -20,6 +23,7 @@ module AppleLiveValidationFakes
       @destroyed = []
       @leaked = []
       @cleaned = []
+      @owners = {}
     end
 
     def provision(agent_run:, image_id:, profile_id:, request_id:)
@@ -29,6 +33,7 @@ module AppleLiveValidationFakes
       identifier = @identifiers.shift || "vm-extra-#{@by_request.size}"
       @provisioned[request_id.split(":")[1]] << identifier
       @by_request[request_id] = identifier
+      @owners[identifier] = agent_run
       create_records(agent_run:, request_id:, identifier:)
       identifier
     end
@@ -43,11 +48,21 @@ module AppleLiveValidationFakes
     end
 
     def inventory(agent_run:)
-      (@provisioned.values.flatten - @destroyed - @cleaned) + @leaked
+      owned = @owners.select { |_, owner| owner.id == agent_run.id }.keys
+      # Entries marked deleted imply the resource was reconciled away (the
+      # shipped lane deletes entries only after successful cleanup), so
+      # FakeReconciler-driven destruction clears the inventory too.
+      reconciled = entries(agent_run).where(status: "deleted").pluck(:provider_resource_id)
+      ((owned - @destroyed - @cleaned - reconciled) + @leaked.select { |identifier| owned.include?(identifier) }).uniq
     end
 
     def request_cleanup!(agent_run:)
-      @cleaned = @provisioned.values.flatten - @destroyed
+      # Mirrors the shipped reconciler's tag discovery: a resource whose
+      # run is still capacity-in-flight is never claimed, so cleanup
+      # converges nothing until the run leaves the in-flight set.
+      return [] if AgentRun.capacity_inflight.exists?(agent_run.id)
+
+      @cleaned |= @owners.select { |_, owner| owner.id == agent_run.id }.keys - @destroyed
       entries(agent_run).each do |entry|
         next if entry.status == "deleted"
 
