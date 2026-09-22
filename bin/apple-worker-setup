@@ -1,0 +1,182 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Guided Apple-worker setup driver for issue #3941 / RDR-068. Default mode is
+# read-only preflight (`--preflight`); `--plan` renders the manual operator
+# action plan; `--smoke` runs the automated smoke scenarios through the
+# shipped control-plane boundaries; `--report PATH` archives the Markdown
+# report. The driver never mutates host state, never writes to the
+# application database, and never shells into the guest.
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+
+# Resolve the Paid root so `require_relative "../config/environment"` always
+# loads from the same checkout, regardless of the caller's current working
+# directory. The setup driver must work whether it is invoked from a
+# git worktree, the project root, or any other directory.
+APP_ROOT = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(APP_ROOT) unless $LOAD_PATH.include?(APP_ROOT)
+Dir.chdir(APP_ROOT)
+
+require "bundler/setup"
+
+require "optparse"
+require "time"
+
+def usage
+  <<~USAGE
+    Usage:
+      bin/apple-worker-setup [options]
+
+    Modes:
+      --preflight             Read-only host preflight (default)
+      --plan                  Render the manual operator action plan
+      --smoke                 Run the automated smoke scenarios
+      --all                   Preflight + plan + smoke in one pass
+
+    Smoke options (used with --smoke or --all):
+      --project ID            Paid project id used for smoke provisioning
+      --image DIGEST          Approved Apple verification image digest
+      --profile ID            Worker profile id (default ios-standard)
+      --source-digest SHA     Source digest materialized in the guest
+      --guest-diagnostics URL Guest executor diagnostics endpoint
+      --repeats N             Repeat functional scenarios N times (default 1)
+
+    Output:
+      --report PATH           Write a Markdown report to PATH (stdout if omitted)
+      --stdout                Alias for omitting --report
+
+    Environment:
+      APPLE_VERIFICATION_HOST_URL          Trusted macOS host service URL
+      APPLE_VERIFICATION_HOST_TOKEN        Trusted macOS host service bearer
+      APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN  Guest executor bearer token
+      DATABASE_URL                         Control-plane database (system access)
+
+    Exit status:
+      0   Preflight ready and all smoke scenarios passed
+      1   Preflight gap, smoke failure, or preflight cannot reach host service
+      2   Bad arguments or missing required values
+  USAGE
+end
+
+options = { mode: :preflight, repeats: 1, profile_id: "ios-standard" }
+parser = OptionParser.new do |opts|
+  opts.banner = usage
+  opts.on("--preflight") { options[:mode] = :preflight }
+  opts.on("--plan") { options[:mode] = :plan }
+  opts.on("--smoke") { options[:mode] = :smoke }
+  opts.on("--all") { options[:mode] = :all }
+  opts.on("--project ID") { |value| options[:project_id] = Integer(value) }
+  opts.on("--image DIGEST") { |value| options[:image_digest] = value }
+  opts.on("--profile ID") { |value| options[:profile_id] = value }
+  opts.on("--source-digest SHA") { |value| options[:source_digest] = value }
+  opts.on("--guest-diagnostics URL") { |value| options[:guest_diagnostics_url] = value }
+  opts.on("--repeats N") { |value| options[:repeats] = Integer(value) }
+  opts.on("--report PATH") { |value| options[:report_path] = value }
+  opts.on("--stdout") { |_value| options[:report_path] = nil }
+  opts.on("-h", "--help") { puts usage; exit 0 }
+end.parse!
+
+if options[:mode] == :smoke || options[:mode] == :all
+  if options[:project_id].nil? || options[:image_digest].blank?
+    warn "Smoke mode requires --project and --image."
+    warn usage
+    exit 2
+  end
+end
+
+require_relative "../config/environment"
+
+preflight_report = AppleVerification::Setup::Preflight.call(
+  profile_id: options[:profile_id], account_id: nil,
+  approved_image_digests: Array(options[:image_digest])
+)
+plan_actions = preflight_report.gapped? ? AppleVerification::Setup::Plan.new(preflight_report).call : []
+
+smoke_summary = nil
+if options[:mode] == :smoke || options[:mode] == :all
+  smoke_summary = run_smoke(options)
+end
+
+if smoke_summary.nil?
+  exit_code =
+    if preflight_report.gapped?
+      1
+    elsif preflight_report.warn?
+      0
+    else
+      0
+    end
+else
+  exit_code = smoke_summary.failed_count.zero? && smoke_summary.gap_count.zero? ? 0 : 1
+end
+
+report = AppleVerification::Setup::Report.new(
+  preflight: preflight_report,
+  plan: plan_actions,
+  smoke: smoke_summary
+)
+
+rendered = report.render
+if options.key?(:report_path) && options[:report_path]
+  File.write(options[:report_path], rendered)
+  puts "Apple worker setup report written to #{options[:report_path]}"
+else
+  puts rendered
+end
+
+exit exit_code
+
+def run_smoke(options)
+  host_client = AppleVerification::HostClient.new(endpoint: ENV.fetch("APPLE_VERIFICATION_HOST_URL"))
+  token = ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN")
+  lifecycle = AppleVerification::Lifecycle.new(host: host_client, token:)
+  diagnostics = options[:guest_diagnostics_url] ? SmokeDiagnostics.new(options[:guest_diagnostics_url]) : nil
+  dispatcher = SmokeDispatcher.new(image_digest: options.fetch(:image_digest))
+
+  AppleVerification::Setup::SmokeTests.call(
+    lifecycle:,
+    dispatcher:,
+    diagnostics:,
+    image_digest: options.fetch(:image_digest),
+    profile_id: options.fetch(:profile_id),
+    source_digest: options[:source_digest]
+  )
+end
+
+# Minimal dispatcher that asks the executor admission boundary to record
+# the scenario outcome; without the executor deployed the boundary reports a
+# gap, which the smoke harness surfaces faithfully.
+class SmokeDispatcher
+  def initialize(image_digest:)
+    @image_digest = image_digest
+  end
+
+  def call(scenario_id:, manifest:, agent_run:)
+    AppleVerification::ExecuteGuestJob.call(
+      agent_run:,
+      manifest: manifest,
+      image_digest: @image_digest
+    ).operations || {}
+  rescue StandardError => error
+    { "error" => "#{error.class.name}: #{error.message}" }
+  end
+end
+
+class SmokeDiagnostics
+  def initialize(url)
+    @uri = URI.parse(url)
+  end
+
+  def call(probe_id:)
+    response = Net::HTTP.start(@uri.host, @uri.port, use_ssl: @uri.scheme == "https") do |http|
+      request = Net::HTTP::Post.new(@uri, "Content-Type" => "application/json")
+      request["Authorization"] = "Bearer #{ENV.fetch('APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN', nil)}"
+      request.body = { probe_id: probe_id }.to_json
+      http.request(request)
+    end
+    JSON.parse(response.body)
+  rescue StandardError => error
+    { "status" => "unavailable", "detail" => "#{error.class.name}: #{error.message}" }
+  end
+end
