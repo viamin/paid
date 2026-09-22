@@ -99,4 +99,19 @@ RSpec.describe AppleVerification::LiveValidation::Report do
     expect(markdown).to include("docs/rdrs/live-validation-2026-09-22-rdr-068.md")
     expect(markdown).to include("next RDR-068 closeout")
   end
+
+  it "entity-escapes pipes and backslashes so detail content cannot break the evidence table" do
+    hostile = AppleVerification::LiveValidation::Evidence.new(
+      scenario_id: "isolation-keychain", status: :failed,
+      detail: "backslash \\ then | pipe and \\| attempt\nnewline", references: [], recorded_at: started_at
+    )
+    rendered = described_class.new(result: result.with(evidence: [ hostile ]), archive_path: "docs/rdrs/live-validation-x-rdr-068.md").render
+    line = rendered.lines.find { |candidate| candidate.start_with?("| isolation-keychain") }
+    gap_line = rendered.lines.find { |candidate| candidate.start_with?("- **isolation-keychain**") }
+
+    expect(line.count("|")).to eq(5)
+    expect(line).to include("backslash &#92; then &#124; pipe and &#92;&#124; attempt newline")
+    expect(gap_line.count("|")).to eq(0)
+    expect(gap_line).to include("backslash &#92; then &#124; pipe and &#92;&#124; attempt newline")
+  end
 end

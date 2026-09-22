@@ -114,18 +114,21 @@ module AppleVerification
 
       def evidence_row(row)
         references = row.references.map { |reference| "#{reference['kind']}##{reference['id']}" }.join(", ")
-        "| #{row.scenario_id} | #{row.status} | #{escape_table(row.detail)} | #{references} |"
+        "| #{row.scenario_id} | #{row.status} | #{escape_inline(row.detail)} | #{references} |"
       end
 
       def gap_lines
         gaps = result.evidence.reject(&:passed?)
         return "No gaps: every executed scenario passed on this run." if gaps.empty?
 
-        gaps.map { |row| "- **#{row.scenario_id}** (#{row.status}) — #{row.detail}" }.join("\n")
+        gaps.map { |row| "- **#{row.scenario_id}** (#{row.status}) — #{escape_inline(row.detail)}" }.join("\n")
       end
 
-      def escape_table(detail)
-        detail.to_s.gsub("|", "\\|").gsub("\n", " ")
+      # Detail text is entity-escaped rather than backslash-escaped: the
+      # rendered cell keeps its literal characters, and no pipe or
+      # backslash survives to act as (or mask) a table delimiter.
+      def escape_inline(detail)
+        detail.to_s.gsub("\\", "&#92;").tr("\r\n", " ").gsub("|", "&#124;")
       end
     end
   end

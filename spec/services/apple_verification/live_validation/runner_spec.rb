@@ -39,7 +39,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     rows = evidence_for(result, "functional-smoke-ios-app")
     expect(rows).to all(have_attributes(status: :passed))
     expect(rows.size).to eq(2)
-    expect(rows.map { |row| row.detail }).to all(match(/vm-a\d/))
+    expect(rows.map(&:detail)).to all(match(/vm-a\d/))
     expect(lifecycle.provisioned_identifiers("functional-smoke-ios-app")).to eq(%w[vm-a1 vm-a2])
     expect(lifecycle.destroyed).to include("vm-a1", "vm-a2")
   end
