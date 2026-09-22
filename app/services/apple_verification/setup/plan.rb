@@ -93,9 +93,10 @@ module AppleVerification
           title: "Recover host capacity",
           commands: [
             "df -g /",
-            "bin/paid apple-worker reconcile --destroy-orphans"
+            "bin/paid apple-worker reconcile --destroy-orphans",
+            "vm_stat | awk '/free/ {print $3}'"
           ],
-          proof: "must report ≥ 60 GiB free disk and ≤ 1 active Apple VM",
+          proof: "must report ≥ 60 GiB free disk, ≤ 1 active Apple VM, and ≥ 25% free host memory",
           guide_section: "Cleanup and quarantine"
         )
       }.freeze

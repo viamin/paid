@@ -12,8 +12,8 @@ RSpec.describe AppleVerification::Setup::Smoke::Manifests do
 
       expect(manifest["version"]).to eq(AppleVerification::GuestProtocol::VERSION)
       operations = manifest["operations"].map { |op| op["type"] }
-      expect(operations).to include("materialize_source", "build", "boot_simulator", "install_app",
-        "launch_app", "ui_action", "capture", "export_artifacts")
+      expect(operations).to include("materialize_source", "build", "test", "boot_simulator",
+        "install_app", "launch_app", "ui_action", "capture", "export_artifacts")
       expect { AppleVerification::GuestProtocol.validate!(manifest) }.not_to raise_error
     end
   end
@@ -22,9 +22,16 @@ RSpec.describe AppleVerification::Setup::Smoke::Manifests do
     it "builds a closed-protocol manifest for the viamin/ColorMatching-iOS scheme" do
       manifest = described_class.colormatching_ios(source_digest:)
       operations = manifest["operations"].map { |op| op["type"] }
-      expect(operations).to include("materialize_source", "resolve_swift_packages", "build",
+      expect(operations).to include("materialize_source", "resolve_swift_packages", "build", "test",
         "boot_simulator", "install_app", "launch_app", "capture", "export_artifacts")
       expect { AppleVerification::GuestProtocol.validate!(manifest) }.not_to raise_error
+    end
+
+    it "places the test operation immediately after build so synthesize_outcomes can surface test_outcome" do
+      manifest = described_class.colormatching_ios(source_digest:)
+      operations = manifest["operations"].map { |op| op["type"] }
+      build_index = operations.index("build")
+      expect(operations[build_index + 1]).to eq("test")
     end
   end
 
@@ -46,6 +53,14 @@ RSpec.describe AppleVerification::Setup::Smoke::Manifests do
         expect(payload).not_to have_key("executable")
         expect(payload).not_to have_key("script")
       end
+    end
+
+    it "includes the test operation between build and launch_app" do
+      manifest = described_class.macos_gui_app(source_digest:)
+      operations = manifest["operations"].map { |op| op["type"] }
+      expect(operations).to include("test")
+      build_index = operations.index("build")
+      expect(operations[build_index + 1]).to eq("test")
     end
   end
 

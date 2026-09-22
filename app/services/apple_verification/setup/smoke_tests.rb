@@ -123,7 +123,12 @@ module AppleVerification
         lifecycle.provision(
           agent_run:, image_id: image_digest, profile_id:, request_id:, apple_verification_attempt: attempt
         )
-        passed(scenario, "dependency probe permitted through Paid egress gateway (no EgressSecurityEvent observed)")
+        # The scenario must observe a real SwiftPM resolve through the closed
+        # GuestProtocol vocabulary and zero EgressSecurityEvent rows to pass.
+        # Until the approved guest executor ships (issue #3937), record a gap
+        # rather than reporting a hollow pass: provisioning alone does not
+        # prove the dependency access boundary holds.
+        gap(scenario, "permitted dependency access requires the guest executor (issue #3937) to dispatch a SwiftPM resolve manifest and verify EgressSecurityEvent is empty")
       ensure
         teardown_lifecycle(attempt, request_id) if defined?(request_id) && defined?(attempt) && attempt
       end

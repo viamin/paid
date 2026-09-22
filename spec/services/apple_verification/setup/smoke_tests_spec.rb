@@ -55,10 +55,23 @@ RSpec.describe AppleVerification::Setup::SmokeTests do
   describe "#permitted_dependency_access" do
     let(:dispatcher) { ->(**) { { "build_outcome" => "succeeded" } } }
 
-    it "passes when the lifecycle can provision a smoke guest" do
+    it "records a gap until the approved guest executor ships (issue #3937)" do
       summary
       dependency = summary.results.find { |row| row.scenario_id == "permitted-dependency-access" }
-      expect(dependency.status).to eq(:passed)
+      expect(dependency.status).to eq(:gap)
+      expect(dependency.detail).to include("permitted dependency access requires the guest executor")
+      expect(dependency.detail).to include("#3937")
+    end
+
+    it "exercises the lifecycle provision + destroy path before recording the gap" do
+      expect(lifecycle).to receive(:provision).with(
+        hash_including(image_id: "sha256:abcdef1234567890", profile_id: "ios-standard")
+      ).and_return(instance_double(ExecutionRunners::RunnerHandle, identifier: "paid-vm-1"))
+      expect(lifecycle).to receive(:destroy)
+
+      summary
+      dependency = summary.results.find { |row| row.scenario_id == "permitted-dependency-access" }
+      expect(dependency.status).to eq(:gap)
     end
 
     it "records a gap when the lifecycle is not configured" do
@@ -224,7 +237,7 @@ RSpec.describe AppleVerification::Setup::SmokeTests do
       summary
       expect(summary.passed_count).to be >= 1
       expect(summary.failed_count).to be >= 0
-      expect(summary.gap_count).to be >= 0
+      expect(summary.gap_count).to be >= 1
     end
 
     it "is satisfied only when every scenario passed" do
@@ -237,7 +250,11 @@ RSpec.describe AppleVerification::Setup::SmokeTests do
         }
       end))
 
-      expect(satisfied_summary.satisfied?).to be(true)
+      # permitted-dependency-access records :gap until the guest executor
+      # ships (issue #3937), so the summary is satisfied only once that
+      # scenario flips to :passed too.
+      expect(satisfied_summary.satisfied?).to be(false)
+      expect(satisfied_summary.gap_count).to be >= 1
     end
   end
 end

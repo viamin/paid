@@ -32,6 +32,22 @@ RSpec.describe AppleVerification::Setup::Plan do
       expect(action[:guide_section]).to eq("Install Tart and Softnet")
     end
 
+    it "renders the capacity action with disk, VM reconciliation, and host-memory verification commands" do
+      capacity_gap = AppleVerification::Setup::Preflight::Result.new(
+        id: :capacity, status: :gap, detail: "free host memory 10% < operator minimum 25%",
+        fix: "stop other workloads"
+      )
+      capacity_report = AppleVerification::Setup::Preflight::Report.new(results: [ capacity_gap ])
+
+      action = described_class.new(capacity_report).call.first
+
+      expect(action[:commands]).to include("df -g /")
+      expect(action[:commands]).to include("bin/paid apple-worker reconcile --destroy-orphans")
+      expect(action[:commands]).to include("vm_stat | awk '/free/ {print $3}'")
+      expect(action[:proof]).to include("60 GiB")
+      expect(action[:proof]).to include("25% free host memory")
+    end
+
     it "returns an empty action list when the preflight is ready" do
       ready_report = AppleVerification::Setup::Preflight::Report.new(results: [ passed_result ])
       expect(described_class.new(ready_report).call).to be_empty
