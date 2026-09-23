@@ -24,6 +24,15 @@ class AppleVerificationAttempt < ApplicationRecord
   has_many :execution_audit_events, dependent: :nullify
   has_many :execution_resource_ledger_entries, dependent: :nullify
 
+  # An attempt is "active" when it owns (or is waiting for) the worker slot
+  # — i.e. it is queued, provisioning, or running. The admission service
+  # counts these to enforce the one-worker limit.
+  scope :active, -> { where(status: %w[queued provisioning running]) }
+  scope :queued, -> { where(status: "queued") }
+  scope :timed_out_candidates, ->(threshold) { where(status: %w[provisioning running]).where("started_at IS NOT NULL AND started_at <= ?", threshold) }
+  scope :for_account, ->(account) { where(account_id: account.id) }
+  scope :for_project, ->(project) { where(project_id: project.id) }
+
   validates :source_digest, format: { with: /\Asha256:[a-f0-9]{64}\z/ }
   validates :status, inclusion: { in: STATES }
   validates :lifecycle_gate, inclusion: { in: LIFECYCLE_GATES }
@@ -44,8 +53,24 @@ class AppleVerificationAttempt < ApplicationRecord
     !terminal?
   end
 
+  def queued?
+    status == "queued"
+  end
+
+  def provisioning?
+    status == "provisioning"
+  end
+
+  def running?
+    status == "running"
+  end
+
   def failed?
     status == "failed"
+  end
+
+  def succeeded?
+    status == "succeeded"
   end
 
   def retained_vm?
