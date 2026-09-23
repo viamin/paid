@@ -136,4 +136,62 @@ FeatureFlags.enable!(:apple_verification_workers, project: project)
     expect(decision.reason).to eq("policy_denied")
     expect(decision.classification).to eq("network_policy")
   end
+
+  it "rejects when the account queue depth has hit the configured limit" do
+    fill_account_queue_to_limit
+
+    decision = described_class.call(attempt: attempt)
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("quota_exceeded")
+    expect(decision.classification).to eq("capacity_or_quota")
+  end
+
+  it "rejects when the agent run has already produced too many attempts" do
+    bound_attempt = fill_agent_run_attempts_to_limit
+
+    decision = described_class.call(attempt: bound_attempt)
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("quota_exceeded")
+    expect(decision.classification).to eq("capacity_or_quota")
+  end
+
+  def fill_account_queue_to_limit
+    AppleVerificationAttempts::Queue::DEFAULT_QUEUE_DEPTH.times do
+      create(
+        :apple_verification_attempt,
+        project: project, account: account,
+        status: "queued"
+      )
+    end
+  end
+
+  def fill_agent_run_attempts_to_limit
+    agent_run = create(:agent_run, project: project)
+    bound_workflow = create(
+      :apple_verification_workflow_revision, :approved,
+      project: project, account: account, apple_worker_profile: profile,
+      lifecycle_gate: attempt.lifecycle_gate
+    )
+    bound_attempt = create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: bound_workflow,
+      apple_worker_profile: profile,
+      lifecycle_gate: bound_workflow.lifecycle_gate,
+      agent_run: agent_run
+    )
+    AppleVerificationAttempts::Queue::DEFAULT_MAX_ATTEMPTS_PER_RUN.times do
+      create(
+        :apple_verification_attempt,
+        project: project, account: account,
+        apple_verification_workflow_revision: bound_workflow,
+        apple_worker_profile: profile,
+        lifecycle_gate: bound_workflow.lifecycle_gate,
+        agent_run: agent_run
+      )
+    end
+    bound_attempt
+  end
 end

@@ -93,6 +93,46 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     expect(decision.reason).to eq("waived")
   end
 
+  it "honors the injected clock when checking waiver expiry" do
+    # The sibling services in this module all guard +clock+ with
+    # +respond_to?(:current) ? @clock.current : @clock.now+ so a
+    # +Time+ instance can be injected in place of the default +Time+
+    # class. Without that guard the call raises +NoMethodError+; with it
+    # the clock parameter is the source of truth for waiver expiry.
+    waiver = create_waiver(expires_at: Time.zone.local(2026, 1, 1, 13, 0, 0))
+
+    before_expiry = described_class.call(
+      agent_run: agent_run, lifecycle_gate: "completion_verification",
+      clock: Time.zone.local(2026, 1, 1, 12, 0, 0)
+    )
+    after_expiry = described_class.call(
+      agent_run: agent_run, lifecycle_gate: "completion_verification",
+      clock: Time.zone.local(2026, 1, 1, 14, 0, 0)
+    )
+
+    expect(before_expiry.reason).to eq("waived")
+    expect(before_expiry.waiver).to eq(waiver)
+    expect(after_expiry.reason).to eq("pending_required_attempt")
+    expect(after_expiry.waiver).to be_nil
+  end
+
+  def create_waiver(expires_at:)
+    revision = approved_workflow
+    blocking = attempt_for(revision, status: "failed")
+    create(
+      :apple_verification_waiver,
+      account: account, project: project,
+      apple_verification_attempt: blocking,
+      apple_verification_workflow_revision: revision,
+      created_by: administrator,
+      source_digest: blocking.source_digest,
+      lifecycle_gate: blocking.lifecycle_gate,
+      check_ids: revision.required_checks,
+      reason: "known simulator outage",
+      expires_at: expires_at
+    )
+  end
+
   it "does not block when the workflow has no required checks" do
     revision = create(
       :apple_verification_workflow_revision,

@@ -113,7 +113,20 @@ module AppleVerificationAttempts
       waiver_relation = attempt.apple_verification_waivers
       return nil unless waiver_relation.respond_to?(:where)
 
-      waiver_relation.where("expires_at > ?", @clock.current).first
+      waiver_relation.where("expires_at > ?", current_time).first
+    end
+
+    # Resolves +now+ through whatever clock the service was constructed with.
+    # The clock contract is the same as the sibling services
+    # ({WorkerHealth}, {TimeoutMonitor}, {CommittedSource}): prefer
+    # +current+ when available (e.g. +ActiveSupport::TimeZone+ or the
+    # +Time+ class), fall back to +now+ for plain clock instances, and
+    # finally to the clock value itself so a literal Time responds cleanly.
+    def current_time
+      return @clock.current if @clock.respond_to?(:current)
+      return @clock.now if @clock.respond_to?(:now)
+
+      @clock
     end
   end
 end
