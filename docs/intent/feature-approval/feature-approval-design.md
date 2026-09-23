@@ -5,6 +5,15 @@ prefix: FEATURE-APPROVAL
 
 # Low-Level Design: Feature Approval
 
+## Policy scope
+
+This document defines the **approval-gated** feature policy. Its whole-feature
+approval, amendment holds and latest-approved-revision rules do not govern
+features explicitly enrolled in the planned [confidence-driven policy](../../rdrs/RDR-071-confidence-driven-issue-delivery.md).
+Those features use issue-level readiness and completion-blocking follow-ups;
+existing features retain their policy until deliberately migrated. Shared
+record types and ordinary CI/security/quality checks remain reusable.
+
 > Companion to the high-level design (`docs/high-level-design.md`). This
 > segment covers the human-led feature operating mode from
 > [RDR-066](../../rdrs/RDR-066-feature-intent-approval-lifecycle.md) in two

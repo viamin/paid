@@ -87,7 +87,8 @@ one. The effective preset is snapshotted onto each review run at creation
 time so a later project change cannot retroactively alter an in-flight
 review's behavior. See `docs/intent/review-depth-presets/`.
 
-Human attention can also move earlier in the lifecycle. The
+Human attention can also move earlier in the lifecycle. For approval-gated
+features, the
 `human_led_feature_factory` project operating mode ([RDR-066](rdrs/RDR-066-feature-intent-approval-lifecycle.md))
 makes human approval of a feature's design the boundary before
 implementation of that feature's work runs. Existing projects opt in; new
@@ -95,8 +96,8 @@ account onboarding proposes the mode as the default project posture with a
 reviewable settings plan. The mode composes with — never replaces — the
 project's independent auto-merge and TDD test-review choices.
 
-For features executed under an approved design (RDR-066/RDR-067 operating
-mode), the same authority applies at the design level: an agent PR that drifts
+For approval-gated features (RDR-066/RDR-067), the same authority applies at
+the design level: an agent PR that drifts
 from the human-approved design stops and asks a human. A one-PR exception can
 never change approved product behavior, constraints, scope, or acceptance
 criteria — product-level changes route through an amended RDR/LID design that
@@ -104,6 +105,29 @@ a human approves and merges before affected work resumes. See
 `docs/intent/approved-intent-amendment/`,
 `docs/intent/approved-intent-merge-guard/`, and, for the Inbox decision flow and
 Mark approved action that records the initial approval, `docs/intent/feature-approval/`.
+
+The planned confidence-driven policy in
+[RDR-069](rdrs/RDR-069-question-centered-chat-exploration.md),
+[RDR-070](rdrs/RDR-070-facet-confidence-and-clarification.md), and
+[RDR-071](rdrs/RDR-071-confidence-driven-issue-delivery.md) makes contextual
+chat the exploration workspace reached from Inbox. Agents produce aids suited
+to the question and the person; diagrams are temporary tools, while answers
+and evidence endure. Durable preferences require explicit user statements.
+
+Under this policy, each material facet has separate numerical intent certainty
+and technical confidence. An issue becomes actionable when each required score
+passes independently configured thresholds (80/100 each by default), its
+dependencies permit work, and its relevant design documents are merged. No
+additional whole-feature approval click is required. The agent judges evidence
+and relevance; code enforces policy, revisions, access and thresholds.
+
+New findings create follow-up issues blocking feature completion, or update
+unstarted issues. They do not pause in-flight work, including when feature-flag
+isolation is impossible. Flags contain unfinished behavior where feasible;
+completion verifies acceptance and dependencies before declaring activation
+readiness. Normal CI, security, quality and release controls remain applicable.
+Feature policy snapshots keep existing approval-gated work unchanged until
+deliberately migrated. These are planned capabilities, not claims of shipping.
 
 ## Approach: All LLM Calls Through One Interface
 
@@ -117,6 +141,14 @@ infrastructure, not an application-level LLM interface.
 ## Tenets
 
 The operating principles that tie the approaches above to day-to-day work:
+
+- **Human understanding is the planning output.** Prefer explanations and
+  experiments fitted to the person's question over preserving every artifact
+  produced during exploration.
+- **Certainty belongs to scope.** Prefer explicit uncertainty per facet over
+  a single feature-wide judgment of readiness.
+- **Learn through forward work.** Confidence-driven delivery favors follow-up
+  tasks and completion accounting over interrupting useful execution.
 
 - **Data over configuration.** When a behavior could be a rule or a record,
   store the record.

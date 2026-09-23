@@ -1,5 +1,16 @@
 # Design: Operator Inbox
 
+## Planned exploration entry
+
+[RDR-069](../../rdrs/RDR-069-question-centered-chat-exploration.md) adds an
+opt-in entry from clarifying questions to persistent contextual chat. The
+[question-exploration segment](../question-exploration/question-exploration-design.md)
+owns conversation, diagram and partial-answer behavior. Existing Inbox
+actions remain in this segment; opening chat or commenting on a diagram does
+not resolve an Inbox item. Approval-specific feature entries apply to the
+approval-gated policy; confidence-driven entries explain issue readiness and
+completion dependencies under RDR-071 instead of requesting Mark approved.
+
 > Segment: operator-inbox · Status: implemented
 > Specs: [operator-inbox-specs.md](operator-inbox-specs.md)
 

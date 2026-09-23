@@ -1,5 +1,14 @@
 # RDR-066: Feature Intent and Approval Lifecycle
 
+## Policy scope
+
+This document defines the **approval-gated** feature policy. Its whole-feature
+approval, amendment holds and latest-approved-revision rules do not govern
+features explicitly enrolled in the planned [confidence-driven policy](RDR-071-confidence-driven-issue-delivery.md).
+Those features use issue-level readiness and completion-blocking follow-ups;
+existing features retain their policy until deliberately migrated. Shared
+record types and ordinary CI/security/quality checks remain reusable.
+
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
