@@ -6,9 +6,13 @@ class AddWorkerHealthQuarantineToAppleWorkerProfiles < ActiveRecord::Migration[8
   def up
     add_quarantine_columns
     add_health_failure_index
+    add_returned_to_service_index
+    add_returned_to_service_foreign_key
   end
 
   def down
+    remove_returned_to_service_foreign_key
+    remove_returned_to_service_index
     remove_health_failure_index
     remove_quarantine_columns
   end
@@ -55,5 +59,38 @@ class AddWorkerHealthQuarantineToAppleWorkerProfiles < ActiveRecord::Migration[8
     return unless index_exists?(:apple_worker_profiles, name: "idx_apple_worker_profiles_quarantined")
 
     remove_index :apple_worker_profiles, name: "idx_apple_worker_profiles_quarantined", algorithm: :concurrently
+  end
+
+  def add_returned_to_service_index
+    return if index_exists?(:apple_worker_profiles, :returned_to_service_by_id,
+      name: "index_apple_worker_profiles_on_returned_to_service_by_id")
+
+    add_index :apple_worker_profiles, :returned_to_service_by_id,
+      name: "index_apple_worker_profiles_on_returned_to_service_by_id",
+      algorithm: :concurrently
+  end
+
+  def remove_returned_to_service_index
+    return unless index_exists?(:apple_worker_profiles,
+      name: "index_apple_worker_profiles_on_returned_to_service_by_id")
+
+    remove_index :apple_worker_profiles,
+      name: "index_apple_worker_profiles_on_returned_to_service_by_id",
+      algorithm: :concurrently
+  end
+
+  def add_returned_to_service_foreign_key
+    return if foreign_key_exists?(:apple_worker_profiles, :users,
+      column: :returned_to_service_by_id)
+
+    add_foreign_key :apple_worker_profiles, :users, column: :returned_to_service_by_id,
+      validate: false
+  end
+
+  def remove_returned_to_service_foreign_key
+    return unless foreign_key_exists?(:apple_worker_profiles, :users,
+      column: :returned_to_service_by_id)
+
+    remove_foreign_key :apple_worker_profiles, :users, column: :returned_to_service_by_id
   end
 end

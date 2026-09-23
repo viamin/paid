@@ -51,4 +51,30 @@ RSpec.describe AppleVerificationAttempts::Recovery do
 
     expect(result.orphans).to eq(enqueued: 0, cleaned: 0, failed: 0)
   end
+
+  it "propagates the timeout monitor scanned count before reclassification" do
+    workflow = create(
+      :apple_verification_workflow_revision, :approved,
+      project: project, account: account
+    )
+    create_stale_attempt(workflow, clock - 60.minutes)
+    create_stale_attempt(workflow, clock - 90.minutes)
+
+    result = described_class.call(timeout_monitor: AppleVerificationAttempts::TimeoutMonitor.new(clock: clock))
+
+    expect(result.scanned).to eq(2)
+    expect(result.reclassified.size).to eq(2)
+  end
+
+  def create_stale_attempt(workflow, started_at)
+    create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: workflow.apple_worker_profile,
+      status: "running",
+      started_at: started_at,
+      lifecycle_gate: workflow.lifecycle_gate
+    )
+  end
 end

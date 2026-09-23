@@ -65,9 +65,11 @@ module AppleVerificationAttempts
     attr_reader :attempt, :workspace_root, :retention_days
 
     def builder_instance
-      return @builder if @builder.respond_to?(:call) && !@builder.is_a?(Class)
-
-      @builder.new
+      # BundleBuilder exposes a Class-level `.call(workspace_root:, output_path:,
+      # manifest_path:)` that builds the instance itself, so a Class builder is
+      # already the callable the call site expects. Non-Class callables (lambdas,
+      # procs, service objects) are returned as-is.
+      @builder
     end
 
     def bundle_output_path

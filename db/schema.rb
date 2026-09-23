@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_23_001829) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_051045) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -540,6 +540,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_001829) do
     t.index ["account_id"], name: "index_apple_worker_profiles_on_account_id"
     t.index ["created_by_id"], name: "index_apple_worker_profiles_on_created_by_id"
     t.index ["quarantined_at"], name: "idx_apple_worker_profiles_quarantined", where: "(quarantined_at IS NOT NULL)"
+    t.index ["returned_to_service_by_id"], name: "index_apple_worker_profiles_on_returned_to_service_by_id"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'deprecated'::character varying::text, 'revoked'::character varying::text])", name: "chk_apple_worker_profiles_status"
   end
 
@@ -3768,6 +3769,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_001829) do
   add_foreign_key "apple_verification_workflow_revisions", "users", column: "approved_by_id"
   add_foreign_key "apple_worker_profiles", "accounts"
   add_foreign_key "apple_worker_profiles", "users", column: "created_by_id"
+  add_foreign_key "apple_worker_profiles", "users", column: "returned_to_service_by_id"
   add_foreign_key "auto_merge_attempts", "issues"
   add_foreign_key "auto_merge_attempts", "projects"
   add_foreign_key "billing_invoices", "accounts"
