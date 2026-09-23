@@ -372,6 +372,18 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Select a token or installation first...")
       end
 
+      # @spec PROJECT-CREATION-001
+      it "offers both connecting an existing repository and creating a new one" do
+        github_token # create the token
+        get new_project_path
+
+        expect(response.body).to include("Connect existing repository")
+        expect(response.body).to include("Create new repository")
+        expect(response.body).to include("Repository name")
+        expect(response.body).to include("Visibility")
+        expect(response.body).to include('data-controller="repository-selector project-creation-mode"')
+      end
+
       it "renders the repository select as disabled initially" do
         github_token # create the token
         get new_project_path
@@ -583,6 +595,199 @@ RSpec.describe "Projects" do
           expect(response.body).to include("must belong to the same account")
           expect(GithubClient).not_to have_received(:new)
         end
+      end
+    end
+  end
+
+  # @spec PROJECT-CREATION-001
+  # @spec PROJECT-CREATION-002
+  # @spec PROJECT-CREATION-006
+  describe "POST /projects (create mode)" do
+    let(:create_params) do
+      {
+        creation_mode: "create",
+        project: {
+          github_token_id: github_token.id,
+          repo: "fresh-start",
+          owner: "octocat",
+          name: "Fresh Start"
+        }
+      }
+    end
+
+    before { sign_in user }
+
+    def stub_blank_creation_client(client)
+      allow(GithubClient).to receive(:new).and_return(client)
+    end
+
+    def blank_repo_client
+      instance_double(GithubClient).tap do |double|
+        allow(double).to receive_messages(
+          authenticated_login: "octocat",
+          organizations: [],
+          create_repository: OpenStruct.new(
+            id: 555_001, name: "fresh-start",
+            owner: OpenStruct.new(login: "octocat"),
+            default_branch: "main", language: nil
+          ),
+          labels: [],
+          create_label: nil,
+          create_issue: OpenStruct.new(html_url: "https://github.com/octocat/fresh-start/issues/1")
+        )
+      end
+    end
+
+    it "creates the repository and project, then redirects with setup guidance" do
+      stub_blank_creation_client(blank_repo_client)
+
+      expect {
+        post projects_path, params: create_params
+      }.to change(Project, :count).by(1)
+
+      project = Project.last
+      expect(project.creation_origin).to eq("blank")
+      expect(project.setup_status).to eq("pending")
+      expect(project.owner).to eq("octocat")
+      expect(project.repo).to eq("fresh-start")
+      expect(response).to redirect_to(project_path(project, anchor: "setup"))
+      expect(flash[:notice]).to include("Chat setup is recommended")
+    end
+
+    it "renders the form in create mode with the error when validation fails" do
+      stub_blank_creation_client(blank_repo_client)
+      params = create_params.deep_merge(project: { repo: "not valid!" })
+
+      expect { post projects_path, params: params }.not_to change(Project, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("may only contain letters, numbers")
+      expect(response.body).to include("Create new repository")
+    end
+
+    it "renders the form with the error when GitHub rejects the creation" do
+      client = blank_repo_client
+      allow(client).to receive(:create_repository).and_raise(GithubClient::ApiError.new("name already exists", status: 422))
+      stub_blank_creation_client(client)
+
+      expect { post projects_path, params: create_params }.not_to change(Project, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("name already exists")
+    end
+  end
+
+  # @spec PROJECT-CREATION-001
+  describe "GET /github_tokens/:id/owners" do
+    before { sign_in user }
+
+    it "returns the token login and its organizations" do
+      client = instance_double(GithubClient)
+      allow(GithubClient).to receive(:new).and_return(client)
+      allow(client).to receive_messages(
+        authenticated_login: "octocat",
+        organizations: [ OpenStruct.new(login: "acme-org") ]
+      )
+
+      get owners_github_token_path(github_token), headers: { "ACCEPT" => "application/json" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to eq(
+        [
+          { "login" => "octocat", "type" => "user" },
+          { "login" => "acme-org", "type" => "organization" }
+        ]
+      )
+    end
+
+    it "returns an error payload when GitHub fails" do
+      client = instance_double(GithubClient)
+      allow(GithubClient).to receive(:new).and_return(client)
+      allow(client).to receive_messages(authenticated_login: nil)
+      allow(client).to receive(:organizations).and_raise(GithubClient::AuthenticationError.new("bad token"))
+
+      get owners_github_token_path(github_token), headers: { "ACCEPT" => "application/json" }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("bad token")
+    end
+  end
+
+  # @spec PROJECT-CREATION-007
+  # @spec PROJECT-CREATION-009
+  # @spec PROJECT-CREATION-011
+  describe "blank project setup" do
+    before { sign_in user }
+
+    let(:blank_project) do
+      create(:project, account: account, github_token: github_token,
+        creation_origin: "blank", setup_status: "pending")
+    end
+
+    def create_api_chat_runner
+      create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+    end
+
+    it "shows the setup banner recommending chat on the project page" do
+      get project_path(blank_project)
+
+      expect(response.body).to include("Finish setting up your new project")
+      expect(response.body).to include("Set up in chat (recommended)")
+      expect(response.body).to include("setup questionnaire")
+    end
+
+    it "does not show the setup banner once setup is completed" do
+      blank_project.update!(setup_status: "completed")
+
+      get project_path(blank_project)
+
+      expect(response.body).not_to include("Finish setting up your new project")
+    end
+
+    describe "POST /projects/:id/start_setup_chat" do
+      it "creates a project chat session with the bootstrap prompt and marks setup in progress" do
+        runner = create_api_chat_runner
+
+        expect {
+          post start_setup_chat_project_path(blank_project)
+        }.to change(ChatSession, :count).by(1)
+
+        chat_session = ChatSession.last
+        expect(chat_session.project).to eq(blank_project)
+        expect(chat_session.system_prompt).to include("grill")
+        expect(chat_session.system_prompt).to include(blank_project.full_name)
+        expect(blank_project.reload.setup_status).to eq("in_progress")
+        expect(response).to redirect_to(chat_session_path(chat_session))
+      end
+
+      it "redirects with a notice when setup is already completed" do
+        blank_project.update!(setup_status: "completed")
+
+        expect {
+          post start_setup_chat_project_path(blank_project)
+        }.not_to change(ChatSession, :count)
+
+        expect(response).to redirect_to(project_path(blank_project))
+      end
+    end
+
+    describe "POST /projects/:id/finish_setup" do
+      it "marks the setup as completed" do
+        post finish_setup_project_path(blank_project)
+
+        expect(blank_project.reload.setup_status).to eq("completed")
+        expect(response).to redirect_to(project_path(blank_project))
+        expect(flash[:notice]).to include("completed")
+      end
+
+      it "is a no-op for already-completed setups" do
+        blank_project.update!(setup_status: "completed")
+
+        post finish_setup_project_path(blank_project)
+
+        expect(blank_project.reload.setup_status).to eq("completed")
       end
     end
   end
