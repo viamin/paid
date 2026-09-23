@@ -44,12 +44,28 @@ module AppleVerificationAttempts
     # through the lifecycle boundary, then revoke credentials; failed
     # attempts persist the retention window and revoke credentials without
     # destroying the VM (which the sweep does after the deadline passes).
+    # The success path refuses to record a `destroyed` audit event when no
+    # real destroy happened: if the lifecycle is unavailable (host not
+    # configured) or the lifecycle reports a +:noop+ (no live ledger entry
+    # or no recorded vm_id), the call logs the skip, leaves the attempt's
+    # terminal state untouched, and surfaces the gap to the caller instead
+    # of asserting a destroy that did not occur. Mirrors the refusal
+    # pattern in
+    # {AppleVerification::Bundles::RetentionSweep#revoke_vm!}.
     def call
       return Result.new(outcome: OUTCOME_NO_VM, retained_until: nil, destroy_request_id: nil) unless @attempt.terminal?
 
       case @attempt.status
       when "succeeded"
         destroy_now!
+        unless @last_destroy_result == :destroyed
+          Rails.logger.warn(
+            message: "apple_verification.complete_skipped",
+            apple_verification_attempt_id: @attempt.id,
+            reason: @last_destroy_skip_reason || "lifecycle_unavailable"
+          )
+          return Result.new(outcome: @attempt.status, retained_until: nil, destroy_request_id: nil)
+        end
         @revocation.call
         Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: @last_destroy_request_id)
       when "failed", "cancelled", "timed_out", "unavailable"
@@ -82,10 +98,15 @@ module AppleVerificationAttempts
 
     def destroy_now!
       lifecycle = resolve_lifecycle
-      return unless lifecycle
+      unless lifecycle
+        @last_destroy_skip_reason = "lifecycle_unavailable"
+        return
+      end
 
       @last_destroy_request_id = "complete:#{@attempt.id}"
-      lifecycle.destroy(attempt: @attempt, request_id: @last_destroy_request_id)
+      result = lifecycle.destroy(attempt: @attempt, request_id: @last_destroy_request_id)
+      @last_destroy_result = result
+      @last_destroy_skip_reason = "destroy_noop" if result != :destroyed
     end
 
     def resolve_lifecycle
