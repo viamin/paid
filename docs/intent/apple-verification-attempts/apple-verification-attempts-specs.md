@@ -89,23 +89,24 @@
   *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`
   *Code:* `AppleVerificationAttempts::RetryPolicy`
 
-- [ ] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
+- [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
   the `completion_verification` gate has not succeeded for an agent run, the
   system SHALL block that agent run from reporting success; when assigned to
   the `pull_request_verification` gate, it SHALL block Paid's PR verification
   result; enforcement SHALL bind the approved committed workflow digest and
   its approved lifecycle gate.
   *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
-  *Code:* `AppleVerificationAttempts::GateEnforcement`
+  *Code:* `AppleVerificationAttempts::GateEnforcement`,
+  `AgentRun#complete!`, `AgentRuns::VerificationResultRecorder`
 
-- [ ] **APPLE-ATTEMPT-012** — A draft workflow revision or advisory check
+- [x] **APPLE-ATTEMPT-012** — A draft workflow revision or advisory check
   SHALL NOT block agent completion or PR verification, and a missing or failed
   capture SHALL block only when the approved revision marks it required and
   assigns it to the current lifecycle gate.
   *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
   *Code:* `AppleVerificationAttempts::GateEnforcement`
 
-- [ ] **APPLE-ATTEMPT-013** — Required verification SHALL remain pending until
+- [x] **APPLE-ATTEMPT-013** — Required verification SHALL remain pending until
   it runs or is explicitly waived, and the system SHALL NOT silently skip
   required verification or fall back to executing project code on the
   macOS host.

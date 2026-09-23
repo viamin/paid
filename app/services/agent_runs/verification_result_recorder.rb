@@ -23,13 +23,13 @@ module AgentRuns
     end
 
     def call
-      return unless @agent_run.project.verification_enabled?
+      apple_decision = AppleVerificationAttempts::GateEnforcement.evaluate(agent_run: @agent_run, gate: "pull_request_verification")
+      return if !@agent_run.project.verification_enabled? && apple_decision.not_required?
       return if @repo_path.blank?
 
-      payload = recorded_result || @fallback_result.presence || (@record_missing ? missing_result : nil)
-      return if payload.nil?
+      persisted = build_result(apple_decision)
+      return if persisted.nil?
 
-      persisted = normalize(payload)
       @agent_run.update!(verification_result: persisted)
       persisted
     ensure
@@ -37,6 +37,41 @@ module AgentRuns
     end
 
     private
+
+    def build_result(apple_decision)
+      payload = recorded_result || @fallback_result.presence
+      # @spec APPLE-ATTEMPT-011
+      # @spec APPLE-ATTEMPT-012
+      return apply_apple_gate(payload, apple_decision) if apple_decision.pending? || apple_decision.blocked?
+
+      payload ||= missing_result if @record_missing
+      return if payload.nil?
+
+      normalize(payload)
+    end
+
+    def apply_apple_gate(payload, decision)
+      interactive = payload.is_a?(Hash) && payload["status"].present? ? normalize(payload) : {}
+      entry = { "state" => decision.pending? ? "pending" : "blocked", "gate" => decision.gate }
+      entry["failure_classification"] = decision.attempt.failure_classification if decision.blocked? && decision.attempt
+      entry["interactive_status"] = interactive["status"] if interactive["status"].present?
+
+      interactive.merge(
+        "status" => decision.pending? ? "not_run" : "failed",
+        "reason" => decision.pending? ? "apple_verification_pending" : "apple_verification_failed",
+        "summary" => interactive["summary"].presence || apple_gate_summary(decision),
+        "apple_verification" => entry,
+        "recorded_at" => Time.current.iso8601
+      )
+    end
+
+    def apple_gate_summary(decision)
+      if decision.pending?
+        "Required Apple verification has not passed for this pull request."
+      else
+        "Required Apple verification failed for this pull request."
+      end
+    end
 
     def recorded_result
       return unless File.exist?(result_path)

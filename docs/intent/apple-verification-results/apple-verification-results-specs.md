@@ -44,12 +44,15 @@
   *Tests:* `spec/services/apple_verification_results/ingest_spec.rb`
   *Code:* `AppleVerificationResults::Ingest`
 
-- [ ] **APPLE-RESULT-006** — Paid-agents SHALL receive the same structured
+- [x] **APPLE-RESULT-006** — Paid-agents SHALL receive the same structured
   verification state as users through the project-bound semantic operations
   `verify_apple_project`, `get_apple_verification`, `capture_apple_screenshot`,
   and `stop_apple_verification`, available only when the rollout flag and
   project mode permit; an agent SHALL NOT be able to approve workflows, enable
   automatic mode, alter network policy, select privileged images, create
   waivers, or exceed project quotas.
-  *Tests:* `spec/lib/apple_verification/agent_tools_spec.rb`
-  *Code:* `AppleVerification::AgentTools`
+  *Tests:* `spec/lib/apple_verification/agent_tools_spec.rb`,
+  `spec/mcp/tools/apple_verification_tools_spec.rb`
+  *Code:* `AppleVerification::AgentTools`, `Tools::VerifyAppleProject`,
+  `Tools::GetAppleVerification`, `Tools::CaptureAppleScreenshot`,
+  `Tools::StopAppleVerification`

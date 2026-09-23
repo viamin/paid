@@ -56,7 +56,11 @@ module Tools
       "Tools::ListMcpServerDefinitions",
       "Tools::CreateMcpServerDefinition",
       "Tools::UpdateMcpServerDefinition",
-      "Tools::RemoveMcpServerDefinition"
+      "Tools::RemoveMcpServerDefinition",
+      "Tools::VerifyAppleProject",
+      "Tools::GetAppleVerification",
+      "Tools::CaptureAppleScreenshot",
+      "Tools::StopAppleVerification"
     ].freeze
 
     class << self

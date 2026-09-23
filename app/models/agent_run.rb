@@ -2114,6 +2114,11 @@ class AgentRun < ApplicationRecord
       if finished?
         false
       else
+        # @spec APPLE-ATTEMPT-011
+        decision = AppleVerificationAttempts::GateEnforcement.evaluate(agent_run: self, gate: "completion_verification")
+        raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationPending, decision.reason if decision.pending?
+        raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed, decision.reason if decision.blocked?
+
         update!(
           status: "completed",
           completed_at: Time.current,

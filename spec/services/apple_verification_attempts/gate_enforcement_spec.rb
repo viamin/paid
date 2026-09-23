@@ -259,7 +259,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       result = agent_run.reload.verification_result
       expect(result["status"]).to eq("not_run")
       expect(result["reason"]).to eq("apple_verification_pending")
-      expect(result.fetch("apple_verification")).include(
+      expect(result.fetch("apple_verification")).to include(
         "state" => "pending",
         "gate" => "pull_request_verification"
       )
@@ -276,7 +276,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       result = agent_run.reload.verification_result
       expect(result["status"]).to eq("failed")
       expect(result["reason"]).to eq("apple_verification_failed")
-      expect(result.fetch("apple_verification")).include(
+      expect(result.fetch("apple_verification")).to include(
         "state" => "blocked",
         "failure_classification" => "required_capture"
       )
