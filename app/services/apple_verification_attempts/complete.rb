@@ -1,0 +1,97 @@
+# frozen_string_literal: true
+
+module AppleVerificationAttempts
+  # @spec APPLE-ATTEMPT-006
+  # Finalises a terminal Apple verification attempt: revokes the attempt's
+  # credentials, disables the attempt's network authority, and either
+  # destroys a successful VM immediately or records the failed-VM retention
+  # window (default one hour, configurable). Operators can request an
+  # earlier destroy via {#early_destroy_retained_vm}, which routes through
+  # the {AppleVerification::Lifecycle} boundary so the audit event reflects
+  # a real destroy rather than a no-op.
+  class Complete
+    DEFAULT_FAILED_VM_RETENTION_HOURS = 1
+
+    Result = Data.define(:outcome, :retained_until, :destroy_request_id)
+
+    OUTCOME_DESTROYED = "verification_vm_destroyed"
+    OUTCOME_RETAINED = "verification_vm_retained"
+    OUTCOME_NO_VM = "no_vm_to_finalize"
+
+    class << self
+      def call(...)
+        new(...).call
+      end
+    end
+
+    def initialize(
+      attempt:,
+      lifecycle: nil,
+      revocation: nil,
+      failed_vm_retention_hours: DEFAULT_FAILED_VM_RETENTION_HOURS,
+      clock: Time
+    )
+      @attempt = attempt
+      @lifecycle = lifecycle
+      @revocation = revocation || AppleVerification::Revocation::Enforce.new(
+        attempt:, failed_vm_retention_hours:, clock:
+      )
+      @failed_vm_retention_hours = failed_vm_retention_hours
+      @clock = clock
+    end
+
+    # Finalises an attempt. Successful attempts drive the real VM destroy
+    # through the lifecycle boundary, then revoke credentials; failed
+    # attempts persist the retention window and revoke credentials without
+    # destroying the VM (which the sweep does after the deadline passes).
+    def call
+      return Result.new(outcome: OUTCOME_NO_VM, retained_until: nil, destroy_request_id: nil) unless @attempt.terminal?
+
+      case @attempt.status
+      when "succeeded"
+        destroy_now!
+        @revocation.call
+        Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: @last_destroy_request_id)
+      when "failed", "cancelled", "timed_out", "unavailable"
+        @revocation.call
+        Result.new(outcome: OUTCOME_RETAINED, retained_until: @attempt.container_retained_until, destroy_request_id: nil)
+      else
+        Result.new(outcome: @attempt.status, retained_until: nil, destroy_request_id: nil)
+      end
+    end
+
+    # Drives an early destroy of a retained failed VM through the lifecycle
+    # boundary, then clears the retention deadline and records the audit
+    # event via the revocation service. Used by the operator UI's "destroy
+    # now" control and by the sweep when the deadline passes.
+    def early_destroy_retained_vm
+      lifecycle = resolve_lifecycle
+      raise NoLifecycleError, "no Apple verification lifecycle available" unless lifecycle
+
+      destroy_request_id = "early_destroy:#{@attempt.id}"
+      lifecycle.destroy(attempt: @attempt, request_id: destroy_request_id)
+      @revocation.revoke_retained!
+      Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: destroy_request_id)
+    end
+
+    NoLifecycleError = Class.new(StandardError)
+
+    private
+
+    attr_reader :attempt
+
+    def destroy_now!
+      lifecycle = resolve_lifecycle
+      return unless lifecycle
+
+      @last_destroy_request_id = "complete:#{@attempt.id}"
+      lifecycle.destroy(attempt: @attempt, request_id: @last_destroy_request_id)
+    end
+
+    def resolve_lifecycle
+      return @lifecycle if @lifecycle
+
+      @lifecycle = AppleVerification::Lifecycle.from_environment
+    end
+  end
+end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_001829) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -523,16 +523,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
   create_table "apple_worker_profiles", comment: "Immutable provider-neutral Apple verification worker profiles.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "capabilities", default: {}, null: false, comment: "Provider-neutral capability inventory."
+    t.integer "consecutive_health_failures", default: 0, null: false, comment: "Consecutive worker health failures; quarantine triggers when this crosses the configured threshold."
     t.jsonb "constraints", default: {}, null: false, comment: "Immutable platform, Xcode, runtime, and resource constraints."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", comment: "Operator that registered the profile."
     t.string "image_digest", null: false, comment: "Approved immutable guest image digest."
+    t.datetime "last_health_failure_at", comment: "Timestamp of the most recent worker health failure; null when none recorded."
     t.string "name", null: false
+    t.text "quarantine_reason", comment: "Operator-visible reason for the quarantine."
+    t.datetime "quarantined_at", comment: "Timestamp the worker was quarantined; null when not quarantined."
+    t.datetime "returned_to_service_at", comment: "Timestamp the worker was last returned to service after quarantine."
+    t.bigint "returned_to_service_by_id", comment: "Operator who returned the worker to service after the isolation smoke test."
     t.string "status", default: "active", null: false, comment: "active, deprecated, or revoked."
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_apple_worker_profiles_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_apple_worker_profiles_on_account_id"
     t.index ["created_by_id"], name: "index_apple_worker_profiles_on_created_by_id"
+    t.index ["quarantined_at"], name: "idx_apple_worker_profiles_quarantined", where: "(quarantined_at IS NOT NULL)"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'deprecated'::character varying::text, 'revoked'::character varying::text])", name: "chk_apple_worker_profiles_status"
   end
 

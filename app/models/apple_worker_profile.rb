@@ -2,6 +2,7 @@
 
 # Immutable, provider-neutral description of an Apple verification guest.
 # @spec APPLE-WORKER-001
+# @spec APPLE-ATTEMPT-015
 class AppleWorkerProfile < ApplicationRecord
   include SecretSafeMetadata
 
@@ -9,12 +10,15 @@ class AppleWorkerProfile < ApplicationRecord
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
+  belongs_to :returned_to_service_by, class_name: "User", optional: true
   has_many :apple_verification_workflow_revisions, dependent: :restrict_with_exception
   has_many :apple_verification_attempts, dependent: :restrict_with_exception
 
   validates :name, :image_digest, presence: true
   validates :image_digest, format: { with: /\Asha256:[a-f0-9]{64}\z/ }
   validates :status, inclusion: { in: STATUSES }
+  validates :consecutive_health_failures,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :creator_matches_account
   validate :capabilities_are_safe
   validate :constraints_are_safe
@@ -27,6 +31,11 @@ class AppleWorkerProfile < ApplicationRecord
 
   def revoked?
     status == "revoked"
+  end
+
+  # @spec APPLE-ATTEMPT-015
+  def quarantined?
+    quarantined_at.present?
   end
 
   private
