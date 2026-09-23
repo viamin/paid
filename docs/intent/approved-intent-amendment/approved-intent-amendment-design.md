@@ -5,6 +5,15 @@ prefix: INTENT-AMENDMENT
 
 # Low-Level Design: Approved Intent Amendment
 
+## Policy scope
+
+This document defines the **approval-gated** feature policy. Its whole-feature
+approval, amendment holds and latest-approved-revision rules do not govern
+features explicitly enrolled in the planned [confidence-driven policy](../../rdrs/RDR-071-confidence-driven-issue-delivery.md).
+Those features use issue-level readiness and completion-blocking follow-ups;
+existing features retain their policy until deliberately migrated. Shared
+record types and ordinary CI/security/quality checks remain reusable.
+
 > Companion to the high-level design (`docs/high-level-design.md`). Implements
 > the design-amendment and revision-impact slice of
 > [RDR-067](../../rdrs/RDR-067-approved-intent-conformance.md) (#3869):

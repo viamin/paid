@@ -125,6 +125,7 @@ remaining gap issues.
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Partially Implemented | High |
 | [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Implemented | High |
 | [RDR-064](RDR-064-container-agent-chat-mode.md) | Container Agent Chat Mode | Draft | P1 |
+| [RDR-069](RDR-069-question-centered-chat-exploration.md) | Question-Centered Chat Exploration | Accepted | P1 |
 
 ### Scaling & Distribution
 
@@ -211,6 +212,12 @@ Scaling & Distribution above).
 | [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Implemented | P1 |
 | [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Partially Implemented | P1 |
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Final | P1 |
+| [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
+| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Accepted | P1 |
+
+RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
+They extend chat and introduce an explicit confidence-driven feature policy;
+RDR-066/067 continue to describe approval-gated features.
 
 ## Decision Summary
 

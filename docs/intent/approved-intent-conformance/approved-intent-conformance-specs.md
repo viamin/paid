@@ -6,7 +6,7 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r INTENT-CONFORMANCE-001`).
 
-- [x] **INTENT-CONFORMANCE-001** — When a lookup requests the current intent
+- [x] **INTENT-CONFORMANCE-001** — For approval-gated features, when a lookup requests the current intent
   conformance verdict for an issue and PR HEAD SHA, the system SHALL return
   the most recently evaluated `IntentConformanceVerdict` row matching that
   exact `(issue, pr_head_sha)` pair, and SHALL return no verdict for any other
@@ -14,14 +14,14 @@
   *Code:* `app/models/intent_conformance_verdict.rb`.
   *Test:* `spec/models/intent_conformance_verdict_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-002** — When the `intent_conformance_enforcement`
+- [x] **INTENT-CONFORMANCE-002** — For approval-gated features, when the `intent_conformance_enforcement`
   feature flag is disabled for a project, or the PR HEAD SHA is unknown, the
   system SHALL treat the `intent_conformance_ok` signal as satisfied, so
   projects that have not opted into conformance enforcement are unaffected.
   *Code:* `app/services/intent_conformance/signal.rb`.
   *Test:* `spec/services/intent_conformance/signal_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-003** — When conformance enforcement is on for a
+- [x] **INTENT-CONFORMANCE-003** — For approval-gated features, when conformance enforcement is on for a
   project and a PR's current HEAD has no `within_scope` verdict — because the
   verdict outcome is `material_drift`, `uncertain`, `not_evaluated`, or no
   verdict exists for that HEAD — the system SHALL treat `intent_conformance_ok`
@@ -33,7 +33,7 @@
   *Test:* `spec/services/intent_conformance/signal_spec.rb`,
   `spec/services/automation/strategies/auto_merge_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-004** — When a human resolves a blocked intent
+- [x] **INTENT-CONFORMANCE-004** — For approval-gated features, when a human resolves a blocked intent
   conformance verdict, the system SHALL record an `IntentConformanceDecision`
   with the actor, the action (`fix_pr`, `bounded_exception`, or
   `design_amendment`), the PR HEAD SHA the decision applies to, and the
@@ -45,7 +45,7 @@
   *Test:* `spec/services/intent_conformance/record_decision_spec.rb`,
   `spec/requests/projects/intent_conformance_decisions_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-005** — When a `bounded_exception` decision exists
+- [x] **INTENT-CONFORMANCE-005** — For approval-gated features, when a `bounded_exception` decision exists
   for an issue, the system SHALL treat it as active only while the PR's
   current HEAD SHA still matches the decision's recorded `head_sha`; once a
   new commit changes the HEAD, the exception SHALL no longer satisfy
@@ -56,7 +56,7 @@
   *Test:* `spec/models/intent_conformance_decision_spec.rb`,
   `spec/services/intent_conformance/signal_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-006** — When an open, ready-phase pull request's
+- [x] **INTENT-CONFORMANCE-006** — For approval-gated features, when an open, ready-phase pull request's
   persisted auto-merge blocker snapshot includes a failed
   `intent_conformance_ok` signal, the system SHALL expose that pull request as
   an `intent_conformance` inbox entry showing the verdict's cited design
@@ -75,7 +75,7 @@
   *Test:* `spec/services/inbox/intent_conformance_spec.rb`,
   `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-007** — When the PR scanner evaluates a
+- [x] **INTENT-CONFORMANCE-007** — For approval-gated features, when the PR scanner evaluates a
   human-authored pull request's auto-merge signals, the system SHALL compute
   the `intent_conformance_ok` signal from the PR's live HEAD SHA and persist
   that HEAD SHA to `issues.last_scanned_head_sha` in the same scan pass that
@@ -87,7 +87,7 @@
   *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-008** — When intent-conformance verdicts or
+- [x] **INTENT-CONFORMANCE-008** — For approval-gated features, when intent-conformance verdicts or
   decisions are read or written, the system SHALL enforce forced tenant
   row-level security on both tables, keying rows through
   `issues → projects.account_id = paid_current_account_id()` (and, for
@@ -97,7 +97,7 @@
   *Code:* `db/migrate/20260917040153_enable_rls_on_intent_conformance_tables.rb`.
   *Test:* `spec/migrations/create_intent_conformance_verdicts_spec.rb`.
 
-- [x] **INTENT-CONFORMANCE-009** — When a pull request's failed
+- [x] **INTENT-CONFORMANCE-009** — For approval-gated features, when a pull request's failed
   `intent_conformance_ok` signal is the only remaining condition keeping it
   out of auto-merge alongside owner approval, the system SHALL NOT classify
   the pull request as blocked only on approval (so it never starts the

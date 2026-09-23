@@ -42,14 +42,14 @@
 
 ## Open decisions
 
-- [x] **FEATURE-APPROVAL-006** — A `FeatureIntentDecision` of kind
+- [x] **FEATURE-APPROVAL-006** — For approval-gated features, a `FeatureIntentDecision` of kind
   `question` SHALL record the prompt text and the design claim it affects,
   and SHALL stay `open` until a human resolves it with an answer, actor, and
   timestamp.
   *Tests:* `spec/models/feature_intent_decision_spec.rb`.
   *Code:* `app/models/feature_intent_decision.rb`.
 
-- [x] **FEATURE-APPROVAL-007** — A `FeatureIntentDecision` of kind
+- [x] **FEATURE-APPROVAL-007** — For approval-gated features, a `FeatureIntentDecision` of kind
   `inferred_decision` SHALL represent an AI-inferred assumption that requires
   explicit human confirmation before it counts as resolved; resolving it
   SHALL use the same `resolve!` path as a question.
@@ -58,7 +58,7 @@
 
 ## Design PR tracking and staleness
 
-- [x] **FEATURE-APPROVAL-008** — A `FeatureIntentDesignPr` SHALL track a
+- [x] **FEATURE-APPROVAL-008** — For approval-gated features, a `FeatureIntentDesignPr` SHALL track a
   linked design pull request's `head_sha` alongside a `reviewed_head_sha` —
   the head its open decisions/evidence were last generated against — and
   SHALL report `stale?` when the two diverge, so a commit landing after
@@ -70,7 +70,7 @@
 
 ## Approval recording
 
-- [x] **FEATURE-APPROVAL-009** — `FeatureIntent#record_approval!` SHALL
+- [x] **FEATURE-APPROVAL-009** — For approval-gated features, `FeatureIntent#record_approval!` SHALL
   transition the feature from `design_open`, `needs_decision`,
   `ready_for_approval`, or (to support refreshing a stale approval)
   `approved_waiting_for_merge` into `approved_waiting_for_merge`, and SHALL
@@ -79,7 +79,7 @@
   *Tests:* `spec/models/feature_intent_spec.rb`.
   *Code:* `app/models/feature_intent.rb`.
 
-- [x] **FEATURE-APPROVAL-010** — Recording an approval SHALL persist the
+- [x] **FEATURE-APPROVAL-010** — For approval-gated features, recording an approval SHALL persist the
   approving user (`approved_by`), the timestamp (`approved_at`), and a
   snapshot of every linked design PR's exact head SHA at approval time
   (`approved_pr_heads`, keyed by PR number) — "approve the exact revision,"
@@ -90,7 +90,7 @@
 
 ## Readiness gate
 
-- [x] **FEATURE-APPROVAL-011** — `FeatureIntents::ApprovalReadiness` SHALL
+- [x] **FEATURE-APPROVAL-011** — For approval-gated features, `FeatureIntents::ApprovalReadiness` SHALL
   report the feature intent not ready, with one blocker per failing check,
   when: the feature's `status` is not in `FeatureIntent::APPROVABLE_STATUSES`
   (mirrors `FeatureIntent#record_approval!`'s lifecycle guard so the Inbox
@@ -117,7 +117,7 @@
 
 ## Authorization
 
-- [x] **FEATURE-APPROVAL-012** — `FeatureIntents::MarkApproved` SHALL be the
+- [x] **FEATURE-APPROVAL-012** — For approval-gated features, `FeatureIntents::MarkApproved` SHALL be the
   single choke point for recording an approval: it SHALL check
   `FeatureIntentPolicy#approve?` (any account owner/admin/member, or a
   narrower-role account user — e.g. a `viewer` — holding an explicit
@@ -144,7 +144,7 @@
 
 ## Inbox surface
 
-- [x] **FEATURE-APPROVAL-013** — `Inbox::Queue` SHALL expose a
+- [x] **FEATURE-APPROVAL-013** — For approval-gated features, `Inbox::Queue` SHALL expose a
   `feature_decision` entry for every `FeatureIntent` whose status is not
   `released`, `revising`, or `cancelled` (including `approved_waiting_for_merge`,
   since a stale head after approval reopens the hold). Unlike every other
