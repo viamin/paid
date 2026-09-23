@@ -46,12 +46,12 @@ RSpec.describe Runners::TestAgent do
       expect(runtime.unset_env).to include("OPENAI_API_KEY")
     end
 
-    it "surfaces invalid configuration instead of testing the CLI default" do
+    it "passes an auth-gated model to live verification rather than testing the CLI default" do
       codex_runner.update_columns(tier_model_ids: { "mid" => "gpt-5.6" })
 
-      expect do
-        described_class.new(runner: codex_runner).send(:container_provider_runtime)
-      end.to raise_error(Runners::TestAgent::InvalidModelError, /not compatible/)
+      runtime = described_class.new(runner: codex_runner).send(:container_provider_runtime)
+      expect(runtime.model).to eq("gpt-5.6")
+      expect(runtime.unset_env).to include("OPENAI_API_KEY")
     end
 
     it "preserves the CLI default when no mid-tier model is configured" do

@@ -7,6 +7,11 @@ module Models
     def runner_tier_model(tier)
       return nil unless tier
 
+      if (runner = agent_run.runner)
+        recovered = Runners::VerifiedModels.new(runner).model_for(tier, project: agent_run.project, goal: agent_run.goal)
+        return LlmModel.find_by(model_id: recovered) if recovered
+      end
+
       model_id = agent_run.runner&.tier_model_ids&.dig(tier)
       return nil if model_id.blank?
 

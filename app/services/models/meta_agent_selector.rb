@@ -13,8 +13,10 @@ module Models
       new(...).call
     end
 
-    def initialize(agent_run:)
+    def initialize(agent_run:, candidates: nil, timeout: TIMEOUT)
       @agent_run = agent_run
+      @candidate_pool = candidates
+      @selection_timeout = timeout
     end
 
     def call
@@ -71,6 +73,8 @@ module Models
     attr_reader :agent_run
 
     def available_candidates(tier: nil)
+      return @candidate_pool if @candidate_pool
+
       scope = compatible_model_scope(LlmModel.active)
 
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
@@ -97,7 +101,7 @@ module Models
         build_prompt(candidates),
         provider: :claude,
         model: MODEL,
-        timeout: TIMEOUT,
+        timeout: @selection_timeout,
         tools: :none,
         **Llm::TextMode.options
       )
