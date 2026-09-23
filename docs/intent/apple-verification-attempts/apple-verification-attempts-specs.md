@@ -110,8 +110,15 @@
   it runs or is explicitly waived, and the system SHALL NOT silently skip
   required verification or fall back to executing project code on the
   macOS host.
-  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
-  *Code:* `AppleVerificationAttempts::GateEnforcement`
+  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
+  `spec/services/apple_verification_attempts/complete_withheld_run_spec.rb`,
+  `spec/services/apple_verification_attempts/waive_spec.rb`,
+  `spec/models/agent_run_spec.rb`
+  *Code:* `AppleVerificationAttempts::GateEnforcement`,
+  `AgentRun#complete!` (withheld marker + payload),
+  `AgentRun.awaiting_completion_verification` (stale-running exemption),
+  `AppleVerificationAttempts::CompleteWithheldRun`,
+  `AppleVerificationAttempts::Waive`
 
 - [ ] **APPLE-ATTEMPT-014** — After a control-plane restart, host restart,
   network interruption, timeout, or partial provisioning failure, lifecycle

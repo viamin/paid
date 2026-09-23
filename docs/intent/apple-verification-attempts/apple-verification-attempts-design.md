@@ -128,6 +128,16 @@ PR verification result. Required verification remains pending until it runs or
 is explicitly waived (APPLE-WORKER-006). Paid never silently skips required
 verification and never falls back to executing project code on the host.
 
+A run whose completion is withheld at the gate stays non-terminal and
+`running`, marked with a withheld-completion record (timestamp plus the
+completion payload the workflow produced). Such a run is parked by design,
+not orphaned: stale-running recovery exempts it, so missing worker capacity
+can never surface as a timeout failure. Once the gate is satisfied (a
+succeeded attempt or an active waiver), `AppleVerificationAttempts::CompleteWithheldRun`
+re-invokes completion from the preserved payload; the waive flow invokes it
+automatically, and attempt-completion code must do the same when it records a
+`succeeded` attempt.
+
 ## Recovery and worker health
 
 Provision, start, stop, destroy, retry, and reconciliation operations are

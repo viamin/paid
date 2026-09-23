@@ -217,6 +217,33 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       expect(agent_run.pull_request_url).to be_blank
       log = agent_run.agent_run_logs.system.last
       expect(log.content).to include("Completion withheld").and include("worker_infrastructure")
+      expect(agent_run.external_metadata).to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+      expect(agent_run.external_metadata.fetch(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY))
+        .to include("withheld_at", "pr_url" => "https://github.com/example/pull/1")
+    end
+
+    it "exempts the withheld run from stale-running recovery" do
+      approved_required_revision
+      agent_run.update_column(:started_at, AgentRun.stale_running_cutoff - 1.minute)
+
+      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_falsey
+
+      expect(AgentRun.awaiting_completion_verification).to contain_exactly(agent_run)
+      expect(AgentRun.stale_running).to be_empty
+      expect(AgentRun.stale_running?(agent_run.reload)).to be(false)
+    end
+
+    it "clears the withheld marker when completion later succeeds" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "worker_infrastructure")
+      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_falsey
+      expect(agent_run.reload.external_metadata).to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+
+      attempt_for(revision, agent_run:, status: "succeeded", retry_number: 1)
+      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_truthy
+
+      expect(agent_run.reload.status).to eq("completed")
+      expect(agent_run.external_metadata).not_to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
     end
 
     it "blocks an agent run from reporting success when required checks failed" do

@@ -420,7 +420,12 @@ RSpec.describe AppleVerification::AgentTools do
       )
 
       expect { described_class.stop_apple_verification(project:, agent_run:, attempt_id: attempt.id) }
-        .to raise_error(ActiveRecord::RecordNotFound)
+        .to raise_error(AppleVerification::AgentTools::AuthorityError, /not found for this project/)
+    end
+
+    it "refuses to cancel an unknown attempt id" do
+      expect { described_class.stop_apple_verification(project:, agent_run:, attempt_id: 0) }
+        .to raise_error(AppleVerification::AgentTools::AuthorityError, /not found for this project/)
     end
 
     it "raises for an already terminal attempt" do

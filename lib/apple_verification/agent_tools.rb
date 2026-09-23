@@ -79,7 +79,8 @@ module AppleVerification
         ensure_mode_available(project)
         ensure_project_match(project, agent_run)
 
-        attempt = project.apple_verification_attempts.find(attempt_id)
+        attempt = project.apple_verification_attempts.find_by(id: attempt_id)
+        raise AuthorityError, "attempt not found for this project" if attempt.nil?
         raise AuthorityError, "attempt belongs to a different agent run" unless attempt.agent_run_id == agent_run.id
 
         AppleVerificationAttempts::Cancel.call(attempt: attempt)
