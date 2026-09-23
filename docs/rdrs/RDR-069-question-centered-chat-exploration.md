@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Draft
+- **Status**: Accepted
 - **Type**: Product experience and chat architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)

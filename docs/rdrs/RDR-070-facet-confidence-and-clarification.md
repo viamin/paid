@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Draft
+- **Status**: Accepted
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)

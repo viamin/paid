@@ -6,7 +6,7 @@ This is a reviewable set of issue drafts for
 [RDR-069](RDR-069-question-centered-chat-exploration.md),
 [RDR-070](RDR-070-facet-confidence-and-clarification.md), and
 [RDR-071](RDR-071-confidence-driven-issue-delivery.md). All three RDRs are
-Draft; no runtime behavior is implemented by this document.
+Accepted; no runtime behavior is implemented by this document.
 
 The keys below are local draft identifiers, **not GitHub issue numbers**.
 When filing, create the epic and task records, replace every local dependency
