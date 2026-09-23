@@ -73,7 +73,7 @@ module AppleVerificationAttempts
       # host-memory-low threshold so callers can distinguish "we're under
       # the normal free-memory floor" from "we're below the critical
       # pressure that the RDR singles out for refusal".
-      if figures.memory_free_percent.present? && figures.memory_free_percent <= @critical_memory_percent
+      if sustained_critical_memory_pressure?(figures)
         return deny("sustained_critical_memory_pressure", figures:, thresholds:)
       end
       return deny("host_memory_low", figures:, thresholds:) if figures.memory_free_percent.present? && figures.memory_free_percent < @min_host_memory_percent
@@ -96,7 +96,7 @@ module AppleVerificationAttempts
       thresholds = thresholds_payload
 
       return deny("host_disk_low", figures:, thresholds:) if figures.disk_free_gib.present? && figures.disk_free_gib < @min_host_disk_gib
-      if figures.memory_free_percent.present? && figures.memory_free_percent <= @critical_memory_percent
+      if sustained_critical_memory_pressure?(figures)
         return deny("sustained_critical_memory_pressure", figures:, thresholds:)
       end
       return deny("host_memory_low", figures:, thresholds:) if figures.memory_free_percent.present? && figures.memory_free_percent < @min_host_memory_percent
@@ -146,14 +146,21 @@ module AppleVerificationAttempts
     # Sustained critical pressure is "memory has been at or below
     # +critical_memory_percent+ for the last +sustained_critical_samples+
     # snapshots". A single low sample may just be a momentary spike during
-    # the clone itself; sustained pressure across the rolling history is what
-    # blocks admission (APPLE-ATTEMPT-001). The provider is the source of
-    # truth for both the current snapshot and the recent memory-pressure
-    # window.
+    # the clone itself; only pressure sustained across the rolling history
+    # blocks admission with the critical reason (APPLE-ATTEMPT-001). The
+    # provider is the source of truth for the recent memory-pressure
+    # window (prior samples, oldest first); the current snapshot counts
+    # as the newest sample. Fewer samples than the window requirement is
+    # not yet "sustained" — a lone dip still trips the regular
+    # host-memory-low threshold instead.
     def sustained_critical_memory_pressure?(figures)
       return false unless figures.memory_free_percent.present?
 
-      figures.memory_free_percent <= @critical_memory_percent
+      samples = figures.memory_pressure_window + [ figures.memory_free_percent ]
+      recent = samples.last(sustained_critical_samples)
+      return false if recent.size < sustained_critical_samples
+
+      recent.all? { |sample| sample <= critical_memory_percent }
     end
   end
 end

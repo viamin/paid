@@ -28,13 +28,23 @@ RSpec.describe AppleVerificationAttempts::CommittedSource do
   it "mints a short-lived read-only credential for committed attempts and forwards the lane entry" do
     lane = instance_double(AppleVerification::SourceLane::CredentialLane)
     expect(lane).to receive(:call).and_return(lane_result)
-    expect(AppleVerification::SourceLane::CredentialLane).to receive(:lane_entry).with(lane_result)
 
     result = described_class.call(attempt: attempt, credential_lane: lane)
 
     expect(result.installation_id).to eq(99)
     expect(result.repository_full_name).to eq(project.full_name)
     expect(result.commit_sha).to eq(attempt.commit_sha)
+    expect(result.lane_entry).to eq(
+      "lane" => "credentials",
+      "kind" => "github_app_installation",
+      "locator" => {
+        "installation_id" => 99,
+        "repository_id" => lane_result.repository_id,
+        "repo_full_name" => project.full_name,
+        "ttl_seconds" => 900
+      }
+    )
+    expect(AppleVerificationWorkers.lane_reference?(result.lane_entry, lane: "credentials")).to be(true)
   end
 
   it "revokes the cached credential through the lane" do

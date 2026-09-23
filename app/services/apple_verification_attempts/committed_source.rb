@@ -13,10 +13,7 @@ module AppleVerificationAttempts
   class CommittedSource
     DEFAULT_TTL_SECONDS = 15 * 60
 
-    Result = Data.define(:expires_at, :installation_id, :repository_full_name, :commit_sha)
-
-    ExpiredCredentialError = Class.new(StandardError)
-    CredentialLaneError = Class.new(StandardError)
+    Result = Data.define(:expires_at, :installation_id, :repository_full_name, :commit_sha, :lane_entry)
 
     class << self
       def call(...)
@@ -40,16 +37,19 @@ module AppleVerificationAttempts
     # credential is delivered through the lane and must NEVER be persisted
     # on the attempt record; this method only returns the in-memory
     # descriptor callers use to attach the token to the input manifest.
+    # The descriptor's +lane_entry+ is the reference-only credentials
+    # lane entry ({CredentialLane.lane_entry}) the caller appends to the
+    # input manifest's credentials lane — it carries no token value.
     def call
       raise ArgumentError, "attempt is not a committed-source attempt" unless committed?
 
       lane_result = @credential_lane.call
-      AppleVerification::SourceLane::CredentialLane.lane_entry(lane_result)
       Result.new(
         expires_at: current_time + @ttl_seconds.seconds,
         installation_id: lane_result.installation_id,
         repository_full_name: lane_result.repo_full_name,
-        commit_sha: @attempt.commit_sha
+        commit_sha: @attempt.commit_sha,
+        lane_entry: AppleVerification::SourceLane::CredentialLane.lane_entry(lane_result)
       )
     end
 

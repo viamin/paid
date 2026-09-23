@@ -96,6 +96,33 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(failed.reload.container_retained_until).to be_nil
   end
 
+  it "skips revocation and keeps the retention deadline when the lifecycle reports the early destroy as a no-op" do
+    failed = create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+      apple_worker_profile: attempt.apple_worker_profile,
+      status: "failed", failure_classification: "test_assertion",
+      lifecycle_gate: attempt.lifecycle_gate,
+      source_digest: attempt.source_digest,
+      finished_at: Time.current
+    )
+    failed.update!(container_retained_until: 1.hour.from_now)
+
+    revocation = instance_double(AppleVerification::Revocation::Enforce)
+    expect(revocation).not_to receive(:revoke_retained!)
+
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    expect(lifecycle).to receive(:destroy).with(attempt: failed, request_id: "early_destroy:#{failed.id}").and_return(:noop)
+
+    result = described_class.new(attempt: failed, revocation: revocation, lifecycle: lifecycle).early_destroy_retained_vm
+
+    expect(result.outcome).to eq("failed")
+    expect(result.retained_until).to be_present
+    expect(result.destroy_request_id).to be_nil
+    expect(failed.reload.container_retained_until).to be_present
+  end
+
   it "raises when no lifecycle is available for an early destroy" do
     failed = create(
       :apple_verification_attempt,

@@ -79,13 +79,28 @@ module AppleVerificationAttempts
     # Drives an early destroy of a retained failed VM through the lifecycle
     # boundary, then clears the retention deadline and records the audit
     # event via the revocation service. Used by the operator UI's "destroy
-    # now" control and by the sweep when the deadline passes.
+    # now" control and by the sweep when the deadline passes. Mirrors the
+    # refusal pattern in {#call} and
+    # {AppleVerification::Bundles::RetentionSweep#revoke_vm!}: a +:noop+
+    # destroy (no live ledger entry or no recorded vm_id — the
+    # partial-provisioning case) skips {#revoke_retained!} entirely, so no
+    # `destroyed` audit event is recorded for a VM that was not destroyed
+    # and +container_retained_until+ stays in place for the next sweep.
     def early_destroy_retained_vm
       lifecycle = resolve_lifecycle
       raise NoLifecycleError, "no Apple verification lifecycle available" unless lifecycle
 
       destroy_request_id = "early_destroy:#{@attempt.id}"
-      lifecycle.destroy(attempt: @attempt, request_id: destroy_request_id)
+      destroy_result = lifecycle.destroy(attempt: @attempt, request_id: destroy_request_id)
+      unless destroy_result == :destroyed
+        Rails.logger.warn(
+          message: "apple_verification.early_destroy_skipped",
+          apple_verification_attempt_id: @attempt.id,
+          reason: "destroy_noop"
+        )
+        return Result.new(outcome: @attempt.status, retained_until: @attempt.container_retained_until, destroy_request_id: nil)
+      end
+
       @revocation.revoke_retained!
       Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: destroy_request_id)
     end
