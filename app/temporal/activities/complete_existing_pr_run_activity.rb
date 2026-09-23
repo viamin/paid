@@ -40,11 +40,28 @@ module Activities
 
         pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
 
-        completed = agent_run.complete!(
-          result_commit: agent_run.result_commit_sha,
-          pr_url: pr.html_url,
-          pr_number: pr.number
-        )
+        # A blocked completion-verification gate is a deterministic project
+        # failure (the gate's decision cannot change without operator
+        # action), so the raise is rescued here to refresh the existing PR
+        # body and post the same update comment that would have run on
+        # success before re-raising. Without this rescue the workflow
+        # rescue marks the run failed but the existing PR body and
+        # followup comment trail are never updated for the new push, and
+        # a retry under DEFAULT_RETRY_POLICY's 3 attempts would still skip
+        # the work because the raise propagates before refresh/comment
+        # run.
+        completed = begin
+          agent_run.complete!(
+            result_commit: agent_run.result_commit_sha,
+            pr_url: pr.html_url,
+            pr_number: pr.number
+          )
+        rescue AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed
+          refresh_pull_request_body(client, project, pr, agent_run)
+          post_update_comment(client, project, pr.number, agent_run)
+          agent_run.log!("system", "PR update blocked by required Apple verification failure: #{pr.html_url}")
+          raise
+        end
         return result(agent_run.reload) unless completed
 
         record_draft_review_round_if_needed(agent_run)
