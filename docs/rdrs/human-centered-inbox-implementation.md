@@ -36,7 +36,7 @@ Checked on 2026-09-22 against main and GitHub issue bodies/comments:
 | [#3867](https://github.com/viamin/paid/issues/3867), [#3868](https://github.com/viamin/paid/issues/3868), [#3869](https://github.com/viamin/paid/issues/3869) | Closed conformance/merge/amendment work. P11 adds explicit policy dispatch and removes amendment-pause behavior only for confidence-driven features. |
 | [#3870](https://github.com/viamin/paid/issues/3870), [#3871](https://github.com/viamin/paid/issues/3871) | Open evaluation/closeout for approval-gated policy. Retain their scope; share fixtures/metrics where useful without claiming these tasks deliver the new policy. |
 | [#3860](https://github.com/viamin/paid/issues/3860), [#3861](https://github.com/viamin/paid/issues/3861) | Existing approval-gated epics. Link the new epic and explain the policy boundary; do not silently close or rewrite completed implementation evidence. |
-| [PR #3958](https://github.com/viamin/paid/pull/3958) | Open clarification-recovery fix. Rebase P04 on its outcome; do not recreate the stale-question recovery bug. |
+| [PR #3958](https://github.com/viamin/paid/pull/3958) | Merged 2026-09-22 clarification-recovery fix. Rebase P04 on its outcome; do not recreate the stale-question recovery bug. |
 
 Issue state is not proof of implementation. P01 must inspect the delivered
 code/tests before reusing, editing, closing or superseding any existing task.
