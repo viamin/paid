@@ -116,4 +116,30 @@ RSpec.describe AppleVerificationAttempts::TimeoutMonitor do
 
     expect(monitor.deadline_for(clock)).to eq(clock + 45.minutes)
   end
+
+  it "reports scanned counts before reclassification so the metric reflects the original candidate set" do
+    workflow = create(
+      :apple_verification_workflow_revision, :approved,
+      project: project, account: account
+    )
+    stale_one = create_stale_attempt(workflow, clock - 46.minutes)
+    stale_two = create_stale_attempt(workflow, clock - 60.minutes)
+
+    result = described_class.call(timeout_minutes: 45, clock: clock)
+
+    expect(result.scanned).to eq(2)
+    expect(result.timed_out).to contain_exactly(stale_one.id, stale_two.id)
+  end
+
+  def create_stale_attempt(workflow, started_at)
+    create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: workflow.apple_worker_profile,
+      status: "running",
+      started_at: started_at,
+      lifecycle_gate: workflow.lifecycle_gate
+    )
+  end
 end

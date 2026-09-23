@@ -112,6 +112,38 @@ RSpec.describe AppleVerificationAttempts::Admission do
     )
   end
 
+  it "denies admission when the reported guest disk is known but below the 15 GiB threshold" do
+    host_metrics[:guest_disk_free_gib] = 5.0
+
+    decision = admission_for(project: project).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("guest_disk_low")
+    expect(decision.thresholds[:min_guest_disk_gib]).to eq(15)
+  end
+
+  it "denies admission when the reported guest disk is below an operator-configured threshold" do
+    host_metrics[:guest_disk_free_gib] = 10.0
+
+    decision = described_class.new(
+      project: project, host_capacity: host_capacity,
+      min_guest_disk_gib: 12
+    ).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("guest_disk_low")
+    expect(decision.thresholds[:min_guest_disk_gib]).to eq(12)
+  end
+
+  it "denies admission when the guest disk reading is unknown" do
+    host_metrics[:guest_disk_free_gib] = nil
+
+    decision = admission_for(project: project).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("guest_disk_unknown")
+  end
+
   describe "#recheck_admissions" do
     it "returns allowed when thresholds remain satisfied while a job runs" do
       decision = admission_for(project: project).recheck_admissions

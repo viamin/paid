@@ -9,7 +9,6 @@ module AppleVerificationAttempts
   # bound to a quarantined profile is rejected by
   # {AppleVerificationAttempts::Validate} before it can reserve capacity.
   class WorkerHealth
-    DEFAULT_FAILURE_WINDOW = 5
     DEFAULT_FAILURE_THRESHOLD = 3
 
     HealthCheck = Data.define(:profile, :consecutive_failures, :last_failure_at)
@@ -22,17 +21,11 @@ module AppleVerificationAttempts
 
     def initialize(
       profile:,
-      failure_window: DEFAULT_FAILURE_WINDOW,
       failure_threshold: DEFAULT_FAILURE_THRESHOLD,
-      quarantine_state_resolver: nil,
-      isolation_smoke_test: nil,
       clock: Time
     )
       @profile = profile
-      @failure_window = failure_window
       @failure_threshold = failure_threshold
-      @quarantine_state_resolver = quarantine_state_resolver || default_quarantine_state_resolver
-      @isolation_smoke_test = isolation_smoke_test || default_isolation_smoke_test
       @clock = clock
     end
 
@@ -89,7 +82,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :failure_window, :failure_threshold
+    attr_reader :failure_threshold
 
     def current_time
       return @clock.current if @clock.respond_to?(:current)
@@ -103,14 +96,6 @@ module AppleVerificationAttempts
         quarantined_at: now,
         quarantine_reason: "consecutive_health_failures=#{consecutive} threshold=#{@failure_threshold}"
       }
-    end
-
-    def default_quarantine_state_resolver
-      ->(profile) { profile.quarantined? }
-    end
-
-    def default_isolation_smoke_test
-      AppleVerification::Setup::SmokeAttemptFactory
     end
   end
 end

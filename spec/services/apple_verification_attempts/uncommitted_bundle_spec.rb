@@ -54,4 +54,37 @@ RSpec.describe AppleVerificationAttempts::UncommittedBundle do
       described_class.call(attempt: committed, workspace_root: "/tmp/whatever")
     }.to raise_error(ArgumentError, /uncommitted/)
   end
+
+  it "invokes a Class builder through its class-level .call so the default dependency works" do
+    captured = {}
+    builder_class = build_recording_builder_class(captured)
+
+    Dir.mktmpdir do |workspace_root|
+      result = described_class.call(
+        attempt: attempt, workspace_root: workspace_root, builder: builder_class
+      )
+
+      expect(captured[:workspace_root]).to eq(workspace_root)
+      expect(captured[:output_path]).to end_with("source.tar")
+      expect(captured[:manifest_path]).to end_with("source.tar.manifest.json")
+      expect(result.digest).to eq("sha256:#{ 'b' * 64 }")
+    end
+  end
+
+  def build_recording_builder_class(captured)
+    Class.new do
+      define_singleton_method(:call) do |workspace_root:, output_path:, manifest_path:|
+        captured[:workspace_root] = workspace_root
+        captured[:output_path] = output_path
+        captured[:manifest_path] = manifest_path
+        AppleVerification::SourceLane::BundleBuilder::Result.new(
+          digest: "sha256:#{ 'b' * 64 }",
+          bytesize: 4,
+          manifest: { "files" => [], "digest" => "sha256:#{ 'b' * 64 }" },
+          bundle_path: output_path,
+          manifest_path: manifest_path
+        )
+      end
+    end
+  end
 end

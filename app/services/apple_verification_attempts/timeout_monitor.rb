@@ -38,6 +38,7 @@ module AppleVerificationAttempts
       now = current_time
       threshold = now - timeout_seconds.seconds
       candidates = expired_attempts(threshold)
+      scanned = candidates.count
       timed_out_ids = []
 
       candidates.find_each(batch_size: @batch_size) do |attempt|
@@ -55,7 +56,7 @@ module AppleVerificationAttempts
         end
       end
 
-      Result.new(scanned: candidates.count, timed_out: timed_out_ids)
+      Result.new(scanned: scanned, timed_out: timed_out_ids)
     end
 
     # Returns the deadline a fresh attempt with +started_at: now+ would

@@ -31,6 +31,7 @@ module AppleVerificationAttempts
       active_vm_limit
       host_disk_low
       host_memory_low
+      guest_disk_low
       guest_disk_unknown
       sustained_critical_memory_pressure
       host_safety_violation
@@ -78,6 +79,7 @@ module AppleVerificationAttempts
       end
       return deny("host_memory_low", figures:, thresholds:) if figures.memory_free_percent.present? && figures.memory_free_percent < @min_host_memory_percent
       return deny("guest_disk_unknown", figures:, thresholds:) if figures.guest_disk_free_gib.nil?
+      return deny("guest_disk_low", figures:, thresholds:) if figures.guest_disk_free_gib < @min_guest_disk_gib
 
       allow(figures:, thresholds:)
     end
