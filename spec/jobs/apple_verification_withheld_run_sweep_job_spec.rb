@@ -22,14 +22,19 @@ RSpec.describe AppleVerificationWithheldRunSweepJob do
     )
   end
 
-  def withheld_agent_run(shipped_commit: "a" * 40)
+  # The approved revision must exist before `complete!` runs, or the gate
+  # evaluates `not_required` and the run completes without being withheld.
+  def withheld_agent_run(revision, shipped_commit: "a" * 40)
     agent_run = create(:agent_run, :running, project:)
-    agent_run.complete!(
+    result = agent_run.complete!(
       result_commit: shipped_commit,
       pr_url: "https://github.com/example/pull/7",
       pr_number: 7
     )
-    expect(agent_run.reload.external_metadata).to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+    expect(result).to be_falsey
+    agent_run.reload
+    expect(agent_run.status).to eq("running")
+    expect(agent_run.external_metadata).to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
     agent_run
   end
 
@@ -51,9 +56,9 @@ RSpec.describe AppleVerificationWithheldRunSweepJob do
   describe "#perform" do
     it "invokes CompleteWithheldRun under system access for every withheld run" do
       shipped = "a" * 40
-      withheld_runs = Array.new(2) { withheld_agent_run(shipped_commit: shipped) }
+      revision = approved_required_revision
+      withheld_runs = Array.new(2) { withheld_agent_run(revision, shipped_commit: shipped) }
       withheld_runs.each do |run|
-        revision = approved_required_revision
         attempt_for(revision, agent_run: run, status: "succeeded", commit_sha: shipped)
       end
 
@@ -75,8 +80,8 @@ RSpec.describe AppleVerificationWithheldRunSweepJob do
 
     it "completes a withheld run once a matching succeeded attempt is recorded" do
       shipped = "a" * 40
-      agent_run = withheld_agent_run(shipped_commit: shipped)
       revision = approved_required_revision
+      agent_run = withheld_agent_run(revision, shipped_commit: shipped)
       attempt_for(revision, agent_run:, status: "succeeded", commit_sha: shipped)
 
       described_class.new.perform
@@ -88,8 +93,8 @@ RSpec.describe AppleVerificationWithheldRunSweepJob do
 
     it "does not complete a withheld run whose latest succeeded attempt does not match the shipped commit" do
       shipped = "a" * 40
-      agent_run = withheld_agent_run(shipped_commit: shipped)
       revision = approved_required_revision
+      agent_run = withheld_agent_run(revision, shipped_commit: shipped)
       attempt_for(revision, agent_run:, status: "succeeded", commit_sha: "b" * 40)
 
       described_class.new.perform
@@ -101,8 +106,8 @@ RSpec.describe AppleVerificationWithheldRunSweepJob do
 
     it "completes a withheld run once the gate relaxes via the project mode being set to off" do
       shipped = "a" * 40
-      agent_run = withheld_agent_run(shipped_commit: shipped)
       revision = approved_required_revision
+      agent_run = withheld_agent_run(revision, shipped_commit: shipped)
       attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion", commit_sha: shipped)
 
       # Waive would block on a failed attempt without an active waiver, but
@@ -128,7 +133,8 @@ RSpec.describe AppleVerificationWithheldRunSweepJob do
     end
 
     it "logs and continues when an individual run fails" do
-      agent_run = withheld_agent_run
+      revision = approved_required_revision
+      agent_run = withheld_agent_run(revision)
       allow(AppleVerificationAttempts::CompleteWithheldRun)
         .to receive(:call).with(agent_run: agent_run).and_raise(StandardError, "boom")
 
