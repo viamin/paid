@@ -170,6 +170,64 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     end
   end
 
+  describe ".evaluate with result_commit binding" do
+    let(:committed_sha) { "0123456789abcdef0123456789abcdef01234567" }
+    let(:other_sha) { "abcdef0123456789abcdef0123456789abcdef01" }
+
+    it "is satisfied only when an attempt's commit_sha matches result_commit" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: committed_sha)
+
+      matching = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: committed_sha)
+      mismatching = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: other_sha)
+
+      expect(matching.status).to eq(:satisfied)
+      expect(mismatching.status).to eq(:pending)
+      expect(mismatching.reason).to include(committed_sha).and include(other_sha)
+    end
+
+    it "stays pending when a stale succeeded attempt cannot satisfy a different commit" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: committed_sha)
+
+      decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: other_sha)
+
+      expect(decision.status).to eq(:pending)
+      expect(decision.attempt).to be_nil
+    end
+
+    it "stays pending when a committed attempt exists but the completion has no commit" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: committed_sha)
+
+      decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: nil)
+
+      expect(decision.status).to eq(:pending)
+      expect(decision.reason).to include(committed_sha)
+    end
+
+    it "blocks when the matching commit's attempt is a non-waived code failure" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion", commit_sha: committed_sha)
+
+      decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: committed_sha)
+
+      expect(decision.status).to eq(:blocked)
+      expect(decision.attempt.failure_classification).to eq("test_assertion")
+    end
+
+    it "ignores the latest committed attempt when it does not match result_commit" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion", commit_sha: committed_sha)
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: other_sha, retry_number: 1)
+
+      decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: other_sha)
+
+      expect(decision.status).to eq(:satisfied)
+      expect(decision.attempt.commit_sha).to eq(other_sha)
+    end
+  end
+
   describe ".evaluate binding to approved committed revisions" do
     it "never enforces a draft revision even at an enforcement gate" do
       create(
@@ -268,6 +326,36 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     it "completes the run when no required verification applies" do
       expect(agent_run.complete!).to be_truthy
       expect(agent_run.reload.status).to eq("completed")
+    end
+
+    it "withholds completion when a stale succeeded attempt does not cover the commit being completed" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "succeeded",
+        commit_sha: "0123456789abcdef0123456789abcdef01234567")
+      shipped_sha = "abcdef0123456789abcdef0123456789abcdef01"
+
+      expect(
+        agent_run.complete!(result_commit: shipped_sha, pr_url: "https://github.com/example/pull/9", pr_number: 9)
+      ).to be_falsey
+
+      agent_run.reload
+      expect(agent_run.status).to eq("running")
+      expect(agent_run.pull_request_url).to be_blank
+      log = agent_run.agent_run_logs.system.last
+      expect(log.content).to include("Completion withheld", "0123456789abcdef0123456789abcdef01234567")
+    end
+
+    it "completes once verification succeeds on the commit being shipped" do
+      revision = approved_required_revision
+      shipped_sha = "0123456789abcdef0123456789abcdef01234567"
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: shipped_sha)
+
+      expect(
+        agent_run.complete!(result_commit: shipped_sha, pr_url: "https://github.com/example/pull/9", pr_number: 9)
+      ).to be_truthy
+
+      expect(agent_run.reload.status).to eq("completed")
+      expect(agent_run.result_commit_sha).to eq(shipped_sha)
     end
   end
 

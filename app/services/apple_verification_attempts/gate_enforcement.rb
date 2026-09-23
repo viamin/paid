@@ -5,6 +5,11 @@ module AppleVerificationAttempts
   # lifecycle gate. Draft revisions and advisory checks never block; a failed
   # infrastructure attempt stays pending; only a project failure without an
   # unexpired waiver blocks.
+  #
+  # At completion gates the decision is also bound to the commit being
+  # completed (passed as `result_commit`): an attempt on a different commit
+  # cannot satisfy the gate, so a verification of a stale or earlier source
+  # cannot leak forward when the run's actual output is a different commit.
   # @spec APPLE-ATTEMPT-011
   # @spec APPLE-ATTEMPT-012
   # @spec APPLE-ATTEMPT-013
@@ -26,13 +31,26 @@ module AppleVerificationAttempts
     end
 
     class << self
-      def evaluate(agent_run:, gate:)
+      # result_commit: the commit being shipped through the lifecycle gate
+      # (typically `AgentRun#result_commit_sha` or the SHA passed into
+      # `complete!`/`pull_request_verification`). When omitted, attempts whose
+      # `commit_sha` is nil (bundle/uncommitted source) can still satisfy the
+      # gate — they match an absent `result_commit`.
+      def evaluate(agent_run:, gate:, result_commit: nil)
         revision = binding_revision(agent_run.project, gate)
         return not_required(gate) unless revision
         return not_required(gate) if revision.required_checks.empty?
 
         attempt = latest_attempt(agent_run, revision)
         return pending(revision, gate, reason: "Required Apple verification has not run for this agent run") unless attempt
+
+        # The attempt covers a specific commit; the gate binds to the commit
+        # being shipped. A verification of any other commit leaves the
+        # decision pending so a fresh verification is required for the
+        # current source.
+        unless attempt_matches_result_commit?(attempt, result_commit)
+          return pending(revision, gate, reason: commit_mismatch_reason(attempt, result_commit))
+        end
 
         evaluate_attempt(attempt, revision, gate)
       end
@@ -48,6 +66,22 @@ module AppleVerificationAttempts
 
       def latest_attempt(agent_run, revision)
         revision.apple_verification_attempts.where(agent_run: agent_run).order(created_at: :desc, id: :desc).first
+      end
+
+      # Both nil is a match (bundle/uncommitted source lines up with a PR-only
+      # completion that has no commit); otherwise the SHAs must compare equal.
+      def attempt_matches_result_commit?(attempt, result_commit)
+        attempt.commit_sha == result_commit
+      end
+
+      def commit_mismatch_reason(attempt, result_commit)
+        if result_commit.present?
+          "Required Apple verification was last run on commit #{attempt.commit_sha.presence || '<no commit>'}, " \
+            "not the commit being completed (#{result_commit})"
+        else
+          "Required Apple verification was last run on commit #{attempt.commit_sha}, " \
+            "but the run is completing without a commit"
+        end
       end
 
       def evaluate_attempt(attempt, revision, gate)

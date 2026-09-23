@@ -109,16 +109,24 @@
 - [x] **APPLE-ATTEMPT-013** — Required verification SHALL remain pending until
   it runs or is explicitly waived, and the system SHALL NOT silently skip
   required verification or fall back to executing project code on the
-  macOS host.
+  macOS host. Required-verification enforcement SHALL bind to the commit
+  being completed: a successful attempt on a different commit SHALL NOT
+  satisfy the gate. A withheld run SHALL be re-invoked via
+  `AppleVerificationAttempts::CompleteWithheldRun` by the waive flow,
+  by attempt-completion code when it records a `succeeded` attempt, and by
+  a 5-minute maintenance sweep so the run still completes when the gate
+  later relaxes without any of the synchronous callers firing.
   *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
   `spec/services/apple_verification_attempts/complete_withheld_run_spec.rb`,
   `spec/services/apple_verification_attempts/waive_spec.rb`,
+  `spec/jobs/apple_verification_withheld_run_sweep_job_spec.rb`,
   `spec/models/agent_run_spec.rb`
   *Code:* `AppleVerificationAttempts::GateEnforcement`,
   `AgentRun#complete!` (withheld marker + payload),
   `AgentRun.awaiting_completion_verification` (stale-running exemption),
   `AppleVerificationAttempts::CompleteWithheldRun`,
-  `AppleVerificationAttempts::Waive`
+  `AppleVerificationAttempts::Waive`,
+  `AppleVerificationWithheldRunSweepJob`
 
 - [ ] **APPLE-ATTEMPT-014** — After a control-plane restart, host restart,
   network interruption, timeout, or partial provisioning failure, lifecycle

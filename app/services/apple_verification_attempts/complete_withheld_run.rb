@@ -24,8 +24,14 @@ module AppleVerificationAttempts
 
       # Only complete when the gate no longer enforces: while pending the run
       # stays withheld, and a blocked gate must keep withholding rather than
-      # surface as a completion failure through this path.
-      decision = GateEnforcement.evaluate(agent_run: @agent_run, gate: "completion_verification")
+      # surface as a completion failure through this path. The gate binds to
+      # the commit the original workflow shipped so a verification of a
+      # different commit cannot leak forward to satisfy completion.
+      decision = GateEnforcement.evaluate(
+        agent_run: @agent_run,
+        gate: "completion_verification",
+        result_commit: payload["result_commit"]
+      )
       return false if decision.enforcing?
 
       @agent_run.complete!(**completion_attributes(payload))

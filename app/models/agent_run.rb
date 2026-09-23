@@ -2135,9 +2135,16 @@ class AgentRun < ApplicationRecord
       reload
       return false if finished?
 
+      # Bind the gate to the commit being completed: a verification of any
+      # other commit cannot satisfy this gate, so a stale verification cannot
+      # leak forward when the run's actual output is a different commit.
       # @spec APPLE-ATTEMPT-011
       # @spec APPLE-ATTEMPT-013
-      decision = AppleVerificationAttempts::GateEnforcement.evaluate(agent_run: self, gate: "completion_verification")
+      decision = AppleVerificationAttempts::GateEnforcement.evaluate(
+        agent_run: self,
+        gate: "completion_verification",
+        result_commit: result_commit
+      )
       if decision.pending?
         # Pending required verification is neither a project success nor a
         # code failure, so it must not raise: an uncaught raise crosses the
