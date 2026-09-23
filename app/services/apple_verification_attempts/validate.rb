@@ -115,12 +115,14 @@ module AppleVerificationAttempts
     end
 
     def default_quota(attempt)
-      queue = Queue.new
-      account_attempts = Queue.new(account_scope: attempt.account).call
-      return false if account_attempts.size >= queue.queue_depth_limit
+      return false if account_queue_depth_at_limit?(attempt)
       return false if attempts_per_agent_run_exceeded?(attempt)
 
       true
+    end
+
+    def account_queue_depth_at_limit?(attempt)
+      AppleVerificationAttempt.queued.for_account(attempt.account).count >= Queue::DEFAULT_QUEUE_DEPTH
     end
 
     def attempts_per_agent_run_exceeded?(attempt)
