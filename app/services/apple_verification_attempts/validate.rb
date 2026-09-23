@@ -98,13 +98,16 @@ module AppleVerificationAttempts
       workflow&.approved? || (workflow&.draft? && workflow.lifecycle_gate == "agent_iteration")
     end
 
-    def default_profile_constraints(profile, attempt)
+    # The profile's jsonb capabilities column wraps the declared
+    # capability list under the "capabilities" key — the same contract
+    # `AppleWorkerProfile#supported_profile_contract` validates. A
+    # profile that declares no capabilities cannot support any attempt's
+    # required operations, so validation fails with
+    # `capability_unsupported` instead of provisioning.
+    def default_profile_constraints(profile, _attempt)
       return false unless profile
 
-      capabilities = profile.capabilities.is_a?(Hash) ? profile["capabilities"] : profile.capabilities
-      return false if capabilities.blank?
-
-      true
+      profile.capabilities["capabilities"].present?
     end
 
     def default_policy(_attempt)

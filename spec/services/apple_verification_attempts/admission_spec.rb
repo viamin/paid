@@ -67,11 +67,32 @@ RSpec.describe AppleVerificationAttempts::Admission do
 
   it "denies admission during sustained critical memory pressure" do
     host_metrics[:memory_free_percent] = 2.0
+    host_metrics[:memory_pressure_window] = [ 2.0, 2.0 ]
 
     decision = admission_for(project: project).call
 
     expect(decision).not_to be_allowed
     expect(decision.reason).to eq("sustained_critical_memory_pressure")
+  end
+
+  it "reports a plain memory shortfall, not sustained pressure, for a single critical sample" do
+    host_metrics[:memory_free_percent] = 2.0
+    host_metrics[:memory_pressure_window] = []
+
+    decision = admission_for(project: project).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("host_memory_low")
+  end
+
+  it "requires the whole rolling window to be critical before denying for sustained pressure" do
+    host_metrics[:memory_free_percent] = 2.0
+    host_metrics[:memory_pressure_window] = [ 40.0, 2.0 ]
+
+    decision = admission_for(project: project).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("host_memory_low")
   end
 
   it "honors operator-configurable defaults for thresholds" do
@@ -105,6 +126,26 @@ RSpec.describe AppleVerificationAttempts::Admission do
 
       expect(decision).not_to be_allowed
       expect(decision.reason).to eq("host_disk_low")
+    end
+
+    it "denies new admissions during sustained critical memory pressure" do
+      host_metrics[:memory_free_percent] = 2.0
+      host_metrics[:memory_pressure_window] = [ 2.0, 2.0 ]
+
+      decision = admission_for(project: project).recheck_admissions
+
+      expect(decision).not_to be_allowed
+      expect(decision.reason).to eq("sustained_critical_memory_pressure")
+    end
+
+    it "reports a plain memory shortfall, not sustained pressure, when the rolling window is incomplete" do
+      host_metrics[:memory_free_percent] = 2.0
+      host_metrics[:memory_pressure_window] = [ 2.0 ]
+
+      decision = admission_for(project: project).recheck_admissions
+
+      expect(decision).not_to be_allowed
+      expect(decision.reason).to eq("host_memory_low")
     end
   end
 end

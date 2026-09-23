@@ -103,6 +103,30 @@ FeatureFlags.enable!(:apple_verification_workers, project: project)
     expect(decision.reason).to eq("workflow_gate_mismatch")
   end
 
+  it "rejects with an unsupported-capability classification when the profile declares no capabilities" do
+    # Capabilities are immutable after create, so the blank declaration is
+    # built into a fresh profile (and a workflow/attempt bound to it)
+    # rather than mutated on the shared one.
+    bare_profile = create(:apple_worker_profile, account: account, capabilities: {})
+    bare_workflow = create(
+      :apple_verification_workflow_revision, :approved,
+      project: project, account: account, apple_worker_profile: bare_profile
+    )
+    bare_attempt = create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: bare_workflow,
+      apple_worker_profile: bare_profile,
+      lifecycle_gate: bare_workflow.lifecycle_gate
+    )
+
+    decision = described_class.call(attempt: bare_attempt)
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("capability_unsupported")
+    expect(decision.classification).to eq("unsupported_capability")
+  end
+
   it "rejects when the rollout feature flag is disabled for the project" do
     FeatureFlags.disable!(:apple_verification_workers, project: project)
 
