@@ -24,7 +24,12 @@ module AgentRuns
 
     def call
       apple_decision = AppleVerificationAttempts::GateEnforcement.evaluate(agent_run: @agent_run, gate: "pull_request_verification")
-      return if !@agent_run.project.verification_enabled? && apple_decision.not_required?
+      # The rollout flag and project mode guard the apple paths; interactive
+      # verification only guards the interactive result. Record whenever
+      # interactive verification is enabled OR a binding apple decision must
+      # be reflected in the PR verification result.
+      # @spec APPLE-ATTEMPT-011
+      return if !@agent_run.project.verification_enabled? && !apple_decision.enforcing?
       return if @repo_path.blank?
 
       persisted = build_result(apple_decision)

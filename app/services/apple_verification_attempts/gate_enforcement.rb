@@ -19,6 +19,10 @@ module AppleVerificationAttempts
       def pending? = status == :pending
       def satisfied? = status == :satisfied
       def blocked? = status == :blocked
+
+      # True while this decision changes the verification outcome (required
+      # verification is still outstanding or has failed without a waiver).
+      def enforcing? = pending? || blocked?
     end
 
     class << self

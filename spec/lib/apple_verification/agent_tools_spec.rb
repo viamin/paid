@@ -40,6 +40,19 @@ RSpec.describe AppleVerification::AgentTools do
     )
   end
 
+  def attempt_for(revision, agent_run:, status: "queued", failure_classification: nil)
+    create(
+      :apple_verification_attempt,
+      project:,
+      agent_run:,
+      apple_verification_workflow_revision: revision,
+      apple_worker_profile: revision.apple_worker_profile,
+      lifecycle_gate: revision.lifecycle_gate,
+      status:,
+      failure_classification:
+    )
+  end
+
   describe ".verify_apple_project" do
     it "queues an advisory draft attempt at the agent_iteration gate from a workspace bundle digest" do
       revision = draft_revision
@@ -155,6 +168,48 @@ RSpec.describe AppleVerification::AgentTools do
         .to raise_error(AppleVerification::AgentTools::QuotaExceededError, /active/)
     end
 
+    it "rejects a second active attempt for the run at the database level" do
+      revision = draft_revision
+      attrs = {
+        project:,
+        agent_run:,
+        apple_verification_workflow_revision: revision,
+        apple_worker_profile: revision.apple_worker_profile,
+        lifecycle_gate: revision.lifecycle_gate
+      }
+      create(:apple_verification_attempt, attrs.merge(status: "queued"))
+
+      expect { create(:apple_verification_attempt, attrs.merge(status: "running")) }
+        .to raise_error(ActiveRecord::RecordNotUnique, /idx_apple_attempts_one_active_per_run/)
+
+      # Terminal attempts never conflict: a retry may queue after them.
+      create(:apple_verification_attempt, attrs.merge(status: "succeeded"))
+      create(:apple_verification_attempt, attrs.merge(status: "failed", failure_classification: "test_assertion"))
+      # Scheduler-owned attempts without an agent run are outside the quota.
+      create(:apple_verification_attempt, attrs.merge(status: "queued", agent_run: nil))
+      create(:apple_verification_attempt, attrs.merge(status: "running", agent_run: nil))
+    end
+
+    it "maps a concurrent duplicate insert to the quota error" do
+      revision = draft_revision
+      create(
+        :apple_verification_attempt,
+        project:,
+        agent_run:,
+        apple_verification_workflow_revision: revision,
+        apple_worker_profile: revision.apple_worker_profile,
+        lifecycle_gate: revision.lifecycle_gate,
+        status: "queued"
+      )
+      # Simulate the check-then-create race: ensure_quota passes because the
+      # concurrent attempt is not visible to it, but the partial unique index
+      # on active attempts per agent run still rejects the duplicate insert.
+      allow(described_class).to receive(:ensure_quota).and_return(nil)
+
+      expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
+        .to raise_error(AppleVerification::AgentTools::QuotaExceededError, /active/)
+    end
+
     it "raises when the run exceeds the per-run attempt quota" do
       revision = draft_revision
       AppleVerification::AgentTools::MAX_ATTEMPTS_PER_RUN.times do
@@ -218,16 +273,7 @@ RSpec.describe AppleVerification::AgentTools do
   describe ".get_apple_verification" do
     it "returns structured state matching the project UI presentation" do
       revision = approved_revision(gate: "agent_iteration")
-      attempt = create(
-        :apple_verification_attempt,
-        project:,
-        agent_run:,
-        apple_verification_workflow_revision: revision,
-        apple_worker_profile: revision.apple_worker_profile,
-        lifecycle_gate: revision.lifecycle_gate,
-        status: "failed",
-        failure_classification: "test_assertion"
-      )
+      attempt = attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion")
 
       state = described_class.get_apple_verification(project:, agent_run:)
 

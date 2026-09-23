@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_033052) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -435,6 +435,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
     t.string "status", default: "queued", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_apple_verification_attempts_on_account_id"
+    t.index ["agent_run_id"], name: "idx_apple_attempts_one_active_per_run", unique: true, where: "((agent_run_id IS NOT NULL) AND ((status)::text <> ALL ((ARRAY['succeeded'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying, 'unavailable'::character varying])::text[])))"
     t.index ["agent_run_id"], name: "index_apple_verification_attempts_on_agent_run_id"
     t.index ["apple_verification_workflow_revision_id"], name: "idx_on_apple_verification_workflow_revision_id_af6c72353a"
     t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"

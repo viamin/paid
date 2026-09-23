@@ -2111,12 +2111,25 @@ class AgentRun < ApplicationRecord
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
     with_lock do
       reload
-      if finished?
+      return false if finished?
+
+      # @spec APPLE-ATTEMPT-011
+      # @spec APPLE-ATTEMPT-013
+      decision = AppleVerificationAttempts::GateEnforcement.evaluate(agent_run: self, gate: "completion_verification")
+      if decision.pending?
+        # Pending required verification is neither a project success nor a
+        # code failure, so it must not raise: an uncaught raise crosses the
+        # Temporal activity boundary as an opaque ActivityError and the
+        # workflow's generic rescue would mark the run failed. Instead the
+        # run stays non-terminal and awaiting verification (a retry or
+        # waiver can still satisfy the gate), the withheld completion is
+        # recorded for operators, and callers take their falsy-skip paths.
+        log!("system", "Completion withheld: #{decision.reason}")
         false
       else
-        # @spec APPLE-ATTEMPT-011
-        decision = AppleVerificationAttempts::GateEnforcement.evaluate(agent_run: self, gate: "completion_verification")
-        raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationPending, decision.reason if decision.pending?
+        # A failed required verification without a waiver is a genuine
+        # project failure, so raising here is intentional: the workflow's
+        # failure path records the failure classification on the run.
         raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed, decision.reason if decision.blocked?
 
         update!(

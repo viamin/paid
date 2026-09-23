@@ -187,6 +187,11 @@ module AppleVerification
           retry_number: 0,
           status: "queued"
         )
+      rescue ActiveRecord::RecordNotUnique
+        # Backstop for the check-then-create race in ensure_quota: the partial
+        # unique index on active attempts per agent run rejects the second
+        # concurrent insert, which must surface as the same quota error.
+        raise QuotaExceededError, "an active Apple verification attempt already exists for this agent run"
       end
 
       def workflow_summaries(project)

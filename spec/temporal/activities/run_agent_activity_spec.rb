@@ -2717,6 +2717,24 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def enable_binding_apple_pr_gate(project:)
+    FeatureFlags.enable!(:apple_verification_workers, project:)
+    project.update!(apple_verification_mode: "on_demand")
+    create(
+      :apple_verification_workflow_revision,
+      :approved,
+      project: project,
+      lifecycle_gate: "pull_request_verification",
+      required_checks: %w[ios-app.tests],
+      advisory_checks: []
+    )
+    # The :approved trait grants project_admin via Rolify, which reloads the
+    # project and drops the github_token client stub installed in the shared
+    # before block; re-establish it for the prompt build below.
+    allow(project.github_token).to receive(:client)
+      .and_return(instance_double(GithubClient, issue_comments: []))
+  end
+
   def expect_preflight_failure_log(activity, agent_run_id, runner:, reason:)
     expect(activity.send(:logger)).to have_received(:warn).with(
       hash_including(
@@ -3264,6 +3282,25 @@ expect(container_service).to receive(:execute).with(
           "app_log_tail" => "booted successfully\n"
         )
         expect(File).not_to exist(File.join(repo_path, AgentRuns::VerificationPrompt::RESULT_PATH))
+      ensure
+        FileUtils.rm_rf(repo_path) if repo_path
+      end
+
+      it "records a binding Apple gate decision even when interactive verification is disabled" do
+        # @spec APPLE-ATTEMPT-011
+        repo_path = Dir.mktmpdir("run-agent-verification-apple-spec")
+        enable_binding_apple_pr_gate(project:)
+        agent_run.update!(worktree_path: repo_path)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(project.verification_enabled?).to be(false)
+        expect(agent_run.reload.verification_result).to include(
+          "status" => "not_run",
+          "reason" => "apple_verification_pending",
+          "apple_verification" => hash_including("state" => "pending", "gate" => "pull_request_verification")
+        )
       ensure
         FileUtils.rm_rf(repo_path) if repo_path
       end

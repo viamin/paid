@@ -203,11 +203,20 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     it "blocks an agent run from reporting success while required verification is pending" do
       approved_required_revision
 
-      expect { agent_run.complete! }.to raise_error(
-        AppleVerificationAttempts::GateEnforcement::RequiredVerificationPending,
-        /required Apple verification/i
-      )
+      expect(agent_run.complete!).to be_falsey
       expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "records the withheld completion instead of failing the run while verification is pending" do
+      revision = approved_required_revision
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "worker_infrastructure")
+
+      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_falsey
+
+      expect(agent_run.reload.status).to eq("running")
+      expect(agent_run.pull_request_url).to be_blank
+      log = agent_run.agent_run_logs.system.last
+      expect(log.content).to include("Completion withheld").and include("worker_infrastructure")
     end
 
     it "blocks an agent run from reporting success when required checks failed" do
@@ -302,6 +311,15 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       result = agent_run.reload.verification_result
       expect(result["status"]).to eq("not_run")
       expect(result["reason"]).to eq("apple_verification_pending")
+    end
+
+    it "records nothing when the gate is satisfied and interactive verification is disabled" do
+      project.update!(screenshot_settings: { "verification_enabled" => false })
+      revision = approved_required_revision(gate: "pull_request_verification")
+      attempt_for(revision, agent_run:, status: "succeeded")
+
+      expect(AgentRuns::VerificationResultRecorder.call(agent_run:, repo_path:)).to be_nil
+      expect(agent_run.reload.verification_result).to eq({})
     end
 
     it "records nothing when no required verification applies and interactive verification is disabled" do
