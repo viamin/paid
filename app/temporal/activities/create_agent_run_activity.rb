@@ -28,6 +28,7 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      reject_create_pr_awaiting_input!(issue, goal)
       custom_prompt = build_lid_planning_prompt(project: project, custom_prompt: custom_prompt, plan_docs: plan_docs, goal: goal)
       ensure_trusted_issue_for_non_container_goal!(issue, goal)
       user_settings = resolve_user_settings(project)
@@ -131,7 +132,7 @@ module Activities
           end
         end
 
-        issue&.update!(paid_state: "in_progress")
+        mark_issue_in_progress!(agent_run)
 
         # Select model for this run (creates a ModelSelection record for cost
         # tracking and audit). Non-fatal — runs proceed with default pricing
@@ -158,6 +159,44 @@ module Activities
     end
 
     private
+
+    # @spec TEMPORAL-ORCHESTRATION-009
+    def reject_create_pr_awaiting_input!(issue, goal)
+      return unless issue && goal == "create_pr" && clarification_pending?(issue)
+
+      raise_issue_awaiting_input!(issue, goal)
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-009
+    def mark_issue_in_progress!(agent_run)
+      issue = agent_run.issue
+      return unless issue
+      return issue.update!(paid_state: "in_progress") unless clarification_pending?(issue)
+      return issue.update!(paid_state: "in_progress") if answered_create_feature_resume?(agent_run, issue)
+      return unless agent_run.create_pr_goal?
+
+      raise_issue_awaiting_input!(issue, agent_run.goal)
+    end
+
+    def clarification_pending?(issue)
+      issue.paid_state == "needs_input" ||
+        issue.has_label?(issue.project.enhance_issue_needs_input_label_name) ||
+        issue.needs_input_questions.present?
+    end
+
+    def answered_create_feature_resume?(agent_run, issue)
+      agent_run.create_feature_goal? &&
+        !issue.has_label?(issue.project.enhance_issue_needs_input_label_name) &&
+        issue.needs_input_questions.blank?
+    end
+
+    def raise_issue_awaiting_input!(issue, goal)
+      raise Temporalio::Error::ApplicationError.new(
+        "Cannot start #{goal} for issue ##{issue.github_number} while it awaits clarifying answers",
+        type: "IssueAwaitingInput",
+        non_retryable: true
+      )
+    end
 
     def ensure_trusted_issue_for_non_container_goal!(issue, goal)
       return unless issue.present? && NON_CONTAINER_GOALS.include?(goal)
@@ -343,7 +382,7 @@ module Activities
         end
       end
 
-      agent_run.issue&.update!(paid_state: "in_progress")
+      mark_issue_in_progress!(agent_run)
       select_model(agent_run) unless agent_run.model_selection
       ensure_lid_planning_prompt!(agent_run)
       user_settings = resolve_user_settings(agent_run.project)
