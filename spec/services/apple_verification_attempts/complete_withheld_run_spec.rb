@@ -69,6 +69,15 @@ RSpec.describe AppleVerificationAttempts::CompleteWithheldRun do
     expect(agent_run.external_metadata).not_to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
   end
 
+  it "completes the withheld run when its matching attempt records success" do
+    revision = withhold_completion
+    attempt = attempt_for(revision, status: "running", commit_sha: shipped_commit)
+
+    attempt.update!(status: "succeeded", finished_at: Time.current)
+
+    expect(agent_run.reload).to have_attributes(status: "completed", result_commit_sha: shipped_commit)
+  end
+
   it "keeps the run withheld while verification is still pending" do
     revision = withhold_completion
     attempt_for(revision, status: "failed", failure_classification: "worker_infrastructure", commit_sha: shipped_commit)

@@ -124,6 +124,7 @@
   *Code:* `AppleVerificationAttempts::GateEnforcement`,
   `AgentRun#complete!` (withheld marker + payload),
   `AgentRun.awaiting_completion_verification` (stale-running exemption),
+  `AppleVerificationAttempt` (succeeded transition),
   `AppleVerificationAttempts::CompleteWithheldRun`,
   `AppleVerificationAttempts::Waive`,
   `AppleVerificationWithheldRunSweepJob`

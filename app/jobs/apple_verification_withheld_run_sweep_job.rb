@@ -3,21 +3,17 @@
 # Resolves runs whose completion was withheld at the completion-verification gate
 # (`AppleVerificationAttempts::GateEnforcement`, APPLE-ATTEMPT-013) by invoking
 # `AppleVerificationAttempts::CompleteWithheldRun` for each one. The original
-# workflow already returned success to Temporal, so without a periodic reminder
-# the withheld run stays `running` indefinitely — none of `Waive`, the
-# attempt-completion stage, or `CompleteWithheldRun`'s single caller (waiver
-# time) account for runs whose gate later relaxes via:
+# workflow already returned success to Temporal. The attempt-success and waiver
+# paths re-invoke completion synchronously, while this periodic reminder covers
+# runs whose gate later relaxes via:
 #
 #   * operator disabling the `apple_verification_workers` rollout flag
 #   * operator switching the project mode to `off`
 #   * the approved revision being superseded or disabled (so `binding_revision`
 #     later returns nil and the gate moves to `not_required`)
 #
-# Re-invoking `CompleteWithheldRun` covers each of those paths without relying
-# on the (still future) attempt-completion stage remembering to call it, so
-# the design's obligation that "attempt-completion code must do the same when
-# it records a `succeeded` attempt" remains a parallel safety net rather than
-# the only exit.
+# This fallback ensures those configuration changes do not leave a withheld run
+# `running` indefinitely when neither synchronous path fires.
 # @spec APPLE-ATTEMPT-013
 class AppleVerificationWithheldRunSweepJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
