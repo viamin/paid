@@ -15,12 +15,15 @@
   `app/javascript/controllers/project_creation_mode_controller.js`.
 
 - [x] **PROJECT-CREATION-002** - When a project is created in create mode with
-  a selected credential, an authorized owner, and a valid repository name,
-  the system SHALL create a blank GitHub repository under that owner using the
-  selected PAT or GitHub App installation and persist the matching Paid
-  project with the repository metadata returned by GitHub.
-  *Tests:* `spec/services/projects/create_blank_spec.rb`.
-  *Code:* `Projects::CreateBlank`, `GithubClient#create_repository`.
+  a selected active credential, an authorized owner, and a valid repository
+  name, the system SHALL create a blank GitHub repository under that owner
+  using the selected PAT or GitHub App installation and persist the matching
+  Paid project with the repository metadata returned by GitHub. Inactive PATs
+  SHALL be rejected before any GitHub write.
+  *Tests:* `spec/requests/projects_spec.rb`,
+  `spec/services/projects/create_blank_spec.rb`.
+  *Code:* `ProjectsController#create_blank_project`, `Projects::CreateBlank`,
+  `GithubClient#create_repository`.
 
 - [x] **PROJECT-CREATION-003** - When a blank project is created, the system
   SHALL record `creation_origin: "blank"` and `setup_status: "pending"` and
@@ -70,12 +73,12 @@
 
 - [x] **PROJECT-CREATION-009** - When the user starts chat setup for a
   pending blank project, the system SHALL create a project-scoped chat
-  session whose system prompt is the grill-me bootstrap questionnaire, mark
-  the project's `setup_status` as `in_progress`, and redirect into the
-  session.
+  session whose standard system prompt includes the grill-me bootstrap
+  questionnaire, mark the project's `setup_status` as `in_progress`, and
+  redirect into the session.
   *Tests:* `spec/requests/projects_spec.rb` ("start_setup_chat").
   *Code:* `ProjectsController#start_setup_chat`,
-  `Projects::BuildSetupPrompt`.
+  `ChatSessions::BuildSystemPrompt`, `Projects::BuildSetupPrompt`.
 
 - [x] **PROJECT-CREATION-010** - When a chat session is created for a project
   whose `setup_status` is `pending`, the generated system prompt SHALL include

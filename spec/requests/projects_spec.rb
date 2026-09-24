@@ -676,6 +676,18 @@ RSpec.describe "Projects" do
       expect(response.body).to include("name already exists")
     end
 
+    # @spec PROJECT-CREATION-002
+    it "rejects a revoked token before creating a GitHub repository" do
+      github_token.revoke!
+      client = blank_repo_client
+      stub_blank_creation_client(client)
+
+      expect { post projects_path, params: create_params }.not_to change(Project, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(client).not_to have_received(:create_repository)
+    end
+
     it "renders the form with the error when GitHub App token provisioning fails" do
       installation = create(:github_installation, account: account, account_login: "acme-org")
       params = create_params.deep_merge(project: {
@@ -764,17 +776,20 @@ RSpec.describe "Projects" do
     end
 
     describe "POST /projects/:id/start_setup_chat" do
-      it "creates a project chat session with the bootstrap prompt and marks setup in progress" do
-        runner = create_api_chat_runner
+      it "creates a project chat session with the standard prompt and setup guidance" do
+        create_api_chat_runner
 
         expect {
           post start_setup_chat_project_path(blank_project)
         }.to change(ChatSession, :count).by(1)
 
         chat_session = ChatSession.last
+        system_prompt = chat_session.messages.find_by!(role: "system").content
         expect(chat_session.project).to eq(blank_project)
-        expect(chat_session.system_prompt).to include("grill")
-        expect(chat_session.system_prompt).to include(blank_project.full_name)
+        expect(system_prompt).to include("AI assistant helping manage software projects via Paid")
+        expect(system_prompt).to include("Current Project: #{blank_project.name} (#{blank_project.full_name})")
+        expect(system_prompt).to include("grill")
+        expect(system_prompt).to include(blank_project.full_name)
         expect(blank_project.reload.setup_status).to eq("in_progress")
         expect(response).to redirect_to(chat_session_path(chat_session))
       end

@@ -118,13 +118,13 @@ class ProjectsController < ApplicationController
 
   def new
     @project = current_account.projects.build
-    @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_tokens = policy_scope(GithubToken).active
     @github_installations = policy_scope(GithubInstallation).active
     authorize @project
   end
 
   def create
-    @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_tokens = policy_scope(GithubToken).active
     @github_installations = policy_scope(GithubInstallation).active
 
     # @spec PROJECT-CREATION-002
@@ -321,8 +321,7 @@ class ProjectsController < ApplicationController
       account: current_account,
       user: current_user,
       project_id: @project.id,
-      title: "Set up #{@project.name}",
-      system_prompt: Projects::BuildSetupPrompt.call(project: @project)
+      title: "Set up #{@project.name}"
     )
     @project.setup_started!
 
@@ -961,7 +960,7 @@ class ProjectsController < ApplicationController
 
   def selected_blank_github_token
     id = params.dig(:project, :github_token_id).presence
-    current_account.github_tokens.find_by(id: id) if id
+    current_account.github_tokens.active.find_by(id: id) if id
   end
 
   def selected_blank_github_installation

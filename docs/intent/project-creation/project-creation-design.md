@@ -44,7 +44,7 @@ Two columns on `projects`:
 `ProjectsController#create` branches on `params[:creation_mode]`. The
 `"create"` branch delegates to `Projects::CreateBlank`:
 
-1. Resolve the GitHub credential — a PAT (`GithubToken#client`) or a
+1. Resolve an active GitHub credential — a PAT (`GithubToken#client`) or a
    paid-agents App installation (an unscoped provisioning token via
    `Github::AppInstallation.provisioning_token_for`, wrapped in a
    `GithubClient`). The latter is necessary because GitHub cannot scope a
@@ -78,12 +78,12 @@ the project page listing the three channels, with chat first (default
 recommendation):
 
 - **Chat** — `POST /projects/:id/start_setup_chat` creates a project-scoped
-  `ChatSession` whose system prompt is the grill-me bootstrap questionnaire
-  (`Projects::BuildSetupPrompt`), marks the project `in_progress`, and drops
-  the user into the session. A chat created against a `pending` project by any
-  other path (e.g. the new-chat modal) gets the same bootstrap section
-  appended by `ChatSessions::BuildSystemPrompt`, so a fresh project can also
-  be set up from a new chat.
+  `ChatSession` whose standard system prompt includes the grill-me bootstrap
+  questionnaire (`Projects::BuildSetupPrompt`), marks the project
+  `in_progress`, and drops the user into the session. A chat created against a
+  `pending` project by any other path (e.g. the new-chat modal) gets the same
+  bootstrap section appended by `ChatSessions::BuildSystemPrompt`, so a fresh
+  project can also be set up from a new chat.
 - **Questionnaire** — links to the existing knowledge context-intake wizard,
   which is Paid's grill-me questionnaire infrastructure.
 - **GitHub issue** — links to the bootstrap issue created in step 6; the
