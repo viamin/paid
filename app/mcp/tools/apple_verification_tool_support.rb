@@ -22,7 +22,9 @@ module Tools
     end
 
     def agent_run_for(project_id, agent_run_id)
-      project_for(project_id).agent_runs.find(agent_run_id)
+      project_for(project_id).agent_runs.where(initiating_user: user).find(agent_run_id)
+    rescue ActiveRecord::RecordNotFound
+      raise Pundit::NotAuthorizedError, "Agent run not found or not accessible"
     end
 
     def with_agent_tool_errors

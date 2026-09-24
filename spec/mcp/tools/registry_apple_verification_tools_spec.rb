@@ -8,7 +8,7 @@ RSpec.describe Tools::Registry do
   let(:user) { create(:user, :member, account:) }
   let(:session) { create(:chat_session, account:, created_by: user) }
   let(:project) { create(:project, account:, apple_verification_mode: "on_demand") }
-  let(:agent_run) { create(:agent_run, :running, project:) }
+  let(:agent_run) { create(:agent_run, :running, project:, initiating_user: user) }
   let(:bundle_digest) { "sha256:#{'e' * 64}" }
 
   before do
@@ -82,6 +82,16 @@ RSpec.describe Tools::Registry do
       expect {
         outsider_tool.call(project_id: project.id, agent_run_id: agent_run.id, bundle_digest: bundle_digest, confirmed: true)
       }.to raise_error(Pundit::NotAuthorizedError)
+    end
+
+    it "denies a run owned by another agent" do
+      other_user = create(:user, :member, account:)
+      other_run = create(:agent_run, :running, project:, initiating_user: other_user)
+      draft_revision
+
+      expect {
+        tool.call(project_id: project.id, agent_run_id: other_run.id, bundle_digest: bundle_digest, confirmed: true)
+      }.to raise_error(Pundit::NotAuthorizedError, /Agent run not found or not accessible/)
     end
 
     it "reports the capability as unauthorized when the rollout flag is disabled" do
