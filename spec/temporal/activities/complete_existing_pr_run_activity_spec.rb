@@ -202,18 +202,22 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
     end
 
     # @spec APPLE-ATTEMPT-013
-    it "records the pushed PR trail while completion waits for required verification" do
+    it "keeps the issue pending while completion waits for required verification" do
       enable_required_completion_verification
       enable_summary_comments
+      issue.update!(pr_review_phase: "draft", draft_review_count: 2)
       agent_run.update!(tdd_phase: "test_writing")
+      agent_run.update!(count_toward_draft_review_round: true, expected_draft_review_count: 2)
       allow(PullRequests::ReviewSurface).to receive(:call).and_return("Updated PR body")
 
-      expect(github_client).to receive(:add_comment).once
+      expect(github_client).not_to receive(:add_comment)
 
-      activity.execute(agent_run_id: agent_run.id)
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .not_to have_enqueued_job(CaptureAgentRunSessionSummaryJob)
 
       expect(agent_run.reload.status).to eq("running")
-      expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.reload.paid_state).not_to eq("completed")
+      expect(issue.reload.draft_review_count).to eq(2)
       expect(github_client).to have_received(:update_pull_request).with(project.full_name, 42, body: "Updated PR body")
     end
 

@@ -64,6 +64,14 @@ module Activities
           raise
         end
 
+        # A pending required verification leaves the run active. Refresh its
+        # review surface, but do not perform any success-only post-processing.
+        # @spec APPLE-ATTEMPT-013
+        unless completed
+          refresh_pull_request_body(client, project, pr, agent_run)
+          return result(agent_run.reload)
+        end
+
         record_draft_review_round_if_needed(agent_run)
         capture_session_summary_if_needed(agent_run)
         refresh_pull_request_body(client, project, pr, agent_run)
@@ -83,8 +91,6 @@ module Activities
         )
 
         ProcessRunQueueJob.perform_later
-
-        return result(agent_run.reload) unless completed
 
         result(agent_run)
       end
