@@ -190,6 +190,8 @@ module Activities
         end
 
         user_settings = resolve_user_settings(agent_run)
+        @model_recoveries = {}
+        @resolved_tier_model_cache = {}
         @issue_runner_retry_cap_exhausted = false
         @issue_runner_retry_capped_keys = nil
         runners = build_runner_order(agent_run, user_settings)
@@ -277,6 +279,8 @@ module Activities
                 tier: requested_tier,
                 error: resolved_model.error
               )
+              agent_run.record_runner_attempt(attempt_label, success: false,
+                error_type: "configuration_error", error_message: resolved_model.error)
               index += 1
               next
             end
@@ -318,6 +322,12 @@ module Activities
             attempt_finished = false
             last_attempted_label = attempt_label
             attempt_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
+            resolved_run_info = resolved_model_info_for(resolved_model)
+            entry = resolved_runner_for(runner_candidate, user_settings.user)
+            if entry.persisted? && Runners::VerifiedModels.new(entry).rejected?(resolved_model&.model_id)
+              raise RunnerModelRejectedError.new("Previously rejected model #{resolved_model.model_id}", model_id: resolved_model.model_id)
+            end
             runner_result = run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             pre_agent_sha = runner_result.fetch(:pre_agent_sha)
@@ -613,6 +623,10 @@ module Activities
               duration_seconds: attempt_duration,
               **resolved_run_info
             )
+            if recover_rejected_model(agent_run, runner_candidate, user_settings,
+              model_id: e.model_id || resolved_model&.model_id)
+              retry
+            end
           rescue RunnerExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -792,7 +806,14 @@ module Activities
     end
 
     class RunnerExecutionError < StandardError; end
-    class RunnerModelRejectedError < RunnerExecutionError; end
+    class RunnerModelRejectedError < RunnerExecutionError
+      attr_reader :model_id
+
+      def initialize(message, model_id: nil)
+        @model_id = model_id
+        super(message)
+      end
+    end
     class PreflightTimeoutError < RunnerExecutionError; end
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
@@ -900,6 +921,10 @@ module Activities
       configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
+      if resolved_model&.failure? && !runner_entry&.free_model_policy? && !direct_outbound_runner?(runner_candidate, user)
+        raise RunnerExecutionError, resolved_model.error
+      end
+
       model_id = resolved_model&.model_id
       if runner_entry&.free_model_policy?
         # Fail loudly rather than fall through to an unpinned opencode
@@ -1014,8 +1039,14 @@ module Activities
       resolved = Runners::ResolveTierModel.call(
         runner: resolution_runner,
         tier: tier,
-        user: user
+        user: user,
+        project: agent_run&.project,
+        goal: agent_run&.goal
       )
+      if resolved.error_type == :policy && agent_run && requested_tier_for(agent_run).blank?
+        raise Temporalio::Error::ApplicationError.new(resolved.error,
+          type: "ModelSelectionPolicyViolation", non_retryable: true)
+      end
       validate_recovery_model!(resolved, agent_run) if agent_run && requested_tier_for(agent_run).blank?
       @resolved_tier_model_cache[cache_key] = resolved
     end
@@ -1031,7 +1062,7 @@ module Activities
       required = preferences["required_model_id"]
       provider_blocked = project.llm_provider_routing_restricted? &&
         (model.nil? || project.llm_provider_blocked?(model.provider))
-      reason = if model && !model.active?
+      reason = if model && !model.active? && resolved.source != "verified_recovery"
         "configured model is inactive"
       elsif excluded || (required.present? && required != resolved.model_id) || provider_blocked
         "configured model violates project model policy"
@@ -2178,11 +2209,36 @@ module Activities
         raise_credit_exhausted!(agent_run: agent_run, runner: runner, sanitized_output: sanitized_output)
       end
 
-      rejection = codex_model_rejection(runner, runner_candidate, user, sanitized_output)
+      rejection = codex_model_rejection(runner, runner_candidate, user, stdout: stdout, stderr: stderr)
       return unless rejection
 
-      raise RunnerModelRejectedError,
-        "Runner model rejected by #{runner}: #{rejection.fetch(:model, 'configured model')}"
+      raise RunnerModelRejectedError.new(
+        "Runner model rejected by #{runner}: #{rejection.fetch(:model, 'configured model')}",
+        model_id: rejection[:model]
+      )
+    end
+
+    # @spec RUNNER-FALLBACK-007, RUNNER-FALLBACK-009
+    def recover_rejected_model(agent_run, runner_candidate, user_settings, model_id:)
+      runner = resolved_runner_for(runner_candidate, user_settings.user)
+      return false unless runner.persisted? && model_id.present?
+
+      @model_recoveries ||= {}
+      seconds = resolve_max_execution_seconds(agent_run, user_settings)
+      recovery = @model_recoveries[runner.id] ||= Runners::ModelRecovery.new(
+        agent_run: agent_run, runner: runner,
+        tier: requested_tier_for(agent_run) || "mid",
+        deadline: seconds && (agent_run.started_at || Time.current) + seconds
+      )
+      result = with_periodic_heartbeat("model_recovery", runner.runner_key, agent_run: agent_run) do
+        recovery.call(rejected_model_id: model_id)
+      end
+      return false unless result.success?
+
+      @resolved_tier_model_cache = {}
+      @harness_plan_cache = {}
+      @runner_entry_cache = {}
+      true
     end
 
     def claude_session_limit_error?(runner, stdout, stderr)
@@ -2194,11 +2250,11 @@ module Activities
       end
     end
 
-    def codex_model_rejection(runner, runner_candidate, user, output)
+    def codex_model_rejection(runner, runner_candidate, user, stdout:, stderr:)
       return unless RunnerSupport.runner_key_for_agent_type(runner) == "codex"
 
-      AgentHarness::Providers::Codex.classify_model_rejection(
-        output,
+      AgentHarness::Providers::Codex.classify_model_rejection_from_result(
+        stdout: stdout, stderr: stderr,
         configured_model: runner_runtime_model(runner_candidate, user)
       )
     end

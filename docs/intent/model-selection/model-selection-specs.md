@@ -28,12 +28,10 @@
 
 - [x] **MODEL-SELECTION-005** — When Codex subscription auth is used, the
   system SHALL filter known ChatGPT-Codex-incompatible catalog models before
-  default tier selection so queued runs do not dispatch a model the Codex CLI
-  rejects at preflight. GPT-5.6 Luna, Terra, and Sol are api_key-only under
-  the current agent-harness Codex subscription contract, so the snapshot marks
-them `active: false` to clear the catalog contract drift detector (RDR-040,
-`#3965`); their tier labels (low/mid/high respectively) still back-fill from
-  `KNOWN_MODELS` so the api_key auth path can rank them once the runner
-  contract catches up. Subscription runs SHALL participate in normal model
-  selection and persist the selected tier.
-  *Code:* `Runners::ModelCompatibility`, `Runners::DefaultTierModelIds`.
+  default tier selection. GPT-5.6 Luna, Terra, and Sol SHALL remain active
+  subscription-compatible candidates with low/mid/high tier labels. A
+  runner-local replacement verified under RUNNER-FALLBACK-008 SHALL override
+  stale catalog/static compatibility for that runner/auth context, subject to
+  project policy and operator disables. Subscription runs SHALL participate in
+  normal model selection and persist the selected tier.
+  *Code:* `Runners::ModelCompatibility`, `Runners::DefaultTierModelIds`, `Models::Select`.

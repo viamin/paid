@@ -41,6 +41,40 @@ Subscription runner health tests use the explicit mid-tier model when configured
 with the same compatibility resolution and credential isolation. Invalid model
 configuration is surfaced instead of falling back to a different CLI default.
 
+## Durable Model Compatibility Recovery
+
+An explicit provider rejection of a model for the configured authentication
+starts bounded recovery on the same runner, with the same credentials. The
+harness owns rejection classification and live model discovery inside the
+execution environment. Static catalog compatibility is advisory when the
+provider supports live verification; it must not prevent verification of a
+configured subscription model. Actual successful preflight is the evidence
+required to remember a replacement.
+
+Paid filters discovered candidates through project required-model, exclusion,
+provider-routing, and operator model-disable policies. It prefers suitable
+same-tier alternatives, then permits another tier if necessary. Selection uses
+the existing model selector with an explicitly bounded candidate pool; provider
+recommendation supplies the fallback when selection cannot run. Discovery alone
+does not establish compatibility. At most three replacement preflights per
+runner per run are allowed, within the run's execution time budget. A further
+failure falls through to normal runner fallback, with a visible diagnostic.
+
+Verified replacements and actual rejections are persisted for the runner and
+its auth/configuration identity, independently of catalog refreshes and process
+lifetime. Replacements override the rejected tier mapping for future runs,
+including when a replacement crosses tiers. They have no time-based expiry and
+are reconsidered after a new model rejection or an explicit configuration/auth
+change. Project restrictions are checked again on every use. Concurrent recovery
+must not overwrite a newer configuration or a newer recovery decision.
+
+Recovery never changes authentication mode or payment mode, reactivates an
+operator-disabled model, or treats expired authentication, rate limits, transport
+errors, or agent prose as a model rejection. An unsuccessful preflight cannot
+become the durable selected model. Run attempts and logs identify rejected and
+verified models and any tier change. A rejection during execution may retry
+with the verified replacement; completed runs are never replayed automatically.
+
 Each attempt can capture:
 
 - the attempted runner,
