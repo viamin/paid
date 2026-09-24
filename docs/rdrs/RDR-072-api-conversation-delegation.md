@@ -70,6 +70,21 @@ the library manages supporting storage. The specific tables and integration
 contract remain implementation-design work. Retaining Paid's loop over a
 normalized transport is still an acceptable outcome if delegation adds complexity.
 
+### Provider Coverage Decision
+
+Adopt incrementally by operation and provider as capability and behavior tests
+pass. Complete provider parity is not a prerequisite for the first migration.
+Preserve working execution paths for providers or operations not yet supported,
+including CLI/subscription callers. Track each remaining migration or justified
+retained path explicitly in the implementation issues opened after approval.
+
+Unsupported capability must be visible to the caller. Keep capability-based
+routing explicit; do not silently switch credentials or authentication modes,
+or disguise a failed migrated request by replaying it through the old path.
+Remove superseded code within each migrated scope once its replacement is
+verified. Temporary coexistence across scopes is allowed; duplicate permanent
+implementations of the same supported path are not the target.
+
 ### Ownership
 
 | Responsibility | Owner |
@@ -124,6 +139,7 @@ change implemented EARS status or supersede RDR-028.
 | Delegate transport and reusable loop mechanics | Preferred target if approval, persistence and retry contracts can be demonstrated. |
 | Require custom persistence for all supporting state | Rejected as a blanket constraint; adapters may recreate the bookkeeping being removed. |
 | Adopt RubyLLM-managed supporting tables selectively | Allowed where simplification is demonstrated and tenant isolation, auditability and migration requirements are met; Rails remains optional for harness consumers. |
+| Require complete provider parity before any adoption | Rejected; migrate verified operation/provider scopes incrementally and preserve other working paths with explicit follow-up tracking. |
 
 ## Non-Goals
 
@@ -142,8 +158,10 @@ change implemented EARS status or supersede RDR-028.
 issues in agent-harness and Paid after the RDR is approved.
 
 Embedding, schema and transport adoption should ship as complete, tested
-replacements in their scoped paths. Avoid permanent dual implementations and
-additional retry layers.
+replacements within each migrated operation/provider scope. Other supported
+paths can retain their current implementation while their migration is tracked.
+Avoid permanent duplicate implementations and additional retry layers within
+a migrated scope.
 
 Loop adoption is blocked on a finalized, merged decision specifying persistence
 and rollout. If staged runtime exposure is necessary, update this section
@@ -177,8 +195,9 @@ requires an explicit recommendation and issue-scope update.
    contract preserves stable tool IDs and resumption while keeping the harness
    usable without Rails? The permission to use library-managed persistence is
    resolved above; the technical mapping still requires investigation.
-2. Which providers/custom endpoints support each operation, and how are
-   unsupported capabilities surfaced without silent fallback?
+2. Establish the operation/provider/custom-endpoint capability matrix and
+   explicit unsupported-capability outcomes. Incremental adoption with preserved
+   working paths is decided above; the actual coverage requires verification.
 3. What attempt identities and retry ownership prevent duplicate usage and
    tool replay across restarts and Paid-controlled runner switches?
 4. Does loop delegation remove enough complexity to justify migration beyond
