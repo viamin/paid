@@ -152,6 +152,33 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Current Project: my-app (acme/my-app)")
       end
 
+      # @spec PROJECT-CREATION-010
+      describe "blank project setup guidance" do
+        it "includes the bootstrap questionnaire when the project setup is pending" do
+          project.update!(creation_origin: "blank", setup_status: "pending")
+
+          expect(prompt).to include("Project Setup Needed")
+          expect(prompt).to include("grill me")
+          expect(prompt).to include("acme/my-app")
+        end
+
+        it "includes the bootstrap questionnaire while setup is in progress" do
+          project.update!(creation_origin: "blank", setup_status: "in_progress")
+
+          expect(prompt).to include("Project Setup Needed")
+        end
+
+        it "omits the bootstrap section once setup is completed" do
+          project.update!(creation_origin: "blank", setup_status: "completed")
+
+          expect(prompt).not_to include("Project Setup Needed")
+        end
+
+        it "omits the bootstrap section for connected projects" do
+          expect(prompt).not_to include("Project Setup Needed")
+        end
+      end
+
       context "with recent issues" do
         before do
           create(:issue, project: project, github_number: 42, title: "Fix login bug",
