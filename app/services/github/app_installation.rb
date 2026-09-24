@@ -19,8 +19,23 @@ module Github
       end
     end
 
+    # Creates an installation token with access to every repository granted to
+    # the installation. This is required while provisioning because the target
+    # repository does not exist yet and therefore cannot be named in a scoped
+    # token request.
+    # @spec PROJECT-CREATION-002
+    def self.provisioning_token_for(installation_id:)
+      Rails.cache.fetch(provisioning_cache_key(installation_id), expires_in: TOKEN_TTL) do
+        new(installation_id: installation_id, repo_full_name: nil).mint
+      end
+    end
+
     def self.cache_key(installation_id, repo_full_name)
       "github_app_installation_token:#{installation_id}:#{repo_full_name}"
+    end
+
+    def self.provisioning_cache_key(installation_id)
+      "github_app_installation_provisioning_token:#{installation_id}"
     end
 
     # Revokes the cached installation token at GitHub (DELETE /installation/token,
@@ -86,7 +101,7 @@ module Github
         request.headers["Accept"] = "application/vnd.github+json"
         request.headers["Authorization"] = "Bearer #{jwt}"
         request.headers["Content-Type"] = "application/json"
-        request.body = { repositories: [ repo_full_name.split("/").last ] }.to_json
+        request.body = token_request_body
       end
 
       parse_response(response)
@@ -99,6 +114,12 @@ module Github
         faraday.options.timeout = 30
         faraday.options.open_timeout = 10
       end
+    end
+
+    def token_request_body
+      return {}.to_json if repo_full_name.blank?
+
+      { repositories: [ repo_full_name.split("/").last ] }.to_json
     end
 
     def parse_response(response)

@@ -14,7 +14,7 @@
     <div class="px-4 py-5 sm:p-6">
       <h1 class="text-xl font-semibold text-gray-900">Add Project</h1>
       <p class="mt-1 text-sm text-gray-500">
-        Connect a GitHub repository to start using AI agents for development.
+        Connect an existing GitHub repository, or create a new project from a blank repository.
       </p>
 
       <% if @github_tokens.empty? && @github_installations.empty? %>
@@ -49,16 +49,18 @@
             <div class="ml-3">
               <h3 class="text-sm font-medium text-blue-800">Repository Access</h3>
               <div class="mt-2 text-sm text-blue-700">
-                <p>The selected GitHub token must have access to the repository you want to add. Make sure the token has the required permissions for reading issues, creating branches, and opening pull requests.</p>
+                <p>The selected GitHub token must have access to the repository you want to add. Make sure the token has the required permissions for reading issues, creating branches, and opening pull requests. To create a new repository, the token also needs repository-creation permissions for the chosen user or organization.</p>
               </div>
             </div>
           </div>
         </div>
 
+        <% creation_mode = "create" if params[:creation_mode] == "create" || (@project.respond_to?(:blank_origin?) && @project&.blank_origin?) %>
         <%= form_with model: @project, url: projects_path, class: "mt-6",
             data: {
-              controller: "repository-selector",
-              repository_selector_selected_repository_value: [ @project.owner, @project.repo ].compact.join("/")
+              controller: "repository-selector project-creation-mode",
+              repository_selector_selected_repository_value: [ @project.owner, @project.repo ].compact.join("/"),
+              project_creation_mode_selected_value: creation_mode
             } do |form| %>
           <% if @project.errors.any? %>
             <div class="mb-6 rounded-md bg-red-50 p-4">
@@ -84,15 +86,21 @@
             </div>
           <% end %>
 
+          <input type="hidden" name="creation_mode" value="<%= creation_mode %>" data-project-creation-mode-target="modeField">
+
            <div class="space-y-6">
             <div>
               <%= form.label :github_installation_id, "GitHub App Installation", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2">
                 <%= form.select :github_installation_id,
-                    options_from_collection_for_select(@github_installations, :id, :display_name, @project.github_installation_id),
-                    { prompt: "Select an installation..." },
+                    @github_installations.map { |installation| [installation.display_name, installation.id, { "data-account-login" => installation.account_login }] },
+                    { prompt: "Select an installation...", selected: @project.github_installation_id },
                     class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
-                    data: { repository_selector_target: "installationSelect", action: "change->repository-selector#installationChanged" } %>
+                    data: {
+                      repository_selector_target: "installationSelect",
+                      project_creation_mode_target: "installationSelect",
+                      action: "change->repository-selector#installationChanged change->project-creation-mode#credentialChanged"
+                    } %>
               </div>
               <p class="mt-1 text-xs text-gray-500">Or select a GitHub token below instead.</p>
             </div>
@@ -104,35 +112,106 @@
                     options_from_collection_for_select(@github_tokens, :id, :name, @project.github_token_id),
                     { prompt: "Select a token..." },
                     class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
-                    data: { repository_selector_target: "tokenSelect", action: "change->repository-selector#tokenChanged" } %>
+                    data: {
+                      repository_selector_target: "tokenSelect",
+                      project_creation_mode_target: "tokenSelect",
+                      action: "change->repository-selector#tokenChanged change->project-creation-mode#credentialChanged"
+                    } %>
               </div>
               <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository. Use either a token or an installation, not both.</p>
             </div>
 
             <div>
               <label class="block text-sm font-medium leading-6 text-gray-900">Repository</label>
-              <div class="mt-2 relative">
-                <select name="repository_selection"
-                        class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 disabled:bg-gray-50 disabled:text-gray-500"
-                        data-repository-selector-target="repoSelect"
-                        data-action="change->repository-selector#repoSelected"
-                        disabled>
-                  <option value="">Select a token or installation first...</option>
-                </select>
-                <div data-repository-selector-target="loading" class="hidden absolute right-2 top-2">
-                  <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+              <div class="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-gray-50 p-1 ring-1 ring-inset ring-gray-200" role="tablist">
+                <button type="button" role="tab"
+                        class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                        data-project-creation-mode-target="connectTab"
+                        data-action="project-creation-mode#useConnectMode">
+                  Connect existing repository
+                </button>
+                <button type="button" role="tab"
+                        class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                        data-project-creation-mode-target="createTab"
+                        data-action="project-creation-mode#useCreateMode">
+                  Create new repository
+                </button>
+              </div>
+
+              <div class="mt-4" data-project-creation-mode-target="connectPane">
+                <div class="relative">
+                  <select name="repository_selection"
+                          class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 disabled:bg-gray-50 disabled:text-gray-500"
+                          data-repository-selector-target="repoSelect"
+                          data-action="change->repository-selector#repoSelected"
+                          disabled>
+                    <option value="">Select a token or installation first...</option>
+                  </select>
+                  <div data-repository-selector-target="loading" class="hidden absolute right-2 top-2">
+                    <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </div>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">Repositories already added to this account are filtered out.</p>
+              </div>
+
+              <div class="mt-4 space-y-4 hidden" data-project-creation-mode-target="createPane">
+                <div>
+                  <label for="owner_selection" class="block text-sm font-medium leading-6 text-gray-900">Owner</label>
+                  <div class="mt-2">
+                    <select id="owner_selection" name="owner_selection"
+                            class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 disabled:bg-gray-50 disabled:text-gray-500"
+                            data-project-creation-mode-target="ownerSelect"
+                            data-action="change->project-creation-mode#ownerSelected"
+                            disabled>
+                      <option value="">Select a token or installation first...</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">The user or organization the new repository will belong to. Loaded from the selected credential.</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label for="repository_name" class="block text-sm font-medium leading-6 text-gray-900">Repository name</label>
+                  <div class="mt-2">
+                    <input type="text" id="repository_name" name="repository_name"
+                           autocomplete="off"
+                           class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                           placeholder="e.g., my-new-project"
+                           data-project-creation-mode-target="repoName"
+                           data-action="input->project-creation-mode#repoNameChanged">
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">Letters, numbers, periods, hyphens, and underscores. A blank repository (README only) will be created on GitHub.</p>
+                </div>
+
+                <div>
+                  <label for="project_description" class="block text-sm font-medium leading-6 text-gray-900">Description (optional)</label>
+                  <div class="mt-2">
+                    <input type="text" id="project_description" name="project[description]"
+                           autocomplete="off"
+                           class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                           placeholder="Short description for the GitHub repository">
+                  </div>
+                </div>
+
+                <div>
+                  <label for="project_visibility" class="block text-sm font-medium leading-6 text-gray-900">Visibility</label>
+                  <div class="mt-2">
+                    <select id="project_visibility" name="project[visibility]"
+                            class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                      <option value="private">Private</option>
+                      <option value="public">Public</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-              <p class="mt-1 text-xs text-gray-500">Repositories already added to this account are filtered out.</p>
-
-              <%= form.hidden_field :owner, data: { repository_selector_target: "owner" } %>
-              <%= form.hidden_field :repo, data: { repository_selector_target: "repo" } %>
-              <input type="hidden" name="project[github_id]" data-repository-selector-target="githubId">
-              <input type="hidden" name="project[default_branch]" data-repository-selector-target="defaultBranch">
             </div>
+
+            <%= form.hidden_field :owner, data: { repository_selector_target: "owner", project_creation_mode_target: "ownerField" } %>
+            <%= form.hidden_field :repo, data: { repository_selector_target: "repo", project_creation_mode_target: "repoField" } %>
+            <input type="hidden" name="project[github_id]" data-repository-selector-target="githubId" data-project-creation-mode-target="githubIdField">
+            <input type="hidden" name="project[default_branch]" data-repository-selector-target="defaultBranch" data-project-creation-mode-target="defaultBranchField">
 
             <div>
               <%= form.label :name, "Display Name (optional)", class: "block text-sm font-medium leading-6 text-gray-900" %>
@@ -145,7 +224,8 @@
 
           <div class="mt-6 flex items-center justify-end gap-x-4">
             <%= link_to "Cancel", projects_path, class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>
-            <%= form.submit "Add Project", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
+            <%= form.submit "Add Project", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer",
+                data: { project_creation_mode_target: "submitButton" } %>
           </div>
         <% end %>
       <% end %>
