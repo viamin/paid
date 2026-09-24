@@ -125,18 +125,22 @@ module Projects
     end
 
     def organization_owner
-      return nil if @github_installation
+      return nil if installation_user?
+      return resolved_owner if @github_installation
 
       owner = resolved_owner
-      owner == client.authenticated_login.to_s.downcase ? nil : owner
+      owner.casecmp?(client.authenticated_login.to_s) ? nil : owner
+    end
+
+    def installation_user?
+      @github_installation&.target_type.to_s.casecmp?("User")
     end
 
     def client
       @client ||= if @github_installation
         GithubClient.new(
-          token: Github::AppInstallation.token_for(
-            installation_id: @github_installation.github_installation_id,
-            repo_full_name: "#{resolved_owner}/#{@repo_name}"
+          token: Github::AppInstallation.provisioning_token_for(
+            installation_id: @github_installation.github_installation_id
           ),
           health_endpoint: GithubHealthState.endpoint_for_github_installation(
             @github_installation.github_installation_id

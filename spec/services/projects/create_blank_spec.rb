@@ -219,8 +219,8 @@ RSpec.describe Projects::CreateBlank do
     let(:installation) { create(:github_installation, account: account, account_login: "acme-org") }
 
     before do
-      allow(Github::AppInstallation).to receive(:token_for)
-        .with(installation_id: installation.github_installation_id, repo_full_name: "acme-org/fresh-start")
+      allow(Github::AppInstallation).to receive(:provisioning_token_for)
+        .with(installation_id: installation.github_installation_id)
         .and_return("ghs_installtoken_#{SecureRandom.alphanumeric(30)}")
       allow(GithubClient).to receive(:new).and_return(client)
     end
@@ -233,9 +233,21 @@ RSpec.describe Projects::CreateBlank do
       ).project
 
       expect(client).to have_received(:create_repository)
-        .with("fresh-start", organization: nil, private: true, description: nil)
+        .with("fresh-start", organization: "acme-org", private: true, description: nil)
       expect(project.github_installation).to eq(installation)
       expect(project.owner).to eq("acme-org")
+    end
+
+    it "creates under the authenticated user for a user installation" do
+      installation.update!(target_type: "User")
+      allow(client).to receive(:create_repository).and_return(repo_response(owner_login: "acme-org"))
+
+      described_class.call(
+        account: account, user: user, github_installation: installation, repo_name: "fresh-start"
+      )
+
+      expect(client).to have_received(:create_repository)
+        .with("fresh-start", organization: nil, private: true, description: nil)
     end
 
     it "rejects an owner that differs from the installation account" do

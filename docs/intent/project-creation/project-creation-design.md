@@ -45,17 +45,20 @@ Two columns on `projects`:
 `"create"` branch delegates to `Projects::CreateBlank`:
 
 1. Resolve the GitHub credential — a PAT (`GithubToken#client`) or a
-   paid-agents App installation (installation token via
-   `Github::AppInstallation.token_for`, wrapped in a `GithubClient`).
+   paid-agents App installation (an unscoped provisioning token via
+   `Github::AppInstallation.provisioning_token_for`, wrapped in a
+   `GithubClient`). The latter is necessary because GitHub cannot scope a
+   token to a repository until that repository exists.
 2. Validate the target owner against the credential: for a PAT the owner must
    be the authenticated login or an organization the token's user belongs to;
    for an installation the owner must be the installation's `account_login`.
 3. Validate the repository name against GitHub's naming rules and reject
    owner/repo pairs that already exist as Paid projects in the account.
-4. Create the repository through `GithubClient#create_repository`. The repo is
-   created with `auto_init: true` so a default branch ref exists — Paid's
-   worktree and branch machinery requires a base commit; a commit-less
-   repository cannot host a run.
+4. Create the repository through `GithubClient#create_repository`. Organization
+   installations pass their authorized installation owner; user installations
+   create under the authenticated user. The repo is created with `auto_init:
+   true` so a default branch ref exists — Paid's worktree and branch machinery
+   requires a base commit; a commit-less repository cannot host a run.
 5. Persist the `Project` with metadata from the creation response
    (`github_id`, `default_branch`, `primary_language`), `creation_origin:
    "blank"`, `setup_status: "pending"`, then apply tenant project defaults
