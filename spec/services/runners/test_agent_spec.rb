@@ -46,12 +46,12 @@ RSpec.describe Runners::TestAgent do
       expect(runtime.unset_env).to include("OPENAI_API_KEY")
     end
 
-    it "surfaces invalid configuration instead of testing the CLI default" do
+    it "passes an auth-gated model to live verification rather than testing the CLI default" do
       codex_runner.update_columns(tier_model_ids: { "mid" => "gpt-5.6" })
 
-      expect do
-        described_class.new(runner: codex_runner).send(:container_provider_runtime)
-      end.to raise_error(Runners::TestAgent::InvalidModelError, /not compatible/)
+      runtime = described_class.new(runner: codex_runner).send(:container_provider_runtime)
+      expect(runtime.model).to eq("gpt-5.6")
+      expect(runtime.unset_env).to include("OPENAI_API_KEY")
     end
 
     it "preserves the CLI default when no mid-tier model is configured" do
@@ -489,6 +489,36 @@ RSpec.describe Runners::TestAgent do
           executor: an_instance_of(Containers::HarnessExecutor),
           provider_runtime: an_instance_of(AgentHarness::ProviderRuntime)
         )
+      end
+    end
+
+    context "when a subscription Codex smoke reply quotes a model rejection" do
+      let!(:configured_model) { create(:llm_model, :openai, model_id: "gpt-5.6", tier: "mid") }
+      let(:runner_record) do
+        create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
+          enabled_for_agent_runs: false, enabled_for_fallback: false)
+      end
+      let(:quoted_rejection) do
+        "I cannot use it: The 'gpt-5.6' model is not supported when using Codex with a ChatGPT account."
+      end
+
+      before do
+        provider.update_columns(tier_model_ids: { "mid" => configured_model.model_id })
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "codex")
+        stub_container_smoke_test(
+          name: :codex, status: "error", message: quoted_rejection, latency_ms: 30,
+          error_category: nil, check: :smoke_test
+        )
+      end
+
+      # @spec RUNNER-FALLBACK-009
+      it "does not treat agent prose as durable recovery evidence" do
+        result = described_class.call(runner: provider)
+
+        expect(result).not_to be_success
+        expect(result.message).to eq(quoted_rejection)
+        expect(Runners::VerifiedModels.new(provider.reload).model_for("mid", project: project)).to be_nil
       end
     end
 

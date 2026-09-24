@@ -484,6 +484,14 @@ class Project < ApplicationRecord
     label_mappings[stage.to_s]
   end
 
+  def needs_input_labels # @spec GITHUB-SYNC-012 AUTO-PICK-QUEUE-007
+    [
+      enhance_issue_needs_input_label_name,
+      label_for_stage("needs_input"),
+      Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
+    ].compact.uniq
+  end
+
   def external_issue_tracker_link(tracker_configuration)
     return if tracker_configuration.blank? || tracker_configuration.tracker_type == "github_issues"
 

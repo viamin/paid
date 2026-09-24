@@ -847,14 +847,12 @@ RSpec.describe Activities::RunAgentActivity do
       resolved = activity.send(:resolve_tier_model_for, "codex", agent_run, user)
       expect(resolved).to be_failure
 
-      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
-
-      expect(command[2]).not_to include("--model")
-      expect(command[2]).not_to include(now_incompatible_model.model_id)
+      expect { activity.send(:build_command, context, "ping", agent_run: agent_run) }
+        .to raise_error(described_class::RunnerExecutionError, /not compatible/)
     end
 
     # @spec RUNNER-FALLBACK-002
-    it "omits --model instead of raising when no compatible model can be resolved for a routing-key runner" do
+    it "rejects unresolved models instead of silently running an unverified CLI default" do
       runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
       create(:model_selection, agent_run: agent_run,
         llm_model: create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid"))
@@ -866,9 +864,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(resolved).to be_failure
       expect(activity.send(:resolved_model_info_for, resolved)).not_to have_key(:resolved_model_id)
 
-      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
-
-      expect(command[2]).not_to include("--model")
+      expect { activity.send(:build_command, context, "ping", agent_run: agent_run) }
+        .to raise_error(described_class::RunnerExecutionError, /no model configured/)
     end
 
     it "builds an API-key wrapper for Google-backed fallback entries without injecting the runner key" do
@@ -2770,6 +2767,52 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "#execute" do
+    # @spec RUNNER-FALLBACK-007, RUNNER-FALLBACK-008, RUNNER-FALLBACK-009
+    context "when Codex needs durable model recovery" do
+      let(:recovery_fixture) do
+        old = create(:llm_model, :openai, model_id: "retired-subscription-model", tier: "mid")
+        replacement = create(:llm_model, :openai, model_id: "verified-subscription-model", tier: "high")
+        runner = create(:runner, user: user, runner_key: "codex", tier_model_ids: { "mid" => old.model_id })
+        { old: old, replacement: replacement, runner: runner, commands: [] }
+      end
+
+      before do
+        old, replacement, runner, commands = recovery_fixture.values_at(:old, :replacement, :runner, :commands)
+        agent_run.update!(runner: runner, agent_type: "codex")
+        create(:model_selection, agent_run: agent_run, llm_model: old, tier: "mid")
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(git_ops).to receive_messages(head_sha: "pre_agent_sha_abc123", commit_uncommitted_changes: false, has_changes_since?: false)
+        allow(container_service).to receive(:execute) do |command, **|
+          commands << command.join(" ")
+          if command.include?("node")
+            Containers::Provision::Result.success(stdout: { id: 2, result: { data: [ { id: replacement.model_id, isDefault: true } ] } }.to_json,
+              stderr: "", exit_code: 0)
+          elsif command.join(" ").include?(old.model_id)
+            error = "The '#{old.model_id}' model is not supported when using Codex with a ChatGPT account."
+            Containers::Provision::Result.failure(stdout: { type: "error", message: error }.to_json,
+              stderr: "", error: error, exit_code: 1)
+          else
+            Containers::Provision::Result.success(stdout: [
+              { type: "item.completed", item: { type: "agent_message", text: "OK" } },
+              { type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }
+            ].map(&:to_json).join("\n"), stderr: "", exit_code: 0)
+          end
+        end
+      end
+
+      it "retries the current run and records the verified model" do
+        old, replacement, runner, commands = recovery_fixture.values_at(:old, :replacement, :runner, :commands)
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be(true)
+        attempts = agent_run.reload.runners_attempted
+        expect(attempts.first).to include("error_type" => "configuration_error", "resolved_model_id" => old.model_id)
+        expect(attempts.last).to include("success" => true, "resolved_model_id" => replacement.model_id, "resolution_source" => "verified_recovery")
+        expect(commands.count { |cmd| cmd.include?(old.model_id) }).to eq(1)
+        expect(Runners::VerifiedModels.new(runner.reload).model_for("mid", project: project)).to eq(replacement.model_id)
+      end
+    end
+
     context "when agent succeeds in container" do
       before do
         allow(container_service).to receive(:execute).and_return(exec_success)

@@ -36,6 +36,21 @@ Issue and PR state is cached locally at multiple layers:
 - request-time API objects such as issues, pull requests, and repo metadata use
   cache invalidation keyed by GitHub webhook event type
 
+Needs-input is a human-answer gate represented by a GitHub label, persisted
+clarification questions, and local `paid_state`. Polling reconciles every open,
+non-PR row that still has both the label and questions if another writer has
+changed its state, restoring `needs_input` unless a paused clarification run
+still owns the wait. This also repairs rows that incremental GitHub polling did
+not return. Removing the label remains the inverse human signal that reopens
+the issue for automation.
+
+Paid-owned status labels are not operator commands. When a trusted operator
+manually applies a needs-input label to an item without persisted clarifying
+questions, sync removes the orphaned label, leaves local state intact, and
+posts the supported paths: answer Inbox questions, re-trigger automation, or
+use `paid-paused` to pause automation. The last label adder is verified through
+GitHub label events so Paid writes and untrusted additions remain untouched.
+
 Repository credentials resolve per project. App-backed projects mint
 installation tokens and present the App bot identity; PAT-backed projects keep
 using their active token. Callers consume an opaque GitHub credential so the

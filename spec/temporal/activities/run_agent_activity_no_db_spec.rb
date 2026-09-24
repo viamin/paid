@@ -428,7 +428,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
         "codex",
         nil,
         nil,
-        '{"error":{"message":"The \'gpt-5.6\' model is not supported when using Codex with a ChatGPT account."}}'
+        stdout: '{"error":{"message":"The \'gpt-5.6\' model is not supported when using Codex with a ChatGPT account."}}', stderr: ""
       )
 
       expect(rejection).to include(type: :subscription_model_rejected, model: "gpt-5.6")
@@ -444,7 +444,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       )
       output = activity.send(:redact_tool_output_for_classification, "codex", event)
 
-      expect(activity.send(:codex_model_rejection, "codex", nil, nil, output)).to be_nil
+      expect(activity.send(:codex_model_rejection, "codex", nil, nil, stdout: output, stderr: "")).to be_nil
     end
   end
 

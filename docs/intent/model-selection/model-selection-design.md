@@ -60,13 +60,13 @@ currently eligible candidate pool. The candidate pool is constrained by:
 Codex subscription runs participate in normal model selection and persist the
 selected tier; subscription authentication must not bypass selection.
 Codex subscription runners use the agent-harness compatibility contract for
-model/authentication checks. GPT-5.6 Luna, Terra, and Sol are api_key-only
-under the current agent-harness Codex subscription contract (see
-`@spec MODEL-SELECTION-005`), so `Models::SeedKnownModels` marks them
-`active: false` to clear the catalog contract drift detector (RDR-040,
-`#3965`). Their tier labels (low/mid/high respectively) still back-fill from
-`KNOWN_MODELS` so the api_key auth path can rank them once the runner
-contract catches up. Other models remain subject to the harness contract.
+catalog defaults. GPT-5.6 Luna, Terra, and Sol have subscription support and
+retain their low/mid/high tier labels. A verified runner-local replacement from
+RUNNER-FALLBACK-008 takes precedence over stale catalog or static compatibility
+information, while explicit project restrictions and operator disables still
+apply. Catalog refreshes do not erase execution evidence. Model recovery may
+supply an explicit policy-filtered candidate pool to the meta-agent and allow
+another tier when no suitable same-tier candidate remains.
 
 When only one candidate remains, the selector skips the LLM round trip and
 returns that candidate directly.
