@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_161456) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2726,6 +2726,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
+    t.string "creation_origin", default: "connected", null: false, comment: "How the project came to be: connected (existing repo) or blank (repo created by Paid)."
     t.string "data_classification", default: "internal", null: false, comment: "Sensitivity level for project data shared with model providers."
     t.string "default_branch", default: "main", null: false
     t.string "enhance_issue_enhanced_label_name", default: "paid-enhanced", null: false
@@ -2786,6 +2787,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
     t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
+    t.string "setup_status", comment: "Blank-project bootstrap state: pending, in_progress, or completed. Null when setup is not required."
     t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
     t.integer "token_limit_warning_threshold", default: 80, null: false
@@ -2807,6 +2809,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_060056) do
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
     t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
     t.index ["scheduler_paused_at"], name: "index_projects_on_scheduler_paused_at", where: "(scheduler_paused_at IS NOT NULL)"
+    t.index ["setup_status"], name: "index_projects_on_setup_status", where: "(setup_status IS NOT NULL)"
     t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying::text, 'on_demand'::character varying::text, 'automatic'::character varying::text])", name: "chk_projects_apple_verification_mode"
     t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
   end

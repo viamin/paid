@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -118,20 +118,23 @@ class ProjectsController < ApplicationController
 
   def new
     @project = current_account.projects.build
-    @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
+    @github_tokens = policy_scope(GithubToken).active
     @github_installations = policy_scope(GithubInstallation).active
     authorize @project
   end
 
   def create
+    @github_tokens = policy_scope(GithubToken).active
+    @github_installations = policy_scope(GithubInstallation).active
+
+    # @spec PROJECT-CREATION-002
+    return create_blank_project if params[:creation_mode] == "create"
+
     @project = current_account.projects.build(project_params)
     assign_selected_github_credential(@project)
     @project.created_by = current_user
     @project.allowed_github_usernames = [ @project.owner ] if @project.allowed_github_usernames.blank?
     authorize @project
-
-    @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
-    @github_installations = policy_scope(GithubInstallation).active
 
     unless @project.github_credential_present?
       @project.errors.add(:base, "must select either a GitHub token or GitHub App installation")
@@ -300,6 +303,47 @@ class ProjectsController < ApplicationController
     redirect_to @project, alert: e.message
   rescue ActiveRecord::RecordNotUnique
     redirect_to @project, alert: "A LID planning run is already queued or in progress for this project."
+  end
+
+  # Starts the recommended chat setup channel for a blank project: creates a
+  # project-scoped chat session whose system prompt is the grill-me bootstrap
+  # questionnaire, and marks the project's setup as in progress.
+  # @spec PROJECT-CREATION-009
+  def start_setup_chat
+    authorize ChatSession.new(account: current_account, project: @project), :create?
+
+    unless @project.setup_pending?
+      redirect_to @project, notice: "Project setup is already completed."
+      return
+    end
+
+    chat_session = ChatSessions::Create.call(
+      account: current_account,
+      user: current_user,
+      project_id: @project.id,
+      title: "Set up #{@project.name}"
+    )
+    @project.setup_started!
+
+    audit_event("project.setup_chat_started", metadata: { project_name: @project.name, chat_session_id: chat_session.id })
+
+    redirect_to chat_session_path(chat_session),
+      notice: "Chat setup started. Answer the questionnaire to capture your project's initial choices."
+  rescue ArgumentError => e
+    redirect_to @project, alert: "Could not start chat setup: #{e.message}"
+  end
+
+  # Marks a blank project's setup as completed (manual dismiss/skip path).
+  # @spec PROJECT-CREATION-011
+  def finish_setup
+    authorize @project, :update?
+
+    if @project.setup_pending?
+      @project.setup_completed!
+      audit_event("project.setup_finished", metadata: { project_name: @project.name })
+    end
+
+    redirect_to @project, notice: "Project setup marked as completed."
   end
 
   def quality_resume
@@ -868,6 +912,60 @@ class ProjectsController < ApplicationController
     else
       render :new, status: :unprocessable_content
     end
+  end
+
+  # Creates a blank GitHub repository and the matching Paid project.
+  # @spec PROJECT-CREATION-002
+  # @spec PROJECT-CREATION-006
+  def create_blank_project
+    @project = current_account.projects.build
+    authorize @project, :create?
+
+    result = Projects::CreateBlank.call(
+      account: current_account,
+      user: current_user,
+      github_token: selected_blank_github_token,
+      github_installation: selected_blank_github_installation,
+      repo_name: params.dig(:project, :repo).to_s,
+      owner: params.dig(:project, :owner).presence,
+      name: params.dig(:project, :name).presence,
+      description: params.dig(:project, :description).presence,
+      private: params.dig(:project, :visibility) != "public"
+    )
+
+    project = result.project
+    audit_event(
+      "project.created",
+      metadata: { name: project.name, github_url: project.github_url, creation_origin: "blank" }
+    )
+
+    redirect_to project_path(project, anchor: "setup"),
+      notice: "Project created with a blank repository at #{project.full_name}. " \
+              "Chat setup is recommended to capture your initial tooling choices."
+  rescue ActiveRecord::RecordInvalid => e
+    blank_creation_form_error(e.message, record: e.record)
+  rescue Projects::CreateBlank::ValidationError, Github::AppInstallation::Error, GithubClient::Error => e
+    blank_creation_form_error(e.message)
+  end
+
+  def blank_creation_form_error(message, record: nil)
+    @project = record || current_account.projects.build(
+      owner: params.dig(:project, :owner).presence,
+      repo: params.dig(:project, :repo).to_s,
+      name: params.dig(:project, :name).presence
+    )
+    @project.errors.add(:base, message)
+    render :new, status: :unprocessable_content
+  end
+
+  def selected_blank_github_token
+    id = params.dig(:project, :github_token_id).presence
+    current_account.github_tokens.active.find_by(id: id) if id
+  end
+
+  def selected_blank_github_installation
+    id = params.dig(:project, :github_installation_id).presence
+    @github_installations.find_by(id: id) if id
   end
 
   def fetch_github_metadata

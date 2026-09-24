@@ -47,6 +47,10 @@ module ChatSessions
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
+      # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
+      # interview surfaced in every chat started against it, so setup can also
+      # happen from a plain new chat session.
+      sections << { priority: 1, content: project_setup_section } if primary_project&.setup_pending?
       sections << { priority: 2, content: tool_definitions } if mcp_tools.any?
       sections << { priority: 3, content: cross_project_context } if reference_projects.any?
       sections << { priority: 4, content: workspace_context } if chat_session.container_ready?
@@ -110,6 +114,11 @@ module ChatSessions
       parts << recent_runs_section(project)
       parts << style_guide_section(project)
       parts.compact.join("\n\n")
+    end
+
+    # @spec PROJECT-CREATION-010
+    def project_setup_section
+      "## Project Setup Needed\n\n" + Projects::BuildSetupPrompt.call(project: primary_project)
     end
 
     def page_context

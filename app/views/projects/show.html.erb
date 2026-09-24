@@ -35,6 +35,8 @@
     </div>
   <% end %>
 
+  <%= render "projects/setup_banner", project: @project %>
+
   <% if @project.scheduler_paused? %>
     <div class="mb-4 rounded-md bg-red-50 p-4 ring-1 ring-inset ring-red-200" data-testid="scheduler-paused-banner">
       <div class="flex">

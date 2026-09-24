@@ -45,6 +45,26 @@ RSpec.describe Github::AppInstallation do
     end
   end
 
+  # @spec PROJECT-CREATION-002
+  describe ".provisioning_token_for" do
+    before do
+      stub_request(:post, %r{/app/installations/\d+/access_tokens})
+        .to_return(
+          status: 201,
+          body: { token: fake_token, expires_at: 1.hour.from_now.iso8601 }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "mints an unscoped token for repository provisioning" do
+      token = described_class.provisioning_token_for(installation_id: installation_id)
+
+      expect(token).to eq(fake_token)
+      expect(WebMock).to have_requested(:post, %r{/app/installations/\d+/access_tokens})
+        .with(body: "{}")
+    end
+  end
+
   describe ".clear_cached_token" do
     let(:different_token) { "ghs_different_token_xyz789" }
 

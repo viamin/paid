@@ -150,6 +150,15 @@ arrows:
     specs: docs/intent/chat-pr-proposal/chat-pr-proposal-specs.md
     parent: PAID
     taxonomy: chat
+  project-creation:
+    title: Project Creation (Blank Repositories)
+    path: docs/intent/project-creation/project-creation-design.md
+    specs: docs/intent/project-creation/project-creation-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: MAPPED
+    sampled: 2026-09-23
+    next: "Implement in-chat bootstrap application of setup decisions"
   toolchain-pin-management:
     title: Toolchain Pin Management
     path: docs/intent/toolchain-pin-management/toolchain-pin-management-design.md
