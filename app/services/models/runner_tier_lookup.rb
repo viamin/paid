@@ -7,7 +7,7 @@ module Models
     def runner_tier_model(tier)
       return nil unless tier
 
-      if (runner = agent_run.runner)
+      if (runner = agent_run.runner) && runner.respond_to?(:persisted?) && runner.persisted?
         recovered = Runners::VerifiedModels.new(runner).model_for(tier, project: agent_run.project, goal: agent_run.goal)
         return LlmModel.find_by(model_id: recovered) if recovered
       end
