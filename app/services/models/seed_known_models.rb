@@ -347,12 +347,8 @@ module Models
         tier: "mid",
         active: false
       },
-      # GPT-5.6 Luna, Sol, and Terra are api_key-only under the current
-      # agent-harness Codex contract (UNSUPPORTED_AUTH_MODE_FOR_MODEL_REASON
-      # for subscription auth), so a ChatGPT-Codex run would preflight-reject
-      # them. Marked `active: false` to clear the catalog contract drift
-      # detector (RDR-040); re-enable via `LlmModel#operator_enable!` once
-      # the harness contract catches up.
+      # Subscription compatibility is supplied by the harness contract;
+      # account-specific runtime rejections must not deactivate these globally.
       {
         model_id: "gpt-5.6-luna",
         display_name: "GPT-5.6 Luna",
@@ -368,7 +364,7 @@ module Models
         supports_json_output: true,
         capability_score: 9.0,
         tier: "low",
-        active: false
+        active: true
       },
       {
         model_id: "gpt-5.6-sol",
@@ -385,7 +381,7 @@ module Models
         supports_json_output: true,
         capability_score: 9.0,
         tier: "high",
-        active: false
+        active: true
       },
       {
         model_id: "gpt-5.6-terra",
@@ -402,7 +398,7 @@ module Models
         supports_json_output: true,
         capability_score: 9.0,
         tier: "mid",
-        active: false
+        active: true
       },
       {
         model_id: "gpt-5-mini",

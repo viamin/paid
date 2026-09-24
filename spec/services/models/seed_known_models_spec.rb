@@ -17,16 +17,11 @@ RSpec.describe Models::SeedKnownModels do
     end
 
     # @spec MODEL-SELECTION-005
-    # GPT-5.6 Luna/Terra/Sol are api_key-only under the agent-harness Codex
-    # subscription contract (#3965), so the snapshot marks them `active:
-    # false` to clear the catalog contract drift detector. Their tier labels
-    # still back-fill from KNOWN_MODELS so the api_key auth path can rank
-    # them when the runner contract catches up.
-    it "marks GPT-5.6 tier variants inactive under the Codex subscription contract" do
+    it "keeps subscription-compatible GPT-5.6 tier variants active" do
       2.times { described_class.call }
 
       { "gpt-5.6-luna" => "low", "gpt-5.6-terra" => "mid", "gpt-5.6-sol" => "high" }.each do |id, tier|
-        expect(LlmModel.find_by!(model_id: id)).to have_attributes(active: false, tier: tier)
+        expect(LlmModel.find_by!(model_id: id)).to have_attributes(active: true, tier: tier)
       end
     end
 

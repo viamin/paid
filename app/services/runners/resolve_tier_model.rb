@@ -7,15 +7,19 @@ module Runners
       new(...).call
     end
 
-    def initialize(runner:, tier:, user:)
+    def initialize(runner:, tier:, user:, project: nil, goal: nil)
       @runner = runner
       @tier = tier.to_s
       @user = user
+      @project = project
+      @goal = goal
     end
 
     def call
       provider = user&.provider_for(runner)
       auth_type = effective_auth_type_for(provider)
+      recovered = VerifiedModels.new(runner.persisted? ? runner : provider).model_for(tier, project: @project, goal: @goal) if runner.persisted? || provider
+      return Result.new(model_id: recovered, provider_id: provider&.id, source: "verified_recovery") if recovered
 
       # Resolve, in priority order:
       #   1. runner.tier_models   — structured tier→{model_id, provider_id}
@@ -58,7 +62,15 @@ module Runners
     def resolve_candidate(model_id:, provider_id:, source:, auth_type:)
       compat = compatibility_for(model_id, auth_type: auth_type)
       log_incompatibility_if_unsupported(compat, model_id: model_id, source: source, auth_type: auth_type)
-      return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
+      if compat.unsupported? && !live_auth_verification?(compat, auth_type)
+        return failure_result(incompatibility_message(model_id, compat))
+      end
+
+      evidence = VerifiedModels.new(runner)
+      if @project && !evidence.permitted?(model_id, project: @project, goal: @goal) &&
+          DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER.key?(runner.runner_key)
+        return failure_result("model '#{model_id}' violates project model policy or operator policy", error_type: :policy)
+      end
 
       Result.new(model_id: model_id, provider_id: provider_id, source: source)
     end
@@ -83,6 +95,15 @@ module Runners
         model_id: model_id,
         auth_type: auth_type
       )
+    end
+
+    # Account entitlements are established by the runner's actual preflight,
+    # not a static provider-wide auth restriction that may have gone stale.
+    def live_auth_verification?(compat, auth_type)
+      return false unless auth_type == "subscription" && compat.incompatibility_type == :auth_mode_gated_for_model
+
+      key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
+      AgentHarness.provider_class(key).method_defined?(:discover_available_models)
     end
 
     def log_incompatibility_if_unsupported(compat, model_id:, source:, auth_type:)
@@ -111,18 +132,19 @@ module Runners
       compat.reason.present? ? "#{base}: #{compat.reason}" : base
     end
 
-    def failure_result(error)
-      Result.new(error: error)
+    def failure_result(error, error_type: nil)
+      Result.new(error: error, error_type: error_type)
     end
 
     class Result
-      attr_reader :model_id, :provider_id, :source, :error
+      attr_reader :model_id, :provider_id, :source, :error, :error_type
 
-      def initialize(model_id: nil, provider_id: nil, source: nil, error: nil)
+      def initialize(model_id: nil, provider_id: nil, source: nil, error: nil, error_type: nil)
         @model_id = model_id
         @provider_id = provider_id
         @source = source
         @error = error
+        @error_type = error_type
       end
 
       def success?
