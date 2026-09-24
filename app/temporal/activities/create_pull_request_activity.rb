@@ -69,6 +69,8 @@ module Activities
           raise "Branch #{agent_run.branch_name} does not exist on GitHub"
         end
 
+        record_shipped_verification_result(agent_run)
+
         # Persist completion as the very first step after obtaining the PR,
         # before any best-effort post-processing. This ensures a retry
         # cannot overwrite status via MarkAgentRunFailedActivity.
@@ -127,6 +129,22 @@ module Activities
     end
 
     private
+
+    # Re-evaluates the PR gate after PushBranchActivity has persisted the
+    # shipped SHA. The earlier post-run recording precedes that push and can
+    # only bind a bundle-based attempt.
+    # @spec APPLE-ATTEMPT-011
+    def record_shipped_verification_result(agent_run)
+      return if agent_run.worktree_path.blank?
+
+      AgentRuns::VerificationResultRecorder.call(
+        agent_run: agent_run,
+        repo_path: agent_run.worktree_path,
+        fallback_result: agent_run.verification_result,
+        record_missing: false,
+        result_commit: agent_run.result_commit_sha
+      )
+    end
 
     def completion_result(agent_run)
       {

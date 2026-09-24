@@ -39,6 +39,7 @@ module Activities
         client = project.client
 
         pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        record_shipped_verification_result(agent_run)
 
         # A blocked completion-verification gate is a deterministic project
         # failure (the gate's decision cannot change without operator
@@ -58,11 +59,10 @@ module Activities
           )
         rescue AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed
           refresh_pull_request_body(client, project, pr, agent_run)
-          post_update_comment(client, project, pr.number, agent_run)
+          post_update_comment_unless_already_posted(client, project, pr.number, agent_run)
           agent_run.log!("system", "PR update blocked by required Apple verification failure: #{pr.html_url}")
           raise
         end
-        return result(agent_run.reload) unless completed
 
         record_draft_review_round_if_needed(agent_run)
         capture_session_summary_if_needed(agent_run)
@@ -83,6 +83,8 @@ module Activities
         )
 
         ProcessRunQueueJob.perform_later
+
+        return result(agent_run.reload) unless completed
 
         result(agent_run)
       end
@@ -116,6 +118,38 @@ module Activities
         pr_number: pr_number,
         error_class: e.class.name,
         error: e.message
+      )
+    end
+
+    def post_update_comment_unless_already_posted(client, project, pr_number, agent_run)
+      return if client.issue_comments(project.full_name, pr_number).any? { |comment| self.class.agent_update_comment?(comment.body) }
+
+      post_update_comment(client, project, pr_number, agent_run)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      logger.warn(
+        message: "agent_execution.existing_pr_comment_lookup_failed",
+        agent_run_id: agent_run.id,
+        pr_number: pr_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # Re-evaluates the PR gate after PushBranchActivity has persisted the
+    # shipped SHA. The earlier post-run recording precedes that push and can
+    # only bind a bundle-based attempt.
+    # @spec APPLE-ATTEMPT-011
+    def record_shipped_verification_result(agent_run)
+      return if agent_run.worktree_path.blank?
+
+      AgentRuns::VerificationResultRecorder.call(
+        agent_run: agent_run,
+        repo_path: agent_run.worktree_path,
+        fallback_result: agent_run.verification_result,
+        record_missing: false,
+        result_commit: agent_run.result_commit_sha
       )
     end
 

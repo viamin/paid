@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "ostruct"
 require "rails_helper"
 
 RSpec.describe Activities::CompleteExistingPrRunActivity do
@@ -200,6 +201,41 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    # @spec APPLE-ATTEMPT-013
+    it "records the pushed PR trail while completion waits for required verification" do
+      enable_required_completion_verification
+      enable_summary_comments
+      agent_run.update!(tdd_phase: "test_writing")
+      allow(PullRequests::ReviewSurface).to receive(:call).and_return("Updated PR body")
+
+      expect(github_client).to receive(:add_comment).once
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.status).to eq("running")
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(github_client).to have_received(:update_pull_request).with(project.full_name, 42, body: "Updated PR body")
+    end
+
+    # @spec APPLE-ATTEMPT-011
+    it "does not repeat the agent update comment when a blocked gate activity retries" do
+      enable_summary_comments
+      comments = []
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(agent_run).to receive(:complete!).and_raise(AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed)
+      allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_return(comments)
+      allow(github_client).to receive(:add_comment) do |_repo, _number, body|
+        comments << OpenStruct.new(body: body)
+      end
+
+      2.times do
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed)
+      end
+
+      expect(comments.count).to eq(1)
+    end
+
     it "returns agent_run_id and PR details including review phase" do
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -358,5 +394,18 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       .with(project.full_name, base_sha, agent_run.result_commit_sha)
       .and_return(summary_comparison)
     allow(AgentHarness).to receive(:send_message).and_return(summary_response)
+  end
+
+  def enable_required_completion_verification
+    project.update!(apple_verification_mode: "on_demand")
+    FeatureFlags.enable!(:apple_verification_workers, project:)
+    create(
+      :apple_verification_workflow_revision,
+      :approved,
+      project:,
+      lifecycle_gate: "completion_verification",
+      required_checks: [ "ios-app.tests" ],
+      advisory_checks: []
+    )
   end
 end

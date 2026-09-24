@@ -39,6 +39,16 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     )
   end
 
+  def record_shipped_result(shipped_sha)
+    AgentRuns::VerificationResultRecorder.call(
+      agent_run:,
+      repo_path:,
+      fallback_result: agent_run.verification_result,
+      record_missing: false,
+      result_commit: shipped_sha
+    )
+  end
+
   describe ".evaluate at the completion gate" do
     it "is not required without an approved workflow" do
       expect(described_class.evaluate(agent_run:, gate: "completion_verification").status).to eq(:not_required)
@@ -415,6 +425,49 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
       expect(agent_run.reload.verification_result["status"]).to eq("passed")
       expect(agent_run.reload.verification_result).not_to have_key("apple_verification")
+    end
+
+    # @spec APPLE-ATTEMPT-011
+    it "accepts a succeeded committed-source attempt for the shipped commit" do
+      revision = approved_required_revision(gate: "pull_request_verification")
+      shipped_sha = "0123456789abcdef0123456789abcdef01234567"
+      agent_run.update!(result_commit_sha: shipped_sha)
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: shipped_sha)
+      agent_run.update!(verification_result: {
+        "status" => "not_run",
+        "reason" => "apple_verification_pending",
+        "summary" => "Required Apple verification has not passed for this pull request.",
+        "apple_verification" => {
+          "state" => "pending",
+          "gate" => "pull_request_verification",
+          "interactive_status" => "passed"
+        }
+      })
+
+      record_shipped_result(shipped_sha)
+
+      expect(agent_run.reload.verification_result["status"]).to eq("passed")
+      expect(agent_run.reload.verification_result).not_to have_key("apple_verification")
+    end
+
+    # @spec APPLE-ATTEMPT-011
+    it "clears a pending apple-only result when the shipped commit succeeds" do
+      project.update!(screenshot_settings: { "verification_enabled" => false })
+      revision = approved_required_revision(gate: "pull_request_verification")
+      shipped_sha = "0123456789abcdef0123456789abcdef01234567"
+      agent_run.update!(
+        result_commit_sha: shipped_sha,
+        verification_result: {
+          "status" => "not_run",
+          "reason" => "apple_verification_pending",
+          "apple_verification" => { "state" => "pending", "gate" => "pull_request_verification" }
+        }
+      )
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: shipped_sha)
+
+      record_shipped_result(shipped_sha)
+
+      expect(agent_run.reload.verification_result).to eq({})
     end
 
     it "records an apple-only result when interactive verification is disabled" do
