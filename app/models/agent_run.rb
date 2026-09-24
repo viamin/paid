@@ -376,7 +376,8 @@ class AgentRun < ApplicationRecord
   # answer, rather than stalled execution eligible for stale recovery.
   # @spec TEMPORAL-ORCHESTRATION-006
   scope :awaiting_human_clarification, -> {
-    joins(:issue).where(goal: "create_feature", issues: { paid_state: "needs_input" })
+    where(goal: "create_feature", status: "paused")
+      .where("NULLIF(external_metadata ->> ?, '') IS NOT NULL", FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY)
   }
   scope :rate_limited, -> { where(status: "rate_limited") }
   # Rate-limited runs whose recovery window has elapsed and are therefore due to
@@ -1711,6 +1712,11 @@ class AgentRun < ApplicationRecord
 
   def review_goal?
     goal == "review"
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-008
+  def feature_clarification_round_recorded?
+    goal == "create_feature" && external_metadata[FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY].present?
   end
 
   def enhance_issue_goal?
