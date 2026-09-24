@@ -1600,13 +1600,14 @@ RSpec.describe "Projects" do
         it "redacts secrets from error messages in the banner and inline rows" do
           project = create(:project, account: account, github_token: github_token, knowledge_status: "failed")
           version = create(:project_version, project: project)
+          token = [ "ghp_", "abc123def456ghi789jkl012mno345pqr678" ].join
           create(:collector_run, :failed, project_version: version, collector_type: "code_structure",
-            error_message: "Clone failed: https://ghp_abc123def456ghi789jkl012mno345pqr678@github.com/org/repo.git")
+            error_message: "Clone failed: https://#{token}@github.com/org/repo.git")
 
           get project_path(project)
 
           expect(response.body).to include("code_structure")
-          expect(response.body).not_to include("ghp_abc123def456ghi789jkl012mno345pqr678")
+          expect(response.body).not_to include(token)
         end
 
         it "does not show stale errors from previous versions in the banner" do

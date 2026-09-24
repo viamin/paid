@@ -121,7 +121,7 @@ module Projects
     def token_organizations_by_login
       @token_organizations_by_login ||= client.organizations
         .filter_map { |org| org.login.to_s.strip.presence }
-        .index_by { |login| login.downcase }
+        .index_by(&:downcase)
     end
 
     def organization_owner
