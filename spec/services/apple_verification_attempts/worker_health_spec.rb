@@ -53,6 +53,24 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
     expect(profile.reload.consecutive_health_failures).to eq(0)
   end
 
+  it "records failed host readiness checks and quarantines active attempts" do
+    attempt = running_attempt
+    host = instance_double(AppleVerification::HostClient)
+    lifecycle = AppleVerification::Lifecycle.new(host: host, token: "host-token")
+    allow(host).to receive(:call).with(
+      version: "v1", operation: "readiness", payload: {}, token: "host-token"
+    ).and_raise(Timeout::Error)
+    monitor = described_class.new(profile: profile, failure_threshold: 3, lifecycle:, clock: clock)
+
+    3.times { monitor.call }
+
+    expect(profile.reload).to be_quarantined
+    expect(attempt.reload).to have_attributes(
+      status: "unavailable",
+      failure_classification: "worker_infrastructure"
+    )
+  end
+
   it "returns the profile to service only when an operator passes the isolation smoke test" do
     profile.update!(
       quarantined_at: clock - 1.hour,

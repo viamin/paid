@@ -80,6 +80,13 @@ module AppleVerification
       :destroyed
     end
 
+    # Returns the macOS worker's fixed-vocabulary readiness payload. A
+    # successful response proves the worker can authenticate and serve its
+    # lifecycle API; callers classify transport or host failures separately.
+    def readiness
+      request("readiness", {})
+    end
+
     private
 
     attr_reader :host, :token, :environment

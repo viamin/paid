@@ -10,6 +10,7 @@
 # @spec APPLE-ATTEMPT-005
 # @spec APPLE-ATTEMPT-014
 # @spec APPLE-TRANSFER-006
+# @spec APPLE-ATTEMPT-015
 class AppleVerificationAttemptMaintenanceJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -22,6 +23,7 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
   )
 
   def perform
+    record_worker_health
     recovery_result = AppleVerificationAttempts::Recovery.call
     scheduling_result = AppleVerificationAttempts::Schedule.call
     retention_result = AppleVerification::Bundles::RetentionSweep.call
@@ -32,5 +34,16 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
       scheduling: scheduling_result.to_h,
       retention: retention_result.to_h
     )
+  end
+
+  private
+
+  def record_worker_health
+    lifecycle = AppleVerification::Lifecycle.from_environment
+    return unless lifecycle
+
+    AppleWorkerProfile.where(status: "active").find_each do |profile|
+      AppleVerificationAttempts::WorkerHealth.call(profile:, lifecycle:)
+    end
   end
 end
