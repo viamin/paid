@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Apple verification MCP tools" do
+RSpec.describe Tools::Registry do
   # @spec APPLE-RESULT-006
   let(:account) { create(:account) }
   let(:user) { create(:user, :member, account:) }
@@ -27,10 +27,10 @@ RSpec.describe "Apple verification MCP tools" do
 
   describe "registry exposure" do
     it "registers the four semantic tools" do
-      expect(Tools::Registry.find("verify_apple_project")).to eq(Tools::VerifyAppleProject)
-      expect(Tools::Registry.find("get_apple_verification")).to eq(Tools::GetAppleVerification)
-      expect(Tools::Registry.find("capture_apple_screenshot")).to eq(Tools::CaptureAppleScreenshot)
-      expect(Tools::Registry.find("stop_apple_verification")).to eq(Tools::StopAppleVerification)
+      expect(described_class.find("verify_apple_project")).to eq(Tools::VerifyAppleProject)
+      expect(described_class.find("get_apple_verification")).to eq(Tools::GetAppleVerification)
+      expect(described_class.find("capture_apple_screenshot")).to eq(Tools::CaptureAppleScreenshot)
+      expect(described_class.find("stop_apple_verification")).to eq(Tools::StopAppleVerification)
     end
 
     it "marks request tools as write operations and state inspection as read-only" do
@@ -43,7 +43,7 @@ RSpec.describe "Apple verification MCP tools" do
     it "exposes the read tool through read-only MCP dispatch" do
       draft_revision
 
-      result = Tools::Registry.dispatch_read_only(
+      result = described_class.dispatch_read_only(
         name: "get_apple_verification",
         arguments: { "project_id" => project.id, "agent_run_id" => agent_run.id },
         user:,

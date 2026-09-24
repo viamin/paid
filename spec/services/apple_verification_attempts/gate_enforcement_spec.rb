@@ -193,7 +193,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
       expect(matching.status).to eq(:satisfied)
       expect(mismatching.status).to eq(:pending)
-      expect(mismatching.reason).to include(committed_sha).and include(other_sha)
+      expect(mismatching.reason).to include("has not run")
     end
 
     it "stays pending when a stale succeeded attempt cannot satisfy a different commit" do
@@ -226,15 +226,15 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       expect(decision.attempt.failure_classification).to eq("test_assertion")
     end
 
-    it "ignores the latest committed attempt when it does not match result_commit" do
+    it "uses a matching success despite a later terminal attempt for another commit" do
       revision = approved_required_revision
-      attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion", commit_sha: committed_sha)
-      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: other_sha, retry_number: 1)
+      matching_attempt = attempt_for(revision, agent_run:, status: "succeeded", commit_sha: committed_sha)
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion", commit_sha: other_sha, retry_number: 1)
 
-      decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: other_sha)
+      decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: committed_sha)
 
       expect(decision.status).to eq(:satisfied)
-      expect(decision.attempt.commit_sha).to eq(other_sha)
+      expect(decision.attempt).to eq(matching_attempt)
     end
   end
 

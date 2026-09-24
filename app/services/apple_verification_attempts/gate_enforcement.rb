@@ -41,16 +41,8 @@ module AppleVerificationAttempts
         return not_required(gate) unless revision
         return not_required(gate) if revision.required_checks.empty?
 
-        attempt = latest_attempt(agent_run, revision)
+        attempt = latest_attempt(agent_run, revision, result_commit)
         return pending(revision, gate, reason: "Required Apple verification has not run for this agent run") unless attempt
-
-        # The attempt covers a specific commit; the gate binds to the commit
-        # being shipped. A verification of any other commit leaves the
-        # decision pending so a fresh verification is required for the
-        # current source.
-        unless attempt_matches_result_commit?(attempt, result_commit)
-          return pending(revision, gate, reason: commit_mismatch_reason(attempt, result_commit))
-        end
 
         evaluate_attempt(attempt, revision, gate)
       end
@@ -64,24 +56,11 @@ module AppleVerificationAttempts
         project.apple_verification_workflow_revisions.approved.where(lifecycle_gate: gate).order(revision: :desc).first
       end
 
-      def latest_attempt(agent_run, revision)
-        revision.apple_verification_attempts.where(agent_run: agent_run).order(created_at: :desc, id: :desc).first
-      end
-
-      # Both nil is a match (bundle/uncommitted source lines up with a PR-only
-      # completion that has no commit); otherwise the SHAs must compare equal.
-      def attempt_matches_result_commit?(attempt, result_commit)
-        attempt.commit_sha == result_commit
-      end
-
-      def commit_mismatch_reason(attempt, result_commit)
-        if result_commit.present?
-          "Required Apple verification was last run on commit #{attempt.commit_sha.presence || '<no commit>'}, " \
-            "not the commit being completed (#{result_commit})"
-        else
-          "Required Apple verification was last run on commit #{attempt.commit_sha}, " \
-            "but the run is completing without a commit"
-        end
+      # Select only attempts that verified the commit currently crossing the
+      # gate. A later attempt for another commit must not hide an earlier
+      # successful attempt for this commit.
+      def latest_attempt(agent_run, revision, result_commit)
+        revision.apple_verification_attempts.where(agent_run:, commit_sha: result_commit).order(created_at: :desc, id: :desc).first
       end
 
       def evaluate_attempt(attempt, revision, gate)
