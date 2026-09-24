@@ -8,6 +8,7 @@ RSpec.describe AppleVerificationAttempts::Waive do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:, apple_verification_mode: "on_demand") }
   let(:agent_run) { create(:agent_run, :running, project:) }
+  let(:shipped_commit) { "0123456789abcdef0123456789abcdef01234567" }
   let!(:revision) do
     create(
       :apple_verification_workflow_revision,
@@ -27,7 +28,8 @@ RSpec.describe AppleVerificationAttempts::Waive do
       apple_worker_profile: revision.apple_worker_profile,
       lifecycle_gate: revision.lifecycle_gate,
       status: "failed",
-      failure_classification: "worker_infrastructure"
+      failure_classification: "worker_infrastructure",
+      commit_sha: shipped_commit
     )
   end
   let(:actor) do
@@ -55,12 +57,15 @@ RSpec.describe AppleVerificationAttempts::Waive do
   end
 
   it "completes an agent run whose completion was withheld on the waived attempt" do
-    expect(agent_run.complete!(pr_url: "https://github.com/example/pull/7", pr_number: 7)).to be_falsey
+    expect(
+      agent_run.complete!(result_commit: shipped_commit, pr_url: "https://github.com/example/pull/7", pr_number: 7)
+    ).to be_falsey
 
     waive
 
     agent_run.reload
     expect(agent_run.status).to eq("completed")
+    expect(agent_run.result_commit_sha).to eq(shipped_commit)
     expect(agent_run.pull_request_url).to eq("https://github.com/example/pull/7")
     expect(agent_run.pull_request_number).to eq(7)
   end

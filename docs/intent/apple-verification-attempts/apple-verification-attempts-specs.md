@@ -90,11 +90,12 @@
   *Code:* `AppleVerificationAttempts::RetryPolicy`
 
 - [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
-  the `completion_verification` gate has not succeeded for an agent run, the
-  system SHALL block that agent run from reporting success; when assigned to
-  the `pull_request_verification` gate, it SHALL block Paid's PR verification
-  result; enforcement SHALL bind the approved committed workflow digest and
-  its approved lifecycle gate.
+  the `completion_verification` gate has not succeeded for an agent run that
+  reports a committed result, the system SHALL block that agent run from
+  reporting success; it SHALL not block a completion without a result commit.
+  When assigned to the `pull_request_verification` gate, it SHALL block Paid's
+  PR verification result; enforcement SHALL bind the approved committed
+  workflow digest and its approved lifecycle gate.
   *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
   *Code:* `AppleVerificationAttempts::GateEnforcement`,
   `AgentRun#complete!`, `AgentRuns::VerificationResultRecorder`
@@ -110,8 +111,9 @@
   it runs or is explicitly waived, and the system SHALL NOT silently skip
   required verification or fall back to executing project code on the
   macOS host. Required-verification enforcement SHALL bind to the commit
-  being completed: a successful attempt on a different commit SHALL NOT
-  satisfy the gate. A withheld run SHALL be re-invoked via
+  being completed when a result commit is present: a successful attempt on a
+  different commit SHALL NOT satisfy the gate. A completion without a result
+  commit SHALL not be withheld. A withheld run SHALL be re-invoked via
   `AppleVerificationAttempts::CompleteWithheldRun` by the waive flow,
   by attempt-completion code when it records a `succeeded` attempt, and by
   a 5-minute maintenance sweep so the run still completes when the gate

@@ -9,6 +9,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:, apple_verification_mode: "on_demand") }
   let(:agent_run) { create(:agent_run, :running, project:) }
+  let(:shipped_commit) { "0123456789abcdef0123456789abcdef01234567" }
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
@@ -213,7 +214,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       decision = described_class.evaluate(agent_run:, gate: "completion_verification", result_commit: nil)
 
       expect(decision.status).to eq(:pending)
-      expect(decision.reason).to include(committed_sha)
+      expect(decision.reason).to include("has not run")
     end
 
     it "blocks when the matching commit's attempt is a non-waived code failure" do
@@ -271,15 +272,23 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     it "blocks an agent run from reporting success while required verification is pending" do
       approved_required_revision
 
-      expect(agent_run.complete!).to be_falsey
+      expect(agent_run.complete!(result_commit: shipped_commit)).to be_falsey
       expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not withhold a non-code completion without a result commit" do
+      approved_required_revision
+
+      expect(agent_run.complete!).to be_truthy
+      expect(agent_run.reload.status).to eq("completed")
+      expect(agent_run.external_metadata).not_to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
     end
 
     it "records the withheld completion instead of failing the run while verification is pending" do
       revision = approved_required_revision
-      attempt_for(revision, agent_run:, status: "failed", failure_classification: "worker_infrastructure")
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "worker_infrastructure", commit_sha: shipped_commit)
 
-      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_falsey
+      expect(agent_run.complete!(result_commit: shipped_commit, pr_url: "https://github.com/example/pull/1")).to be_falsey
 
       expect(agent_run.reload.status).to eq("running")
       expect(agent_run.pull_request_url).to be_blank
@@ -294,7 +303,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       approved_required_revision
       agent_run.update_column(:started_at, AgentRun.stale_running_cutoff - 1.minute)
 
-      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_falsey
+      expect(agent_run.complete!(result_commit: shipped_commit, pr_url: "https://github.com/example/pull/1")).to be_falsey
 
       expect(AgentRun.awaiting_completion_verification).to contain_exactly(agent_run)
       expect(AgentRun.stale_running).to be_empty
@@ -303,12 +312,12 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
     it "clears the withheld marker when completion later succeeds" do
       revision = approved_required_revision
-      attempt_for(revision, agent_run:, status: "failed", failure_classification: "worker_infrastructure")
-      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_falsey
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "worker_infrastructure", commit_sha: shipped_commit)
+      expect(agent_run.complete!(result_commit: shipped_commit, pr_url: "https://github.com/example/pull/1")).to be_falsey
       expect(agent_run.reload.external_metadata).to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
 
-      attempt_for(revision, agent_run:, status: "succeeded", retry_number: 1)
-      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_truthy
+      attempt_for(revision, agent_run:, status: "succeeded", retry_number: 1, commit_sha: shipped_commit)
+      expect(agent_run.complete!(result_commit: shipped_commit, pr_url: "https://github.com/example/pull/1")).to be_truthy
 
       expect(agent_run.reload.status).to eq("completed")
       expect(agent_run.external_metadata).not_to have_key(AgentRun::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
@@ -316,9 +325,9 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
     it "blocks an agent run from reporting success when required checks failed" do
       revision = approved_required_revision
-      attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion")
+      attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion", commit_sha: shipped_commit)
 
-      expect { agent_run.complete! }.to raise_error(
+      expect { agent_run.complete!(result_commit: shipped_commit) }.to raise_error(
         AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed,
         /test_assertion/
       )
@@ -327,9 +336,9 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
     it "completes the run once required verification succeeds" do
       revision = approved_required_revision
-      attempt_for(revision, agent_run:, status: "succeeded")
+      attempt_for(revision, agent_run:, status: "succeeded", commit_sha: shipped_commit)
 
-      expect(agent_run.complete!(pr_url: "https://github.com/example/pull/1")).to be_truthy
+      expect(agent_run.complete!(result_commit: shipped_commit, pr_url: "https://github.com/example/pull/1")).to be_truthy
       expect(agent_run.reload.status).to eq("completed")
     end
 
@@ -352,7 +361,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       expect(agent_run.status).to eq("running")
       expect(agent_run.pull_request_url).to be_blank
       log = agent_run.agent_run_logs.system.last
-      expect(log.content).to include("Completion withheld", "0123456789abcdef0123456789abcdef01234567")
+      expect(log.content).to include("Completion withheld", "has not run")
     end
 
     it "completes once verification succeeds on the commit being shipped" do

@@ -130,8 +130,11 @@ binds to the commit the agent run is shipping through the gate (the
 `result_commit` threaded into `AgentRun#complete!` and into the re-invoked
 completion); a verification of any other commit cannot satisfy the gate, so a
 stale verification cannot leak forward when the run's actual output is a
-different commit. Paid never silently skips required verification and never
-falls back to executing project code on the host.
+different commit. The gate applies only when a completion has a result commit:
+review and issue-creation goals do not ship committed code and must complete
+without being parked for an impossible verification attempt. Paid never
+silently skips required verification for committed output and never falls back
+to executing project code on the host.
 
 A run whose completion is withheld at the gate stays non-terminal and
 `running`, marked with a withheld-completion record (timestamp plus the

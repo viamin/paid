@@ -2135,52 +2135,50 @@ class AgentRun < ApplicationRecord
       reload
       return false if finished?
 
-      # Bind the gate to the commit being completed: a verification of any
-      # other commit cannot satisfy this gate, so a stale verification cannot
-      # leak forward when the run's actual output is a different commit.
-      # @spec APPLE-ATTEMPT-011
-      # @spec APPLE-ATTEMPT-013
-      decision = AppleVerificationAttempts::GateEnforcement.evaluate(
-        agent_run: self,
-        gate: "completion_verification",
-        result_commit: result_commit
-      )
-      if decision.pending?
-        # Pending required verification is neither a project success nor a
-        # code failure, so it must not raise: an uncaught raise crosses the
-        # Temporal activity boundary as an opaque ActivityError and the
-        # workflow's generic rescue would mark the run failed. Instead the
-        # run stays non-terminal and awaiting verification (a retry or
-        # waiver can still satisfy the gate), the withheld completion is
-        # recorded for operators, and callers take their falsy-skip paths.
-        log!("system", "Completion withheld: #{decision.reason}")
-        mark_completion_withheld!(
-          "result_commit" => result_commit,
-          "pr_url" => pr_url,
-          "pr_number" => pr_number,
-          "issue_url" => issue_url,
-          "issue_number" => issue_number
-        )
-        false
-      else
-        # A failed required verification without a waiver is a genuine
-        # project failure, so raising here is intentional: the workflow's
-        # failure path records the failure classification on the run.
-        raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed, decision.reason if decision.blocked?
-
-        update!(
-          status: "completed",
-          completed_at: Time.current,
-          result_commit_sha: result_commit,
-          pull_request_url: pr_url,
-          pull_request_number: pr_number,
-          created_issue_url: issue_url,
-          created_issue_number: issue_number,
-          duration_seconds: duration,
-          external_metadata: external_metadata.except(COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
-        )
+      if result_commit.present?
+        return false unless enforce_completion_verification!(result_commit:, pr_url:, pr_number:, issue_url:, issue_number:)
       end
+
+      update!(
+        status: "completed",
+        completed_at: Time.current,
+        result_commit_sha: result_commit,
+        pull_request_url: pr_url,
+        pull_request_number: pr_number,
+        created_issue_url: issue_url,
+        created_issue_number: issue_number,
+        duration_seconds: duration,
+        external_metadata: external_metadata.except(COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+      )
     end
+  end
+
+  # The completion-verification gate verifies committed agent output. Goals
+  # such as review and issue creation have no result commit, so they must not
+  # be parked waiting for a verification attempt that cannot exist.
+  # @spec APPLE-ATTEMPT-011
+  # @spec APPLE-ATTEMPT-013
+  def enforce_completion_verification!(result_commit:, pr_url:, pr_number:, issue_url:, issue_number:)
+    decision = AppleVerificationAttempts::GateEnforcement.evaluate(
+      agent_run: self,
+      gate: "completion_verification",
+      result_commit: result_commit
+    )
+    if decision.pending?
+      log!("system", "Completion withheld: #{decision.reason}")
+      mark_completion_withheld!(
+        "result_commit" => result_commit,
+        "pr_url" => pr_url,
+        "pr_number" => pr_number,
+        "issue_url" => issue_url,
+        "issue_number" => issue_number
+      )
+      return false
+    end
+
+    raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed, decision.reason if decision.blocked?
+
+    true
   end
 
   # Marks the run as parked awaiting completion verification and preserves the
