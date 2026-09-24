@@ -15,7 +15,7 @@ module AppleVerificationAttempts
     def call
       raise ArgumentError, "only a completed attempt can be rerun" unless @attempt.terminal?
 
-      @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
+      rerun = @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
         rerun_attempt.assign_attributes(
           account: @attempt.account,
           agent_run: @attempt.agent_run,
@@ -28,6 +28,8 @@ module AppleVerificationAttempts
           status: "queued"
         )
       end
+      AppleVerificationAttemptMaintenanceJob.perform_later
+      rerun
     end
   end
 end

@@ -178,6 +178,12 @@ Rails.application.configure do
       class: "ExecutionResourceReconciliationJob",
       description: "Reconcile execution resource ledger rows against runner/provider state"
     },
+    apple_verification_attempt_maintenance: {
+      cron: "4-59/5 * * * *",
+      class: "AppleVerificationAttemptMaintenanceJob",
+      queue: "maintenance",
+      description: "Expire timed-out Apple verification attempts and reconcile their VM resources"
+    },
     container_pool_replenishment: {
       cron: "4-59/5 * * * *",
       class: "PoolReplenishmentJob",

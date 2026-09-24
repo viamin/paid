@@ -14,14 +14,14 @@ RSpec.describe AppleVerificationAttempt, type: :model do
   end
 
   describe ".active" do
-    it "returns queued, provisioning, and running attempts but not terminal ones" do
+    it "returns VM-owning provisioning and running attempts but not queued or terminal ones" do
       queued = create(:apple_verification_attempt, project: project, account: account, apple_verification_workflow_revision: workflow, apple_worker_profile: profile, status: "queued")
       provisioning = create(:apple_verification_attempt, project: project, account: account, apple_verification_workflow_revision: workflow, apple_worker_profile: profile, status: "provisioning")
       running = create(:apple_verification_attempt, project: project, account: account, apple_verification_workflow_revision: workflow, apple_worker_profile: profile, status: "running")
       succeeded = create(:apple_verification_attempt, project: project, account: account, apple_verification_workflow_revision: workflow, apple_worker_profile: profile, status: "succeeded")
 
-      expect(described_class.active).to contain_exactly(queued, provisioning, running)
-      expect(described_class.active).not_to include(succeeded)
+      expect(described_class.active).to contain_exactly(provisioning, running)
+      expect(described_class.active).not_to include(queued, succeeded)
     end
   end
 

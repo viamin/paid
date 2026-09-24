@@ -55,6 +55,15 @@ RSpec.describe AppleVerificationAttempts::Admission do
     expect(decision.thresholds[:min_host_disk_gib]).to eq(60)
   end
 
+  it "denies admission when the host disk measurement is unavailable" do
+    host_metrics[:disk_free_gib] = nil
+
+    decision = admission_for(project: project).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("host_disk_unknown")
+  end
+
   it "denies admission when host free memory is below the 25% threshold" do
     host_metrics[:memory_free_percent] = 15.0
 
@@ -63,6 +72,15 @@ RSpec.describe AppleVerificationAttempts::Admission do
     expect(decision).not_to be_allowed
     expect(decision.reason).to eq("host_memory_low")
     expect(decision.thresholds[:min_host_memory_percent]).to eq(25)
+  end
+
+  it "denies admission when the host memory measurement is unavailable" do
+    host_metrics[:memory_free_percent] = nil
+
+    decision = admission_for(project: project).call
+
+    expect(decision).not_to be_allowed
+    expect(decision.reason).to eq("host_memory_unknown")
   end
 
   it "denies admission during sustained critical memory pressure" do

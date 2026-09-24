@@ -22,10 +22,14 @@ module AppleVerificationAttempts
     def initialize(
       profile:,
       failure_threshold: DEFAULT_FAILURE_THRESHOLD,
+      attempt_scope: AppleVerificationAttempt,
+      completion: Complete,
       clock: Time
     )
       @profile = profile
       @failure_threshold = failure_threshold
+      @attempt_scope = attempt_scope
+      @completion = completion
       @clock = clock
     end
 
@@ -39,11 +43,11 @@ module AppleVerificationAttempts
     def record(outcome)
       profile = @profile
       now = current_time
-      profile.with_lock do
+      quarantined = profile.with_lock do
         profile.reload
         if outcome == :passed
           profile.update!(consecutive_health_failures: 0)
-          return HealthCheck.new(profile:, consecutive_failures: 0, last_failure_at: nil)
+          next false
         end
 
         consecutive = (profile.consecutive_health_failures || 0) + 1
@@ -51,10 +55,13 @@ module AppleVerificationAttempts
           consecutive_health_failures: consecutive,
           last_health_failure_at: now
         }
-        attrs.merge!(quarantine_attrs(consecutive, now)) if consecutive >= @failure_threshold && !profile.quarantined?
+        quarantining = consecutive >= @failure_threshold && !profile.quarantined?
+        attrs.merge!(quarantine_attrs(consecutive, now)) if quarantining
         profile.update!(attrs)
-        HealthCheck.new(profile:, consecutive_failures: consecutive, last_failure_at: now)
+        quarantining
       end
+      quarantine_active_attempts(now) if quarantined
+      HealthCheck.new(profile:, consecutive_failures: profile.consecutive_health_failures, last_failure_at: outcome == :passed ? nil : now)
     end
 
     # Returns the profile to service after an operator runs the isolation
@@ -83,6 +90,27 @@ module AppleVerificationAttempts
     private
 
     attr_reader :failure_threshold
+
+    def quarantine_active_attempts(now)
+      active_attempts.find_each do |attempt|
+        quarantined = attempt.with_lock do
+          attempt.reload
+          next false if attempt.terminal?
+
+          attempt.update!(
+            status: "unavailable",
+            failure_classification: "worker_infrastructure",
+            finished_at: now
+          )
+          true
+        end
+        @completion.call(attempt:) if quarantined
+      end
+    end
+
+    def active_attempts
+      @attempt_scope.where(apple_worker_profile_id: @profile.id, status: %w[provisioning running])
+    end
 
     def current_time
       return @clock.current if @clock.respond_to?(:current)

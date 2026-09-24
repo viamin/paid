@@ -31,6 +31,20 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
     expect(profile.quarantine_reason).to eq("prior")
   end
 
+  it "finalizes active attempts when the profile enters quarantine" do
+    attempt = running_attempt
+
+    monitor = described_class.new(profile: profile, failure_threshold: 3, clock: clock)
+    3.times { monitor.record(:failed) }
+
+    expect(attempt.reload).to have_attributes(
+      status: "unavailable",
+      failure_classification: "worker_infrastructure",
+      finished_at: clock
+    )
+    expect(attempt.container_retained_until).to be_present
+  end
+
   it "clears the consecutive failure counter on a passing health check" do
     profile.update!(consecutive_health_failures: 2)
 
@@ -75,5 +89,25 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
     result.define_singleton_method(:passed?) { passed }
     result.define_singleton_method(:operator_id) { operator&.id }
     result
+  end
+
+  def running_attempt
+    workflow = create(
+      :apple_verification_workflow_revision,
+      :approved,
+      project: project,
+      account: account,
+      apple_worker_profile: profile
+    )
+    create(
+      :apple_verification_attempt,
+      project: project,
+      account: account,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: profile,
+      status: "running",
+      started_at: clock - 1.minute,
+      lifecycle_gate: workflow.lifecycle_gate
+    )
   end
 end
