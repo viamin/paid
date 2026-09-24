@@ -11,6 +11,7 @@ module Activities
     DEFAULT_PER_PAGE = 100
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
+    ORPHANED_NEEDS_INPUT_LABEL_BATCH_SIZE = 100
     ISSUE_RECONCILIATION_INTERVAL = 1.hour
     PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
 
@@ -70,11 +71,7 @@ module Activities
         )
         sync_changed = manually_added_needs_input_changed || sync_changed
 
-        orphaned_needs_input_changed = repair_orphaned_needs_input_labels(
-          project,
-          synced_issues,
-          client: client
-        )
+        orphaned_needs_input_changed = repair_orphaned_needs_input_labels(project, client: client)
         sync_changed = orphaned_needs_input_changed || sync_changed
 
         invalid_needs_input_changed = repair_questionless_needs_input(
@@ -324,11 +321,15 @@ module Activities
       rounds_reset = reset_enhancement_rounds_on_trusted_body_edit!(
         issue, trusted: trusted, rounds_before_reset: rounds_before_reset, body_changed: body_changed_in_upsert
       )
+      added_labels = issue.labels - previous_labels
+      if (added_labels & project.needs_input_labels).any?
+        issue.update!(orphaned_needs_input_label_evaluated_at: nil)
+      end
       collect_eligible_issue(project, issue, eligible_issues) if eager_queue_enabled
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
-        added_labels: issue.labels - previous_labels, changed: upsert_changed || rounds_reset }
+        added_labels: added_labels, changed: upsert_changed || rounds_reset }
     end
 
     # @spec ISSUE-ENHANCEMENT-016
@@ -534,21 +535,25 @@ module Activities
     # the same cleanup. Rows with persisted questions belong to state-drift
     # repair instead, which preserves a real clarification gate.
     # @spec GITHUB-SYNC-012
-    def repair_orphaned_needs_input_labels(project, synced_issues, client:)
-      cleanup_orphaned_needs_input_labels(project, orphaned_needs_input_label_candidates(project, synced_issues), client:) do |issue_data, labels|
+    def repair_orphaned_needs_input_labels(project, client:)
+      cleanup_orphaned_needs_input_labels(project, orphaned_needs_input_label_candidates(project), client:) do |issue_data, labels|
         Array(issue_data[:labels]) & labels
       end
     end
 
-    def orphaned_needs_input_label_candidates(project, synced_issues)
-      candidates = Array(synced_issues).index_by { |issue_data| issue_data[:id] }
+    def orphaned_needs_input_label_candidates(project)
+      return [] if project.needs_input_labels.empty?
+
       project.issues
+        .where(github_state: "open", is_pull_request: false)
         .where.not(paid_state: "needs_input")
         .where(needs_input_questions: nil)
+        .where(orphaned_needs_input_label_evaluated_at: nil)
         .where(or_label_conditions(project.needs_input_labels))
+        .order(:id)
+        .limit(ORPHANED_NEEDS_INPUT_LABEL_BATCH_SIZE)
         .pluck(:id, :labels)
-        .each { |id, labels| candidates[id] ||= { id:, labels: } }
-      candidates.values
+        .map { |id, labels| { id:, labels: } }
     end
 
     def or_label_conditions(labels)
@@ -565,23 +570,29 @@ module Activities
         issue = project.issues.find(issue_data[:id])
         next if issue.paid_state == "needs_input" || issue.needs_input_questions.present?
 
-        orphaned_labels = yield(issue_data, labels).select do |label|
-          issue.has_label?(label) && Automation::LabelPolicy.trusted_user_added_label?(project, issue, label)
+        label_trust = yield(issue_data, labels).to_h do |label|
+          [ label, Automation::LabelPolicy.label_addition_trust(project, issue, label) ]
         end
-        next if orphaned_labels.empty?
-        next unless remove_invalid_needs_input_labels(client, project, issue, orphaned_labels)
+        next if label_trust.value?(:unknown)
 
-        issue.update!(labels: Array(issue.labels) - orphaned_labels)
-        post_manually_added_needs_input_label_comment(client, project, issue, orphaned_labels)
-        changed = true
+        orphaned_labels = label_trust.select { |_label, trust| trust == :trusted }.keys
+        unless orphaned_labels.empty?
+          next unless remove_invalid_needs_input_labels(client, project, issue, orphaned_labels)
 
-        logger.info(
-          message: "github_sync.needs_input_label_added_ignored",
-          project_id: project.id,
-          issue_id: issue.id,
-          issue_number: issue.github_number,
-          labels: orphaned_labels
-        )
+          issue.update!(labels: Array(issue.labels) - orphaned_labels)
+          post_manually_added_needs_input_label_comment(client, project, issue, orphaned_labels)
+          changed = true
+
+          logger.info(
+            message: "github_sync.needs_input_label_added_ignored",
+            project_id: project.id,
+            issue_id: issue.id,
+            issue_number: issue.github_number,
+            labels: orphaned_labels
+          )
+        end
+
+        issue.update!(orphaned_needs_input_label_evaluated_at: Time.current)
       end
 
       changed

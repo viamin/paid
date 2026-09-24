@@ -1041,6 +1041,36 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(github_client).not_to have_received(:add_comment)
       end
 
+      # @spec GITHUB-SYNC-012
+      it "records an untrusted historical label evaluation so it is not rescanned" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        issue.update!(labels: [ "paid-build", "paid-needs-input" ])
+        stub_issues_by_label(nil => [])
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.orphaned_needs_input_label_evaluated_at).to be_present
+        expect(github_client).to have_received(:issue_events).once
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "processes historical orphaned labels in bounded batches" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        stub_issues_by_label(nil => [])
+        allow(github_client).to receive(:issue_events).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+        create_list(:issue, 101, project:, labels: [ "paid-needs-input" ], paid_state: "new")
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_events).exactly(100).times
+      end
+
       it "does not remove a label last added by Paid" do
         allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
           label_event(event: "labeled", login: Github::AppRegistry.bot_login, label: "paid-needs-input")
