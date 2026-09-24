@@ -38,13 +38,21 @@
   *Code:* `ProcessRunQueueJob`, `Activities::RunAgentActivity`,
   `AgentRun#start!`.
 
-- [x] **TEMPORAL-ORCHESTRATION-006** — When a paused `create_feature` run is
-  awaiting issue clarification (`paid_state: "needs_input"`), stale recovery
-  SHALL leave it paused regardless of its age. Paused executions not awaiting
-  human clarification SHALL retain their existing bounded stale-recovery
-  behavior.
+- [x] **TEMPORAL-ORCHESTRATION-006** — When a paused `create_feature` run has
+  a persisted clarification-round identity, stale recovery SHALL leave it
+  paused regardless of its age or the current issue `paid_state`. Paused
+  executions without that run-owned clarification identity SHALL retain their
+  existing bounded stale-recovery behavior.
   *Tests:* `spec/jobs/stale_run_detector_job_spec.rb`.
   *Code:* `AgentRun.awaiting_human_clarification`, `StaleRunDetectorJob`.
+
+- [x] **TEMPORAL-ORCHESTRATION-008** — When stale recovery terminalizes a
+  `create_feature` run with a persisted clarification-round identity and its
+  issue retains both the needs-input label and stored questions, the system
+  SHALL restore the issue to `needs_input` rather than leave the answer gate
+  orphaned behind `failed`.
+  *Tests:* `spec/jobs/stale_run_detector_job_spec.rb`.
+  *Code:* `StaleRunDetectorJob`.
 
 - [x] **TEMPORAL-ORCHESTRATION-007** — When a `create_feature` clarification
   comment is retried after GitHub accepted it but before local needs-input

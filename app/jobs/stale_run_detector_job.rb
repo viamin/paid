@@ -306,13 +306,7 @@ class StaleRunDetectorJob < ApplicationJob
         )
         agent_run.log!("system",
           "Rate-limited run retry limit reached (#{AgentRun::MAX_RATE_LIMITED_REQUEUES}), staying failed")
-        if (issue = agent_run.issue)
-          # Review-goal failures restore "completed" (the PR work succeeded; only
-          # the review follow-up failed) so auto-pick/PR scanning is not blocked —
-          # consistent with resolve_stale_run and MarkAgentRunFailedActivity.
-          target_state = agent_run.review_goal? ? "completed" : "failed"
-          issue.update!(paid_state: target_state) unless issue.paid_state == target_state
-        end
+        update_issue_state_after_terminal_recovery(agent_run)
         Rails.logger.warn(
           message: "stale_run_detector.rate_limited_exhausted",
           agent_run_id: agent_run.id,
@@ -556,12 +550,7 @@ class StaleRunDetectorJob < ApplicationJob
       )
       agent_run.log!("system", "Run marked as timed out by stale run detector")
 
-      if (issue = agent_run.issue)
-        # Review-goal failures restore "completed" instead of "failed" so
-        # auto-pick is not blocked by a transient review follow-up failure.
-        target_state = agent_run.review_goal? ? "completed" : "failed"
-        issue.update!(paid_state: target_state) unless issue.paid_state == target_state
-      end
+      update_issue_state_after_terminal_recovery(agent_run)
 
       Rails.logger.warn(
         message: "stale_run_detector.resolved_stale_run",
@@ -576,6 +565,30 @@ class StaleRunDetectorJob < ApplicationJob
     cleanup_docker_resources_by_id(agent_run, old_resources)
 
     true
+  end
+
+  # A clarification round's run-owned identity survives unrelated issue-state
+  # writes. Preserve its answer flow whenever its externally visible label and
+  # locally stored questions still agree that human input is pending.
+  # @spec TEMPORAL-ORCHESTRATION-008
+  def update_issue_state_after_terminal_recovery(agent_run)
+    issue = agent_run.issue
+    return unless issue
+
+    target_state = if active_clarification_gate?(agent_run, issue)
+      "needs_input"
+    elsif agent_run.review_goal?
+      "completed"
+    else
+      "failed"
+    end
+    issue.update!(paid_state: target_state) unless issue.paid_state == target_state
+  end
+
+  def active_clarification_gate?(agent_run, issue)
+    agent_run.feature_clarification_round_recorded? &&
+      issue.has_label?(issue.project.enhance_issue_needs_input_label_name) &&
+      issue.needs_input_questions.present?
   end
 
   # Cancels a Temporal workflow by its captured workflow_id. Returns true if

@@ -515,15 +515,35 @@ RSpec.describe StaleRunDetectorJob do
 
     context "with stale paused runs" do
       # @spec TEMPORAL-ORCHESTRATION-006
-      it "does not recover a create_feature run awaiting human clarification" do
+      it "does not recover a create_feature run with a clarification round after issue state drifts" do
         issue = create(:issue, :needs_input, project: create(:project))
+        issue.update!(paid_state: "failed", needs_input_questions: [ "Which behavior should Paid implement?" ])
         stale_run = create(:agent_run, :paused, :create_feature_goal, project: issue.project, issue: issue,
-          paused_at: (paused_threshold + 60).seconds.ago)
+          paused_at: (paused_threshold + 60).seconds.ago,
+          external_metadata: { AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY => "clarification-round" })
 
         described_class.perform_now
 
         expect(stale_run.reload.status).to eq("paused")
         expect(stale_run.stale_requeue_count).to eq(0)
+      end
+
+      # @spec TEMPORAL-ORCHESTRATION-008
+      it "restores needs_input when a clarification run is timed out with its answer gate intact" do
+        issue = create(:issue, :needs_input, project: create(:project),
+          needs_input_questions: [ "Which behavior should Paid implement?" ])
+        issue.update!(paid_state: "failed")
+        stale_run = create(:agent_run, :paused, :create_feature_goal, project: issue.project, issue: issue,
+          external_metadata: { AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY => "clarification-round" })
+        provisioner = instance_double(Containers::ServiceProvisioner, cleanup: nil)
+        allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+        described_class.new.send(:resolve_stale_run, stale_run)
+
+        expect(stale_run.reload.status).to eq("timeout")
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(issue.project.enhance_issue_needs_input_label_name)
+        expect(issue.needs_input_questions).to be_present
       end
 
       it "requeues a stale paused run that has not exhausted requeue budget" do
@@ -779,6 +799,24 @@ RSpec.describe StaleRunDetectorJob do
 
         expect(run.reload.status).to eq("failed")
         expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      # @spec TEMPORAL-ORCHESTRATION-008
+      it "restores needs_input when an exhausted clarification run retains its answer gate" do
+        issue = create(:issue, :needs_input, project: project,
+          needs_input_questions: [ "Which behavior should Paid implement?" ])
+        issue.update!(paid_state: "failed")
+        run = create(:agent_run, :rate_limited, :create_feature_goal, project: project, issue: issue,
+          rate_limited_until: 1.minute.ago,
+          stale_requeue_count: AgentRun::MAX_RATE_LIMITED_REQUEUES,
+          external_metadata: { AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY => "clarification-round" })
+
+        described_class.perform_now
+
+        expect(run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+        expect(issue.needs_input_questions).to be_present
       end
 
       it "restores the issue to completed (not failed) when an exhausted run is a review goal" do
