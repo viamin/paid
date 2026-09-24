@@ -14,6 +14,70 @@ RSpec.describe "Api::GithubWebhooks" do
   end
 
   describe "POST /api/github_webhooks" do
+    context "with an issue mutation event" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:action) { "edited" }
+      let(:actor_login) { project.allowed_github_usernames.first }
+      let(:payload) do
+        {
+          action: action,
+          issue: { number: 42 },
+          sender: { login: actor_login },
+          repository: { id: project.github_id, full_name: project.full_name }
+        }
+      end
+
+      before do
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:update_issue)
+        allow(github_client).to receive(:add_comment)
+      end
+
+      # @spec GITHUB-SYNC-013
+      it "preserves an edit made by a trusted GitHub user" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issues",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change { AccountActivityEvent.where(action: "issue.mutation_trust_verified").count }.by(1)
+
+        expect(response).to have_http_status(:ok)
+        expect(github_client).not_to have_received(:update_issue)
+      end
+
+      context "when an untrusted user reopens the issue" do
+        let(:action) { "reopened" }
+        let(:actor_login) { "untrusted-user" }
+
+        # @spec GITHUB-SYNC-013
+        it "closes and explains the reopen" do
+          body, signature = sign_payload(payload, project.webhook_secret)
+
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issues",
+              "X-Hub-Signature-256" => signature
+            }
+
+          expect(response).to have_http_status(:ok)
+          expect(github_client).to have_received(:update_issue).with(project.full_name, 42, state: "closed")
+          expect(github_client).to have_received(:add_comment).with(
+            project.full_name,
+            42,
+            Issues::EnforceMutationTrust::UNTRUSTED_MUTATION_COMMENT
+          )
+        end
+      end
+    end
+
     context "with pull_request_review event" do
       let(:payload) do
         {

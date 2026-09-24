@@ -126,3 +126,17 @@
   do not repeatedly fetch unchanged issues' label-event histories.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **GITHUB-SYNC-013** — When a signed GitHub `issues` webhook reports an
+  `edited` or `reopened` action, the system SHALL evaluate the webhook sender
+  against the project's explicit case-insensitive human GitHub allowlist. The
+  implicit Paid App bot identity SHALL NOT grant mutation trust. For an
+  allowlisted sender, the system SHALL preserve the GitHub issue state; for
+  any other sender, it SHALL close the issue through the project credential,
+  post an explanatory comment naming the allowlist and appeal path, and record
+  an audit event and structured log with the sender, trust result, action, and
+  allow/close decision.
+  *Code:* `app/controllers/api/github_webhooks_controller.rb`,
+  `app/services/issues/enforce_mutation_trust.rb`.
+  *Test:* `spec/services/issues/enforce_mutation_trust_spec.rb`,
+  `spec/requests/api/github_webhooks_spec.rb`.
