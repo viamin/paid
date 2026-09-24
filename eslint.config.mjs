@@ -19,6 +19,7 @@ export default [
         URL: "readonly",
         Chart: "readonly",
         Option: "readonly",
+        Event: "readonly",
         setTimeout: "readonly",
         requestAnimationFrame: "readonly",
         cancelAnimationFrame: "readonly",

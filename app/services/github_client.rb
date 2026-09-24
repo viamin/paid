@@ -229,6 +229,44 @@ class GithubClient
     end
   end
 
+  # Lists organizations the authenticated user belongs to.
+  #
+  # @return [Array<Sawyer::Resource>] Organization records with :login
+  # @raise [AuthenticationError] if the token is invalid
+  # @raise [RateLimitError] if rate limit is exceeded
+  # @spec PROJECT-CREATION-004
+  def organizations
+    handle_errors do
+      with_auto_paginate { client.organizations }
+    end
+  end
+
+  # Creates a new repository under the authenticated user (or an
+  # organization). Used by the blank-project creation flow (issue #3954).
+  #
+  # @param name [String] Repository name (GitHub naming rules apply)
+  # @param organization [String, nil] Organization login to own the repo;
+  #   nil creates under the authenticated user
+  # @param private [Boolean] Whether the repository is private
+  # @param description [String, nil] Short repository description
+  # @param auto_init [Boolean] Whether GitHub seeds an initial commit so a
+  #   default branch ref exists. Paid's worktree/branch machinery requires a
+  #   base commit, so this defaults to true.
+  # @return [Sawyer::Resource] The created repository
+  # @raise [NotFoundError] if the target owner does not exist
+  # @raise [AuthenticationError] if the token cannot create repos there
+  # @raise [ApiError] for other API errors (e.g. name already taken)
+  # @spec PROJECT-CREATION-002
+  def create_repository(name, organization: nil, private: true, description: nil, auto_init: true)
+    raise ArgumentError, "repository name cannot be blank" if name.blank?
+
+    options = { private: private, auto_init: auto_init }
+    options[:description] = description if description.present?
+    options[:organization] = organization if organization.present?
+
+    handle_errors { client.create_repository(name, options) }
+  end
+
   # Lists issues for a repository.
   #
   # @param repo [String] Repository in "owner/name" format

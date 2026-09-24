@@ -22,6 +22,11 @@ class ContextIntakeSession < ApplicationRecord
 
   def complete!
     update!(status: "completed", completed_at: Time.current)
+
+    # Completing the grill-me questionnaire captures a blank project's
+    # initial preferences, which finishes its setup.
+    # @spec PROJECT-CREATION-011
+    project.setup_completed! if project.setup_pending?
   end
 
   def mark_stale!

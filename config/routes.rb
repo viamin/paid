@@ -75,6 +75,7 @@ Rails.application.routes.draw do
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
     get :repositories, on: :member
+    get :owners, on: :member
     get :validation_status, on: :member
     post :retry_validation, on: :member
   end
@@ -244,6 +245,8 @@ Rails.application.routes.draw do
     post :toggle_auto_merge, on: :member
     post :toggle_pause, on: :member
     post :start_lid, on: :member
+    post :start_setup_chat, on: :member
+    post :finish_setup, on: :member
     post :quality_resume, on: :member
     post :cleanup_stale_runs, on: :member
     post :start_preview, on: :member

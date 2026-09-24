@@ -29,6 +29,15 @@ class Project < ApplicationRecord
   }.freeze
 
   LID_MODES = %w[full scoped].freeze
+  # How the project came to be (issue #3954): "connected" projects attach to
+  # a repository that already existed on GitHub; "blank" projects had their
+  # repository created by Paid and start from a blank slate.
+  # @spec PROJECT-CREATION-003
+  CREATION_ORIGINS = %w[connected blank].freeze
+  # Blank-project bootstrap state. Null means setup is not required
+  # (connected projects, or blank projects whose setup finished).
+  # @spec PROJECT-CREATION-011
+  SETUP_STATUSES = %w[pending in_progress completed].freeze
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
@@ -311,6 +320,11 @@ class Project < ApplicationRecord
   validates :auto_merge_mode, inclusion: { in: %w[off dependabot_only all] }
   validates :auto_release_granularity, inclusion: { in: AUTO_RELEASE_GRANULARITIES }
   validates :lid_mode, inclusion: { in: LID_MODES }, allow_nil: true
+  # @spec PROJECT-CREATION-003
+  validates :creation_origin, inclusion: { in: CREATION_ORIGINS }
+  # @spec PROJECT-CREATION-011
+  validates :setup_status, inclusion: { in: SETUP_STATUSES }, allow_nil: true
+  validate :setup_status_requires_blank_origin
   validates :tdd_mode, inclusion: { in: TDD_MODES }
   # @spec FEATURE-APPROVAL-001
   validates :operating_mode, inclusion: { in: OPERATING_MODES }
@@ -410,6 +424,34 @@ class Project < ApplicationRecord
 
   def flipper_id
     "Project;#{id}"
+  end
+
+  # Blank-slate projects had their repository created by Paid (issue #3954)
+  # and may still need their initial tooling choices captured.
+  # @spec PROJECT-CREATION-003
+  def blank_origin?
+    creation_origin == "blank"
+  end
+
+  # True while the blank project still needs its initial setup decisions
+  # (language/framework, dependencies, CI, conventions) captured.
+  # @spec PROJECT-CREATION-007
+  def setup_pending?
+    blank_origin? && setup_status != "completed"
+  end
+
+  # @spec PROJECT-CREATION-009
+  def setup_started!
+    return unless blank_origin? && setup_status == "pending"
+
+    update_column(:setup_status, "in_progress")
+  end
+
+  # @spec PROJECT-CREATION-011
+  def setup_completed!
+    return unless blank_origin? && setup_status != "completed"
+
+    update_column(:setup_status, "completed")
   end
 
   def github_url
@@ -2211,6 +2253,16 @@ class Project < ApplicationRecord
     return if allowed_github_usernames.is_a?(Array) && allowed_github_usernames.any?(&:present?)
 
     errors.add(:allowed_github_usernames, "must include at least one trusted GitHub username")
+  end
+
+  # Setup state only applies to blank projects; a connected project carries
+  # no bootstrap state because its repository came with history and tooling.
+  # @spec PROJECT-CREATION-003
+  def setup_status_requires_blank_origin
+    return if setup_status.nil?
+    return if creation_origin == "blank"
+
+    errors.add(:setup_status, "only applies to blank-origin projects")
   end
 
   # When the trusted-user list changes, previously-parsed dependency and
