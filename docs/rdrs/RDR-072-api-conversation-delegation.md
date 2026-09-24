@@ -54,11 +54,21 @@ owns a provider-neutral execution contract and translates RubyLLM results and
 errors into that contract. RubyLLM supplies API protocols and reusable
 conversation mechanics inside that implementation.
 
-Prefer application-supplied persistence or serializable conversation state.
-Do not make RubyLLM Active Record models an accidental harness requirement.
-If resumption requires RubyLLM-owned tables, compare migration cost and tenant
-isolation explicitly before finalizing the loop decision. Retaining Paid's
-loop over a normalized transport is an acceptable outcome.
+### Persistence Decision
+
+Paid may adopt RubyLLM-managed supporting tables when they remove substantial
+bookkeeping. Custom persistence is not a requirement: recreating library
+behavior in adapters would undermine the simplification goal. Agent-harness
+must remain usable without Rails; any Rails persistence integration is optional
+and must not impose Active Record models on plain Ruby consumers.
+
+Before adopting supporting tables, demonstrate tenant isolation, auditability,
+and preservation of existing conversations, message links and pending approvals.
+Document and rehearse migration and recovery, including completed tool effects.
+Paid retains ownership of application authority and domain records even when
+the library manages supporting storage. The specific tables and integration
+contract remain implementation-design work. Retaining Paid's loop over a
+normalized transport is still an acceptable outcome if delegation adds complexity.
 
 ### Ownership
 
@@ -70,6 +80,7 @@ loop over a normalized transport is an acceptable outcome.
 | Generic pending decisions and resumable tool sequencing | Harness contract, using RubyLLM where suitable |
 | Protocols, schemas, streaming and normalized API errors | Harness contract backed by RubyLLM |
 | Conversation identity, application message links and audit attribution | Paid |
+| Optional supporting persistence schema and mechanics | RubyLLM where adopted; Paid verifies tenant isolation, migration and audit requirements |
 | Reported attempts, tokens and provider cost calculations | Harness contract for calls it executes |
 | Budgets, CLI/proxy reconciliation and infrastructure costs | Paid |
 | Containers, egress controls and secrets proxy | Existing Paid infrastructure |
@@ -111,7 +122,8 @@ change implemented EARS status or supersede RDR-028.
 | Call RubyLLM directly from Paid | Breaks the HLD's single execution interface. |
 | Delegate transport, retain Paid's loop | Recommended first milestone; may remain the final boundary if loop adapters add more complexity than they remove. |
 | Delegate transport and reusable loop mechanics | Preferred target if approval, persistence and retry contracts can be demonstrated. |
-| Adopt RubyLLM Rails tables wholesale | Requires explicit assessment of tenant RLS, historical messages and application links; not the initial recommendation. |
+| Require custom persistence for all supporting state | Rejected as a blanket constraint; adapters may recreate the bookkeeping being removed. |
+| Adopt RubyLLM-managed supporting tables selectively | Allowed where simplification is demonstrated and tenant isolation, auditability and migration requirements are met; Rails remains optional for harness consumers. |
 
 ## Non-Goals
 
@@ -161,8 +173,10 @@ requires an explicit recommendation and issue-scope update.
 
 ## Open Decisions
 
-1. Can the harness support persistence-neutral resumption with stable tool IDs
-   and cancellation, or are RubyLLM-owned records required?
+1. Which supporting tables should Paid adopt, and what optional integration
+   contract preserves stable tool IDs and resumption while keeping the harness
+   usable without Rails? The permission to use library-managed persistence is
+   resolved above; the technical mapping still requires investigation.
 2. Which providers/custom endpoints support each operation, and how are
    unsupported capabilities surfaced without silent fallback?
 3. What attempt identities and retry ownership prevent duplicate usage and
