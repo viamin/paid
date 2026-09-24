@@ -40,7 +40,7 @@ RSpec.describe AppleVerification::AgentTools do
     )
   end
 
-  def attempt_for(revision, agent_run:, status: "queued", failure_classification: nil)
+  def attempt_for(revision, agent_run:, status: "queued", failure_classification: nil, requested_capture: nil)
     create(
       :apple_verification_attempt,
       project:,
@@ -49,7 +49,8 @@ RSpec.describe AppleVerification::AgentTools do
       apple_worker_profile: revision.apple_worker_profile,
       lifecycle_gate: revision.lifecycle_gate,
       status:,
-      failure_classification:
+      failure_classification:,
+      requested_capture:
     )
   end
 
@@ -240,7 +241,9 @@ RSpec.describe AppleVerification::AgentTools do
         "requested_capture" => "ios-app.initial-screen",
         "lifecycle_gate" => "agent_iteration"
       )
-      expect(revision.apple_verification_attempts.count).to eq(1)
+      expect(revision.apple_verification_attempts.last).to have_attributes(
+        requested_capture: "ios-app.initial-screen"
+      )
     end
 
     it "rejects a capture the revision does not declare" do
@@ -273,7 +276,10 @@ RSpec.describe AppleVerification::AgentTools do
   describe ".get_apple_verification" do
     it "returns structured state matching the project UI presentation" do
       revision = approved_revision(gate: "agent_iteration")
-      attempt = attempt_for(revision, agent_run:, status: "failed", failure_classification: "test_assertion")
+      capture_id = "ios-app.initial-screen"
+      attempt = attempt_for(
+        revision, agent_run:, status: "failed", failure_classification: "test_assertion", requested_capture: capture_id
+      )
 
       state = described_class.get_apple_verification(project:, agent_run:)
 
@@ -288,6 +294,7 @@ RSpec.describe AppleVerification::AgentTools do
         "failure_classification" => "test_assertion",
         "workflow_revision_status" => "approved",
         "retry_number" => 0,
+        "requested_capture" => capture_id,
         "required_checks" => %w[ios-app.tests ios-app.initial-screen]
       )
     end

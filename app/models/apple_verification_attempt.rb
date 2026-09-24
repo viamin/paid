@@ -117,6 +117,6 @@ class AppleVerificationAttempt < ApplicationRecord
     will_save_change_to_account_id? || will_save_change_to_project_id? || will_save_change_to_agent_run_id? ||
       will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
       will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
-      will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
+      will_save_change_to_requested_capture? || will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
   end
 end

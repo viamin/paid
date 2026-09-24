@@ -45,7 +45,7 @@ module AppleVerification
 
         request = resolve_request(project:, agent_run:, bundle_digest:, commit_sha:)
         ensure_declared_capture!(request.revision, capture_id)
-        attempt = create_attempt(project:, agent_run:, request:)
+        attempt = create_attempt(project:, agent_run:, request:, requested_capture: capture_id)
         {
           "status" => "queued",
           "attempt_id" => attempt.id,
@@ -176,7 +176,7 @@ module AppleVerification
         raise CaptureNotDeclaredError, "capture #{capture_id} is not declared by the workflow revision"
       end
 
-      def create_attempt(project:, agent_run:, request:)
+      def create_attempt(project:, agent_run:, request:, requested_capture: nil)
         project.apple_verification_attempts.create!(
           account: project.account,
           agent_run: agent_run,
@@ -184,6 +184,7 @@ module AppleVerification
           apple_worker_profile: request.revision.apple_worker_profile,
           source_digest: request.source_digest,
           commit_sha: request.commit_sha,
+          requested_capture: requested_capture,
           lifecycle_gate: request.revision.lifecycle_gate,
           retry_number: 0,
           status: "queued"
@@ -222,6 +223,7 @@ module AppleVerification
           "lifecycle_gate" => attempt.lifecycle_gate,
           "source_digest" => attempt.source_digest,
           "commit_sha" => attempt.commit_sha,
+          "requested_capture" => attempt.requested_capture,
           "retry_number" => attempt.retry_number,
           "workflow_revision_status" => revision.status,
           "required_checks" => revision.required_checks,
