@@ -264,7 +264,20 @@ class Issue < ApplicationRecord
 
   # @spec ISSUE-REOPEN-REVIEW-001
   def require_reopen_review!
-    update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+    with_lock do
+      reload
+      update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+    end
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-001
+  def complete_unless_reopen_review_pending!(attributes = {})
+    with_lock do
+      reload
+      return false if reopen_review_pending?
+
+      update!({ paid_state: "completed" }.merge(attributes))
+    end
   end
 
   def untrusted?

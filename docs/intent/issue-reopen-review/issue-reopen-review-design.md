@@ -23,6 +23,8 @@ auto-pick selection excludes it.
 An operator resumes the issue from manual review only after validating whether
 the original intent remains valid and whether new work is required. This moves
 the issue back into active work through the existing manual-review workflow.
+Automated completion activities re-check this gate immediately before changing
+an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
 ## Chat-tool policy
 
