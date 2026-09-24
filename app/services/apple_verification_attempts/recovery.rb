@@ -22,17 +22,20 @@ module AppleVerificationAttempts
       attempt_scope: AppleVerificationAttempt,
       timeout_monitor: TimeoutMonitor.new(attempt_scope:),
       ledger_reconciler: ExecutionRunners::ResourceReconciler,
+      completion: Complete,
       clock: Time
     )
       @attempt_scope = attempt_scope
       @timeout_monitor = timeout_monitor
       @ledger_reconciler = ledger_reconciler
+      @completion = completion
       @clock = clock
     end
 
     def call
       timeout_result = @timeout_monitor.call
       reclassified = timeout_result.timed_out
+      finalize_incomplete_terminal_attempts
 
       Result.new(
         scanned: timeout_result.scanned,
@@ -56,6 +59,12 @@ module AppleVerificationAttempts
         error: error.message
       )
       { enqueued: 0, cleaned: 0, failed: 0 }
+    end
+
+    def finalize_incomplete_terminal_attempts
+      @attempt_scope
+        .where(status: %w[failed cancelled timed_out unavailable], container_retained_until: nil)
+        .find_each { |attempt| @completion.call(attempt:) }
     end
   end
 end

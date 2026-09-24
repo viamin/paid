@@ -66,6 +66,19 @@ RSpec.describe AppleVerificationAttempts::Recovery do
     expect(result.reclassified.size).to eq(2)
   end
 
+  it "retries finalization for a terminal attempt that has not entered retention" do
+    timed_out = running_attempt(started_at: clock - 46.minutes)
+    timed_out.update!(
+      status: "timed_out",
+      failure_classification: "cancellation_or_timeout",
+      finished_at: clock
+    )
+
+    described_class.call(timeout_monitor: AppleVerificationAttempts::TimeoutMonitor.new(clock: clock))
+
+    expect(timed_out.reload.container_retained_until).to be_present
+  end
+
   def create_stale_attempt(workflow, started_at)
     create(
       :apple_verification_attempt,

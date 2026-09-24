@@ -5,13 +5,13 @@ module AppleVerificationAttempts
   # to decide whether to admit a new Apple verification attempt. The probe
   # is intentionally small and query-only: it never asks the macOS worker to
   # run anything, and it never inspects the macOS guest. It pulls the active
-  # Apple VM count from the database (a queued or running attempt counts as
-  # "active" because it owns the single worker slot) and reads host-level
+  # Apple VM count from the database (a provisioning or running attempt owns
+  # the single worker slot) and reads host-level
   # memory and disk from an injected provider so unit tests can stub it.
   # @spec APPLE-ATTEMPT-001
   class HostCapacity
     # Returns a Hash with at least these keys:
-    #   :active_apple_vms         Integer count of queued/provisioning/running attempts
+    #   :active_apple_vms         Integer count of provisioning/running attempts
     #   :disk_free_gib            Float free host disk in GiB (nil when unknown)
     #   :memory_free_percent      Float free host memory as a percent (nil when unknown)
     #   :guest_disk_free_gib      Float free disk inside the booted guest in GiB (nil when unknown)

@@ -29,7 +29,9 @@ module AppleVerificationAttempts
     REASONS = %w[
       allowed
       active_vm_limit
+      host_disk_unknown
       host_disk_low
+      host_memory_unknown
       host_memory_low
       guest_disk_low
       guest_disk_unknown
@@ -68,6 +70,7 @@ module AppleVerificationAttempts
       thresholds = thresholds_payload
 
       return deny("active_vm_limit", figures:, thresholds:) if figures.active_apple_vms >= @max_active_vms
+      return deny("host_disk_unknown", figures:, thresholds:) if figures.disk_free_gib.nil?
       return deny("host_disk_low", figures:, thresholds:) if figures.disk_free_gib.present? && figures.disk_free_gib < @min_host_disk_gib
 
       # Sustained critical memory pressure is checked before the regular
@@ -77,6 +80,7 @@ module AppleVerificationAttempts
       if sustained_critical_memory_pressure?(figures)
         return deny("sustained_critical_memory_pressure", figures:, thresholds:)
       end
+      return deny("host_memory_unknown", figures:, thresholds:) if figures.memory_free_percent.nil?
       return deny("host_memory_low", figures:, thresholds:) if figures.memory_free_percent.present? && figures.memory_free_percent < @min_host_memory_percent
       return deny("guest_disk_unknown", figures:, thresholds:) if figures.guest_disk_free_gib.nil?
       return deny("guest_disk_low", figures:, thresholds:) if figures.guest_disk_free_gib < @min_guest_disk_gib

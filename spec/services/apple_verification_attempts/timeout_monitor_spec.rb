@@ -31,6 +31,7 @@ RSpec.describe AppleVerificationAttempts::TimeoutMonitor do
 
     expect(stale.reload.status).to eq("timed_out")
     expect(stale.failure_classification).to eq("cancellation_or_timeout")
+    expect(stale.container_retained_until).to be_present
     expect(fresh.reload.status).to eq("running")
   end
 

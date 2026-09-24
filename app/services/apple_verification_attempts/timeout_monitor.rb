@@ -25,12 +25,14 @@ module AppleVerificationAttempts
       timeout_minutes: DEFAULT_TIMEOUT_MINUTES,
       clock: Time,
       logger: Rails.logger,
+      completion: Complete,
       batch_size: BATCH_SIZE
     )
       @attempt_scope = attempt_scope
       @timeout_minutes = timeout_minutes
       @clock = clock
       @logger = logger
+      @completion = completion
       @batch_size = batch_size
     end
 
@@ -42,18 +44,22 @@ module AppleVerificationAttempts
       timed_out_ids = []
 
       candidates.find_each(batch_size: @batch_size) do |attempt|
-        attempt.with_lock do
+        timed_out = attempt.with_lock do
           attempt.reload
-          next if attempt.terminal?
+          next false if attempt.terminal?
 
           attempt.update!(
             status: "timed_out",
             failure_classification: "cancellation_or_timeout",
             finished_at: now
           )
-          timed_out_ids << attempt.id
           log_timed_out(attempt)
+          true
         end
+        next unless timed_out
+
+        @completion.call(attempt: attempt)
+        timed_out_ids << attempt.id
       end
 
       Result.new(scanned: scanned, timed_out: timed_out_ids)
