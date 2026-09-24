@@ -40,12 +40,14 @@ Signed `issues` webhooks are also the authoritative attribution point for
 issue lifecycle mutations. When GitHub reports that an issue was reopened or
 edited, Paid evaluates the webhook sender against the project's explicit,
 case-insensitive human GitHub allowlist. The project's implicit Paid App bot
-identity is deliberately excluded from this mutation authority. A sender that
-is not allowlisted causes Paid to close the issue through the project
-credential, post a fixed explanation with an appeal path, and record an audit
-event containing the sender, trust result, action, and decision. This keeps an
-untrusted reopen or body edit from becoming an automation back door while
-making the intervention visible rather than silently suppressing work.
+identity is deliberately excluded from human mutation authority, but a sender
+matching that identity is recognized as a Paid-originated write and preserved.
+A sender that is neither allowlisted nor the project's App bot causes Paid to
+close the issue through the project credential, post a fixed explanation with
+an appeal path, and record an audit event containing the sender, trust result,
+Paid-origin flag, action, and decision. This keeps an untrusted reopen or body
+edit from becoming an automation back door while allowing authorized Paid
+writes to complete without re-closing themselves.
 
 Needs-input is a human-answer gate represented by a GitHub label, persisted
 clarification questions, and local `paid_state`. Polling reconciles every open,

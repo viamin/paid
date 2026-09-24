@@ -33,6 +33,29 @@ RSpec.describe Issues::EnforceMutationTrust do
   end
 
   # @spec GITHUB-SYNC-013
+  it "preserves an App-backed Paid mutation without treating the bot as a trusted user" do
+    app_project = create(:project, :with_github_installation, allowed_github_usernames: [ "trusted-user" ])
+    allow(app_project).to receive(:client).and_return(client)
+
+    result = described_class.call(
+      project: app_project,
+      action: "reopened",
+      issue_number: 42,
+      actor_login: Github::AppRegistry.bot_login
+    )
+
+    expect(result).to eq(:allowed)
+    expect(app_project.trusted_github_user?(Github::AppRegistry.bot_login)).to be false
+    expect(client).not_to have_received(:update_issue)
+    expect(client).not_to have_received(:add_comment)
+    expect(AccountActivityEvent.last.metadata).to include(
+      "trusted" => false,
+      "paid_originated" => true,
+      "decision" => "allow_paid_mutation"
+    )
+  end
+
+  # @spec GITHUB-SYNC-013
   it "closes and explains an untrusted reopen" do
     result = described_class.call(
       project: project,

@@ -51,6 +51,35 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(github_client).not_to have_received(:update_issue)
       end
 
+      context "when Paid's App edits or reopens an issue" do
+        let(:project) { create(:project, :with_github_installation, webhook_secret: "test-secret-123") }
+        let(:action) { "reopened" }
+        let(:actor_login) { Github::AppRegistry.bot_login }
+
+        # @spec GITHUB-SYNC-013
+        it "preserves the Paid-originated mutation without human-trusting the bot" do
+          body, signature = sign_payload(payload, project.webhook_secret)
+
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issues",
+              "X-Hub-Signature-256" => signature
+            }
+
+          expect(response).to have_http_status(:ok)
+          expect(project.trusted_github_user?(actor_login)).to be false
+          expect(github_client).not_to have_received(:update_issue)
+          expect(github_client).not_to have_received(:add_comment)
+          expect(AccountActivityEvent.last.metadata).to include(
+            "trusted" => false,
+            "paid_originated" => true,
+            "decision" => "allow_paid_mutation"
+          )
+        end
+      end
+
       context "when an untrusted user reopens the issue" do
         let(:action) { "reopened" }
         let(:actor_login) { "untrusted-user" }

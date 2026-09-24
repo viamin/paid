@@ -20,6 +20,7 @@ module Issues
 
     # @spec GITHUB-SYNC-013
     def call
+      return allow_paid_mutation! if paid_originated?
       return allow! if trusted?
 
       close!
@@ -35,6 +36,12 @@ module Issues
       :allowed
     end
 
+    def allow_paid_mutation!
+      record!(decision: "allow_paid_mutation")
+      log!(decision: "allow_paid_mutation")
+      :allowed
+    end
+
     def close!
       client.update_issue(project.full_name, issue_number, state: "closed")
       client.add_comment(project.full_name, issue_number, UNTRUSTED_MUTATION_COMMENT)
@@ -47,6 +54,13 @@ module Issues
       project.trusted_github_user?(actor_login)
     end
 
+    # A signed webhook sender matching this App's bot identity proves the
+    # mutation originated through Paid's project credential. This is distinct
+    # from human allowlist trust, which remains false for the bot.
+    def paid_originated?
+      project.paid_bot_author?(actor_login)
+    end
+
     def client
       project.client || raise(ArgumentError, "Project has no GitHub credential configured")
     end
@@ -55,7 +69,7 @@ module Issues
       Audit::RecordEvent.call(
         action: "issue.mutation_trust_verified",
         subject: project,
-        metadata: { issue_number:, actor_login:, action:, trusted: trusted?, decision: }
+        metadata: { issue_number:, actor_login:, action:, trusted: trusted?, paid_originated: paid_originated?, decision: }
       )
     end
 
@@ -66,6 +80,7 @@ module Issues
         issue_number: issue_number,
         actor_login: actor_login,
         trusted: trusted?,
+        paid_originated: paid_originated?,
         action: action,
         decision: decision
       )
