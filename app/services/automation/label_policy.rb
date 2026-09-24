@@ -31,10 +31,16 @@ module Automation
       end
 
       def trusted_user_added_label?(project, record, label)
-        state = replay_label_events(project, record, label)
-        return false unless state
+        label_addition_trust(project, record, label) == :trusted
+      end
 
-        state[:present] && project.trusted_github_user?(state[:added_by])
+      def label_addition_trust(project, record, label)
+        state = replay_label_events(project, record, label)
+        return :unknown unless state
+
+        return :trusted if state[:present] && project.trusted_github_user?(state[:added_by])
+
+        :untrusted
       end
 
       # +after+ bounds the replay to events at or after the given time — used
