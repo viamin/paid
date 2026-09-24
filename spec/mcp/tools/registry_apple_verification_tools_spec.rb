@@ -47,7 +47,8 @@ RSpec.describe Tools::Registry do
         name: "get_apple_verification",
         arguments: { "project_id" => project.id, "agent_run_id" => agent_run.id },
         user:,
-        session:
+        session:,
+        agent_run:
       )
 
       expect(result).to include("mode" => "on_demand")
@@ -55,7 +56,7 @@ RSpec.describe Tools::Registry do
   end
 
   describe Tools::VerifyAppleProject do
-    let(:tool) { described_class.new(user:, session:) }
+    let(:tool) { described_class.new(user:, session:, agent_run:) }
 
     it "queues a verification attempt for the acting agent run" do
       draft_revision
@@ -94,6 +95,15 @@ RSpec.describe Tools::Registry do
       }.to raise_error(Pundit::NotAuthorizedError, /Agent run not found or not accessible/)
     end
 
+    it "denies another run initiated by the same user" do
+      other_run = create(:agent_run, :running, project:, initiating_user: user)
+      draft_revision
+
+      expect {
+        tool.call(project_id: project.id, agent_run_id: other_run.id, bundle_digest: bundle_digest, confirmed: true)
+      }.to raise_error(Pundit::NotAuthorizedError, /Agent run not found or not accessible/)
+    end
+
     it "reports the capability as unauthorized when the rollout flag is disabled" do
       FeatureFlags.disable!(:apple_verification_workers, project:)
       draft_revision
@@ -122,7 +132,7 @@ RSpec.describe Tools::Registry do
   end
 
   describe Tools::CaptureAppleScreenshot do
-    let(:tool) { described_class.new(user:, session:) }
+    let(:tool) { described_class.new(user:, session:, agent_run:) }
 
     it "requests a declared capture" do
       draft_revision
@@ -149,7 +159,7 @@ RSpec.describe Tools::Registry do
   end
 
   describe Tools::StopAppleVerification do
-    let(:tool) { described_class.new(user:, session:) }
+    let(:tool) { described_class.new(user:, session:, agent_run:) }
 
     it "cancels the run's own active attempt" do
       revision = draft_revision
@@ -188,7 +198,7 @@ RSpec.describe Tools::Registry do
   end
 
   describe Tools::GetAppleVerification do
-    let(:tool) { described_class.new(user:, session:) }
+    let(:tool) { described_class.new(user:, session:, agent_run:) }
 
     it "returns structured state for the project and run" do
       draft_revision

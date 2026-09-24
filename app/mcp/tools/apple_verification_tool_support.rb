@@ -22,7 +22,11 @@ module Tools
     end
 
     def agent_run_for(project_id, agent_run_id)
-      project_for(project_id).agent_runs.where(initiating_user: user).find(agent_run_id)
+      unless agent_run&.id.to_s == agent_run_id.to_s
+        raise Pundit::NotAuthorizedError, "Agent run not found or not accessible"
+      end
+
+      project_for(project_id).agent_runs.where(id: agent_run.id, initiating_user: user).find(agent_run_id)
     rescue ActiveRecord::RecordNotFound
       raise Pundit::NotAuthorizedError, "Agent run not found or not accessible"
     end

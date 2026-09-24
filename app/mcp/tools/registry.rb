@@ -69,22 +69,23 @@ module Tools
           operator_chat_tool_classes_for(user:, session:)
       end
 
-      def dispatch(name:, arguments:, user:, session:)
+      def dispatch(name:, arguments:, user:, session:, agent_run: nil)
         dispatch_via_registry(
           registry_for(name),
           name:,
           arguments:,
           user:,
-          session:
+          session:,
+          agent_run:
         )
       end
 
-      def dispatch_read_only(name:, arguments:, user:, session:)
+      def dispatch_read_only(name:, arguments:, user:, session:, agent_run: nil)
         tool_class = dispatchable_read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
-        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+        instantiate_tool(tool_class, user:, session:, agent_run:).dispatch(**arguments.symbolize_keys)
       end
 
       def find(name)
@@ -117,7 +118,7 @@ module Tools
         tools_for(session:, user:).map { |klass| chat_definition_for(klass, session:) }
       end
 
-      def dispatch_mcp(name:, arguments:, user:, session:)
+      def dispatch_mcp(name:, arguments:, user:, session:, agent_run: nil)
         ensure_mcp_container_ready(name:, session:)
         return mcp_container_unavailable(name:, session:) if container_tool_unready?(name:, session:)
 
@@ -127,6 +128,7 @@ module Tools
           arguments:,
           user:,
           session:,
+          agent_run:,
           mcp: true
         )
       end
@@ -242,32 +244,38 @@ module Tools
         nil
       end
 
-      def dispatch_via_registry(registry, name:, arguments:, user:, session:, mcp: false)
+      def dispatch_via_registry(registry, name:, arguments:, user:, session:, agent_run: nil, mcp: false)
         raise ArgumentError, "Unknown tool: #{name}" unless registry
 
         if mcp
-          return dispatch_own_read_only(name:, arguments:, user:, session:) if registry == self
+          return dispatch_own_read_only(name:, arguments:, user:, session:, agent_run:) if registry == self
 
           return registry.dispatch_read_only(name:, arguments:, user:, session:)
         end
 
-        registry == self ? dispatch_own(name:, arguments:, user:, session:) : registry.dispatch(name:, arguments:, user:, session:)
+        registry == self ? dispatch_own(name:, arguments:, user:, session:, agent_run:) : registry.dispatch(name:, arguments:, user:, session:)
       end
 
-      def dispatch_own(name:, arguments:, user:, session:)
+      def dispatch_own(name:, arguments:, user:, session:, agent_run: nil)
         tool_class = tool_hash[name]
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
-        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+        instantiate_tool(tool_class, user:, session:, agent_run:).dispatch(**arguments.symbolize_keys)
       end
 
-      def dispatch_own_read_only(name:, arguments:, user:, session:)
+      def dispatch_own_read_only(name:, arguments:, user:, session:, agent_run: nil)
         tool_class = read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
-        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+        instantiate_tool(tool_class, user:, session:, agent_run:).dispatch(**arguments.symbolize_keys)
+      end
+
+      def instantiate_tool(tool_class, user:, session:, agent_run:)
+        return tool_class.new(user:, session:) unless agent_run
+
+        tool_class.new(user:, session:, agent_run:)
       end
 
       def container_tool_unready?(name:, session:)

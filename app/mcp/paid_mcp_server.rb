@@ -7,9 +7,10 @@ class PaidMcpServer
   RATE_LIMIT_MAX = 30
   RATE_LIMIT_PERIOD = 1.minute
 
-  attr_reader :session, :user
+  attr_reader :agent_run, :session, :user
 
-  def initialize(session:, user:)
+  def initialize(session:, user:, agent_run: nil)
+    @agent_run = agent_run
     @session = session
     @user = user
   end
@@ -63,7 +64,9 @@ class PaidMcpServer
   end
 
   def call_tool(name:, arguments:)
-    Tools::Registry.dispatch_mcp(name:, arguments:, user:, session:)
+    dispatch_arguments = { name:, arguments:, user:, session: }
+    dispatch_arguments[:agent_run] = agent_run if agent_run
+    Tools::Registry.dispatch_mcp(**dispatch_arguments)
   end
 
   class RateLimitExceeded < StandardError; end
