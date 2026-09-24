@@ -41,11 +41,15 @@ rather than as ordinary waiting queue depth.
 ## Human-input pauses and stale recovery
 
 Stale recovery distinguishes a recoverable execution pause from a deliberate
-`create_feature` clarification wait. A paused `create_feature` run whose issue
-is in `needs_input` is owned by the human-answer flow, not the stale-run
-detector: it remains paused regardless of age until that flow or another
-explicit supported action requeues it. Other paused runs retain the bounded
-stale-recovery policy.
+`create_feature` clarification wait. A paused `create_feature` run carrying a
+persisted clarification-round identity is owned by the human-answer flow, not
+the stale-run detector: it remains paused regardless of age until that flow or
+another explicit supported action requeues it. This run-owned identity remains
+authoritative if another write temporarily drifts the issue's `paid_state`.
+Other paused runs retain the bounded stale-recovery policy. If another stale
+recovery path terminalizes a run carrying that identity while its needs-input
+label and stored questions still exist, it restores the issue to `needs_input`
+rather than orphaning the answer flow behind `failed`.
 
 Each clarification round has a run-persisted identity embedded in its GitHub
 comment. The identity is saved before posting. A retry or restarted workflow
