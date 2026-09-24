@@ -23,7 +23,7 @@ RSpec.describe AppleVerificationAttempts::Queue do
   it "interleaves queued attempts across projects within an account and assigns 1-based positions" do
     older = queued_attempt_for(project: account_a_first_project, created_at: 2.minutes.ago)
     newer = queued_attempt_for(project: account_a_first_project, created_at: 1.minute.ago)
-    a2 = queued_attempt_for(project: account_a_second_project, created_at: 1.minute.ago)
+    queued_attempt_for(project: account_a_second_project, created_at: 1.minute.ago)
 
     entries = described_class.call(account_scope: account_a)
 
@@ -35,16 +35,19 @@ RSpec.describe AppleVerificationAttempts::Queue do
     expect(entries.third.attempt.id).to eq(newer.id)
   end
 
-  it "round-robins accounts before any account sees a second project" do
-    a1 = queued_attempt_for(project: account_a_first_project)
-    a2 = queued_attempt_for(project: account_a_second_project)
-    b1 = queued_attempt_for(project: account_b_first_project, account: account_b)
+  it "round-robins accounts before selecting another project for an account" do
+    queued_attempt_for(project: account_a_first_project)
+    queued_attempt_for(project: account_a_second_project)
+    queued_attempt_for(project: account_b_first_project, account: account_b)
 
     entries = described_class.call
 
     project_ids_in_order = entries.first(3).map(&:project_id)
-    expect(project_ids_in_order.uniq.size).to eq(3)
-    expect(project_ids_in_order).to contain_exactly(account_a_first_project.id, account_a_second_project.id, account_b_first_project.id)
+    expect(project_ids_in_order).to eq([
+      account_a_first_project.id,
+      account_b_first_project.id,
+      account_a_second_project.id
+    ])
     expect(entries.first(3).map(&:position)).to eq([ 1, 2, 3 ])
   end
 

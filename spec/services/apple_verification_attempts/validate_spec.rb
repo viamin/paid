@@ -20,10 +20,10 @@ RSpec.describe AppleVerificationAttempts::Validate do
 
   # Eagerly evaluate +attempt+ so tests that mutate the profile or workflow
   # can rely on the attempt being built before their mutation runs.
-  before { attempt
-FeatureFlags.enable!(:apple_verification_workers, project: project)
-   }
-
+  before do
+    attempt
+    FeatureFlags.enable!(:apple_verification_workers, project: project)
+  end
 
   after { FeatureFlags.disable!(:apple_verification_workers, project: project) }
 
@@ -147,6 +147,16 @@ FeatureFlags.enable!(:apple_verification_workers, project: project)
     expect(decision.classification).to eq("capacity_or_quota")
   end
 
+  it "uses the configured queue depth limit" do
+    24.times do
+      create(:apple_verification_attempt, project: project, account: account, status: "queued")
+    end
+
+    decision = described_class.call(attempt: attempt, queue_depth_limit: 50)
+
+    expect(decision).to be_allowed
+  end
+
   it "rejects when the agent run has already produced too many attempts" do
     bound_attempt = fill_agent_run_attempts_to_limit
 
@@ -157,6 +167,16 @@ FeatureFlags.enable!(:apple_verification_workers, project: project)
     expect(decision.classification).to eq("capacity_or_quota")
   end
 
+  it "uses the configured maximum attempts per agent run" do
+    agent_run = create(:agent_run, project: project)
+    bound_attempt = attempt_for(agent_run)
+    4.times { attempt_for(agent_run) }
+
+    decision = described_class.call(attempt: bound_attempt, max_attempts_per_run: 8)
+
+    expect(decision).to be_allowed
+  end
+
   def fill_account_queue_to_limit
     AppleVerificationAttempts::Queue::DEFAULT_QUEUE_DEPTH.times do
       create(
@@ -165,6 +185,17 @@ FeatureFlags.enable!(:apple_verification_workers, project: project)
         status: "queued"
       )
     end
+  end
+
+  def attempt_for(agent_run)
+    create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: workflow,
+      apple_worker_profile: profile,
+      lifecycle_gate: workflow.lifecycle_gate,
+      agent_run: agent_run
+    )
   end
 
   def fill_agent_run_attempts_to_limit
