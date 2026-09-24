@@ -6,6 +6,7 @@
 # even when the guest or control plane stops reporting progress.
 # @spec APPLE-ATTEMPT-004
 # @spec APPLE-ATTEMPT-014
+# @spec APPLE-TRANSFER-006
 class AppleVerificationAttemptMaintenanceJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -18,11 +19,13 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
   )
 
   def perform
-    result = AppleVerificationAttempts::Recovery.call
+    recovery_result = AppleVerificationAttempts::Recovery.call
+    retention_result = AppleVerification::Bundles::RetentionSweep.call
 
     Rails.logger.info(
       message: "apple_verification_attempts.maintenance_complete",
-      **result.to_h
+      recovery: recovery_result.to_h,
+      retention: retention_result.to_h
     )
   end
 end

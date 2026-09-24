@@ -125,5 +125,7 @@
   quarantine the worker, revoke its active credentials, and stop scheduling
   against it; a quarantined worker SHALL NOT receive work until an operator
   passes the isolation smoke test and explicitly returns it to service.
-  *Tests:* `spec/services/apple_verification_attempts/worker_health_spec.rb`
-  *Code:* `AppleVerificationAttempts::WorkerHealth`
+  *Tests:* `spec/services/apple_verification_attempts/worker_health_spec.rb`,
+  `spec/migrations/add_worker_health_quarantine_to_apple_worker_profiles_dbless_spec.rb`
+  *Code:* `AppleVerificationAttempts::WorkerHealth`,
+  `AddWorkerHealthQuarantineToAppleWorkerProfiles`
