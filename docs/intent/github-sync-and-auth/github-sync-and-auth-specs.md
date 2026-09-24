@@ -110,14 +110,17 @@
   *Code:* `app/services/github_client.rb`.
   *Test:* `spec/services/github_client_spec.rb`.
 
-- [x] **GITHUB-SYNC-012** — When a trusted GitHub user manually applies a
-  Paid-owned needs-input status label to an item that is not in
-  `paid_state: "needs_input"`, the sync SHALL remove the orphaned label and
-  post a Paid-authored explanation that the label is a Paid-managed status
-  marker, not a pause or an Inbox-question trigger. The explanation SHALL
-  direct operators to answer existing Inbox questions, re-trigger supported
-  automation, or use `paid-paused` to pause automation. The sync SHALL leave
-  the item's Paid state unchanged and log the cleanup. Labels last applied by
-  an untrusted user or by Paid SHALL not be treated as an operator request.
+- [x] **GITHUB-SYNC-012** — During GitHub sync, the system SHALL reconcile
+  every open, non-PR issue with a configured needs-input label and persisted
+  clarification questions whose `paid_state` has drifted away from
+  `needs_input`, restoring `needs_input` and logging the repair unless a
+  paused `create_feature` run with a recorded clarification round still owns
+  that wait. This makes the existing inbox answer flow authoritative for
+  orphaned clarification gates, including rows absent from an incremental
+  response (#3992). When a trusted user applies a needs-input label to an item
+  without persisted clarifying questions, the sync SHALL instead remove that
+  orphaned label, leave the item's Paid state unchanged, post an explanation of
+  the supported flows, and log the cleanup. Labels last applied by Paid or an
+  untrusted user SHALL remain untouched (#3988).
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
