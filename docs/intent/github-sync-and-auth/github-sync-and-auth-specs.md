@@ -109,3 +109,14 @@
   errors rather than raw Octokit exceptions.
   *Code:* `app/services/github_client.rb`.
   *Test:* `spec/services/github_client_spec.rb`.
+
+- [x] **GITHUB-SYNC-012** — During GitHub sync, the system SHALL reconcile
+  every open, non-PR issue with a configured needs-input label and persisted
+  clarification questions whose `paid_state` has drifted away from
+  `needs_input`, restoring `needs_input` and logging the repair unless a
+  paused `create_feature` run with a recorded clarification round still owns
+  that wait. This makes the existing inbox answer flow authoritative for
+  orphaned clarification gates, including rows absent from an incremental
+  response (#3992).
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
