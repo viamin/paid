@@ -843,6 +843,15 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "shows each open issue's internal Paid state" do # @spec AUTO-PICK-QUEUE-008
+        project = create(:project, account: account, github_token: github_token)
+        create(:issue, project: project, paid_state: "recommend_close")
+
+        get project_path(project)
+
+        expect(response.body).to include("Recommend Close")
+      end
+
       it "shows the Apple verification link when the feature is enabled" do # @spec APPLE-VERIFY-001
         project = create(:project, account: account, github_token: github_token)
         FeatureFlags.enable!(:apple_verification_workers, project:)

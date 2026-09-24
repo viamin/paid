@@ -55,6 +55,17 @@ RSpec.describe Issues::UpsertFromGithub do
       expect(issue.github_number).to eq(42)
     end
 
+    # @spec GITHUB-SYNC-014
+    it "resets internal state when GitHub reopens an issue" do
+      create(:issue, project: project, github_issue_id: 1234, github_number: 42,
+        github_state: "closed", paid_state: "completed")
+      github_issue.pull_request = nil
+
+      issue = described_class.call(project: project, github_issue: github_issue)
+
+      expect(issue).to have_attributes(github_state: "open", paid_state: "new")
+    end
+
     it "treats issue payloads without a pull_request attribute as plain issues" do
       github_issue_without_pull_request = OpenStruct.new(
         id: 5678,

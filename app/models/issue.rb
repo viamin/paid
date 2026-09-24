@@ -2,7 +2,6 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
-  AUTO_PICK_ELIGIBLE_PAID_STATES = %w[new planning failed analyzed].freeze
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   # The first four reasons denote agent failure. `awaiting_approval` denotes
@@ -570,42 +569,11 @@ class Issue < ApplicationRecord
       AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
   SQL
 
-  def self.auto_pick_eligible_paid_state_scope(base_scope) # @spec AUTO-PICK-QUEUE-005
-    scope = base_scope.where(paid_state: AUTO_PICK_ELIGIBLE_PAID_STATES)
-
-    scope = scope.or(
-      base_scope.where(
-        paid_state: "completed",
-        id: recoverable_completed_auto_pick_issue_ids(base_scope)
-      )
-    )
-
-    # Durable enhance->create_pr handoff marker (#3851): EnhanceIssueActivity
-    # (and AnalyzeIssueActivity) stamp `last_analyzer_sufficient_context` on
-    # every readiness verdict. Gating on that signal — rather than on
-    # `paid_state == "completed"` alone — lets a `completed` issue that was
-    # enhanced-and-ready re-enter Auto-Pick even when the follow-up
-    # `create_pr` run never got queued (a crashed workflow, or an enhance run
-    # that was not itself an automatic auto-pick run and so is invisible to
-    # the recovery path above), without resurrecting issues completed for
-    # unrelated reasons.
-    scope.or(
-      base_scope.where(paid_state: "completed", last_analyzer_sufficient_context: true)
-    )
-  end
-
-  def self.recoverable_completed_auto_pick_issue_ids(base_scope)
-    AgentRun.where(
-      status: "completed",
-      trigger_type: "automatic",
-      auto_pick: true
-    ).where.not(issue_id: nil)
-      .where.not(goal: "analyze_issue")
-      .where(issue_id: base_scope.select(:id))
-      .where(
-        "agent_runs.pull_request_number IS NULL OR EXISTS (#{AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})"
-      )
-      .select(:issue_id)
+  # GitHub's open state, not Paid's internal workflow state, determines
+  # whether an issue can be considered. Callers apply the durable safeguards
+  # (active runs, dependencies, labels, and pauses) around this shared scope.
+  def self.auto_pick_eligible_paid_state_scope(base_scope) # @spec AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-008
+    base_scope
   end
 
   def self.open_pull_request_parent_issue_ids(project: nil, issue_ids: nil)

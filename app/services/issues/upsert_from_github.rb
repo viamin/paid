@@ -10,6 +10,7 @@ module Issues
     def self.call(project:, github_issue:, body: github_issue.body)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
       was_open = issue.github_state == "open"
+      was_closed = issue.github_state == "closed"
       previous_labels = Array(issue.labels)
 
       new_labels = extract_labels(github_issue)
@@ -26,6 +27,7 @@ module Issues
       )
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
+      reset_paid_state_on_reopen(issue, was_closed: was_closed)
       maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
@@ -50,6 +52,21 @@ module Issues
       IssueMergeSubscriptions::Deliver.call(issue: issue, event: event)
     end
     private_class_method :deliver_completion_notifications
+
+    def self.reset_paid_state_on_reopen(issue, was_closed:) # @spec GITHUB-SYNC-014
+      return unless was_closed && issue.github_state == "open" && !issue.is_pull_request?
+
+      previous_paid_state = issue.paid_state
+      issue.update!(paid_state: "new")
+      Rails.logger.info(
+        message: "github_sync.reopened_issue_state_reset",
+        issue_id: issue.id,
+        project_id: issue.project_id,
+        github_number: issue.github_number,
+        previous_paid_state: previous_paid_state
+      )
+    end
+    private_class_method :reset_paid_state_on_reopen
 
     def self.closed_as_completed?(github_issue)
       github_issue.respond_to?(:state_reason) && github_issue.state_reason == "completed"

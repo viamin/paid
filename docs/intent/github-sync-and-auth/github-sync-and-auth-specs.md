@@ -147,3 +147,9 @@
   *Test:* `spec/services/issues/enforce_mutation_trust_spec.rb`,
   `spec/requests/api/github_webhooks_spec.rb`,
   `spec/mcp/tools/edit_issue_spec.rb`.
+
+- [x] **GITHUB-SYNC-014** — When GitHub sync changes a non-PR issue from
+  closed to open, the system SHALL reset its internal `paid_state` to `new` so
+  stale completion or recommendation state cannot obscure renewed work.
+  *Test:* `spec/services/issues/upsert_from_github_spec.rb`.
+  *Code:* `app/services/issues/upsert_from_github.rb`.
