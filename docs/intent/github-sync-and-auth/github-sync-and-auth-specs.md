@@ -132,13 +132,18 @@
   against the project's explicit case-insensitive human GitHub allowlist. The
   implicit Paid App bot identity SHALL NOT grant human mutation trust. A
   webhook sender that matches the project's own App bot identity SHALL instead
-  be recognized as a Paid-originated mutation and preserved. For an allowlisted
-  sender, the system SHALL preserve the GitHub issue state; for any other
-  sender, it SHALL close the issue through the project credential, post an
-  explanatory comment naming the allowlist and appeal path, and record an audit
-  event and structured log with the sender, trust result, Paid-origin flag,
-  action, and allow/close decision.
+  be recognized as an autonomous Paid-originated mutation and preserved. Before
+  a chat `edit_issue` tool call writes, the system SHALL require its GitHub
+  credential to authenticate as an allowlisted human, and SHALL reject an App
+  bot or unknown credential. For an allowlisted webhook sender, the system
+  SHALL preserve the GitHub issue state; for any other sender, it SHALL close
+  the issue through the project credential, post an explanatory comment naming
+  the allowlist and appeal path, and record an audit event and structured log
+  with the sender, trust result, Paid-origin flag, action, and allow/close
+  decision.
   *Code:* `app/controllers/api/github_webhooks_controller.rb`,
-  `app/services/issues/enforce_mutation_trust.rb`.
+  `app/services/issues/enforce_mutation_trust.rb`,
+  `app/mcp/tools/edit_issue.rb`.
   *Test:* `spec/services/issues/enforce_mutation_trust_spec.rb`,
-  `spec/requests/api/github_webhooks_spec.rb`.
+  `spec/requests/api/github_webhooks_spec.rb`,
+  `spec/mcp/tools/edit_issue_spec.rb`.
