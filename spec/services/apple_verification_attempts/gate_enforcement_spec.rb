@@ -116,6 +116,27 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     expect(decision.reason).to eq("no_approved_workflow")
   end
 
+  it "does not block completion for an approved advisory workflow" do
+    approved_workflow(lifecycle_gate: "agent_iteration")
+
+    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
+
+    expect(decision).not_to be_blocking
+    expect(decision.reason).to eq("draft_only")
+  end
+
+  it "does not block PR verification for an approved advisory workflow" do
+    approved_workflow(lifecycle_gate: "agent_iteration")
+
+    decision = described_class.call(
+      pull_request: pull_request_for("a" * 40), project: project,
+      lifecycle_gate: "pull_request_verification"
+    )
+
+    expect(decision).not_to be_blocking
+    expect(decision.reason).to eq("draft_only")
+  end
+
   it "treats a waiver as releasing the blocking attempt" do
     revision = approved_workflow
     blocking = attempt_for(revision, status: "failed")

@@ -52,7 +52,7 @@ module AppleVerificationAttempts
 
       approved = approved_workflow
       return satisfy("no_approved_workflow") unless approved
-      return satisfy("draft_only") unless approved.lifecycle_gate == @lifecycle_gate || approved.lifecycle_gate == "agent_iteration"
+      return satisfy("draft_only") unless approved.lifecycle_gate == @lifecycle_gate
 
       required_checks = Array(approved.required_checks)
       return satisfy("no_required_checks") if required_checks.empty?

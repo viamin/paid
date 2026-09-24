@@ -6,7 +6,9 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-005
   # Dispatches the next fair-share queued attempt. Validation failures become
   # classified terminal results; capacity refusals remain queued for
-  # a later sweep. A lifecycle call happens only after both checks pass.
+  # a later sweep. Until the guest-execution handoff can deliver source,
+  # start verification, and record its result, admitted attempts also remain
+  # queued so no VM is stranded in provisioning.
   class Schedule
     Result = Data.define(:attempt, :outcome, :reason)
 
@@ -16,12 +18,10 @@ module AppleVerificationAttempts
       end
     end
 
-    def initialize(queue: Queue, validator: Validate, admission: Admission,
-      lifecycle: AppleVerification::Lifecycle.from_environment, clock: Time)
+    def initialize(queue: Queue, validator: Validate, admission: Admission, clock: Time)
       @queue = queue
       @validator = validator
       @admission = admission
-      @lifecycle = lifecycle
       @clock = clock
     end
 
@@ -34,9 +34,8 @@ module AppleVerificationAttempts
 
       decision = @admission.call(project: attempt.project)
       return defer(attempt, decision.reason) unless decision.allowed?
-      return defer(attempt, "lifecycle_unavailable") unless @lifecycle
 
-      provision(attempt)
+      defer(attempt, "verification_execution_unavailable")
     end
 
     private
@@ -52,20 +51,6 @@ module AppleVerificationAttempts
 
     def defer(attempt, reason)
       Result.new(attempt:, outcome: "deferred", reason:)
-    end
-
-    def provision(attempt)
-      attempt.with_lock { attempt.update!(status: "provisioning", started_at: @clock.current) if attempt.queued? }
-      return defer(attempt, "attempt_no_longer_queued") unless attempt.provisioning?
-
-      @lifecycle.provision(
-        agent_run: attempt.agent_run,
-        image_id: attempt.apple_worker_profile.image_digest,
-        profile_id: attempt.apple_worker_profile.name,
-        request_id: "apple_verification_attempt:#{attempt.id}",
-        apple_verification_attempt: attempt
-      )
-      Result.new(attempt:, outcome: "provisioning", reason: nil)
     end
   end
 end
