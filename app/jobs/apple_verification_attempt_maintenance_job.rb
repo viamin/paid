@@ -5,6 +5,9 @@
 # ledger orphans, so terminal attempts enter the retained-and-locked-down path
 # even when the guest or control plane stops reporting progress.
 # @spec APPLE-ATTEMPT-004
+# @spec APPLE-ATTEMPT-001
+# @spec APPLE-ATTEMPT-003
+# @spec APPLE-ATTEMPT-005
 # @spec APPLE-ATTEMPT-014
 # @spec APPLE-TRANSFER-006
 class AppleVerificationAttemptMaintenanceJob < ApplicationJob
@@ -20,11 +23,13 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
 
   def perform
     recovery_result = AppleVerificationAttempts::Recovery.call
+    scheduling_result = AppleVerificationAttempts::Schedule.call
     retention_result = AppleVerification::Bundles::RetentionSweep.call
 
     Rails.logger.info(
       message: "apple_verification_attempts.maintenance_complete",
       recovery: recovery_result.to_h,
+      scheduling: scheduling_result.to_h,
       retention: retention_result.to_h
     )
   end
