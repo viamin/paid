@@ -434,9 +434,12 @@ module Runners
 
       klass = AgentHarness.provider_class(harness_runner_key)
       return result unless runner.subscription? && klass.method_defined?(:discover_available_models)
+      return result unless klass.respond_to?(:classify_model_rejection_from_result)
 
       runtime = container_provider_runtime
-      rejection = klass.classify_model_rejection(result[:message], configured_model: runtime&.model)
+      rejection = klass.classify_model_rejection_from_result(
+        stdout: result[:stdout], stderr: result[:stderr], configured_model: runtime&.model
+      )
       return result unless rejection
 
       recovery = ModelRecovery.new(agent_run: run, runner: runner, tier: "mid", executor: executor,

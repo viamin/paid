@@ -48,7 +48,9 @@ module Runners
         end
 
         log("preflight_failed", model_id: model_id, error: result[:message])
-        rejection = provider.class.classify_model_rejection(result[:message], configured_model: model_id)
+        rejection = provider.class.classify_model_rejection_from_result(
+          stdout: result[:stdout] || result[:output], stderr: result[:stderr], configured_model: model_id
+        )
         return failure(result[:message]) unless rejection
 
         generation = evidence.reject!(model_id)
