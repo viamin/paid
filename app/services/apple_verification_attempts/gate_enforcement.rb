@@ -43,7 +43,7 @@ module AppleVerificationAttempts
       @agent_run = agent_run
       @pull_request = pull_request
       @lifecycle_gate = lifecycle_gate
-      @project = project || @agent_run&.project || @pull_request&.project
+      @project = project || @agent_run&.project || pull_request_project
       @clock = clock
     end
 
@@ -58,7 +58,7 @@ module AppleVerificationAttempts
       return satisfy("no_required_checks") if required_checks.empty?
 
       attempts = eligible_attempts(approved)
-      return satisfy("all_attempts_failed_or_pending") if attempts.empty?
+      return block(nil) if attempts.empty?
 
       waiver = active_waiver_for(attempts.first)
       return satisfy("waived", waiver: waiver) if waiver
@@ -93,7 +93,19 @@ module AppleVerificationAttempts
       relation = workflow.apple_verification_attempts
       relation = relation.where(lifecycle_gate: @lifecycle_gate)
       relation = relation.where(agent_run_id: @agent_run.id) if @agent_run
+      relation = relation.where(commit_sha: pull_request_head_sha) if pull_request
       relation.order(retry_number: :desc, created_at: :desc)
+    end
+
+    def pull_request_head_sha
+      return pull_request.head_sha if pull_request.respond_to?(:head_sha)
+      return pull_request.head.sha if pull_request.respond_to?(:head)
+
+      nil
+    end
+
+    def pull_request_project
+      pull_request.project if pull_request&.respond_to?(:project)
     end
 
     def blocking_attempt?(attempt)

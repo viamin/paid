@@ -39,12 +39,16 @@ module AppleVerificationAttempts
       attempt:,
       profile_constraints_resolver: nil,
       policy_resolver: nil,
-      quota_resolver: nil
+      quota_resolver: nil,
+      queue_depth_limit: Queue::DEFAULT_QUEUE_DEPTH,
+      max_attempts_per_run: Queue::DEFAULT_MAX_ATTEMPTS_PER_RUN
     )
       @attempt = attempt
       @profile_constraints_resolver = profile_constraints_resolver || method(:default_profile_constraints)
       @policy_resolver = policy_resolver || method(:default_policy)
       @quota_resolver = quota_resolver || method(:default_quota)
+      @queue_depth_limit = queue_depth_limit
+      @max_attempts_per_run = max_attempts_per_run
     end
 
     def call
@@ -122,14 +126,14 @@ module AppleVerificationAttempts
     end
 
     def account_queue_depth_at_limit?(attempt)
-      AppleVerificationAttempt.queued.for_account(attempt.account).count >= Queue::DEFAULT_QUEUE_DEPTH
+      AppleVerificationAttempt.queued.for_account(attempt.account).count >= @queue_depth_limit
     end
 
     def attempts_per_agent_run_exceeded?(attempt)
       return false unless attempt.agent_run_id
 
       count = AppleVerificationAttempt.where(agent_run_id: attempt.agent_run_id).count
-      count >= Queue::DEFAULT_MAX_ATTEMPTS_PER_RUN
+      count >= @max_attempts_per_run
     end
   end
 end

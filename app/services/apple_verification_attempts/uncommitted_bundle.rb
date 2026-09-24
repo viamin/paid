@@ -88,9 +88,5 @@ module AppleVerificationAttempts
 
       File.join(Rails.root.to_s, "tmp", "apple_verification_attempts", @attempt.id.to_s)
     end
-
-    def storage
-      @storage.is_a?(Class) ? @storage.new : @storage
-    end
   end
 end

@@ -26,7 +26,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     revision
   end
 
-  def attempt_for(revision, status:, lifecycle_gate: nil)
+  def attempt_for(revision, status:, lifecycle_gate: nil, commit_sha: nil)
     create(
       :apple_verification_attempt,
       project: project, account: account,
@@ -34,7 +34,8 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       apple_worker_profile: revision.apple_worker_profile,
       status: status,
       lifecycle_gate: lifecycle_gate || revision.lifecycle_gate,
-      agent_run: agent_run
+      agent_run: agent_run,
+      commit_sha: commit_sha
     )
   end
 
@@ -56,6 +57,50 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
     expect(decision).not_to be_blocking
     expect(decision.reason).to eq("satisfied")
+  end
+
+  it "blocks when a required workflow has no attempt for the agent run" do
+    approved_workflow
+
+    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
+
+    expect(decision).to be_blocking
+    expect(decision.reason).to eq("pending_required_attempt")
+  end
+
+  it "only accepts a successful committed attempt for the current pull request head" do
+    revision = approved_workflow(lifecycle_gate: "pull_request_verification")
+    attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
+    decision = described_class.call(
+      pull_request: pull_request_for("b" * 40), project: project,
+      lifecycle_gate: "pull_request_verification"
+    )
+
+    expect(decision).to be_blocking
+    expect(decision.reason).to eq("pending_required_attempt")
+  end
+
+  it "accepts a successful committed attempt for the current pull request head" do
+    revision = approved_workflow(lifecycle_gate: "pull_request_verification")
+    attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
+
+    decision = described_class.call(
+      pull_request: pull_request_for("a" * 40), project: project,
+      lifecycle_gate: "pull_request_verification"
+    )
+
+    expect(decision).not_to be_blocking
+    expect(decision.reason).to eq("satisfied")
+  end
+
+  def pull_request_for(head_sha)
+    Automation::Signals::PullRequestSnapshot.new(
+      number: 1, title: "PR", body: nil, state: "open", draft: false,
+      merged: false, mergeable: true, head_sha: head_sha, head_ref: "feature",
+      base_ref: "main", author_login: "author", labels: [], created_at: Time.current,
+      updated_at: Time.current, merged_at: nil, url: "https://example.test/pr/1",
+      raw_state: "open", head_repo_fork: false
+    )
   end
 
   it "does not block when there is no approved workflow" do

@@ -105,29 +105,35 @@ module AppleVerificationAttempts
       relation
     end
 
-    # Groups queued attempts by (account_id, project_id) preserving FIFO
-    # within each project, then interleaves projects round-robin. The
-    # interleave walks the (account, project) pairs in the order they first
-    # appear in the snapshot so projects that queued earliest get a turn
-    # first, but every project gets a turn before any project sees a second
-    # attempt.
+    # Rotates accounts in first-queued order, selecting each account's next
+    # project in first-queued order. This gives every nonempty account one
+    # turn before another account is scheduled again while preserving FIFO
+    # within a project.
     def interleave(attempts)
-      grouped = attempts.group_by { |attempt| [ attempt.account_id, attempt.project_id ] }
-      ordering = grouped.keys
-      queues = grouped.transform_values { |entries| entries.dup }
+      project_queues = attempts.group_by(&:account_id).transform_values do |account_attempts|
+        account_attempts.group_by(&:project_id).transform_values(&:dup)
+      end
+      project_order = project_queues.transform_values(&:keys)
 
       interleaved = []
       loop do
-        progressed = false
-        ordering.each do |key|
-          next if queues[key].empty?
-
-          interleaved << queues[key].shift
-          progressed = true
+        scheduled = project_queues.filter_map do |account_id, queues|
+          next_project_attempt(queues, project_order.fetch(account_id))
         end
-        break unless progressed
+        break if scheduled.empty?
+
+        interleaved.concat(scheduled)
       end
       interleaved
+    end
+
+    def next_project_attempt(queues, ordering)
+      project_id = ordering.shift
+      return unless project_id
+
+      attempt = queues.fetch(project_id).shift
+      ordering << project_id if queues.fetch(project_id).any?
+      attempt
     end
 
     def annotate_positions(attempts)
