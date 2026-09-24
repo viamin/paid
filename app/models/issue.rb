@@ -2,6 +2,8 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
+  REOPEN_REVIEW_REQUIRED_REASON =
+    "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
   AUTO_PICK_ELIGIBLE_PAID_STATES = %w[new planning failed analyzed].freeze
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
@@ -253,6 +255,16 @@ class Issue < ApplicationRecord
 
   def trusted?
     project.trusted_github_author?(github_creator_login)
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-001
+  def reopen_review_pending?
+    paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-001
+  def require_reopen_review!
+    update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
   end
 
   def untrusted?

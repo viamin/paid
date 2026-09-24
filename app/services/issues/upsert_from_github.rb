@@ -10,6 +10,7 @@ module Issues
     def self.call(project:, github_issue:, body: github_issue.body)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
       was_open = issue.github_state == "open"
+      was_closed = issue.persisted? && issue.github_state == "closed"
       previous_labels = Array(issue.labels)
 
       new_labels = extract_labels(github_issue)
@@ -26,10 +27,21 @@ module Issues
       )
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
+      require_reopen_review(issue, was_closed: was_closed)
       maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
     end
+
+    # @spec ISSUE-REOPEN-REVIEW-001
+    def self.require_reopen_review(issue, was_closed:)
+      return unless was_closed
+      return unless issue.github_state == "open"
+      return if issue.is_pull_request?
+
+      issue.require_reopen_review!
+    end
+    private_class_method :require_reopen_review
 
     def self.extract_labels(github_issue)
       Array(github_issue.labels).map { |label| label.respond_to?(:name) ? label.name : label.to_s }

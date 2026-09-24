@@ -118,6 +118,22 @@ RSpec.describe Issues::UpsertFromGithub do
       }.not_to change(Notification, :count)
     end
 
+    # @spec ISSUE-REOPEN-REVIEW-001 @spec ISSUE-REOPEN-REVIEW-002
+    it "parks a reopened issue for operator review before it can be completed again" do
+      create(:issue, project: project, github_issue_id: 1234, github_number: 42,
+        github_state: "closed", paid_state: "recommend_close")
+      github_issue.pull_request = nil
+
+      issue = described_class.call(project: project, github_issue: github_issue)
+
+      expect(issue).to have_attributes(
+        github_state: "open",
+        paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+      )
+      expect(issue).to be_reopen_review_pending
+    end
+
     describe "recommend_close label removal reset" do
       let(:recommend_close_label_url) do
         "https://api.github.com/repos/#{project.full_name}/issues/77/labels/paid-recommend-close"
