@@ -20,6 +20,7 @@ class AccountActivityEvent < ApplicationRecord
     "project.settings_changed" => "project",
     "issue.created" => "project",
     "issue.updated" => "project",
+    "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
     "runner.created" => "runner",
     "runner.updated" => "runner",
