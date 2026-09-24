@@ -54,7 +54,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
   end
 
   describe "#execute" do
-    # @spec TEMPORAL-ORCHESTRATION-008
+    # @spec TEMPORAL-ORCHESTRATION-009
     it "rejects a create_pr run for an issue awaiting clarification without changing its state" do
       issue.update!(
         paid_state: "needs_input",
@@ -69,6 +69,29 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(error.non_retryable).to be(true)
       }
 
+      expect(issue.reload).to have_attributes(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-009
+    it "starts an unrelated run without changing an issue awaiting clarification" do
+      issue.update!(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        goal: "review",
+        source_pull_request_number: 42
+      )
+
+      expect(result[:agent_run_id]).to be_present
       expect(issue.reload).to have_attributes(
         paid_state: "needs_input",
         labels: [ project.enhance_issue_needs_input_label_name ],
@@ -352,7 +375,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-008
+    # @spec TEMPORAL-ORCHESTRATION-009
     it "rejects a resumed create_pr run for an issue awaiting clarification without changing its state" do
       queued_run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr")
       issue.update!(
@@ -368,6 +391,32 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(error.non_retryable).to be(true)
       }
 
+      expect(issue.reload).to have_attributes(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-009
+    it "resumes an unrelated run without changing an issue awaiting clarification" do
+      queued_run = create(
+        :agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        goal: "review",
+        source_pull_request_number: 42
+      )
+      issue.update!(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+
+      result = activity.execute(agent_run_id: queued_run.id)
+
+      expect(result[:agent_run_id]).to eq(queued_run.id)
       expect(issue.reload).to have_attributes(
         paid_state: "needs_input",
         labels: [ project.enhance_issue_needs_input_label_name ],

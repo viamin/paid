@@ -64,11 +64,12 @@
   *Code:* `Activities::CreateAgentRunActivity`,
   `ClarifyingQuestions::ClearNeedsInput`.
 
-- [x] **TEMPORAL-ORCHESTRATION-008** — When an issue has a pending
+- [x] **TEMPORAL-ORCHESTRATION-009** — When an issue has a pending
   clarification round (`needs_input` state, needs-input label, or stored
   questions), Paid SHALL reject a `create_pr` run before it can change the
-  issue state. A queued `create_feature` run resumed after answers clear that
-  pending data MAY transition the issue to `in_progress`.
+  issue state. Other run goals SHALL leave that state unchanged. A queued
+  `create_feature` run resumed after answers clear the pending data MAY
+  transition the issue to `in_progress`.
   *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
   `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
   *Code:* `Activities::CreateAgentRunActivity`,

@@ -160,19 +160,20 @@ module Activities
 
     private
 
-    # @spec TEMPORAL-ORCHESTRATION-008
+    # @spec TEMPORAL-ORCHESTRATION-009
     def reject_create_pr_awaiting_input!(issue, goal)
       return unless issue && goal == "create_pr" && clarification_pending?(issue)
 
       raise_issue_awaiting_input!(issue, goal)
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-008
+    # @spec TEMPORAL-ORCHESTRATION-009
     def mark_issue_in_progress!(agent_run)
       issue = agent_run.issue
       return unless issue
       return issue.update!(paid_state: "in_progress") unless clarification_pending?(issue)
       return issue.update!(paid_state: "in_progress") if answered_create_feature_resume?(agent_run, issue)
+      return unless agent_run.create_pr_goal?
 
       raise_issue_awaiting_input!(issue, agent_run.goal)
     end
