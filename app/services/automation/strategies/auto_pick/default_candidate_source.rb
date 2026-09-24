@@ -85,7 +85,7 @@ module Automation
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005
+          def eligible_scope(project, excluding_run_id: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007
             base = without_open_non_pr_subissues(base_scope(project, excluding_run_id: excluding_run_id))
             scope = Issue.auto_pick_eligible_paid_state_scope(base)
 
@@ -261,7 +261,11 @@ module Automation
               base = base.where("LOWER(issues.github_creator_login) IN (?)", trusted_usernames)
             end
 
-            project.effective_auto_pick_skip_labels.reduce(base) do |scope, label|
+            needs_input_excluded = project.needs_input_labels.reduce(base) do |scope, label|
+              scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+            end
+
+            project.effective_auto_pick_skip_labels.reduce(needs_input_excluded) do |scope, label|
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
           end

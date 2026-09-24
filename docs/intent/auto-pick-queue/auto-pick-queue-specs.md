@@ -61,3 +61,10 @@
   `spec/temporal/activities/detect_labels_activity_spec.rb`.
   *Code:* `app/services/automation/feature_activation.rb`,
   `app/services/automation/label_policy.rb`.
+
+- [x] **AUTO-PICK-QUEUE-007** — When an open issue carries any of the
+  project's needs-input labels, Auto-Pick candidate selection SHALL exclude it
+  regardless of its `paid_state`, so a state/label drift cannot mint work while
+  a human clarification is pending (#3992).
+  *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
