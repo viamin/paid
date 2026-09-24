@@ -88,6 +88,12 @@ module AppleVerification
         key
       end
 
+      def upload_bundle(file_path:, account_id:, project_id:, attempt_id:)
+        key = self.class.bundle_key(account_id:, project_id:, attempt_id:)
+        @artifact_storage.upload(file_path:, key:, content_type: BUNDLE_CONTENT_TYPE)
+        key
+      end
+
       def upload_bytes(bytes:, account_id:, project_id:, attempt_id:, kind:, name:, content_type: nil)
         key = self.class.artifact_key(account_id:, project_id:, attempt_id:, kind:, name:)
         resolved_content_type = content_type || self.class.content_type_for(kind)

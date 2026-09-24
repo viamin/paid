@@ -41,28 +41,25 @@ module AppleVerificationAttempts
       manifest_path = "#{output_path}.manifest.json"
 
       builder_result = builder_instance.call(workspace_root: @workspace_root, output_path:, manifest_path:)
+      bundle_key = storage.upload_bundle(
+        file_path: builder_result.bundle_path,
+        account_id: @attempt.account_id,
+        project_id: @attempt.project_id,
+        attempt_id: @attempt.id
+      )
 
       Result.new(
         digest: builder_result.digest,
         bytesize: builder_result.bytesize,
         manifest: builder_result.manifest,
-        bundle_key: AppleVerification::ArtifactIngestion::Storage.bundle_key(
-          account_id: @attempt.account_id,
-          project_id: @attempt.project_id,
-          attempt_id: @attempt.id
-        ),
-        bundle_url: AppleVerification::ArtifactIngestion::Storage.bundle_url(
-          account_id: @attempt.account_id,
-          project_id: @attempt.project_id,
-          attempt_id: @attempt.id,
-          digest: builder_result.digest
-        )
+        bundle_key:,
+        bundle_url: storage.signed_url(bundle_key)
       )
     end
 
     private
 
-    attr_reader :attempt, :workspace_root, :retention_days
+    attr_reader :attempt, :storage, :workspace_root, :retention_days
 
     def builder_instance
       # BundleBuilder exposes a Class-level `.call(workspace_root:, output_path:,

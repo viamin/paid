@@ -6,8 +6,9 @@ module AppleVerificationAttempts
   # is intentionally small and query-only: it never asks the macOS worker to
   # run anything, and it never inspects the macOS guest. It pulls the active
   # Apple VM count from the database (a provisioning or running attempt owns
-  # the single worker slot) and reads host-level
-  # memory and disk from an injected provider so unit tests can stub it.
+  # the single worker slot) and reads host-level memory and disk from the
+  # configured macOS host service. Tests may inject a provider directly
+  # without needing a host-service transport.
   # @spec APPLE-ATTEMPT-001
   class HostCapacity
     # Returns a Hash with at least these keys:
@@ -53,14 +54,30 @@ module AppleVerificationAttempts
       attempt_scope.active.count
     end
 
-    # The default provider returns nils for every value so callers (and the
-    # operator setup preflight) must inject a real provider. The macOS worker
-    # has its own host-metrics surface (readiness payload or a shell probe);
-    # reading from the Docker control-plane snapshot would conflate two
-    # different hosts and silently admit when the macOS worker is the actual
-    # resource being constrained.
     def default_host_metrics_provider
-      -> { { disk_free_gib: nil, memory_free_percent: nil, guest_disk_free_gib: nil, memory_pressure_window: [] } }
+      endpoint = ENV["APPLE_VERIFICATION_HOST_URL"]
+      token = ENV["APPLE_VERIFICATION_HOST_TOKEN"]
+      return -> { unknown_metrics } if endpoint.blank? || token.blank?
+
+      host = AppleVerification::HostClient.new(endpoint: endpoint)
+      -> { metrics_from(host.call(version: AppleVerification::HostService::API_VERSION, operation: "readiness", payload: {}, token: token)) }
+    end
+
+    def metrics_from(readiness)
+      payload = readiness.deep_stringify_keys
+      disk = payload.fetch("disk", {})
+      memory = payload.fetch("memory", {})
+
+      {
+        disk_free_gib: disk["free_gib"],
+        memory_free_percent: memory["free_percent"],
+        guest_disk_free_gib: disk["guest_free_gib"] || disk["free_gib"],
+        memory_pressure_window: memory["pressure_window"] || []
+      }
+    end
+
+    def unknown_metrics
+      { disk_free_gib: nil, memory_free_percent: nil, guest_disk_free_gib: nil, memory_pressure_window: [] }
     end
   end
 end

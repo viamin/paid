@@ -7,6 +7,15 @@ RSpec.describe AppleVerificationAttempts::UncommittedBundle do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let(:workflow) { create(:apple_verification_workflow_revision, project: project, account: account) }
+  let(:bundle_key) do
+    AppleVerification::ArtifactIngestion::Storage.bundle_key(account_id: account.id, project_id: project.id, attempt_id: attempt.id)
+  end
+  let(:storage) do
+    instance_double(AppleVerification::ArtifactIngestion::Storage).tap do |instance|
+      allow(instance).to receive(:upload_bundle).and_return(bundle_key)
+      allow(instance).to receive(:signed_url).with(bundle_key).and_return("https://storage.example.test/source.tar")
+    end
+  end
   let(:attempt) do
     create(
       :apple_verification_attempt,
@@ -21,7 +30,7 @@ RSpec.describe AppleVerificationAttempts::UncommittedBundle do
 
       builder = build_stub_builder
 
-      result = described_class.call(attempt: attempt, workspace_root: workspace_root, builder: builder)
+      result = described_class.call(attempt: attempt, workspace_root: workspace_root, builder: builder, storage: storage)
 
       expect(result.digest).to eq("sha256:#{ 'a' * 64 }")
       expect(result.bundle_key).to eq(
@@ -29,7 +38,13 @@ RSpec.describe AppleVerificationAttempts::UncommittedBundle do
           account_id: account.id, project_id: project.id, attempt_id: attempt.id
         )
       )
-      expect(result.bundle_url).to be_nil
+      expect(result.bundle_url).to eq("https://storage.example.test/source.tar")
+      expect(storage).to have_received(:upload_bundle).with(
+        file_path: end_with("source.tar"),
+        account_id: account.id,
+        project_id: project.id,
+        attempt_id: attempt.id
+      )
     end
   end
 
@@ -61,7 +76,7 @@ RSpec.describe AppleVerificationAttempts::UncommittedBundle do
 
     Dir.mktmpdir do |workspace_root|
       result = described_class.call(
-        attempt: attempt, workspace_root: workspace_root, builder: builder_class
+        attempt: attempt, workspace_root: workspace_root, builder: builder_class, storage: storage
       )
 
       expect(captured[:workspace_root]).to eq(workspace_root)
@@ -77,6 +92,8 @@ RSpec.describe AppleVerificationAttempts::UncommittedBundle do
         captured[:workspace_root] = workspace_root
         captured[:output_path] = output_path
         captured[:manifest_path] = manifest_path
+        File.binwrite(output_path, "tar-")
+        File.binwrite(manifest_path, JSON.generate({ "files" => [], "digest" => "sha256:#{'b' * 64}" }))
         AppleVerification::SourceLane::BundleBuilder::Result.new(
           digest: "sha256:#{ 'b' * 64 }",
           bytesize: 4,
