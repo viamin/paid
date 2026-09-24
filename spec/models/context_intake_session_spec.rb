@@ -59,6 +59,26 @@ RSpec.describe ContextIntakeSession do
         expect(session.completed_at).to eq(Time.current)
       end
     end
+
+    # @spec PROJECT-CREATION-011
+    it "completes the setup of a pending blank project" do
+      project = create(:project, creation_origin: "blank", setup_status: "pending")
+      session = create(:context_intake_session, project: project)
+
+      session.complete!
+
+      expect(project.reload.setup_status).to eq("completed")
+    end
+
+    # @spec PROJECT-CREATION-011
+    it "does not touch connected projects" do
+      project = create(:project)
+      session = create(:context_intake_session, project: project)
+
+      session.complete!
+
+      expect(project.reload.setup_status).to be_nil
+    end
   end
 
   describe "#mark_stale!" do

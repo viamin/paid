@@ -336,6 +336,87 @@ RSpec.describe GithubClient do
     end
   end
 
+  # @spec PROJECT-CREATION-004
+  describe "#organizations" do
+    before do
+      stub_request(:get, %r{#{api_base}/user/orgs})
+        .to_return(
+          status: 200,
+          body: [ { login: "acme-org", id: 1 }, { login: "other-org", id: 2 } ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "fetches organizations via GET /user/orgs" do
+      result = client.organizations
+
+      expect(result.map(&:login)).to eq([ "acme-org", "other-org" ])
+    end
+  end
+
+  # @spec PROJECT-CREATION-002
+  describe "#create_repository" do
+    let(:created_repo) do
+      { id: 555_001, name: "fresh-start", full_name: "octocat/fresh-start",
+        private: true, default_branch: "main",
+        owner: { login: "octocat", id: 99 } }
+    end
+
+    it "creates a user repository via POST /user/repos" do
+      stub_request(:post, "#{api_base}/user/repos")
+        .to_return(status: 201, body: created_repo.to_json, headers: { "Content-Type" => "application/json" })
+
+      result = client.create_repository("fresh-start", private: true)
+
+      expect(result.name).to eq("fresh-start")
+      expect(result.owner.login).to eq("octocat")
+      expect(WebMock).to(have_requested(:post, "#{api_base}/user/repos").with { |req|
+        body = JSON.parse(req.body)
+        expect(body["name"]).to eq("fresh-start")
+        expect(body["private"]).to be(true)
+        expect(body["auto_init"]).to be(true)
+        expect(body["organization"]).to be_nil
+      })
+    end
+
+    it "creates an organization repository via POST /orgs/:org/repos" do
+      stub_request(:post, "#{api_base}/orgs/acme-org/repos")
+        .to_return(status: 201, body: created_repo.merge(full_name: "acme-org/fresh-start").to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      result = client.create_repository("fresh-start", organization: "acme-org", description: "A fresh start")
+
+      expect(result.full_name).to eq("acme-org/fresh-start")
+      expect(WebMock).to(have_requested(:post, "#{api_base}/orgs/acme-org/repos").with { |req|
+        body = JSON.parse(req.body)
+        expect(body["description"]).to eq("A fresh start")
+      })
+    end
+
+    it "raises ArgumentError for a blank repository name" do
+      expect { client.create_repository("  ") }.to raise_error(ArgumentError, /cannot be blank/)
+    end
+
+    it "maps 404 to NotFoundError" do
+      stub_request(:post, "#{api_base}/orgs/ghost-org/repos")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json, headers: { "Content-Type" => "application/json" })
+
+      expect {
+        client.create_repository("fresh-start", organization: "ghost-org")
+      }.to raise_error(GithubClient::NotFoundError)
+    end
+
+    it "maps 403 without rate limit to ApiError" do
+      stub_request(:post, "#{api_base}/user/repos")
+        .to_return(status: 403, body: { message: "Repository creation restricted" }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect {
+        client.create_repository("fresh-start")
+      }.to raise_error(GithubClient::ApiError, /Repository creation restricted/)
+    end
+  end
+
   describe "#write_accessible?" do
     let(:repo) { "owner/repo" }
 

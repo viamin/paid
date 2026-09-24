@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class GithubTokensController < ApplicationController
-  before_action :set_github_token, only: [ :show, :destroy, :repositories, :validation_status, :retry_validation ]
+  before_action :set_github_token, only: [ :show, :destroy, :repositories, :owners, :validation_status, :retry_validation ]
   skip_after_action :verify_authorized, only: :index
 
   def index
@@ -50,6 +50,25 @@ class GithubTokensController < ApplicationController
     available_repos = repos.reject { |r| existing_github_ids.include?(r["id"]) }
 
     render json: available_repos
+  end
+
+  # Owner options for blank-repository creation (issue #3954): the token's
+  # authenticated login plus the organizations its user belongs to.
+  # @spec PROJECT-CREATION-004
+  def owners
+    authorize @github_token, :show?
+
+    client = @github_token.client
+    login = client.authenticated_login
+    owners = []
+    owners << { "login" => login, "type" => "user" } if login.present?
+    client.organizations.each do |org|
+      owners << { "login" => org.login, "type" => "organization" }
+    end
+
+    render json: owners.uniq { |owner| owner["login"].to_s.downcase }
+  rescue GithubClient::Error => e
+    render json: { error: e.message }, status: :unprocessable_content
   end
 
   def destroy
