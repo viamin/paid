@@ -12,8 +12,10 @@
   minimum free host disk before clone, 25% minimum free system memory, and
   15 GiB minimum free guest disk, and SHALL refuse admission during sustained
   critical memory pressure.
-  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
-  *Code:* `AppleVerificationAttempts::Admission`
+  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`,
+  `spec/services/apple_verification_attempts/schedule_spec.rb`
+  *Code:* `AppleVerificationAttempts::Admission`,
+  `AppleVerificationAttempts::Schedule`
 
 - [x] **APPLE-ATTEMPT-002** — While an Apple verification attempt runs, the
   system SHALL recheck host disk and memory thresholds; crossing a normal
@@ -27,8 +29,10 @@
   and remain cancellable while queued; operator-configurable limits SHALL
   bound queue depth, runtime, retry count, retained storage, and attempts per
   agent run.
-  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`
-  *Code:* `AppleVerificationAttempts::Queue`
+  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`,
+  `spec/services/apple_verification_attempts/schedule_spec.rb`
+  *Code:* `AppleVerificationAttempts::Queue`,
+  `AppleVerificationAttempts::Schedule`
 
 - [x] **APPLE-ATTEMPT-004** — When an attempt exceeds the configured attempt
   timeout (default 45 minutes), the system SHALL end it in the `timed_out`
@@ -42,8 +46,10 @@
   capabilities, policy, and quota, and SHALL fail the attempt with a
   `project_configuration` or `unsupported_capability` classification instead
   of provisioning.
-  *Tests:* `spec/services/apple_verification_attempts/validate_spec.rb`
-  *Code:* `AppleVerificationAttempts::Validate`
+  *Tests:* `spec/services/apple_verification_attempts/validate_spec.rb`,
+  `spec/services/apple_verification_attempts/schedule_spec.rb`
+  *Code:* `AppleVerificationAttempts::Validate`,
+  `AppleVerificationAttempts::Schedule`
 
 - [x] **APPLE-ATTEMPT-006** — When an attempt finishes uploading its output
   manifest and artifacts, the system SHALL revoke the attempt's credentials
@@ -86,8 +92,10 @@
 - [x] **APPLE-ATTEMPT-010** — The system MAY retry safe infrastructure
   failures within policy and SHALL NOT silently retry deterministic project
   failures or represent an infrastructure failure as a code defect.
-  *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`
-  *Code:* `AppleVerificationAttempts::RetryPolicy`
+  *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`,
+  `spec/services/apple_verification_attempts/rerun_spec.rb`
+  *Code:* `AppleVerificationAttempts::RetryPolicy`,
+  `AppleVerificationAttempts::Rerun`
 
 - [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
   the `completion_verification` gate has not succeeded for an agent run, the

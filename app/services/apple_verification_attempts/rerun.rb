@@ -3,6 +3,7 @@
 module AppleVerificationAttempts
   # Queues an immutable retry from a completed attempt.
   # @spec APPLE-VERIFY-006
+  # @spec APPLE-ATTEMPT-010
   class Rerun
     def self.call(attempt:)
       new(attempt:).call
@@ -14,6 +15,7 @@ module AppleVerificationAttempts
 
     def call
       raise ArgumentError, "only a completed attempt can be rerun" unless @attempt.terminal?
+      ensure_retryable!
 
       rerun = @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
         rerun_attempt.assign_attributes(
@@ -30,6 +32,15 @@ module AppleVerificationAttempts
       end
       AppleVerificationAttemptMaintenanceJob.perform_later
       rerun
+    end
+
+    private
+
+    def ensure_retryable!
+      decision = RetryPolicy.call(attempt: @attempt)
+      return if decision.retryable?
+
+      raise ArgumentError, "attempt cannot be rerun: #{decision.reason}"
     end
   end
 end
