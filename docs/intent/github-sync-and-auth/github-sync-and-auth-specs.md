@@ -117,6 +117,12 @@
   paused `create_feature` run with a recorded clarification round still owns
   that wait. This makes the existing inbox answer flow authoritative for
   orphaned clarification gates, including rows absent from an incremental
-  response (#3992).
+  response (#3992). When a trusted user applies a needs-input label to an item
+  without persisted clarifying questions, the sync SHALL instead remove that
+  orphaned label, leave the item's Paid state unchanged, post an explanation of
+  the supported flows, and log the cleanup. Labels last applied by Paid or an
+  untrusted user SHALL remain untouched (#3988). Historical reconciliation
+  SHALL use bounded batches and persist a completed evaluation so normal polls
+  do not repeatedly fetch unchanged issues' label-event histories.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.

@@ -55,6 +55,15 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def label_event(event:, login:, label:, created_at: Time.current)
+    OpenStruct.new(
+      event: event,
+      actor: OpenStruct.new(login: login),
+      label: OpenStruct.new(name: label),
+      created_at: created_at
+    )
+  end
+
   def github_pr_issue(number)
     OpenStruct.new(
       id: 5000 + number,
@@ -992,6 +1001,98 @@ RSpec.describe Activities::FetchIssuesActivity do
         activity.execute(project_id: project.id)
 
         expect(issue.reload.paid_state).to eq("needs_input")
+      end
+    end
+
+    context "when a trusted user manually adds paid-needs-input" do
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9501, github_number: 96,
+          labels: [ "paid-build" ], paid_state: "new")
+      end
+      let(:synced_github_issue) { github_issue(96, id: issue.github_issue_id, labels: [ "paid-build", "paid-needs-input" ]) }
+
+      before do
+        stub_issues_by_label(nil => [ synced_github_issue ])
+        allow(Rails.logger).to receive(:info)
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "viamin", label: "paid-needs-input")
+        ])
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "removes the orphaned label and explains the supported flows" do
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload).to have_attributes(paid_state: "new", labels: [ "paid-build" ])
+        expect(github_client).to have_received(:remove_labels_from_issue).with(project.full_name, issue.github_number, [ "paid-needs-input" ])
+        expect(github_client).to have_received(:add_comment).with(project.full_name, issue.github_number, a_string_including("paid-needs-input").and(include("paid-paused")))
+        expect(Rails.logger).to have_received(:info).with(hash_including(message: "github_sync.needs_input_label_added_ignored", issue_id: issue.id))
+      end
+
+      it "does not remove a label last added by an untrusted user" do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.labels).to include("paid-needs-input")
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "records an untrusted historical label evaluation so it is not rescanned" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        issue.update!(labels: [ "paid-build", "paid-needs-input" ])
+        stub_issues_by_label(nil => [])
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.orphaned_needs_input_label_evaluated_at).to be_present
+        expect(github_client).to have_received(:issue_events).once
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "processes historical orphaned labels in bounded batches" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        stub_issues_by_label(nil => [])
+        allow(github_client).to receive(:issue_events).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+        create_list(:issue, 101, project:, labels: [ "paid-needs-input" ], paid_state: "new")
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_events).exactly(100).times
+      end
+
+      it "does not remove a label last added by Paid" do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: Github::AppRegistry.bot_login, label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.labels).to include("paid-needs-input")
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "cleans up an orphaned label omitted from the incremental GitHub fetch" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        issue.update!(labels: [ "paid-build", "paid-needs-input" ])
+        stub_issues_by_label(nil => [])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.labels).to eq([ "paid-build" ])
+        expect(github_client).to have_received(:remove_labels_from_issue).with(project.full_name, issue.github_number, [ "paid-needs-input" ])
       end
     end
 
