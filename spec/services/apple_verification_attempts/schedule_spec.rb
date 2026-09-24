@@ -13,24 +13,18 @@ RSpec.describe AppleVerificationAttempts::Schedule do
   let(:allowed_admission) do
     AppleVerificationAttempts::Admission::Decision.new(allowed: true, reason: "allowed", figures: nil, thresholds: nil)
   end
-  let(:lifecycle) { instance_double(AppleVerification::Lifecycle, provision: nil) }
 
   before { FeatureFlags.enable!(:apple_verification_workers, project:) }
 
   after { FeatureFlags.disable!(:apple_verification_workers, project:) }
 
-  it "validates, admits, and provisions the next fair-share queue entry" do
+  it "keeps an admitted attempt queued until verification execution is available" do
     attempt
 
-    result = described_class.call(admission: ->(project:) { allowed_admission }, lifecycle:)
+    result = described_class.call(admission: ->(project:) { allowed_admission })
 
-    expect(result).to have_attributes(attempt:, outcome: "provisioning", reason: nil)
-    expect(attempt.reload).to be_provisioning
-    expect(lifecycle).to have_received(:provision).with(
-      agent_run:, image_id: attempt.apple_worker_profile.image_digest,
-      profile_id: attempt.apple_worker_profile.name,
-      request_id: "apple_verification_attempt:#{attempt.id}", apple_verification_attempt: attempt
-    )
+    expect(result).to have_attributes(attempt:, outcome: "deferred", reason: "verification_execution_unavailable")
+    expect(attempt.reload).to be_queued
   end
 
   it "leaves an attempt queued when admission refuses capacity" do
@@ -39,21 +33,19 @@ RSpec.describe AppleVerificationAttempts::Schedule do
       allowed: false, reason: "active_vm_limit", figures: nil, thresholds: nil
     )
 
-    result = described_class.call(admission: ->(project:) { denied_admission }, lifecycle:)
+    result = described_class.call(admission: ->(project:) { denied_admission })
 
     expect(result).to have_attributes(attempt:, outcome: "deferred", reason: "active_vm_limit")
     expect(attempt.reload).to be_queued
-    expect(lifecycle).not_to have_received(:provision)
   end
 
   it "fails validation before attempting admission or provisioning" do
     FeatureFlags.disable!(:apple_verification_workers, project:)
     attempt
 
-    result = described_class.call(admission: ->(*) { raise "admission should not run" }, lifecycle:)
+    result = described_class.call(admission: ->(*) { raise "admission should not run" })
 
     expect(result).to have_attributes(attempt:, outcome: "rejected", reason: "policy_denied")
     expect(attempt.reload).to have_attributes(status: "failed", failure_classification: "network_policy")
-    expect(lifecycle).not_to have_received(:provision)
   end
 end

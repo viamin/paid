@@ -65,6 +65,11 @@ follows one ordered contract:
 10. Retain a failed VM for at most the configured window (default one hour),
     or destroy it early on request.
 
+The scheduler validates and checks admission before dispatch. Until the guest
+execution handoff implements source delivery, verification start, and result
+completion as one path, it leaves admitted attempts queued rather than cloning
+and starting a VM that cannot complete.
+
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
 last five are terminal. Cancellation is available while an attempt is not

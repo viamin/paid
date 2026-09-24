@@ -5,7 +5,7 @@
 > Phase 0); the `Tests:` and `Code:` surfaces below are the ones those issues
 > will add.
 
-- [x] **APPLE-ATTEMPT-001** — When an Apple verification attempt is submitted,
+- [ ] **APPLE-ATTEMPT-001** — When an Apple verification attempt is submitted,
   the system SHALL admit it only when the active-VM limit and the host disk,
   host memory, and guest disk thresholds are satisfied, with
   operator-configurable defaults of one active Apple verification VM, 60 GiB
@@ -41,7 +41,7 @@
   *Tests:* `spec/services/apple_verification_attempts/timeout_monitor_spec.rb`
   *Code:* `AppleVerificationAttempts::TimeoutMonitor`
 
-- [x] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system
+- [ ] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system
   SHALL validate project approval, workflow state, source identity,
   capabilities, policy, and quota, and SHALL fail the attempt with a
   `project_configuration` or `unsupported_capability` classification instead
