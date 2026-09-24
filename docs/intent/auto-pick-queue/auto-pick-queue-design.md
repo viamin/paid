@@ -48,6 +48,10 @@ unless the owner's issue-analysis runner configuration / runner-health context
 has changed since that cooldown was recorded. Manual retries do not consult
 this gate.
 
+A needs-input label is an independent, always-on eligibility exclusion. It
+applies regardless of `paid_state`, so a stale local state cannot schedule work
+while a user clarification remains pending.
+
 ## Completed-issue recovery vs. agent-declared terminal completions
 
 `DefaultCandidateSource` re-includes open, `paid_state: "completed"` issues

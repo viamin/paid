@@ -222,6 +222,9 @@ RSpec.describe Projects::CreateBlank do
       allow(Github::AppInstallation).to receive(:provisioning_token_for)
         .with(installation_id: installation.github_installation_id)
         .and_return("ghs_installtoken_#{SecureRandom.alphanumeric(30)}")
+      allow(Github::AppInstallation).to receive(:token_for)
+        .with(installation_id: installation.github_installation_id, repo_full_name: "acme-org/fresh-start")
+        .and_return("ghs_repotoken_#{SecureRandom.alphanumeric(30)}")
       allow(GithubClient).to receive(:new).and_return(client)
     end
 

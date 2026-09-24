@@ -844,6 +844,53 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.reload.paid_state).to eq("needs_input")
         expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
       end
+
+      # @spec GITHUB-SYNC-012
+      it "restores needs_input when a labeled clarification gate drifts to failed" do
+        issue.update!(paid_state: "failed")
+        allow(Rails.logger).to receive(:info)
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "github_sync.needs_input_state_repaired",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          paid_state_before: "failed"
+        ))
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "repairs a drifted issue that is absent from an incremental response" do
+        drifted_issue = create(:issue,
+          project: project,
+          github_issue_id: 9103,
+          github_number: 93,
+          paid_state: "failed",
+          labels: [ project.enhance_issue_needs_input_label_name ],
+          needs_input_questions: [ "Which behavior should Paid implement?" ])
+
+        activity.execute(project_id: project.id)
+
+        expect(drifted_issue.reload.paid_state).to eq("needs_input")
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "does not replace the state while a clarification run still owns the wait" do
+        issue.update!(paid_state: "in_progress")
+        create(:agent_run,
+          project: project,
+          issue: issue,
+          goal: "create_feature",
+          status: "paused",
+          external_metadata: { AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY => "round-1" })
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
     end
 
     context "when the paid-needs-input label is removed" do
@@ -882,6 +929,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_issues_by_label(nil => [ github_issue ])
       end
 
+      # @spec GITHUB-SYNC-012
       it "transitions paid_state to new" do
         activity.execute(project_id: project.id)
 

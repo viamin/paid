@@ -71,6 +71,12 @@ module Activities
         )
         sync_changed = invalid_needs_input_changed || sync_changed
 
+        needs_input_state_changed = repair_needs_input_state_drift(
+          project,
+          ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
+        )
+        sync_changed = needs_input_state_changed || sync_changed
+
         paused_changed = sync_paused_state(project, synced_issues)
         sync_changed = paused_changed || sync_changed
 
@@ -467,11 +473,7 @@ module Activities
     end
 
     def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
-      repair_labels = [
-        project.enhance_issue_needs_input_label_name,
-        project.label_for_stage("needs_input"),
-        Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
-      ].compact.uniq
+      repair_labels = project.needs_input_labels
       synced_issues = Array(synced_issues)
       return false if synced_issues.empty?
 
@@ -504,6 +506,60 @@ module Activities
       end
 
       changed
+    end
+
+    # Restores the answer gate when another state writer leaves persisted
+    # questions and their GitHub label behind. A parked create_feature run with
+    # a clarification-round identity remains the owner of its own wait.
+    # @spec GITHUB-SYNC-012
+    def repair_needs_input_state_drift(project, ignored_issue_ids: [])
+      ignored_issue_ids = ignored_issue_ids.to_set
+      changed = false
+
+      needs_input_state_drift_candidates(project, ignored_issue_ids).find_each.with_index do |issue, index|
+        heartbeat("fetch_issues.needs_input_state_drift", project_id: project.id, issue_id: issue.id, index: index)
+        paid_state_before = nil
+        repaired = issue.with_lock do
+          issue.reload
+          next false unless repairable_needs_input_state_drift?(project, issue)
+
+          paid_state_before = issue.paid_state
+          issue.update!(paid_state: "needs_input")
+          true
+        end
+        next unless repaired
+
+        changed = true
+        logger.info(
+          message: "github_sync.needs_input_state_repaired",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          paid_state_before: paid_state_before
+        )
+      end
+
+      changed
+    end
+
+    def needs_input_state_drift_candidates(project, ignored_issue_ids)
+      labels = project.needs_input_labels
+      label_conditions = labels.map { "labels @> ?::jsonb" }.join(" OR ")
+
+      project.issues
+        .where(github_state: "open", is_pull_request: false)
+        .where.not(paid_state: "needs_input")
+        .where.not(needs_input_questions: nil)
+        .where(label_conditions, *labels.map { |label| [ label ].to_json })
+        .where.not(id: ignored_issue_ids.to_a)
+    end
+
+    def repairable_needs_input_state_drift?(project, issue)
+      return false if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state == "needs_input"
+      return false unless issue.needs_input_questions.present?
+      return false unless project.needs_input_labels.any? { |label| issue.has_label?(label) }
+
+      !AgentRun.awaiting_human_clarification.where(issue: issue).exists?
     end
 
     def pending_clarifying_questions_for(project, issue)
