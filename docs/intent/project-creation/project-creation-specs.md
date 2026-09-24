@@ -44,8 +44,9 @@
   *Code:* `Projects::CreateBlank`, `GithubClient` name guard.
 
 - [x] **PROJECT-CREATION-006** - When a GitHub API error occurs during
-  repository creation, the system SHALL surface the error on the add-project
-  form without persisting a Paid project.
+  repository creation or GitHub App installation-token provisioning, the
+  system SHALL surface the error on the add-project form without persisting a
+  Paid project.
   *Tests:* `spec/requests/projects_spec.rb` ("POST /projects" create mode
   error contexts), `spec/services/projects/create_blank_spec.rb`.
   *Code:* `ProjectsController#create`, `Projects::CreateBlank`.

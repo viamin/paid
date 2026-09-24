@@ -68,7 +68,8 @@ Two columns on `projects`:
    never fails project creation.
 
 GitHub API failures (`NotFoundError`, `AuthenticationError`, `RateLimitError`,
-`ApiError`, `Error`) are surfaced as form errors on the add-project page.
+`ApiError`, `Error`) and GitHub App installation-token provisioning failures
+are surfaced as form errors on the add-project page.
 
 ## Setup guidance
 

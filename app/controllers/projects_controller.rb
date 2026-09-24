@@ -945,7 +945,7 @@ class ProjectsController < ApplicationController
               "Chat setup is recommended to capture your initial tooling choices."
   rescue ActiveRecord::RecordInvalid => e
     blank_creation_form_error(e.message, record: e.record)
-  rescue Projects::CreateBlank::ValidationError, GithubClient::Error => e
+  rescue Projects::CreateBlank::ValidationError, Github::AppInstallation::Error, GithubClient::Error => e
     blank_creation_form_error(e.message)
   end
 

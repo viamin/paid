@@ -675,6 +675,23 @@ RSpec.describe "Projects" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("name already exists")
     end
+
+    it "renders the form with the error when GitHub App token provisioning fails" do
+      installation = create(:github_installation, account: account, account_login: "acme-org")
+      params = create_params.deep_merge(project: {
+        github_token_id: nil,
+        github_installation_id: installation.id,
+        owner: "acme-org"
+      })
+      allow(Github::AppInstallation).to receive(:provisioning_token_for)
+        .with(installation_id: installation.github_installation_id)
+        .and_raise(Github::AppInstallation::ConfigurationError, "Paid Agents GitHub App is not configured")
+
+      expect { post projects_path, params: params }.not_to change(Project, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("Paid Agents GitHub App is not configured")
+    end
   end
 
   # @spec PROJECT-CREATION-001
