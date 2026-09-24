@@ -54,6 +54,28 @@ RSpec.describe Activities::CreateAgentRunActivity do
   end
 
   describe "#execute" do
+    # @spec TEMPORAL-ORCHESTRATION-008
+    it "rejects a create_pr run for an issue awaiting clarification without changing its state" do
+      issue.update!(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, goal: "create_pr")
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueAwaitingInput")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(issue.reload).to have_attributes(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+    end
+
     it "creates an agent run for the project and issue" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
@@ -327,6 +349,29 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.configuration_bundle.definition).to include(
         "runner_id" => codex_runner.id,
         "agent_type" => "codex"
+      )
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-008
+    it "rejects a resumed create_pr run for an issue awaiting clarification without changing its state" do
+      queued_run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr")
+      issue.update!(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
+      )
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueAwaitingInput")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(issue.reload).to have_attributes(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: [ "Which users should receive the first rollout?" ]
       )
     end
 
