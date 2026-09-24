@@ -24,13 +24,24 @@ module AppleVerificationAttempts
       failure_threshold: DEFAULT_FAILURE_THRESHOLD,
       attempt_scope: AppleVerificationAttempt,
       completion: Complete,
+      lifecycle: AppleVerification::Lifecycle.from_environment,
+      logger: Rails.logger,
       clock: Time
     )
       @profile = profile
       @failure_threshold = failure_threshold
       @attempt_scope = attempt_scope
       @completion = completion
+      @lifecycle = lifecycle
+      @logger = logger
       @clock = clock
+    end
+
+    # Probes the configured macOS worker and records its outcome. The
+    # maintenance job invokes this path so host readiness failures reach the
+    # quarantine policy in {#record}, rather than merely being logged.
+    def call
+      record(readiness_outcome) if @lifecycle
     end
 
     # Records a worker health outcome. When consecutive failures cross the
@@ -90,6 +101,19 @@ module AppleVerificationAttempts
     private
 
     attr_reader :failure_threshold
+
+    def readiness_outcome
+      @lifecycle.readiness
+      :passed
+    rescue StandardError => error
+      @logger.warn(
+        message: "apple_verification_attempts.worker_health_check_failed",
+        apple_worker_profile_id: @profile.id,
+        error_class: error.class.name,
+        error: error.message
+      )
+      :failed
+    end
 
     def quarantine_active_attempts(now)
       active_attempts.find_each do |attempt|

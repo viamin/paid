@@ -8,6 +8,7 @@ require "rails_helper"
 # @spec APPLE-ATTEMPT-005
 # @spec APPLE-ATTEMPT-014
 # @spec APPLE-TRANSFER-006
+# @spec APPLE-ATTEMPT-015
 RSpec.describe AppleVerificationAttemptMaintenanceJob do
   let(:recovery_result) do
     AppleVerificationAttempts::Recovery::Result.new(scanned: 1, reclassified: [ 42 ], orphans: { enqueued: 0 })
@@ -43,5 +44,16 @@ RSpec.describe AppleVerificationAttemptMaintenanceJob do
     described_class.perform_now
 
     expect(AppleVerificationAttempts::Schedule).to have_received(:call)
+  end
+
+  it "records worker health from the scheduled maintenance path" do
+    profile = create(:apple_worker_profile)
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    allow(AppleVerification::Lifecycle).to receive(:from_environment).and_return(lifecycle)
+    allow(AppleVerificationAttempts::WorkerHealth).to receive(:call)
+
+    described_class.perform_now
+
+    expect(AppleVerificationAttempts::WorkerHealth).to have_received(:call).with(profile:, lifecycle:)
   end
 end
