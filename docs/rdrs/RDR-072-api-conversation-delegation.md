@@ -7,7 +7,6 @@
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
-- **Implementation tree**: [Cross-repository issue drafts](api-conversation-delegation-implementation.md)
 
 ## Problem Statement
 
@@ -127,7 +126,8 @@ change implemented EARS status or supersede RDR-028.
 
 ## Rollout Guard
 
-**Docs-only now:** this draft and its issue tree ship no runtime behavior.
+**Docs-only now:** this draft ships no runtime behavior. Open implementation
+issues in agent-harness and Paid after the RDR is approved.
 
 Embedding, schema and transport adoption should ship as complete, tested
 replacements in their scoped paths. Avoid permanent dual implementations and
