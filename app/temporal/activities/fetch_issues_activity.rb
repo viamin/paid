@@ -63,6 +63,20 @@ module Activities
         )
         sync_changed = needs_input_changed || sync_changed
 
+        manually_added_needs_input_changed = detect_needs_input_label_additions(
+          project,
+          synced_issues,
+          client: client
+        )
+        sync_changed = manually_added_needs_input_changed || sync_changed
+
+        orphaned_needs_input_changed = repair_orphaned_needs_input_labels(
+          project,
+          synced_issues,
+          client: client
+        )
+        sync_changed = orphaned_needs_input_changed || sync_changed
+
         invalid_needs_input_changed = repair_questionless_needs_input(
           project,
           synced_issues,
@@ -308,6 +322,7 @@ module Activities
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
+        added_labels: issue.labels - previous_labels,
         changed: upsert_changed || rounds_reset }
     end
 
@@ -466,12 +481,91 @@ module Activities
       changed
     end
 
-    def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
-      repair_labels = [
+    # @spec GITHUB-SYNC-012
+    def detect_needs_input_label_additions(project, synced_issues, client:)
+      cleanup_orphaned_needs_input_labels(project, synced_issues, client:) do |issue_data, labels|
+        Array(issue_data[:added_labels]) & labels
+      end
+    end
+
+    # A prior sync may already have persisted a manually added label before
+    # this behavior shipped. Re-evaluate every currently-present needs-input
+    # label so those orphaned status markers receive the same cleanup.
+    # @spec GITHUB-SYNC-012
+    def repair_orphaned_needs_input_labels(project, synced_issues, client:)
+      cleanup_orphaned_needs_input_labels(project, synced_issues, client:) do |issue_data, labels|
+        Array(issue_data[:labels]) & labels
+      end
+    end
+
+    def cleanup_orphaned_needs_input_labels(project, synced_issues, client:)
+      labels = needs_input_labels(project)
+      changed = false
+
+      Array(synced_issues).each_with_index do |issue_data, index|
+        heartbeat("fetch_issues.orphaned_needs_input", project_id: project.id, issue_id: issue_data[:id], index: index, total: synced_issues.size)
+        issue = project.issues.find(issue_data[:id])
+        next if issue.paid_state == "needs_input"
+
+        orphaned_labels = yield(issue_data, labels).select do |label|
+          issue.has_label?(label) && Automation::LabelPolicy.trusted_user_added_label?(project, issue, label)
+        end
+        next if orphaned_labels.empty?
+        next unless remove_invalid_needs_input_labels(client, project, issue, orphaned_labels)
+
+        issue.update!(labels: Array(issue.labels) - orphaned_labels)
+        post_manually_added_needs_input_label_comment(client, project, issue, orphaned_labels)
+        changed = true
+
+        logger.info(
+          message: "github_sync.needs_input_label_added_ignored",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          labels: orphaned_labels
+        )
+      end
+
+      changed
+    end
+
+    def needs_input_labels(project)
+      [
         project.enhance_issue_needs_input_label_name,
         project.label_for_stage("needs_input"),
         Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
       ].compact.uniq
+    end
+
+    def post_manually_added_needs_input_label_comment(client, project, issue, labels)
+      client.add_comment(
+        project.full_name,
+        issue.github_number,
+        manually_added_needs_input_label_comment(labels)
+      )
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.needs_input_label_added_comment_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+    end
+
+    def manually_added_needs_input_label_comment(labels)
+      [
+        "<!-- paid:manually-added-needs-input-label -->",
+        "## Paid status label removed",
+        "",
+        "#{labels.to_sentence} is a Paid-managed status label. Adding it manually does not create Inbox clarifying questions or pause automation.",
+        "",
+        "Answer existing clarifying questions in the Inbox, or re-trigger the supported automation flow to request work. To pause automation, use `#{Issue::PAUSED_LABEL}`."
+      ].join("\n")
+    end
+
+    def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
+      repair_labels = needs_input_labels(project)
       synced_issues = Array(synced_issues)
       return false if synced_issues.empty?
 

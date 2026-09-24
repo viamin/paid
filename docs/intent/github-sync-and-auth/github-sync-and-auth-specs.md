@@ -109,3 +109,15 @@
   errors rather than raw Octokit exceptions.
   *Code:* `app/services/github_client.rb`.
   *Test:* `spec/services/github_client_spec.rb`.
+
+- [x] **GITHUB-SYNC-012** — When a trusted GitHub user manually applies a
+  Paid-owned needs-input status label to an item that is not in
+  `paid_state: "needs_input"`, the sync SHALL remove the orphaned label and
+  post a Paid-authored explanation that the label is a Paid-managed status
+  marker, not a pause or an Inbox-question trigger. The explanation SHALL
+  direct operators to answer existing Inbox questions, re-trigger supported
+  automation, or use `paid-paused` to pause automation. The sync SHALL leave
+  the item's Paid state unchanged and log the cleanup. Labels last applied by
+  an untrusted user or by Paid SHALL not be treated as an operator request.
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.

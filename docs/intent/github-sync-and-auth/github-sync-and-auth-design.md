@@ -36,6 +36,18 @@ Issue and PR state is cached locally at multiple layers:
 - request-time API objects such as issues, pull requests, and repo metadata use
   cache invalidation keyed by GitHub webhook event type
 
+Paid-owned status labels describe state that Paid has already established;
+they are not operator commands. In particular, `paid-needs-input` is applied
+only after Paid has parked an issue with answerable clarifying questions.
+When a trusted operator applies that label to an item whose local state is not
+`needs_input`, sync removes the orphaned label, leaves the local state intact,
+and posts an explanation of the supported paths: answer existing Inbox
+questions, re-trigger automation, or use `paid-paused` for an operational
+pause. Sync verifies the last label adder through GitHub label events, so a
+Paid write or an untrusted addition is never misread as operator intent. The
+same check repairs orphaned labels that were already present before a sync
+observed their addition.
+
 Repository credentials resolve per project. App-backed projects mint
 installation tokens and present the App bot identity; PAT-backed projects keep
 using their active token. Callers consume an opaque GitHub credential so the
