@@ -44,12 +44,13 @@ module Tools
       }
     end
 
-    # @spec CHAT-TOOL-CONFIRMATION-001
+    # @spec CHAT-TOOL-CONFIRMATION-001, GITHUB-SYNC-013
     def perform(project_id:, issue_number:, confirmed: false, title: nil, body: nil, state: nil, labels: nil, assignees: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to edit an issue" unless confirmed
 
       project = project_for(project_id)
       client = require_github_client!(project)
+      require_trusted_human_credential!(project, client)
       repo = project.full_name
 
       options = {}
@@ -84,6 +85,12 @@ module Tools
     end
 
     private
+
+    def require_trusted_human_credential!(project, client)
+      return if project.trusted_github_user?(client.authenticated_login)
+
+      raise ArgumentError, "Issue edits require a trusted human GitHub credential"
+    end
 
     def sync_local_issue!(project, github_issue, parse_dependencies: false)
       issue = Issues::UpsertFromGithub.call(project:, github_issue:)
