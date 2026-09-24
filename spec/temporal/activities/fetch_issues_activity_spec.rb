@@ -1023,8 +1023,10 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       # @spec GITHUB-SYNC-012
-      it "cleans up an orphaned label that predates this sync" do
+      it "cleans up an orphaned label omitted from the incremental GitHub fetch" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
         issue.update!(labels: [ "paid-build", "paid-needs-input" ])
+        stub_issues_by_label(nil => [])
 
         activity.execute(project_id: project.id)
 

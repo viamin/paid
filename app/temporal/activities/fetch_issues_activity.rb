@@ -493,9 +493,24 @@ module Activities
     # label so those orphaned status markers receive the same cleanup.
     # @spec GITHUB-SYNC-012
     def repair_orphaned_needs_input_labels(project, synced_issues, client:)
-      cleanup_orphaned_needs_input_labels(project, synced_issues, client:) do |issue_data, labels|
+      cleanup_orphaned_needs_input_labels(project, orphaned_needs_input_label_candidates(project, synced_issues), client:) do |issue_data, labels|
         Array(issue_data[:labels]) & labels
       end
+    end
+
+    def orphaned_needs_input_label_candidates(project, synced_issues)
+      candidates = Array(synced_issues).index_by { |issue_data| issue_data[:id] }
+      project.issues
+        .where.not(paid_state: "needs_input")
+        .where(or_label_conditions(needs_input_labels(project)))
+        .pluck(:id, :labels)
+        .each { |id, labels| candidates[id] ||= { id:, labels: } }
+      candidates.values
+    end
+
+    def or_label_conditions(labels)
+      conditions = labels.map { "labels @> ?::jsonb" }.join(" OR ")
+      [ conditions, *labels.map { |label| [ label ].to_json } ]
     end
 
     def cleanup_orphaned_needs_input_labels(project, synced_issues, client:)
