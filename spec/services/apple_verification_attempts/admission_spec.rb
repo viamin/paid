@@ -23,6 +23,33 @@ RSpec.describe AppleVerificationAttempts::Admission do
     )
   end
 
+  describe ".default" do
+    it "reads scheduling metrics from the configured Apple host service" do
+      stub_configured_host_metrics
+
+      snapshot = AppleVerificationAttempts::HostCapacity.default.snapshot
+
+      expect(snapshot).to have_attributes(
+        disk_free_gib: 200,
+        memory_free_percent: 60,
+        guest_disk_free_gib: 200,
+        memory_pressure_window: [ 55, 58 ]
+      )
+    end
+  end
+
+  def stub_configured_host_metrics
+    host = instance_double(AppleVerification::HostClient)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("APPLE_VERIFICATION_HOST_URL").and_return("https://macos-worker.example.test")
+    allow(ENV).to receive(:[]).with("APPLE_VERIFICATION_HOST_TOKEN").and_return("host-token")
+    allow(AppleVerification::HostClient).to receive(:new).with(endpoint: "https://macos-worker.example.test").and_return(host)
+    allow(host).to receive(:call).with(version: AppleVerification::HostService::API_VERSION,
+      operation: "readiness", payload: {}, token: "host-token").and_return(
+        "disk" => { "free_gib" => 200 }, "memory" => { "free_percent" => 60, "pressure_window" => [ 55, 58 ] }
+      )
+  end
+
   def admission_for(project:)
     described_class.new(project: project, host_capacity: host_capacity)
   end
