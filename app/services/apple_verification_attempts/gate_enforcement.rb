@@ -22,11 +22,12 @@ module AppleVerificationAttempts
     end
 
     class << self
-      # Compatibility entry point for gate callers that do not yet carry a
-      # result commit. Pull-request review has no AgentRun to bind, so it is
-      # outside the commit-bound completion gate.
+      # Compatibility entry point for callers at either enforcement gate.
+      # Pull-request review has no AgentRun, but it still binds verification
+      # to the project and the pull request's current head commit.
       def call(agent_run: nil, pull_request: nil, lifecycle_gate:, project: nil)
         return evaluate(agent_run:, gate: lifecycle_gate) if agent_run
+        return evaluate_pull_request(project:, pull_request:, gate: lifecycle_gate) if pull_request && project
 
         not_required(lifecycle_gate)
       end
@@ -42,6 +43,17 @@ module AppleVerificationAttempts
         evaluate_attempt(attempt, revision, gate)
       end
 
+      def evaluate_pull_request(project:, pull_request:, gate:)
+        revision = binding_revision(project, gate)
+        return not_required(gate) unless revision
+        return not_required(gate) if revision.required_checks.empty?
+
+        attempt = latest_pull_request_attempt(project, pull_request.head.sha, revision)
+        return pending(revision, gate, reason: "Required Apple verification has not run for this pull request") unless attempt
+
+        evaluate_attempt(attempt, revision, gate)
+      end
+
       private
 
       def binding_revision(project, gate)
@@ -53,6 +65,10 @@ module AppleVerificationAttempts
 
       def latest_attempt(agent_run, revision, result_commit)
         revision.apple_verification_attempts.where(agent_run:, commit_sha: result_commit).order(created_at: :desc, id: :desc).first
+      end
+
+      def latest_pull_request_attempt(project, head_sha, revision)
+        revision.apple_verification_attempts.where(project:, commit_sha: head_sha).order(created_at: :desc, id: :desc).first
       end
 
       def evaluate_attempt(attempt, revision, gate)

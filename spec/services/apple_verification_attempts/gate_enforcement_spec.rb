@@ -111,6 +111,22 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     expect(decision.reason).to eq("satisfied")
   end
 
+  # @spec APPLE-ATTEMPT-011
+  it "enforces the enabled PR gate against the current pull request head" do
+    project.update!(apple_verification_mode: "on_demand")
+    FeatureFlags.enable!(:apple_verification_workers, project: project)
+    revision = approved_workflow(lifecycle_gate: "pull_request_verification")
+    attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
+
+    decision = described_class.call(
+      pull_request: pull_request_for("b" * 40), project: project,
+      lifecycle_gate: "pull_request_verification"
+    )
+
+    expect(decision).to be_pending
+    expect(decision).to be_enforcing
+  end
+
   def pull_request_for(head_sha)
     Automation::Signals::PullRequestSnapshot.new(
       number: 1, title: "PR", body: nil, state: "open", draft: false,
