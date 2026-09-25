@@ -80,4 +80,33 @@ RSpec.describe AppleVerificationAttempts::RetryPolicy do
     expect(decision).not_to be_retryable
     expect(decision.reason).to eq("not_terminal")
   end
+
+  describe ".explicit" do
+    it "permits an administrator-initiated rerun of a deterministic project failure" do
+      attempt = attempt_with(status: "failed", failure_classification: "test_assertion")
+
+      decision = described_class.explicit(attempt: attempt)
+
+      expect(decision).to be_retryable
+      expect(decision.classification).to eq("test_assertion")
+    end
+
+    it "still refuses an administrator-initiated rerun of a cancelled attempt" do
+      attempt = attempt_with(status: "cancelled", failure_classification: "worker_infrastructure")
+
+      decision = described_class.explicit(attempt: attempt)
+
+      expect(decision).not_to be_retryable
+      expect(decision.reason).to eq("cancelled")
+    end
+
+    it "still refuses an administrator-initiated rerun once the retry budget is exhausted" do
+      attempt = attempt_with(status: "timed_out", failure_classification: "cancellation_or_timeout", retry_number: 3)
+
+      decision = described_class.explicit(attempt: attempt, max_retries: 3)
+
+      expect(decision).not_to be_retryable
+      expect(decision.reason).to eq("max_retries_exceeded")
+    end
+  end
 end

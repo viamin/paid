@@ -8,15 +8,16 @@ RSpec.describe AppleVerificationAttempts::Rerun do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:) }
 
-  it "refuses a deterministic failure without creating a retry" do
+  it "permits an explicit rerun of a deterministic project failure" do
     attempt = create(
       :apple_verification_attempt,
       project:, account:, status: "failed", failure_classification: "test_assertion"
     )
 
-    expect { described_class.call(attempt:) }
-      .to raise_error(ArgumentError, "attempt cannot be rerun: not_infrastructure")
-    expect(project.apple_verification_attempts.count).to eq(1)
+    rerun_attempt = described_class.call(attempt:)
+
+    expect(rerun_attempt).to have_attributes(status: "queued", retry_of_attempt: attempt)
+    expect(project.apple_verification_attempts.count).to eq(2)
   end
 
   it "refuses a cancelled attempt without creating a retry" do

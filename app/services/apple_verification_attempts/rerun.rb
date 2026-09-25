@@ -2,6 +2,9 @@
 
 module AppleVerificationAttempts
   # Queues an immutable retry from a completed attempt.
+  # An administrator-initiated rerun is never a silent retry: deterministic
+  # project failures remain rerunnable (APPLE-VERIFY-006), while cancelled
+  # attempts and exhausted retry budgets are still refused.
   # @spec APPLE-VERIFY-006
   # @spec APPLE-ATTEMPT-010
   class Rerun
@@ -38,7 +41,7 @@ module AppleVerificationAttempts
     private
 
     def ensure_retryable!
-      decision = RetryPolicy.call(attempt: @attempt)
+      decision = RetryPolicy.explicit(attempt: @attempt)
       return if decision.retryable?
 
       raise ArgumentError, "attempt cannot be rerun: #{decision.reason}"
