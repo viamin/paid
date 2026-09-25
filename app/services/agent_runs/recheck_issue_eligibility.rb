@@ -4,9 +4,9 @@ module AgentRuns
   # RDR-032 hardening: recheck a queued run's issue eligibility at dequeue
   # time. Eager queue seeding creates a queued run the moment an issue
   # becomes eligible, but the issue can lose eligibility before the
-  # scheduler claims the run — a skip label added, paid_state entering a
-  # skip state, a new blocking dependency, the issue closed/completed, an
-  # untrusted creator, etc.
+  # scheduler claims the run — a skip label added, a new blocking dependency,
+  # the issue closed, an untrusted creator, etc. Paid's internal workflow
+  # state is intentionally not a dequeue-time exclusion.
   #
   # Those stale queued runs would otherwise hold a unique-active-run slot
   # and pollute the dashboard queue preview forever. Cancel them here so
