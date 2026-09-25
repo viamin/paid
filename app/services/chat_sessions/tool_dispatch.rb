@@ -19,7 +19,7 @@ module ChatSessions
         Tools::Registry.dispatch(
           name: name,
           arguments: arguments,
-          user: chat_session.created_by,
+          user: actor,
           session: chat_session
         )
       end
@@ -49,7 +49,7 @@ module ChatSessions
         Tools::Registry.dispatch(
           name: name,
           arguments: arguments,
-          user: chat_session.created_by,
+          user: actor,
           session: chat_session
         )
       end
@@ -61,7 +61,7 @@ module ChatSessions
           name: name,
           decision: decision,
           pending_result: pending_result,
-          user: chat_session.created_by,
+          user: actor,
           session: chat_session
         )
       end

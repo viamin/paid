@@ -39,6 +39,7 @@ class ChatChannel < ApplicationCable::Channel
 
       ChatSessions::ProcessMessageJob.perform_later(
         chat_session_id: @chat_session.id,
+        actor_id: current_user.id,
         content: content,
         stream_message_id: stream_message_id
       )
@@ -65,6 +66,7 @@ class ChatChannel < ApplicationCable::Channel
 
       ChatSessions::ResolveToolCallJob.perform_later(
         chat_session_id: @chat_session.id,
+        actor_id: current_user.id,
         message_id: message.id,
         decision: decision,
         stream_message_id: stream_message_id

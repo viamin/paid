@@ -9,8 +9,9 @@ class ChatSessions::ResolveToolCallJob < ApplicationJob
     job.send(:broadcast_error, chat_session_id, stream_message_id, "Session no longer exists") if chat_session_id
   end
 
-  def perform(chat_session_id:, message_id:, decision:, stream_message_id:)
+  def perform(chat_session_id:, message_id:, decision:, stream_message_id:, actor_id: nil)
     chat_session = ChatSession.find(chat_session_id)
+    actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     tool_call_message = chat_session.messages.find(message_id)
     stream_name = "chat_session:#{chat_session.id}"
 
@@ -21,6 +22,7 @@ class ChatSessions::ResolveToolCallJob < ApplicationJob
 
     assistant_message = ChatSessions::ResolveToolCall.call(
       chat_session: chat_session,
+      actor: actor,
       tool_call_message: tool_call_message,
       decision: decision,
       stream_message_id: stream_message_id,
