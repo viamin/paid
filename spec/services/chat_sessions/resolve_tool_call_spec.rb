@@ -266,6 +266,20 @@ RSpec.describe ChatSessions::ResolveToolCall do
 
       expect(tool_call_message.reload.tool_status).to eq("pending")
     end
+
+    it "rejects resolving a tool call when an interactive inbox chat is closed" do
+      # @spec QUESTION-EXPLORATION-001
+      chat_session.update!(status: "closed", inbox_item_key: "clarifying_questions:1")
+
+      expect {
+        described_class.call(
+          chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :approve, llm_client: llm_client
+        )
+      }.to raise_error(ArgumentError, /interactive inbox chat sessions cannot be resumed/)
+
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+    end
   end
 
   describe "concurrent resolution safety" do

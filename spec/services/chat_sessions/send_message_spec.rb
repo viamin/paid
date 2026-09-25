@@ -103,6 +103,24 @@ RSpec.describe ChatSessions::SendMessage do
       expect(closed_session.metadata["last_resumed_at"]).to be_present
     end
 
+    it "does not resume a closed interactive inbox chat" do
+      # @spec QUESTION-EXPLORATION-001
+      closed_session = create(
+        :chat_session,
+        :closed,
+        account: account,
+        created_by: user,
+        inbox_item_key: "clarifying_questions:1"
+      )
+
+      expect {
+        described_class.call(chat_session: closed_session, content: "Hello", llm_client: llm_client)
+      }.to raise_error(ArgumentError, /interactive inbox chat sessions cannot be resumed/)
+
+      expect(closed_session.reload.status).to eq("closed")
+      expect(closed_session.messages).to be_empty
+    end
+
     it "does not reopen a closed session for blank content" do
       closed_session = create(:chat_session, :closed, account: account, created_by: user)
 

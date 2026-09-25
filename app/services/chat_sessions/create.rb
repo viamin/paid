@@ -15,10 +15,12 @@ module ChatSessions
   #   )
   class Create
     attr_reader :account, :user, :container_capability, :runner_id, :model,
-      :project_id, :system_prompt, :title, :metadata, :auto_approve, :clarifying_question_issue
+      :project_id, :system_prompt, :title, :metadata, :auto_approve,
+      :inbox_item_key, :inbox_item_metadata, :opened_at, :clarifying_question_issue
 
     def initialize(account:, user:, container_capability: nil, runner_id: nil, provider_id: nil, model: nil,
-      project_id: nil, system_prompt: nil, title: nil, metadata: nil, auto_approve: nil, clarifying_question_issue: nil)
+      project_id: nil, system_prompt: nil, title: nil, metadata: nil, auto_approve: nil,
+      inbox_item_key: nil, inbox_item_metadata: nil, opened_at: nil, clarifying_question_issue: nil)
       @account = account
       @user = user
       @container_capability = container_capability.presence || "none"
@@ -29,6 +31,9 @@ module ChatSessions
       @title = title
       @metadata = metadata
       @auto_approve = auto_approve
+      @inbox_item_key = inbox_item_key
+      @inbox_item_metadata = inbox_item_metadata
+      @opened_at = opened_at
       @clarifying_question_issue = clarifying_question_issue
     end
 
@@ -79,7 +84,10 @@ module ChatSessions
         status: "active",
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
         metadata: metadata.presence || {},
-        auto_approve: auto_approve || false
+        auto_approve: auto_approve || false,
+        inbox_item_key: inbox_item_key,
+        inbox_item_metadata: inbox_item_metadata.presence || {},
+        opened_at: opened_at
       )
     end
 

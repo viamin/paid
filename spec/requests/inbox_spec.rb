@@ -131,6 +131,17 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("false")
   end
 
+  it "opens the current user's canonical interactive chat for an inbox entry" do
+    # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
+    issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+
+    post inbox_interactive_chat_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(ChatSession.last).to have_attributes(created_by: user, inbox_item_key: "clarifying_questions:#{issue.id}")
+  end
+
   it "selects the requested entry on the member route" do
     create(:issue, :needs_input, project: project, github_number: 11, body: questions_body)
     second_issue = create(:issue, :needs_input, project: project, github_number: 22, body: questions_body)
