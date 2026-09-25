@@ -55,9 +55,13 @@
   `manual_review`, `needs_input`, `completed`, and `in_progress`. Separate
   explicit safeguards, including active work, dependencies, and configured
   GitHub labels, remain authoritative and visible in the eligibility dashboard.
+  The project issue list SHALL display each open issue's actual internal
+  `paid_state`, including `analyzed`, rather than a fallback state label.
   *Tests:* `spec/models/issue_spec.rb`,
-  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
-  *Code:* `app/models/issue.rb`.
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/requests/projects_spec.rb`.
+  *Code:* `app/models/issue.rb`, `app/helpers/application_helper.rb`,
+  `app/views/projects/_issue.html.erb`.
 
 - [x] **AUTO-PICK-QUEUE-006** — When Auto-Pick is disabled at the project
   level, a trusted issue-scoped activation label (`paid-automation` or
