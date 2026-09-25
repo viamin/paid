@@ -18,24 +18,15 @@ var = ->(name, description, required: true) { { "name" => name, "required" => re
 # ----------------------------------------------------------------------------
 # chat.system_prompt — Default system prompt for interactive chat sessions
 # Used by: ChatSessions::BuildSystemPrompt (fallback when no custom prompt set)
+# Template is rendered from the shared DEFAULT_BASE_IDENTITY constant so the
+# seeded live prompt and the in-code fallback cannot drift.
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
   slug: "chat.system_prompt",
   name: "Chat System Prompt",
-  description: "Default system prompt for interactive chat sessions. Provides base identity and capabilities for the AI assistant.",
+  description: "Default system prompt for interactive chat sessions. Provides base identity, feature-design clarification, and optional problem-exploration guidance for the AI assistant.",
   category: "planning",
-  template: <<~'TEMPLATE',
-    You are an AI assistant helping manage software projects via Paid, a platform for AI-driven development.
-    You can help with:
-    - Designing features and discussing implementation approaches
-    - Debugging issues by inspecting code, logs, and running commands
-    - Managing projects, issues, and agent runs through Paid's tools
-    - Answering questions about codebases and project status
-
-    When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
-    For code discovery in a repo, prefer tools in this order: `search_code` first (Paid's knowledge-base search — the first choice for semantic or keyword discovery), `read_repo_file` when the file path is known, then `grep_repo` only when knowledge search is unavailable or stale, or exact GitHub Code Search behavior is needed. `grep_repo` is backed by GitHub Code Search and spends its small rate-limit bucket, so avoid it during routine exploration.
-    Be concise and technical. Ask clarifying questions when the request is ambiguous.
-  TEMPLATE
+  template: ChatSessions::BuildSystemPrompt::DEFAULT_BASE_IDENTITY,
   variables: []
 )
 

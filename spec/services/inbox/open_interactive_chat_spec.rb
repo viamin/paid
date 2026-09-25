@@ -9,7 +9,10 @@ RSpec.describe Inbox::OpenInteractiveChat do
   let(:issue) do
     create(:issue, :needs_input, project:, body: "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. What changed?\n")
   end
-  let(:entry) { Inbox::Queue.call(user:, project:).first }
+  let(:entry) do
+    issue
+    Inbox::Queue.call(user:, project:).first
+  end
 
   it "creates and audits the current user's active chat for an inbox item" do
     # @spec QUESTION-EXPLORATION-001

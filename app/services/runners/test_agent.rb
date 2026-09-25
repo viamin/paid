@@ -395,6 +395,11 @@ module Runners
     end
 
     def resolve_openrouter_free_model_id
+      # @spec MODEL-POLICY-013
+      if runner.enabled_for_chat? && !runner.enabled_for_agent_runs?
+        return FreeModels::SelectChatModel.call(runner: runner, project: test_project).model_id
+      end
+
       LlmModel::TIERS.each do |tier|
         result = Runners::ResolveTierModel.call(runner: runner, tier: tier, user: runner.user)
         return result.model_id if result.success? && result.model_id.present?
