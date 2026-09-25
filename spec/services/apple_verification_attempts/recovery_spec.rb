@@ -79,6 +79,18 @@ RSpec.describe AppleVerificationAttempts::Recovery do
     expect(timed_out.reload.container_retained_until).to be_present
   end
 
+  it "retries finalization for a successful attempt after an interrupted completion" do
+    successful = create(:apple_verification_attempt, :succeeded, project: project, account: account)
+    finalized_attempts = []
+
+    described_class.call(
+      timeout_monitor: AppleVerificationAttempts::TimeoutMonitor.new(clock: clock),
+      completion: ->(attempt:) { finalized_attempts << attempt }
+    )
+
+    expect(finalized_attempts).to contain_exactly(successful)
+  end
+
   def create_stale_attempt(workflow, started_at)
     create(
       :apple_verification_attempt,

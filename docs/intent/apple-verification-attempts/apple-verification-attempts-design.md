@@ -148,6 +148,9 @@ control-plane restart, host restart, network interruption, timeout, or partial
 provisioning failure; every scenario converges to a known external-resource
 ledger state. Unknown or orphaned Paid-owned VMs are quarantined or destroyed
 according to ledger state — never adopted as healthy without validation.
+Recovery also retries successful-attempt finalization when interruption occurs
+after the success state is recorded, ensuring immediate VM destruction and
+credential revocation converge rather than leaving authority active.
 
 Repeated worker health failures quarantine the worker, revoke active
 credentials, and stop scheduling. An operator repairs or replaces the worker
