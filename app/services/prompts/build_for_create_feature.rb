@@ -233,7 +233,7 @@ module Prompts
       value = framing["selected_framing"]
       return if value.blank?
 
-      if framing["selected_framing_confirmed"].to_s == "true"
+      if framing["selected_framing_confirmed"] == true
         text_section("User-confirmed selected framing", value)
       else
         text_section("Proposed selected framing (not user-confirmed — treat as a hypothesis)", value)

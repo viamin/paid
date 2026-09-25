@@ -186,6 +186,15 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).not_to include("User-confirmed selected framing")
     end
 
+    it "treats a string confirmation flag as unconfirmed" do
+      brief = enriched_feature_brief.deep_merge("problem_framing" => { "selected_framing_confirmed" => "true" })
+
+      prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: brief)
+
+      expect(prompt).to include("Proposed selected framing (not user-confirmed")
+      expect(prompt).not_to include("User-confirmed selected framing")
+    end
+
     it "does not add a problem-framing section for an ordinary brief" do
       prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: feature_brief)
 
