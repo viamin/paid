@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Tools
   class TriggerAgentRun < BaseTool
     authorize :run_agent?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
@@ -26,7 +28,7 @@ module Tools
           project_id: { type: "integer", description: "The project ID" },
           issue_id: { type: "integer", description: "The issue ID. Omit when goal is create_issue and custom_prompt is provided instead." },
           goal: { type: "string", description: "Run goal", enum: AgentRun::GOALS, default: "create_pr" },
-          custom_prompt: { type: "string", description: "Description of the work for the agent to do. Required when goal is create_issue and no issue_id is given." },
+          custom_prompt: { type: "string", description: "Description of the work for the agent to do. For goal=create_feature, pass the structured feature brief as a JSON object; when it includes problem_framing.selected_framing, set selected_framing_confirmed true only if the user confirmed that framing — it is stored verbatim and rendered as proposed unless confirmed." },
           plan_docs: {
             type: "array",
             description: "Named plan docs to weight the prompt (used by lid_planning). Each entry is an object with a 'name' key.",
@@ -59,12 +61,16 @@ module Tools
       docs_only_planning = goal == "lid_planning" && named_plan_docs.any?
       raise ArgumentError, "issue_id or custom_prompt is required" if issue.nil? && custom_prompt.nil? && !docs_only_planning
 
+      feature_brief = feature_brief_from(custom_prompt) if goal == "create_feature" && custom_prompt
+      custom_prompt = nil if feature_brief
+
       runner_id, agent_type = AgentRuns::RunnerResolver.call(
         project: project,
         goal: goal
       )
 
       external_metadata = named_plan_docs.any? ? { "plan_docs" => named_plan_docs } : {}
+      external_metadata["feature_brief"] = feature_brief if feature_brief
 
       run = AgentRun.create!(
         project: project,
@@ -108,6 +114,23 @@ module Tools
 
     def duplicate_active_issue_run?(error)
       (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_issue")
+    end
+
+    # @spec FEATURE-CREATION-007 — the parsed brief is stored verbatim
+    # (stringified keys only), so a caller-supplied confirmation flag such as
+    # problem_framing.selected_framing_confirmed survives to the prompt
+    # builder, which owns the confirmed-vs-proposed label decision.
+    def feature_brief_from(custom_prompt)
+      parsed = JSON.parse(custom_prompt)
+      return parsed.deep_stringify_keys if parsed.is_a?(Hash)
+
+      text_brief(custom_prompt)
+    rescue JSON::ParserError
+      text_brief(custom_prompt)
+    end
+
+    def text_brief(custom_prompt)
+      { "title" => custom_prompt.lines.first.to_s.strip.truncate(120), "problem" => custom_prompt }
     end
   end
 end

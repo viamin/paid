@@ -161,6 +161,39 @@ The feature brief is a structured JSON object stored in `external_metadata["feat
 }
 ```
 
+The existing brief may additionally carry an optional `problem_framing`
+object. It records exploration reasoning at the same metadata boundary; it is
+not a new discovery lifecycle, persistence model, or approval gate:
+
+```json
+{
+  "problem_framing": {
+    "observations": ["Reviewers wait for assignment context"],
+    "evidence_references": ["Support ticket #123"],
+    "affected_stakeholders": ["Reviewers", "Authors"],
+    "selected_framing": "Reduce avoidable reviewer waiting time",
+    "selected_framing_rationale": "The user confirmed this is the priority",
+    "selected_framing_confirmed": true,
+    "alternative_framings": ["Increase reviewer capacity"],
+    "unresolved_assumptions": ["Notifications reach active reviewers"],
+    "desired_outcome": "Review waiting time decreases",
+    "reconsideration_conditions": ["Waiting time does not improve after adoption"]
+  }
+}
+```
+
+Observations and evidence references are supplied material, never customer
+evidence invented by Paid. User-confirmed choices and unresolved hypotheses
+remain distinct. `selected_framing_confirmed` is the explicit assertion that
+the user confirmed the framing: the direct tool path stores any JSON brief
+verbatim, so the rendered design prompt labels a framing user-confirmed only
+when the flag is `true` and otherwise renders it as a proposed framing the RDR
+must treat as a hypothesis — an AI-proposed framing never inherits a
+user-confirmation label by default. The chat/tool handoff and later
+clarification preserve this optional object in
+`external_metadata["feature_brief"]`; an ordinary brief remains valid and does
+not trigger new questions.
+
 #### 3. RDR generation
 
 The `create_feature` run clones the repo, reads `docs/rdrs/README.md` and the existing `docs/rdrs/RDR-*.md` files, and derives the next sequential number by finding the highest existing number and incrementing (a prompt instruction, not a Paid-side computation — consistent with the "repo stays the source of truth" tenet from RDR-051). It then researches the codebase (the same repo-read capability `lid_planning` already has) to ground the RDR's Context and Research Findings sections in real files and symbols, and writes `docs/rdrs/RDR-0XX-<slug>.md` following the section structure in `docs/rdrs/README.md`.
@@ -298,6 +331,14 @@ If `lid_mode` is not set but `lid_requested` is `true`, the run's completion mes
 3. Integration: a directly triggered `create_feature` run with an insufficient brief posts clarifying questions and moves to `paid_state: "needs_input"`, matching the existing needs-input flow.
 4. Integration: the filed issue tree's dependency text is parseable by `Issues::ParseDependencies` and each issue references the source RDR.
 5. Integration: `lid_requested: true` with `project.lid_mode` unset results in an offer to bootstrap LID, not a silent bootstrap or a silent skip.
+6. Unit/integration: an enriched chat/tool brief reaches stored metadata and
+   the rendered prompt with evidence references, framing, assumptions, and
+   reconsideration conditions intact; a clarification answer changes only the
+   framing fields it supplies.
+7. Evaluation: a representative generated RDR distinguishes supplied evidence,
+   user-confirmed choices, and hypotheses, and distinguishes implementation
+   acceptance (notifications are delivered correctly) from the unachieved
+   desired outcome (review waiting time decreases).
 
 ### Test scenarios
 

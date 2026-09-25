@@ -80,20 +80,23 @@ RSpec.describe Prompt, type: :model do
     expect(actual).to eq(SeedsPromptsSpec::EXPECTED_SLUGS.sort)
   end
 
-  describe "chat.system_prompt feature-design exploration coupling" do
+  describe "chat.system_prompt feature-design guidance coupling" do
     # The seeded chat template and the in-code base_identity fallback are the
     # two prompt sources for feature-design chat. They must carry the same
-    # guidance — including the optional problem-exploration step — so seeded
-    # and fallback deployments behave alike (RDR-053 § 2026-09-25 Extension).
-    # @spec FEATURE-CREATION-003
+    # guidance — including the optional problem-exploration step and the
+    # problem-framing recording handoff — so seeded and fallback deployments
+    # behave alike (RDR-053 § 2026-09-25 Extension).
+    # @spec FEATURE-CREATION-003 @spec FEATURE-CREATION-007
     let(:seed_template) do
       described_class.global.find_by(slug: "chat.system_prompt").current_version.template
     end
 
-    it "seeds the feature-design clarification guidance", :aggregate_failures do
+    it "seeds the feature-design clarification and problem-framing guidance", :aggregate_failures do
       expect(seed_template).to include("gather intent through adaptive questions")
       expect(seed_template).to include("trigger a `create_feature` agent run")
       expect(seed_template).to include("custom_prompt")
+      expect(seed_template).to include("selected_framing_confirmed")
+      expect(seed_template).to include("supplied evidence/references")
     end
 
     it "seeds the problem-exploration guidance", :aggregate_failures do
