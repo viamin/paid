@@ -167,6 +167,16 @@ RSpec.describe AppleVerificationAttempts::Validate do
     expect(decision.classification).to eq("capacity_or_quota")
   end
 
+  it "allows the configured maximum attempts per agent run including the current attempt" do
+    agent_run = create(:agent_run, project: project)
+    bound_attempt = attempt_for(agent_run)
+    (AppleVerificationAttempts::Queue::DEFAULT_MAX_ATTEMPTS_PER_RUN - 1).times { attempt_for(agent_run) }
+
+    decision = described_class.call(attempt: bound_attempt)
+
+    expect(decision).to be_allowed
+  end
+
   it "uses the configured maximum attempts per agent run" do
     agent_run = create(:agent_run, project: project)
     bound_attempt = attempt_for(agent_run)
