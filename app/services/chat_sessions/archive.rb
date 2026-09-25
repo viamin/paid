@@ -62,6 +62,7 @@ module ChatSessions
       {
         status: "archived",
         idle_timeout_at: nil,
+        closed_at: chat_session.closed_at || Time.current,
         metadata: (chat_session.metadata || {}).merge("archived_at" => Time.current.iso8601)
       }.merge(workspace_cleanup_attributes)
     end

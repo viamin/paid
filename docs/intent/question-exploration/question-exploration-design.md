@@ -15,10 +15,13 @@ actions.
 
 ## Components and ownership
 
-- Extend `ChatSession` linkage to a feature or standalone issue. Use one
-  persistent feature conversation, with question/issue focus carried by
-  messages and navigation. Add uniqueness/concurrency protection to avoid
-  duplicate conversations on simultaneous Inbox opens.
+- Extend `ChatSession` linkage to an Inbox item. The first backend increment
+  uses one active conversation per `(creator, inbox item)` so a user’s
+  exploratory transcript remains private; a future shared-feature conversation
+  must be an explicit collaboration model, not an accidental reuse of a
+  personal popup. Persist the inbox key, creator, open/close timestamps and an
+  audit snapshot of queue metadata. Add uniqueness/concurrency protection to
+  avoid duplicate conversations on simultaneous Inbox opens.
 - Extend `ChatMessage` with actor and question/facet context and typed diagram
   references. Keep domain records for answers separate from transcript text;
   archiving a conversation must not destroy the feature's intent.
@@ -41,6 +44,13 @@ Act as the sending collaborator, not automatically as the session creator;
 recheck membership for queued side effects. Do not expose a personal chat by
 attaching a feature to it. Each UI action has an equivalent structured API/tool
 operation with the same policy checks.
+
+The initial backend treats GitHub-comment authority as the write threshold:
+only a project user who can manage issue comments may open or use the linked
+chat. Authorization is rechecked for HTML, Cable, messages and context queries.
+Inbox context is not appended to the system prompt. `Inbox::ChatContext` is a
+section-addressable query boundary; callers request the work item, comments,
+review comments, labels, queue metadata or relevant agent-run output as needed.
 
 ## Temporary visual lifecycle
 

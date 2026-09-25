@@ -2,10 +2,13 @@
 
 class ChatMessagePolicy < ApplicationPolicy
   def index?
-    user_in_account?
+    ChatSessionPolicy.new(user, chat_session).show?
   end
 
   def create?
+    return false unless user_in_account?
+    return ChatSessionPolicy.new(user, chat_session).show? if chat_session.interactive_inbox_chat?
+
     has_any_account_role?(:owner, :admin, :member)
   end
 
@@ -17,7 +20,7 @@ class ChatMessagePolicy < ApplicationPolicy
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
-      scope.joins(:chat_session).where(chat_sessions: { account_id: user.account_id })
+      scope.where(chat_session: ChatSessionPolicy::Scope.new(user, ChatSession).resolve)
     end
   end
 
@@ -25,5 +28,9 @@ class ChatMessagePolicy < ApplicationPolicy
 
   def account_for_record
     record.respond_to?(:chat_session) ? record.chat_session.account : record.account
+  end
+
+  def chat_session
+    record.chat_session
   end
 end

@@ -81,6 +81,7 @@ class ChatChannel < ApplicationCable::Channel
     TenantContext.with_system_access do
       ChatSession.where(account_id: current_user.account_id)
         .find_by(id: params[:session_id])
+        &.then { |session| ChatSessionPolicy.new(current_user, session).show? ? session : nil }
     end
   end
 
