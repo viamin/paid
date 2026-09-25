@@ -111,7 +111,7 @@
   *Test:* `spec/services/github_client_spec.rb`.
 
 - [x] **GITHUB-SYNC-012** — During GitHub sync, the system SHALL reconcile
-  every open, non-PR issue with a configured needs-input label and persisted
+  every open issue or pull request with a configured needs-input label and persisted
   clarification questions whose `paid_state` has drifted away from
   `needs_input`, restoring `needs_input` and logging the repair unless a
   paused `create_feature` run with a recorded clarification round still owns
@@ -126,3 +126,34 @@
   do not repeatedly fetch unchanged issues' label-event histories.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **GITHUB-SYNC-014** — During GitHub sync, the system SHALL apply the
+  needs-input label-removal, enhancement recheck, questionless-needs-input, and
+  state-drift repair paths to both open issues and open pull requests. The hourly
+  reconciliation sweep SHALL include an open pull request confirmed by the
+  pull-request sweep in the questionless-repair candidates even when the
+  incremental issue response did not include it. Closed pull requests SHALL
+  remain excluded from those repair paths.
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **GITHUB-SYNC-013** — When a signed GitHub `issues` webhook reports an
+  `edited` or `reopened` action, the system SHALL evaluate the webhook sender
+  against the project's explicit case-insensitive human GitHub allowlist. The
+  implicit Paid App bot identity SHALL NOT grant human mutation trust. A
+  webhook sender that matches the project's own App bot identity SHALL instead
+  be recognized as an autonomous Paid-originated mutation and preserved. Before
+  a chat `edit_issue` tool call writes, the system SHALL require its GitHub
+  credential to authenticate as an allowlisted human, and SHALL reject an App
+  bot or unknown credential. For an allowlisted webhook sender, the system
+  SHALL preserve the GitHub issue state; for any other sender, it SHALL close
+  the issue through the project credential, post an explanatory comment naming
+  the allowlist and appeal path, and record an audit event and structured log
+  with the sender, trust result, Paid-origin flag, action, and allow/close
+  decision.
+  *Code:* `app/controllers/api/github_webhooks_controller.rb`,
+  `app/services/issues/enforce_mutation_trust.rb`,
+  `app/mcp/tools/edit_issue.rb`.
+  *Test:* `spec/services/issues/enforce_mutation_trust_spec.rb`,
+  `spec/requests/api/github_webhooks_spec.rb`,
+  `spec/mcp/tools/edit_issue_spec.rb`.
