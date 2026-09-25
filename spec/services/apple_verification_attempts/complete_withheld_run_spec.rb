@@ -16,6 +16,7 @@ RSpec.describe AppleVerificationAttempts::CompleteWithheldRun do
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
   end
 
   def approved_required_revision
@@ -70,8 +71,8 @@ RSpec.describe AppleVerificationAttempts::CompleteWithheldRun do
   end
 
   it "completes the withheld run when its matching attempt records success" do
-    revision = withhold_completion
-    attempt = attempt_for(revision, status: "running", commit_sha: shipped_commit)
+    withhold_completion
+    attempt = project.apple_verification_attempts.find_by!(agent_run:, commit_sha: shipped_commit)
 
     attempt.update!(status: "succeeded", finished_at: Time.current)
 

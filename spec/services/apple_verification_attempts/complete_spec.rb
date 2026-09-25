@@ -57,6 +57,21 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(attempt.reload.finalized_at).to be_nil
   end
 
+  it "revokes credentials and leaves finalization for the next sweep when the destroy raises" do
+    revocation = instance_double(AppleVerification::Revocation::Enforce)
+    expect(revocation).to receive(:revoke_credential!).once
+
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    expect(lifecycle).to receive(:destroy)
+      .with(attempt: attempt, request_id: "complete:#{attempt.id}")
+      .and_raise(AppleVerification::HostService::UnsupportedRequestError, "workers disabled")
+
+    result = described_class.call(attempt: attempt, revocation: revocation, lifecycle: lifecycle)
+
+    expect(result.outcome).to eq("succeeded")
+    expect(attempt.reload.finalized_at).to be_nil
+  end
+
   it "persists the failed-VM retention window for failed attempts" do
     failed = create(
       :apple_verification_attempt,
@@ -123,6 +138,31 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.outcome).to eq("failed")
     expect(result.retained_until).to be_present
     expect(result.destroy_request_id).to be_nil
+    expect(failed.reload.container_retained_until).to be_present
+  end
+
+  it "keeps the retention deadline when an early destroy raises" do
+    failed = create(
+      :apple_verification_attempt,
+      project: project, account: account,
+      apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+      apple_worker_profile: attempt.apple_worker_profile,
+      status: "failed", failure_classification: "test_assertion",
+      lifecycle_gate: attempt.lifecycle_gate,
+      source_digest: attempt.source_digest,
+      finished_at: Time.current
+    )
+    failed.update!(container_retained_until: 1.hour.from_now)
+
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    expect(lifecycle).to receive(:destroy)
+      .with(attempt: failed, request_id: "early_destroy:#{failed.id}")
+      .and_raise(Faraday::Error.new("host down"))
+
+    result = described_class.new(attempt: failed, lifecycle: lifecycle).early_destroy_retained_vm
+
+    expect(result.outcome).to eq("failed")
+    expect(result.retained_until).to be_present
     expect(failed.reload.container_retained_until).to be_present
   end
 

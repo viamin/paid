@@ -127,6 +127,15 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     end
   end
 
+  it "records the credential revocation audit event only once across repeated revokes" do
+    attempt.update!(status: "succeeded")
+
+    service = described_class.new(attempt: attempt, credential_lane: credential_lane)
+    2.times { service.revoke_credential! }
+
+    expect(ExecutionAuditEvent.where(event_name: "apple_credential.revoked", apple_verification_attempt: attempt).count).to eq(1)
+  end
+
   it "does nothing for non-terminal states" do
     attempt.update!(status: "running")
 

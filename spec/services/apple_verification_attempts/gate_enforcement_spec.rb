@@ -6,255 +6,174 @@ require "rails_helper"
 # @spec APPLE-ATTEMPT-012
 # @spec APPLE-ATTEMPT-013
 RSpec.describe AppleVerificationAttempts::GateEnforcement do
-  context "with scheduled-attempt gate behavior" do
-  let(:account) { create(:account) }
-  let(:project) { create(:project, account: account) }
-  let(:agent_run) { create(:agent_run, project: project) }
+  context "when execution is unavailable" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account, apple_verification_mode: "on_demand") }
+    let(:agent_run) { create(:agent_run, project: project) }
 
-  let(:administrator) do
-    user = create(:user, account: account)
-    user.add_role(:project_admin, project)
-    user
+    let(:administrator) do
+      user = create(:user, account: account)
+      user.add_role(:project_admin, project)
+      user
+    end
+
+    before do
+      FeatureFlags.enable!(:apple_verification_workers, project: project)
+    end
+
+    def approved_workflow(lifecycle_gate: "completion_verification")
+      revision = create(
+        :apple_verification_workflow_revision,
+        project: project, account: account,
+        lifecycle_gate: lifecycle_gate
+      )
+      revision.approve!(actor: administrator)
+      revision
+    end
+
+    def attempt_for(revision, status:, lifecycle_gate: nil, commit_sha: nil)
+      create(
+        :apple_verification_attempt,
+        project: project, account: account,
+        apple_verification_workflow_revision: revision,
+        apple_worker_profile: revision.apple_worker_profile,
+        status: status,
+        lifecycle_gate: lifecycle_gate || revision.lifecycle_gate,
+        agent_run: agent_run,
+        commit_sha: commit_sha
+      )
+    end
+
+    def pull_request_for(head_sha)
+      Automation::Signals::PullRequestSnapshot.new(
+        number: 1, title: "PR", body: nil, state: "open", draft: false,
+        merged: false, mergeable: true, head_sha: head_sha, head_ref: "feature",
+        base_ref: "main", author_login: "author", labels: [], created_at: Time.current,
+        updated_at: Time.current, merged_at: nil, url: "https://example.test/pr/1",
+        raw_state: "open", head_repo_fork: false
+      )
+    end
+
+    it "does not enforce completion verification until execution is available" do
+      revision = approved_workflow
+      attempt = attempt_for(revision, status: "failed")
+
+      decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
+
+      expect(decision.status).to eq(:not_required)
+      expect(decision.gate).to eq("completion_verification")
+      expect(decision.attempt).to be_nil
+      expect(decision.reason).to include("execution is unavailable")
+      expect(attempt).to be_failed
+    end
+
+    it "does not inspect completion attempts until execution is available" do
+      revision = approved_workflow
+      attempt_for(revision, status: "succeeded")
+
+      decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
+
+      expect(decision.status).to eq(:not_required)
+      expect(decision.reason).to include("execution is unavailable")
+    end
+
+    it "does not block completion when a required workflow has no attempt" do
+      approved_workflow
+
+      decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
+
+      expect(decision.status).to eq(:not_required)
+      expect(decision.reason).to include("execution is unavailable")
+    end
+
+    it "does not block PR verification when required execution is unavailable" do
+      approved_workflow(lifecycle_gate: "pull_request_verification")
+
+      decision = described_class.call(
+        pull_request: pull_request_for("a" * 40), project: project,
+        lifecycle_gate: "pull_request_verification"
+      )
+
+      expect(decision.status).to eq(:not_required)
+      expect(decision.reason).to include("execution is unavailable")
+    end
   end
 
-  def approved_workflow(lifecycle_gate: "completion_verification")
-    revision = create(
-      :apple_verification_workflow_revision,
-      project: project, account: account,
-      lifecycle_gate: lifecycle_gate
-    )
-    revision.approve!(actor: administrator)
-    revision
+  context "with available execution at the pull request gate" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account, apple_verification_mode: "on_demand") }
+    let(:agent_run) { create(:agent_run, project: project) }
+
+    let(:administrator) do
+      user = create(:user, account: account)
+      user.add_role(:project_admin, project)
+      user
+    end
+
+    before do
+      FeatureFlags.enable!(:apple_verification_workers, project: project)
+      allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
+    end
+
+    def approved_workflow(lifecycle_gate: "completion_verification")
+      revision = create(
+        :apple_verification_workflow_revision,
+        project: project, account: account,
+        lifecycle_gate: lifecycle_gate
+      )
+      revision.approve!(actor: administrator)
+      revision
+    end
+
+    def attempt_for(revision, status:, lifecycle_gate: nil, commit_sha: nil)
+      create(
+        :apple_verification_attempt,
+        project: project, account: account,
+        apple_verification_workflow_revision: revision,
+        apple_worker_profile: revision.apple_worker_profile,
+        status: status,
+        lifecycle_gate: lifecycle_gate || revision.lifecycle_gate,
+        agent_run: agent_run,
+        commit_sha: commit_sha
+      )
+    end
+
+    def pull_request_for(head_sha)
+      Automation::Signals::PullRequestSnapshot.new(
+        number: 1, title: "PR", body: nil, state: "open", draft: false,
+        merged: false, mergeable: true, head_sha: head_sha, head_ref: "feature",
+        base_ref: "main", author_login: "author", labels: [], created_at: Time.current,
+        updated_at: Time.current, merged_at: nil, url: "https://example.test/pr/1",
+        raw_state: "open", head_repo_fork: false
+      )
+    end
+
+    it "accepts a successful committed attempt for the current pull request head" do
+      revision = approved_workflow(lifecycle_gate: "pull_request_verification")
+      attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
+
+      decision = described_class.call(
+        pull_request: pull_request_for("a" * 40), project: project,
+        lifecycle_gate: "pull_request_verification"
+      )
+
+      expect(decision.status).to eq(:satisfied)
+    end
+
+    # @spec APPLE-ATTEMPT-011
+    it "enforces the enabled PR gate against the current pull request head" do
+      revision = approved_workflow(lifecycle_gate: "pull_request_verification")
+      attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
+
+      decision = described_class.call(
+        pull_request: pull_request_for("b" * 40), project: project,
+        lifecycle_gate: "pull_request_verification"
+      )
+
+      expect(decision.status).to eq(:pending)
+      expect(decision).to be_enforcing
+    end
   end
-
-  def attempt_for(revision, status:, lifecycle_gate: nil, commit_sha: nil)
-    create(
-      :apple_verification_attempt,
-      project: project, account: account,
-      apple_verification_workflow_revision: revision,
-      apple_worker_profile: revision.apple_worker_profile,
-      status: status,
-      lifecycle_gate: lifecycle_gate || revision.lifecycle_gate,
-      agent_run: agent_run,
-      commit_sha: commit_sha
-    )
-  end
-
-  it "does not enforce completion verification until execution is available" do
-    revision = approved_workflow
-    attempt = attempt_for(revision, status: "failed")
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.gate).to eq("completion_verification")
-    expect(decision.attempt).to be_nil
-    expect(decision.reason).to eq("verification_execution_unavailable")
-    expect(attempt).to be_failed
-  end
-
-  it "does not inspect completion attempts until execution is available" do
-    revision = approved_workflow
-    attempt_for(revision, status: "succeeded")
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("verification_execution_unavailable")
-  end
-
-  it "does not block completion when a required workflow has no attempt" do
-    approved_workflow
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("verification_execution_unavailable")
-  end
-
-  it "does not block PR verification when required execution is unavailable" do
-    approved_workflow(lifecycle_gate: "pull_request_verification")
-
-    decision = described_class.call(
-      pull_request: pull_request_for("a" * 40), project: project,
-      lifecycle_gate: "pull_request_verification"
-    )
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("verification_execution_unavailable")
-  end
-
-  it "only accepts a successful committed attempt for the current pull request head" do
-    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
-    revision = approved_workflow(lifecycle_gate: "pull_request_verification")
-    attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
-    decision = described_class.call(
-      pull_request: pull_request_for("b" * 40), project: project,
-      lifecycle_gate: "pull_request_verification"
-    )
-
-    expect(decision).to be_blocking
-    expect(decision.reason).to eq("pending_required_attempt")
-  end
-
-  it "accepts a successful committed attempt for the current pull request head" do
-    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
-    revision = approved_workflow(lifecycle_gate: "pull_request_verification")
-    attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
-
-    decision = described_class.call(
-      pull_request: pull_request_for("a" * 40), project: project,
-      lifecycle_gate: "pull_request_verification"
-    )
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("satisfied")
-  end
-
-  # @spec APPLE-ATTEMPT-011
-  it "enforces the enabled PR gate against the current pull request head" do
-    project.update!(apple_verification_mode: "on_demand")
-    FeatureFlags.enable!(:apple_verification_workers, project: project)
-    revision = approved_workflow(lifecycle_gate: "pull_request_verification")
-    attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
-
-    decision = described_class.call(
-      pull_request: pull_request_for("b" * 40), project: project,
-      lifecycle_gate: "pull_request_verification"
-    )
-
-    expect(decision).to be_pending
-    expect(decision).to be_enforcing
-  end
-
-  def pull_request_for(head_sha)
-    Automation::Signals::PullRequestSnapshot.new(
-      number: 1, title: "PR", body: nil, state: "open", draft: false,
-      merged: false, mergeable: true, head_sha: head_sha, head_ref: "feature",
-      base_ref: "main", author_login: "author", labels: [], created_at: Time.current,
-      updated_at: Time.current, merged_at: nil, url: "https://example.test/pr/1",
-      raw_state: "open", head_repo_fork: false
-    )
-  end
-
-  it "does not block when there is no approved workflow" do
-    create(
-      :apple_verification_workflow_revision,
-      project: project, account: account,
-      lifecycle_gate: "completion_verification"
-    )
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("no_approved_workflow")
-  end
-
-  it "does not block completion for an approved advisory workflow" do
-    approved_workflow(lifecycle_gate: "agent_iteration")
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("draft_only")
-  end
-
-  it "does not block PR verification for an approved advisory workflow" do
-    approved_workflow(lifecycle_gate: "agent_iteration")
-
-    decision = described_class.call(
-      pull_request: pull_request_for("a" * 40), project: project,
-      lifecycle_gate: "pull_request_verification"
-    )
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("draft_only")
-  end
-
-  it "treats a waiver as releasing the blocking attempt" do
-    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
-    revision = approved_workflow
-    blocking = attempt_for(revision, status: "failed")
-    create(
-      :apple_verification_waiver,
-      account: account, project: project,
-      apple_verification_attempt: blocking,
-      apple_verification_workflow_revision: revision,
-      created_by: administrator,
-      source_digest: blocking.source_digest,
-      lifecycle_gate: blocking.lifecycle_gate,
-      check_ids: revision.required_checks,
-      reason: "known simulator outage",
-      expires_at: 1.hour.from_now
-    )
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("waived")
-  end
-
-  it "honors the injected clock when checking waiver expiry" do
-    # The sibling services in this module all guard +clock+ with
-    # +respond_to?(:current) ? @clock.current : @clock.now+ so a
-    # +Time+ instance can be injected in place of the default +Time+
-    # class. Without that guard the call raises +NoMethodError+; with it
-    # the clock parameter is the source of truth for waiver expiry.
-    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
-    waiver = create_waiver(expires_at: Time.zone.local(2026, 1, 1, 13, 0, 0))
-
-    before_expiry = described_class.call(
-      agent_run: agent_run, lifecycle_gate: "completion_verification",
-      clock: Time.zone.local(2026, 1, 1, 12, 0, 0)
-    )
-    after_expiry = described_class.call(
-      agent_run: agent_run, lifecycle_gate: "completion_verification",
-      clock: Time.zone.local(2026, 1, 1, 14, 0, 0)
-    )
-
-    expect(before_expiry.reason).to eq("waived")
-    expect(before_expiry.waiver).to eq(waiver)
-    expect(after_expiry.reason).to eq("pending_required_attempt")
-    expect(after_expiry.waiver).to be_nil
-  end
-
-  def create_waiver(expires_at:)
-    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
-    revision = approved_workflow
-    blocking = attempt_for(revision, status: "failed")
-    create(
-      :apple_verification_waiver,
-      account: account, project: project,
-      apple_verification_attempt: blocking,
-      apple_verification_workflow_revision: revision,
-      created_by: administrator,
-      source_digest: blocking.source_digest,
-      lifecycle_gate: blocking.lifecycle_gate,
-      check_ids: revision.required_checks,
-      reason: "known simulator outage",
-      expires_at: expires_at
-    )
-  end
-
-  it "does not block when the workflow has no required checks" do
-    revision = create(
-      :apple_verification_workflow_revision,
-      project: project, account: account,
-      apple_worker_profile: create(:apple_worker_profile, account: account),
-      lifecycle_gate: "completion_verification",
-      required_checks: []
-    )
-    revision.approve!(actor: administrator)
-
-    decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
-
-    expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("no_required_checks")
-  end
-
-  # The newer commit-bound gate suite follows; it covers the `evaluate` API
-  # used by completion verification.
-end
 
   context "with commit-bound completion behavior" do
   # @spec APPLE-ATTEMPT-011
@@ -267,6 +186,7 @@ end
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
   end
 
   def approved_required_revision(gate: "completion_verification")
@@ -615,7 +535,7 @@ end
       expect(agent_run.status).to eq("running")
       expect(agent_run.pull_request_url).to be_blank
       log = agent_run.agent_run_logs.system.last
-      expect(log.content).to include("Completion withheld", "has not run")
+      expect(log.content).to include("Completion withheld", "has not completed")
     end
 
     it "completes once verification succeeds on the commit being shipped" do

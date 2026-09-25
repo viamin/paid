@@ -28,6 +28,15 @@ RSpec.describe AppleVerificationAttempts::RetryPolicy do
     expect(decision.classification).to eq("cancellation_or_timeout")
   end
 
+  it "permits retry of a terminal attempt without a failure classification" do
+    attempt = attempt_with(status: "failed")
+
+    decision = described_class.call(attempt: attempt)
+
+    expect(decision).to be_retryable
+    expect(decision.classification).to be_nil
+  end
+
   it "permits retry of worker_infrastructure outcomes within the configured budget" do
     attempt = attempt_with(status: "failed", failure_classification: "worker_infrastructure", retry_number: 1)
 

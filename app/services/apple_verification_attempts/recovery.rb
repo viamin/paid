@@ -22,7 +22,7 @@ module AppleVerificationAttempts
 
     def initialize(
       attempt_scope: AppleVerificationAttempt,
-      timeout_monitor: TimeoutMonitor.new(attempt_scope:),
+      timeout_monitor: TimeoutMonitor.new(attempt_scope:, timeout_minutes: TimeoutMonitor.timeout_minutes_from),
       ledger_reconciler: ExecutionRunners::ResourceReconciler,
       completion: Complete,
       clock: Time

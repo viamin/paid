@@ -28,6 +28,15 @@ RSpec.describe AppleVerificationAttempts::Recovery do
     expect(stale.reload.status).to eq("timed_out")
   end
 
+  it "honors the operator timeout knob in its default timeout monitor" do
+    allow(AppleVerificationAttempts::TimeoutMonitor).to receive(:timeout_minutes_from).and_return(120)
+    fresh = running_attempt(started_at: Time.current - 46.minutes)
+
+    described_class.call
+
+    expect(fresh.reload.status).to eq("running")
+  end
+
   it "invokes the durable ledger reconciler for orphaned VM recovery" do
     reconciler = instance_double(ExecutionRunners::ResourceReconciler)
     expect(reconciler).to receive(:call).and_return(enqueued: 0, cleaned: 0, failed: 0)
