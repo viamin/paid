@@ -30,9 +30,9 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.destroy_request_id).to eq("complete:#{attempt.id}")
   end
 
-  it "skips revocation when no lifecycle is available and surfaces the gap instead of recording a fake destroy" do
+  it "revokes credentials when no lifecycle is available without recording a fake destroy" do
     revocation = instance_double(AppleVerification::Revocation::Enforce)
-    expect(revocation).not_to receive(:call)
+    expect(revocation).to receive(:revoke_credential!).once
 
     result = described_class.call(attempt: attempt, revocation: revocation, lifecycle: nil)
 
@@ -41,9 +41,9 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.destroy_request_id).to be_nil
   end
 
-  it "skips revocation when the lifecycle reports the destroy as a no-op" do
+  it "revokes credentials when the lifecycle reports the destroy as a no-op" do
     revocation = instance_double(AppleVerification::Revocation::Enforce)
-    expect(revocation).not_to receive(:call)
+    expect(revocation).to receive(:revoke_credential!).once
 
     lifecycle = instance_double(AppleVerification::Lifecycle)
     expect(lifecycle).to receive(:destroy).with(attempt: attempt, request_id: "complete:#{attempt.id}").and_return(:noop)

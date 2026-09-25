@@ -168,6 +168,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     # +Time+ instance can be injected in place of the default +Time+
     # class. Without that guard the call raises +NoMethodError+; with it
     # the clock parameter is the source of truth for waiver expiry.
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
     waiver = create_waiver(expires_at: Time.zone.local(2026, 1, 1, 13, 0, 0))
 
     before_expiry = described_class.call(
