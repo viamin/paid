@@ -58,6 +58,13 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("custom_prompt")
       end
 
+      # @spec FEATURE-CREATION-005
+      it "instructs the agent to mark a framing user-confirmed only on explicit user confirmation" do
+        expect(prompt).to include("selected_framing_confirmed")
+        expect(prompt).to include("only after the user confirms the framing")
+        expect(prompt).to include("treats it as a hypothesis")
+      end
+
       # @spec CHAT-API-012
       it "prefers knowledge search over GitHub code search for repo discovery" do
         expect(prompt).to include("`search_code`")

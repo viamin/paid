@@ -173,6 +173,7 @@ not a new discovery lifecycle, persistence model, or approval gate:
     "affected_stakeholders": ["Reviewers", "Authors"],
     "selected_framing": "Reduce avoidable reviewer waiting time",
     "selected_framing_rationale": "The user confirmed this is the priority",
+    "selected_framing_confirmed": true,
     "alternative_framings": ["Increase reviewer capacity"],
     "unresolved_assumptions": ["Notifications reach active reviewers"],
     "desired_outcome": "Review waiting time decreases",
@@ -183,9 +184,15 @@ not a new discovery lifecycle, persistence model, or approval gate:
 
 Observations and evidence references are supplied material, never customer
 evidence invented by Paid. User-confirmed choices and unresolved hypotheses
-remain distinct. The chat/tool handoff and later clarification preserve this
-optional object in `external_metadata["feature_brief"]`; an ordinary brief
-remains valid and does not trigger new questions.
+remain distinct. `selected_framing_confirmed` is the explicit assertion that
+the user confirmed the framing: the direct tool path stores any JSON brief
+verbatim, so the rendered design prompt labels a framing user-confirmed only
+when the flag is `true` and otherwise renders it as a proposed framing the RDR
+must treat as a hypothesis — an AI-proposed framing never inherits a
+user-confirmation label by default. The chat/tool handoff and later
+clarification preserve this optional object in
+`external_metadata["feature_brief"]`; an ordinary brief remains valid and does
+not trigger new questions.
 
 #### 3. RDR generation
 

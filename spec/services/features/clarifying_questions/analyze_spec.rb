@@ -15,7 +15,7 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
       "reconsideration_conditions" => [ "Waiting time does not improve after adoption" ]
     }
   end
-  let(:refined_problem_framing) { { "selected_framing" => "Reduce avoidable reviewer waiting time" } }
+  let(:refined_problem_framing) { { "selected_framing" => "Reduce avoidable reviewer waiting time", "selected_framing_confirmed" => true } }
 
   before do
     allow(project).to receive(:client).and_return(nil)
@@ -91,9 +91,12 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
     result = described_class.call(project: project, issue: issue, feature_brief: enriched_brief)
 
     expect(result.feature_brief.fetch("problem_framing")).to include(problem_framing.merge(refined_problem_framing))
+    expect(result.feature_brief.dig("problem_framing", "selected_framing_confirmed")).to be(true)
     expect(AgentHarness).to have_received(:send_message) do |prompt, **|
       expect(prompt).to include("retain evidence references as supplied")
       expect(prompt).to include("retain unresolved assumptions as hypotheses")
+      expect(prompt).to include("selected_framing_confirmed")
+      expect(prompt).to include("only when the user confirmed")
     end
   end
 

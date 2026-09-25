@@ -27,7 +27,7 @@ RSpec.describe Prompts::BuildForCreateFeature do
       "evidence_references" => [ "Support ticket #123" ],
       "affected_stakeholders" => [ "Reviewers", "Authors" ],
       "selected_framing" => "Reduce avoidable reviewer waiting time",
-      "selected_framing_rationale" => "The user confirmed this priority",
+      "selected_framing_rationale" => "Waiting time dominates the review cost",
       "alternative_framings" => [ "Increase reviewer capacity" ],
       "unresolved_assumptions" => [ "Notifications reach active reviewers" ],
       "desired_outcome" => "Review waiting time decreases",
@@ -158,13 +158,32 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include(
         "Problem framing:",
         "Supplied evidence/references:",
-        "User-confirmed selected framing:",
+        "Proposed selected framing (not user-confirmed",
         "Unresolved assumptions / AI hypotheses:",
         "Desired user outcome (not yet achieved):",
         "Conditions to reconsider:"
       )
+      expect(prompt).not_to include("User-confirmed selected framing")
       expect(prompt).to include(*problem_framing.values.flatten)
       expect(prompt).to include("notifications are delivered correctly")
+    end
+
+    it "labels a selected framing user-confirmed only when the brief asserts the confirmation flag" do
+      brief = enriched_feature_brief.deep_merge("problem_framing" => { "selected_framing_confirmed" => true })
+
+      prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: brief)
+
+      expect(prompt).to include("User-confirmed selected framing:")
+      expect(prompt).not_to include("Proposed selected framing")
+    end
+
+    it "treats an explicit false confirmation flag as unconfirmed" do
+      brief = enriched_feature_brief.deep_merge("problem_framing" => { "selected_framing_confirmed" => false })
+
+      prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: brief)
+
+      expect(prompt).to include("Proposed selected framing (not user-confirmed")
+      expect(prompt).not_to include("User-confirmed selected framing")
     end
 
     it "does not add a problem-framing section for an ordinary brief" do

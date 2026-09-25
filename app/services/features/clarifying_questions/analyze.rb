@@ -43,9 +43,10 @@ module Features
         when one or more targeted questions are necessary; provide at most five.
         Preserve all settled intent in feature_brief and incorporate admitted
         answers. For problem framing, retain evidence references as supplied
-        material, mark selected framing as user-confirmed only when the user
-        confirmed it, and retain unresolved assumptions as hypotheses. Do not
-        add facts or evidence unsupported by the supplied material.
+        material and retain unresolved assumptions as hypotheses; set
+        selected_framing_confirmed to true only when the user confirmed the
+        current selected framing. Do not add facts or evidence unsupported by
+        the supplied material.
 
         ## Feature brief
         %{feature_brief}

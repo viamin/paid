@@ -62,6 +62,15 @@ references, affected stakeholders, the selected framing and rationale,
 material alternatives, unresolved assumptions or AI hypotheses, the desired
 user outcome, and conditions that justify reconsidering the framing.
 
+Because a framing may be AI-proposed before the user has chosen it — the
+direct tool path stores any JSON brief verbatim — the framing carries an
+explicit `selected_framing_confirmed` boolean rather than letting the
+renderer assume confirmation. Only an explicit `true` renders as a
+user-confirmed choice; an absent or `false` flag renders as a proposed
+framing the design prompt tells the RDR to treat as a hypothesis. The flag is
+caller-supplied metadata: chat and clarification instructions set it truthfully,
+and nothing in Paid promotes it on the caller's behalf.
+
 The brief stays in `AgentRun#external_metadata["feature_brief"]`. Chat/tool
 entry normalizes it there; clarification deep-merges later answers so omitted
 optional fields do not discard settled intent. Supplied evidence remains

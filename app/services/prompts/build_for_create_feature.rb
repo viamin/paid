@@ -42,7 +42,9 @@ module Prompts
       Proposed Solution; do not invent facts the brief does not support. When
       the brief includes problem framing, preserve supplied evidence,
       user-confirmed choices, and unresolved assumptions or AI hypotheses as
-      distinct categories.
+      distinct categories. A selected framing the brief does not explicitly
+      mark user-confirmed (`selected_framing_confirmed: true`) is a proposed
+      framing — treat it as a hypothesis, not a settled user choice.
 
       {{feature_brief}}
 
@@ -71,8 +73,9 @@ module Prompts
          - Rollout Guard
          - Implementation Plan (phases/steps)
          - Validation (testing approach and scenarios)
-         Apply problem framing where present: use the selected framing in
-         Problem Statement; observations and supplied evidence/references in
+         Apply problem framing where present: use the selected framing
+         (labelled user-confirmed or proposed) in Problem Statement;
+         observations and supplied evidence/references in
          Context and Research Findings; material framings in Alternatives
          Considered; and desired outcome plus reconsideration conditions in
          Validation. Keep implementation acceptance criteria (for example,
@@ -107,7 +110,9 @@ module Prompts
       - **Preserve evidence status.** Do not promote an unresolved assumption
         or AI hypothesis into a confirmed fact, and do not fabricate customer
         evidence. Label supplied evidence, user-confirmed choices, and
-        hypotheses distinctly in the RDR.
+        hypotheses distinctly in the RDR. A selected framing the brief does
+        not mark user-confirmed is a hypothesis — never present it as a
+        user-confirmed choice.
       - **RDR numbering is repo-derived.** Do not hardcode numbers; the repo
         is the source of truth.
       - **Docs-only PR.** The RDR PR must contain only `docs/rdrs/` changes.
@@ -207,7 +212,7 @@ module Prompts
         brief_section("Observations", framing["observations"]),
         brief_section("Supplied evidence/references", framing["evidence_references"]),
         brief_section("Affected stakeholders", framing["affected_stakeholders"]),
-        text_section("User-confirmed selected framing", framing["selected_framing"]),
+        selected_framing_section(framing),
         text_section("Selected-framing rationale", framing["selected_framing_rationale"]),
         brief_section("Material alternative framings", framing["alternative_framings"]),
         brief_section("Unresolved assumptions / AI hypotheses", framing["unresolved_assumptions"]),
@@ -217,6 +222,22 @@ module Prompts
       return if sections.empty?
 
       "Problem framing:\n" + sections.join("\n\n")
+    end
+
+    # @spec FEATURE-CREATION-006 — the confirmation flag is caller-supplied
+    # metadata: the direct tool path stores any JSON brief verbatim, so a
+    # framing earns the user-confirmed label only when the brief explicitly
+    # asserts it. Anything else renders as a hypothesis, never a settled
+    # user choice.
+    def selected_framing_section(framing)
+      value = framing["selected_framing"]
+      return if value.blank?
+
+      if framing["selected_framing_confirmed"].to_s == "true"
+        text_section("User-confirmed selected framing", value)
+      else
+        text_section("Proposed selected framing (not user-confirmed — treat as a hypothesis)", value)
+      end
     end
 
     def text_section(label, value)

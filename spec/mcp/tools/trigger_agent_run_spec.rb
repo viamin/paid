@@ -153,7 +153,8 @@ RSpec.describe Tools::TriggerAgentRun do
           "evidence_references" => [ "Support ticket #123" ],
           "affected_stakeholders" => [ "Reviewers", "Authors" ],
           "selected_framing" => "Reduce avoidable reviewer waiting time",
-          "selected_framing_rationale" => "The user confirmed this priority",
+          "selected_framing_rationale" => "Waiting time dominates the review cost",
+          "selected_framing_confirmed" => false,
           "alternative_framings" => [ "Increase reviewer capacity" ],
           "unresolved_assumptions" => [ "Notifications reach active reviewers" ],
           "desired_outcome" => "Review waiting time decreases",
@@ -184,6 +185,37 @@ RSpec.describe Tools::TriggerAgentRun do
           "Notifications reach active reviewers",
           "Waiting time does not improve after adoption"
         )
+      end
+
+      it "renders an unconfirmed framing as proposed, never user-confirmed" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "create_feature",
+          custom_prompt: { "title" => "Notify reviewers", "problem_framing" => problem_framing }.to_json,
+          confirmed: true
+        )
+
+        prompt = AgentRun.find(result[:id]).send(:prompt_for_goal)
+        expect(prompt).to include("Proposed selected framing (not user-confirmed")
+        expect(prompt).not_to include("User-confirmed selected framing")
+      end
+
+      it "renders a framing user-confirmed only when the brief asserts the confirmation flag" do
+        brief = {
+          "title" => "Notify reviewers",
+          "problem_framing" => problem_framing.merge("selected_framing_confirmed" => true)
+        }
+
+        result = tool.call(
+          project_id: project.id,
+          goal: "create_feature",
+          custom_prompt: brief.to_json,
+          confirmed: true
+        )
+
+        prompt = AgentRun.find(result[:id]).send(:prompt_for_goal)
+        expect(prompt).to include("User-confirmed selected framing:")
+        expect(prompt).not_to include("Proposed selected framing")
       end
 
       it "keeps an ordinary text brief on the existing create-feature path" do
