@@ -41,6 +41,19 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["sessions"].length).to eq(1)
       end
 
+      # @spec QUESTION-EXPLORATION-007
+      it "does not list linked chats outside the member's projects" do
+        member = create(:user, :member, account: account)
+        project = create(:project, account: account)
+        linked_session = create(:chat_session, account: account, project: project,
+          clarifying_question_issue: create(:issue, project: project))
+
+        sign_in member
+        get chat_sessions_path(format: :json)
+
+        expect(response.parsed_body["sessions"].map { |session| session["id"] }).not_to include(linked_session.id)
+      end
+
       it "does not include archived sessions in the default listing" do
         visible = create(:chat_session, account: account, created_by: user, title: "Visible")
         create(:chat_session, :archived, account: account, created_by: user, title: "Archived")

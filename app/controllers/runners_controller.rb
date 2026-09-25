@@ -749,12 +749,8 @@ class RunnersController < ApplicationController
     # @spec FREE-MODEL-RUNNER-002
     # @spec FREE-MODEL-RUNNER-003
     runner.enabled_for_agent_runs = true if runner.enabled_for_agent_runs.nil?
-    # Chat dispatch does not resolve a free-tier model for policy-based free
-    # runners yet (see Runner#opencode_free_policy_chat_must_be_disabled,
-    # which actually enforces this — it also covers update and rows created
-    # outside this controller). This default is only a UX convenience so a
-    # create submitted without an explicit chat choice doesn't fail
-    # validation against the enabled_for_chat column's true DB default.
+    # Keep chat opt-in for new free-policy runners; chat uses the managed
+    # eligible catalog pool independently of the agent-run tier mappings.
     runner.enabled_for_chat = false unless chat_param_submitted
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)

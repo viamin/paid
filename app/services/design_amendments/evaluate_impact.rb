@@ -92,7 +92,7 @@ module DesignAmendments
     end
 
     def unstarted_issues
-      linked_issues.where(is_pull_request: false, github_state: "open", paid_state: Issue::AUTO_PICK_ELIGIBLE_PAID_STATES)
+      linked_issues.where(is_pull_request: false, github_state: "open")
     end
 
     def merged_prs

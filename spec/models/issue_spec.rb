@@ -2027,12 +2027,12 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:eligible)
     end
 
-    it "does not report a manual_review issue as :eligible" do # @spec AUTO-PICK-QUEUE-005
+    it "reports a manual_review issue as :eligible when no other guard applies" do # @spec AUTO-PICK-QUEUE-008
       issue = create(:issue, project: project, github_state: "open", paid_state: "manual_review")
 
       result = described_class.lifecycle_statuses([ issue ])
 
-      expect(result[issue.id]).to eq(:blocked)
+      expect(result[issue.id]).to eq(:eligible)
     end
 
     it "returns :blocked for an issue with an open local dependency" do
@@ -2214,7 +2214,7 @@ RSpec.describe Issue do
       eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).pluck(:id)
 
       expect(statuses.select { |_, status| status == :eligible }.keys).to match_array(eligible_ids)
-      expect(statuses[non_recoverable_completed.id]).to eq(:blocked)
+      expect(statuses[non_recoverable_completed.id]).to eq(:eligible)
     end
 
     it "returns correct statuses for multiple issues" do

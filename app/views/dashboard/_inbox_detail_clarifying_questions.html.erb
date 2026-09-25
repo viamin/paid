@@ -6,6 +6,11 @@
     answer form. Without the lg grid wrapper the flex default would still
     render but the question list would lose its sticky bottom submit button. %>
 <div class="space-y-6">
+  <% if policy(entry.project).update? %>
+    <%= button_to "Answer in chat",
+          project_issue_clarifying_questions_chat_path(entry.project, entry.issue),
+          class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+  <% end %>
   <% if entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,

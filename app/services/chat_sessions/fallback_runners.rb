@@ -37,14 +37,34 @@ module ChatSessions
         runner
       end
 
-      (current_candidates + configured_candidates + automatic_candidates).uniq
+      (current_candidates + configured_candidates + automatic_candidates).uniq.select do |runner|
+        free_pool_available?(runner, chat_session: chat_session)
+      end
     end
 
     def switch!(chat_session:, runner:)
-      chat_session.update!(runner: runner, model: model_for(runner))
+      model = if runner.free_model_policy?
+        FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
+      else
+        model_for(runner)
+      end
+      chat_session.update!(runner: runner, model: model)
     end
 
-    def model_for(runner)
+    # @spec CHAT-API-019
+    def free_pool_available?(runner, chat_session:)
+      return true unless runner.free_model_policy?
+
+      FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session)
+      true
+    rescue LlmClientConfigurationError
+      false
+    end
+
+    # @spec CHAT-API-018
+    def model_for(runner, project: nil)
+      return FreeModels::SelectChatModel.call(runner: runner, project: project).model_id if runner.free_model_policy?
+
       runner.direct_outbound_model_id.presence || default_model_for_service_type(service_type_for(runner))
     end
 

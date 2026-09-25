@@ -255,6 +255,22 @@ claim that unverified library capabilities already exist.
    net maintenance reduction across both repositories and migration cost.
    Document the evidence for delegation or retaining Paid's loop.
 
+## Implementation Design Mapping
+
+[`api-conversation-delegation`](../intent/api-conversation-delegation/api-conversation-delegation-design.md)
+maps these investigations into implementation-ready ownership, persistence,
+attempt/recovery, and loop-evaluation contracts. Its EARS claims deliberately
+remain gaps until a verified `agent-harness` release containing #431 and the
+protected Paid #3995 Codex subscription discovery/recovery compatibility are
+installed and tested.
+
+The mapping retains Paid's `ChatSession`/`ChatMessage` transcript IDs,
+approval claims, actor/tenant authority, and durable accounting; optional
+RubyLLM supporting tables may only supplement that state. It also defines the
+attempt identity and aggregate cross-repository comparison required before a
+later loop decision. This RDR's rollout guard remains docs-only: the mapping
+does not authorize a dependency change, schema migration, or runtime routing.
+
 ## Sources
 
 - [RubyLLM 2.0 release guide](https://github.com/crmne/ruby_llm/blob/v2.0.0/docs/_getting_started/whats-new-in-2-0.md)

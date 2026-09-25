@@ -14,6 +14,7 @@ RSpec.describe ChatSession do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }
+    it { is_expected.to belong_to(:clarifying_question_issue).class_name("Issue").optional }
     it { is_expected.to belong_to(:runner).optional }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:messages).class_name("ChatMessage").dependent(:destroy) }
@@ -48,6 +49,41 @@ RSpec.describe ChatSession do
       session = build(:chat_session, project: other_project)
       expect(session).not_to be_valid
       expect(session.errors[:project]).to include("must belong to the same account")
+    end
+
+    # @spec QUESTION-EXPLORATION-007
+    it "requires a linked clarifying-question issue to belong to the chat project" do
+      account = create(:account)
+      session_project = create(:project, account: account)
+      issue_project = create(:project, account: account)
+      session = build(:chat_session, account: account, project: session_project,
+        clarifying_question_issue: create(:issue, project: issue_project))
+
+      expect(session).not_to be_valid
+      expect(session.errors[:clarifying_question_issue]).to include("must belong to the chat project")
+    end
+  end
+
+  describe "linked sidebar broadcasts" do
+    # @spec QUESTION-EXPLORATION-007
+    it "broadcasts linked chat cards to the project stream" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account)
+
+      create(:chat_session, account: account, created_by: user, project: project,
+        clarifying_question_issue: create(:issue, project: project))
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ project, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/session_card",
+        locals: hash_including(:chat_session)
+      )
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        anything
+      )
     end
   end
 

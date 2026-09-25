@@ -26,7 +26,7 @@
   issue that GitHub currently reports as closed, it SHALL persist the Paid user,
   time, and reason on the issue, record those details in the account audit trail,
   and place the issue in reopen review. Automatic issue selection SHALL remain
-  blocked until an operator resumes the issue.
+  state-neutral, while completion remains gated until the review is resolved.
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.

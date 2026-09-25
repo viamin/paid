@@ -15,19 +15,22 @@ actions.
 
 ## Components and ownership
 
-- Extend `ChatSession` linkage to a feature or standalone issue. Use one
-  persistent feature conversation, with question/issue focus carried by
-  messages and navigation. Add uniqueness/concurrency protection to avoid
-  duplicate conversations on simultaneous Inbox opens.
+- `ChatSession#clarifying_question_issue` links the first shipped exploration
+  flow to its inbox issue or PR. The database permits one non-archived chat
+  per linked item; concurrent opens converge on it, and an archived linked
+  chat is restored rather than replaced. It is created under the initiating
+  user's account with the generic title "Clarifying questions".
 - Extend `ChatMessage` with actor and question/facet context and typed diagram
   references. Keep domain records for answers separate from transcript text;
   archiving a conversation must not destroy the feature's intent.
 - Reuse the existing chat renderer, Cable/SSE delivery, and agent tool loop.
   A shared diagram card handles expansion, accessible textual representation,
   element selection and its own comment composer.
-- Bridge `ClarifyingQuestions::Load` and the existing answer submission path
-  to durable per-question progress. Do not call `ClearNeedsInput` merely
-  because one answer or an exploration comment was saved.
+- The chat system prompt carries the linked issue/PR and its pending questions.
+  It may ask follow-ups; only the confirmation-gated
+  `submit_clarifying_answers` chat tool posts the final ordered answers through
+  `ClarifyingQuestions::SubmitAnswers`. That existing path adjusts labels and
+  clears the inbox item only after GitHub accepts the comment.
 - Persist extracted answer/evidence context for the facet-confidence segment.
   Update canonical RDR/LLD/EARS through normal design PRs when intent changes.
 

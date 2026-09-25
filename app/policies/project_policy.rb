@@ -34,11 +34,21 @@ class ProjectPolicy < ApplicationPolicy
     user.has_role?(:project_admin, record)
   end
 
+  # Shared exploration transcripts contain project-scoped issue context. They
+  # are visible to account owners/admins and explicit project collaborators,
+  # but never merely by virtue of an account-level member role.
+  # @spec QUESTION-EXPLORATION-007
+  def explore?
+    return false unless user_in_account?
+
+    has_any_account_role?(:owner, :admin) || has_project_role?(:project_viewer)
+  end
+
   private
 
-  def has_project_role?
+  def has_project_role?(*additional_roles)
     return false unless user && record.is_a?(Project)
 
-    user.has_any_role?(:project_admin, :project_member, record)
+    user.has_any_role?(:project_admin, :project_member, *additional_roles, record)
   end
 end

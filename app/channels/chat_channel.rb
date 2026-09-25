@@ -39,6 +39,7 @@ class ChatChannel < ApplicationCable::Channel
 
       ChatSessions::ProcessMessageJob.perform_later(
         chat_session_id: @chat_session.id,
+        actor_id: current_user.id,
         content: content,
         stream_message_id: stream_message_id
       )
@@ -65,6 +66,7 @@ class ChatChannel < ApplicationCable::Channel
 
       ChatSessions::ResolveToolCallJob.perform_later(
         chat_session_id: @chat_session.id,
+        actor_id: current_user.id,
         message_id: message.id,
         decision: decision,
         stream_message_id: stream_message_id
@@ -79,8 +81,9 @@ class ChatChannel < ApplicationCable::Channel
 
   def find_session
     TenantContext.with_system_access do
-      ChatSession.where(account_id: current_user.account_id)
+      session = ChatSession.where(account_id: current_user.account_id)
         .find_by(id: params[:session_id])
+      session if session && ChatSessionPolicy.new(current_user, session).show?
     end
   end
 

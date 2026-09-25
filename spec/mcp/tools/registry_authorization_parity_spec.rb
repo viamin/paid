@@ -208,6 +208,23 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "submit_clarifying_answers",
+        denied_user: -> {
+          project
+          issue
+          create(:user, :member, account: account)
+        },
+        arguments: -> { { answers: %w[Denied], confirmed: true } },
+        session: ->(user) {
+          create(:chat_session, account: user.account, created_by: user, project: project,
+            clarifying_question_issue: issue)
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "search_code",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, query: "agent run" } },

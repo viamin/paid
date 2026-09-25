@@ -52,9 +52,10 @@
   auto-pick run tied to an issue, the system SHALL re-check that issue's
   eligibility at dequeue time, and SHALL cancel the run (freeing its slot
   and removing it from the dashboard preview) when the issue is no longer
-  eligible — skip label, `paid_state` skip, new blocking dependency,
-  closed/completed, or paused — so the re-enqueue hooks can recreate it if
-  the issue becomes eligible again.
+  eligible — skip label, new blocking dependency, closed issue, or paused —
+  so the re-enqueue hooks can recreate it if the issue becomes eligible
+  again. An open issue's internal `paid_state` SHALL NOT by itself cancel
+  the run.
   *Code:* `AgentRuns::RecheckIssueEligibility#call`,
   `AgentRuns::RecheckIssueEligibility#cancel_run`,
   `ProcessRunQueueJob` recheck invocation.

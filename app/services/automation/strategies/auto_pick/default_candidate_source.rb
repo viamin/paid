@@ -124,7 +124,7 @@ module Automation
           #
           # +candidate_scope+ is the already-filtered eligible-issue scope
           # so the ILIKE scan runs only against issues that passed earlier
-          # filters (labels, paid_state, dependencies, etc.) rather than
+          # filters (labels, dependencies, active runs, etc.) rather than
           # all open project issues. If this still becomes expensive on
           # repos with thousands of eligible issues, consider a trigram
           # GIN index on (title, body) or a persisted +tracker_issue+

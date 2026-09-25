@@ -62,6 +62,24 @@ RSpec.describe ChatSessions::ResolveToolCall do
       )
     end
 
+    # @spec QUESTION-EXPLORATION-007
+    it "dispatches an approved tool as the collaborator who confirmed it" do
+      collaborator = create(:user, account: account)
+      allow(Tools::Registry).to receive(:chat_definitions_for)
+        .with(user: collaborator, session: anything).and_return(tool_definitions)
+
+      described_class.call(
+        chat_session: chat_session, actor: collaborator, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(Tools::Registry).to have_received(:dispatch).with(
+        hash_including(user: collaborator, session: chat_session)
+      )
+      expect(Tools::Registry).to have_received(:chat_definitions_for)
+        .with(user: collaborator, session: chat_session)
+    end
+
     it "persists the dispatch result and marks the tool call approved" do
       result = described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,

@@ -65,6 +65,11 @@ the runner key/provider.
 
 ### Validation
 
+OpenCode runtime model IDs include a provider prefix in addition to the
+OpenRouter catalog ID. An OpenRouter-owned model such as `openrouter/free`
+therefore executes as `openrouter/openrouter/free`. Already qualified IDs
+remain unchanged. Stored catalog IDs and API-chat model IDs remain unqualified.
+
 - `model_policy` must be one of `Runner::MODEL_POLICIES` (`specific`,
   `free`).
 - `free` is valid only when the runner's derived API provider is
@@ -97,18 +102,14 @@ the runner key/provider.
   currently interpret `metadata[:config]` for OpenRouter routing, so
   data-classification routing on those paths remains an upstream gap rather
   than an app-side omission.
-- Chat is different: chat dispatch (`ChatSessions::BuildLlmClient`,
-  `Containers::ChatSessionManager`) does not yet resolve a free-tier model
-  for policy-based free runners — only the legacy `openrouter_free` runner
-  has that support today. `Runner#opencode_free_policy_chat_must_be_disabled`
-  rejects `enabled_for_chat: true` on any free-policy `opencode` runner
-  (create, update, or a row written outside `RunnersController`), so it
-  cannot end up chat-enabled and silently fall through to a paid default
-  model. `RunnersController#apply_new_runner_defaults` additionally defaults
-  `enabled_for_chat` to `false` on create as a UX convenience, but the model
-  validation is what actually enforces the gate. This will be relaxed once
-  chat-side free-model resolution lands for policy-based free runners.
-  (`MODEL-POLICY-013`)
+- Chat-enabled free-policy runners resolve a concrete model through
+  `FreeModels::SelectChatModel` for API clients, container execution plans,
+  and chat-only runner tests. The selector uses the daily-synced catalog,
+  independently of agent-run tier mappings. It preserves an eligible session
+  model and replaces an ineligible one; an empty pool raises a configuration
+  error instead of selecting a paid default. The controller leaves chat off
+  by default on new free-policy runners, but users can explicitly enable it.
+  (`MODEL-POLICY-013`, `CHAT-API-018`)
 
 ### Defaults and display
 

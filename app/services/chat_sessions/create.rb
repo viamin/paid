@@ -15,10 +15,10 @@ module ChatSessions
   #   )
   class Create
     attr_reader :account, :user, :container_capability, :runner_id, :model,
-      :project_id, :system_prompt, :title, :metadata, :auto_approve
+      :project_id, :system_prompt, :title, :metadata, :auto_approve, :clarifying_question_issue
 
     def initialize(account:, user:, container_capability: nil, runner_id: nil, provider_id: nil, model: nil,
-      project_id: nil, system_prompt: nil, title: nil, metadata: nil, auto_approve: nil)
+      project_id: nil, system_prompt: nil, title: nil, metadata: nil, auto_approve: nil, clarifying_question_issue: nil)
       @account = account
       @user = user
       @container_capability = container_capability.presence || "none"
@@ -29,6 +29,7 @@ module ChatSessions
       @title = title
       @metadata = metadata
       @auto_approve = auto_approve
+      @clarifying_question_issue = clarifying_question_issue
     end
 
     def self.call(...)
@@ -72,6 +73,7 @@ module ChatSessions
         runner_id: resolved_runner&.id,
         model: resolved_model,
         project_id: project_id,
+        clarifying_question_issue: clarifying_question_issue,
         system_prompt: system_prompt,
         title: title,
         status: "active",

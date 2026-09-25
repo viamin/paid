@@ -56,8 +56,8 @@ project/user fair-stride keys) decides dispatch order.
 ## Dequeue-time eligibility recheck
 
 An issue can lose eligibility between seeding and the scheduler claiming the
-run — a skip label added, `paid_state` entering a skip state, a new blocking
-dependency, the issue closed/completed, or the scheduler paused.
+run — a skip label added, a new blocking dependency, the issue closed, or the
+scheduler paused. Paid's internal workflow state is not an eligibility guard.
 `AgentRuns::RecheckIssueEligibility` re-checks only eagerly-seeded auto-pick
 runs tied to an issue (manual runs, no-issue runs, and `review` goals are
 excluded) at dequeue time via `DefaultCandidateSource.eligible_for_dequeue?`.

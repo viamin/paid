@@ -5,6 +5,7 @@
 <% can_unarchive_chat_session = policy(@chat_session).unarchive? && archived_chat_session %>
 
 <%= turbo_stream_from current_account, :chat_sessions %>
+<%= turbo_stream_from @chat_session.project, :chat_sessions if @chat_session.clarifying_question_issue.present? %>
 
 <%# @spec CHAT-API-008 @spec CHAT-API-009 @spec LIST-DETAIL-001
     The page chrome (max-w-7xl + responsive padding) stays feature-specific —

@@ -34,6 +34,7 @@ module ChatSessions
     def fallback_loop_kwargs
       {
         chat_session: chat_session,
+        actor: actor,
         llm_client: llm_client,
         on_chunk: on_chunk,
         on_message_persisted: on_message_persisted,

@@ -46,6 +46,7 @@ RSpec.describe Tools::Registry do
       create_issue
       edit_issue
       set_labels
+      submit_clarifying_answers
       verify_apple_project
       capture_apple_screenshot
       stop_apple_verification
