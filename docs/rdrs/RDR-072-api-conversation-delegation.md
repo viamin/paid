@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Date**: 2026-09-24
-- **Status**: Draft
+- **Status**: Accepted
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
@@ -166,8 +166,8 @@ calls. Preserve these distinctions in the public contract.
 - Keep CLI/subscription paths. Schema-dependent callers check capabilities;
   do not silently switch authentication modes to obtain structured output.
 
-These are proposed acceptance requirements. Implementation must map them into
-existing LLD/EARS segments and add failing-first tests. This Draft does not
+These are accepted requirements. Implementation must map them into
+existing LLD/EARS segments and add failing-first tests. This decision does not
 change implemented EARS status or supersede RDR-028.
 
 ## Alternatives Considered
@@ -197,8 +197,8 @@ change implemented EARS status or supersede RDR-028.
 
 ## Rollout Guard
 
-**Docs-only now:** this draft ships no runtime behavior. Open implementation
-issues in agent-harness and Paid after the RDR is approved.
+**Docs-only now:** this accepted RDR ships no runtime behavior. Open implementation
+issues in agent-harness and Paid after the RDR is merged.
 
 Embedding, schema and transport adoption should ship as complete, tested
 replacements within each migrated operation/provider scope. Other supported

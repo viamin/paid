@@ -84,7 +84,7 @@ remaining gap issues.
 | [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Implemented | Medium |
 | [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Implemented | P1 |
 | [RDR-059](RDR-059-immutable-agent-runtime-images.md) | Immutable Agent Runtime Images | Implemented | P1 |
-| [RDR-072](RDR-072-api-conversation-delegation.md) | Delegate API Conversation Mechanics Through AgentHarness | Draft | P2 |
+| [RDR-072](RDR-072-api-conversation-delegation.md) | Delegate API Conversation Mechanics Through AgentHarness | Accepted | P2 |
 
 ### Intelligence
 
