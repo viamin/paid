@@ -58,6 +58,27 @@ The implemented behavior builds on:
 
 ## Current State
 
+### Managed free-model chat pool
+
+`FreeModels::SelectChatModel` selects concrete OpenRouter models for runners
+using `model_policy: "free"`. The existing daily `FreeModels::SyncJob` supplies
+the catalog; selection queries that catalog at each client build. Eligible
+models are active, unexpired, synced and free, support tools and text output,
+and meet `QualityFilter`'s 128,000-token minimum. Routing aliases under
+`openrouter/`, operator-disabled rows, below-quality-bar rows, project-excluded
+models, disallowed upstream providers, and runner-rate-limited models are
+excluded. An eligible session model is retained for continuity; otherwise the
+highest catalog capability score wins, with model ID as the deterministic tie
+breaker. Empty pools raise `LlmClientConfigurationError`; paid defaults and
+automatic routers are never substitutes. The selected model is reported by
+the client and response and saved on API sessions without mutating the runner's
+agent-run tier mappings.
+
+API client construction, fallback selection, container chat plans, and
+chat-only runner tests share the selector. Mixed agent/chat runner tests retain
+the agent tier test behavior. Free chat selection is separate from automatic
+retry: existing chat runner fallback and rate-limit handling remain in force.
+
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
 

@@ -1204,15 +1204,15 @@ RSpec.describe "Runners" do
     end
 
     # @spec MODEL-POLICY-013
-    it "rejects an explicit request to enable chat for a free-policy OpenCode runner" do
+    it "accepts an explicit request to enable chat for a free-policy OpenCode runner" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post runners_path, params: {
         runner: free_policy_runner_params(api_key_id: api_key.id, enabled: true, enabled_for_chat: true)
       }
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("cannot be enabled until chat dispatch resolves a free-tier model for free-policy runners")
+      expect(response).to redirect_to(runners_path)
+      expect(user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")).to be_enabled_for_chat
     end
 
     it "re-renders the free model configuration when the free model option is selected through the flagged form" do

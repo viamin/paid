@@ -880,7 +880,7 @@ RSpec.describe Runner do
       end
 
       # @spec MODEL-POLICY-013
-      it "rejects a free-policy runner enabled for chat" do
+      it "allows a free-policy runner enabled for chat" do
         api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
         runner.auth_type = "api_key"
         runner.provider_api_key = api_key
@@ -888,10 +888,7 @@ RSpec.describe Runner do
         runner.assign_attributes(enabled_for_agent_runs: false, enabled_for_fallback: false, enabled_for_chat: true)
         runner.config = { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } }
 
-        expect(runner).not_to be_valid
-        expect(runner.errors[:enabled_for_chat]).to include(
-          "cannot be enabled until chat dispatch resolves a free-tier model for free-policy runners"
-        )
+        expect(runner).to be_valid
       end
 
       it "rejects the free policy on a non-openrouter API provider" do

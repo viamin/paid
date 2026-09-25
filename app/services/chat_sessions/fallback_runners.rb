@@ -41,10 +41,13 @@ module ChatSessions
     end
 
     def switch!(chat_session:, runner:)
-      chat_session.update!(runner: runner, model: model_for(runner))
+      chat_session.update!(runner: runner, model: model_for(runner, project: chat_session.project))
     end
 
-    def model_for(runner)
+    # @spec CHAT-API-018
+    def model_for(runner, project: nil)
+      return FreeModels::SelectChatModel.call(runner: runner, project: project).model_id if runner.free_model_policy?
+
       runner.direct_outbound_model_id.presence || default_model_for_service_type(service_type_for(runner))
     end
 

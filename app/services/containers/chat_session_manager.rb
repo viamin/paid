@@ -193,6 +193,7 @@ module Containers
           runner: chat_session.runner,
           prompt: prompt,
           options: options,
+          provider_runtime: free_chat_runtime,
           project: chat_session.project
         )
       else
@@ -202,6 +203,16 @@ module Containers
           options: options
         )
       end
+    end
+
+    # @spec MODEL-POLICY-013
+    def free_chat_runtime
+      runner = chat_session.runner
+      return unless runner&.free_model_policy?
+
+      model = FreeModels::SelectChatModel.call(runner: runner, project: chat_session.project,
+        preferred_model_id: chat_session.model)
+      runner.free_model_policy_runner_runtime(project: chat_session.project, model_id: model.model_id)
     end
 
     # Materializes preparation file writes inside the container using

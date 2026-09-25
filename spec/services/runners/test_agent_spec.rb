@@ -916,7 +916,11 @@ RSpec.describe Runners::TestAgent do
 
     context "when a direct-outbound free-policy opencode runner is tested" do
       let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
-      let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free") }
+      let!(:free_model) do
+        create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free",
+          catalog_source: "openrouter_sync", supports_tools: true,
+          metadata: { "architecture" => { "output_modalities" => [ "text" ] } })
+      end
       let(:runner_record) do
         create(
           :runner,
@@ -941,7 +945,8 @@ RSpec.describe Runners::TestAgent do
         )
       end
 
-      it "passes the OpenRouter runtime (not the bare opencode default) to the harness check" do
+      # @spec MODEL-POLICY-013
+      it "passes an eligible free chat model to the harness check" do
         described_class.call(runner: provider)
 
         expect(AgentHarness).to have_received(:check_provider).with(
@@ -949,7 +954,7 @@ RSpec.describe Runners::TestAgent do
           timeout: 60,
           executor: an_instance_of(Containers::HarnessExecutor),
           provider_runtime: have_attributes(
-            model: "deepseek/deepseek-v4-flash:free",
+            model: "openrouter/deepseek/deepseek-v4-flash:free",
             env: hash_including(
               "OPENROUTER_API_KEY" => "sk-openrouter-secret",
               "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
@@ -993,7 +998,7 @@ RSpec.describe Runners::TestAgent do
           timeout: 60,
           executor: an_instance_of(Containers::HarnessExecutor),
           provider_runtime: have_attributes(
-            model: "deepseek/deepseek-v4-flash:free",
+            model: "openrouter/deepseek/deepseek-v4-flash:free",
             env: hash_including(
               "OPENROUTER_API_KEY" => "sk-openrouter-secret",
               "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"

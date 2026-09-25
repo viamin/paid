@@ -1088,7 +1088,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, runner, user, restricted_run)
 
-      expect(runtime.model).to eq("deepseek/deepseek-v4-flash:free")
+      expect(runtime.model).to eq("openrouter/deepseek/deepseek-v4-flash:free")
       expect(runtime.env).to include(
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
@@ -2550,7 +2550,7 @@ RSpec.describe Activities::RunAgentActivity do
 
   def expect_openrouter_runtime(runtime, model_id:, api_key:, provider_routing:)
     aggregate_failures do
-      expect(runtime.model).to eq(model_id)
+      expect(runtime.model).to eq("openrouter/#{model_id}")
       expect(runtime.env).to include(
         "OPENROUTER_API_KEY" => api_key,
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"

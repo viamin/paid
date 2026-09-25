@@ -1,5 +1,17 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-018** — When building a chat client for a free-policy
+  OpenRouter runner, Paid SHALL select from the current synced free catalog,
+  requiring active, unexpired, text-output models with tools and at least
+  128,000 context tokens. Paid SHALL exclude routing aliases, operator-disabled
+  and below-quality-bar models, project exclusions and disallowed providers,
+  and models under a runner-specific rate limit. An eligible session model
+  SHALL be retained; otherwise Paid SHALL select by catalog capability score
+  descending and model ID ascending. No eligible model SHALL produce an
+  explicit configuration error. Subsequent client builds SHALL reflect catalog
+  refreshes without rewriting runner tier preferences. Chat fallback into a
+  free-policy runner SHALL use the same pool.
+
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
