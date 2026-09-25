@@ -16,6 +16,16 @@
 
 - [x] **ISSUE-REOPEN-REVIEW-003** - When the chat issue-editing tool reopens a
   locally known closed issue, it SHALL require explicit confirmation that the
-  prior closure was reviewed.
+  prior closure was reviewed and a non-blank reason from a caller authorized to
+  manage issues.
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`.
   *Code:* `Tools::EditIssue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-004** - When the chat issue-editing tool reopens a
+  locally known closed issue, it SHALL persist the Paid user, time, and reason
+  on the issue and record those details in the account audit trail; automatic
+  issue selection SHALL remain blocked by reopen review until an operator
+  resumes the issue.
+  *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
+  `spec/services/issues/upsert_from_github_spec.rb`.
+  *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
