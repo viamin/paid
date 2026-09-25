@@ -118,6 +118,11 @@ class ChatSession < ApplicationRecord
     status == "archived"
   end
 
+  # @spec CHAT-API-019
+  def llm_policy_projects
+    Project.where(id: project_id).or(Project.where(id: chat_session_projects.select(:project_id))).to_a
+  end
+
   def inline_only?
     container_capability == "none"
   end

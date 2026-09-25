@@ -84,7 +84,8 @@ module ChatSessions
         transport: transport,
         model: model,
         provider_type: :openai_compatible,
-        max_tokens: config&.dig(:chat_max_tokens)
+        max_tokens: config&.dig(:chat_max_tokens),
+        model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil
       )
     end
 
@@ -96,8 +97,7 @@ module ChatSessions
     def chat_model_for(runner)
       return chat_session.model || default_model_for(runner) unless runner.free_model_policy?
 
-      model = FreeModels::SelectChatModel.call(runner: runner, project: chat_session.project,
-        preferred_model_id: chat_session.model).model_id
+      model = FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       chat_session.update!(model: model) if chat_session.model != model
       model
     end
@@ -112,7 +112,7 @@ module ChatSessions
     end
 
     def default_model_for(provider)
-      return FreeModels::SelectChatModel.call(runner: provider, project: chat_session.project).model_id if provider.free_model_policy?
+      return FreeModels::SelectChatModel.for_session(runner: provider, chat_session: chat_session).model_id if provider.free_model_policy?
 
       provider.direct_outbound_model_id.presence || default_model_for_service_type(provider_service_type(provider))
     end
@@ -124,14 +124,17 @@ module ChatSessions
     class HttpClient
       attr_reader :model
 
-      def initialize(transport:, model:, provider_type:, max_tokens: nil)
+      def initialize(transport:, model:, provider_type:, max_tokens: nil, model_resolver: nil)
         @transport = transport
         @model = model
         @provider_type = provider_type
         @max_tokens = max_tokens
+        @model_resolver = model_resolver
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
+        # @spec CHAT-API-019
+        @model = @model_resolver.call if @model_resolver
         messages = format_messages(conversation)
         formatted_tools = format_tools(tools)
 

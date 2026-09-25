@@ -77,4 +77,17 @@ RSpec.describe FreeModels::SelectChatModel do
       "llm_providers" => { "allowlist" => [ "openai" ] } })
     expect(described_class.call(runner: runner, project: project)).to eq(eligible)
   end
+
+  # @spec CHAT-API-019
+  %w[pi omp].each do |runner_key|
+    it "rejects sensitive container chat on #{runner_key} without supported privacy routing" do
+      project = create(:project, account: user.account, data_classification: "confidential")
+      session = create(:chat_session, account: user.account, project: project, created_by: user)
+      unsupported = build(:runner, user: user, runner_key: runner_key,
+        config: { runner_key => { "model_policy" => "free" } })
+
+      expect { described_class.for_session(runner: unsupported, chat_session: session, transport: :container) }
+        .to raise_error(ChatSessions::LlmClientConfigurationError, /privacy routing/)
+    end
+  end
 end

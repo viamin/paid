@@ -12,6 +12,17 @@
   refreshes without rewriting runner tier preferences. Chat fallback into a
   free-policy runner SHALL use the same pool.
 
+- [x] **CHAT-API-019** — Before each managed free-model API request, Paid
+  SHALL apply model exclusions and provider restrictions from every primary
+  and reference project currently attached to the chat. While the API
+  transport cannot enforce OpenRouter data-collection and ZDR routing, Paid
+  SHALL reject confidential or restricted project context before sending it.
+  Container chat SHALL apply the most restrictive attached project's routing
+  or reject sensitive context when its runner cannot enforce those controls.
+  An unavailable free-model fallback SHALL be skipped so later configured
+  usable fallbacks can be tried without changing the session to the unusable
+  runner.
+
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 

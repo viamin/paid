@@ -6,9 +6,21 @@ module FreeModels
       new(...).call
     end
 
-    def initialize(runner:, project: nil, preferred_model_id: nil)
+    # @spec CHAT-API-019
+    def self.for_session(runner:, chat_session:, transport: :api)
+      projects = chat_session.llm_policy_projects
+      sensitive = projects.any? { |project| project.confidential? || project.restricted? }
+      if sensitive && (transport == :api || %w[pi omp].include?(runner.runner_key))
+        raise ChatSessions::LlmClientConfigurationError,
+          "This free chat runner cannot enforce the required OpenRouter privacy routing for confidential or restricted project context. Choose a chat provider approved for the project's privacy requirements."
+      end
+
+      call(runner: runner, projects: projects, preferred_model_id: chat_session.model)
+    end
+
+    def initialize(runner:, project: nil, projects: [], preferred_model_id: nil)
       @runner = runner
-      @project = project
+      @projects = (projects + [ project ]).compact.uniq
       @preferred_model_id = preferred_model_id
     end
 
@@ -23,7 +35,7 @@ module FreeModels
     private
 
     def eligible_models
-      excluded = Array(@project&.model_preferences&.dig("excluded_free_model_ids"))
+      excluded = @projects.flat_map { |project| Array(project.model_preferences&.dig("excluded_free_model_ids")) }
       limited = @runner.user.runner_states.find_by(runner_name: @runner.state_key)&.rate_limited_model_ids || Set.new
 
       LlmModel.openrouter_synced_free.active.by_capability.order(:model_id).select do |model|
@@ -32,7 +44,7 @@ module FreeModels
           !QualityFilter.call(context_window: model.context_window, supports_tools: model.supports_tools) &&
           Array(model.metadata.dig("architecture", "output_modalities")).include?("text") &&
           !excluded.include?(model.model_id) && !limited.include?(model.model_id) &&
-          (!@project || @project.llm_provider_allowed?(model.provider))
+          @projects.all? { |project| project.llm_provider_allowed?(model.provider) }
       end
     end
   end
