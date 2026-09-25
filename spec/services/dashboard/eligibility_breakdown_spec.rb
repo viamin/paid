@@ -42,44 +42,47 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       bd = result.first
       expect(bd.project).to eq(project)
       expect(bd.total_open).to eq(6)
-      expect(bd.eligible).to eq(1)
-      expect(bd.needs_input).to eq(1)
-      expect(bd.in_progress).to eq(1)
-      expect(bd.completed).to eq(1)
-      expect(bd.manual_review).to eq(1)
+      expect(bd.eligible).to eq(5)
+      expect(bd.needs_input).to eq(0)
+      expect(bd.in_progress).to eq(0)
+      expect(bd.completed).to eq(0)
+      expect(bd.manual_review).to eq(0)
       expect(bd.skip_label).to eq(1)
       expect(bd.other_excluded).to eq(0)
     end
 
     # @spec OPERATOR-INBOX-002D
-    it "names manual_review as its own bucket instead of folding it into other_excluded" do
+    it "does not count manual_review as excluded solely because of internal state" do
       create(:issue, project: project, github_state: "open", paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
       result = described_class.call(user: user)
 
       bd = result.first
-      expect(bd.manual_review).to eq(1)
+      expect(bd.eligible).to eq(1)
+      expect(bd.manual_review).to eq(0)
       expect(bd.other_excluded).to eq(0)
     end
 
-    it "counts questionless needs-input issues as needs input" do
+    it "does not exclude questionless needs-input issues solely because of internal state" do
       create(:issue, project: project, github_state: "open", paid_state: "needs_input")
 
       result = described_class.call(user: user)
 
       bd = result.first
-      expect(bd.needs_input).to eq(1)
+      expect(bd.eligible).to eq(1)
+      expect(bd.needs_input).to eq(0)
       expect(bd.other_excluded).to eq(0)
     end
 
-    it "counts marker-only needs-input bodies as needs input" do
+    it "does not exclude marker-only needs-input issues solely because of internal state" do
       create(:issue, project: project, github_state: "open", paid_state: "needs_input",
         body: "#{ClarifyingQuestions::Parse::ENHANCEMENT_MARKER}\n\n## Clarifying questions\nNo numbered questions here.")
 
       result = described_class.call(user: user)
 
       bd = result.first
-      expect(bd.needs_input).to eq(1)
+      expect(bd.eligible).to eq(1)
+      expect(bd.needs_input).to eq(0)
       expect(bd.other_excluded).to eq(0)
     end
 

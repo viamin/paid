@@ -121,14 +121,19 @@ RSpec.describe Issues::ReenqueueEligibleJob do
       expect(Issues::EnqueueEligible).not_to have_received(:call)
     end
 
-    it "does nothing for intentional waiting states" do
+    it "rechecks an open issue regardless of its internal Paid state" do # @spec AUTO-PICK-QUEUE-008
       project = create(:project, auto_pick_enabled: true)
-      issue = create(:issue, project: project, paid_state: "needs_input", github_state: "open")
+      issue = create(:issue, project: project, paid_state: "manual_review", github_state: "open")
       allow(Issues::EnqueueEligible).to receive(:call)
 
       described_class.perform_now(issue.id)
 
-      expect(Issues::EnqueueEligible).not_to have_received(:call)
+      expect(Issues::EnqueueEligible).to have_received(:call).with(
+        issue,
+        project: project,
+        skip_project_gate: true,
+        no_runner_retry_count: 0
+      )
     end
 
     it "does nothing when the auto-pick project gate defers work" do

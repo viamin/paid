@@ -95,8 +95,7 @@ revision without impact evaluation.
 `DesignAmendments::EvaluateImpact` gathers the feature's linked branches:
 
 - open PRs (`is_pull_request`, `github_state: open`),
-- unstarted issues (non-PR, open, `paid_state` in the auto-pick-eligible
-  set), and
+- open non-PR issues, regardless of internal `paid_state`, and
 - merged PRs (`merged_phase?`).
 
 `DesignAmendments::ImpactReview` asks the semantic reviewer (via

@@ -81,6 +81,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec AUTO-PICK-QUEUE-008
+    it "does not exclude an open issue because of its internal Paid state" do
+      issues = %w[in_progress completed needs_input manual_review recommend_close].map do |paid_state|
+        create(:issue, project: project, paid_state: paid_state)
+      end
+
+      expect(described_class.eligible_scope(project)).to include(*issues)
+    end
+
     # @spec AUTO-PICK-QUEUE-007
     it "excludes every configured needs-input label regardless of paid_state" do
       project.update!(
@@ -577,7 +586,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
-    it "excludes completed issues whose completed run was not a recoverable auto-pick run" do
+    it "includes completed issues whose completed run was not a recoverable auto-pick run" do # @spec AUTO-PICK-QUEUE-008
       manual_issue = create(:issue, project: project, paid_state: "completed", github_number: 50)
       analyze_issue = create(:issue, project: project, paid_state: "completed", github_number: 51)
 
@@ -588,7 +597,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       scope = described_class.eligible_scope(project)
 
-      expect(scope.pluck(:id)).to be_empty
+      expect(scope.pluck(:id)).to contain_exactly(manual_issue.id, analyze_issue.id)
     end
 
     # @spec ISSUE-ENHANCEMENT-015
@@ -611,12 +620,12 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     # @spec ISSUE-ENHANCEMENT-015
-    it "does not recover a completed issue whose verdict was insufficient context" do
-      create(:issue, project: project, paid_state: "completed", last_analyzer_sufficient_context: false)
+    it "includes a completed issue whose verdict was insufficient context" do # @spec AUTO-PICK-QUEUE-008
+      issue = create(:issue, project: project, paid_state: "completed", last_analyzer_sufficient_context: false)
 
       scope = described_class.eligible_scope(project)
 
-      expect(scope.pluck(:id)).to be_empty
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
     it "keeps a parent issue eligible when all of its sub-issues are closed" do
@@ -657,25 +666,27 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     # @spec AUTO-PICK-QUEUE-003
-    it "does not resurrect a recommend_close issue with no dependencies during queue sweeps" do
-      create(:issue, :recommend_close, project: project, github_number: 1)
+    it "includes a recommend_close issue with no dependencies during queue sweeps" do # @spec AUTO-PICK-QUEUE-008
+      issue = create(:issue, :recommend_close, project: project, github_number: 1)
 
       scope = described_class.eligible_scope(project)
 
-      expect(scope.pluck(:id)).to be_empty
+      expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    it "derives its eligible paid_state filter from the shared issue definition" do # @spec AUTO-PICK-QUEUE-005
+    it "derives its state-neutral eligibility rule from the shared issue definition" do # @spec AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-008
       recoverable_completed = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: recoverable_completed,
         goal: "create_pr", auto_pick: true, pull_request_number: nil, pull_request_url: nil)
-      create(:issue, project: project, paid_state: "manual_review")
-      create(:issue, project: project, paid_state: "needs_input")
+      manual_review = create(:issue, project: project, paid_state: "manual_review")
+      needs_input = create(:issue, project: project, paid_state: "needs_input")
       eligible = create(:issue, project: project, paid_state: "new")
 
       scope = described_class.eligible_scope(project)
 
-      expect(scope.pluck(:id)).to contain_exactly(recoverable_completed.id, eligible.id)
+      expect(scope.pluck(:id)).to contain_exactly(
+        recoverable_completed.id, manual_review.id, needs_input.id, eligible.id
+      )
     end
 
     it "uses project skip labels before user, tenant, and defaults" do

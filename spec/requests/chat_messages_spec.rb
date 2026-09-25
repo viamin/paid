@@ -18,6 +18,21 @@ RSpec.describe "ChatMessages" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec QUESTION-EXPLORATION-007
+      it "does not expose a linked chat transcript without project membership" do
+        create(:user, account: account)
+        member = create(:user, :member, account: account)
+        project = create(:project, account: account)
+        linked_session = create(:chat_session, account: account, project: project,
+          clarifying_question_issue: create(:issue, project: project))
+        create(:chat_message, chat_session: linked_session, content: "Private project context")
+
+        sign_in member
+        get chat_session_chat_messages_path(linked_session)
+
+        expect(response).to have_http_status(:not_found)
+      end
+
       it "returns paginated messages" do
         create_list(:chat_message, 3, chat_session: chat_session, role: "user")
         create(:chat_message, :assistant, chat_session: chat_session)

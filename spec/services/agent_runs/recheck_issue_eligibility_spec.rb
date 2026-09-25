@@ -43,12 +43,12 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.error_message).to include("no longer eligible")
   end
 
-  it "cancels the run when paid_state is in a skip state" do
+  it "keeps the run queued when only its internal Paid state changed" do # @spec AUTO-PICK-QUEUE-008
     issue = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
     run = queued_auto_pick_run(issue: issue)
 
-    expect(described_class.call(run)).to be true
-    expect(run.reload.status).to eq("cancelled")
+    expect(described_class.call(run)).to be false
+    expect(run.reload.status).to eq("queued")
   end
 
   it "cancels the run when the issue is blocked by an open dependency" do

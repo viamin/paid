@@ -32,6 +32,24 @@ RSpec.describe ChatSessions::ResolveToolCallJob, type: :job do
       .with(hash_including(type: "message_complete", tokens: { input: 5, output: 3 }))
   end
 
+  # @spec QUESTION-EXPLORATION-007
+  it "passes the confirming collaborator to ResolveToolCall" do
+    collaborator = create(:user, account: account)
+    allow(ChatSessions::ResolveToolCall).to receive(:call).and_return(nil)
+
+    described_class.perform_now(
+      chat_session_id: chat_session.id,
+      actor_id: collaborator.id,
+      message_id: tool_call_message.id,
+      decision: "approve",
+      stream_message_id: stream_message_id
+    )
+
+    expect(ChatSessions::ResolveToolCall).to have_received(:call).with(
+      hash_including(actor: collaborator, chat_session: chat_session)
+    )
+  end
+
   it "pauses the session and persists a durable pause notice when every runner is rate limited" do
     # @spec CHAT-API-017
     error = AgentHarness::RateLimitError.new("API rate limit exceeded", reset_time: 10.minutes.from_now)
