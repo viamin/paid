@@ -132,7 +132,7 @@ module AppleVerificationAttempts
     def attempts_per_agent_run_exceeded?(attempt)
       return false unless attempt.agent_run_id
 
-      count = AppleVerificationAttempt.where(agent_run_id: attempt.agent_run_id).count
+      count = AppleVerificationAttempt.where(agent_run_id: attempt.agent_run_id).where.not(id: attempt.id).count
       count >= @max_attempts_per_run
     end
   end

@@ -44,6 +44,9 @@ module AppleVerificationAttempts
         guest_disk_free_gib: host_metrics[:guest_disk_free_gib],
         memory_pressure_window: Array(host_metrics[:memory_pressure_window])
       )
+    rescue Timeout::Error, Faraday::Error, AppleVerification::HostService::AuthenticationError,
+      AppleVerification::HostService::UnsupportedRequestError
+      Snapshot.new(active_apple_vms: active_vms, **unknown_metrics)
     end
 
     private
@@ -64,9 +67,12 @@ module AppleVerificationAttempts
     end
 
     def metrics_from(readiness)
+      return unknown_metrics unless readiness.is_a?(Hash)
+
       payload = readiness.deep_stringify_keys
-      disk = payload.fetch("disk", {})
-      memory = payload.fetch("memory", {})
+      disk = payload["disk"]
+      memory = payload["memory"]
+      return unknown_metrics unless disk.is_a?(Hash) && memory.is_a?(Hash)
 
       {
         disk_free_gib: disk["free_gib"],

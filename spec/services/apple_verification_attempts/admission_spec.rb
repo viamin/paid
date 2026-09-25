@@ -36,6 +36,34 @@ RSpec.describe AppleVerificationAttempts::Admission do
         memory_pressure_window: [ 55, 58 ]
       )
     end
+
+    it "reports unknown capacity when the host metrics probe fails" do
+      host = stub_configured_host_metrics
+      allow(host).to receive(:call).and_raise(Faraday::ConnectionFailed, "unreachable")
+
+      snapshot = AppleVerificationAttempts::HostCapacity.default.snapshot
+
+      expect(snapshot).to have_attributes(
+        disk_free_gib: nil,
+        memory_free_percent: nil,
+        guest_disk_free_gib: nil,
+        memory_pressure_window: []
+      )
+    end
+
+    it "reports unknown capacity when the host metrics response is malformed" do
+      host = stub_configured_host_metrics
+      allow(host).to receive(:call).and_return([])
+
+      snapshot = AppleVerificationAttempts::HostCapacity.default.snapshot
+
+      expect(snapshot).to have_attributes(
+        disk_free_gib: nil,
+        memory_free_percent: nil,
+        guest_disk_free_gib: nil,
+        memory_pressure_window: []
+      )
+    end
   end
 
   def stub_configured_host_metrics
@@ -48,6 +76,7 @@ RSpec.describe AppleVerificationAttempts::Admission do
       operation: "readiness", payload: {}, token: "host-token").and_return(
         "disk" => { "free_gib" => 200 }, "memory" => { "free_percent" => 60, "pressure_window" => [ 55, 58 ] }
       )
+    host
   end
 
   def admission_for(project:)
