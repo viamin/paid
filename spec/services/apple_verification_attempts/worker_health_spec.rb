@@ -102,6 +102,31 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
     }.to raise_error(ArgumentError, /smoke test/)
   end
 
+  it "rejects a passed smoke test without an operator before clearing quarantine" do
+    profile.update!(quarantined_at: clock, quarantine_reason: "prior failure")
+
+    expect {
+      described_class.new(profile: profile, clock: clock).return_to_service(
+        smoke_test_result: stub_smoke_result(passed: true, operator: nil)
+      )
+    }.to raise_error(ArgumentError, /operator must belong/)
+
+    expect(profile.reload).to be_quarantined
+  end
+
+  it "rejects a passed smoke test attributed to another account before clearing quarantine" do
+    profile.update!(quarantined_at: clock, quarantine_reason: "prior failure")
+    other_operator = create(:user, account: create(:account))
+
+    expect {
+      described_class.new(profile: profile, clock: clock).return_to_service(
+        smoke_test_result: stub_smoke_result(passed: true, operator: other_operator)
+      )
+    }.to raise_error(ArgumentError, /operator must belong/)
+
+    expect(profile.reload).to be_quarantined
+  end
+
   def stub_smoke_result(passed:, operator:)
     result = Object.new
     result.define_singleton_method(:passed?) { passed }

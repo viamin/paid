@@ -86,13 +86,16 @@ module AppleVerificationAttempts
       now = current_time
       @profile.with_lock do
         @profile.reload
+        operator = operator_for(smoke_test_result)
+        raise ArgumentError, "isolation smoke test operator must belong to the profile account" unless operator
+
         @profile.update!(
           quarantined_at: nil,
           quarantine_reason: nil,
           consecutive_health_failures: 0,
           last_health_failure_at: nil,
           returned_to_service_at: now,
-          returned_to_service_by_id: smoke_test_result.operator_id
+          returned_to_service_by: operator
         )
       end
       @profile
@@ -113,6 +116,12 @@ module AppleVerificationAttempts
         error: error.message
       )
       :failed
+    end
+
+    def operator_for(smoke_test_result)
+      return unless smoke_test_result.respond_to?(:operator_id)
+
+      User.find_by(id: smoke_test_result.operator_id, account_id: @profile.account_id)
     end
 
     def quarantine_active_attempts(now)
