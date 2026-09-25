@@ -41,6 +41,7 @@ RSpec.describe Inbox::ChatContext do
   it "loads review comments returned as GitHub client hashes" do
     # @spec QUESTION-EXPLORATION-014
     issue.update!(is_pull_request: true)
+    project.update!(allowed_github_usernames: [ "reviewer" ])
     github_client = instance_double(GithubClient)
     allow(github_client).to receive(:pull_request_review_comments).and_return([
       { id: 12, user_login: "reviewer", body: "Use a guard clause", path: "app/models/user.rb", created_at: Time.current }
