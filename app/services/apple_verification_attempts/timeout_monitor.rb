@@ -72,7 +72,7 @@ module AppleVerificationAttempts
       started_at + timeout_seconds.seconds
     end
 
-    def timeout_minutes = @timeout_minutes
+    attr_reader :timeout_minutes
 
     def self.timeout_minutes_from(timeout_minutes: nil)
       return timeout_minutes if timeout_minutes.present?
