@@ -376,9 +376,9 @@ that reach the cap without a human signal.
 
 The analyze→enhance loop only converges when an `enhance_issue` round that
 concludes `sufficient_context: true` hands the issue off to a `create_pr` run.
-Without that handoff the issue parks in the `completed` paid_state — a state
-auto-pick does not select (it's not in `AUTO_PICK_ELIGIBLE_PAID_STATES`) — and
-no further automation touches it. The handoff is implemented as a
+Without that handoff the issue parks in the `completed` paid_state. GitHub-open
+state remains eligible for auto-pick regardless of this internal state, but the
+handoff is still implemented as a
 `CreateFollowupRunActivity` call after `EnhanceIssueActivity` returns
 `sufficient_context: true`, mirroring the analyze branch's pattern.
 

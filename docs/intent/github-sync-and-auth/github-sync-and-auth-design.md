@@ -36,6 +36,11 @@ Issue and PR state is cached locally at multiple layers:
 - request-time API objects such as issues, pull requests, and repo metadata use
   cache invalidation keyed by GitHub webhook event type
 
+When sync observes a non-PR issue transition from closed back to open, it
+resets Paid's internal state to `new`. This makes GitHub's reopened state the
+authoritative renewal signal and prevents a prior completion or recommendation
+from masking work that is open again.
+
 Signed `issues` webhooks are the authoritative attribution point for externally
 initiated issue lifecycle mutations. When GitHub reports that an issue was
 reopened or edited, Paid evaluates the webhook sender against the project's

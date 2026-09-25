@@ -1423,17 +1423,17 @@ RSpec.describe ProcessRunQueueJob do
         expect(started_ids).to eq([ eligible_run.id ])
       end
 
-      it "cancels a run whose issue is in a paid_state skip state" do
+      it "starts a run whose open issue only has an internal Paid state" do # @spec AUTO-PICK-QUEUE-008
         project = create(:project, auto_pick_enabled: true)
         issue = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
         run = create(:agent_run, :queued, :automatic, project: project,
           issue: issue, goal: "create_pr", auto_pick: true)
 
-        expect(temporal_client).not_to receive(:start_workflow)
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
 
         described_class.new.perform
 
-        expect(run.reload.status).to eq("cancelled")
+        expect(run.reload.temporal_workflow_id).to be_present
       end
 
       it "cancels a run whose issue is blocked by an open dependency" do

@@ -138,14 +138,14 @@ RSpec.describe DesignAmendments::EvaluateImpact do
     expect(DesignAmendments::ImpactReview).not_to have_received(:call)
   end
 
-  it "ignores branches that are neither open, unstarted, nor merged" do
+  it "includes an open issue regardless of its internal Paid state" do # @spec AUTO-PICK-QUEUE-008
     in_progress = create(:issue, project: project, paid_state: "in_progress")
     link_feature_issue(in_progress)
-    stub_review({})
+    stub_review(mapping_for({ in_progress => "affected" }))
 
     result = described_class.call(amendment: amendment)
 
-    expect(result.paused).to eq({})
-    expect(DesignAmendmentPause.where(issue: in_progress)).not_to exist
+    expect(result.paused).to eq(in_progress.id => "affected")
+    expect(DesignAmendmentPause.where(issue: in_progress)).to exist
   end
 end
