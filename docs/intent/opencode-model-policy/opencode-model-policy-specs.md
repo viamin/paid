@@ -8,6 +8,12 @@
 
 ## Config and Validation
 
+- [x] **MODEL-POLICY-014** — When Paid builds an OpenCode runtime for an
+  OpenRouter model, the system SHALL prepend the OpenCode provider prefix to
+  the complete catalog ID, including `openrouter/free` and
+  `openrouter/pareto-code`; already qualified IDs SHALL remain unchanged,
+  and the stored model ID used by API chat SHALL remain unchanged.
+
 - [x] **MODEL-POLICY-001** — When an `opencode` runner's config omits
   `model_policy`, `Runner#opencode_model_policy` SHALL default to
   `"specific"`. For any other `runner_key`, it SHALL return `nil`. A

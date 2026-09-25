@@ -536,13 +536,19 @@ class Runner < ApplicationRecord
   # (e.g. "minimax/MiniMax-M3"). Defaults to the runner's configured model but
   # accepts an explicit model_id so models resolved outside the runtime builder
   # (tier resolution, escalation) get the same treatment. Idempotent: a value
-  # already prefixed with this provider is returned unchanged.
+  # already prefixed with this provider is returned unchanged. OpenRouter
+  # catalog IDs themselves contain an author prefix, so its qualified IDs
+  # need both the CLI provider and the complete author/model pair.
+  # @spec MODEL-POLICY-014
   def opencode_qualified_model(model_id = opencode_model_id)
     return if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
     provider_id = api_config[:opencode_model_provider]
-    return model_id if provider_id.blank? || model_id.start_with?("#{provider_id}/")
+    return model_id if provider_id.blank?
+    if model_id.start_with?("#{provider_id}/")
+      return model_id unless provider_id == "openrouter" && model_id.count("/") == 1
+    end
 
     "#{provider_id}/#{model_id}"
   end
@@ -555,12 +561,11 @@ class Runner < ApplicationRecord
   # provider="MiniMax-M3", model="") and raises ProviderModelNotFoundError, so a
   # bare id needs the runner's "<provider>/<model>" form.
   #
-  # A model id that already carries a "/" is left untouched: OpenRouter-routed
-  # ids are "<vendor>/<model>" slugs (e.g. "moonshotai/kimi-k2-0905") that
-  # opencode addresses directly. No-op for runners that do not
-  # provider-qualify their models.
+  # OpenRouter catalog IDs include a vendor/model pair that still needs the
+  # OpenCode provider prefix. No-op for other runners.
+  # @spec MODEL-POLICY-014
   def qualified_model_for(model_id)
-    return model_id if model_id.blank? || model_id.include?("/")
+    return model_id if model_id.blank?
     return opencode_qualified_model(model_id) if runner_key == "opencode"
 
     model_id

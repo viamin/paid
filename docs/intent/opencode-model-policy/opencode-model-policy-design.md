@@ -65,6 +65,11 @@ the runner key/provider.
 
 ### Validation
 
+OpenCode runtime model IDs include a provider prefix in addition to the
+OpenRouter catalog ID. An OpenRouter-owned model such as `openrouter/free`
+therefore executes as `openrouter/openrouter/free`. Already qualified IDs
+remain unchanged. Stored catalog IDs and API-chat model IDs remain unqualified.
+
 - `model_policy` must be one of `Runner::MODEL_POLICIES` (`specific`,
   `free`).
 - `free` is valid only when the runner's derived API provider is

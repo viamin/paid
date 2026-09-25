@@ -1840,6 +1840,19 @@ RSpec.describe Runner do
       create(:llm_model, model_id: "claude-sonnet-4-5", provider: "anthropic", tier: "mid")
     end
 
+    # @spec MODEL-POLICY-014
+    it "qualifies OpenRouter-owned catalog models without changing the chat model" do
+      create(:llm_model, model_id: "openrouter/free", provider: "openrouter", tier: "mid")
+      runner.update!(config: { "opencode" => { "model" => "openrouter/free" } })
+
+      expect(runner.agent_harness_runner_runtime.model).to eq("openrouter/openrouter/free")
+      expect(runner.qualified_model_for("openrouter/pareto-code")).to eq("openrouter/openrouter/pareto-code")
+      expect(runner.qualified_model_for("openrouter/openrouter/free")).to eq("openrouter/openrouter/free")
+      expect(runner.qualified_model_for("moonshotai/kimi-k2-0905")).to eq("openrouter/moonshotai/kimi-k2-0905")
+      expect(runner.qualified_model_for("openrouter/moonshotai/kimi-k2-0905")).to eq("openrouter/moonshotai/kimi-k2-0905")
+      expect(runner.reload.direct_outbound_model_id).to eq("openrouter/free")
+    end
+
     def expected_minimax_provider(model_id)
       { "minimax" => {
         "npm" => "@ai-sdk/anthropic",

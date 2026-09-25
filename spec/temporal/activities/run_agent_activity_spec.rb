@@ -1052,7 +1052,7 @@ RSpec.describe Activities::RunAgentActivity do
       # OpenRouter ids are "<vendor>/<model>" slugs that opencode addresses
       # directly, so they pass through unchanged (matching the execute path and
       # free-policy runtime) rather than gaining a redundant prefix.
-      expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
+      expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
     end
 
     it "provider-qualifies the resolved tier model for opencode MiniMax direct-outbound runs" do
@@ -2400,9 +2400,9 @@ RSpec.describe Activities::RunAgentActivity do
     third_config = JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)
     fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
-    expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(third_config).to include("model" => "openrouter/moonshotai/kimi-k2-0905")
     expect(third_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
-    expect(fourth_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(fourth_config).to include("model" => "openrouter/moonshotai/kimi-k2-0905")
     expect(fourth_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
   end
 
