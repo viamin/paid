@@ -85,12 +85,36 @@ Remove superseded code within each migrated scope once its replacement is
 verified. Temporary coexistence across scopes is allowed; duplicate permanent
 implementations of the same supported path are not the target.
 
+### Retry and Accounting Decision
+
+Agent-harness owns bounded retries of an individual provider request, using
+RubyLLM where appropriate. Paid supplies retry limits and cancellation; the
+harness must honor those controls across its internal attempts. Configure one
+effective request-retry owner rather than multiplying harness and RubyLLM
+retry loops. Authentication/configuration failures remain distinct from
+transient failures and do not enter transient retry handling.
+
+Paid owns runner changes and workflow recovery. When request retries are
+exhausted, return a classified outcome to Paid so its existing eligibility,
+credential, fallback and recovery policies determine what happens next.
+Request retries and runner changes must preserve completed tool results;
+neither authorizes replay of completed application side effects.
+
+The harness reports individual attempts and any available usage, including
+failed attempts, so Paid can attribute consumption without duplication. A new
+outbound request is a new attempt; redelivery of an existing attempt record is
+not. Paid owns durable accounting and budget enforcement. Stable attempt IDs,
+restart recovery and idempotent persistence need a tested technical contract;
+unknown usage must remain unknown rather than being recorded as zero.
+
 ### Ownership
 
 | Responsibility | Owner |
 |---|---|
 | Actor identity, Pundit checks, tenant context and tool visibility | Paid |
 | Eligible runners, credentials, allowed models, fallback order and notices | Paid |
+| Bounded retries of individual provider requests | Agent-harness, honoring Paid-supplied limits and cancellation |
+| Runner changes, workflow recovery and durable usage attribution | Paid |
 | Confirmation policy, selective auto-approval and two-phase drafts | Paid |
 | Generic pending decisions and resumable tool sequencing | Harness contract, using RubyLLM where suitable |
 | Protocols, schemas, streaming and normalized API errors | Harness contract backed by RubyLLM |
@@ -140,6 +164,7 @@ change implemented EARS status or supersede RDR-028.
 | Require custom persistence for all supporting state | Rejected as a blanket constraint; adapters may recreate the bookkeeping being removed. |
 | Adopt RubyLLM-managed supporting tables selectively | Allowed where simplification is demonstrated and tenant isolation, auditability and migration requirements are met; Rails remains optional for harness consumers. |
 | Require complete provider parity before any adoption | Rejected; migrate verified operation/provider scopes incrementally and preserve other working paths with explicit follow-up tracking. |
+| Schedule every provider-request retry in Paid | Rejected; delegate bounded request retries to the harness while Paid retains runner changes, workflow recovery and accounting policy. |
 
 ## Non-Goals
 
@@ -198,8 +223,10 @@ requires an explicit recommendation and issue-scope update.
 2. Establish the operation/provider/custom-endpoint capability matrix and
    explicit unsupported-capability outcomes. Incremental adoption with preserved
    working paths is decided above; the actual coverage requires verification.
-3. What attempt identities and retry ownership prevent duplicate usage and
-   tool replay across restarts and Paid-controlled runner switches?
+3. Specify stable attempt identities, idempotent accounting and crash recovery
+   across restarts and Paid-controlled runner switches. Retry ownership is
+   resolved above; verify that limits/cancellation reach every internal attempt
+   and completed tools are not replayed.
 4. Does loop delegation remove enough complexity to justify migration beyond
    the normalized transport milestone?
 
