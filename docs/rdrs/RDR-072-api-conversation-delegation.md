@@ -107,6 +107,23 @@ not. Paid owns durable accounting and budget enforcement. Stable attempt IDs,
 restart recovery and idempotent persistence need a tested technical contract;
 unknown usage must remain unknown rather than being recorded as zero.
 
+### Loop Delegation Decision
+
+Delegate the chat loop only when it demonstrably simplifies the maintained
+system while preserving required behavior. Replacing Paid's loop is not a
+mandatory destination. Keeping it over normalized harness transport is an
+acceptable completed outcome, with the evidence and retained responsibilities
+recorded in the design and closeout.
+
+Compare removed sequencing, transcript and approval-resumption mechanics with
+all new adapters, persistence glue and recovery code in both repositories.
+Moving equivalent custom code upstream or reducing Paid's line count alone
+does not establish simplification. Require behavior tests for authorization,
+confirmation policy, budgets, resumption and side-effect recovery, plus a
+reviewable account of reduced maintenance responsibilities and migration cost.
+If those criteria are not met, retain the loop and complete the independently
+useful transport, embedding, schema and usage improvements.
+
 ### Ownership
 
 | Responsibility | Owner |
@@ -116,7 +133,7 @@ unknown usage must remain unknown rather than being recorded as zero.
 | Bounded retries of individual provider requests | Agent-harness, honoring Paid-supplied limits and cancellation |
 | Runner changes, workflow recovery and durable usage attribution | Paid |
 | Confirmation policy, selective auto-approval and two-phase drafts | Paid |
-| Generic pending decisions and resumable tool sequencing | Harness contract, using RubyLLM where suitable |
+| Generic pending decisions and resumable tool sequencing | Harness where the loop-delegation criteria are met; otherwise Paid's retained loop |
 | Protocols, schemas, streaming and normalized API errors | Harness contract backed by RubyLLM |
 | Conversation identity, application message links and audit attribution | Paid |
 | Optional supporting persistence schema and mechanics | RubyLLM where adopted; Paid verifies tenant isolation, migration and audit requirements |
@@ -160,7 +177,8 @@ change implemented EARS status or supersede RDR-028.
 | Retain current implementations | Lowest migration risk, but retains patches and duplicated mechanics. |
 | Call RubyLLM directly from Paid | Breaks the HLD's single execution interface. |
 | Delegate transport, retain Paid's loop | Recommended first milestone; may remain the final boundary if loop adapters add more complexity than they remove. |
-| Delegate transport and reusable loop mechanics | Preferred target if approval, persistence and retry contracts can be demonstrated. |
+| Delegate transport and reusable loop mechanics | Adopt only when preserved behavior and net maintenance simplification are demonstrated, counting new adapters and persistence/recovery code. |
+| Require eventual loop delegation regardless of demonstrated benefit | Rejected; retaining Paid's loop over normalized transport is an acceptable completed outcome. |
 | Require custom persistence for all supporting state | Rejected as a blanket constraint; adapters may recreate the bookkeeping being removed. |
 | Adopt RubyLLM-managed supporting tables selectively | Allowed where simplification is demonstrated and tenant isolation, auditability and migration requirements are met; Rails remains optional for harness consumers. |
 | Require complete provider parity before any adoption | Rejected; migrate verified operation/provider scopes incrementally and preserve other working paths with explicit follow-up tracking. |
@@ -211,10 +229,16 @@ pending confirmations wherever persistence changes. Compare deleted mechanics
 with added adapter code rather than counting moved code as simplification.
 
 Closeout records delegated and retained responsibilities, versions, tests and
-remaining gaps. Mark implemented only from that evidence. A narrower target
-requires an explicit recommendation and issue-scope update.
+remaining gaps. Mark implemented only from that evidence. If the evaluation
+supports retaining Paid's loop, record that supported outcome and align the
+implementation issues; it is not an unfulfilled promise of eventual delegation.
+Any other scope reduction requires an explicit recommendation and issue update.
 
-## Open Decisions
+## Technical Investigation
+
+The architectural preferences are resolved above. The following investigations
+must supply implementation evidence; they do not reopen those preferences or
+claim that unverified library capabilities already exist.
 
 1. Which supporting tables should Paid adopt, and what optional integration
    contract preserves stable tool IDs and resumption while keeping the harness
@@ -227,8 +251,9 @@ requires an explicit recommendation and issue-scope update.
    across restarts and Paid-controlled runner switches. Retry ownership is
    resolved above; verify that limits/cancellation reach every internal attempt
    and completed tools are not replayed.
-4. Does loop delegation remove enough complexity to justify migration beyond
-   the normalized transport milestone?
+4. Evaluate loop delegation against the decided criteria: behavior preservation,
+   net maintenance reduction across both repositories and migration cost.
+   Document the evidence for delegation or retaining Paid's loop.
 
 ## Sources
 
