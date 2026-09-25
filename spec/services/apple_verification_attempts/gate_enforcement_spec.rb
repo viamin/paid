@@ -39,33 +39,36 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     )
   end
 
-  it "blocks completion when an approved required attempt has not succeeded" do
+  it "does not enforce completion verification until execution is available" do
     revision = approved_workflow
-    attempt_for(revision, status: "failed")
+    attempt = attempt_for(revision, status: "failed")
 
     decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
 
-    expect(decision).to be_blocking
+    expect(decision).not_to be_blocking
     expect(decision.gate).to eq("completion_verification")
+    expect(decision.attempt).to be_nil
+    expect(decision.reason).to eq("verification_execution_unavailable")
+    expect(attempt).to be_failed
   end
 
-  it "does not block when the most-recent attempt for the gate succeeded" do
+  it "does not inspect completion attempts until execution is available" do
     revision = approved_workflow
     attempt_for(revision, status: "succeeded")
 
     decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
 
     expect(decision).not_to be_blocking
-    expect(decision.reason).to eq("satisfied")
+    expect(decision.reason).to eq("verification_execution_unavailable")
   end
 
-  it "blocks when a required workflow has no attempt for the agent run" do
+  it "does not block completion when a required workflow has no attempt" do
     approved_workflow
 
     decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
 
-    expect(decision).to be_blocking
-    expect(decision.reason).to eq("pending_required_attempt")
+    expect(decision).not_to be_blocking
+    expect(decision.reason).to eq("verification_execution_unavailable")
   end
 
   it "only accepts a successful committed attempt for the current pull request head" do

@@ -24,30 +24,17 @@ RSpec.describe AppleVerificationAttempts::EnqueueCompletion do
     workflow
   end
 
-  it "queues one attempt for the exact completed commit and schedules maintenance" do
+  it "does not enable a required completion gate until execution is available" do
     workflow = approve_completion_workflow
 
     expect {
       described_class.call(agent_run:, commit_sha:)
-    }.to change(AppleVerificationAttempt, :count).by(1)
-      .and have_enqueued_job(AppleVerificationAttemptMaintenanceJob)
-
-    attempt = AppleVerificationAttempt.last
-    expect(attempt).to have_attributes(
-      account:,
-      project:,
-      agent_run:,
-      apple_verification_workflow_revision: workflow,
-      apple_worker_profile: workflow.apple_worker_profile,
-      commit_sha:,
-      source_digest: "sha256:#{Digest::SHA256.hexdigest(commit_sha)}",
-      lifecycle_gate: "completion_verification",
-      status: "queued",
-      retry_number: 0
-    )
+    }.not_to change(AppleVerificationAttempt, :count)
+    expect(workflow).to be_approved
+    expect(AppleVerificationAttemptMaintenanceJob).not_to have_been_enqueued
   end
 
-  it "does not queue duplicate attempts when completion is retried" do
+  it "does not queue attempts when completion is retried" do
     approve_completion_workflow
 
     described_class.call(agent_run:, commit_sha:)

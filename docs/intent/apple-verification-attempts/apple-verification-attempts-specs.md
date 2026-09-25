@@ -99,10 +99,13 @@
   *Code:* `AppleVerificationAttempts::RetryPolicy`,
   `AppleVerificationAttempts::Rerun`
 
-- [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
-  the `completion_verification` gate has not succeeded for an agent run, the
+- [x] **APPLE-ATTEMPT-011** — When the end-to-end guest-execution handoff is
+  available and an approved required workflow assigned to the
+  `completion_verification` gate has not succeeded for an agent run, the
   system SHALL create and enqueue one attempt bound to that run's completion
-  commit before blocking the run from reporting success; when assigned to the
+  commit before blocking the run from reporting success; before that handoff
+  is available, it SHALL leave the completion gate unavailable rather than
+  create an attempt that cannot release the run. When assigned to the
   `pull_request_verification` gate, it SHALL block Paid's PR verification
   result; enforcement SHALL bind the approved committed workflow digest and
   its approved lifecycle gate.
