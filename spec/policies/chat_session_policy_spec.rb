@@ -69,5 +69,18 @@ RSpec.describe ChatSessionPolicy do
 
       expect(sessions).to contain_exactly(inbox_chat)
     end
+
+    it "includes a creator's inbox chat when the creator has account-level member access" do
+      # @spec QUESTION-EXPLORATION-014
+      account = create(:account)
+      owner = create(:user, account:)
+      creator = create(:user, :member, account:)
+      project = create(:project, account:, created_by: owner)
+      inbox_chat = create(:chat_session, account:, project:, created_by: creator, inbox_item_key: "clarifying_questions:1")
+
+      sessions = described_class::Scope.new(creator, ChatSession).resolve
+
+      expect(sessions).to contain_exactly(inbox_chat)
+    end
   end
 end

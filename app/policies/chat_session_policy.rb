@@ -59,20 +59,25 @@ class ChatSessionPolicy < ApplicationPolicy
     end
 
     def personal_inbox_chats(sessions)
-      sessions.where(<<~SQL.squish, user.id, user.id, comment_authority_roles)
-        chat_sessions.inbox_item_key IS NULL OR (
-          chat_sessions.created_by_id = ? AND EXISTS (
-            SELECT 1 FROM project_memberships
-            WHERE project_memberships.project_id = chat_sessions.project_id
-              AND project_memberships.user_id = ?
-              AND project_memberships.role IN (?)
-          )
+      inbox_chats = sessions.where.not(inbox_item_key: nil).where(created_by: user)
+      return inbox_chats if account_comment_authority?
+
+      inbox_chats.where(<<~SQL.squish, user.id, comment_authority_roles)
+        EXISTS (
+          SELECT 1 FROM project_memberships
+          WHERE project_memberships.project_id = chat_sessions.project_id
+            AND project_memberships.user_id = ?
+            AND project_memberships.role IN (?)
         )
       SQL
     end
 
     def comment_authority_roles
       ProjectMembership.roles.values_at("member", "admin")
+    end
+
+    def account_comment_authority?
+      user.has_any_role?(:owner, :admin, :member, user.account)
     end
   end
 
