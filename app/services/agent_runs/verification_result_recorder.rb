@@ -14,22 +14,35 @@ module AgentRuns
       new(...).call
     end
 
-    def initialize(agent_run:, repo_path:, fallback_result: nil, record_missing: true, logger: Rails.logger)
+    def initialize(agent_run:, repo_path:, fallback_result: nil, record_missing: true, result_commit: nil, logger: Rails.logger)
       @agent_run = agent_run
       @repo_path = repo_path
       @fallback_result = fallback_result
       @record_missing = record_missing
+      @result_commit = result_commit
       @logger = logger
     end
 
     def call
-      return unless @agent_run.project.verification_enabled?
+      apple_decision = AppleVerificationAttempts::GateEnforcement.evaluate(
+        agent_run: @agent_run,
+        gate: "pull_request_verification",
+        result_commit: @result_commit
+      )
+      # The rollout flag and project mode guard the apple paths; interactive
+      # verification only guards the interactive result. Record whenever
+      # interactive verification is enabled OR a binding apple decision must
+      # be reflected in the PR verification result.
+      # @spec APPLE-ATTEMPT-011
+      if !@agent_run.project.verification_enabled? && !apple_decision.enforcing?
+        clear_apple_only_result
+        return
+      end
       return if @repo_path.blank?
 
-      payload = recorded_result || @fallback_result.presence || (@record_missing ? missing_result : nil)
-      return if payload.nil?
+      persisted = build_result(apple_decision)
+      return if persisted.nil?
 
-      persisted = normalize(payload)
       @agent_run.update!(verification_result: persisted)
       persisted
     ensure
@@ -37,6 +50,54 @@ module AgentRuns
     end
 
     private
+
+    def build_result(apple_decision)
+      payload = interactive_payload(recorded_result || @fallback_result.presence)
+      # @spec APPLE-ATTEMPT-011
+      # @spec APPLE-ATTEMPT-012
+      return apply_apple_gate(payload, apple_decision) if apple_decision.pending? || apple_decision.blocked?
+
+      payload ||= missing_result if @record_missing
+      return if payload.nil?
+
+      normalize(payload)
+    end
+
+    def apply_apple_gate(payload, decision)
+      interactive = payload.is_a?(Hash) && payload["status"].present? ? normalize(payload) : {}
+      entry = { "state" => decision.pending? ? "pending" : "blocked", "gate" => decision.gate }
+      entry["failure_classification"] = decision.attempt.failure_classification if decision.blocked? && decision.attempt
+      entry["interactive_status"] = interactive["status"] if interactive["status"].present?
+
+      interactive.merge(
+        "status" => decision.pending? ? "not_run" : "failed",
+        "reason" => decision.pending? ? "apple_verification_pending" : "apple_verification_failed",
+        "summary" => interactive["summary"].presence || apple_gate_summary(decision),
+        "apple_verification" => entry,
+        "recorded_at" => Time.current.iso8601
+      )
+    end
+
+    def interactive_payload(payload)
+      apple_result = payload.is_a?(Hash) && payload["apple_verification"]
+      return payload unless apple_result.is_a?(Hash) && apple_result["interactive_status"].present?
+
+      payload.except("apple_verification", "reason").merge("status" => apple_result["interactive_status"])
+    end
+
+    def clear_apple_only_result
+      return unless @agent_run.verification_result["apple_verification"].present?
+
+      @agent_run.update!(verification_result: {})
+    end
+
+    def apple_gate_summary(decision)
+      if decision.pending?
+        "Required Apple verification has not passed for this pull request."
+      else
+        "Required Apple verification failed for this pull request."
+      end
+    end
 
     def recorded_result
       return unless File.exist?(result_path)

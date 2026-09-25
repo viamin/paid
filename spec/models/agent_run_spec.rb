@@ -399,6 +399,28 @@ RSpec.describe AgentRun do
         expect(described_class.stale_running).to include(stale_unknown_goal)
         expect(described_class.stale_running).not_to include(fresh_unknown_goal)
       end
+
+      it "excludes runs withheld at the completion-verification gate" do
+        stale_run = create(:agent_run, :running, started_at: described_class.stale_running_cutoff - 1.minute)
+        withheld_run = create(:agent_run, :running,
+          started_at: described_class.stale_running_cutoff - 1.minute,
+          external_metadata: { described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY => { "withheld_at" => Time.current.iso8601 } })
+
+        expect(described_class.stale_running).to contain_exactly(stale_run)
+        expect(described_class.stale_running?(withheld_run)).to be(false)
+      end
+    end
+
+    describe ".awaiting_completion_verification" do
+      it "returns only running runs carrying the withheld-completion marker" do
+        withheld_run = create(:agent_run, :running,
+          external_metadata: { described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY => { "withheld_at" => Time.current.iso8601 } })
+        create(:agent_run, :running)
+        create(:agent_run, :completed,
+          external_metadata: { described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY => { "withheld_at" => Time.current.iso8601 } })
+
+        expect(described_class.awaiting_completion_verification).to contain_exactly(withheld_run)
+      end
     end
 
     describe ".stale_claimed" do
@@ -425,6 +447,14 @@ RSpec.describe AgentRun do
         create(:agent_run, :running, started_at: described_class.stale_running_cutoff + 1.minute)
 
         expect(described_class.stale_for_cleanup).to contain_exactly(stale_running, stale_claimed, stale_admitted)
+      end
+
+      it "excludes runs withheld at the completion-verification gate" do
+        create(:agent_run, :running,
+          started_at: described_class.stale_running_cutoff - 1.minute,
+          external_metadata: { described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY => { "withheld_at" => Time.current.iso8601 } })
+
+        expect(described_class.stale_for_cleanup).to be_empty
       end
     end
 

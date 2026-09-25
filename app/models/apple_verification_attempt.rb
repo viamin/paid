@@ -35,6 +35,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
   validate :execution_binding_is_immutable, on: :update
+  after_update_commit :complete_withheld_run, if: :completed_completion_verification?
 
   def terminal?
     TERMINAL_STATES.include?(status)
@@ -94,6 +95,18 @@ class AppleVerificationAttempt < ApplicationRecord
     errors.add(:agent_run, "must match the attempt project") if agent_run && agent_run.project_id != project_id
   end
 
+  # A completion-verification attempt can unblock a run after its agent
+  # workflow has already returned. Re-invoke completion only after the
+  # attempt's success is committed, so the gate observes the final state.
+  # @spec APPLE-ATTEMPT-013
+  def complete_withheld_run
+    AppleVerificationAttempts::CompleteWithheldRun.call(agent_run: agent_run)
+  end
+
+  def completed_completion_verification?
+    saved_change_to_status? && status == "succeeded" && lifecycle_gate == "completion_verification" && agent_run_id.present?
+  end
+
   def execution_binding_is_immutable
     return unless execution_binding_changed?
 
@@ -104,6 +117,6 @@ class AppleVerificationAttempt < ApplicationRecord
     will_save_change_to_account_id? || will_save_change_to_project_id? || will_save_change_to_agent_run_id? ||
       will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
       will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
-      will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
+      will_save_change_to_requested_capture? || will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
   end
 end

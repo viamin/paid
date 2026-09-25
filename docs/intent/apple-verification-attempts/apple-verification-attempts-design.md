@@ -125,8 +125,31 @@ requires a new approval.
 An approved required workflow at `completion_verification` may block an agent
 run from reporting success; at `pull_request_verification` it may block Paid's
 PR verification result. Required verification remains pending until it runs or
-is explicitly waived (APPLE-WORKER-006). Paid never silently skips required
-verification and never falls back to executing project code on the host.
+is explicitly waived (APPLE-WORKER-006). Required-verification enforcement
+binds to the commit the agent run is shipping through the gate (the
+`result_commit` threaded into `AgentRun#complete!` and into the re-invoked
+completion); a verification of any other commit cannot satisfy the gate, so a
+stale verification cannot leak forward when the run's actual output is a
+different commit. The gate applies only when a completion has a result commit:
+review and issue-creation goals do not ship committed code and must complete
+without being parked for an impossible verification attempt. Paid never
+silently skips required verification for committed output and never falls back
+to executing project code on the host.
+
+A run whose completion is withheld at the gate stays non-terminal and
+`running`, marked with a withheld-completion record (timestamp plus the
+completion payload the workflow produced). Such a run is parked by design,
+not orphaned: stale-running recovery exempts it, so missing worker capacity
+can never surface as a timeout failure. Once the gate is satisfied (a
+succeeded attempt, an active waiver, or a relaxed gate after the operator
+disables the rollout flag, switches the project mode to `off`, or supersedes
+the approved revision), `AppleVerificationAttempts::CompleteWithheldRun`
+re-invokes completion from the preserved payload. The waive flow invokes it
+synchronously, attempt-completion code invokes it when it records a `succeeded`
+attempt, and `AppleVerificationWithheldRunSweepJob` invokes it on a 5-minute
+cron for every run in `AgentRun.awaiting_completion_verification` so the
+flag/mode/revision-relaxation cases do not have to wait for either of the
+synchronous callers to fire.
 
 ## Recovery and worker health
 
