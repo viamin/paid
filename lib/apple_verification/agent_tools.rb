@@ -219,6 +219,7 @@ module AppleVerification
         {
           "attempt_id" => attempt.id,
           "status" => attempt.status,
+          "queue_position" => AppleVerificationAttempts::Queue.position(attempt: attempt),
           "failure_classification" => attempt.failure_classification,
           "lifecycle_gate" => attempt.lifecycle_gate,
           "source_digest" => attempt.source_digest,

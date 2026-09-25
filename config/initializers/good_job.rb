@@ -340,6 +340,19 @@ Rails.application.configure do
       cron: "6-59/5 * * * *",
       class: "AppleVerificationWithheldRunSweepJob",
       description: "Re-invoke completion for runs withheld at the completion-verification gate (APPLE-ATTEMPT-013)"
+    },
+    apple_verification_timeout: {
+      # Stagger onto 5-minute offsets (8/9) adjacent to the withheld-run sweep
+      # (6) so the Apple maintenance family shares the 5-minute window without
+      # co-firing on the same minute.
+      cron: "8-59/5 * * * *",
+      class: "AppleVerificationTimeoutJob",
+      description: "End Apple verification attempts that exceeded the attempt timeout (APPLE-ATTEMPT-004)"
+    },
+    apple_verification_recovery: {
+      cron: "9-59/5 * * * *",
+      class: "AppleVerificationRecoveryJob",
+      description: "Reconcile in-flight Apple verification attempts against the VM ledger (APPLE-ATTEMPT-014)"
     }
   }
 end
