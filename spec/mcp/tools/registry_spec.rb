@@ -46,6 +46,7 @@ RSpec.describe Tools::Registry do
       create_issue
       edit_issue
       set_labels
+      submit_clarifying_answers
     ]
   end
 

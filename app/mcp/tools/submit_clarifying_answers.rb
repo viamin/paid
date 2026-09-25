@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 module Tools
+  # Posts a linked chat's final clarifying answers through the standard
+  # inbox answer path. Confirmation-gated like every chat write tool.
+  # @spec QUESTION-EXPLORATION-002
   class SubmitClarifyingAnswers < BaseTool
     authorize :update?, ->(_args) { project_for_session }, policy_class: ProjectPolicy
 
