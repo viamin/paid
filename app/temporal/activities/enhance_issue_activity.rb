@@ -425,7 +425,11 @@ module Activities
       attrs = { paid_state: paid_state }
       attrs[:last_analyzer_sufficient_context] = sufficient_context unless sufficient_context.nil?
       attrs[:manual_review_reason] = reason if reason
-      agent_run.issue.update!(attrs)
+      if paid_state == "completed"
+        agent_run.issue.complete_unless_reopen_review_pending!(attrs.except(:paid_state))
+      else
+        agent_run.issue.update!(attrs)
+      end
     end
 
     # Shared with stop_after_max_rounds' GitHub comment copy, so the persisted
