@@ -25,6 +25,8 @@ module Api
         handle_pull_request
       when "issue_comment"
         handle_issue_comment
+      when "issues"
+        handle_issue
       when "check_suite"
         handle_check_suite
       when "check_run"
@@ -132,6 +134,23 @@ module Api
       )
       check_quality_pause(agent_run)
 
+      head :ok
+    end
+
+    # @spec GITHUB-SYNC-013
+    def handle_issue
+      action = payload["action"]
+      return head(:ok) unless action.in?(%w[edited reopened])
+
+      issue = payload["issue"] || {}
+      return head(:ok) if issue["pull_request"].present?
+
+      Issues::EnforceMutationTrust.call(
+        project: @project,
+        action: action,
+        issue_number: issue["number"],
+        actor_login: payload.dig("sender", "login")
+      )
       head :ok
     end
 

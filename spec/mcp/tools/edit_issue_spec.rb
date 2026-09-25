@@ -48,7 +48,7 @@ RSpec.describe Tools::EditIssue do
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
       allow(Issues::ParseDependencies).to receive(:call)
-      allow(github_client).to receive_messages(update_issue: updated_issue, labels: [
+      allow(github_client).to receive_messages(authenticated_login: project.allowed_github_usernames.first, update_issue: updated_issue, labels: [
         Struct.new(:name).new("bug"),
         Struct.new(:name).new("enhancement")
       ])
@@ -199,13 +199,15 @@ RSpec.describe Tools::EditIssue do
         allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_installation_token")
       end
 
-      it "edits an issue using the installation credential" do
-        result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
+      # @spec GITHUB-SYNC-013
+      it "rejects a chat edit made through the Paid App credential" do
+        allow(github_client).to receive(:authenticated_login).and_return(nil)
 
-        expect(github_client).to have_received(:update_issue).with(
-          project.full_name, 42, title: "Updated title"
-        )
-        expect(result[:title]).to eq("Updated title")
+        expect do
+          tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
+        end.to raise_error(ArgumentError, /trusted human GitHub credential/)
+
+        expect(github_client).not_to have_received(:update_issue)
       end
     end
   end
