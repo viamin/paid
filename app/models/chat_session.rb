@@ -118,6 +118,10 @@ class ChatSession < ApplicationRecord
     status == "archived"
   end
 
+  def closed?
+    status == "closed"
+  end
+
   def interactive_inbox_chat?
     inbox_item_key.present?
   end

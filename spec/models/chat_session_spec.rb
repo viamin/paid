@@ -51,6 +51,15 @@ RSpec.describe ChatSession do
     end
   end
 
+  describe "status predicates" do
+    it "identifies closed sessions" do
+      # @spec QUESTION-EXPLORATION-001
+      chat_session.status = "closed"
+
+      expect(chat_session).to be_closed
+    end
+  end
+
   describe "legacy provider alias" do
     it "exposes runner_id through provider_id" do
       account = create(:account)
