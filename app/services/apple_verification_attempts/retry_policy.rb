@@ -54,7 +54,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :attempt
+    attr_reader :attempt, :max_retries
 
     def allow(classification)
       Decision.new(retryable: true, reason: "allowed", classification:)
@@ -66,10 +66,6 @@ module AppleVerificationAttempts
 
     def retry_budget_exhausted?
       attempt.retry_number >= max_retries
-    end
-
-    def max_retries
-      @max_retries
     end
   end
 end

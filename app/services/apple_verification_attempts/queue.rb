@@ -73,10 +73,7 @@ module AppleVerificationAttempts
       AppleVerificationAttempts::Cancel.call(attempt: attempt)
     end
 
-    def queue_depth_limit = @queue_depth_limit
-    def max_attempts_per_run = @max_attempts_per_run
-    def max_runtime_minutes = @max_runtime_minutes
-    def retained_storage_hours = @retained_storage_hours
+    attr_reader :queue_depth_limit, :max_attempts_per_run, :max_runtime_minutes, :retained_storage_hours
 
     def self.limits_for(
       queue_depth_limit: DEFAULT_QUEUE_DEPTH,
