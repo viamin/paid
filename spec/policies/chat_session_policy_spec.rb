@@ -3,6 +3,20 @@
 require "rails_helper"
 
 RSpec.describe ChatSessionPolicy do
+  describe "#destroy?" do
+    it "permits the interactive inbox chat creator with member-level project access" do
+      # @spec QUESTION-EXPLORATION-014
+      account = create(:account)
+      owner = create(:user, account:)
+      creator = create(:user, :viewer, account:)
+      project = create(:project, account:, created_by: owner)
+      create(:project_membership, :member, user: creator, project:)
+      inbox_chat = create(:chat_session, account:, project:, created_by: creator, inbox_item_key: "clarifying_questions:1")
+
+      expect(described_class.new(creator, inbox_chat)).to be_destroy
+    end
+  end
+
   describe "Scope" do
     it "keeps another account member's interactive inbox chat and messages out of the scope" do
       # @spec QUESTION-EXPLORATION-014

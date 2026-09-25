@@ -27,6 +27,8 @@ class ChatSessionPolicy < ApplicationPolicy
   end
 
   def destroy?
+    return inbox_chat_access? if record.interactive_inbox_chat?
+
     has_any_account_role?(:owner, :admin, :member)
   end
 

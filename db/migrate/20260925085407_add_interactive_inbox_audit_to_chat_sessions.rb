@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AddInteractiveInboxAuditToChatSessions < ActiveRecord::Migration[8.1]
+  disable_ddl_transaction!
+
   def up
     return unless table_exists?(:chat_sessions)
 
@@ -15,7 +17,10 @@ class AddInteractiveInboxAuditToChatSessions < ActiveRecord::Migration[8.1]
     return unless table_exists?(:chat_sessions)
 
     safety_assured do
-      remove_index :chat_sessions, name: "index_chat_sessions_active_inbox_item_per_creator", if_exists: true
+      remove_index :chat_sessions,
+        name: "index_chat_sessions_active_inbox_item_per_creator",
+        algorithm: :concurrently,
+        if_exists: true
       remove_column :chat_sessions, :closed_at if column_exists?(:chat_sessions, :closed_at)
       remove_column :chat_sessions, :opened_at if column_exists?(:chat_sessions, :opened_at)
       remove_column :chat_sessions, :inbox_item_metadata if column_exists?(:chat_sessions, :inbox_item_metadata)
@@ -59,6 +64,7 @@ class AddInteractiveInboxAuditToChatSessions < ActiveRecord::Migration[8.1]
     add_index :chat_sessions, [ :created_by_id, :inbox_item_key ],
       unique: true,
       where: "status = 'active' AND inbox_item_key IS NOT NULL",
-      name: "index_chat_sessions_active_inbox_item_per_creator"
+      name: "index_chat_sessions_active_inbox_item_per_creator",
+      algorithm: :concurrently
   end
 end
