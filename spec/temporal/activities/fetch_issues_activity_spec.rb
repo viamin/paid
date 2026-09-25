@@ -899,6 +899,16 @@ RSpec.describe Activities::FetchIssuesActivity do
         ))
       end
 
+      # @spec GITHUB-SYNC-012 GITHUB-SYNC-014
+      it "restores needs_input when an open pull request clarification gate drifts to failed" do
+        issue.update!(paid_state: "failed", is_pull_request: true)
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/92")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+      end
+
       # @spec GITHUB-SYNC-012
       it "repairs a drifted issue that is absent from an incremental response" do
         drifted_issue = create(:issue,

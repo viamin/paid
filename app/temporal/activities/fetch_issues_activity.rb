@@ -626,7 +626,7 @@ module Activities
     # Restores the answer gate when another state writer leaves persisted
     # questions and their GitHub label behind. A parked create_feature run with
     # a clarification-round identity remains the owner of its own wait.
-    # @spec GITHUB-SYNC-012
+    # @spec GITHUB-SYNC-012 GITHUB-SYNC-014
     def repair_needs_input_state_drift(project, ignored_issue_ids: [])
       ignored_issue_ids = ignored_issue_ids.to_set
       changed = false
@@ -662,7 +662,7 @@ module Activities
       label_conditions = labels.map { "labels @> ?::jsonb" }.join(" OR ")
 
       project.issues
-        .where(github_state: "open", is_pull_request: false)
+        .where(github_state: "open")
         .where.not(paid_state: "needs_input")
         .where.not(needs_input_questions: nil)
         .where(label_conditions, *labels.map { |label| [ label ].to_json })
@@ -670,7 +670,7 @@ module Activities
     end
 
     def repairable_needs_input_state_drift?(project, issue)
-      return false if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state == "needs_input"
+      return false if issue.github_state == "closed" || issue.paid_state == "needs_input"
       return false unless issue.needs_input_questions.present?
       return false unless project.needs_input_labels.any? { |label| issue.has_label?(label) }
 
