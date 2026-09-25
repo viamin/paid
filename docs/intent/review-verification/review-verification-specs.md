@@ -131,3 +131,19 @@
   `docs/intent/review-verification/review-verification-design.md`.
   *Tests:* segment registered in `docs/arrows/index.yaml`;
   `bin/coherence-check.mjs` passes with this segment.
+
+- [x] **REVIEW-VERIFY-011** — The system SHALL not enable specialist finder
+  roles or a second sweep by default merely because a reference workflow uses
+  multiple agents. Before either ships, a reproducible paired evaluation SHALL
+  compare the generic-finder baseline with one focused role or one second
+  generic sweep on the same pinned PR heads and under the same verification and
+  one-tracked-review publication policy. It SHALL measure incremental valid,
+  false/duplicate, and missed findings plus wall time and token cost by PR size
+  and review depth. Any evidence-supported implementation SHALL bound itself to
+  at most two finder calls and 15 combined candidates, verify all candidates,
+  deduplicate confirmed findings, and post only the final tracked GitHub
+  review.
+  *Docs:* `docs/intent/review-verification/review-verification-design.md`,
+  `docs/intent/review-verification/pilot-measurement.md`.
+  *Tests:* segment registered in `docs/arrows/index.yaml`;
+  `bin/coherence-check.mjs` passes with this segment.
