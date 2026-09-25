@@ -15,6 +15,7 @@ RSpec.describe Tools::EditIssue do
       42, "https://github.com/owner/repo/issues/42", "Updated title", "open"
     )
   end
+  let(:github_issue) { Struct.new(:state).new("open") }
 
 
   describe ".available_to?" do
@@ -43,12 +44,18 @@ RSpec.describe Tools::EditIssue do
     end
   end
 
+  describe ".description" do
+    it "directs new work related to closed issues to create_issue" do
+      expect(described_class.description).to include("use create_issue to file a follow-up")
+    end
+  end
+
   describe "#call" do
     before do
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
       allow(Issues::ParseDependencies).to receive(:call)
-      allow(github_client).to receive_messages(update_issue: updated_issue, labels: [
+      allow(github_client).to receive_messages(authenticated_login: project.allowed_github_usernames.first, issue: github_issue, update_issue: updated_issue, labels: [
         Struct.new(:name).new("bug"),
         Struct.new(:name).new("enhancement")
       ])
@@ -84,6 +91,87 @@ RSpec.describe Tools::EditIssue do
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, state: "closed")
       expect(Issues::ParseDependencies).not_to have_received(:call)
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-003
+    it "requires an explicit review confirmation before reopening a closed issue" do
+      create(:issue, project: project, github_number: 42, github_state: "closed")
+      allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true)
+      end.to raise_error(ArgumentError, /Reopen review confirmation required/)
+
+      expect(github_client).not_to have_received(:update_issue)
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-003
+    it "requires a reason before reopening a closed issue" do
+      create(:issue, project: project, github_number: 42, github_state: "closed")
+      allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
+          reopen_review_confirmed: true)
+      end.to raise_error(ArgumentError, /Reopen reason required/)
+
+      expect(github_client).not_to have_received(:update_issue)
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-003, ISSUE-REOPEN-REVIEW-004
+    it "records the reopener and reason after the caller explicitly confirms review" do
+      reopened_issue = create(:issue, project: project, github_number: 42, github_state: "closed")
+      allow(Issues::UpsertFromGithub).to receive(:call).and_return(reopened_issue)
+      allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
+          reopen_review_confirmed: true, reopen_reason: "The reported regression remains unresolved")
+      end.to change(AccountActivityEvent, :count).by(1)
+
+      expect(github_client).to have_received(:update_issue).with(project.full_name, 42, state: "open")
+      expect(reopened_issue.reload).to have_attributes(
+        reopened_by: user,
+        reopen_reason: "The reported regression remains unresolved"
+      )
+      expect(reopened_issue.reopened_at).to be_present
+
+      event = AccountActivityEvent.last
+      expect(event.action).to eq("issue.reopened")
+      expect(event.actor).to eq(user)
+      expect(event.metadata).to include(
+        "issue_number" => 42,
+        "reason" => "The reported regression remains unresolved"
+      )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-003, ISSUE-REOPEN-REVIEW-004
+    it "uses GitHub's current state when the local issue is stale" do
+      stale_issue = create(:issue, project: project, github_number: 42, github_state: "open")
+      allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(Struct.new(:state).new("closed"))
+      allow(Issues::UpsertFromGithub).to receive(:call).and_return(stale_issue)
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true)
+      end.to raise_error(ArgumentError, /Reopen review confirmation required/)
+
+      tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
+        reopen_review_confirmed: true, reopen_reason: "The issue was closed after the last sync")
+
+      expect(stale_issue.reload).to be_reopen_review_pending
+      expect(stale_issue).to have_attributes(reopened_by: user, reopen_reason: "The issue was closed after the last sync")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-002
+    it "refuses to close an issue while its reopen review is pending" do
+      create(:issue, project: project, github_number: 42, github_state: "open",
+        paid_state: "manual_review", manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "closed", confirmed: true)
+      end.to raise_error(ArgumentError, /reopen review is pending/)
+
+      expect(github_client).not_to have_received(:update_issue)
     end
 
     it "updates multiple fields at once" do
@@ -166,13 +254,15 @@ RSpec.describe Tools::EditIssue do
         allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_installation_token")
       end
 
-      it "edits an issue using the installation credential" do
-        result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
+      # @spec GITHUB-SYNC-013
+      it "rejects a chat edit made through the Paid App credential" do
+        allow(github_client).to receive(:authenticated_login).and_return(nil)
 
-        expect(github_client).to have_received(:update_issue).with(
-          project.full_name, 42, title: "Updated title"
-        )
-        expect(result[:title]).to eq("Updated title")
+        expect do
+          tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
+        end.to raise_error(ArgumentError, /trusted human GitHub credential/)
+
+        expect(github_client).not_to have_received(:update_issue)
       end
     end
   end

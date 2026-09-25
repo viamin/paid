@@ -56,6 +56,11 @@ comment. The identity is saved before posting. A retry or restarted workflow
 first reconciles issue comments with that identity, then persists the local
 needs-input state without reposting if GitHub already accepted the comment.
 Answering clears the identity, allowing a later genuinely new round to post.
+Run-start processing preserves that human-owned pause: a pending clarification
+round blocks `create_pr` before it can overwrite the issue's state. Other run
+goals may start, but leave that clarification-owned state unchanged. The
+resumed `create_feature` run proceeds only after answer handling clears the
+pending label and stored questions.
 
 ## Worker Capacity Model
 

@@ -40,16 +40,21 @@ module TestAgentHealthCheckFallback
       test_run.with_container do |run|
         executor = Containers::HarnessExecutor.new(run)
         prepare_kilocode_config!(run) if kilocode_direct_outbound?
-        AgentHarness.check_provider(
-          harness_health_check_key,
-          timeout: self.class::TIMEOUT,
-          executor: executor,
-          provider_runtime: container_provider_runtime
-        )
+        container_health_check(run, executor)
       end
     ensure
       test_run.destroy! if test_run&.persisted?
     end
+  end
+
+  # Runs the agent-harness smoke_test contract inside a provisioned container.
+  def container_health_check(_run, executor)
+    AgentHarness.check_provider(
+      harness_health_check_key,
+      timeout: self.class::TIMEOUT,
+      executor: executor,
+      provider_runtime: container_provider_runtime
+    )
   end
 
   # Runs the agent-harness smoke_test contract inside a provisioned container.

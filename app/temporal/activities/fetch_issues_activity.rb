@@ -11,6 +11,7 @@ module Activities
     DEFAULT_PER_PAGE = 100
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
+    ORPHANED_NEEDS_INPUT_LABEL_BATCH_SIZE = 100
     ISSUE_RECONCILIATION_INTERVAL = 1.hour
     PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
 
@@ -63,6 +64,16 @@ module Activities
         )
         sync_changed = needs_input_changed || sync_changed
 
+        manually_added_needs_input_changed = detect_needs_input_label_additions(
+          project,
+          synced_issues,
+          client: client
+        )
+        sync_changed = manually_added_needs_input_changed || sync_changed
+
+        orphaned_needs_input_changed = repair_orphaned_needs_input_labels(project, client: client)
+        sync_changed = orphaned_needs_input_changed || sync_changed
+
         invalid_needs_input_changed = repair_questionless_needs_input(
           project,
           synced_issues,
@@ -70,6 +81,12 @@ module Activities
           ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
         )
         sync_changed = invalid_needs_input_changed || sync_changed
+
+        needs_input_state_changed = repair_needs_input_state_drift(
+          project,
+          ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
+        )
+        sync_changed = needs_input_state_changed || sync_changed
 
         paused_changed = sync_paused_state(project, synced_issues)
         sync_changed = paused_changed || sync_changed
@@ -86,7 +103,8 @@ module Activities
             project,
             client,
             eager_queue_enabled: eager_queue_enabled,
-            eligible_issues: eligible_issues
+            eligible_issues: eligible_issues,
+            open_pull_request_numbers: stale_pr_result[:open_pull_request_numbers]
           )
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed = stale_issue_result[:changed] || sync_changed
@@ -304,11 +322,15 @@ module Activities
       rounds_reset = reset_enhancement_rounds_on_trusted_body_edit!(
         issue, trusted: trusted, rounds_before_reset: rounds_before_reset, body_changed: body_changed_in_upsert
       )
+      added_labels = issue.labels - previous_labels
+      if (added_labels & project.needs_input_labels).any?
+        issue.update!(orphaned_needs_input_label_evaluated_at: nil)
+      end
       collect_eligible_issue(project, issue, eligible_issues) if eager_queue_enabled
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
-        changed: upsert_changed || rounds_reset }
+        added_labels: added_labels, changed: upsert_changed || rounds_reset }
     end
 
     # @spec ISSUE-ENHANCEMENT-016
@@ -384,7 +406,7 @@ module Activities
         next unless Array(issue_data[:removed_labels]).include?(label)
 
         issue = project.issues.find(issue_data[:id])
-        next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
+        next if issue.github_state == "closed" || issue.paid_state != "needs_input"
 
         handled_issue_ids << issue.id
         changed = true
@@ -441,7 +463,7 @@ module Activities
         next unless Array(issue_data[:removed_labels]).include?(needs_input_label)
 
         issue = project.issues.find(issue_data[:id])
-        next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
+        next if issue.github_state == "closed" || issue.paid_state != "needs_input"
 
         # Removing the needs-input label is meaningful human signal — the
         # operator has either answered in-thread, edited the body, or otherwise
@@ -466,12 +488,9 @@ module Activities
       changed
     end
 
+    # @spec GITHUB-SYNC-014
     def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
-      repair_labels = [
-        project.enhance_issue_needs_input_label_name,
-        project.label_for_stage("needs_input"),
-        Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
-      ].compact.uniq
+      repair_labels = project.needs_input_labels
       synced_issues = Array(synced_issues)
       return false if synced_issues.empty?
 
@@ -482,7 +501,7 @@ module Activities
         next if ignored_issue_ids.include?(issue_data[:id])
 
         issue = project.issues.find(issue_data[:id])
-        next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
+        next if issue.github_state == "closed" || issue.paid_state != "needs_input"
         next if pending_clarifying_questions_for(project, issue).any?
         next unless issue.reload.paid_state == "needs_input"
 
@@ -504,6 +523,158 @@ module Activities
       end
 
       changed
+    end
+
+    # @spec GITHUB-SYNC-012
+    def detect_needs_input_label_additions(project, synced_issues, client:)
+      cleanup_orphaned_needs_input_labels(project, synced_issues, client:) do |issue_data, labels|
+        Array(issue_data[:added_labels]) & labels
+      end
+    end
+
+    # A prior sync may already have persisted a manually added label before
+    # this behavior shipped. Re-evaluate it so orphaned status markers receive
+    # the same cleanup. Rows with persisted questions belong to state-drift
+    # repair instead, which preserves a real clarification gate.
+    # @spec GITHUB-SYNC-012
+    def repair_orphaned_needs_input_labels(project, client:)
+      cleanup_orphaned_needs_input_labels(project, orphaned_needs_input_label_candidates(project), client:) do |issue_data, labels|
+        Array(issue_data[:labels]) & labels
+      end
+    end
+
+    def orphaned_needs_input_label_candidates(project)
+      return [] if project.needs_input_labels.empty?
+
+      project.issues
+        .where(github_state: "open", is_pull_request: false)
+        .where.not(paid_state: "needs_input")
+        .where(needs_input_questions: nil)
+        .where(orphaned_needs_input_label_evaluated_at: nil)
+        .where(or_label_conditions(project.needs_input_labels))
+        .order(:id)
+        .limit(ORPHANED_NEEDS_INPUT_LABEL_BATCH_SIZE)
+        .pluck(:id, :labels)
+        .map { |id, labels| { id:, labels: } }
+    end
+
+    def or_label_conditions(labels)
+      conditions = labels.map { "labels @> ?::jsonb" }.join(" OR ")
+      [ conditions, *labels.map { |label| [ label ].to_json } ]
+    end
+
+    def cleanup_orphaned_needs_input_labels(project, synced_issues, client:)
+      labels = project.needs_input_labels
+      changed = false
+
+      Array(synced_issues).each_with_index do |issue_data, index|
+        heartbeat("fetch_issues.orphaned_needs_input", project_id: project.id, issue_id: issue_data[:id], index: index, total: synced_issues.size)
+        issue = project.issues.find(issue_data[:id])
+        next if issue.paid_state == "needs_input" || issue.needs_input_questions.present?
+
+        label_trust = yield(issue_data, labels).to_h do |label|
+          [ label, Automation::LabelPolicy.label_addition_trust(project, issue, label) ]
+        end
+        next if label_trust.value?(:unknown)
+
+        orphaned_labels = label_trust.select { |_label, trust| trust == :trusted }.keys
+        unless orphaned_labels.empty?
+          next unless remove_invalid_needs_input_labels(client, project, issue, orphaned_labels)
+
+          issue.update!(labels: Array(issue.labels) - orphaned_labels)
+          post_manually_added_needs_input_label_comment(client, project, issue, orphaned_labels)
+          changed = true
+
+          logger.info(
+            message: "github_sync.needs_input_label_added_ignored",
+            project_id: project.id,
+            issue_id: issue.id,
+            issue_number: issue.github_number,
+            labels: orphaned_labels
+          )
+        end
+
+        issue.update!(orphaned_needs_input_label_evaluated_at: Time.current)
+      end
+
+      changed
+    end
+
+    def post_manually_added_needs_input_label_comment(client, project, issue, labels)
+      client.add_comment(project.full_name, issue.github_number, manually_added_needs_input_label_comment(labels))
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.needs_input_label_added_comment_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+    end
+
+    def manually_added_needs_input_label_comment(labels)
+      [
+        "<!-- paid:manually-added-needs-input-label -->",
+        "## Paid status label removed",
+        "",
+        "#{labels.to_sentence} is a Paid-managed status label. Adding it manually does not create Inbox clarifying questions or pause automation.",
+        "",
+        "Answer existing clarifying questions in the Inbox, or re-trigger the supported automation flow to request work. To pause automation, use `#{Issue::PAUSED_LABEL}`."
+      ].join("\n")
+    end
+
+    # Restores the answer gate when another state writer leaves persisted
+    # questions and their GitHub label behind. A parked create_feature run with
+    # a clarification-round identity remains the owner of its own wait.
+    # @spec GITHUB-SYNC-012 GITHUB-SYNC-014
+    def repair_needs_input_state_drift(project, ignored_issue_ids: [])
+      ignored_issue_ids = ignored_issue_ids.to_set
+      changed = false
+
+      needs_input_state_drift_candidates(project, ignored_issue_ids).find_each.with_index do |issue, index|
+        heartbeat("fetch_issues.needs_input_state_drift", project_id: project.id, issue_id: issue.id, index: index)
+        paid_state_before = nil
+        repaired = issue.with_lock do
+          issue.reload
+          next false unless repairable_needs_input_state_drift?(project, issue)
+
+          paid_state_before = issue.paid_state
+          issue.update!(paid_state: "needs_input")
+          true
+        end
+        next unless repaired
+
+        changed = true
+        logger.info(
+          message: "github_sync.needs_input_state_repaired",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          paid_state_before: paid_state_before
+        )
+      end
+
+      changed
+    end
+
+    def needs_input_state_drift_candidates(project, ignored_issue_ids)
+      labels = project.needs_input_labels
+      label_conditions = labels.map { "labels @> ?::jsonb" }.join(" OR ")
+
+      project.issues
+        .where(github_state: "open")
+        .where.not(paid_state: "needs_input")
+        .where.not(needs_input_questions: nil)
+        .where(label_conditions, *labels.map { |label| [ label ].to_json })
+        .where.not(id: ignored_issue_ids.to_a)
+    end
+
+    def repairable_needs_input_state_drift?(project, issue)
+      return false if issue.github_state == "closed" || issue.paid_state == "needs_input"
+      return false unless issue.needs_input_questions.present?
+      return false unless project.needs_input_labels.any? { |label| issue.has_label?(label) }
+
+      !AgentRun.awaiting_human_clarification.where(issue: issue).exists?
     end
 
     def pending_clarifying_questions_for(project, issue)
@@ -973,7 +1144,7 @@ module Activities
 
     def reconcile_open_pull_requests(project, client)
       open_pr_numbers, truncated = fetch_open_pull_request_numbers(client, project.full_name)
-      return { changed: false, closed_count: 0 } if truncated
+      return { changed: false, closed_count: 0, open_pull_request_numbers: [] } if truncated
 
       backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
       dependency_changed = open_pr_numbers.any? && resolve_external_dependencies(project, open_pr_numbers)
@@ -981,7 +1152,8 @@ module Activities
 
       {
         changed: backfilled_count.positive? || dependency_changed || closed_count.positive?,
-        closed_count: closed_count
+        closed_count: closed_count,
+        open_pull_request_numbers: open_pr_numbers
       }
     end
 
@@ -1141,7 +1313,7 @@ module Activities
     # Mirrors reconcile_open_pull_requests for issues. Fetches all open issue
     # numbers from GitHub and closes locally-open issues not in that set.
     # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API cost.
-    def reconcile_open_issues(project, client, eager_queue_enabled: false, eligible_issues: nil)
+    def reconcile_open_issues(project, client, eager_queue_enabled: false, eligible_issues: nil, open_pull_request_numbers: [])
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
       open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
@@ -1192,7 +1364,12 @@ module Activities
       {
         changed: backfilled_count.positive? || reconciled_count.positive? || count.positive?,
         closed_count: count,
-        synced_issues: questionless_needs_input_candidates(project, synced_issues, open_numbers)
+        synced_issues: questionless_needs_input_candidates(
+          project,
+          synced_issues,
+          open_numbers,
+          open_pull_request_numbers
+        )
       }
     end
 
@@ -1269,11 +1446,16 @@ module Activities
       last.nil? || last < ISSUE_RECONCILIATION_INTERVAL.ago
     end
 
-    def questionless_needs_input_candidates(project, synced_issues, open_numbers)
+    def questionless_needs_input_candidates(project, synced_issues, open_numbers, open_pull_request_numbers)
       candidate_ids = synced_issues.filter_map { |issue_data| issue_data[:id] }
       candidate_ids.concat(
         project.issues
           .where(github_state: "open", is_pull_request: false, paid_state: "needs_input", github_number: open_numbers)
+          .pluck(:id)
+      )
+      candidate_ids.concat(
+        project.issues
+          .where(github_state: "open", is_pull_request: true, paid_state: "needs_input", github_number: open_pull_request_numbers)
           .pluck(:id)
       )
       candidate_ids.uniq.map { |id| { id: id } }

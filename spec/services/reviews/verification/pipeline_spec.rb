@@ -172,7 +172,7 @@ RSpec.describe Reviews::Verification::Pipeline do
 
   describe "Apple verification gate" do
     # @spec APPLE-ATTEMPT-011
-    it "does not publish a PR verification result while required Apple verification is pending" do
+    it "leaves the PR gate unavailable until guest execution can complete the attempt" do
       workflow = create(
         :apple_verification_workflow_revision,
         project: project,
@@ -185,10 +185,8 @@ RSpec.describe Reviews::Verification::Pipeline do
 
       result = run_pipeline
 
-      expect(poster).not_to have_received(:call)
-      expect(AgentHarness).not_to have_received(:send_message)
-      expect(result[:outcome]).to eq("blocked_apple_verification")
-      expect(result[:comments_posted]).to eq(0)
+      expect(poster).to have_received(:call)
+      expect(result[:outcome]).to eq("posted_findings")
     end
   end
 

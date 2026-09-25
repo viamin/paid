@@ -1916,6 +1916,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_084559) do
     t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "no_code_required_at", comment: "When non-null, an agent explicitly declared this issue's work complete without a code change (no_code_required outcome). Permanently excludes the issue from auto-pick's completed-issue recovery path even though paid_state is 'completed', so it does not loop back into the queue on its own; only a manually triggered run can pick it up again."
     t.datetime "operational_failure_reset_at"
+    t.datetime "orphaned_needs_input_label_evaluated_at", comment: "When the historical questionless needs-input label reconciliation last evaluated this issue. Cleared labels do not need a later backfill scan; labels added after the evaluation are handled directly by the GitHub sync delta."
     t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
@@ -1929,6 +1930,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_084559) do
     t.bigint "project_id", null: false
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
+    t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
+    t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false
     t.datetime "review_goal_retry_reset_at"
     t.text "runner_retry_abandon_reason", comment: "Human-readable reason the issue was abandoned due to the retry cap."
@@ -1946,12 +1950,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_084559) do
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
+    t.index ["project_id", "orphaned_needs_input_label_evaluated_at"], name: "index_issues_pending_orphaned_needs_input_label_evaluation", where: "(orphaned_needs_input_label_evaluated_at IS NULL)"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "paused"], name: "index_issues_on_project_id_and_paused"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
+    t.index ["reopened_by_id"], name: "index_issues_on_reopened_by_id"
     t.index ["source"], name: "index_issues_on_source"
   end
 
@@ -3907,6 +3913,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_084559) do
   add_foreign_key "issue_merge_subscriptions", "users"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
   add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
