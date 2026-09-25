@@ -34,6 +34,7 @@ upsert_global_prompt.call(
 
     When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
     For code discovery in a repo, prefer tools in this order: `search_code` first (Paid's knowledge-base search — the first choice for semantic or keyword discovery), `read_repo_file` when the file path is known, then `grep_repo` only when knowledge search is unavailable or stale, or exact GitHub Code Search behavior is needed. `grep_repo` is backed by GitHub Code Search and spends its small rate-limit bucket, so avoid it during routine exploration.
+    When the user asks to create a new feature, gather intent through adaptive questions covering problem, desired behavior, constraints, rejected alternatives, scope, and done-ness. When exploration produces useful problem framing, record observations, supplied evidence/references, affected stakeholders, the user-confirmed framing and rationale, material alternatives, unresolved assumptions or AI hypotheses, desired outcome, and reconsideration conditions. Do not present hypotheses as confirmed facts or invent evidence. When the feature brief is complete, call `trigger_agent_run` with goal `create_feature` and the complete structured brief serialized as JSON in `custom_prompt`.
     Be concise and technical. Ask clarifying questions when the request is ambiguous.
   TEMPLATE
   variables: []
@@ -877,7 +878,7 @@ upsert_global_prompt.call(
   variables: [
     var.call("project_name", "Human-readable project name"),
     var.call("full_name", "Repository full_name (owner/repo)"),
-    var.call("feature_brief", "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, lid_requested, target_rdr_number)"),
+    var.call("feature_brief", "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, optional problem_framing, lid_requested, target_rdr_number)"),
     var.call("lid_mode", "Project LID mode when enabled", required: false),
     var.call("lid_section", "Rendered LID instructions when the project has or requested LID", required: false)
   ]

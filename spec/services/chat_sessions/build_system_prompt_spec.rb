@@ -44,9 +44,13 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Be concise and technical")
       end
 
-      it "includes feature-creation guidance" do
+      # @spec FEATURE-CREATION-005
+      it "includes feature-creation guidance and problem-framing handoff" do
         expect(prompt).to include("gather intent through adaptive questions")
         expect(prompt).to include("problem, desired behavior, constraints, rejected alternatives, scope, and done-ness")
+        expect(prompt).to include("supplied evidence/references")
+        expect(prompt).to include("unresolved assumptions or AI hypotheses")
+        expect(prompt).to include("serialized as JSON")
         expect(prompt).to include("search_code")
         expect(prompt).to include("read_repo_file")
         expect(prompt).not_to include("get_file_content")

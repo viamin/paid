@@ -21,6 +21,20 @@ RSpec.describe Prompts::BuildForCreateFeature do
       "target_rdr_number" => nil
     }
   end
+  let(:problem_framing) do
+    {
+      "observations" => [ "Reviewers wait for assignment context" ],
+      "evidence_references" => [ "Support ticket #123" ],
+      "affected_stakeholders" => [ "Reviewers", "Authors" ],
+      "selected_framing" => "Reduce avoidable reviewer waiting time",
+      "selected_framing_rationale" => "The user confirmed this priority",
+      "alternative_framings" => [ "Increase reviewer capacity" ],
+      "unresolved_assumptions" => [ "Notifications reach active reviewers" ],
+      "desired_outcome" => "Review waiting time decreases",
+      "reconsideration_conditions" => [ "Waiting time does not improve after adoption" ]
+    }
+  end
+  let(:enriched_feature_brief) { feature_brief.merge("problem_framing" => problem_framing) }
 
   describe ".call" do
     it "returns a String prompt that contains the feature brief and instructions" do
@@ -135,6 +149,28 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("# Feature brief")
       expect(prompt).to include("# Instructions")
       expect(prompt).to include("# Rules")
+    end
+
+    # @spec FEATURE-CREATION-006
+    it "renders problem framing with evidence, hypotheses, and outcome distinctly" do
+      prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: enriched_feature_brief)
+
+      expect(prompt).to include(
+        "Problem framing:",
+        "Supplied evidence/references:",
+        "User-confirmed selected framing:",
+        "Unresolved assumptions / AI hypotheses:",
+        "Desired user outcome (not yet achieved):",
+        "Conditions to reconsider:"
+      )
+      expect(prompt).to include(*problem_framing.values.flatten)
+      expect(prompt).to include("notifications are delivered correctly")
+    end
+
+    it "does not add a problem-framing section for an ordinary brief" do
+      prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: feature_brief)
+
+      expect(prompt).not_to include("Problem framing:")
     end
   end
 

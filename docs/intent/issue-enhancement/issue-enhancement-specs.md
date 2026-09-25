@@ -28,6 +28,31 @@
   *Code:* `app/services/clarifying_questions/clear_needs_input.rb`,
   `app/services/features/clarifying_questions/analyze.rb`.
 
+- [x] **FEATURE-CREATION-005** — When chat or a direct tool call starts a
+  `create_feature` run with optional `problem_framing`, the system SHALL
+  normalize and store it in `external_metadata["feature_brief"]`. It SHALL
+  preserve observations, supplied evidence/references, affected stakeholders,
+  selected framing and rationale, alternatives, unresolved assumptions or AI
+  hypotheses, desired outcome, and reconsideration conditions without
+  representing hypotheses as confirmed facts. Briefs without it SHALL retain
+  the existing path without added questions or gates.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`,
+  `spec/mcp/tools/trigger_agent_run_spec.rb`.
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb`,
+  `app/mcp/tools/trigger_agent_run.rb`.
+
+- [x] **FEATURE-CREATION-006** — When a create-feature clarification pass
+  refines an enriched brief, it SHALL retain prior settled problem-framing
+  fields that the admitted answer does not replace. The rendered design prompt
+  SHALL distinguish user-confirmed choices, supplied evidence, and hypotheses;
+  use framing in Problem Statement, Context/Research Findings, Alternatives
+  Considered, and Validation; and separate implementation acceptance from an
+  unachieved desired outcome.
+  *Tests:* `spec/services/features/clarifying_questions/analyze_spec.rb`,
+  `spec/services/prompts/build_for_create_feature_spec.rb`.
+  *Code:* `app/services/features/clarifying_questions/analyze.rb`,
+  `app/services/prompts/build_for_create_feature.rb`.
+
 - [x] **ISSUE-ENHANCEMENT-001** — When issue enhancement determines that an
   issue lacks implementation-ready context, the system SHALL ask clarifying
   questions in plain language about the problem, desired behavior, constraints,

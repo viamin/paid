@@ -52,6 +52,23 @@ The enhancement comment and its questions are written in simplified technical
 English: short sentences with one idea per sentence, plain technical words, no
 nested clauses or stacked jargon, keeping technical meaning precise (#3840).
 
+## Feature-brief problem framing
+
+The `create_feature` use of this clarification path may include an optional
+`problem_framing` object in its existing feature brief. It preserves reasoning
+from chat exploration without adding a discovery mode, stored workflow, or
+approval boundary. It may record observations and user-supplied evidence or
+references, affected stakeholders, the selected framing and rationale,
+material alternatives, unresolved assumptions or AI hypotheses, the desired
+user outcome, and conditions that justify reconsidering the framing.
+
+The brief stays in `AgentRun#external_metadata["feature_brief"]`. Chat/tool
+entry normalizes it there; clarification deep-merges later answers so omitted
+optional fields do not discard settled intent. Supplied evidence remains
+supplied, user-confirmed choices remain confirmed, and hypotheses remain
+explicitly uncertain. Missing problem framing adds neither questions nor a
+blocker to the ordinary create-feature path.
+
 The activity still emits the same markdown shape:
 
 - `## Clarifying questions`

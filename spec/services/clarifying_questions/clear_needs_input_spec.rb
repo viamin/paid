@@ -191,6 +191,20 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         expect(brief["problem"]).to eq("Need dark theme")
       end
 
+      # @spec FEATURE-CREATION-006
+      it "preserves settled problem framing while the run resumes for admitted answers" do
+        framing = {
+          "evidence_references" => [ "Support ticket #123" ],
+          "selected_framing" => "Reduce reviewer waiting time",
+          "unresolved_assumptions" => [ "Notifications reach active reviewers" ]
+        }
+        agent_run.update!(external_metadata: agent_run.external_metadata.deep_merge("feature_brief" => { "problem_framing" => framing }))
+
+        described_class.call(project: project, issue: issue)
+
+        expect(agent_run.reload.external_metadata.dig("feature_brief", "problem_framing")).to eq(framing)
+      end
+
       it "does not reset paid_state to new" do
         described_class.call(project: project, issue: issue)
         expect(issue.reload.paid_state).to eq("needs_input")
