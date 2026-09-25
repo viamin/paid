@@ -21,8 +21,10 @@
   system SHALL recheck host disk and memory thresholds; crossing a normal
   admission threshold SHALL stop new admissions, and a running attempt SHALL
   be terminated only for an actual host-safety condition.
-  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
-  *Code:* `AppleVerificationAttempts::Admission`
+  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`,
+  `spec/jobs/apple_verification_attempt_maintenance_job_spec.rb`
+  *Code:* `AppleVerificationAttempts::Admission`,
+  `AppleVerificationAttemptMaintenanceJob`
 
 - [x] **APPLE-ATTEMPT-003** — When the active Apple worker slot is occupied,
   attempts SHALL queue fairly by account and project, expose queue position,
@@ -103,8 +105,11 @@
   the `pull_request_verification` gate, it SHALL block Paid's PR verification
   result; enforcement SHALL bind the approved committed workflow digest and
   its approved lifecycle gate.
-  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
-  *Code:* `AppleVerificationAttempts::GateEnforcement`
+  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
+  `spec/models/agent_run_spec.rb`,
+  `spec/services/reviews/verification/pipeline_spec.rb`
+  *Code:* `AppleVerificationAttempts::GateEnforcement`, `AgentRun`,
+  `Reviews::Verification::Pipeline`
 
 - [x] **APPLE-ATTEMPT-012** — A draft workflow revision or advisory check
   SHALL NOT block agent completion or PR verification, and a missing or failed
