@@ -55,6 +55,15 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def label_event(event:, login:, label:, created_at: Time.current)
+    OpenStruct.new(
+      event: event,
+      actor: OpenStruct.new(login: login),
+      label: OpenStruct.new(name: label),
+      created_at: created_at
+    )
+  end
+
   def github_pr_issue(number)
     OpenStruct.new(
       id: 5000 + number,
@@ -812,6 +821,34 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
       end
 
+      # @spec GITHUB-SYNC-014
+      it "repairs an open pull request that has no questions to answer" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/92")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload).to have_attributes(paid_state: "failed", is_pull_request: true)
+        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+        expect(github_client).to have_received(:remove_labels_from_issue).with(
+          project.full_name,
+          issue.github_number,
+          [ project.enhance_issue_needs_input_label_name ]
+        )
+      end
+
+      # @spec GITHUB-SYNC-014
+      it "does not repeatedly repair a closed pull request" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        github_issue.state = "closed"
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/92")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload).to have_attributes(paid_state: "needs_input", github_state: "closed")
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+      end
+
       it "keeps comment-backed clarifying questions in needs-input" do
         issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
         allow(github_client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return([
@@ -843,6 +880,63 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(issue.reload.paid_state).to eq("needs_input")
         expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "restores needs_input when a labeled clarification gate drifts to failed" do
+        issue.update!(paid_state: "failed")
+        allow(Rails.logger).to receive(:info)
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "github_sync.needs_input_state_repaired",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          paid_state_before: "failed"
+        ))
+      end
+
+      # @spec GITHUB-SYNC-012 GITHUB-SYNC-014
+      it "restores needs_input when an open pull request clarification gate drifts to failed" do
+        issue.update!(paid_state: "failed", is_pull_request: true)
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/92")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("needs_input")
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "repairs a drifted issue that is absent from an incremental response" do
+        drifted_issue = create(:issue,
+          project: project,
+          github_issue_id: 9103,
+          github_number: 93,
+          paid_state: "failed",
+          labels: [ project.enhance_issue_needs_input_label_name ],
+          needs_input_questions: [ "Which behavior should Paid implement?" ])
+
+        activity.execute(project_id: project.id)
+
+        expect(drifted_issue.reload.paid_state).to eq("needs_input")
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "does not replace the state while a clarification run still owns the wait" do
+        issue.update!(paid_state: "in_progress")
+        create(:agent_run,
+          project: project,
+          issue: issue,
+          goal: "create_feature",
+          status: "paused",
+          external_metadata: { AgentRun::FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY => "round-1" })
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("in_progress")
       end
     end
 
@@ -882,6 +976,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_issues_by_label(nil => [ github_issue ])
       end
 
+      # @spec GITHUB-SYNC-012
       it "transitions paid_state to new" do
         activity.execute(project_id: project.id)
 
@@ -918,12 +1013,13 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.reload.paid_state).to eq("needs_input")
       end
 
-      it "does not transition when issue is a pull request" do
+      # @spec GITHUB-SYNC-014
+      it "transitions an open pull request when the needs-input label is removed" do
         github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/93")
 
         activity.execute(project_id: project.id)
 
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.reload.paid_state).to eq("new")
       end
 
       it "does not transition when paid_state is not needs_input" do
@@ -944,6 +1040,98 @@ RSpec.describe Activities::FetchIssuesActivity do
         activity.execute(project_id: project.id)
 
         expect(issue.reload.paid_state).to eq("needs_input")
+      end
+    end
+
+    context "when a trusted user manually adds paid-needs-input" do
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9501, github_number: 96,
+          labels: [ "paid-build" ], paid_state: "new")
+      end
+      let(:synced_github_issue) { github_issue(96, id: issue.github_issue_id, labels: [ "paid-build", "paid-needs-input" ]) }
+
+      before do
+        stub_issues_by_label(nil => [ synced_github_issue ])
+        allow(Rails.logger).to receive(:info)
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "viamin", label: "paid-needs-input")
+        ])
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "removes the orphaned label and explains the supported flows" do
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload).to have_attributes(paid_state: "new", labels: [ "paid-build" ])
+        expect(github_client).to have_received(:remove_labels_from_issue).with(project.full_name, issue.github_number, [ "paid-needs-input" ])
+        expect(github_client).to have_received(:add_comment).with(project.full_name, issue.github_number, a_string_including("paid-needs-input").and(include("paid-paused")))
+        expect(Rails.logger).to have_received(:info).with(hash_including(message: "github_sync.needs_input_label_added_ignored", issue_id: issue.id))
+      end
+
+      it "does not remove a label last added by an untrusted user" do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.labels).to include("paid-needs-input")
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "records an untrusted historical label evaluation so it is not rescanned" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        issue.update!(labels: [ "paid-build", "paid-needs-input" ])
+        stub_issues_by_label(nil => [])
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.orphaned_needs_input_label_evaluated_at).to be_present
+        expect(github_client).to have_received(:issue_events).once
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "processes historical orphaned labels in bounded batches" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        stub_issues_by_label(nil => [])
+        allow(github_client).to receive(:issue_events).and_return([
+          label_event(event: "labeled", login: "attacker", label: "paid-needs-input")
+        ])
+        create_list(:issue, 101, project:, labels: [ "paid-needs-input" ], paid_state: "new")
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_events).exactly(100).times
+      end
+
+      it "does not remove a label last added by Paid" do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          label_event(event: "labeled", login: Github::AppRegistry.bot_login, label: "paid-needs-input")
+        ])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.labels).to include("paid-needs-input")
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      # @spec GITHUB-SYNC-012
+      it "cleans up an orphaned label omitted from the incremental GitHub fetch" do
+        project.update!(last_issue_sync_at: Time.current, last_issue_reconciliation_at: Time.current)
+        issue.update!(labels: [ "paid-build", "paid-needs-input" ])
+        stub_issues_by_label(nil => [])
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.labels).to eq([ "paid-build" ])
+        expect(github_client).to have_received(:remove_labels_from_issue).with(project.full_name, issue.github_number, [ "paid-needs-input" ])
       end
     end
 
@@ -2589,6 +2777,28 @@ RSpec.describe Activities::FetchIssuesActivity do
 
           expect(issue.reload.paid_state).to eq("failed")
           expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+          expect(github_client).to have_received(:remove_labels_from_issue).with(
+            project.full_name,
+            issue.github_number,
+            [ project.enhance_issue_needs_input_label_name ]
+          )
+        end
+
+        # @spec GITHUB-SYNC-014
+        it "repairs an open pull request omitted from the incremental response" do
+          issue = create(:issue, :needs_input,
+            project: project,
+            github_issue_id: 7060,
+            github_number: 60,
+            is_pull_request: true,
+            labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
+            needs_input_questions: nil,
+            body: "No clarifying questions here")
+          allow(github_client).to receive(:pull_requests).and_return([ OpenStruct.new(number: issue.github_number) ])
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
           expect(github_client).to have_received(:remove_labels_from_issue).with(
             project.full_name,
             issue.github_number,

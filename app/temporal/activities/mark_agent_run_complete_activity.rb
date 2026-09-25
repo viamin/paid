@@ -22,7 +22,11 @@ module Activities
 
           if agent_run.issue && agent_run.status != "no_output"
             paid_state = agent_run.analyze_issue_goal? ? "analyzed" : "completed"
-            agent_run.issue.update!(paid_state: paid_state)
+            if paid_state == "completed"
+              agent_run.issue.complete_unless_reopen_review_pending!
+            else
+              agent_run.issue.update!(paid_state: paid_state)
+            end
           end
 
           logger.info(

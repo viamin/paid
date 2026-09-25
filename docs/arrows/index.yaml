@@ -183,6 +183,14 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-03
+  issue-reopen-review:
+    title: Issue Reopen Review
+    path: docs/intent/issue-reopen-review/issue-reopen-review-design.md
+    specs: docs/intent/issue-reopen-review/issue-reopen-review-specs.md
+    parent: PAID
+    taxonomy: orchestration
+    status: OK
+    audited: 2026-09-24
   api-mode-chat:
     title: API-Mode Chat
     path: docs/intent/api-mode-chat/api-mode-chat-design.md

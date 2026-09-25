@@ -36,6 +36,38 @@ Issue and PR state is cached locally at multiple layers:
 - request-time API objects such as issues, pull requests, and repo metadata use
   cache invalidation keyed by GitHub webhook event type
 
+Signed `issues` webhooks are the authoritative attribution point for externally
+initiated issue lifecycle mutations. When GitHub reports that an issue was
+reopened or edited, Paid evaluates the webhook sender against the project's
+explicit, case-insensitive human GitHub allowlist. The project's implicit Paid
+App bot identity is deliberately excluded from human mutation authority, but a
+sender matching that identity is recognized as an autonomous Paid write and
+preserved. Chat issue edits require a credential authenticated as an allowlisted
+human before they write, so a chat user cannot use the Paid App bot identity to
+bypass the allowlist. A sender that is neither allowlisted nor the project's App
+bot causes Paid to close the issue through the project credential, post a fixed
+explanation with an appeal path, and record an audit event containing the
+sender, trust result, Paid-origin flag, action, and decision. This keeps an
+untrusted reopen or body edit from becoming an automation back door while
+allowing authorized Paid writes to complete without re-closing themselves.
+
+Needs-input is a human-answer gate represented by a GitHub label, persisted
+clarification questions, and local `paid_state`. Polling reconciles every open
+issue or pull request that still has both the label and questions if another
+writer has changed its state, restoring `needs_input` unless a paused
+clarification run still owns the wait. This also repairs rows that incremental
+GitHub polling did not return. Removing the label remains the inverse human
+signal that reopens the item for automation. A questionless needs-input item is
+repaired by clearing its invalid labels and leaving the wait state, so it cannot
+remain invisible in the Inbox and ineligible for automation.
+
+Paid-owned status labels are not operator commands. When a trusted operator
+manually applies a needs-input label to an item without persisted clarifying
+questions, sync removes the orphaned label, leaves local state intact, and
+posts the supported paths: answer Inbox questions, re-trigger automation, or
+use `paid-paused` to pause automation. The last label adder is verified through
+GitHub label events so Paid writes and untrusted additions remain untouched.
+
 Repository credentials resolve per project. App-backed projects mint
 installation tokens and present the App bot identity; PAT-backed projects keep
 using their active token. Callers consume an opaque GitHub credential so the

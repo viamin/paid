@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
+  belongs_to :reopened_by, class_name: "User", optional: true
+
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
+  REOPEN_REVIEW_REQUIRED_REASON =
+    "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
   AUTO_PICK_ELIGIBLE_PAID_STATES = %w[new planning failed analyzed].freeze
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
@@ -253,6 +257,29 @@ class Issue < ApplicationRecord
 
   def trusted?
     project.trusted_github_author?(github_creator_login)
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-001
+  def reopen_review_pending?
+    paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-001
+  def require_reopen_review!
+    with_lock do
+      reload
+      update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+    end
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-001
+  def complete_unless_reopen_review_pending!(attributes = {})
+    with_lock do
+      reload
+      return false if reopen_review_pending?
+
+      update!({ paid_state: "completed" }.merge(attributes))
+    end
   end
 
   def untrusted?

@@ -421,10 +421,34 @@ module Runners
     def subscription_test_model
       return unless runner.tier_model_ids&.dig("mid").present? || runner.tier_models&.dig("mid").present?
 
-      resolved = Runners::ResolveTierModel.call(runner: runner, tier: "mid", user: runner.user)
+      resolved = Runners::ResolveTierModel.call(runner: runner, tier: "mid", user: runner.user, project: test_project)
       raise InvalidModelError, resolved.error if resolved.failure?
 
       resolved.model_id
+    end
+
+    # @spec RUNNER-FALLBACK-005, RUNNER-FALLBACK-007
+    def container_health_check(run, executor)
+      result = super
+      return result if result[:status] == "ok"
+
+      klass = AgentHarness.provider_class(harness_runner_key)
+      return result unless runner.subscription? && klass.method_defined?(:discover_available_models)
+      return result unless klass.respond_to?(:classify_model_rejection_from_result)
+
+      runtime = container_provider_runtime
+      rejection = klass.classify_model_rejection_from_result(
+        stdout: result[:stdout], stderr: result[:stderr], configured_model: runtime&.model
+      )
+      return result unless rejection
+
+      recovery = ModelRecovery.new(agent_run: run, runner: runner, tier: "mid", executor: executor,
+        deadline: TIMEOUT.seconds.from_now).call(rejected_model_id: rejection[:model] || runtime&.model)
+      if recovery.success?
+        { status: "ok", model: recovery.model_id, message: "Preflight verified replacement #{recovery.model_id}" }
+      else
+        result.merge(message: "#{result[:message]}; model recovery: #{recovery.error}")
+      end
     end
 
     # Builds a ProviderRuntime for kilocode direct-outbound smoke tests.

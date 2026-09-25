@@ -46,15 +46,24 @@ with (1).
 - Never let policy-eligible replacement selection default to one hardcoded
   "universal" fallback model id — rank from current catalog/tier data instead.
 
-## Non-goals (kept independently shippable — see #3943, #3944)
+## Boundary with Runtime Recovery
+
+Runner-local verified selections are owned by RUNNER-FALLBACK-007 through
+RUNNER-FALLBACK-009. They persist in `RunnerState` under the runner's state key and a
+fingerprint including its concrete runner ID and auth/configuration, without the periodic check TTL.
+They are execution evidence, while a `ModelAvailabilityCheck` whose source is
+`agent_harness_compat` records static compatibility. A global catalog refresh or
+static compatibility check cannot erase runner-local verification. Live recovery
+does not promote one account's availability to the global catalog and always
+honors `operator_active_override: false`.
+
+## Non-goals
 
 - Wiring a preflight retry into the live run/container execution path.
 - Reclassifying provider error text at the point a run fails.
-- Live, per-account provider API discovery calls (blocked on
-  `viamin/agent-harness#413`; this segment consumes the existing
-  `Runners::ModelCompatibility` / `AgentHarness.model_compatibility` contract
-  instead, and is written so a future richer discovery contract slots into
-  the same `Models::ReconcileAvailability` entry points).
+- Live, per-runner discovery and durable replacement selection, which belong to
+  the runtime recovery segment. This segment consumes the static
+  `Runners::ModelCompatibility` / `AgentHarness.model_compatibility` contract.
 
 ## Design
 

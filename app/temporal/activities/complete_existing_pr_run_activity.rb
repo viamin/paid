@@ -56,7 +56,7 @@ module Activities
 
         issue = agent_run.issue
         if issue && !(issue.is_pull_request? && issue.draft_phase?)
-          issue.update!(paid_state: "completed")
+          issue.complete_unless_reopen_review_pending!
         end
 
         logger.info(

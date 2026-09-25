@@ -6,7 +6,8 @@
 - [x] **RUNNER-FALLBACK-001** — When a run has a requested model tier, the
   system SHALL treat that tier as the fallback compatibility contract and SHALL
   skip runners that cannot satisfy the tier instead of requiring every runner
-  to match a single concrete model id.
+  to match a single concrete model id, except that verified model/auth recovery
+  may use another tier under RUNNER-FALLBACK-007.
   *Code:* `Activities::RunAgentActivity`, `Runners::ResolveTierModel`.
 
 - [x] **RUNNER-FALLBACK-002** — When a runner attempt resolves a concrete model
@@ -51,8 +52,8 @@
 - [x] **RUNNER-FALLBACK-005** — When a subscription runner has an explicitly
   configured mid-tier model, its Test action SHALL pass that resolved model to
   the harness smoke test with subscription credential isolation. If the model
-  is incompatible, the test SHALL report the configuration error instead of
-  silently testing the CLI default.
+  is rejected by the provider, the test SHALL use the same explicit, verified
+  recovery policy as execution and report the model actually tested.
   *Code:* `Runners::TestAgent`.
   *Test:* `spec/services/runners/test_agent_spec.rb`.
 
@@ -68,3 +69,25 @@
   *Code:* `Activities::RunAgentActivity#raise_classified_provider_state!`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/temporal/activities/run_agent_activity_no_db_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-007** — When a provider explicitly rejects a selected
+  model for the configured authentication, Paid SHALL discover alternatives
+  through agent-harness in the same execution/auth context, apply explicit
+  project and operator restrictions, prefer same-tier candidates, permit
+  cross-tier recovery, and verify a replacement by successful preflight before
+  retrying the current run. Recovery SHALL attempt at most three replacements
+  per runner per run within the execution budget before normal runner fallback.
+
+- [x] **RUNNER-FALLBACK-008** — When replacement preflight succeeds, Paid SHALL
+  persist that model for the runner/auth/configuration and requested tier, reuse
+  it across future runs and catalog refreshes without time-based expiry, and
+  repeat recovery on a later model rejection. Reuse SHALL respect current project
+  restrictions and explicit configuration changes. Concurrent recovery SHALL
+  not overwrite a newer configuration or recovery decision.
+
+- [x] **RUNNER-FALLBACK-009** — When compatibility validation skips a runner or
+  runtime model recovery occurs, Paid SHALL record the rejected model, recovery
+  outcome, verified replacement and tier change in visible run diagnostics.
+  Failed preflights SHALL NOT become durable selections. Expired credentials,
+  rate limits, transport errors, and agent prose SHALL NOT trigger model/auth
+  recovery or change the configured auth/payment mode.

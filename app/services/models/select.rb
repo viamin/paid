@@ -283,6 +283,11 @@ module Models
       runner = agent_run.runner
       return nil unless model && runner
 
+      evidence = Runners::VerifiedModels.new(runner)
+      if LlmModel::TIERS.any? { |tier| evidence.model_for(tier, project: agent_run.project, goal: agent_run.goal) == model.model_id }
+        return Runners::ModelCompatibility::Result.new(supported: true, source: "verified_recovery")
+      end
+
       Runners::ModelCompatibility.call(
         runner_key: runner.runner_key,
         model_id: model.model_id,

@@ -81,6 +81,24 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec AUTO-PICK-QUEUE-007
+    it "excludes every configured needs-input label regardless of paid_state" do
+      project.update!(
+        enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
+        label_mappings: { "needs_input" => "paid-stage-needs-input" }
+      )
+      issue = create(:issue,
+        project: project,
+        paid_state: "failed",
+        labels: [ "paid-stage-needs-input" ])
+      enhance_issue = create(:issue,
+        project: project,
+        paid_state: "failed",
+        labels: [ "paid-enhance-needs-input" ])
+
+      expect(described_class.eligible_scope(project)).not_to include(issue, enhance_issue)
+    end
+
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
     it "excludes failed issues during an active analyze_issue provider-exhaustion cooldown" do
       issue = create(:issue, project: project, paid_state: "failed")

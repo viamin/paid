@@ -131,12 +131,10 @@ RSpec.describe Runners::ModelCompatibility do
 
       # @spec MODEL-SELECTION-005
       context "with subscription auth and GPT-5.6 tier variants" do
-        it "rejects models unavailable under the verified harness subscription contract" do
+        it "preserves verified tier-variant support under subscription auth" do
           %w[gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol].each do |variant|
             compatibility = described_class.call(runner_key: "codex", model_id: variant, auth_type: "subscription")
-            expect(compatibility).to be_unsupported
-            expect(compatibility.incompatibility_type).to eq(:auth_mode_gated_for_model)
-            expect(compatibility.replacement_model_id).to eq("gpt-5.2-codex")
+            expect(compatibility).to be_supported
             expect(compatibility.source).to eq("agent_harness")
           end
         end

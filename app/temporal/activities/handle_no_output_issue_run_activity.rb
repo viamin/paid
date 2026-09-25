@@ -333,7 +333,8 @@ module Activities
     def handle_no_code_required(client, agent_run, rationale) # @spec NO-OUTPUT-ISSUE-006
       project = agent_run.project
       issue = agent_run.issue
-      issue.update!(paid_state: "completed", no_code_required_at: Time.current)
+      return unless issue.complete_unless_reopen_review_pending!(no_code_required_at: Time.current)
+
       remove_trigger_labels(client, project, issue, agent_run.id)
       remove_needs_input_label(client, project, issue, agent_run.id)
       remove_recommend_close_label(client, project, issue, agent_run.id)
