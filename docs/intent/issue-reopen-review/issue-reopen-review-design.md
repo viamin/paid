@@ -18,9 +18,8 @@ must be reviewed before Paid can treat the issue as complete again.
 issue state. When it observes a persisted non-PR issue transition from `closed`
 to `open`, it places the issue in `manual_review` with the dedicated reopen
 review reason. The Inbox exposes this state to an operator, and ordinary
-auto-pick selection excludes it. This means newly filed follow-up issues remain
-the default path for new work; a reopened issue cannot re-enter automatic work
-without an operator's review.
+automatic selection remains state-neutral; completion remains gated until the
+review is resolved.
 
 An operator resumes the issue from manual review only after validating whether
 the original intent remains valid and whether new work is required. This moves

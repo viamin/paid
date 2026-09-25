@@ -312,6 +312,7 @@ Rails.application.routes.draw do
         controller: "projects/issue_merge_subscriptions"
       resource :clarifying_questions, only: [ :show, :create ],
         controller: "projects/clarifying_questions"
+      post "clarifying_questions/chat", to: "projects/clarifying_questions#chat", as: :clarifying_questions_chat
     end
     resources :change_intents, only: [ :show ], controller: "projects/change_intents" do
       member do

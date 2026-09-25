@@ -23,16 +23,34 @@ RSpec.describe ChatSessionPolicy do
       account = create(:account)
       user = create(:user, :owner, account:)
       project = create(:project, account:, created_by: user)
-      inbox_chat = create(
-        :chat_session,
-        :archived,
-        account:,
-        project:,
-        created_by: user,
-        inbox_item_key: "clarifying_questions:1"
-      )
+      inbox_chat = create(:chat_session, :archived, account:, project:, created_by: user, inbox_item_key: "clarifying_questions:1")
 
       expect(described_class.new(user, inbox_chat)).not_to be_unarchive
+    end
+  end
+
+  describe "linked chats" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account:) }
+    let(:linked_session) do
+      create(:chat_session, account:, project:, clarifying_question_issue: create(:issue, project:))
+    end
+
+    # @spec QUESTION-EXPLORATION-007
+    it "does not expose linked chats to account members without project membership" do
+      create(:user, account:)
+      user = create(:user, :member, account:)
+
+      expect(described_class.new(user, linked_session)).not_to be_show
+    end
+
+    # @spec QUESTION-EXPLORATION-007
+    it "permits project collaborators to view linked chats" do
+      create(:user, account:)
+      user = create(:user, :viewer, account:)
+      user.add_role(:project_viewer, project)
+
+      expect(described_class.new(user, linked_session)).to be_show
     end
   end
 
@@ -65,22 +83,24 @@ RSpec.describe ChatSessionPolicy do
       create(:project_membership, :member, user: creator, project:)
       inbox_chat = create(:chat_session, account:, project:, created_by: creator, inbox_item_key: "clarifying_questions:1")
 
-      sessions = described_class::Scope.new(creator, ChatSession).resolve
-
-      expect(sessions).to contain_exactly(inbox_chat)
+      expect(described_class::Scope.new(creator, ChatSession).resolve).to contain_exactly(inbox_chat)
     end
 
-    it "includes a creator's inbox chat when the creator has account-level member access" do
-      # @spec QUESTION-EXPLORATION-014
+    it "limits account members to linked chats in their projects" do
+      # @spec QUESTION-EXPLORATION-007
       account = create(:account)
-      owner = create(:user, account:)
-      creator = create(:user, :member, account:)
-      project = create(:project, account:, created_by: owner)
-      inbox_chat = create(:chat_session, account:, project:, created_by: creator, inbox_item_key: "clarifying_questions:1")
+      project = create(:project, account:)
+      create(:user, account:)
+      user = create(:user, :member, account:)
+      visible_session = create(:chat_session, account:, project:, clarifying_question_issue: create(:issue, project:))
+      hidden_project = create(:project, account:)
+      hidden_session = create(:chat_session, account:, project: hidden_project, clarifying_question_issue: create(:issue, project: hidden_project))
+      user.add_role(:project_member, project)
 
-      sessions = described_class::Scope.new(creator, ChatSession).resolve
+      scope = described_class::Scope.new(user, ChatSession.all).resolve
 
-      expect(sessions).to contain_exactly(inbox_chat)
+      expect(scope).to include(visible_session)
+      expect(scope).not_to include(hidden_session)
     end
   end
 end

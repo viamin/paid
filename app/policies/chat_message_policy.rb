@@ -2,14 +2,14 @@
 
 class ChatMessagePolicy < ApplicationPolicy
   def index?
-    ChatSessionPolicy.new(user, chat_session).show?
+    chat_session_visible?
   end
 
   def create?
     return false unless user_in_account?
     # @spec QUESTION-EXPLORATION-001
-    return false if chat_session.interactive_inbox_chat? && chat_session.status == "closed"
-    return ChatSessionPolicy.new(user, chat_session).show? if chat_session.interactive_inbox_chat?
+    return false if chat_session.interactive_inbox_chat? && chat_session.closed?
+    return chat_session_visible? if chat_session.interactive_inbox_chat?
 
     has_any_account_role?(:owner, :admin, :member)
   end
@@ -34,5 +34,9 @@ class ChatMessagePolicy < ApplicationPolicy
 
   def chat_session
     record.chat_session
+  end
+
+  def chat_session_visible?
+    ChatSessionPolicy.new(user, chat_session).show?
   end
 end

@@ -7,9 +7,9 @@ class ChatSessionPolicy < ApplicationPolicy
 
   def show?
     return false unless user_in_account?
-    return true unless record.interactive_inbox_chat?
+    return inbox_chat_access? if record.interactive_inbox_chat?
 
-    inbox_chat_access?
+    linked_chat_visible?
   end
 
   def create?
@@ -19,27 +19,29 @@ class ChatSessionPolicy < ApplicationPolicy
   def update?
     return inbox_chat_access? if record.interactive_inbox_chat?
 
-    has_any_account_role?(:owner, :admin, :member)
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   def reopen?
-    create?
+    linked_chat_visible? && create?
   end
 
   def destroy?
     return inbox_chat_access? if record.interactive_inbox_chat?
 
-    has_any_account_role?(:owner, :admin, :member)
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   def archive?
-    update?
+    return inbox_chat_access? if record.interactive_inbox_chat?
+
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   def unarchive?
     return false if record.interactive_inbox_chat?
 
-    update?
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   class Scope < ApplicationPolicy::Scope
@@ -47,20 +49,25 @@ class ChatSessionPolicy < ApplicationPolicy
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
       sessions = scope.where(account_id: user.account_id)
-      return regular_sessions_or_personal_inbox_chats(sessions) if user.has_any_role?(:owner, :admin, :member, user.account)
+      return sessions if account_operator?
 
-      personal_inbox_chats(sessions)
+      visible_regular_sessions(sessions).or(personal_inbox_chats(sessions))
     end
 
     private
 
-    def regular_sessions_or_personal_inbox_chats(sessions)
-      sessions.where(inbox_item_key: nil).or(personal_inbox_chats(sessions))
+    def visible_regular_sessions(sessions)
+      visible_ids = scope.left_outer_joins(project: :project_memberships)
+        .where(account: user.account, inbox_item_key: nil)
+        .where("chat_sessions.clarifying_question_issue_id IS NULL OR project_memberships.user_id = ?", user.id)
+        .select(:id)
+
+      sessions.where(id: visible_ids)
     end
 
     def personal_inbox_chats(sessions)
       inbox_chats = sessions.where.not(inbox_item_key: nil).where(created_by: user)
-      return inbox_chats if account_comment_authority?
+      return inbox_chats if user.has_any_role?(:member, user.account)
 
       inbox_chats.where(<<~SQL.squish, user.id, comment_authority_roles)
         EXISTS (
@@ -76,8 +83,8 @@ class ChatSessionPolicy < ApplicationPolicy
       ProjectMembership.roles.values_at("member", "admin")
     end
 
-    def account_comment_authority?
-      user.has_any_role?(:owner, :admin, :member, user.account)
+    def account_operator?
+      user.has_any_role?(:owner, :admin, user.account)
     end
   end
 
@@ -85,5 +92,11 @@ class ChatSessionPolicy < ApplicationPolicy
 
   def inbox_chat_access?
     record.created_by == user && Inbox::InteractiveChatAccess.allowed?(user:, project: record.project)
+  end
+
+  def linked_chat_visible?
+    return user_in_account? unless record.clarifying_question_issue.present?
+
+    ProjectPolicy.new(user, record.project).explore?
   end
 end

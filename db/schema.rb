@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_085407) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_093047) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -704,6 +704,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_085407) do
   create_table "chat_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
+    t.bigint "clarifying_question_issue_id", comment: "Inbox issue whose clarifying questions this chat resolves."
     t.jsonb "clone_manifest", default: [], null: false, comment: "Persisted clone metadata used to reopen a reaped multi-repo chat workspace."
     t.datetime "closed_at", comment: "When an interactive inbox chat session was closed or archived."
     t.string "container_capability", default: "none", null: false, comment: "Container capability lifecycle for the chat session: none, pending, provisioning, ready, failed, or stopped."
@@ -730,6 +731,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_085407) do
     t.string "workspace_volume"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
     t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
+    t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
+    t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
@@ -3795,6 +3798,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_085407) do
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
+  add_foreign_key "chat_sessions", "issues", column: "clarifying_question_issue_id", validate: false
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"

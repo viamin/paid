@@ -93,6 +93,7 @@ class ChatMessagesController < ApplicationController
 
       assistant_message = ChatSessions::SendMessage.call(
         chat_session: @chat_session,
+        actor: current_user,
         content: params[:content],
         on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
         on_message_persisted: ->(message, stream_message_id: nil) { write_sse_tool_event(message, stream_message_id: stream_message_id) }
@@ -131,6 +132,7 @@ class ChatMessagesController < ApplicationController
     assistant_message = with_chat_session_tenant_context do
       ChatSessions::SendMessage.call(
         chat_session: @chat_session,
+        actor: current_user,
         content: params[:content]
       )
     end
@@ -212,6 +214,7 @@ class ChatMessagesController < ApplicationController
 
       assistant_message = ChatSessions::ResolveToolCall.call(
         chat_session: @chat_session,
+        actor: current_user,
         tool_call_message: tool_call_message,
         decision: decision,
         on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
@@ -257,6 +260,7 @@ class ChatMessagesController < ApplicationController
     assistant_message = with_chat_session_tenant_context do
       ChatSessions::ResolveToolCall.call(
         chat_session: @chat_session,
+        actor: current_user,
         tool_call_message: tool_call_message,
         decision: decision
       )
