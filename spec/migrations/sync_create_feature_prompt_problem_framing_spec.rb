@@ -12,7 +12,7 @@ RSpec.describe SyncCreateFeaturePromptProblemFraming, :aggregate_failures do
     TenantContext.with_system_access { Prompt.unscoped.where(slug:).destroy_all }
   end
 
-  # @spec FEATURE-CREATION-006
+  # @spec FEATURE-CREATION-008
   it "keeps the seed definition current after adding problem-framing guidance" do
     prompt = create(:prompt, :global, slug:)
     migration.up

@@ -151,7 +151,7 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("# Rules")
     end
 
-    # @spec FEATURE-CREATION-006
+    # @spec FEATURE-CREATION-008
     it "renders problem framing with evidence, hypotheses, and outcome distinctly" do
       prompt = described_class.call(project_name: "Paid", full_name: "viamin/paid", feature_brief: enriched_feature_brief)
 

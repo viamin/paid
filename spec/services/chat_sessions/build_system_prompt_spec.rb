@@ -44,7 +44,7 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Be concise and technical")
       end
 
-      # @spec FEATURE-CREATION-005
+      # @spec FEATURE-CREATION-007
       it "includes feature-creation guidance and problem-framing handoff" do
         expect(prompt).to include("gather intent through adaptive questions")
         expect(prompt).to include("problem, desired behavior, constraints, rejected alternatives, scope, and done-ness")
@@ -58,11 +58,22 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("custom_prompt")
       end
 
-      # @spec FEATURE-CREATION-005
+      # @spec FEATURE-CREATION-007
       it "instructs the agent to mark a framing user-confirmed only on explicit user confirmation" do
         expect(prompt).to include("selected_framing_confirmed")
         expect(prompt).to include("only after the user confirms the framing")
         expect(prompt).to include("treats it as a hypothesis")
+      end
+
+      # The merged base identity carries the problem-exploration step (RDR-053
+      # § 2026-09-25 Extension) alongside the problem-framing recording
+      # handoff; guard against dropping the exploration guidance when the
+      # framing sentence is folded into the feature-creation paragraph.
+      # @spec FEATURE-CREATION-007
+      it "retains problem-exploration guidance alongside the framing handoff" do
+        expect(prompt).to match(/explicitly asks to explore the problem/i)
+        expect(prompt).to include("tentative hypotheses")
+        expect(prompt).to include("selected_framing_confirmed")
       end
 
       # @spec CHAT-API-012

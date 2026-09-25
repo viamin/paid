@@ -116,7 +116,7 @@ module Tools
       (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_issue")
     end
 
-    # @spec FEATURE-CREATION-005 — the parsed brief is stored verbatim
+    # @spec FEATURE-CREATION-007 — the parsed brief is stored verbatim
     # (stringified keys only), so a caller-supplied confirmation flag such as
     # problem_framing.selected_framing_confirmed survives to the prompt
     # builder, which owns the confirmed-vs-proposed label decision.

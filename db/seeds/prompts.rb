@@ -24,7 +24,7 @@ upsert_global_prompt.call(
   name: "Chat System Prompt",
   description: "Default system prompt for interactive chat sessions. Provides base identity and capabilities for the AI assistant.",
   category: "planning",
-  template: ChatSessions::BuildSystemPrompt::BASE_IDENTITY_TEMPLATE,
+  template: ChatSessions::BuildSystemPrompt::DEFAULT_BASE_IDENTITY,
   variables: []
 )
 

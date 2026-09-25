@@ -79,7 +79,7 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
     end
   end
 
-  # @spec FEATURE-CREATION-006
+  # @spec FEATURE-CREATION-008
   it "keeps settled problem framing when clarification refines only one field" do
     enriched_brief = brief.merge("problem_framing" => problem_framing)
     stub_response(

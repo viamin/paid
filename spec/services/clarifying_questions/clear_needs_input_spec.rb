@@ -191,7 +191,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         expect(brief["problem"]).to eq("Need dark theme")
       end
 
-      # @spec FEATURE-CREATION-006
+      # @spec FEATURE-CREATION-008
       it "preserves settled problem framing while the run resumes for admitted answers" do
         framing = {
           "evidence_references" => [ "Support ticket #123" ],

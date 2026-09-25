@@ -7,7 +7,7 @@ module Features
     # Uses the model for the semantic decision about whether a feature brief is
     # ready. Ruby only validates the returned shape and carries the result into
     # the established needs-input lifecycle.
-    # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002 @spec FEATURE-CREATION-006
+    # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002 @spec FEATURE-CREATION-008
     class Analyze
       DEFAULT_MODEL = "claude-sonnet-4-6"
       TIMEOUT = 60

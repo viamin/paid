@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-CREATION-005
+# @spec FEATURE-CREATION-007
 class SyncChatSystemPromptProblemFraming < ActiveRecord::Migration[8.1]
   CHANGE_NOTES = "Preserve problem framing in chat-created feature briefs"
   PROMPT_SLUG = ChatSessions::BuildSystemPrompt::CHAT_SYSTEM_PROMPT_SLUG
@@ -12,7 +12,7 @@ class SyncChatSystemPromptProblemFraming < ActiveRecord::Migration[8.1]
       next if synced?(prompt.current_version)
 
       prompt.create_version!(
-        template: ChatSessions::BuildSystemPrompt::BASE_IDENTITY_TEMPLATE,
+        template: ChatSessions::BuildSystemPrompt::DEFAULT_BASE_IDENTITY,
         variables: [],
         created_by: "migration",
         change_notes: CHANGE_NOTES
@@ -28,7 +28,7 @@ class SyncChatSystemPromptProblemFraming < ActiveRecord::Migration[8.1]
   def synced?(version)
     return false unless version
 
-    version.template.to_s.strip == ChatSessions::BuildSystemPrompt::BASE_IDENTITY_TEMPLATE &&
+    version.template.to_s.strip == ChatSessions::BuildSystemPrompt::DEFAULT_BASE_IDENTITY &&
       version.variables == []
   end
 end

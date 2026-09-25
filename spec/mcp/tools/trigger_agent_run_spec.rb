@@ -146,7 +146,7 @@ RSpec.describe Tools::TriggerAgentRun do
     end
 
     context "with goal create_feature" do
-      # @spec FEATURE-CREATION-005
+      # @spec FEATURE-CREATION-007
       let(:problem_framing) do
         {
           "observations" => [ "Reviewers wait for assignment context" ],

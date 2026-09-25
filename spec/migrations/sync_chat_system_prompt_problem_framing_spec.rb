@@ -13,7 +13,7 @@ RSpec.describe SyncChatSystemPromptProblemFraming, :aggregate_failures do
     end
   end
 
-  # @spec FEATURE-CREATION-005
+  # @spec FEATURE-CREATION-007
   it "updates an existing global chat prompt with problem-framing guidance" do
     prompt = create(:prompt, :global, slug: ChatSessions::BuildSystemPrompt::CHAT_SYSTEM_PROMPT_SLUG)
     previous_version = prompt.create_version!(template: "old chat prompt", variables: [], created_by: "seed")
@@ -26,7 +26,7 @@ RSpec.describe SyncChatSystemPromptProblemFraming, :aggregate_failures do
     expect(prompt.current_version.created_by).to eq("migration")
   end
 
-  # @spec FEATURE-CREATION-005
+  # @spec FEATURE-CREATION-007
   it "is idempotent when the current chat prompt has the expected guidance" do
     prompt = create(:prompt, :global, slug: ChatSessions::BuildSystemPrompt::CHAT_SYSTEM_PROMPT_SLUG)
     migration.up

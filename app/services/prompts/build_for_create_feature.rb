@@ -5,7 +5,7 @@ module Prompts
   # @spec CREATE-FEATURE-002
   # @spec CREATE-FEATURE-003
   # @spec RDR-ROLLOUT-GUARD-003
-  # @spec FEATURE-CREATION-006
+  # @spec FEATURE-CREATION-008
   #
   # Builds the agent prompt for a `create_feature` run. The run is responsible
   # for taking a structured feature brief (collected via chat or the
@@ -224,7 +224,7 @@ module Prompts
       "Problem framing:\n" + sections.join("\n\n")
     end
 
-    # @spec FEATURE-CREATION-006 — the confirmation flag is caller-supplied
+    # @spec FEATURE-CREATION-008 — the confirmation flag is caller-supplied
     # metadata: the direct tool path stores any JSON brief verbatim, so a
     # framing earns the user-confirmed label only when the brief explicitly
     # asserts it. Anything else renders as a hypothesis, never a settled

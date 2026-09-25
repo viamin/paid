@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-CREATION-006
+# @spec FEATURE-CREATION-008
 class SyncCreateFeaturePromptProblemFraming < ActiveRecord::Migration[8.1]
   CHANGE_NOTES = "Preserve problem framing in create-feature RDR prompts"
   PROMPT_SLUG = Prompts::BuildForCreateFeature::PROMPT_SLUG

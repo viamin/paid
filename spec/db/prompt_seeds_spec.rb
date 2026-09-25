@@ -80,6 +80,38 @@ RSpec.describe Prompt, type: :model do
     expect(actual).to eq(SeedsPromptsSpec::EXPECTED_SLUGS.sort)
   end
 
+  describe "chat.system_prompt feature-design guidance coupling" do
+    # The seeded chat template and the in-code base_identity fallback are the
+    # two prompt sources for feature-design chat. They must carry the same
+    # guidance — including the optional problem-exploration step and the
+    # problem-framing recording handoff — so seeded and fallback deployments
+    # behave alike (RDR-053 § 2026-09-25 Extension).
+    # @spec FEATURE-CREATION-007
+    let(:seed_template) do
+      described_class.global.find_by(slug: "chat.system_prompt").current_version.template
+    end
+
+    it "seeds the feature-design clarification and problem-framing guidance", :aggregate_failures do
+      expect(seed_template).to include("gather intent through adaptive questions")
+      expect(seed_template).to include("trigger a `create_feature` agent run")
+      expect(seed_template).to include("custom_prompt")
+      expect(seed_template).to include("selected_framing_confirmed")
+      expect(seed_template).to include("supplied evidence/references")
+    end
+
+    it "seeds the problem-exploration guidance", :aggregate_failures do
+      expect(seed_template).to match(/explicitly asks to explore the problem/i)
+      expect(seed_template).to include('never run a fixed questionnaire')
+      expect(seed_template).to include("tentative hypotheses")
+      expect(seed_template).to include('must not itself trigger a `create_feature` agent run or file implementation issues')
+      expect(seed_template).to include('justify reconsidering')
+    end
+
+    it "seeded template matches the base_identity fallback exactly" do
+      expect(seed_template.strip).to eq(ChatSessions::BuildSystemPrompt::DEFAULT_BASE_IDENTITY)
+    end
+  end
+
   describe "goal.review_pull_request clean-PR phrase coupling" do
     # If ScanPaidPrsActivity::REVIEW_BOT_CLEAN_PATTERN ever changes, the
     # seeded review template AND the FALLBACK_REVIEW_GOAL_PROMPT in
