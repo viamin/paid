@@ -4,6 +4,7 @@ require "rails_helper"
 
 # @spec APPLE-ATTEMPT-010
 RSpec.describe AppleVerificationAttempts::Rerun do
+  context "when retrying classified failures" do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:) }
 
@@ -39,4 +40,19 @@ RSpec.describe AppleVerificationAttempts::Rerun do
       .to raise_error(ArgumentError, "attempt cannot be rerun: max_retries_exceeded")
     expect(project.apple_verification_attempts.count).to eq(1)
   end
+end
+
+  context "when preserving capture selection" do
+  # @spec APPLE-VERIFY-006
+  it "preserves a capture selection on the retry" do
+    attempt = create(:apple_verification_attempt, status: "failed", requested_capture: "ios-app.initial-screen")
+
+    rerun_attempt = described_class.call(attempt:)
+
+    expect(rerun_attempt).to have_attributes(
+      requested_capture: "ios-app.initial-screen",
+      retry_of_attempt: attempt
+    )
+  end
+end
 end

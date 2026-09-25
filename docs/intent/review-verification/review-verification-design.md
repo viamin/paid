@@ -153,6 +153,45 @@ attempt's stage time is preserved — the run's real cost includes it.
 No repository content — no file paths, diffs, summaries, or comment bodies —
 is written to logs or phase metadata.
 
+## Specialist-finder evaluation and second sweep
+
+The generic finder is the baseline. A specialist finder is an additional,
+focused candidate-generation session; it is not an additional publisher. The
+first roles considered are **removed safeguards** (identify a deleted or
+bypassed invariant and its concrete consequence) and **caller compatibility**
+(identify an incompatible changed contract and a reachable caller). A second
+sweep means one generic candidate-generation session after the baseline finder,
+not a fan-out of reviewers.
+
+Before either option can ship, run the paired evaluation recorded in
+`pilot-measurement.md`. Each corpus PR is reviewed at the same pinned head by
+the baseline pipeline and by exactly one variant: removed-safeguards finder,
+caller-compatibility finder, or one second generic sweep. Both arms use the
+same model configuration, changed-file/patch bounds, verification stage,
+deduplication, publication policy, and exactly-one-tracked-review contract.
+The variant's candidates are merged with baseline candidates before the
+existing verifier; only confirmed, deduplicated findings can reach the single
+posted review.
+
+The evaluation is deliberately staged rather than enabled by a PR's text or
+labels. Its corpus is stratified into clean PRs, seeded defects, and historical
+PRs with an independently established author or defect outcome. It reports
+incremental valid findings, false or duplicate findings, missed known defects,
+wall time, and token cost by changed-file band and `review_depth_snapshot`.
+The pre-registered decision rule and current result are in
+`pilot-measurement.md`.
+
+**Current decision:** do not ship specialist finders or a second sweep. There
+is no live paired corpus result yet, so there is no evidence that the extra
+candidate-generation call improves confirmed-findings recall enough to justify
+its cost. `thorough` continues to express investigation scope to the existing
+reviewer; it does not authorize fan-out. If a future result satisfies the
+decision rule, the first implementation may be limited to one selected role
+or one second sweep, only for the evaluated `thorough` cohort, with at most two
+finder calls and the existing cap of 15 combined candidates before verification.
+All findings remain independently verified before the one tracked review is
+posted.
+
 ## Workflow routing
 
 `Activities::ResolveReviewPipelineActivity` decides (per run, in an activity

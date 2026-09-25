@@ -9,6 +9,21 @@ RSpec.describe "Api::McpController" do
   let(:session_token) { chat_session.external_id }
   let(:headers) { { "X-Session-Token" => session_token, "Content-Type" => "application/json" } }
 
+  def apple_verification_headers(agent_run)
+    headers.merge(
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.proxy_token
+    )
+  end
+
+  def apple_verification_project_and_run
+    project = create(:project, account:, apple_verification_mode: "on_demand")
+    agent_run = create(:agent_run, :running, project:, initiating_user: user)
+    FeatureFlags.enable!(:apple_verification_workers, project:)
+    create(:apple_verification_workflow_revision, project:, lifecycle_gate: "agent_iteration")
+    [ project, agent_run ]
+  end
+
   describe "POST /api/mcp/call" do
     context "with valid session token" do
       it "handles initialize request" do
@@ -58,6 +73,35 @@ RSpec.describe "Api::McpController" do
         content = JSON.parse(body["result"]["content"].first["text"])
         expect(content.size).to eq(1)
         expect(content.first["id"]).to eq(project.id)
+      end
+
+      it "binds Apple verification MCP calls to the proxy-authenticated agent run" do
+        project, agent_run = apple_verification_project_and_run
+
+        post "/api/mcp/call", params: {
+          jsonrpc: "2.0", id: 31, method: "tools/list", params: {}
+        }.to_json, headers: apple_verification_headers(agent_run)
+
+        names = JSON.parse(response.body).dig("result", "tools").map { |tool| tool["name"] }
+        expect(names).to include(
+          "verify_apple_project", "get_apple_verification",
+          "capture_apple_screenshot", "stop_apple_verification"
+        )
+
+        call_apple_verification(project:, agent_run:)
+        expect(apple_verification_result).to include("status" => "queued")
+      end
+
+      it "rejects an Apple verification run whose proxy token is invalid" do
+        project = create(:project, account:, apple_verification_mode: "on_demand")
+        agent_run = create(:agent_run, :running, project:, initiating_user: user)
+
+        post "/api/mcp/call", params: {
+          jsonrpc: "2.0", id: 33, method: "tools/list", params: {}
+        }.to_json, headers: headers.merge("X-Agent-Run-Id" => agent_run.id.to_s, "X-Proxy-Token" => "invalid")
+
+        expect(response).to have_http_status(:forbidden)
+        expect(JSON.parse(response.body)).to include("error" => "Invalid agent run proxy token")
       end
 
       it "returns error for unknown method" do
@@ -171,6 +215,23 @@ RSpec.describe "Api::McpController" do
         expect(target_account.reload).not_to be_suspended
       end
     end
+  end
+
+  def call_apple_verification(project:, agent_run:)
+    post "/api/mcp/call", params: {
+      jsonrpc: "2.0", id: 32, method: "tools/call",
+      params: {
+        name: "verify_apple_project",
+        arguments: {
+          project_id: project.id, agent_run_id: agent_run.id,
+          bundle_digest: "sha256:#{'a' * 64}", confirmed: true
+        }
+      }
+    }.to_json, headers: apple_verification_headers(agent_run)
+  end
+
+  def apple_verification_result
+    JSON.parse(JSON.parse(response.body).dig("result", "content", 0, "text"))
   end
 
   describe "GET /api/mcp/sse" do

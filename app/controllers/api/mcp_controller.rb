@@ -37,7 +37,7 @@ module Api
       body = parse_request_body
       return render json: jsonrpc_error(nil, -32700, "Parse error"), status: :ok unless body
 
-      server = PaidMcpServer.new(session: @chat_session, user: @current_user)
+      server = PaidMcpServer.new(session: @chat_session, user: @current_user, agent_run: @agent_run)
       result = server.handle_request(
         method: body["method"],
         params: body["params"] || {},
@@ -74,6 +74,7 @@ module Api
       end
 
       TenantContext.apply!(@chat_session.account)
+      authenticate_agent_run!
     end
 
     def teardown_tenant_context
@@ -83,6 +84,28 @@ module Api
     def extract_session_token
       request.headers["X-Session-Token"].presence ||
         request.headers["Authorization"]&.delete_prefix("Bearer ")&.presence
+    end
+
+    def authenticate_agent_run!
+      agent_run_id = request.headers["X-Agent-Run-Id"]
+      return unless agent_run_id.present?
+
+      @agent_run = TenantContext.with_system_access do
+        AgentRun.includes(project: :account).find_by(id: agent_run_id)
+      end
+      return reject_agent_run! unless @agent_run&.active? || @agent_run&.claimed?
+      return reject_agent_run! unless @agent_run.project.account_id == @chat_session.account_id
+      return reject_agent_run! unless @agent_run.initiating_user_id == @current_user.id
+      reject_agent_run! unless valid_agent_run_proxy_token?
+    end
+
+    def valid_agent_run_proxy_token?
+      token = request.headers["X-Proxy-Token"]
+      token.present? && ActiveSupport::SecurityUtils.secure_compare(token, @agent_run.ensure_proxy_token!)
+    end
+
+    def reject_agent_run!
+      render json: { error: "Invalid agent run proxy token" }, status: :forbidden
     end
 
     def parse_request_body

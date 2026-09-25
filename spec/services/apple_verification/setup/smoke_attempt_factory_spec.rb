@@ -131,9 +131,18 @@ RSpec.describe AppleVerification::Setup::SmokeAttemptFactory do
       second_factory = described_class.new(project:, image_digest: other_digest, profile_id: "ios-standard").call
 
       first_result = first_factory.call(agent_run: agent_run)
-      second_result = second_factory.call(agent_run: agent_run)
+      second_result = second_factory.call(agent_run: create_third_agent_run)
 
       expect(second_result.profile.id).not_to eq(first_result.profile.id)
+    end
+  end
+
+  describe "active attempts" do
+    it "reuses the active smoke attempt when setup runs again for the same agent run" do
+      first_result = attempt_lambda.call(agent_run: agent_run)
+      second_result = attempt_lambda.call(agent_run: agent_run)
+
+      expect(second_result.attempt.id).to eq(first_result.attempt.id)
     end
   end
 
