@@ -77,8 +77,10 @@ with that end-to-end handoff.
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
 last five are terminal. Cancellation is available while an attempt is not
-terminal, and a rerun is an idempotent queued retry bound to its terminal
-source attempt (APPLE-VERIFY-006).
+terminal. It is classified as `cancellation_or_timeout` and immediately
+finalizes credential revocation, network disablement, and failed-VM retention
+rather than waiting for a maintenance sweep. A rerun is an idempotent queued
+retry bound to its terminal source attempt (APPLE-VERIFY-006).
 
 ## Source and credential transfer
 
