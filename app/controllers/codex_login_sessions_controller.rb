@@ -45,7 +45,7 @@ class CodexLoginSessionsController < ApplicationController
     @flow_definition = flow_definition_for_session(@codex_login_session)
     authorize @codex_login_session
     result = CodexLoginSessions::DeviceFlow.new(session: @codex_login_session).poll!(
-      session_token: params[:session_token]
+      session_token: request.request_parameters[:session_token]
     )
 
     if result[:completed]
