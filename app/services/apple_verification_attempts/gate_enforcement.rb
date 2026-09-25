@@ -57,11 +57,11 @@ module AppleVerificationAttempts
 
       required_checks = Array(approved.required_checks)
       return satisfy("no_required_checks") if required_checks.empty?
+      return satisfy("verification_execution_unavailable") if execution_unavailable?
 
       attempts = eligible_attempts(approved)
       waiver = active_waiver_for(attempts.first) if attempts.any?
       return satisfy("waived", waiver: waiver) if waiver
-      return satisfy("verification_execution_unavailable") if completion_gate_unavailable?
       return block(nil) if attempts.empty?
 
       last_attempt = attempts.first
@@ -109,8 +109,12 @@ module AppleVerificationAttempts
       pull_request.project if pull_request&.respond_to?(:project)
     end
 
-    def completion_gate_unavailable?
-      @lifecycle_gate == EnqueueCompletion::COMPLETION_GATE && !Schedule.execution_available?
+    def execution_unavailable?
+      executable_gate? && !Schedule.execution_available?
+    end
+
+    def executable_gate?
+      [ EnqueueCompletion::COMPLETION_GATE, "pull_request_verification" ].include?(@lifecycle_gate)
     end
 
     def blocking_attempt?(attempt)

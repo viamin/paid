@@ -54,6 +54,7 @@ module AppleVerificationAttempts
     # {AppleVerification::Bundles::RetentionSweep#revoke_vm!}.
     def call
       return Result.new(outcome: OUTCOME_NO_VM, retained_until: nil, destroy_request_id: nil) unless @attempt.terminal?
+      return finalized_result if @attempt.finalized_at?
 
       case @attempt.status
       when "succeeded"
@@ -68,9 +69,11 @@ module AppleVerificationAttempts
           return Result.new(outcome: @attempt.status, retained_until: nil, destroy_request_id: nil)
         end
         @revocation.call
+        mark_finalized!
         Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: @last_destroy_request_id)
       when "failed", "cancelled", "timed_out", "unavailable"
         @revocation.call
+        mark_finalized!
         Result.new(outcome: OUTCOME_RETAINED, retained_until: @attempt.container_retained_until, destroy_request_id: nil)
       else
         Result.new(outcome: @attempt.status, retained_until: nil, destroy_request_id: nil)
@@ -129,6 +132,23 @@ module AppleVerificationAttempts
       return @lifecycle if @lifecycle
 
       @lifecycle = AppleVerification::Lifecycle.from_environment
+    end
+
+    def mark_finalized!
+      @attempt.update!(finalized_at: current_time)
+    end
+
+    def finalized_result
+      return Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: nil) if @attempt.succeeded?
+
+      Result.new(outcome: OUTCOME_RETAINED, retained_until: @attempt.container_retained_until, destroy_request_id: nil)
+    end
+
+    def current_time
+      return @clock.current if @clock.respond_to?(:current)
+      return @clock.now if @clock.respond_to?(:now)
+
+      @clock
     end
   end
 end

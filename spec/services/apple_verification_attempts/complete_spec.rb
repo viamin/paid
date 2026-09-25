@@ -28,6 +28,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.outcome).to eq("verification_vm_destroyed")
     expect(result.retained_until).to be_nil
     expect(result.destroy_request_id).to eq("complete:#{attempt.id}")
+    expect(attempt.reload.finalized_at).to be_present
   end
 
   it "revokes credentials when no lifecycle is available without recording a fake destroy" do
@@ -39,6 +40,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.outcome).to eq("succeeded")
     expect(result.retained_until).to be_nil
     expect(result.destroy_request_id).to be_nil
+    expect(attempt.reload.finalized_at).to be_nil
   end
 
   it "revokes credentials when the lifecycle reports the destroy as a no-op" do
@@ -52,6 +54,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
 
     expect(result.outcome).to eq("succeeded")
     expect(result.destroy_request_id).to be_nil
+    expect(attempt.reload.finalized_at).to be_nil
   end
 
   it "persists the failed-VM retention window for failed attempts" do

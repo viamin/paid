@@ -71,7 +71,20 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     expect(decision.reason).to eq("verification_execution_unavailable")
   end
 
+  it "does not block PR verification when required execution is unavailable" do
+    approved_workflow(lifecycle_gate: "pull_request_verification")
+
+    decision = described_class.call(
+      pull_request: pull_request_for("a" * 40), project: project,
+      lifecycle_gate: "pull_request_verification"
+    )
+
+    expect(decision).not_to be_blocking
+    expect(decision.reason).to eq("verification_execution_unavailable")
+  end
+
   it "only accepts a successful committed attempt for the current pull request head" do
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
     revision = approved_workflow(lifecycle_gate: "pull_request_verification")
     attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
     decision = described_class.call(
@@ -84,6 +97,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
   end
 
   it "accepts a successful committed attempt for the current pull request head" do
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
     revision = approved_workflow(lifecycle_gate: "pull_request_verification")
     attempt_for(revision, status: "succeeded", commit_sha: "a" * 40)
 
@@ -141,6 +155,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
   end
 
   it "treats a waiver as releasing the blocking attempt" do
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
     revision = approved_workflow
     blocking = attempt_for(revision, status: "failed")
     create(
@@ -187,6 +202,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
   end
 
   def create_waiver(expires_at:)
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
     revision = approved_workflow
     blocking = attempt_for(revision, status: "failed")
     create(

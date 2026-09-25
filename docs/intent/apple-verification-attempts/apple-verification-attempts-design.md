@@ -68,10 +68,11 @@ follows one ordered contract:
 The scheduler validates and checks admission before dispatch. Until the guest
 execution handoff implements source delivery, verification start, and result
 completion as one path, it leaves admitted attempts queued rather than cloning
-and starting a VM that cannot complete. Required `completion_verification`
-gates remain unavailable during that interval: Paid neither creates their
-attempt nor blocks the agent run on an attempt that the scheduler cannot
-complete. The gate becomes available only with that end-to-end handoff.
+and starting a VM that cannot complete. Required `completion_verification` and
+`pull_request_verification` gates remain unavailable during that interval:
+Paid neither creates their attempt nor blocks the agent run or PR result on an
+attempt that the scheduler cannot complete. The gates become available only
+with that end-to-end handoff.
 
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
@@ -132,8 +133,9 @@ requires a new approval.
 
 An approved required workflow at `completion_verification` may block an agent
 run from reporting success only after the end-to-end guest-execution handoff is
-available; at `pull_request_verification` it may block Paid's PR verification
-result. Required verification remains pending until it runs or is explicitly
+available; at `pull_request_verification`, it may block Paid's PR verification
+result only after the corresponding handoff can create and execute the required
+attempt. Required verification remains pending until it runs or is explicitly
 waived (APPLE-WORKER-006). When the completion handoff is available and an
 agent run reaches a required completion gate, Paid creates one queued attempt
 for its exact completion commit and schedules the attempt-maintenance sweep

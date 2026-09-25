@@ -65,7 +65,7 @@ module AppleVerificationAttempts
 
     def finalize_incomplete_terminal_attempts
       @attempt_scope
-        .where(status: AppleVerificationAttempt::TERMINAL_STATES, container_retained_until: nil)
+        .where(status: AppleVerificationAttempt::TERMINAL_STATES, finalized_at: nil)
         .find_each { |attempt| @completion.call(attempt:) }
     end
   end
