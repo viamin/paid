@@ -8,6 +8,12 @@
 
 ## Config and Validation
 
+- [x] **MODEL-POLICY-014** — When Paid builds an OpenCode runtime for an
+  OpenRouter model, the system SHALL prepend the OpenCode provider prefix to
+  the complete catalog ID, including `openrouter/free` and
+  `openrouter/pareto-code`; already qualified IDs SHALL remain unchanged,
+  and the stored model ID used by API chat SHALL remain unchanged.
+
 - [x] **MODEL-POLICY-001** — When an `opencode` runner's config omits
   `model_policy`, `Runner#opencode_model_policy` SHALL default to
   `"specific"`. For any other `runner_key`, it SHALL return `nil`. A
@@ -82,17 +88,7 @@
   OpenRouter credential) is enforced by MODEL-POLICY-007, independent of what
   the "Add Runner" list shows. Landed with the `openrouter_free` ->
   `opencode` migration (RDR-065, #3671).
-- [x] **MODEL-POLICY-013** — A free-policy `opencode` runner (`model_policy
-  == "free"`) SHALL fail validation with an error on `:enabled_for_chat` if
-  `enabled_for_chat` is true, on create, update, or any other save path.
-  Chat dispatch does not yet resolve a free-tier model for policy-based free
-  runners, so this validation is the enforcement point that prevents a
-  free-policy runner from silently falling through to a paid default model
-  in chat — regardless of the `enabled_for_chat` column's `true` DB default
-  or a save that bypasses `RunnersController`. The validation only fires for
-  `runner_key == "opencode"`, so the other direct-outbound runner keys
-  (`kilocode`, `pi`, `omp`) and the legacy `openrouter_free` runner key (no
-  longer in `RunnerSupport::APP_RUNNER_KEYS` after the
-  `migrate_openrouter_free_pareto_runners_to_opencode` migration) are
-  unaffected by construction. Deferred: relax once chat dispatch resolves a
-  free-tier model for policy-based free runners.
+- [x] **MODEL-POLICY-013** — A free-policy OpenRouter runner SHALL allow chat
+  usage. API chat, container chat, and chat-only runner tests SHALL resolve a
+  concrete model from the Paid-managed chat pool and SHALL fail explicitly
+  when the pool is empty, without using a paid default or a routing alias.

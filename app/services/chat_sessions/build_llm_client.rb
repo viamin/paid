@@ -72,7 +72,7 @@ module ChatSessions
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       # @spec CHAT-API-015
       base_url = config&.dig(:chat_base_url) || config&.dig(:base_url) || "https://api.openai.com/v1"
-      model = chat_session.model || default_model_for(provider)
+      model = chat_model_for(provider)
 
       transport = AgentHarness::OpenAICompatibleTransport.new(
         base_url: base_url,
@@ -84,12 +84,22 @@ module ChatSessions
         transport: transport,
         model: model,
         provider_type: :openai_compatible,
-        max_tokens: config&.dig(:chat_max_tokens)
+        max_tokens: config&.dig(:chat_max_tokens),
+        model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil
       )
     end
 
     def missing_runner_message
       "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+    end
+
+    # @spec CHAT-API-018, MODEL-POLICY-013
+    def chat_model_for(runner)
+      return chat_session.model || default_model_for(runner) unless runner.free_model_policy?
+
+      model = FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
+      chat_session.update!(model: model) if chat_session.model != model
+      model
     end
 
     def missing_api_key_message(provider)
@@ -102,6 +112,8 @@ module ChatSessions
     end
 
     def default_model_for(provider)
+      return FreeModels::SelectChatModel.for_session(runner: provider, chat_session: chat_session).model_id if provider.free_model_policy?
+
       provider.direct_outbound_model_id.presence || default_model_for_service_type(provider_service_type(provider))
     end
 
@@ -112,14 +124,17 @@ module ChatSessions
     class HttpClient
       attr_reader :model
 
-      def initialize(transport:, model:, provider_type:, max_tokens: nil)
+      def initialize(transport:, model:, provider_type:, max_tokens: nil, model_resolver: nil)
         @transport = transport
         @model = model
         @provider_type = provider_type
         @max_tokens = max_tokens
+        @model_resolver = model_resolver
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
+        # @spec CHAT-API-019
+        @model = @model_resolver.call if @model_resolver
         messages = format_messages(conversation)
         formatted_tools = format_tools(tools)
 

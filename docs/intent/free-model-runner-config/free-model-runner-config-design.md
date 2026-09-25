@@ -62,10 +62,9 @@ submitted config (`Runner#free_model_policy?` true on the built record —
   controller-level)
 - `fallback_role` defaults to `"rate_limit_fallback"`
 - `enabled_for_fallback` and `enabled_for_agent_runs` default to `true`
-- `enabled_for_chat` defaults to `false` — chat dispatch does not resolve a
-  free-tier model for policy-based free runners, so
-  `Runner#opencode_free_policy_chat_must_be_disabled` (MODEL-POLICY-013)
-  rejects a chat-enabled free-policy runner outright
+- `enabled_for_chat` defaults to `false`; users may opt into chat, which
+  selects from the daily-refreshed eligible pool independently of agent-run
+  tier mappings (`MODEL-POLICY-013`, `CHAT-API-018`)
 
 These are suggestions, not enforced policy. If the user already supplied a
 value in the form, the defaulting path must leave that explicit choice intact.

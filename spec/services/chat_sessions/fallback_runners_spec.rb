@@ -9,6 +9,19 @@ RSpec.describe ChatSessions::FallbackRunners do
     let(:chat_session) { create(:chat_session, account: account, created_by: user, runner: primary_runner) }
     let(:primary_runner) { create_openrouter_runner(name: "Primary") }
 
+    # @spec CHAT-API-019
+    it "skips an empty free-model pool and retains a later healthy fallback" do
+      free = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+        enabled_for_agent_runs: false, config: { "opencode" => { "model_policy" => "free" } })
+      healthy = create_openrouter_runner(name: "Healthy")
+      user.settings.update_columns(kb_chat_fallback_runners: [ free.routing_key, healthy.routing_key ])
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([ healthy ])
+      expect(chat_session.reload.runner).to eq(primary_runner)
+    end
+
+
     it "allows fallback to another API-key runner with the same runner key" do
       fallback_runner = create_openrouter_runner(name: "Fallback")
       user.settings.update!(kb_chat_fallback_runners: [ "opencode" ])
