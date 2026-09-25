@@ -46,8 +46,8 @@ class ClaudeLoginSessionsController < ApplicationController
     authorize @claude_login_session
     result = ClaudeLoginSessions::SubmitCode.call(
       session: @claude_login_session,
-      session_token: params[:session_token],
-      code: params[:authorization_code]
+      session_token: request.request_parameters[:session_token],
+      code: request.request_parameters[:authorization_code]
     )
 
     if result.success?
