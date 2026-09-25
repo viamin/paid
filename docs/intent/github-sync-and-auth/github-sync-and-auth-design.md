@@ -57,12 +57,14 @@ untrusted reopen or body edit from becoming an automation back door while
 allowing authorized Paid writes to complete without re-closing themselves.
 
 Needs-input is a human-answer gate represented by a GitHub label, persisted
-clarification questions, and local `paid_state`. Polling reconciles every open,
-non-PR row that still has both the label and questions if another writer has
-changed its state, restoring `needs_input` unless a paused clarification run
-still owns the wait. This also repairs rows that incremental GitHub polling did
-not return. Removing the label remains the inverse human signal that reopens
-the issue for automation.
+clarification questions, and local `paid_state`. Polling reconciles every open
+issue or pull request that still has both the label and questions if another
+writer has changed its state, restoring `needs_input` unless a paused
+clarification run still owns the wait. This also repairs rows that incremental
+GitHub polling did not return. Removing the label remains the inverse human
+signal that reopens the item for automation. A questionless needs-input item is
+repaired by clearing its invalid labels and leaving the wait state, so it cannot
+remain invisible in the Inbox and ineligible for automation.
 
 Paid-owned status labels are not operator commands. When a trusted operator
 manually applies a needs-input label to an item without persisted clarifying
