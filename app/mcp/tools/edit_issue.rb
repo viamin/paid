@@ -58,10 +58,12 @@ module Tools
       raise ArgumentError, "Confirmation required: set confirmed=true to edit an issue" unless confirmed
 
       project = project_for(project_id)
-      reopening_issue = validate_state_transition!(project, issue_number, state, reopen_review_confirmed, reopen_reason)
       client = require_github_client!(project)
       require_trusted_human_credential!(project, client)
       repo = project.full_name
+      reopening_issue = validate_state_transition!(
+        project:, client:, repo:, issue_number:, state:, reopen_review_confirmed:, reopen_reason:
+      )
 
       options = {}
       options[:title] = title if title
@@ -91,29 +93,35 @@ module Tools
 
     private
 
-    # @spec ISSUE-REOPEN-REVIEW-002 @spec ISSUE-REOPEN-REVIEW-003
-    def validate_state_transition!(project, issue_number, state, reopen_review_confirmed, reopen_reason)
+    # @spec ISSUE-REOPEN-REVIEW-002, ISSUE-REOPEN-REVIEW-003
+    def validate_state_transition!(project:, client:, repo:, issue_number:, state:, reopen_review_confirmed:, reopen_reason:)
+      return unless state
+
+      return validate_reopen!(client:, repo:, issue_number:, reopen_review_confirmed:, reopen_reason:) if state == "open"
+
       issue = project.issues.find_by(github_number: issue_number)
-      return unless issue && state
-
-      if reopening?(issue, state) && !reopen_review_confirmed
-        raise ArgumentError, "Reopen review confirmation required: set reopen_review_confirmed=true after validating the original closure"
-      end
-
-      raise ArgumentError, "Reopen reason required" if reopening?(issue, state) && reopen_reason.blank?
-      return issue if reopening?(issue, state)
-
-      return unless state == "closed" && issue.reopen_review_pending?
+      return unless state == "closed" && issue&.reopen_review_pending?
 
       raise ArgumentError, "Cannot close this issue while its reopen review is pending"
     end
 
-    def reopening?(issue, state)
-      state == "open" && issue.github_state == "closed"
+    def validate_reopen!(client:, repo:, issue_number:, reopen_review_confirmed:, reopen_reason:)
+      return unless client.issue(repo, issue_number).state == "closed"
+
+      unless reopen_review_confirmed
+        raise ArgumentError, "Reopen review confirmation required: set reopen_review_confirmed=true after validating the original closure"
+      end
+
+      raise ArgumentError, "Reopen reason required" if reopen_reason.blank?
+
+      true
     end
 
     def record_reopen!(issue, reason:)
-      issue.update!(reopened_at: Time.current, reopened_by: user, reopen_reason: reason)
+      issue.transaction do
+        issue.update!(reopened_at: Time.current, reopened_by: user, reopen_reason: reason)
+        issue.require_reopen_review! unless issue.is_pull_request?
+      end
     end
 
     def record_audit_event(project, issue_number:, repo:, changes:, reopened:, reopen_reason:)

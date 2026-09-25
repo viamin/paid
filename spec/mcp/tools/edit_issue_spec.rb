@@ -15,6 +15,7 @@ RSpec.describe Tools::EditIssue do
       42, "https://github.com/owner/repo/issues/42", "Updated title", "open"
     )
   end
+  let(:github_issue) { Struct.new(:state).new("open") }
 
 
   describe ".available_to?" do
@@ -54,7 +55,7 @@ RSpec.describe Tools::EditIssue do
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
       allow(Issues::ParseDependencies).to receive(:call)
-      allow(github_client).to receive_messages(authenticated_login: project.allowed_github_usernames.first, update_issue: updated_issue, labels: [
+      allow(github_client).to receive_messages(authenticated_login: project.allowed_github_usernames.first, issue: github_issue, update_issue: updated_issue, labels: [
         Struct.new(:name).new("bug"),
         Struct.new(:name).new("enhancement")
       ])
@@ -95,6 +96,7 @@ RSpec.describe Tools::EditIssue do
     # @spec ISSUE-REOPEN-REVIEW-003
     it "requires an explicit review confirmation before reopening a closed issue" do
       create(:issue, project: project, github_number: 42, github_state: "closed")
+      allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
 
       expect do
         tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true)
@@ -106,6 +108,7 @@ RSpec.describe Tools::EditIssue do
     # @spec ISSUE-REOPEN-REVIEW-003
     it "requires a reason before reopening a closed issue" do
       create(:issue, project: project, github_number: 42, github_state: "closed")
+      allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
 
       expect do
         tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
@@ -119,6 +122,7 @@ RSpec.describe Tools::EditIssue do
     it "records the reopener and reason after the caller explicitly confirms review" do
       reopened_issue = create(:issue, project: project, github_number: 42, github_state: "closed")
       allow(Issues::UpsertFromGithub).to receive(:call).and_return(reopened_issue)
+      allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
 
       expect do
         tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
@@ -139,6 +143,23 @@ RSpec.describe Tools::EditIssue do
         "issue_number" => 42,
         "reason" => "The reported regression remains unresolved"
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-003, ISSUE-REOPEN-REVIEW-004
+    it "uses GitHub's current state when the local issue is stale" do
+      stale_issue = create(:issue, project: project, github_number: 42, github_state: "open")
+      allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(Struct.new(:state).new("closed"))
+      allow(Issues::UpsertFromGithub).to receive(:call).and_return(stale_issue)
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true)
+      end.to raise_error(ArgumentError, /Reopen review confirmation required/)
+
+      tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
+        reopen_review_confirmed: true, reopen_reason: "The issue was closed after the last sync")
+
+      expect(stale_issue.reload).to be_reopen_review_pending
+      expect(stale_issue).to have_attributes(reopened_by: user, reopen_reason: "The issue was closed after the last sync")
     end
 
     # @spec ISSUE-REOPEN-REVIEW-002
