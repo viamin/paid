@@ -5,6 +5,7 @@ module Prompts
   # @spec CREATE-FEATURE-002
   # @spec CREATE-FEATURE-003
   # @spec RDR-ROLLOUT-GUARD-003
+  # @spec FEATURE-CREATION-008
   #
   # Builds the agent prompt for a `create_feature` run. The run is responsible
   # for taking a structured feature brief (collected via chat or the
@@ -38,7 +39,12 @@ module Prompts
 
       The user has provided the following structured brief for this feature.
       Use it as the seed for the RDR's Problem Statement, Context, and
-      Proposed Solution; do not invent facts the brief does not support.
+      Proposed Solution; do not invent facts the brief does not support. When
+      the brief includes problem framing, preserve supplied evidence,
+      user-confirmed choices, and unresolved assumptions or AI hypotheses as
+      distinct categories. A selected framing the brief does not explicitly
+      mark user-confirmed (`selected_framing_confirmed: true`) is a proposed
+      framing — treat it as a hypothesis, not a settled user choice.
 
       {{feature_brief}}
 
@@ -67,6 +73,15 @@ module Prompts
          - Rollout Guard
          - Implementation Plan (phases/steps)
          - Validation (testing approach and scenarios)
+         Apply problem framing where present: use the selected framing
+         (labelled user-confirmed or proposed) in Problem Statement;
+         observations and supplied evidence/references in
+         Context and Research Findings; material framings in Alternatives
+         Considered; and desired outcome plus reconsideration conditions in
+         Validation. Keep implementation acceptance criteria (for example,
+         "notifications are delivered correctly") separate from a desired user
+         outcome (for example, "review waiting time decreases"); neither is
+         evidence that the outcome has already been achieved.
       4. **Update the index**: Add a row for the new RDR to `docs/rdrs/README.md`
          in the appropriate section, matching the table format already in use.
       5. **Open a docs-only PR**: Open a pull request whose diff contains only
@@ -92,6 +107,12 @@ module Prompts
       - **Honour the brief.** Do not invent facts the brief does not support.
         If the brief is silent on something the RDR requires, mark it as
         `[inferred]` and surface it in the PR description for human review.
+      - **Preserve evidence status.** Do not promote an unresolved assumption
+        or AI hypothesis into a confirmed fact, and do not fabricate customer
+        evidence. Label supplied evidence, user-confirmed choices, and
+        hypotheses distinctly in the RDR. A selected framing the brief does
+        not mark user-confirmed is a hypothesis — never present it as a
+        user-confirmed choice.
       - **RDR numbering is repo-derived.** Do not hardcode numbers; the repo
         is the source of truth.
       - **Docs-only PR.** The RDR PR must contain only `docs/rdrs/` changes.
@@ -158,6 +179,7 @@ module Prompts
         brief_section("Constraints", feature_brief["constraints"]),
         brief_section("Rejected alternatives", feature_brief["rejected_alternatives"]),
         scope_section,
+        problem_framing_section,
         "",
         "Done criteria: #{feature_brief['done_criteria']}",
         "",
@@ -180,6 +202,48 @@ module Prompts
       parts << brief_section("Scope (in)", scope["in"])
       parts << brief_section("Scope (out)", scope["out"])
       parts.compact.join("\n\n")
+    end
+
+    def problem_framing_section
+      framing = feature_brief["problem_framing"]
+      return unless framing.is_a?(Hash)
+
+      sections = [
+        brief_section("Observations", framing["observations"]),
+        brief_section("Supplied evidence/references", framing["evidence_references"]),
+        brief_section("Affected stakeholders", framing["affected_stakeholders"]),
+        selected_framing_section(framing),
+        text_section("Selected-framing rationale", framing["selected_framing_rationale"]),
+        brief_section("Material alternative framings", framing["alternative_framings"]),
+        brief_section("Unresolved assumptions / AI hypotheses", framing["unresolved_assumptions"]),
+        text_section("Desired user outcome (not yet achieved)", framing["desired_outcome"]),
+        brief_section("Conditions to reconsider", framing["reconsideration_conditions"])
+      ].compact
+      return if sections.empty?
+
+      "Problem framing:\n" + sections.join("\n\n")
+    end
+
+    # @spec FEATURE-CREATION-008 — the confirmation flag is caller-supplied
+    # metadata: the direct tool path stores any JSON brief verbatim, so a
+    # framing earns the user-confirmed label only when the brief explicitly
+    # asserts it. Anything else renders as a hypothesis, never a settled
+    # user choice.
+    def selected_framing_section(framing)
+      value = framing["selected_framing"]
+      return if value.blank?
+
+      if framing["selected_framing_confirmed"] == true
+        text_section("User-confirmed selected framing", value)
+      else
+        text_section("Proposed selected framing (not user-confirmed — treat as a hypothesis)", value)
+      end
+    end
+
+    def text_section(label, value)
+      return if value.blank?
+
+      "#{label}: #{value}"
     end
 
     def lid_section

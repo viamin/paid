@@ -89,6 +89,44 @@
   *Code:* `app/services/chat_sessions/build_system_prompt.rb#base_identity`,
   `db/seeds/prompts.rb` (`chat.system_prompt`).
 
+- [x] **FEATURE-CREATION-007** — When chat or a direct tool call starts a
+  `create_feature` run with optional `problem_framing`, the system SHALL
+  normalize and store it in `external_metadata["feature_brief"]`. It SHALL
+  preserve observations, supplied evidence/references, affected stakeholders,
+  selected framing and rationale, alternatives, unresolved assumptions or AI
+  hypotheses, desired outcome, and reconsideration conditions without
+  representing hypotheses as confirmed facts. The stored framing SHALL carry a
+  `selected_framing_confirmed` boolean (preserved verbatim on the direct-tool
+  path); absence or `false` SHALL mean the framing is not user-confirmed.
+  Briefs without it SHALL retain the existing path without added questions or
+  gates. This claim materializes the structured persistence and RDR handoff
+  that FEATURE-CREATION-006 (exploration summary) defers, reusing the framing
+  the FEATURE-CREATION-003..005 exploration conversation produces without
+  adding a new discovery mode, stored workflow, or approval boundary.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`,
+  `spec/mcp/tools/trigger_agent_run_spec.rb`.
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb`,
+  `app/mcp/tools/trigger_agent_run.rb`.
+
+- [x] **FEATURE-CREATION-008** — When a create-feature clarification pass
+  refines an enriched brief, it SHALL retain prior settled problem-framing
+  fields that the admitted answer does not replace, including the
+  `selected_framing_confirmed` flag. The rendered design prompt SHALL
+  distinguish user-confirmed choices, supplied evidence, and hypotheses; SHALL
+  label the selected framing user-confirmed only when the brief explicitly
+  asserts `selected_framing_confirmed` and otherwise render it as a proposed
+  framing the RDR must treat as a hypothesis; use framing in Problem
+  Statement, Context/Research Findings, Alternatives Considered, and
+  Validation; and separate implementation acceptance from an unachieved
+  desired outcome. This deep-merge and confirmed-vs-proposed rendering is the
+  RDR-handoff half of FEATURE-CREATION-007, carrying the
+  FEATURE-CREATION-003..006 exploration fields through clarification and into
+  the design prompt.
+  *Tests:* `spec/services/features/clarifying_questions/analyze_spec.rb`,
+  `spec/services/prompts/build_for_create_feature_spec.rb`.
+  *Code:* `app/services/features/clarifying_questions/analyze.rb`,
+  `app/services/prompts/build_for_create_feature.rb`.
+
 - [x] **ISSUE-ENHANCEMENT-001** — When issue enhancement determines that an
   issue lacks implementation-ready context, the system SHALL ask clarifying
   questions in plain language about the problem, desired behavior, constraints,

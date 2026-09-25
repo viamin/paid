@@ -7,7 +7,7 @@ module Features
     # Uses the model for the semantic decision about whether a feature brief is
     # ready. Ruby only validates the returned shape and carries the result into
     # the established needs-input lifecycle.
-    # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002
+    # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002 @spec FEATURE-CREATION-008
     class Analyze
       DEFAULT_MODEL = "claude-sonnet-4-6"
       TIMEOUT = 60
@@ -42,7 +42,11 @@ module Features
         RDR research. Then questions must be empty. Set ready to false only
         when one or more targeted questions are necessary; provide at most five.
         Preserve all settled intent in feature_brief and incorporate admitted
-        answers. Do not add facts unsupported by the supplied material.
+        answers. For problem framing, retain evidence references as supplied
+        material and retain unresolved assumptions as hypotheses; set
+        selected_framing_confirmed to true only when the user confirmed the
+        current selected framing. Do not add facts or evidence unsupported by
+        the supplied material.
 
         ## Feature brief
         %{feature_brief}
@@ -134,7 +138,7 @@ module Features
         brief = payload["feature_brief"]
         raise InvalidResponse, "feature clarification must return a feature_brief object" unless brief.is_a?(Hash)
 
-        Result.new(ready:, questions:, feature_brief: feature_brief.merge(brief.deep_stringify_keys))
+        Result.new(ready:, questions:, feature_brief: feature_brief.deep_merge(brief.deep_stringify_keys))
       rescue JSON::ParserError
         raise InvalidResponse, "feature clarification analysis returned invalid JSON"
       end

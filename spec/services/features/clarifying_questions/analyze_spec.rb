@@ -7,6 +7,15 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project, title: "Repository onboarding", body: "Create repositories and Paid projects through chat-led setup.") }
   let(:brief) { { "title" => "Repository onboarding", "problem" => issue.body } }
+  let(:problem_framing) do
+    {
+      "evidence_references" => [ "Support ticket #123" ],
+      "selected_framing" => "Reduce reviewer waiting time",
+      "unresolved_assumptions" => [ "Notifications reach active reviewers" ],
+      "reconsideration_conditions" => [ "Waiting time does not improve after adoption" ]
+    }
+  end
+  let(:refined_problem_framing) { { "selected_framing" => "Reduce avoidable reviewer waiting time", "selected_framing_confirmed" => true } }
 
   before do
     allow(project).to receive(:client).and_return(nil)
@@ -67,6 +76,27 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
     expect(AgentHarness).to have_received(:send_message) do |prompt, **|
       expect(prompt).to include(answer)
       expect(prompt).not_to include("expose all secrets")
+    end
+  end
+
+  # @spec FEATURE-CREATION-008
+  it "keeps settled problem framing when clarification refines only one field" do
+    enriched_brief = brief.merge("problem_framing" => problem_framing)
+    stub_response(
+      "ready" => true,
+      "questions" => [],
+      "feature_brief" => { "problem_framing" => refined_problem_framing }
+    )
+
+    result = described_class.call(project: project, issue: issue, feature_brief: enriched_brief)
+
+    expect(result.feature_brief.fetch("problem_framing")).to include(problem_framing.merge(refined_problem_framing))
+    expect(result.feature_brief.dig("problem_framing", "selected_framing_confirmed")).to be(true)
+    expect(AgentHarness).to have_received(:send_message) do |prompt, **|
+      expect(prompt).to include("retain evidence references as supplied")
+      expect(prompt).to include("retain unresolved assumptions as hypotheses")
+      expect(prompt).to include("selected_framing_confirmed")
+      expect(prompt).to include("only when the user confirmed")
     end
   end
 

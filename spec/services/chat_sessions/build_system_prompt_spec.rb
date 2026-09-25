@@ -44,14 +44,36 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Be concise and technical")
       end
 
-      it "includes feature-creation guidance" do
+      # @spec FEATURE-CREATION-007
+      it "includes feature-creation guidance and problem-framing handoff" do
         expect(prompt).to include("gather intent through adaptive questions")
         expect(prompt).to include("problem, desired behavior, constraints, rejected alternatives, scope, and done-ness")
+        expect(prompt).to include("supplied evidence/references")
+        expect(prompt).to include("unresolved assumptions or AI hypotheses")
+        expect(prompt).to include("serialized as JSON")
         expect(prompt).to include("search_code")
         expect(prompt).to include("read_repo_file")
         expect(prompt).not_to include("get_file_content")
         expect(prompt).to include("trigger a `create_feature` agent run")
         expect(prompt).to include("custom_prompt")
+      end
+
+      # @spec FEATURE-CREATION-007
+      it "instructs the agent to mark a framing user-confirmed only on explicit user confirmation" do
+        expect(prompt).to include("selected_framing_confirmed")
+        expect(prompt).to include("only after the user confirms the framing")
+        expect(prompt).to include("treats it as a hypothesis")
+      end
+
+      # The merged base identity carries the problem-exploration step (RDR-053
+      # § 2026-09-25 Extension) alongside the problem-framing recording
+      # handoff; guard against dropping the exploration guidance when the
+      # framing sentence is folded into the feature-creation paragraph.
+      # @spec FEATURE-CREATION-007
+      it "retains problem-exploration guidance alongside the framing handoff" do
+        expect(prompt).to match(/explicitly asks to explore the problem/i)
+        expect(prompt).to include("tentative hypotheses")
+        expect(prompt).to include("selected_framing_confirmed")
       end
 
       describe "feature-design problem exploration guidance" do
