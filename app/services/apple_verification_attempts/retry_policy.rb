@@ -7,7 +7,11 @@ module AppleVerificationAttempts
   # worker infrastructure outages, and timeouts. Deterministic project
   # failures and cancellations are not retried; pretending an
   # infrastructure outage was a code defect would burn the retry budget
-  # and hide the real problem.
+  # and hide the real problem. An attempt with no failure classification
+  # (legacy rows predating the taxonomy, and succeeded attempts) stays
+  # retryable because an unknown classification is not a deterministic
+  # project failure and APPLE-VERIFY-006 preserves administrator rerun
+  # control.
   class RetryPolicy
     DEFAULT_MAX_RETRIES = 3
 
@@ -41,7 +45,7 @@ module AppleVerificationAttempts
       return deny("not_terminal") unless @attempt.terminal?
 
       classification = FailureClassification.new(@attempt.failure_classification)
-      return deny("not_infrastructure", classification.value) unless classification.infrastructure?
+      return deny("not_infrastructure", classification.value) if classification.value.present? && !classification.infrastructure?
       return deny("cancelled", classification.value) if @attempt.status == "cancelled"
       return deny("max_retries_exceeded", classification.value) if retry_budget_exhausted?
 

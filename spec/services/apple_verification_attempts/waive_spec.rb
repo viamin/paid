@@ -38,6 +38,7 @@ RSpec.describe AppleVerificationAttempts::Waive do
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
+    allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
   end
 
   def waive

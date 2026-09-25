@@ -90,6 +90,8 @@ module AppleVerification
         return unless attempt.commit_sha.present?
 
         credential_lane.revoke!
+        return if credential_revocation_recorded?
+
         record_event!(
           event_name: "apple_credential.revoked",
           metadata: { "attempt_id" => attempt.id, "action" => "credential_revoked" }
@@ -173,6 +175,16 @@ module AppleVerification
           error: error.message
         )
         nil
+      end
+
+      # The destroy-skip path in {AppleVerificationAttempts::Complete} leaves
+      # +finalized_at+ nil so the recovery sweep retries finalization, which
+      # re-enters this method every sweep. The credential revoke itself is
+      # idempotent (a cache miss is a safe no-op), but the audit event is not:
+      # record it only once per attempt so a stuck attempt cannot append a
+      # duplicate +apple_credential.revoked+ row every five minutes.
+      def credential_revocation_recorded?
+        attempt.execution_audit_events.exists?(event_name: "apple_credential.revoked")
       end
 
       def failed_vm_retained_until

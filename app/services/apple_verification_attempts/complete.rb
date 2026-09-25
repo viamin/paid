@@ -95,7 +95,17 @@ module AppleVerificationAttempts
       raise NoLifecycleError, "no Apple verification lifecycle available" unless lifecycle
 
       destroy_request_id = "early_destroy:#{@attempt.id}"
-      destroy_result = lifecycle.destroy(attempt: @attempt, request_id: destroy_request_id)
+      destroy_result = begin
+        lifecycle.destroy(attempt: @attempt, request_id: destroy_request_id)
+      rescue StandardError => error
+        Rails.logger.warn(
+          message: "apple_verification.early_destroy_failed",
+          apple_verification_attempt_id: @attempt.id,
+          error_class: error.class.name,
+          error: error.message
+        )
+        return Result.new(outcome: @attempt.status, retained_until: @attempt.container_retained_until, destroy_request_id: nil)
+      end
       unless destroy_result == :destroyed
         Rails.logger.warn(
           message: "apple_verification.early_destroy_skipped",
@@ -123,9 +133,16 @@ module AppleVerificationAttempts
       end
 
       @last_destroy_request_id = "complete:#{@attempt.id}"
-      result = lifecycle.destroy(attempt: @attempt, request_id: @last_destroy_request_id)
-      @last_destroy_result = result
-      @last_destroy_skip_reason = "destroy_noop" if result != :destroyed
+      @last_destroy_result = lifecycle.destroy(attempt: @attempt, request_id: @last_destroy_request_id)
+      @last_destroy_skip_reason = "destroy_noop" if @last_destroy_result != :destroyed
+    rescue StandardError => error
+      @last_destroy_skip_reason = "destroy_failed"
+      Rails.logger.warn(
+        message: "apple_verification.complete_destroy_failed",
+        apple_verification_attempt_id: @attempt.id,
+        error_class: error.class.name,
+        error: error.message
+      )
     end
 
     def resolve_lifecycle

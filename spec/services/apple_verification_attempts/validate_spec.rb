@@ -180,7 +180,7 @@ RSpec.describe AppleVerificationAttempts::Validate do
   it "allows the configured maximum attempts per agent run including the current attempt" do
     agent_run = create(:agent_run, project: project)
     bound_attempt = attempt_for(agent_run)
-    (AppleVerificationAttempts::Queue::DEFAULT_MAX_ATTEMPTS_PER_RUN - 1).times { attempt_for(agent_run) }
+    (AppleVerificationAttempts::Queue::DEFAULT_MAX_ATTEMPTS_PER_RUN - 1).times { attempt_for(agent_run, status: "failed") }
 
     decision = described_class.call(attempt: bound_attempt)
 
@@ -190,7 +190,7 @@ RSpec.describe AppleVerificationAttempts::Validate do
   it "uses the configured maximum attempts per agent run" do
     agent_run = create(:agent_run, project: project)
     bound_attempt = attempt_for(agent_run)
-    4.times { attempt_for(agent_run) }
+    4.times { attempt_for(agent_run, status: "failed") }
 
     decision = described_class.call(attempt: bound_attempt, max_attempts_per_run: 8)
 
@@ -207,14 +207,16 @@ RSpec.describe AppleVerificationAttempts::Validate do
     end
   end
 
-  def attempt_for(agent_run)
+  def attempt_for(agent_run, status: "queued")
     create(
       :apple_verification_attempt,
       project: project, account: account,
       apple_verification_workflow_revision: workflow,
       apple_worker_profile: profile,
       lifecycle_gate: workflow.lifecycle_gate,
-      agent_run: agent_run
+      agent_run: agent_run,
+      status: status,
+      finished_at: (Time.current unless status == "queued")
     )
   end
 
@@ -240,7 +242,9 @@ RSpec.describe AppleVerificationAttempts::Validate do
         apple_verification_workflow_revision: bound_workflow,
         apple_worker_profile: profile,
         lifecycle_gate: bound_workflow.lifecycle_gate,
-        agent_run: agent_run
+        agent_run: agent_run,
+        status: "failed",
+        finished_at: Time.current
       )
     end
     bound_attempt
