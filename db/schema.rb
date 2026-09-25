@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_23_161456) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_084559) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -425,6 +425,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_161456) do
     t.datetime "container_retained_until", comment: "Deadline until which a failed Apple VM is retained before destroy; null when destroyed promptly or never retained."
     t.datetime "created_at", null: false
     t.string "failure_classification"
+    t.datetime "finalized_at", comment: "When VM cleanup and credential revocation completed for this terminal attempt."
     t.datetime "finished_at"
     t.string "lifecycle_gate", null: false
     t.bigint "project_id", null: false
@@ -440,6 +441,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_161456) do
     t.index ["apple_worker_profile_id"], name: "index_apple_verification_attempts_on_apple_worker_profile_id"
     t.index ["bundle_retained_until"], name: "idx_apple_attempts_bundle_retained_until", where: "(bundle_retained_until IS NOT NULL)"
     t.index ["container_retained_until"], name: "idx_apple_attempts_container_retained_until", where: "(container_retained_until IS NOT NULL)"
+    t.index ["finalized_at"], name: "idx_apple_attempts_incomplete_finalization", where: "(finalized_at IS NULL)"
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
     t.index ["retry_of_attempt_id"], name: "idx_apple_attempts_one_retry_per_source", unique: true

@@ -107,8 +107,10 @@
   is available, it SHALL leave the completion gate unavailable rather than
   create an attempt that cannot release the run. When assigned to the
   `pull_request_verification` gate, it SHALL block Paid's PR verification
-  result; enforcement SHALL bind the approved committed workflow digest and
-  its approved lifecycle gate.
+  result only after the same handoff can create and execute the required
+  attempt; before then it SHALL leave the PR gate unavailable. Enforcement
+  SHALL bind the approved committed workflow digest and its approved lifecycle
+  gate.
   *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
   `spec/services/apple_verification_attempts/enqueue_completion_spec.rb`,
   `spec/models/agent_run_spec.rb`,

@@ -91,6 +91,19 @@ RSpec.describe AppleVerificationAttempts::Recovery do
     expect(finalized_attempts).to contain_exactly(successful)
   end
 
+  it "does not repeat finalization after a successful attempt has completed cleanup" do
+    successful = create(:apple_verification_attempt, :succeeded, project: project, account: account)
+    successful.update!(finalized_at: clock)
+    finalized_attempts = []
+
+    described_class.call(
+      timeout_monitor: AppleVerificationAttempts::TimeoutMonitor.new(clock: clock),
+      completion: ->(attempt:) { finalized_attempts << attempt }
+    )
+
+    expect(finalized_attempts).to be_empty
+  end
+
   def create_stale_attempt(workflow, started_at)
     create(
       :apple_verification_attempt,
