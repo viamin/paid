@@ -821,6 +821,34 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
       end
 
+      # @spec GITHUB-SYNC-014
+      it "repairs an open pull request that has no questions to answer" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/92")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload).to have_attributes(paid_state: "failed", is_pull_request: true)
+        expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+        expect(github_client).to have_received(:remove_labels_from_issue).with(
+          project.full_name,
+          issue.github_number,
+          [ project.enhance_issue_needs_input_label_name ]
+        )
+      end
+
+      # @spec GITHUB-SYNC-014
+      it "does not repeatedly repair a closed pull request" do
+        issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
+        github_issue.state = "closed"
+        github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/92")
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload).to have_attributes(paid_state: "needs_input", github_state: "closed")
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+      end
+
       it "keeps comment-backed clarifying questions in needs-input" do
         issue.update!(needs_input_questions: nil, body: "No clarifying questions here")
         allow(github_client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return([
@@ -975,12 +1003,13 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.reload.paid_state).to eq("needs_input")
       end
 
-      it "does not transition when issue is a pull request" do
+      # @spec GITHUB-SYNC-014
+      it "transitions an open pull request when the needs-input label is removed" do
         github_issue.pull_request = OpenStruct.new(html_url: "https://github.com/owner/repo/pull/93")
 
         activity.execute(project_id: project.id)
 
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.reload.paid_state).to eq("new")
       end
 
       it "does not transition when paid_state is not needs_input" do
@@ -2738,6 +2767,28 @@ RSpec.describe Activities::FetchIssuesActivity do
 
           expect(issue.reload.paid_state).to eq("failed")
           expect(issue.labels).not_to include(project.enhance_issue_needs_input_label_name)
+          expect(github_client).to have_received(:remove_labels_from_issue).with(
+            project.full_name,
+            issue.github_number,
+            [ project.enhance_issue_needs_input_label_name ]
+          )
+        end
+
+        # @spec GITHUB-SYNC-014
+        it "repairs an open pull request omitted from the incremental response" do
+          issue = create(:issue, :needs_input,
+            project: project,
+            github_issue_id: 7060,
+            github_number: 60,
+            is_pull_request: true,
+            labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ],
+            needs_input_questions: nil,
+            body: "No clarifying questions here")
+          allow(github_client).to receive(:pull_requests).and_return([ OpenStruct.new(number: issue.github_number) ])
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.paid_state).to eq("failed")
           expect(github_client).to have_received(:remove_labels_from_issue).with(
             project.full_name,
             issue.github_number,
