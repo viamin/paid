@@ -1582,6 +1582,23 @@ RSpec.describe AgentRun do
         expect(agent_run.pull_request_url).to be_nil
         expect(agent_run.pull_request_number).to be_nil
       end
+
+      # @spec APPLE-ATTEMPT-011
+      it "does not report completion while required Apple verification is pending" do
+        agent_run = create(:agent_run, status: "running", started_at: 5.minutes.ago)
+        workflow = create(
+          :apple_verification_workflow_revision,
+          project: agent_run.project,
+          account: agent_run.project.account,
+          lifecycle_gate: "completion_verification"
+        )
+        administrator = create(:user, account: agent_run.project.account)
+        administrator.add_role(:project_admin, agent_run.project)
+        workflow.approve!(actor: administrator)
+
+        expect(agent_run.complete!).to be false
+        expect(agent_run.reload).to be_running
+      end
     end
 
     describe "#complete! with issue details" do
