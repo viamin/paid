@@ -70,9 +70,9 @@ execution handoff implements source delivery, verification start, and result
 completion as one path, it leaves admitted attempts queued rather than cloning
 and starting a VM that cannot complete. Required `completion_verification` and
 `pull_request_verification` gates remain unavailable during that interval:
-Paid neither creates their attempt nor blocks the agent run or PR result on an
-attempt that the scheduler cannot complete. The gates become available only
-with that end-to-end handoff.
+Paid does not create their attempt during that interval, but the required gate
+remains pending (enforcing) and withholds the agent run or PR result until the
+end-to-end handoff lands and verification can run (or is explicitly waived).
 
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
