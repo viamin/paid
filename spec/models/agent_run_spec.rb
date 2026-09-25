@@ -1584,8 +1584,8 @@ RSpec.describe AgentRun do
       end
 
       # @spec APPLE-ATTEMPT-011
-      it "does not report completion while required Apple verification is pending" do
-        agent_run = create(:agent_run, status: "running", started_at: 5.minutes.ago)
+      it "queues required Apple verification before reporting completion" do
+        agent_run = create(:agent_run, :with_git_context, status: "running", started_at: 5.minutes.ago)
         workflow = create(
           :apple_verification_workflow_revision,
           project: agent_run.project,
@@ -1596,8 +1596,15 @@ RSpec.describe AgentRun do
         administrator.add_role(:project_admin, agent_run.project)
         workflow.approve!(actor: administrator)
 
-        expect(agent_run.complete!).to be false
+        expect {
+          expect(agent_run.complete!(result_commit: "abc123def456789012345678901234567890abcd")).to be false
+        }.to change(AppleVerificationAttempt, :count).by(1)
         expect(agent_run.reload).to be_running
+        expect(AppleVerificationAttempt.where(agent_run:).last).to have_attributes(
+          commit_sha: "abc123def456789012345678901234567890abcd",
+          lifecycle_gate: "completion_verification",
+          status: "queued"
+        )
       end
     end
 

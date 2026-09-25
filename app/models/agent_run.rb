@@ -2113,7 +2113,7 @@ class AgentRun < ApplicationRecord
       reload
       if finished?
         false
-      elsif apple_completion_verification_blocked?
+      elsif apple_completion_verification_blocked?(result_commit:)
         false
       else
         update!(
@@ -2183,7 +2183,11 @@ class AgentRun < ApplicationRecord
   # A completion-gated Apple workflow must succeed for this run before it can
   # report success. This central transition is shared by every successful
   # agent-run completion path, so individual activities cannot bypass it.
-  def apple_completion_verification_blocked?
+  def apple_completion_verification_blocked?(result_commit:)
+    AppleVerificationAttempts::EnqueueCompletion.call(
+      agent_run: self,
+      commit_sha: result_commit || result_commit_sha || base_commit_sha
+    )
     AppleVerificationAttempts::GateEnforcement.call(
       agent_run: self,
       lifecycle_gate: "completion_verification"
