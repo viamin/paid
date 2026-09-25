@@ -37,10 +37,10 @@ module AppleVerification
       end
 
       # Returns a lambda suitable for passing as +attempt_factory:+ to
-      # {AppleVerification::Setup::SmokeTests}. The lambda constructs a
-      # fresh +AppleVerificationAttempt+ on each invocation so the smoke
-      # scenarios get an attempt bound to their individual agent_run while
-      # sharing the same smoke-scoped profile + revision across runs.
+      # {AppleVerification::Setup::SmokeTests}. The lambda creates an attempt
+      # for each agent run while sharing the same smoke-scoped profile +
+      # revision across runs. Repeated setup for one active run reuses its
+      # existing attempt, preserving the one-active-attempt-per-run invariant.
       def call
         lambda do |agent_run:|
           TenantContext.with_system_access do
@@ -98,6 +98,24 @@ module AppleVerification
       end
 
       def build_attempt(agent_run:, profile:, revision:)
+        existing_active_attempt(agent_run:, profile:, revision:) || create_attempt(agent_run:, profile:, revision:)
+      rescue ActiveRecord::RecordNotUnique
+        existing_active_attempt(agent_run:, profile:, revision:) || raise
+      end
+
+      def existing_active_attempt(agent_run:, profile:, revision:)
+        AppleVerificationAttempt
+          .where(
+            agent_run:,
+            apple_worker_profile: profile,
+            apple_verification_workflow_revision: revision
+          )
+          .where.not(status: AppleVerificationAttempt::TERMINAL_STATES)
+          .order(created_at: :desc, id: :desc)
+          .first
+      end
+
+      def create_attempt(agent_run:, profile:, revision:)
         AppleVerificationAttempt.create!(
           project: project,
           account: project.account,

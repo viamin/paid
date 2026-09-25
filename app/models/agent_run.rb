@@ -189,6 +189,11 @@ class AgentRun < ApplicationRecord
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
   FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY = "feature_clarification_round_id".freeze
+  # Records a withheld completion (payload + "withheld_at") when the
+  # completion-verification gate holds the run non-terminal. Its presence on
+  # a running run marks the run as parked awaiting verification, exempt from
+  # stale-running recovery.
+  COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY = "completion_verification_withheld".freeze
 
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
@@ -379,6 +384,14 @@ class AgentRun < ApplicationRecord
     where(goal: "create_feature", status: "paused")
       .where("NULLIF(external_metadata ->> ?, '') IS NOT NULL", FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY)
   }
+  # A running run whose completion was withheld at the completion-verification
+  # gate is parked by design, not stalled execution eligible for stale
+  # recovery: the gate keeps it pending until verification runs or is
+  # explicitly waived, then re-invokes completion.
+  # @spec APPLE-ATTEMPT-013
+  scope :awaiting_completion_verification, -> {
+    running.where("external_metadata->>? IS NOT NULL", COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+  }
   scope :rate_limited, -> { where(status: "rate_limited") }
   # Rate-limited runs whose recovery window has elapsed and are therefore due to
   # be re-queued in place. StaleRunDetectorJob reactivates these — without it,
@@ -478,7 +491,14 @@ class AgentRun < ApplicationRecord
   scope :recent, -> { order(created_at: :desc) }
   scope :started_before, ->(time) { where("started_at < ?", time) }
   scope :updated_before, ->(time) { where("updated_at < ?", time) }
-  scope :stale_running, -> { running.where(stale_running_condition_sql(now: Time.current)) }
+  # Excludes runs withheld at the completion-verification gate: their workflow
+  # already returned and the gate owns completion, so sweeping them to timeout
+  # would turn pending verification into a terminal apparent failure.
+  # @spec APPLE-ATTEMPT-013
+  scope :stale_running, -> {
+    running.where(stale_running_condition_sql(now: Time.current))
+           .where.not(id: awaiting_completion_verification.select(:id))
+  }
   scope :stale_claimed, -> { claimed.or(admitted_not_started).updated_before(stale_claimed_cutoff) }
   scope :stale_for_cleanup, -> { stale_running.or(stale_claimed) }
   scope :search_by_goal, lambda { |query|
@@ -960,7 +980,9 @@ class AgentRun < ApplicationRecord
   def self.stale_running?(agent_run, now: Time.current)
     agent_run.status == "running" &&
       agent_run.started_at.present? &&
-      agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now)
+      agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now) &&
+      # @spec APPLE-ATTEMPT-013
+      agent_run.external_metadata[COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY].blank?
   end
 
   def self.stale_claimed?(agent_run, now: Time.current)
@@ -2111,21 +2133,66 @@ class AgentRun < ApplicationRecord
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
     with_lock do
       reload
-      if finished?
-        false
-      else
-        update!(
-          status: "completed",
-          completed_at: Time.current,
-          result_commit_sha: result_commit,
-          pull_request_url: pr_url,
-          pull_request_number: pr_number,
-          created_issue_url: issue_url,
-          created_issue_number: issue_number,
-          duration_seconds: duration
-        )
+      return false if finished?
+
+      if result_commit.present?
+        return false unless enforce_completion_verification!(result_commit:, pr_url:, pr_number:, issue_url:, issue_number:)
       end
+
+      update!(
+        status: "completed",
+        completed_at: Time.current,
+        result_commit_sha: result_commit,
+        pull_request_url: pr_url,
+        pull_request_number: pr_number,
+        created_issue_url: issue_url,
+        created_issue_number: issue_number,
+        duration_seconds: duration,
+        external_metadata: external_metadata.except(COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+      )
     end
+  end
+
+  # The completion-verification gate verifies committed agent output. Goals
+  # such as review and issue creation have no result commit, so they must not
+  # be parked waiting for a verification attempt that cannot exist.
+  # @spec APPLE-ATTEMPT-011
+  # @spec APPLE-ATTEMPT-013
+  def enforce_completion_verification!(result_commit:, pr_url:, pr_number:, issue_url:, issue_number:)
+    decision = AppleVerificationAttempts::GateEnforcement.evaluate(
+      agent_run: self,
+      gate: "completion_verification",
+      result_commit: result_commit
+    )
+    if decision.pending?
+      log!("system", "Completion withheld: #{decision.reason}")
+      mark_completion_withheld!(
+        "result_commit" => result_commit,
+        "pr_url" => pr_url,
+        "pr_number" => pr_number,
+        "issue_url" => issue_url,
+        "issue_number" => issue_number
+      )
+      return false
+    end
+
+    raise AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed, decision.reason if decision.blocked?
+
+    true
+  end
+
+  # Marks the run as parked awaiting completion verification and preserves the
+  # withheld completion attributes so the re-invoked completion
+  # (AppleVerificationAttempts::CompleteWithheldRun) records the PR/issue the
+  # workflow actually produced. Also excludes the run from stale-running
+  # recovery via AgentRun.awaiting_completion_verification.
+  # @spec APPLE-ATTEMPT-013
+  def mark_completion_withheld!(payload)
+    update!(
+      external_metadata: external_metadata.merge(
+        COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY => { "withheld_at" => Time.current.iso8601 }.merge(payload.compact)
+      )
+    )
   end
 
   def complete_no_output!(reason: "no_changes")

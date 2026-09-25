@@ -3393,7 +3393,10 @@ module Activities
 
     def record_verification_result(agent_run, fallback_result:, record_missing: true)
       return unless agent_run.create_pr_goal?
-      return unless agent_run.project.verification_enabled?
+      # No verification_enabled? guard here: a binding Apple gate decision
+      # must reach the recorder even when interactive verification is off;
+      # the recorder itself skips projects with neither signal to record.
+      # @spec APPLE-ATTEMPT-011
       return if agent_run.worktree_path.blank?
 
       AgentRuns::VerificationResultRecorder.call(

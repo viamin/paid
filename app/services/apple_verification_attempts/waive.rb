@@ -17,7 +17,7 @@ module AppleVerificationAttempts
     def call
       raise ArgumentError, "only a failed attempt can be waived" unless @attempt.failed?
 
-      @attempt.apple_verification_waivers.create!(
+      waiver = @attempt.apple_verification_waivers.create!(
         account: @attempt.account,
         project: @attempt.project,
         apple_verification_workflow_revision: @attempt.apple_verification_workflow_revision,
@@ -26,6 +26,19 @@ module AppleVerificationAttempts
         lifecycle_gate: @attempt.lifecycle_gate,
         **@attributes
       )
+      complete_withheld_run
+      waiver
+    end
+
+    private
+
+    # An active waiver can satisfy the completion gate, so finish a completion
+    # that was withheld on this attempt's agent run.
+    # @spec APPLE-ATTEMPT-013
+    def complete_withheld_run
+      return unless @attempt.agent_run
+
+      CompleteWithheldRun.call(agent_run: @attempt.agent_run)
     end
   end
 end
