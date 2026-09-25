@@ -28,7 +28,11 @@ module Projects
     before_action :set_project
     before_action :set_issue
     before_action :authorize_project_show, only: [ :show ]
-    before_action :authorize_project_update, only: [ :create ]
+    # A single declaration covering both write actions: registering the same
+    # filter twice with different `only:` sets makes the later registration
+    # replace the earlier one's conditions, silently dropping `create`'s
+    # authorization (and failing the controller's verify_authorized audit).
+    before_action :authorize_project_update, only: [ :create, :chat ]
 
     def show
       @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
@@ -65,6 +69,16 @@ module Projects
     rescue GithubClient::Error => e
       remember_pending_inbox_answers
       redirect_to failure_redirect_path, alert: "Failed to post answers: #{e.message}"
+    end
+
+    # @spec QUESTION-EXPLORATION-001
+    # @spec QUESTION-EXPLORATION-002
+    def chat
+      chat_session = ClarifyingQuestions::OpenChat.call(issue: @issue, user: current_user)
+      redirect_to chat_session_path(chat_session)
+    rescue GithubClient::Error => e
+      redirect_back fallback_location: project_path(@project),
+        alert: "Failed to load clarifying questions: #{e.message}"
     end
 
     private

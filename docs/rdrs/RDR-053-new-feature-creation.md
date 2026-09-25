@@ -9,7 +9,7 @@
 - **Type**: Architecture + Process
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-031](RDR-031-focused-agent-runs.md) (Focused Agent Runs), [RDR-009](RDR-009-prompt-evolution.md) (Feature Creation vs Existing Goals), [RDR-044](RDR-044-configuration-profiles-chat.md) (Chat-Driven Configuration Profiles)
-- **Related Issues**: #3305 (chat path), #3306 (run/needs-input path), #3307 (LID integration), #3308 (E2E tests + closeout)
+- **Related Issues**: #3305 (chat path), #3306 (run/needs-input path), #3307 (LID integration), #3308 (E2E tests + closeout), #4021 (chat problem exploration extension)
 
 ## Problem Statement
 
@@ -395,3 +395,48 @@ See [`audit-report-2026-08-11-rdr-053.md`](audit-report-2026-08-11-rdr-053.md).
 ### Status: Implemented
 
 All five phases shipped with test coverage. No remaining gaps.
+
+## 2026-09-25 Extension: Optional Problem Exploration in Feature-Design Chat (#4021)
+
+The adaptive feature questions above make a *proposed solution* precise without
+examining whether the user's explanation of the *underlying problem* is useful.
+"Add notifications to speed up reviews" could reflect unnoticed requests,
+unclear ownership, genuinely difficult reviews, or overloaded reviewers — each
+suggests different work. This bounded extension adds an optional,
+conversational problem-exploration step to the existing feature-design chat.
+
+**Approach.** Exploration is activated only when the user explicitly asks for
+it ("explore the problem", "reframe this feature"). It is prompt-level chat
+behavior, not a new workflow: no new chat states, buttons, settings pages, or
+persisted modes, and no Ruby-side detection of exploration intent — the
+semantic judgment of whether the user asked to explore stays in the model,
+expressed through the chat system prompt (`ChatSessions::BuildSystemPrompt`
+fallback and the seeded `chat.system_prompt` template, which must carry the
+same guidance). While exploring, the agent uses the existing conversation and
+repository context to distinguish observed conditions, affected stakeholders,
+desired outcomes, and assumed causes; it reuses settled facts and preferences,
+never runs a fixed questionnaire, never asks for facts the repository already
+answers, and asks only questions whose answers could materially change the
+design. Where useful it compares two or three plausible problem framings and
+how each changes the possible response, presented as tentative hypotheses —
+not established facts or user decisions — with repository inspection treated
+as evidence about code, never as proof of customer behavior.
+
+**User control and outcome gating.** The user may select or revise a framing,
+continue with the original request, investigate first, or decide not to build;
+none of these requires an additional approval gate. The agent may suggest a
+small observation or experiment in chat, but executing or tracking experiments
+is out of scope. Choosing "investigate first" or "do not build" must not
+itself trigger a `create_feature` run or file implementation issues — the run
+is triggered only when the user asks to proceed. Exploration ends with a
+concise, user-reviewable summary kept in the existing conversation:
+observations and evidence, affected stakeholders, chosen framing, assumptions,
+desired outcome, and the conditions that would justify reconsideration.
+Structured persistence of that summary and its RDR handoff are owned by a
+follow-up issue, not this extension.
+
+Ordinary feature requests — those that do not explicitly ask for exploration —
+retain the direct adaptive-clarification path unchanged. The EARS claims live
+in `docs/intent/issue-enhancement/` (FEATURE-CREATION-003 through
+FEATURE-CREATION-006) alongside the other feature-creation clarification
+claims.

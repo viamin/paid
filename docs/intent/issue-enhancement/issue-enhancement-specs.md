@@ -28,6 +28,67 @@
   *Code:* `app/services/clarifying_questions/clear_needs_input.rb`,
   `app/services/features/clarifying_questions/analyze.rb`.
 
+## Feature-design problem exploration (chat, #4021)
+
+- [x] **FEATURE-CREATION-003** — When a user explicitly asks to explore the
+  problem or reframe a feature during feature-design chat, the chat agent
+  SHALL engage in conversational problem exploration through the existing
+  chat orchestration and tools, and ordinary feature requests that do not ask
+  for exploration SHALL retain the existing direct adaptive-clarification
+  path. The default chat guidance (the `base_identity` fallback and the
+  seeded `chat.system_prompt` template) SHALL carry the same exploration
+  guidance so seeded and fallback deployments behave alike (RDR-053 §
+  2026-09-25 Extension).
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`,
+  `spec/db/prompt_seeds_spec.rb` (`chat.system_prompt feature-design
+  exploration coupling`).
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb#base_identity`,
+  `db/seeds/prompts.rb` (`chat.system_prompt`).
+
+- [x] **FEATURE-CREATION-004** — While exploring a problem in feature-design
+  chat, the agent SHALL use the existing conversation and repository context
+  to distinguish observed conditions, affected stakeholders, desired
+  outcomes, and assumed causes; it SHALL reuse settled facts and preferences,
+  SHALL NOT force a fixed questionnaire or ask the user to supply facts
+  already available from the repository or conversation, and SHALL ask only
+  questions whose answers could materially change the design.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`
+  (exploration guidance),
+  `spec/db/prompt_seeds_spec.rb`.
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb#base_identity`,
+  `db/seeds/prompts.rb` (`chat.system_prompt`).
+
+- [x] **FEATURE-CREATION-005** — When problem exploration offers alternative
+  problem framings, the agent SHALL present them as tentative hypotheses
+  unless supported by evidence the user supplied, SHALL NOT present
+  repository inspection as proof of customer behavior, and SHALL let the user
+  select or revise a framing, continue with the original request,
+  investigate first, or decide not to build — none of which SHALL require an
+  additional approval gate. The agent MAY suggest a small observation or
+  experiment in chat; executing or tracking experiments is outside the
+  feature-design chat's tool boundary.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`
+  (exploration guidance),
+  `spec/db/prompt_seeds_spec.rb`.
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb#base_identity`,
+  `db/seeds/prompts.rb` (`chat.system_prompt`).
+
+- [x] **FEATURE-CREATION-006** — When problem exploration ends, the agent
+  SHALL close it with a concise, user-reviewable summary in the existing
+  conversation covering observations and evidence, affected stakeholders,
+  chosen framing, assumptions, desired outcome, and the conditions that would
+  justify reconsideration; structured persistence and RDR handoff remain
+  follow-up work. Choosing to investigate first or not to build SHALL NOT
+  itself trigger a `create_feature` run or file implementation issues — the
+  run SHALL be triggered only when the user asks to proceed.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`
+  (exploration summary and run-gating guidance),
+  `spec/services/chat_sessions/feature_problem_exploration_spec.rb`
+  (no-build and investigate-first conversation outcomes create no agent run),
+  `spec/db/prompt_seeds_spec.rb`.
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb#base_identity`,
+  `db/seeds/prompts.rb` (`chat.system_prompt`).
+
 - [x] **FEATURE-CREATION-007** — When chat or a direct tool call starts a
   `create_feature` run with optional `problem_framing`, the system SHALL
   normalize and store it in `external_metadata["feature_brief"]`. It SHALL

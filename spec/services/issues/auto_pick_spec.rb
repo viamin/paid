@@ -163,20 +163,20 @@ RSpec.describe Issues::AutoPick do
       expect(result.issue).to eq(unblocked)
     end
 
-    it "skips issues with in_progress paid_state" do
-      create(:issue, :in_progress, project: project)
+    it "selects an open issue with in_progress paid_state" do # @spec AUTO-PICK-QUEUE-008
+      issue = create(:issue, :in_progress, project: project)
 
       result = described_class.new(project).call
 
-      expect(result).to be_nil
+      expect(result.issue).to eq(issue)
     end
 
-    it "skips issues with completed paid_state" do
-      create(:issue, :completed, project: project)
+    it "selects an open issue with completed paid_state" do # @spec AUTO-PICK-QUEUE-008
+      issue = create(:issue, :completed, project: project)
 
       result = described_class.new(project).call
 
-      expect(result).to be_nil
+      expect(result.issue).to eq(issue)
     end
 
     it "includes issues with failed paid_state" do

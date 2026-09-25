@@ -18,11 +18,13 @@ var = ->(name, description, required: true) { { "name" => name, "required" => re
 # ----------------------------------------------------------------------------
 # chat.system_prompt — Default system prompt for interactive chat sessions
 # Used by: ChatSessions::BuildSystemPrompt (fallback when no custom prompt set)
+# Template is rendered from the shared DEFAULT_BASE_IDENTITY constant so the
+# seeded live prompt and the in-code fallback cannot drift.
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
   slug: "chat.system_prompt",
   name: "Chat System Prompt",
-  description: "Default system prompt for interactive chat sessions. Provides base identity and capabilities for the AI assistant.",
+  description: "Default system prompt for interactive chat sessions. Provides base identity, feature-design clarification, and optional problem-exploration guidance for the AI assistant.",
   category: "planning",
   template: ChatSessions::BuildSystemPrompt::DEFAULT_BASE_IDENTITY,
   variables: []

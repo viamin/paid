@@ -402,9 +402,9 @@ that reach the cap without a human signal.
 
 The analyze→enhance loop only converges when an `enhance_issue` round that
 concludes `sufficient_context: true` hands the issue off to a `create_pr` run.
-Without that handoff the issue parks in the `completed` paid_state — a state
-auto-pick does not select (it's not in `AUTO_PICK_ELIGIBLE_PAID_STATES`) — and
-no further automation touches it. The handoff is implemented as a
+Without that handoff the issue parks in the `completed` paid_state. GitHub-open
+state remains eligible for auto-pick regardless of this internal state, but the
+handoff is still implemented as a
 `CreateFollowupRunActivity` call after `EnhanceIssueActivity` returns
 `sufficient_context: true`, mirroring the analyze branch's pattern.
 
@@ -465,6 +465,67 @@ later regression does not inherit an exhausted automatic-retry budget:
 
 Manual runs never consume a round at queue time so they have nothing to
 reset.
+
+## Feature-design problem exploration (chat path, #4021)
+
+The chat entry point of feature creation (RDR-053 Phase 1) gathers a feature
+brief through adaptive questions. That questioning makes the *proposed
+solution* precise without examining whether the user's explanation of the
+*underlying problem* is useful — "add notifications to speed up reviews"
+could reflect unnoticed requests, unclear ownership, genuinely difficult
+reviews, or overloaded reviewers, and each suggests different work. The
+optional problem-exploration step lets the user examine that framing before
+committing to a brief.
+
+Exploration is activated only by an explicit user request ("explore the
+problem", "reframe this feature"). All of the semantics — recognizing the
+request, separating observed conditions from assumed causes, deciding which
+questions could materially change the design, and composing the closing
+summary — stay in the model, expressed through the default chat guidance.
+Paid adds no exploration states, buttons, settings, or persisted modes, and
+no Ruby-side detection of exploration intent (Zero Framework Cognition: the
+request's meaning is a semantic judgment).
+
+The guidance is carried by both prompt sources so seeded and fallback
+deployments behave alike (the CHAT-API-012 coupling convention):
+
+- `ChatSessions::BuildSystemPrompt#base_identity` (in-code fallback), and
+- the seeded `chat.system_prompt` template in `db/seeds/prompts.rb`,
+  propagated to existing databases by `prompts:sync_defaults`.
+
+The guidance contract (FEATURE-CREATION-003..006):
+
+- **Reuse before asking.** Exploration uses the existing conversation and
+  repository context (`search_code`, `read_repo_file`) to distinguish
+  observed conditions, affected stakeholders, desired outcomes, and assumed
+  causes. Settled facts and preferences are reused; the user is never run
+  through a fixed questionnaire or asked for facts the repository already
+  answers. Only questions whose answers could materially change the design
+  are asked.
+- **Framings are hypotheses.** Where useful, the agent compares two or three
+  plausible problem framings and how each changes the possible response.
+  Alternative explanations are visibly tentative unless supported by evidence
+  the user supplied, and repository inspection is presented as evidence about
+  code — never as proof of customer behavior.
+- **The user stays in control.** The user may select or revise a framing,
+  continue with the original request, investigate first, or decide not to
+  build, with no additional approval gate. The agent may suggest a small
+  observation or experiment in chat; executing or tracking experiments is
+  outside the chat tool boundary.
+- **Run gating.** "Investigate first" and "do not build" must not themselves
+  trigger a `create_feature` run or file implementation issues — a
+  text-only exploration outcome creates no agent run. The run is triggered
+  only when the user asks to proceed.
+- **Closing summary.** Exploration ends with a concise, user-reviewable
+  summary in the existing conversation: observations and evidence, affected
+  stakeholders, chosen framing, assumptions, desired outcome, and the
+  conditions that would justify reconsideration. Structured persistence of
+  the summary and its handoff into the RDR are owned by a follow-up issue,
+  not this behavior.
+
+Ordinary feature requests — those that do not explicitly ask for exploration
+— keep the direct adaptive-clarification path unchanged, and the run-path
+clarification flow (FEATURE-CREATION-001/002) is untouched.
 
 ## Decisions and alternatives
 

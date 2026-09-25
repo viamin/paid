@@ -52,6 +52,23 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       ))
   end
 
+  # @spec QUESTION-EXPLORATION-007
+  it "passes the requesting collaborator to SendMessage" do
+    collaborator = create(:user, account: account)
+    allow(ChatSessions::SendMessage).to receive(:call).and_return(nil)
+
+    described_class.perform_now(
+      chat_session_id: chat_session.id,
+      actor_id: collaborator.id,
+      content: "Hello",
+      stream_message_id: stream_message_id
+    )
+
+    expect(ChatSessions::SendMessage).to have_received(:call).with(
+      hash_including(actor: collaborator, chat_session: chat_session)
+    )
+  end
+
   it "broadcasts message_complete with nil tokens when a write tool pauses" do
     # @spec CHAT-API-003
     pending_msg = create(:chat_message, chat_session: chat_session,

@@ -47,6 +47,7 @@ module ChatSessions
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
+      sections << { priority: 1, content: clarifying_questions_context } if clarifying_question_issue
       # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
       # interview surfaced in every chat started against it, so setup can also
       # happen from a plain new chat session.
@@ -81,6 +82,8 @@ module ChatSessions
     # optional problem-exploration step for feature-design chat (RDR-053
     # § 2026-09-25 Extension) and the problem-framing recording handoff
     # (FEATURE-CREATION-007).
+    # @spec FEATURE-CREATION-003 @spec FEATURE-CREATION-004
+    # @spec FEATURE-CREATION-005 @spec FEATURE-CREATION-006
     # @spec FEATURE-CREATION-007
     DEFAULT_BASE_IDENTITY = <<~PROMPT.strip.freeze
       You are an AI assistant helping manage software projects via Paid, a platform for AI-driven development.
@@ -99,6 +102,7 @@ module ChatSessions
     PROMPT
 
     # @spec CHAT-API-012
+    # @spec FEATURE-CREATION-003
     # @spec FEATURE-CREATION-007
     def base_identity
       prompt = resolve_prompt
@@ -148,6 +152,22 @@ module ChatSessions
       return if lines.empty?
 
       "## Current Page Context\n#{lines.join("\n")}"
+    end
+
+    # @spec QUESTION-EXPLORATION-001
+    # The pending questions are snapshotted into session metadata by
+    # ClarifyingQuestions::OpenChat before the session row is inserted, so
+    # this section never performs GitHub I/O while ChatSessions::Create's
+    # insert transaction is open.
+    def clarifying_questions_context
+      issue = clarifying_question_issue
+      questions = Array(chat_session.metadata&.dig("clarifying_questions"))
+      <<~PROMPT.strip
+        ## Clarifying Questions for #{issue.is_pull_request? ? "PR" : "Issue"} ##{issue.github_number}: #{issue.title}
+        #{questions.each_with_index.map { |question, index| "#{index + 1}. #{question}" }.join("\n")}
+
+        Help the user explore these questions and ask focused follow-ups when needed. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
+      PROMPT
     end
 
     def cross_project_context
@@ -257,6 +277,10 @@ module ChatSessions
 
     def primary_project
       @primary_project ||= chat_session.project
+    end
+
+    def clarifying_question_issue
+      chat_session.clarifying_question_issue
     end
 
     def reference_projects

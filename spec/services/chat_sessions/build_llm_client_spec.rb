@@ -6,6 +6,65 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
 
+  describe "managed free chat policy" do
+    let!(:model) do
+      create(:llm_model, :free, model_id: "vendor/chat:free", provider: "openai", catalog_source: "openrouter_sync",
+        supports_tools: true, metadata: { "architecture" => { "output_modalities" => [ "text" ] } })
+    end
+    let(:runner) do
+      create(:runner, user: user, runner_key: "opencode", auth_type: "api_key",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+        enabled_for_agent_runs: false, enabled_for_fallback: false,
+        config: { "opencode" => { "model_policy" => "free" } })
+    end
+    let(:session) { create(:chat_session, account: account, created_by: user, runner: runner) }
+
+    # @spec CHAT-API-019
+    it "enforces a reference project's provider restrictions" do
+      project = create(:project, account: account, model_preferences: { "llm_providers" => { "blocklist" => [ "openai" ] } })
+      session.chat_session_projects.create!(project: project, context_type: "reference")
+
+      expect { described_class.call(chat_session: session) }.to raise_error(ChatSessions::LlmClientConfigurationError, /No eligible/)
+    end
+
+    # @spec CHAT-API-019
+    it "rejects sensitive context attached after the client was built before transmitting a tool round" do
+      client = described_class.call(chat_session: session)
+      expect(client.model).to eq(model.model_id)
+      project = create(:project, account: account, data_classification: "restricted")
+      session.chat_session_projects.create!(project: project, context_type: "reference")
+
+      expect { client.call([ { role: "user", content: "Sensitive context" } ]) }
+        .to raise_error(ChatSessions::LlmClientConfigurationError, /privacy routing/)
+      expect(WebMock).not_to have_requested(:post, "https://openrouter.ai/api/v1/chat/completions")
+    end
+  end
+
+  # @spec CHAT-API-018, MODEL-POLICY-013
+  it "uses the refreshed free chat pool for clients and runner fallbacks instead of a saved paid model" do
+    model = create(:llm_model, :free, model_id: "vendor/chat:free", catalog_source: "openrouter_sync",
+      supports_tools: true, metadata: { "architecture" => { "output_modalities" => [ "text" ] } })
+    runner = create(:runner, user: user, runner_key: "opencode", auth_type: "api_key",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "test-key"),
+      enabled_for_agent_runs: false, enabled_for_fallback: false,
+      config: { "opencode" => { "model_policy" => "free" } })
+    session = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-4o")
+    request = stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
+      .with { |req| JSON.parse(req.body)["model"] == model.model_id }
+      .to_return(status: 200, body: { choices: [ { message: { content: "OK" } } ], model: model.model_id }.to_json,
+        headers: { "Content-Type" => "application/json" })
+
+    client = described_class.call(chat_session: session)
+    expect(client.model).to eq(model.model_id)
+    expect(client.call([ { role: "user", content: "Reply OK" } ])[:content]).to eq("OK")
+    expect(request).to have_been_requested.once
+    ChatSessions::FallbackRunners.switch!(chat_session: session, runner: runner)
+    expect(session.reload.model).to eq(model.model_id)
+
+    model.update!(active: false)
+    expect { described_class.call(chat_session: session) }.to raise_error(ChatSessions::LlmClientConfigurationError, /No eligible/)
+  end
+
   def build_openai_runner(user:, credential_source:, service_type:, model:, runner_key: "opencode")
     create(:runner,
       user: user,

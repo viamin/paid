@@ -17,10 +17,11 @@ module ChatSessions
   class ResumeRateLimited
     include FallbackLoop
 
-    attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id
+    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id
 
     def initialize(chat_session:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
       @chat_session = chat_session
+      @actor = chat_session.created_by
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client

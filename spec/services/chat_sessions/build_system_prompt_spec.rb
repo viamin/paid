@@ -76,6 +76,118 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("selected_framing_confirmed")
       end
 
+      describe "feature-design problem exploration guidance" do
+        # @spec FEATURE-CREATION-003
+        it "activates exploration only on an explicit user request" do
+          expect(prompt).to match(/explicitly asks to explore the problem/i)
+          expect(prompt).to match(/reframe this feature/i)
+        end
+
+        # @spec FEATURE-CREATION-003
+        it "keeps the direct clarification path for ordinary feature requests" do
+          expect(prompt).to include("gather intent through adaptive questions")
+          expect(prompt).to include('When the feature brief is complete')
+        end
+
+        # @spec FEATURE-CREATION-004
+        it "directs exploration to separate conditions, stakeholders, outcomes, and assumed causes" do
+          expect(prompt).to include("observed conditions")
+          expect(prompt).to include("affected stakeholders")
+          expect(prompt).to include("desired outcomes")
+          expect(prompt).to include("assumed causes")
+        end
+
+        # @spec FEATURE-CREATION-004
+        it "bounds questions to ones whose answers could materially change the design" do
+          expect(prompt).to include('materially change the design')
+        end
+
+        # Already-settled request scenario: exploration reuses what is known
+        # instead of forcing a questionnaire.
+        #
+        # @spec FEATURE-CREATION-004
+        it "reuses settled context and never runs a fixed questionnaire" do
+          expect(prompt).to match(/[Rr]euse settled facts/)
+          expect(prompt).to include('never run a fixed questionnaire')
+          expect(prompt).to include('never ask the user to supply facts the repository or conversation already provides')
+        end
+
+        # Unsupported-hypothesis scenario: alternative explanations stay
+        # tentative and repository reads are not behavior proof.
+        #
+        # @spec FEATURE-CREATION-005
+        it "presents alternative framings as tentative hypotheses, not behavior proof" do
+          expect(prompt).to match(/two or three plausible problem framings/i)
+          expect(prompt).to include("tentative hypotheses")
+          expect(prompt).to include('not established facts')
+          expect(prompt).to include('not proof of customer behavior')
+        end
+
+        # @spec FEATURE-CREATION-005
+        it "leaves the framing choice with the user without an approval gate" do
+          expect(prompt).to include('investigate first')
+          expect(prompt).to include('decide not to build')
+          expect(prompt).to include("None of these choices requires an approval gate")
+        end
+
+        # @spec FEATURE-CREATION-005
+        it "allows suggesting an observation in chat without executing or tracking it" do
+          expect(prompt).to include('suggest a small observation or experiment')
+          expect(prompt).to include('do not execute or track experiments')
+        end
+
+        # No-build outcome scenario: exploration conclusions never trigger
+        # implementation work on their own.
+        #
+        # @spec FEATURE-CREATION-006
+        it "forbids exploration outcomes from triggering a create_feature run or filing issues" do
+          expect(prompt).to include('must not itself trigger a `create_feature` agent run or file implementation issues')
+          expect(prompt).to include('trigger the run only when the user asks to proceed')
+        end
+
+        # @spec FEATURE-CREATION-006
+        it "requires a closing summary with the user-reviewable elements" do
+          expect(prompt).to include('End the exploration with a concise, user-reviewable summary')
+          expect(prompt).to include("observations and evidence")
+          expect(prompt).to include("chosen framing")
+          expect(prompt).to include("assumptions")
+          expect(prompt).to include("desired outcome")
+          expect(prompt).to include('justify reconsidering')
+        end
+      end
+
+      # Representative evaluation scenarios for the exploration guidance
+      # (FEATURE-CREATION-003..006). The semantic judgment for each scenario
+      # stays in the model; these assertions pin the guidance properties that
+      # govern it, so the tests do not depend on one exact wording of the
+      # whole clause.
+      # @spec FEATURE-CREATION-003 @spec FEATURE-CREATION-004
+      # @spec FEATURE-CREATION-005 @spec FEATURE-CREATION-006
+      {
+        "an ambiguous request" => [
+          "observed conditions", "affected stakeholders", "desired outcomes",
+          "assumed causes", "plausible problem framings", "materially change the design"
+        ],
+        "an already-settled request" => [
+          "Reuse settled facts", "never run a fixed questionnaire", "materially change the design"
+        ],
+        "unsupported hypotheses" => [
+          "tentative hypotheses", "not established facts", "not proof of customer behavior",
+          "evidence the user supplied"
+        ],
+        "a no-build outcome" => [
+          "investigate first", "decide not to build",
+          "must not itself trigger a `create_feature` agent run or file implementation issues",
+          "trigger the run only when the user asks to proceed", "justify reconsidering"
+        ]
+      }.each do |scenario, markers|
+        it "carries governing guidance for #{scenario}" do
+          aggregate_failures do
+            markers.each { |marker| expect(prompt).to include(marker) }
+          end
+        end
+      end
+
       # @spec CHAT-API-012
       it "prefers knowledge search over GitHub code search for repo discovery" do
         expect(prompt).to include("`search_code`")
@@ -300,6 +412,51 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
 
         run_lines = prompt.scan(/^- Run #\d+:/).count
         expect(run_lines).to eq(5)
+      end
+    end
+
+    describe "clarifying questions context" do
+      let(:project) { create(:project, account: account) }
+      let(:issue) do
+        create(:issue, :needs_input, project: project, github_number: 7, title: "Tighten inbox flow",
+          needs_input_questions: [ "What is the expected behavior?", "Should this be behind a flag?" ])
+      end
+      let(:chat_session) do
+        create(:chat_session, account: account, created_by: user, project: project,
+          clarifying_question_issue: issue,
+          metadata: {
+            "clarifying_question_issue_id" => issue.id,
+            "clarifying_questions" => issue.needs_input_questions
+          })
+      end
+
+      # @spec QUESTION-EXPLORATION-001
+      it "includes the linked issue and its pending questions from the session snapshot" do
+        expect(prompt).to include("Clarifying Questions for Issue #7: Tighten inbox flow")
+        expect(prompt).to include("1. What is the expected behavior?")
+        expect(prompt).to include("2. Should this be behind a flag?")
+        expect(prompt).to include("submit_clarifying_answers")
+      end
+
+      it "labels a linked pull request as a PR" do
+        pull_request = create(:issue, :needs_input, :pull_request, project: project, github_number: 9,
+          title: "Ship it", needs_input_questions: [ "What should happen after approval?" ])
+        chat_session.update!(
+          clarifying_question_issue: pull_request,
+          metadata: {
+            "clarifying_question_issue_id" => pull_request.id,
+            "clarifying_questions" => [ "What should happen after approval?" ]
+          }
+        )
+
+        expect(prompt).to include("Clarifying Questions for PR #9: Ship it")
+      end
+
+      it "reads the snapshot without resolving questions from GitHub" do
+        allow(ClarifyingQuestions::Load).to receive(:call)
+          .and_raise(RuntimeError, "must not be called from the prompt builder")
+
+        expect { prompt }.not_to raise_error
       end
     end
 

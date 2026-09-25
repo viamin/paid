@@ -42,15 +42,26 @@
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
 
-- [x] **AUTO-PICK-QUEUE-005** — When an open issue's `paid_state` is outside
-  Auto-Pick's eligible-state set, lifecycle reporting SHALL not classify that
-  issue as `:eligible`; lifecycle reporting and Auto-Pick candidate selection
-  SHALL derive their eligible-`paid_state` rule from one shared definition,
-  including the recoverable `paid_state=completed` path.
+- [x] **AUTO-PICK-QUEUE-005** — Lifecycle reporting and Auto-Pick candidate
+  selection SHALL derive their eligibility rule from one shared definition.
   *Tests:* `spec/models/issue_spec.rb`,
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/models/issue.rb`,
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
+- [x] **AUTO-PICK-QUEUE-008** — When a non-PR issue is open on GitHub,
+  Auto-Pick candidate selection and lifecycle reporting SHALL NOT exclude it
+  solely because of its internal `paid_state`, including `recommend_close`,
+  `manual_review`, `needs_input`, `completed`, and `in_progress`. Separate
+  explicit safeguards, including active work, dependencies, and configured
+  GitHub labels, remain authoritative and visible in the eligibility dashboard.
+  The project issue list SHALL display each open issue's actual internal
+  `paid_state`, including `analyzed`, rather than a fallback state label.
+  *Tests:* `spec/models/issue_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/requests/projects_spec.rb`, `spec/jobs/issues/reenqueue_eligible_job_spec.rb`.
+  *Code:* `app/models/issue.rb`, `app/helpers/application_helper.rb`,
+  `app/views/projects/_issue.html.erb`, `Issues::ReenqueueEligibleJob`.
 
 - [x] **AUTO-PICK-QUEUE-006** — When Auto-Pick is disabled at the project
   level, a trusted issue-scoped activation label (`paid-automation` or

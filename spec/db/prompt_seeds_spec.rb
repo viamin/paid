@@ -86,7 +86,7 @@ RSpec.describe Prompt, type: :model do
     # guidance — including the optional problem-exploration step and the
     # problem-framing recording handoff — so seeded and fallback deployments
     # behave alike (RDR-053 § 2026-09-25 Extension).
-    # @spec FEATURE-CREATION-007
+    # @spec FEATURE-CREATION-003 @spec FEATURE-CREATION-007
     let(:seed_template) do
       described_class.global.find_by(slug: "chat.system_prompt").current_version.template
     end
