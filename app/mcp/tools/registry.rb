@@ -16,6 +16,7 @@ module Tools
       "Tools::RecordChangeIntent",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
+      "Tools::SubmitClarifyingAnswers",
       "Tools::CreateIssue",
       "Tools::EditIssue",
       "Tools::SetLabels",

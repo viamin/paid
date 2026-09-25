@@ -29,6 +29,7 @@ module Projects
     before_action :set_issue
     before_action :authorize_project_show, only: [ :show ]
     before_action :authorize_project_update, only: [ :create ]
+    before_action :authorize_project_update, only: [ :chat ]
 
     def show
       @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
@@ -65,6 +66,12 @@ module Projects
     rescue GithubClient::Error => e
       remember_pending_inbox_answers
       redirect_to failure_redirect_path, alert: "Failed to post answers: #{e.message}"
+    end
+
+    # @spec QUESTION-EXPLORATION-001
+    def chat
+      chat_session = ClarifyingQuestions::OpenChat.call(issue: @issue, user: current_user)
+      redirect_to chat_session_path(chat_session)
     end
 
     private

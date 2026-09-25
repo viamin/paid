@@ -57,6 +57,7 @@ class ChatSession < ApplicationRecord
   after_destroy_commit :broadcast_sidebar_remove
 
   belongs_to :project, optional: true
+  belongs_to :clarifying_question_issue, class_name: "Issue", optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :created_by, class_name: "User", optional: true

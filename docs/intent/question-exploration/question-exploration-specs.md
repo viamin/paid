@@ -1,9 +1,15 @@
 # EARS Specs: Question Exploration
 
-Status: `[ ]` planned; no implementation is claimed by these specs.
+Status: the chat-entry and final-answer submission claims below are implemented;
+diagram and durable-progress work remains planned.
 
-- [ ] **QUESTION-EXPLORATION-001** — When a user opens an enabled Inbox clarifying question, Paid SHALL open its feature conversation, or standalone-issue conversation, focused on that question, reusing the same conversation on subsequent or concurrent opens.
-- [ ] **QUESTION-EXPLORATION-002** — While a user explores a question in chat, Paid SHALL preserve partial answers and allow other questions to be answered without treating an exploration request as an answer or clearing unresolved questions.
+- [x] **QUESTION-EXPLORATION-001** — When a user with issue-comment permission opens an Inbox clarifying-question item, Paid SHALL open one canonical linked chat, reusing an active chat and restoring an archived one. The chat SHALL be created under that user with the generic title "Clarifying questions", carry the linked issue/PR and pending-question context, and allow follow-up questions.
+  *Tests:* `spec/services/clarifying_questions/open_chat_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
+  *Code:* `app/services/clarifying_questions/open_chat.rb`, `app/controllers/projects/clarifying_questions_controller.rb`, `app/services/chat_sessions/build_system_prompt.rb`.
+
+- [x] **QUESTION-EXPLORATION-002** — When the user confirms final ordered answers in a linked exploration chat, Paid SHALL post them through the standard clarifying-answer comment path, adjust labels, and remove the inbox item only after the comment succeeds. Users without issue-comment permission SHALL not be offered or able to invoke this action.
+  *Tests:* `spec/mcp/tools/submit_clarifying_answers_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
+  *Code:* `app/mcp/tools/submit_clarifying_answers.rb`, `app/services/clarifying_questions/submit_answers.rb`.
 - [ ] **QUESTION-EXPLORATION-003** — When Paid presents a diagram in chat, it SHALL identify the question, provide a text equivalent, allow expansion/collapse and keyboard interaction, and include a text input for comments on that diagram.
 - [ ] **QUESTION-EXPLORATION-004** — When a user comments on a diagram or selected element, Paid SHALL attribute the comment to the user and retain question identity and sufficient textual context for the comment to remain understandable after the diagram is removed.
 - [ ] **QUESTION-EXPLORATION-005** — When a diagram is replaced or discarded, Paid SHALL preserve human comments, answers and evidence summaries without requiring retention of non-final diagram source or visual revision history.
