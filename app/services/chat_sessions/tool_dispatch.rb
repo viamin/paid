@@ -12,6 +12,13 @@ module ChatSessions
 
     private
 
+    # AgentLoop and ResolveToolCall provide the collaborator who initiated the
+    # action. Keep the mixin usable by other dispatchers by falling back to the
+    # session creator, which is the established behavior for non-shared chats.
+    def actor
+      chat_session.created_by
+    end
+
     def dispatch_tool(name:, arguments:)
       return dispatch_container_tool(name:, arguments:) if Tools::Registry.requires_container?(name)
 
