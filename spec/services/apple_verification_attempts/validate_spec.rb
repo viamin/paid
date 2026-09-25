@@ -147,6 +147,16 @@ RSpec.describe AppleVerificationAttempts::Validate do
     expect(decision.classification).to eq("capacity_or_quota")
   end
 
+  it "allows an attempt that fills the configured account queue depth" do
+    (AppleVerificationAttempts::Queue::DEFAULT_QUEUE_DEPTH - 1).times do
+      create(:apple_verification_attempt, project: project, account: account, status: "queued")
+    end
+
+    decision = described_class.call(attempt: attempt)
+
+    expect(decision).to be_allowed
+  end
+
   it "uses the configured queue depth limit" do
     24.times do
       create(:apple_verification_attempt, project: project, account: account, status: "queued")

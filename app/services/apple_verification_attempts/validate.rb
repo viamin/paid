@@ -126,7 +126,7 @@ module AppleVerificationAttempts
     end
 
     def account_queue_depth_at_limit?(attempt)
-      AppleVerificationAttempt.queued.for_account(attempt.account).count >= @queue_depth_limit
+      AppleVerificationAttempt.queued.for_account(attempt.account).where.not(id: attempt.id).count >= @queue_depth_limit
     end
 
     def attempts_per_agent_run_exceeded?(attempt)
