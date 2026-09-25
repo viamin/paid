@@ -4,6 +4,7 @@ module Activities
   class UpdateIssueWithPrActivity < BaseActivity
     activity_name "UpdateIssueWithPR"
 
+    # @spec ISSUE-REOPEN-REVIEW-001
     def execute(input)
       agent_run_id = input[:agent_run_id]
       pull_request_url = input[:pull_request_url]
@@ -16,7 +17,7 @@ module Activities
         project = agent_run.project
         client = project.client
 
-        issue.update!(paid_state: "completed")
+        return { agent_run_id: agent_run_id } unless issue.complete_unless_reopen_review_pending!
 
         post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
         remove_trigger_labels(client, project, issue, agent_run_id)

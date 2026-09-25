@@ -23,6 +23,21 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    # @spec ISSUE-REOPEN-REVIEW-001
+    it "preserves pending reopen review instead of completing an in-flight issue" do
+      issue.update!(
+        paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+      )
+
+      expect(github_client).not_to receive(:add_comment)
+      expect(github_client).not_to receive(:remove_label_from_issue)
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+
+      expect(issue.reload).to be_reopen_review_pending
+    end
+
     it "posts a comment on the GitHub issue with the PR link" do
       expect(github_client).to receive(:add_comment).with(
         project.full_name,

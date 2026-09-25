@@ -86,6 +86,39 @@ RSpec.describe Tools::EditIssue do
       expect(Issues::ParseDependencies).not_to have_received(:call)
     end
 
+    # @spec ISSUE-REOPEN-REVIEW-003
+    it "requires an explicit review confirmation before reopening a closed issue" do
+      create(:issue, project: project, github_number: 42, github_state: "closed")
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true)
+      end.to raise_error(ArgumentError, /Reopen review confirmation required/)
+
+      expect(github_client).not_to have_received(:update_issue)
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-003
+    it "allows reopening after the caller explicitly confirms review" do
+      create(:issue, project: project, github_number: 42, github_state: "closed")
+
+      tool.call(project_id: project.id, issue_number: 42, state: "open", confirmed: true,
+        reopen_review_confirmed: true)
+
+      expect(github_client).to have_received(:update_issue).with(project.full_name, 42, state: "open")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-002
+    it "refuses to close an issue while its reopen review is pending" do
+      create(:issue, project: project, github_number: 42, github_state: "open",
+        paid_state: "manual_review", manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, state: "closed", confirmed: true)
+      end.to raise_error(ArgumentError, /reopen review is pending/)
+
+      expect(github_client).not_to have_received(:update_issue)
+    end
+
     it "updates multiple fields at once" do
       tool.call(project_id: project.id, issue_number: 42, title: "X", body: "Y", state: "closed", confirmed: true)
 

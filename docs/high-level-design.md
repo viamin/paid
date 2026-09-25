@@ -76,6 +76,11 @@ adds an automated review pass, but the authority over whether a change lands
 always rests with a human — exercised per-PR by default, or through the
 auto-merge configuration when the owner has enabled it.
 
+The same human review boundary applies when a completed issue is reopened:
+Paid parks the reopened issue for validation of the prior closure and current
+intent before it can return to work or be completed again. See
+`docs/intent/issue-reopen-review/`.
+
 Paid's own reviewer follows the same human-final-say posture at the
 comment-policy level: every preset on the project-level `review_depth`
 control (`Focused`, `Balanced`, `Thorough`, default `Balanced`) enforces the
