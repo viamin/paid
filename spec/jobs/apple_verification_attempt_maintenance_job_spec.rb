@@ -56,4 +56,18 @@ RSpec.describe AppleVerificationAttemptMaintenanceJob do
 
     expect(AppleVerificationAttempts::WorkerHealth).to have_received(:call).with(profile:, lifecycle:)
   end
+
+  # @spec APPLE-ATTEMPT-002
+  it "rechecks admission thresholds for active attempts without terminating them" do
+    attempt = create(:apple_verification_attempt, status: "running", started_at: 1.minute.ago)
+    decision = AppleVerificationAttempts::Admission::Decision.new(
+      allowed: false, reason: "host_disk_low", figures: nil, thresholds: nil
+    )
+    allow(AppleVerificationAttempts::Admission).to receive(:recheck_admissions).and_return(decision)
+
+    described_class.perform_now
+
+    expect(AppleVerificationAttempts::Admission).to have_received(:recheck_admissions).with(project: attempt.project)
+    expect(attempt.reload).to be_running
+  end
 end

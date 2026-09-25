@@ -63,7 +63,8 @@ module Reviews
         loop do
           attempt += 1
           @attempt = attempt
-          run_attempt!
+          apple_gate = run_attempt!
+          return blocked_result(apple_gate) if apple_gate&.blocking?
 
           break if head_stable?
           raise HeadMovedError, "head moved before posting on attempt #{attempt}" if attempt >= MAX_ATTEMPTS
@@ -86,6 +87,12 @@ module Reviews
 
         pr = pull_request
         @head_sha = pr.head.sha
+        apple_gate = AppleVerificationAttempts::GateEnforcement.call(
+          pull_request: pr,
+          project: @project,
+          lifecycle_gate: "pull_request_verification"
+        )
+        return apple_gate if apple_gate.blocking?
 
         files = fetch_files
         changed_lines = ChangedLines.from_files(files)
@@ -95,6 +102,15 @@ module Reviews
         @confirmed_groups = findings.size
         @unanchored_findings = findings.count { |f| f.anchor_line.nil? }
         @draft = run_synthesize(findings, changed_lines)
+        nil
+      end
+
+      # @spec APPLE-ATTEMPT-011
+      # Do not publish Paid's PR-verification result until its required Apple
+      # verification has succeeded (or an eligible waiver releases it).
+      def blocked_result(decision)
+        @outcome = "blocked_apple_verification"
+        build_result.merge(apple_verification_gate: decision.reason)
       end
 
       def pull_request

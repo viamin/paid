@@ -24,6 +24,7 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
 
   def perform
     record_worker_health
+    admission_rechecks = recheck_active_attempt_admissions
     recovery_result = AppleVerificationAttempts::Recovery.call
     scheduling_result = AppleVerificationAttempts::Schedule.call
     retention_result = AppleVerification::Bundles::RetentionSweep.call
@@ -32,7 +33,8 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
       message: "apple_verification_attempts.maintenance_complete",
       recovery: recovery_result.to_h,
       scheduling: scheduling_result.to_h,
-      retention: retention_result.to_h
+      retention: retention_result.to_h,
+      admission_rechecks:
     )
   end
 
@@ -45,5 +47,30 @@ class AppleVerificationAttemptMaintenanceJob < ApplicationJob
     AppleWorkerProfile.where(status: "active").find_each do |profile|
       AppleVerificationAttempts::WorkerHealth.call(profile:, lifecycle:)
     end
+  end
+
+  # @spec APPLE-ATTEMPT-002
+  # Normal admission-threshold crossings are deliberately observational for
+  # an already-active VM: Schedule will refuse subsequent admissions, while
+  # the host lifecycle safety path remains the only authority that can stop a
+  # running guest for an actual host-safety condition.
+  def recheck_active_attempt_admissions
+    rechecks = []
+    AppleVerificationAttempt.active.includes(:project).find_each do |attempt|
+      decision = AppleVerificationAttempts::Admission.recheck_admissions(project: attempt.project)
+      log_admission_recheck(attempt, decision) unless decision.allowed?
+      rechecks << { apple_verification_attempt_id: attempt.id, allowed: decision.allowed?, reason: decision.reason }
+    end
+    rechecks
+  end
+
+  def log_admission_recheck(attempt, decision)
+    Rails.logger.warn(
+      message: "apple_verification_attempts.admission_recheck_denied",
+      apple_verification_attempt_id: attempt.id,
+      account_id: attempt.account_id,
+      project_id: attempt.project_id,
+      reason: decision.reason
+    )
   end
 end

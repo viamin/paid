@@ -170,6 +170,28 @@ RSpec.describe Reviews::Verification::Pipeline do
     end
   end
 
+  describe "Apple verification gate" do
+    # @spec APPLE-ATTEMPT-011
+    it "does not publish a PR verification result while required Apple verification is pending" do
+      workflow = create(
+        :apple_verification_workflow_revision,
+        project: project,
+        account: project.account,
+        lifecycle_gate: "pull_request_verification"
+      )
+      administrator = create(:user, account: project.account)
+      administrator.add_role(:project_admin, project)
+      workflow.approve!(actor: administrator)
+
+      result = run_pipeline
+
+      expect(poster).not_to have_received(:call)
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(result[:outcome]).to eq("blocked_apple_verification")
+      expect(result[:comments_posted]).to eq(0)
+    end
+  end
+
   describe "verification outcomes" do
     # @spec REVIEW-VERIFY-004
     it "never posts a refuted candidate; all refuted yields the clean review" do
