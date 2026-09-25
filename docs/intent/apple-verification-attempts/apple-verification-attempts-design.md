@@ -130,8 +130,11 @@ requires a new approval.
 An approved required workflow at `completion_verification` may block an agent
 run from reporting success; at `pull_request_verification` it may block Paid's
 PR verification result. Required verification remains pending until it runs or
-is explicitly waived (APPLE-WORKER-006). Paid never silently skips required
-verification and never falls back to executing project code on the host.
+is explicitly waived (APPLE-WORKER-006). When an agent run reaches a required
+completion gate, Paid creates one queued attempt for its exact completion
+commit and schedules the attempt-maintenance sweep before withholding success.
+Paid never silently skips required verification and never falls back to
+executing project code on the host.
 
 ## Recovery and worker health
 

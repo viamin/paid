@@ -101,14 +101,17 @@
 
 - [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
   the `completion_verification` gate has not succeeded for an agent run, the
-  system SHALL block that agent run from reporting success; when assigned to
-  the `pull_request_verification` gate, it SHALL block Paid's PR verification
+  system SHALL create and enqueue one attempt bound to that run's completion
+  commit before blocking the run from reporting success; when assigned to the
+  `pull_request_verification` gate, it SHALL block Paid's PR verification
   result; enforcement SHALL bind the approved committed workflow digest and
   its approved lifecycle gate.
   *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
+  `spec/services/apple_verification_attempts/enqueue_completion_spec.rb`,
   `spec/models/agent_run_spec.rb`,
   `spec/services/reviews/verification/pipeline_spec.rb`
-  *Code:* `AppleVerificationAttempts::GateEnforcement`, `AgentRun`,
+  *Code:* `AppleVerificationAttempts::EnqueueCompletion`,
+  `AppleVerificationAttempts::GateEnforcement`, `AgentRun`,
   `Reviews::Verification::Pipeline`
 
 - [x] **APPLE-ATTEMPT-012** — A draft workflow revision or advisory check
