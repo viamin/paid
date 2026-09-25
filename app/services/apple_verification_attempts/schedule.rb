@@ -4,17 +4,28 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-001
   # @spec APPLE-ATTEMPT-003
   # @spec APPLE-ATTEMPT-005
+  # @spec APPLE-ATTEMPT-011
   # Dispatches the next fair-share queued attempt. Validation failures become
   # classified terminal results; capacity refusals remain queued for
   # a later sweep. Until the guest-execution handoff can deliver source,
   # start verification, and record its result, admitted attempts also remain
-  # queued so no VM is stranded in provisioning.
+  # queued so no VM is stranded in provisioning. Required completion gates
+  # consult {.execution_available?} and stay unavailable in that interval.
   class Schedule
     Result = Data.define(:attempt, :outcome, :reason)
 
     class << self
       def call(...)
         new(...).call
+      end
+
+      # The existing guest executor accepts a fully constructed manifest, but
+      # no control-plane handoff yet supplies an attempt's source and records
+      # its terminal result. Required completion verification must therefore
+      # remain unavailable rather than enqueue an attempt that can never
+      # release its AgentRun gate.
+      def execution_available?
+        false
       end
     end
 

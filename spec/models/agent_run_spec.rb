@@ -1584,7 +1584,7 @@ RSpec.describe AgentRun do
       end
 
       # @spec APPLE-ATTEMPT-011
-      it "queues required Apple verification before reporting completion" do
+      it "does not enforce completion verification until execution is available" do
         agent_run = create(:agent_run, :with_git_context, status: "running", started_at: 5.minutes.ago)
         workflow = create(
           :apple_verification_workflow_revision,
@@ -1597,14 +1597,9 @@ RSpec.describe AgentRun do
         workflow.approve!(actor: administrator)
 
         expect {
-          expect(agent_run.complete!(result_commit: "abc123def456789012345678901234567890abcd")).to be false
-        }.to change(AppleVerificationAttempt, :count).by(1)
-        expect(agent_run.reload).to be_running
-        expect(AppleVerificationAttempt.where(agent_run:).last).to have_attributes(
-          commit_sha: "abc123def456789012345678901234567890abcd",
-          lifecycle_gate: "completion_verification",
-          status: "queued"
-        )
+          expect(agent_run.complete!(result_commit: "abc123def456789012345678901234567890abcd")).to be true
+        }.not_to change(AppleVerificationAttempt, :count)
+        expect(agent_run.reload).to be_completed
       end
     end
 

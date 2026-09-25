@@ -68,7 +68,10 @@ follows one ordered contract:
 The scheduler validates and checks admission before dispatch. Until the guest
 execution handoff implements source delivery, verification start, and result
 completion as one path, it leaves admitted attempts queued rather than cloning
-and starting a VM that cannot complete.
+and starting a VM that cannot complete. Required `completion_verification`
+gates remain unavailable during that interval: Paid neither creates their
+attempt nor blocks the agent run on an attempt that the scheduler cannot
+complete. The gate becomes available only with that end-to-end handoff.
 
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
@@ -128,13 +131,14 @@ Moving a workflow revision to a different gate is a binding change and
 requires a new approval.
 
 An approved required workflow at `completion_verification` may block an agent
-run from reporting success; at `pull_request_verification` it may block Paid's
-PR verification result. Required verification remains pending until it runs or
-is explicitly waived (APPLE-WORKER-006). When an agent run reaches a required
-completion gate, Paid creates one queued attempt for its exact completion
-commit and schedules the attempt-maintenance sweep before withholding success.
-Paid never silently skips required verification and never falls back to
-executing project code on the host.
+run from reporting success only after the end-to-end guest-execution handoff is
+available; at `pull_request_verification` it may block Paid's PR verification
+result. Required verification remains pending until it runs or is explicitly
+waived (APPLE-WORKER-006). When the completion handoff is available and an
+agent run reaches a required completion gate, Paid creates one queued attempt
+for its exact completion commit and schedules the attempt-maintenance sweep
+before withholding success. Paid never falls back to executing project code on
+the host.
 
 ## Recovery and worker health
 

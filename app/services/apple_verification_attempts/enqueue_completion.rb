@@ -4,8 +4,9 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-011
   # @spec APPLE-ATTEMPT-013
   # Creates the first required completion-verification attempt for an agent
-  # run. The caller holds the run lock, making the lookup and creation
-  # idempotent across completion retries.
+  # run once the guest-execution handoff is available. The caller holds the
+  # run lock, making the lookup and creation idempotent across completion
+  # retries.
   class EnqueueCompletion
     COMPLETION_GATE = "completion_verification"
 
@@ -21,6 +22,7 @@ module AppleVerificationAttempts
     end
 
     def call
+      return unless Schedule.execution_available?
       return unless required_workflow&.required_checks&.any?
       return if commit_sha.blank?
 
