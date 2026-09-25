@@ -15,6 +15,9 @@
       </p>
     </div>
     <div class="mt-4 sm:mt-0 sm:ml-4">
+      <% if policy(@project).update? %>
+        <%= button_to "Answer in chat", project_issue_clarifying_questions_chat_path(@project, @issue), class: "mr-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
       <%= link_to back_link_path(project_path(@project)), class: "text-sm text-indigo-600 hover:text-indigo-500" do %>
         &larr; Back to project
       <% end %>

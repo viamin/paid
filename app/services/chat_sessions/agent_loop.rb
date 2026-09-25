@@ -20,12 +20,13 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_PROMPT = "You've reached the token budget for this chat session. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
-    attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
+    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
       :created_message_ids
 
-    def initialize(chat_session:, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
+    def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
       token_budget: nil)
       @chat_session = chat_session
+      @actor = actor
       @llm_client = llm_client
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
@@ -442,7 +443,7 @@ module ChatSessions
     end
 
     def tool_definitions
-      @tool_definitions ||= Tools::Registry.chat_definitions_for(user: chat_session.created_by, session: chat_session)
+      @tool_definitions ||= Tools::Registry.chat_definitions_for(user: actor, session: chat_session)
     end
 
     def create_assistant_message(response)

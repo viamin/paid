@@ -9,9 +9,10 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     job.send(:broadcast_error, chat_session_id, stream_message_id, "Session no longer exists") if chat_session_id
   end
 
-  def perform(chat_session_id:, content:, stream_message_id:)
+  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil)
     # @spec CHAT-API-002
     chat_session = ChatSession.find(chat_session_id)
+    actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"
 
     ActionCable.server.broadcast(stream_name, {
@@ -21,6 +22,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
 
     assistant_message = ChatSessions::SendMessage.call(
       chat_session: chat_session,
+      actor: actor,
       content: content,
       stream_message_id: stream_message_id,
       on_message_persisted: ->(message, stream_message_id: nil) {
