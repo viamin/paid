@@ -331,6 +331,15 @@ Rails.application.configure do
       cron: "1-59/5 * * * *",
       class: "DispatchCircuitBreakerRecoveryJob",
       description: "Check open dispatch circuit breakers for recovery to half_open"
+    },
+    apple_verification_withheld_run_sweep: {
+      # Stagger onto a 5-minute offset (6) not used by any other maintenance
+      # sweep so this run re-invokes withheld completions without crowding
+      # the wall-clock burst that already loads stale_run_detector, the
+      # docker/container/queue sweeps, or chat_idle_reaper.
+      cron: "6-59/5 * * * *",
+      class: "AppleVerificationWithheldRunSweepJob",
+      description: "Re-invoke completion for runs withheld at the completion-verification gate (APPLE-ATTEMPT-013)"
     }
   }
 end

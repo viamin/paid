@@ -6,9 +6,10 @@ module Tools
   class BaseTool
     include Pundit::Authorization
 
-    attr_reader :user, :session
+    attr_reader :agent_run, :user, :session
 
-    def initialize(user:, session:)
+    def initialize(user:, session:, agent_run: nil)
+      @agent_run = agent_run
       @user = user
       @session = session
     end
@@ -67,6 +68,16 @@ module Tools
     end
 
     def self.write_operation?
+      false
+    end
+
+    # MCP exposes read-only tools by default. A write tool must explicitly opt
+    # in after providing an MCP-safe confirmation contract.
+    def self.mcp_available?
+      !write_operation?
+    end
+
+    def self.requires_agent_run?
       false
     end
 

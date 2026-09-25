@@ -638,6 +638,42 @@ RSpec.describe Tools::Registry do
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :show?, policy_class: ProjectPolicy)
         }
+      },
+      {
+        tool_name: "verify_apple_project",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { project_id: project.id, agent_run_id: agent_run.id, bundle_digest: "sha256:#{'e' * 64}", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "capture_apple_screenshot",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { project_id: project.id, agent_run_id: agent_run.id, capture_id: "ios-app.initial-screen", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "stop_apple_verification",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { project_id: project.id, agent_run_id: agent_run.id, attempt_id: 0, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "get_apple_verification",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { project_id: project.id, agent_run_id: agent_run.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+        }
       }
     ] + operator_tool_scenarios
   end

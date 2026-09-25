@@ -69,14 +69,39 @@ module Activities
           raise "Branch #{agent_run.branch_name} does not exist on GitHub"
         end
 
+        record_shipped_verification_result(agent_run)
+
         # Persist completion as the very first step after obtaining the PR,
         # before any best-effort post-processing. This ensures a retry
         # cannot overwrite status via MarkAgentRunFailedActivity.
-        completed = agent_run.complete!(
-          result_commit: agent_run.result_commit_sha,
-          pr_url: pr.html_url,
-          pr_number: pr.number
-        )
+        # A blocked completion-verification gate is a deterministic project
+        # failure (the gate's decision cannot change without operator action),
+        # so the raise is rescued here to run the same reconcile work that
+        # would have run on success — labels, body refresh, sync — before
+        # re-raising. Without this rescue the workflow rescue marks the run
+        # failed but the PR lives on GitHub without Paid-managed labels or
+        # the body refresh, and a retry under DEFAULT_RETRY_POLICY's 3
+        # attempts would still skip the work because the raise propagates
+        # before reconcile_pull_request runs.
+        completed = begin
+          agent_run.complete!(
+            result_commit: agent_run.result_commit_sha,
+            pr_url: pr.html_url,
+            pr_number: pr.number
+          )
+        rescue AppleVerificationAttempts::GateEnforcement::RequiredVerificationFailed
+          reconcile_pull_request(
+            agent_run,
+            client,
+            project,
+            pr,
+            pr_action,
+            pr_body: pr_body,
+            issue: issue,
+            llm_generated_description: pr_body&.fetch(:llm_generated_description, false)
+          )
+          raise
+        end
         reconcile_pull_request(
           agent_run,
           client,
@@ -104,6 +129,22 @@ module Activities
     end
 
     private
+
+    # Re-evaluates the PR gate after PushBranchActivity has persisted the
+    # shipped SHA. The earlier post-run recording precedes that push and can
+    # only bind a bundle-based attempt.
+    # @spec APPLE-ATTEMPT-011
+    def record_shipped_verification_result(agent_run)
+      return if agent_run.worktree_path.blank?
+
+      AgentRuns::VerificationResultRecorder.call(
+        agent_run: agent_run,
+        repo_path: agent_run.worktree_path,
+        fallback_result: agent_run.verification_result,
+        record_missing: false,
+        result_commit: agent_run.result_commit_sha
+      )
+    end
 
     def completion_result(agent_run)
       {
