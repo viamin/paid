@@ -111,7 +111,7 @@
   *Test:* `spec/services/github_client_spec.rb`.
 
 - [x] **GITHUB-SYNC-012** — During GitHub sync, the system SHALL reconcile
-  every open, non-PR issue with a configured needs-input label and persisted
+  every open issue or pull request with a configured needs-input label and persisted
   clarification questions whose `paid_state` has drifted away from
   `needs_input`, restoring `needs_input` and logging the repair unless a
   paused `create_feature` run with a recorded clarification round still owns
@@ -124,6 +124,16 @@
   untrusted user SHALL remain untouched (#3988). Historical reconciliation
   SHALL use bounded batches and persist a completed evaluation so normal polls
   do not repeatedly fetch unchanged issues' label-event histories.
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **GITHUB-SYNC-014** — During GitHub sync, the system SHALL apply the
+  needs-input label-removal, enhancement recheck, questionless-needs-input, and
+  state-drift repair paths to both open issues and open pull requests. The hourly
+  reconciliation sweep SHALL include an open pull request confirmed by the
+  pull-request sweep in the questionless-repair candidates even when the
+  incremental issue response did not include it. Closed pull requests SHALL
+  remain excluded from those repair paths.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
 
