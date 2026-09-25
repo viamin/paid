@@ -199,7 +199,6 @@ class Runner < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :free_model_policy_runner_must_be_unique_per_credential
   validate :direct_outbound_model_policy_must_be_valid
-  validate :opencode_free_policy_chat_must_be_disabled
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
@@ -536,13 +535,19 @@ class Runner < ApplicationRecord
   # (e.g. "minimax/MiniMax-M3"). Defaults to the runner's configured model but
   # accepts an explicit model_id so models resolved outside the runtime builder
   # (tier resolution, escalation) get the same treatment. Idempotent: a value
-  # already prefixed with this provider is returned unchanged.
+  # already prefixed with this provider is returned unchanged. OpenRouter
+  # catalog IDs themselves contain an author prefix, so its qualified IDs
+  # need both the CLI provider and the complete author/model pair.
+  # @spec MODEL-POLICY-014
   def opencode_qualified_model(model_id = opencode_model_id)
     return if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
     provider_id = api_config[:opencode_model_provider]
-    return model_id if provider_id.blank? || model_id.start_with?("#{provider_id}/")
+    return model_id if provider_id.blank?
+    if model_id.start_with?("#{provider_id}/")
+      return model_id unless provider_id == "openrouter" && model_id.count("/") == 1
+    end
 
     "#{provider_id}/#{model_id}"
   end
@@ -555,12 +560,11 @@ class Runner < ApplicationRecord
   # provider="MiniMax-M3", model="") and raises ProviderModelNotFoundError, so a
   # bare id needs the runner's "<provider>/<model>" form.
   #
-  # A model id that already carries a "/" is left untouched: OpenRouter-routed
-  # ids are "<vendor>/<model>" slugs (e.g. "moonshotai/kimi-k2-0905") that
-  # opencode addresses directly. No-op for runners that do not
-  # provider-qualify their models.
+  # OpenRouter catalog IDs include a vendor/model pair that still needs the
+  # OpenCode provider prefix. No-op for other runners.
+  # @spec MODEL-POLICY-014
   def qualified_model_for(model_id)
-    return model_id if model_id.blank? || model_id.include?("/")
+    return model_id if model_id.blank?
     return opencode_qualified_model(model_id) if runner_key == "opencode"
 
     model_id
@@ -1265,24 +1269,6 @@ class Runner < ApplicationRecord
     return if direct_outbound_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
 
     errors.add(:config, "#{direct_outbound_runner_label} free model policy requires the OpenRouter API provider")
-  end
-
-  # Chat dispatch (ChatSessions::BuildLlmClient, Containers::ChatSessionManager)
-  # does not resolve a free-tier model for policy-based free runners the way
-  # Temporal's RunAgentActivity#selected_runner_runtime does for agent runs —
-  # only the legacy openrouter_free runner has that support today. Without
-  # this guard, the enabled_for_chat column's DB default of true (or an
-  # update outside RunnersController#apply_new_runner_defaults, which only
-  # runs on create) would silently enable chat dispatch to a paid fallback
-  # model instead of the free tier. Drop once chat-side free-model
-  # resolution lands for policy-based free runners.
-  # @spec MODEL-POLICY-013
-  def opencode_free_policy_chat_must_be_disabled
-    return unless runner_key == "opencode"
-    return unless opencode_model_policy == "free"
-    return unless enabled_for_chat?
-
-    errors.add(:enabled_for_chat, "cannot be enabled until chat dispatch resolves a free-tier model for free-policy runners")
   end
 
   # @spec MODEL-POLICY-002 MODEL-POLICY-003
@@ -2017,7 +2003,7 @@ class Runner < ApplicationRecord
   # AgentHarness runtime.
   def openrouter_provider_runtime(config)
     AgentHarness::ProviderRuntime.new(
-      model: config.fetch(:model),
+      model: opencode_qualified_model(config.fetch(:model)),
       env: {
         config.fetch(:api_key_env) => effective_api_secret.to_s,
         "OPENAI_BASE_URL" => config.fetch(:base_url)

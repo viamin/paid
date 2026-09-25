@@ -97,6 +97,7 @@ RSpec.describe Containers::ChatSessionManager do
         runner: runner,
         prompt: "Fix the bug",
         options: {},
+        provider_runtime: nil,
         project: project
       )
 
