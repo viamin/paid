@@ -10,6 +10,9 @@ module Tools
       def available_to?(user:)
         run_agent_available_to?(user:)
       end
+
+      def mcp_available? = true
+      def requires_agent_run? = true
     end
 
     private

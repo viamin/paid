@@ -71,6 +71,16 @@ module Tools
       false
     end
 
+    # MCP exposes read-only tools by default. A write tool must explicitly opt
+    # in after providing an MCP-safe confirmation contract.
+    def self.mcp_available?
+      !write_operation?
+    end
+
+    def self.requires_agent_run?
+      false
+    end
+
     def self.requires_container?
       false
     end

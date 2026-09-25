@@ -102,8 +102,8 @@ module Tools
           OperatorTools::Registry.read_only_definitions_for(user:)
       end
 
-      def mcp_definitions_for(user:, session: nil)
-        read_only_tools_for(session:, user:).map do |klass|
+      def mcp_definitions_for(user:, session: nil, agent_run: nil)
+        mcp_tools_for(session:, user:, agent_run:).map do |klass|
           mcp_definition_for(klass, session:)
         end
       end
@@ -197,6 +197,12 @@ module Tools
         tools_for(session:, user:).reject(&:write_operation?)
       end
 
+      def mcp_tools_for(session:, user:, agent_run:)
+        tools_for(session:, user:).select do |klass|
+          klass.mcp_available? && (!klass.requires_agent_run? || agent_run.present?)
+        end
+      end
+
       def dispatchable_read_only_tools_for(session:, user:)
         (read_only_tool_classes_for(user:) + read_only_tools_for(session:, user:)).uniq
       end
@@ -248,7 +254,7 @@ module Tools
         raise ArgumentError, "Unknown tool: #{name}" unless registry
 
         if mcp
-          return dispatch_own_read_only(name:, arguments:, user:, session:, agent_run:) if registry == self
+          return dispatch_own_mcp(name:, arguments:, user:, session:, agent_run:) if registry == self
 
           return registry.dispatch_read_only(name:, arguments:, user:, session:)
         end
@@ -266,6 +272,14 @@ module Tools
 
       def dispatch_own_read_only(name:, arguments:, user:, session:, agent_run: nil)
         tool_class = read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+        raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
+
+        instantiate_tool(tool_class, user:, session:, agent_run:).dispatch(**arguments.symbolize_keys)
+      end
+
+      def dispatch_own_mcp(name:, arguments:, user:, session:, agent_run:)
+        tool_class = mcp_tools_for(session:, user:, agent_run:).find { |klass| klass.tool_name == name }
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 

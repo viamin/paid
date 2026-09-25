@@ -53,6 +53,36 @@ RSpec.describe Tools::Registry do
 
       expect(result).to include("mode" => "on_demand")
     end
+
+    it "advertises and dispatches the semantic write tools over MCP for the authenticated run" do
+      draft_revision
+
+      definitions = described_class.mcp_definitions_for(user:, session:, agent_run:)
+      names = definitions.map { |definition| definition[:name] }
+      expect(names).to include(
+        "verify_apple_project", "get_apple_verification",
+        "capture_apple_screenshot", "stop_apple_verification"
+      )
+
+      result = described_class.dispatch_mcp(
+        name: "verify_apple_project",
+        arguments: { project_id: project.id, agent_run_id: agent_run.id, bundle_digest:, confirmed: true },
+        user:,
+        session:,
+        agent_run:
+      )
+
+      expect(result).to include("status" => "queued")
+    end
+
+    it "does not expose agent-bound tools without an authenticated run" do
+      names = described_class.mcp_definitions_for(user:, session:).map { |definition| definition[:name] }
+
+      expect(names).not_to include(
+        "verify_apple_project", "get_apple_verification",
+        "capture_apple_screenshot", "stop_apple_verification"
+      )
+    end
   end
 
   describe Tools::VerifyAppleProject do

@@ -60,7 +60,7 @@ class PaidMcpServer
   end
 
   def tool_definitions
-    Tools::Registry.mcp_definitions_for(user:, session:)
+    Tools::Registry.mcp_definitions_for(user:, session:, agent_run:)
   end
 
   def call_tool(name:, arguments:)
