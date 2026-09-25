@@ -56,7 +56,7 @@ module Inbox
     def comments
       return [] unless issue
 
-      github_client.issue_comments(chat_session.project.full_name, issue.github_number).map do |comment|
+      trusted_issue_comments.map do |comment|
         { id: comment.id, author: comment.user&.login, body: comment.body, created_at: comment.created_at }
       end
     end
@@ -64,8 +64,23 @@ module Inbox
     def review_comments
       return [] unless issue&.is_pull_request?
 
-      github_client.pull_request_review_comments(chat_session.project.full_name, issue.github_number).map do |comment|
+      trusted_review_comments.map do |comment|
         { id: comment[:id], author: comment[:user_login], body: comment[:body], path: comment[:path], line: comment[:line] }
+      end
+    end
+
+    def trusted_issue_comments
+      Prompts::BuildForIssue.fetch_trusted_comments(
+        github_client:,
+        repo: chat_session.project.full_name,
+        number: issue.github_number,
+        project: chat_session.project
+      )
+    end
+
+    def trusted_review_comments
+      github_client.pull_request_review_comments(chat_session.project.full_name, issue.github_number).select do |comment|
+        PromptAssembly::Trust.human_trusted?(chat_session.project, comment[:user_login])
       end
     end
 

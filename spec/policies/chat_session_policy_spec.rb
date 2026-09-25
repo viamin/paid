@@ -17,6 +17,25 @@ RSpec.describe ChatSessionPolicy do
     end
   end
 
+  describe "#unarchive?" do
+    it "does not permit unarchiving an interactive inbox chat" do
+      # @spec QUESTION-EXPLORATION-001
+      account = create(:account)
+      user = create(:user, :owner, account:)
+      project = create(:project, account:, created_by: user)
+      inbox_chat = create(
+        :chat_session,
+        :archived,
+        account:,
+        project:,
+        created_by: user,
+        inbox_item_key: "clarifying_questions:1"
+      )
+
+      expect(described_class.new(user, inbox_chat)).not_to be_unarchive
+    end
+  end
+
   describe "Scope" do
     it "keeps another account member's interactive inbox chat and messages out of the scope" do
       # @spec QUESTION-EXPLORATION-014

@@ -37,6 +37,8 @@ class ChatSessionPolicy < ApplicationPolicy
   end
 
   def unarchive?
+    return false if record.interactive_inbox_chat?
+
     update?
   end
 
