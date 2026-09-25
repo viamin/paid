@@ -61,6 +61,12 @@ module ChatSessions
 
     def validate_session_state!
       raise ArgumentError, "Chat session is archived." if chat_session.archived?
+      # @spec QUESTION-EXPLORATION-001
+      raise ArgumentError, "interactive inbox chat sessions cannot be resumed" if closed_interactive_inbox_chat?
+    end
+
+    def closed_interactive_inbox_chat?
+      chat_session.status == "closed" && chat_session.interactive_inbox_chat?
     end
 
     # Atomically transition this tool call from +pending+ to its decision status
