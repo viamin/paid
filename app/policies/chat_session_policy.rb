@@ -6,7 +6,7 @@ class ChatSessionPolicy < ApplicationPolicy
   end
 
   def show?
-    user_in_account?
+    linked_chat_visible?
   end
 
   def create?
@@ -14,22 +14,48 @@ class ChatSessionPolicy < ApplicationPolicy
   end
 
   def update?
-    has_any_account_role?(:owner, :admin, :member)
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   def reopen?
-    create?
+    linked_chat_visible? && create?
   end
 
   def destroy?
-    has_any_account_role?(:owner, :admin, :member)
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   def archive?
-    has_any_account_role?(:owner, :admin, :member)
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
   end
 
   def unarchive?
-    has_any_account_role?(:owner, :admin, :member)
+    linked_chat_visible? && has_any_account_role?(:owner, :admin, :member)
+  end
+
+  class Scope < ApplicationPolicy::Scope
+    def resolve
+      raise Pundit::NotAuthorizedError, "must be logged in" unless user
+      return scope.where(account: user.account) if account_operator?
+
+      scope.left_outer_joins(project: :project_memberships)
+        .where(account: user.account)
+        .where("chat_sessions.clarifying_question_issue_id IS NULL OR project_memberships.user_id = ?", user.id)
+        .distinct
+    end
+
+    private
+
+    def account_operator?
+      user.has_any_role?(:owner, :admin, user.account)
+    end
+  end
+
+  private
+
+  def linked_chat_visible?
+    return user_in_account? unless record.clarifying_question_issue.present?
+
+    ProjectPolicy.new(user, record.project).explore?
   end
 end

@@ -281,6 +281,51 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       end
     end
 
+    describe "clarifying questions context" do
+      let(:project) { create(:project, account: account) }
+      let(:issue) do
+        create(:issue, :needs_input, project: project, github_number: 7, title: "Tighten inbox flow",
+          needs_input_questions: [ "What is the expected behavior?", "Should this be behind a flag?" ])
+      end
+      let(:chat_session) do
+        create(:chat_session, account: account, created_by: user, project: project,
+          clarifying_question_issue: issue,
+          metadata: {
+            "clarifying_question_issue_id" => issue.id,
+            "clarifying_questions" => issue.needs_input_questions
+          })
+      end
+
+      # @spec QUESTION-EXPLORATION-001
+      it "includes the linked issue and its pending questions from the session snapshot" do
+        expect(prompt).to include("Clarifying Questions for Issue #7: Tighten inbox flow")
+        expect(prompt).to include("1. What is the expected behavior?")
+        expect(prompt).to include("2. Should this be behind a flag?")
+        expect(prompt).to include("submit_clarifying_answers")
+      end
+
+      it "labels a linked pull request as a PR" do
+        pull_request = create(:issue, :needs_input, :pull_request, project: project, github_number: 9,
+          title: "Ship it", needs_input_questions: [ "What should happen after approval?" ])
+        chat_session.update!(
+          clarifying_question_issue: pull_request,
+          metadata: {
+            "clarifying_question_issue_id" => pull_request.id,
+            "clarifying_questions" => [ "What should happen after approval?" ]
+          }
+        )
+
+        expect(prompt).to include("Clarifying Questions for PR #9: Ship it")
+      end
+
+      it "reads the snapshot without resolving questions from GitHub" do
+        allow(ClarifyingQuestions::Load).to receive(:call)
+          .and_raise(RuntimeError, "must not be called from the prompt builder")
+
+        expect { prompt }.not_to raise_error
+      end
+    end
+
     describe "page context" do
       let(:chat_session) do
         create(:chat_session,

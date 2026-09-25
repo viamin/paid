@@ -15,12 +15,13 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id
+    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
       @chat_session = chat_session
+      @actor = actor
       @content = content
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted

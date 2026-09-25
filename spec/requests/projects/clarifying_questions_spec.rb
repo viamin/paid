@@ -270,6 +270,78 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     end
   end
 
+  describe "POST /projects/:project_id/issues/:issue_id/clarifying_questions/chat" do
+    let(:issue) do
+      create(:issue, :needs_input, project: project, body: issue_body,
+        needs_input_questions: [ "What is the expected behavior?", "Should this be behind a flag?" ])
+    end
+
+    before do
+      allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+    end
+
+    # @spec QUESTION-EXPLORATION-001
+    it "opens the linked chat under the current user and redirects to it" do
+      expect {
+        post project_issue_clarifying_questions_chat_path(project, issue)
+      }.to change(ChatSession, :count).by(1)
+
+      chat = ChatSession.find_by(clarifying_question_issue: issue)
+      expect(chat.created_by).to eq(user)
+      expect(chat.account).to eq(account)
+      expect(chat.title).to eq("Clarifying questions")
+      expect(chat.metadata["clarifying_questions"]).to eq(
+        [ "What is the expected behavior?", "Should this be behind a flag?" ]
+      )
+      expect(response).to redirect_to(chat_session_path(chat))
+    end
+
+    # @spec QUESTION-EXPLORATION-001
+    it "reuses the existing linked chat on repeated opens" do
+      post project_issue_clarifying_questions_chat_path(project, issue)
+      chat = ChatSession.find_by(clarifying_question_issue: issue)
+
+      expect {
+        post project_issue_clarifying_questions_chat_path(project, issue)
+      }.not_to change(ChatSession, :count)
+
+      expect(response).to redirect_to(chat_session_path(chat))
+    end
+
+    # @spec QUESTION-EXPLORATION-002
+    it "denies users who cannot update the project" do
+      member = create(:user, :member, account: account)
+      sign_out user
+      sign_in member
+
+      expect {
+        post project_issue_clarifying_questions_chat_path(project, issue)
+      }.not_to change(ChatSession, :count)
+
+      expect(response).to redirect_to(root_path)
+      follow_redirect!
+      expect(response.body).to include("You are not authorized to perform this action.")
+    end
+
+    context "when the pending questions cannot be loaded" do
+      let(:issue) { create(:issue, :needs_input, project: project, body: issue_body) }
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_raise(GithubClient::Error, "boom")
+      end
+
+      it "bounces back with an alert instead of raising" do
+        expect {
+          post project_issue_clarifying_questions_chat_path(project, issue)
+        }.not_to change(ChatSession, :count)
+
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("Failed to load clarifying questions")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/issues/:issue_id/clarifying_questions" do
     before do
       allow(github_client).to receive(:add_comment).and_return(double(html_url: "https://github.com/test"))
