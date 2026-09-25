@@ -20,7 +20,7 @@ module ChatSessions
     def call
       validate!
 
-      return destroy_empty_session unless user_messages?
+      return destroy_empty_session unless user_messages? || chat_session.interactive_inbox_chat?
 
       ActiveRecord::Base.transaction do
         compute_totals
@@ -73,7 +73,7 @@ module ChatSessions
     end
 
     def transition_to_closed(attributes = {})
-      chat_session.update!({ status: "closed" }.merge(attributes))
+      chat_session.update!({ status: "closed", closed_at: Time.current }.merge(attributes))
     end
 
     def workspace_cleanup_attributes

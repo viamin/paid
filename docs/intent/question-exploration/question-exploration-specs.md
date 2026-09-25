@@ -3,10 +3,9 @@
 Status: the chat-entry and final-answer submission claims below are implemented;
 diagram and durable-progress work remains planned.
 
-- [x] **QUESTION-EXPLORATION-001** — When a user with issue-comment permission opens an Inbox clarifying-question item, Paid SHALL open one canonical linked chat, reusing an active chat and restoring an archived one. The chat SHALL be created under that user with the generic title "Clarifying questions", carry the linked issue/PR and pending-question context, and allow follow-up questions.
-  *Tests:* `spec/services/clarifying_questions/open_chat_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
-  *Code:* `app/services/clarifying_questions/open_chat.rb`, `app/controllers/projects/clarifying_questions_controller.rb`, `app/services/chat_sessions/build_system_prompt.rb`.
-
+- [x] **QUESTION-EXPLORATION-001** — When a user opens an enabled Inbox clarifying question, Paid SHALL open that user's active conversation for the Inbox item, reusing it on subsequent or concurrent opens. A closed or archived conversation SHALL be replaced rather than reopened or used. The legacy clarifying-question entry SHALL instead open one canonical linked chat, restoring an archived chat and retaining its linked issue/PR and pending-question context.
+  *Tests:* `spec/services/inbox/open_interactive_chat_spec.rb`, `spec/services/clarifying_questions/open_chat_spec.rb`, `spec/policies/chat_message_policy_spec.rb`, `spec/services/chat_sessions/resolve_tool_call_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
+  *Code:* `app/services/inbox/open_interactive_chat.rb`, `app/services/clarifying_questions/open_chat.rb`, `app/policies/chat_message_policy.rb`, `app/services/chat_sessions/resolve_tool_call.rb`, `app/services/chat_sessions/build_system_prompt.rb`.
 - [x] **QUESTION-EXPLORATION-002** — When the user confirms final ordered answers in a linked exploration chat, Paid SHALL post them through the standard clarifying-answer comment path, adjust labels, and remove the inbox item only after the comment succeeds. Users without issue-comment permission SHALL not be offered or able to invoke this action.
   *Tests:* `spec/mcp/tools/submit_clarifying_answers_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
   *Code:* `app/mcp/tools/submit_clarifying_answers.rb`, `app/services/clarifying_questions/submit_answers.rb`.
@@ -23,3 +22,6 @@ diagram and durable-progress work remains planned.
 - [ ] **QUESTION-EXPLORATION-011** — When a user selects, collapses or experimentally edits a diagram, Paid SHALL treat the interaction as exploration and SHALL NOT infer a preference or increase intent certainty solely from that interaction.
 - [ ] **QUESTION-EXPLORATION-012** — When an exploration action is available through the UI, Paid SHALL expose an equivalent authorized API/tool action and consistent message context through HTML, Cable and SSE transports.
 - [ ] **QUESTION-EXPLORATION-013** — When a conversation is archived or an investigation is interrupted, Paid SHALL preserve the related human answers and evidence; reopening SHALL restore current question progress without requiring discarded diagrams.
+- [x] **QUESTION-EXPLORATION-014** — The interactive Inbox chat SHALL persist its Inbox item key, creator, opened/closed timestamps and queue-metadata audit snapshot. Only a user with the project’s comment authority SHALL create or use it. Inbox context SHALL be available through an explicit section-query service and SHALL NOT be inserted into the system prompt by default.
+  *Tests:* `spec/services/inbox/open_interactive_chat_spec.rb`, `spec/services/inbox/chat_context_spec.rb`, `spec/policies/chat_message_policy_spec.rb`.
+  *Code:* `app/services/inbox/open_interactive_chat.rb`, `app/services/inbox/chat_context.rb`, `app/policies/chat_session_policy.rb`, `app/policies/chat_message_policy.rb`.

@@ -120,6 +120,14 @@ class ChatSession < ApplicationRecord
     status == "archived"
   end
 
+  def closed?
+    status == "closed"
+  end
+
+  def interactive_inbox_chat?
+    inbox_item_key.present?
+  end
+
   # @spec CHAT-API-019
   def llm_policy_projects
     Project.where(id: project_id).or(Project.where(id: chat_session_projects.select(:project_id))).to_a

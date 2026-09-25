@@ -1,4 +1,5 @@
-<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
+<% can_continue_chat = !chat_session.closed? || !chat_session.interactive_inbox_chat? %>
+<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? && can_continue_chat %>
 
 <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
   <div class="shrink-0 border-b border-gray-100 bg-white px-4 py-1 text-center">
@@ -93,7 +94,13 @@
       <% end %>
     <% else %>
       <p class="text-sm text-gray-500">
-        <%= chat_session.archived? ? "This chat is archived. Restore it to continue the conversation." : "You have read-only access to this chat." %>
+        <% if chat_session.closed? && chat_session.interactive_inbox_chat? %>
+          This chat is closed. Open the Inbox item to start a new conversation.
+        <% elsif chat_session.archived? %>
+          This chat is archived. Restore it to continue the conversation.
+        <% else %>
+          You have read-only access to this chat.
+        <% end %>
       </p>
     <% end %>
   </div>

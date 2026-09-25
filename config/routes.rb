@@ -59,6 +59,7 @@ Rails.application.routes.draw do
   get "dashboard/pr_cycle_time", to: "dashboard#pr_cycle_time", as: :dashboard_pr_cycle_time
   get "inbox", to: "inbox#index", as: :inbox
   get "inbox/count", to: "inbox#count", as: :inbox_count
+  post "inbox/:entry_id/interactive_chat", to: "inbox#open_chat", as: :inbox_interactive_chat
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
   get "dashboard/inbox/entries/:entry_kind/:entry_id", to: "legacy_inbox_redirects#show", as: :dashboard_inbox_entry

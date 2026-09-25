@@ -706,6 +706,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_093047) do
     t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
     t.bigint "clarifying_question_issue_id", comment: "Inbox issue whose clarifying questions this chat resolves."
     t.jsonb "clone_manifest", default: [], null: false, comment: "Persisted clone metadata used to reopen a reaped multi-repo chat workspace."
+    t.datetime "closed_at", comment: "When an interactive inbox chat session was closed or archived."
     t.string "container_capability", default: "none", null: false, comment: "Container capability lifecycle for the chat session: none, pending, provisioning, ready, failed, or stopped."
     t.string "container_id"
     t.datetime "container_ready_at", comment: "When the session's container-backed workspace most recently became ready."
@@ -714,8 +715,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_093047) do
     t.bigint "created_by_id"
     t.uuid "external_id", default: -> { "gen_random_uuid()" }, null: false
     t.datetime "idle_timeout_at"
+    t.string "inbox_item_key", comment: "Stable Inbox::Queue entry key that this interactive chat session was opened from."
+    t.jsonb "inbox_item_metadata", default: {}, null: false, comment: "Audit snapshot of the linked inbox item's queue metadata at chat open time."
     t.jsonb "metadata", default: {}
     t.string "model"
+    t.datetime "opened_at", comment: "When an interactive inbox chat session was opened."
     t.bigint "project_id"
     t.string "proxy_token", limit: 64
     t.datetime "rate_limited_until", comment: "When a runner rate limit that paused this chat session is expected to clear. Set when a chat turn exhausts every fallback runner with an AgentHarness::RateLimitError; cleared on a successful resend."
@@ -726,6 +730,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_093047) do
     t.datetime "updated_at", null: false
     t.string "workspace_volume"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
+    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"

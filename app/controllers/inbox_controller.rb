@@ -2,7 +2,7 @@
 
 class InboxController < ApplicationController
   before_action :authenticate_user!
-  before_action :load_inbox, only: %i[index show]
+  before_action :load_inbox, only: %i[index show open_chat]
 
   # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
   def index
@@ -17,6 +17,18 @@ class InboxController < ApplicationController
 
     @detail_view = true
     render :index
+  end
+
+  # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
+  def open_chat
+    entry = resolve_selected_entry(@inbox_entries)
+    raise ActiveRecord::RecordNotFound unless entry
+
+    chat_session = Inbox::OpenInteractiveChat.call(user: current_user, entry:)
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(chat_session) }
+      format.json { render json: { id: chat_session.id, url: chat_session_path(chat_session) }, status: :created }
+    end
   end
 
   # Lazy-loaded by the top-level nav badge Turbo Frame so ordinary page
