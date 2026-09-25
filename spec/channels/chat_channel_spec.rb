@@ -45,6 +45,20 @@ RSpec.describe ChatChannel do
       subscribe(session_id: other_session.id)
       expect(subscription).to be_rejected
     end
+
+    # @spec QUESTION-EXPLORATION-007
+    it "rejects subscription to a linked chat without project membership" do
+      create(:user, account: account)
+      member = create(:user, :member, account: account)
+      project = create(:project, account: account)
+      linked_session = create(:chat_session, account: account, project: project,
+        clarifying_question_issue: create(:issue, project: project))
+
+      stub_connection current_user: member
+      subscribe(session_id: linked_session.id)
+
+      expect(subscription).to be_rejected
+    end
   end
 
   # @spec CHAT-SESSION-REOPEN-005

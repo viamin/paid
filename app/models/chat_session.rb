@@ -73,6 +73,7 @@ class ChatSession < ApplicationRecord
   validates :external_id, uniqueness: true
   validate :runner_must_belong_to_same_account
   validate :project_must_belong_to_same_account
+  validate :clarifying_question_issue_must_belong_to_project
 
   def provider_id
     runner_id
@@ -311,13 +312,20 @@ class ChatSession < ApplicationRecord
     errors.add(:project, "must belong to the same account")
   end
 
+  def clarifying_question_issue_must_belong_to_project
+    return unless clarifying_question_issue
+    return if project && clarifying_question_issue.project_id == project_id
+
+    errors.add(:clarifying_question_issue, "must belong to the chat project")
+  end
+
   def broadcast_sidebar_prepend
     Turbo::StreamsChannel.broadcast_remove_to(
-      [ account, :chat_sessions ],
+      sidebar_broadcast_stream,
       target: sidebar_empty_state_target
     )
     Turbo::StreamsChannel.broadcast_prepend_to(
-      [ account, :chat_sessions ],
+      sidebar_broadcast_stream,
       target: sidebar_list_target,
       partial: "chat_sessions/session_card",
       locals: { chat_session: self }
@@ -328,7 +336,7 @@ class ChatSession < ApplicationRecord
     previous_status = saved_change_to_status&.first || status
 
     Turbo::StreamsChannel.broadcast_remove_to(
-      [ account, :chat_sessions ],
+      sidebar_broadcast_stream,
       target: ActionView::RecordIdentifier.dom_id(self)
     )
     broadcast_sidebar_append_empty_state(status: previous_status) if previous_status != status
@@ -337,21 +345,27 @@ class ChatSession < ApplicationRecord
 
   def broadcast_sidebar_remove
     Turbo::StreamsChannel.broadcast_remove_to(
-      [ account, :chat_sessions ],
+      sidebar_broadcast_stream,
       target: ActionView::RecordIdentifier.dom_id(self)
     )
     broadcast_sidebar_append_empty_state(status: status)
   end
 
   def broadcast_sidebar_append_empty_state(status:)
+    return if clarifying_question_issue.present?
     return unless self.class.where(account_id: account_id).public_send(status == "archived" ? :archived_only : :visible).none?
 
     Turbo::StreamsChannel.broadcast_append_to(
-      [ account, :chat_sessions ],
+      sidebar_broadcast_stream,
       target: sidebar_list_target(status: status),
       partial: "chat_sessions/sidebar_empty_state",
       locals: { archived_view: status == "archived" }
     )
+  end
+
+  def sidebar_broadcast_stream
+    # @spec QUESTION-EXPLORATION-007
+    clarifying_question_issue.present? ? [ project, :chat_sessions ] : [ account, :chat_sessions ]
   end
 
   def handle_container_capability_transition

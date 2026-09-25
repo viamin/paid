@@ -15,7 +15,8 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      session&.clarifying_question_issue.present? && policy_allows?(user:, record: session.project, query: :update?, policy_class: ProjectPolicy)
+      issue = session&.clarifying_question_issue
+      issue.present? && policy_allows?(user:, record: issue.project, query: :update?, policy_class: ProjectPolicy)
     end
 
     def self.input_schema
@@ -35,6 +36,7 @@ module Tools
       issue = session.clarifying_question_issue || raise(ArgumentError, "This chat is not linked to clarifying questions")
       questions = ClarifyingQuestions::Load.call(project: issue.project, issue: issue)
       raise ArgumentError, "Answer every pending question before posting" unless answers.size == questions.size
+      validate_choice_answers!(questions:, answers:)
 
       ClarifyingQuestions::SubmitAnswers.call(
         project: issue.project,
@@ -46,8 +48,15 @@ module Tools
 
     private
 
+    def validate_choice_answers!(questions:, answers:)
+      questions.zip(answers).each_with_index do |(question, answer), index|
+        error = ClarifyingQuestions::ChoiceAnswers.error_for(question:, answer:, position: index + 1)
+        raise ArgumentError, error if error
+      end
+    end
+
     def project_for_session
-      session.project || session.clarifying_question_issue&.project || raise(ArgumentError, "This chat has no project")
+      session.clarifying_question_issue&.project || session.project || raise(ArgumentError, "This chat has no project")
     end
   end
 end

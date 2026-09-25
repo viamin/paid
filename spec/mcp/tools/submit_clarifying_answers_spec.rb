@@ -72,6 +72,39 @@ RSpec.describe Tools::SubmitClarifyingAnswers do
     end
 
     # @spec QUESTION-EXPLORATION-002
+    it "rejects answers that are not offered by a choice question" do
+      issue.update!(needs_input_questions: [
+        "Which database? - ( ) SQLite) local file - ( ) Postgres) shared service",
+        questions.second
+      ])
+
+      expect do
+        tool.call(answers: [ "MySQL", "Yes, by default" ], confirmed: true)
+      end.to raise_error(ArgumentError, /Answer 1: "MySQL" isn't one of the offered options/)
+
+      expect(github_client).not_to have_received(:add_comment)
+      expect(issue.reload.paid_state).to eq("needs_input")
+    end
+
+    # @spec QUESTION-EXPLORATION-002
+    it "rejects multiple selections for a single-choice question" do
+      issue.update!(needs_input_questions: [
+        "Which database? - ( ) SQLite) local file - ( ) Postgres) shared service",
+        questions.second
+      ])
+
+      expect do
+        tool.call(
+          answers: [ "SQLite (local file)\nPostgres (shared service)", "Yes, by default" ],
+          confirmed: true
+        )
+      end.to raise_error(ArgumentError, /Answer 1: Single-choice answers must select exactly one option or Other/)
+
+      expect(github_client).not_to have_received(:add_comment)
+      expect(issue.reload.paid_state).to eq("needs_input")
+    end
+
+    # @spec QUESTION-EXPLORATION-002
     it "posts the ordered answers through the standard answer path and clears the inbox item" do
       result = tool.call(answers: [ "X is a feature", "Yes, by default" ], confirmed: true)
 
