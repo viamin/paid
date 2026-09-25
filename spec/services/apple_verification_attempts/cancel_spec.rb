@@ -19,6 +19,6 @@ RSpec.describe AppleVerificationAttempts::Cancel do
     )
     expect(attempt.finished_at).to be_present
     expect(attempt.finalized_at).to be_present
-    expect(attempt.container_retained_until).to be_present
+    expect(attempt.container_retained_until).to be_nil
   end
 end

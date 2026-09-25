@@ -4,10 +4,11 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-006
   # Finalises a terminal Apple verification attempt: revokes the attempt's
   # credentials, disables the attempt's network authority, and either
-  # destroys a successful VM immediately or records the failed-VM retention
-  # window (default one hour, configurable). Operators can request an
-  # earlier destroy via {#early_destroy_retained_vm}, which routes through
-  # the {AppleVerification::Lifecycle} boundary so the audit event reflects
+  # destroys a successful VM immediately or, when the attempt holds a live
+  # VM, records the failed-VM retention window (default one hour,
+  # configurable). Operators can request an earlier destroy via
+  # {#early_destroy_retained_vm}, which routes through the
+  # {AppleVerification::Lifecycle} boundary so the audit event reflects
   # a real destroy rather than a no-op.
   class Complete
     DEFAULT_FAILED_VM_RETENTION_HOURS = 1
@@ -42,15 +43,17 @@ module AppleVerificationAttempts
 
     # Finalises an attempt. Successful attempts drive the real VM destroy
     # through the lifecycle boundary, then revoke credentials; failed
-    # attempts persist the retention window and revoke credentials without
-    # destroying the VM (which the sweep does after the deadline passes).
-    # The success path refuses to record a `destroyed` audit event when no
-    # real destroy happened: if the lifecycle is unavailable (host not
-    # configured) or the lifecycle reports a +:noop+ (no live ledger entry
-    # or no recorded vm_id), the call logs the skip, leaves the attempt's
-    # terminal state untouched, and surfaces the gap to the caller instead
-    # of asserting a destroy that did not occur. Mirrors the refusal
-    # pattern in
+    # attempts revoke credentials and, only when the attempt holds a live
+    # VM, persist the retention window (which the sweep enforces after the
+    # deadline passes). The success path refuses to record a `destroyed`
+    # audit event when no real destroy happened: if the lifecycle is
+    # unavailable (host not configured) or the lifecycle reports a +:noop+
+    # (no live ledger entry or no recorded vm_id), the call logs the skip
+    # and surfaces the gap to the caller instead of asserting a destroy
+    # that did not occur. A +:noop+ is permanent — there is no VM cleanup
+    # gap left to retry — so the attempt is finalized; an unavailable
+    # lifecycle or a failed destroy is transient and is left unfinalized
+    # for the recovery sweep to retry. Mirrors the refusal pattern in
     # {AppleVerification::Bundles::RetentionSweep#revoke_vm!}.
     def call
       return Result.new(outcome: OUTCOME_NO_VM, retained_until: nil, destroy_request_id: nil) unless @attempt.terminal?
@@ -61,6 +64,7 @@ module AppleVerificationAttempts
         destroy_now!
         unless @last_destroy_result == :destroyed
           @revocation.revoke_credential!
+          mark_finalized! if @last_destroy_skip_reason == "destroy_noop"
           Rails.logger.warn(
             message: "apple_verification.complete_skipped",
             apple_verification_attempt_id: @attempt.id,
@@ -72,7 +76,11 @@ module AppleVerificationAttempts
         mark_finalized!
         Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, destroy_request_id: @last_destroy_request_id)
       when "failed", "cancelled", "timed_out", "unavailable"
-        @revocation.call
+        if @attempt.retained_vm?
+          @revocation.call
+        else
+          @revocation.revoke_credential!
+        end
         mark_finalized!
         Result.new(outcome: OUTCOME_RETAINED, retained_until: @attempt.container_retained_until, destroy_request_id: nil)
       else

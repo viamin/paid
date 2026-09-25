@@ -75,7 +75,7 @@ RSpec.describe AppleVerificationAttempts::Recovery do
     expect(result.reclassified.size).to eq(2)
   end
 
-  it "retries finalization for a terminal attempt that has not entered retention" do
+  it "finalizes a terminal timed-out attempt without a VM and skips the retention window" do
     timed_out = running_attempt(started_at: clock - 46.minutes)
     timed_out.update!(
       status: "timed_out",
@@ -85,7 +85,8 @@ RSpec.describe AppleVerificationAttempts::Recovery do
 
     described_class.call(timeout_monitor: AppleVerificationAttempts::TimeoutMonitor.new(clock: clock))
 
-    expect(timed_out.reload.container_retained_until).to be_present
+    expect(timed_out.reload.finalized_at).to be_present
+    expect(timed_out.reload.container_retained_until).to be_nil
   end
 
   it "retries finalization for a successful attempt after an interrupted completion" do
