@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_24_200329) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_005635) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1920,6 +1920,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_200329) do
     t.bigint "project_id", null: false
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
+    t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
+    t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false
     t.datetime "review_goal_retry_reset_at"
     t.text "runner_retry_abandon_reason", comment: "Human-readable reason the issue was abandoned due to the retry cap."
@@ -1944,6 +1947,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_200329) do
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
+    t.index ["reopened_by_id"], name: "index_issues_on_reopened_by_id"
     t.index ["source"], name: "index_issues_on_source"
   end
 
@@ -3898,6 +3902,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_200329) do
   add_foreign_key "issue_merge_subscriptions", "users"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
   add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade

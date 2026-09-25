@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
+  belongs_to :reopened_by, class_name: "User", optional: true
+
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
     "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
