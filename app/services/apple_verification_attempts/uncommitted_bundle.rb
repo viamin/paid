@@ -24,14 +24,12 @@ module AppleVerificationAttempts
       attempt:,
       workspace_root:,
       builder: AppleVerification::SourceLane::BundleBuilder,
-      storage: AppleVerification::ArtifactIngestion::Storage.new,
-      retention_days: AppleVerification::Revocation::Enforce::DEFAULT_BUNDLE_RETENTION_DAYS
+      storage: AppleVerification::ArtifactIngestion::Storage.new
     )
       @attempt = attempt
       @workspace_root = workspace_root
       @builder = builder
       @storage = storage
-      @retention_days = retention_days
     end
 
     def call
@@ -40,7 +38,7 @@ module AppleVerificationAttempts
       output_path = bundle_output_path
       manifest_path = "#{output_path}.manifest.json"
 
-      builder_result = builder_instance.call(workspace_root: @workspace_root, output_path:, manifest_path:)
+      builder_result = @builder.call(workspace_root: @workspace_root, output_path:, manifest_path:)
       bundle_key = storage.upload_bundle(
         file_path: builder_result.bundle_path,
         account_id: @attempt.account_id,
@@ -59,15 +57,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :attempt, :storage, :workspace_root, :retention_days
-
-    def builder_instance
-      # BundleBuilder exposes a Class-level `.call(workspace_root:, output_path:,
-      # manifest_path:)` that builds the instance itself, so a Class builder is
-      # already the callable the call site expects. Non-Class callables (lambdas,
-      # procs, service objects) are returned as-is.
-      @builder
-    end
+    attr_reader :attempt, :storage, :workspace_root
 
     def bundle_output_path
       directory = storage_output_directory
