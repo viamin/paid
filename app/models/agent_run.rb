@@ -2159,6 +2159,7 @@ class AgentRun < ApplicationRecord
   # @spec APPLE-ATTEMPT-011
   # @spec APPLE-ATTEMPT-013
   def enforce_completion_verification!(result_commit:, pr_url:, pr_number:, issue_url:, issue_number:)
+    AppleVerificationAttempts::EnqueueCompletion.call(agent_run: self, commit_sha: result_commit)
     decision = AppleVerificationAttempts::GateEnforcement.evaluate(
       agent_run: self,
       gate: "completion_verification",
@@ -2242,21 +2243,6 @@ class AgentRun < ApplicationRecord
         )
       end
     end
-  end
-
-  # @spec APPLE-ATTEMPT-011
-  # A completion-gated Apple workflow must succeed for this run before it can
-  # report success. This central transition is shared by every successful
-  # agent-run completion path, so individual activities cannot bypass it.
-  def apple_completion_verification_blocked?(result_commit:)
-    AppleVerificationAttempts::EnqueueCompletion.call(
-      agent_run: self,
-      commit_sha: result_commit || result_commit_sha || base_commit_sha
-    )
-    AppleVerificationAttempts::GateEnforcement.call(
-      agent_run: self,
-      lifecycle_gate: "completion_verification"
-    ).blocking?
   end
 
   def pause!(violation_type:, context: nil, decision_point: "agent_run.pause")

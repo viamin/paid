@@ -188,6 +188,38 @@ RSpec.describe Reviews::Verification::Pipeline do
       expect(poster).to have_received(:call)
       expect(result[:outcome]).to eq("posted_findings")
     end
+
+    def apple_gate_decision(status, reason)
+      AppleVerificationAttempts::GateEnforcement::Decision.new(
+        status: status, reason: reason, attempt: nil, revision: nil, gate: "pull_request_verification"
+      )
+    end
+
+    # @spec APPLE-ATTEMPT-011
+    it "withholds the review while a required Apple verification is still pending" do
+      allow(AppleVerificationAttempts::GateEnforcement).to receive(:call).and_return(
+        apple_gate_decision(:pending, "Required Apple verification has not run for this agent run")
+      )
+
+      result = run_pipeline
+
+      expect(poster).not_to have_received(:call)
+      expect(result[:outcome]).to eq("blocked_apple_verification")
+      expect(result[:apple_verification_gate]).to eq("Required Apple verification has not run for this agent run")
+    end
+
+    # @spec APPLE-ATTEMPT-011
+    it "withholds the review when a required Apple verification failed without a waiver" do
+      allow(AppleVerificationAttempts::GateEnforcement).to receive(:call).and_return(
+        apple_gate_decision(:blocked, "Required Apple verification failed with classification test_assertion")
+      )
+
+      result = run_pipeline
+
+      expect(poster).not_to have_received(:call)
+      expect(result[:outcome]).to eq("blocked_apple_verification")
+      expect(result[:apple_verification_gate]).to eq("Required Apple verification failed with classification test_assertion")
+    end
   end
 
   describe "verification outcomes" do

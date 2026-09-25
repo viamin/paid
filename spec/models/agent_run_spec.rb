@@ -1613,23 +1613,50 @@ RSpec.describe AgentRun do
         expect(agent_run.pull_request_number).to be_nil
       end
 
+      def approve_completion_workflow(project)
+        workflow = create(
+          :apple_verification_workflow_revision,
+          project: project,
+          account: project.account,
+          lifecycle_gate: "completion_verification"
+        )
+        administrator = create(:user, account: project.account)
+        administrator.add_role(:project_admin, project)
+        workflow.approve!(actor: administrator)
+        workflow
+      end
+
       # @spec APPLE-ATTEMPT-011
       it "does not enforce completion verification until execution is available" do
         agent_run = create(:agent_run, :with_git_context, status: "running", started_at: 5.minutes.ago)
-        workflow = create(
-          :apple_verification_workflow_revision,
-          project: agent_run.project,
-          account: agent_run.project.account,
-          lifecycle_gate: "completion_verification"
-        )
-        administrator = create(:user, account: agent_run.project.account)
-        administrator.add_role(:project_admin, agent_run.project)
-        workflow.approve!(actor: administrator)
+        approve_completion_workflow(agent_run.project)
 
         expect {
           expect(agent_run.complete!(result_commit: "abc123def456789012345678901234567890abcd")).to be true
         }.not_to change(AppleVerificationAttempt, :count)
-        expect(agent_run.reload).to be_completed
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
+      # @spec APPLE-ATTEMPT-011
+      it "enqueues the required completion attempt before withholding success" do
+        project = create(:project, apple_verification_mode: "on_demand")
+        agent_run = create(:agent_run, :with_git_context, project:, status: "running", started_at: 5.minutes.ago)
+        approve_completion_workflow(project)
+        FeatureFlags.enable!(:apple_verification_workers, project:)
+        allow(AppleVerificationAttempts::Schedule).to receive(:execution_available?).and_return(true)
+
+        commit = "abc123def456789012345678901234567890abcd"
+        expect {
+          expect(agent_run.complete!(result_commit: commit, pr_url: "https://github.com/example/repo/pull/42", pr_number: 42)).to be false
+        }.to change(AppleVerificationAttempt, :count).by(1)
+
+        expect(agent_run.reload.status).to eq("running")
+        expect(agent_run.external_metadata).to have_key(described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+        attempt = AppleVerificationAttempt.last
+        expect(attempt.status).to eq("queued")
+        expect(attempt.commit_sha).to eq(commit)
+        expect(attempt.lifecycle_gate).to eq("completion_verification")
+        expect(AppleVerificationAttemptMaintenanceJob).to have_been_enqueued
       end
     end
 
