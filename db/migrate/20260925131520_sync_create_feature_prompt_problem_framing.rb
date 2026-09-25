@@ -10,7 +10,7 @@ class SyncCreateFeaturePromptProblemFraming < ActiveRecord::Migration[8.1]
     {
       "name" => "feature_brief",
       "required" => true,
-      "description" => "Structured feature brief including optional problem_framing with evidence, choices, hypotheses, outcomes, and reconsideration conditions"
+      "description" => "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, optional problem_framing, lid_requested, target_rdr_number)"
     },
     { "name" => "lid_mode", "required" => false, "description" => "Project LID mode when enabled" },
     { "name" => "lid_section", "required" => false, "description" => "Rendered LID instructions when the project has or requested LID" }
