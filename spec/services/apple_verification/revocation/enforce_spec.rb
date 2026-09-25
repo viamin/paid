@@ -25,6 +25,18 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(attempt.bundle_retained_until).to be_nil
   end
 
+  it "revokes credentials without recording VM destruction when lifecycle cleanup is pending" do
+    attempt.update!(status: "succeeded")
+    destroyed_events = ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count
+
+    expect {
+      described_class.new(attempt: attempt, credential_lane: credential_lane).revoke_credential!
+    }.to change { ExecutionAuditEvent.where(event_name: "apple_credential.revoked").count }.by(1)
+
+    expect(credential_lane).to have_received(:revoke!)
+    expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count).to eq(destroyed_events)
+  end
+
   it "persists the bundle retention deadline for an uncommitted successful attempt" do
     uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
     uncommitted.update!(status: "succeeded")

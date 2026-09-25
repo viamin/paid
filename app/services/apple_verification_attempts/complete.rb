@@ -59,6 +59,7 @@ module AppleVerificationAttempts
       when "succeeded"
         destroy_now!
         unless @last_destroy_result == :destroyed
+          @revocation.revoke_credential!
           Rails.logger.warn(
             message: "apple_verification.complete_skipped",
             apple_verification_attempt_id: @attempt.id,

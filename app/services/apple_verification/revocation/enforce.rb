@@ -82,6 +82,20 @@ module AppleVerification
         Result.new(outcome: OUTCOME_FAILED_VM_REVOKED, retained_until: nil, audit_event: audit_event)
       end
 
+      # Revokes the credential lane without asserting that the VM was
+      # destroyed. Used when a successful attempt cannot reach the lifecycle
+      # host, so recovery can remove its authority while retaining the VM
+      # cleanup gap for a later retry.
+      def revoke_credential!
+        return unless attempt.commit_sha.present?
+
+        credential_lane.revoke!
+        record_event!(
+          event_name: "apple_credential.revoked",
+          metadata: { "attempt_id" => attempt.id, "action" => "credential_revoked" }
+        )
+      end
+
       private
 
       attr_reader :attempt, :credential_lane, :failed_vm_retention_hours, :bundle_retention_days, :clock
@@ -114,23 +128,6 @@ module AppleVerification
         record_event!(
           event_name: "apple_verification_vm.retained",
           metadata: retain_failure_window_metadata(bundle_deadline)
-        )
-      end
-
-      def revoke_credential!
-        # Uncommitted attempts never have a credentials lane entry or a
-        # minted installation token, so {CredentialLane#revoke!} early-returns
-        # and no remote revoke happens. Recording the audit event for an
-        # attempt with no `commit_sha` would assert a revocation that did
-        # not occur, polluting the append-only audit trail; mirror the
-        # `CredentialLane#revoke!` commit_sha-present? guard here so the
-        # audit event only fires when a revocation actually took place.
-        return unless attempt.commit_sha.present?
-
-        credential_lane.revoke!
-        record_event!(
-          event_name: "apple_credential.revoked",
-          metadata: { "attempt_id" => attempt.id, "action" => "credential_revoked" }
         )
       end
 
