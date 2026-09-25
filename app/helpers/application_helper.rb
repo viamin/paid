@@ -221,6 +221,7 @@ module ApplicationHelper
   PAID_STATE_STYLES = {
     "new" => { bg: "bg-gray-100", text: "text-gray-700", label: "New" },
     "planning" => { bg: "bg-purple-100", text: "text-purple-700", label: "Planning" },
+    "analyzed" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Analyzed" },
     "in_progress" => { bg: "bg-blue-100", text: "text-blue-700", label: "In Progress" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },

@@ -52,27 +52,17 @@ A needs-input label is an independent, always-on eligibility exclusion. It
 applies regardless of `paid_state`, so a stale local state cannot schedule work
 while a user clarification remains pending.
 
-## Completed-issue recovery vs. agent-declared terminal completions
+## GitHub-open authority and visibility
 
-`DefaultCandidateSource` re-includes open, `paid_state: "completed"` issues
-whose last automatic run finished without a PR, on the theory the run may
-have failed transiently and is worth retrying. That recovery path is a poor
-fit for an issue an agent explicitly declared complete without a code change
-(see the no-output-issue-handling segment's `no_code_required` outcome):
-retrying would just loop, since the agent will typically reach the same
-conclusion again. Such issues are stamped with `no_code_required_at`, which
-candidate selection excludes permanently and regardless of `paid_state` —
-the same always-on style already used for merged-PR-linked issues — so only a
-manually triggered run can pick the issue up again.
+An issue that remains open on GitHub is never removed from Auto-Pick merely
+because Paid has reached an internal workflow state. Candidate selection and
+the project issue lifecycle use the same state-neutral scope, so
+`recommend_close`, `manual_review`, `needs_input`, `completed`, and stale
+`in_progress` rows remain actionable when no other guard applies. Active runs,
+open dependencies, explicit label controls, pauses, and the durable
+no-code-required / merged-PR safeguards remain separate guards.
 
-A second, independent completed-issue recovery path (`#3851`, see
-`docs/intent/issue-enhancement/`) re-includes a `completed` issue whenever
-`last_analyzer_sufficient_context` is `true` — the durable marker an
-`analyze_issue` or `enhance_issue` run stamps when it concludes the issue is
-ready for `create_pr`. Unlike the run-based recovery path above, this one
-does not require the verdict-producing run to have been an automatic
-auto-pick run, so it also reconciles a lost `enhance_issue -> create_pr`
-handoff when the `enhance_issue` run was queued manually or directly by
-GitHub sync. Both recovery paths are additive (`OR`ed together) and both sit
-behind the same permanent no-code-required/merged-PR exclusions applied in
-`base_scope`.
+The project issue list displays each issue's Paid state beside its lifecycle
+badge. The dashboard's eligibility breakdown continues to report the actual
+guards that exclude open issues, so a workflow-state drift cannot become an
+invisible block.
