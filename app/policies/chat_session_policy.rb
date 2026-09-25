@@ -43,18 +43,32 @@ class ChatSessionPolicy < ApplicationPolicy
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
       sessions = scope.where(account_id: user.account_id)
-      return sessions if user.has_any_role?(:owner, :admin, :member, user.account)
+      return regular_sessions_or_personal_inbox_chats(sessions) if user.has_any_role?(:owner, :admin, :member, user.account)
 
-      sessions.where(<<~SQL.squish, user.id, user.id)
+      personal_inbox_chats(sessions)
+    end
+
+    private
+
+    def regular_sessions_or_personal_inbox_chats(sessions)
+      sessions.where(inbox_item_key: nil).or(personal_inbox_chats(sessions))
+    end
+
+    def personal_inbox_chats(sessions)
+      sessions.where(<<~SQL.squish, user.id, user.id, comment_authority_roles)
         chat_sessions.inbox_item_key IS NULL OR (
           chat_sessions.created_by_id = ? AND EXISTS (
             SELECT 1 FROM project_memberships
             WHERE project_memberships.project_id = chat_sessions.project_id
               AND project_memberships.user_id = ?
-              AND project_memberships.role IN ('member', 'admin')
+              AND project_memberships.role IN (?)
           )
         )
       SQL
+    end
+
+    def comment_authority_roles
+      ProjectMembership.roles.values_at("member", "admin")
     end
   end
 

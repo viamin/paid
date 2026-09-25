@@ -11,16 +11,17 @@ module Inbox
       new(...).call
     end
 
-    def initialize(chat_session:, user:, sections:)
+    def initialize(chat_session:, user:, sections:, github_client: nil)
       @chat_session = chat_session
       @user = user
       @sections = Array(sections).map(&:to_s)
+      @github_client = github_client
     end
 
     def call
       authorize!
       validate_sections!
-      sections.index_with { |section| public_send(section) }
+      sections.index_with { |section| send(section) }
     end
 
     private
@@ -64,7 +65,7 @@ module Inbox
       return [] unless issue&.is_pull_request?
 
       github_client.pull_request_review_comments(chat_session.project.full_name, issue.github_number).map do |comment|
-        { id: comment.id, author: comment.user&.login, body: comment.body, path: comment.path, line: comment.line }
+        { id: comment[:id], author: comment[:user_login], body: comment[:body], path: comment[:path], line: comment[:line] }
       end
     end
 
@@ -91,7 +92,7 @@ module Inbox
     end
 
     def github_client
-      @github_client ||= GithubClient.new(chat_session.project)
+      @github_client ||= chat_session.project.client
     end
   end
 end

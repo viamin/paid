@@ -31,9 +31,25 @@ RSpec.describe Inbox::ChatContext do
 
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
+    chat_session
     user.remove_role(:owner, account)
 
     expect { described_class.call(chat_session:, user:, sections: [ :labels ]) }
       .to raise_error(Pundit::NotAuthorizedError)
+  end
+
+  it "loads review comments returned as GitHub client hashes" do
+    # @spec QUESTION-EXPLORATION-014
+    issue.update!(is_pull_request: true)
+    github_client = instance_double(GithubClient)
+    allow(github_client).to receive(:pull_request_review_comments).and_return([
+      { id: 12, user_login: "reviewer", body: "Use a guard clause", path: "app/models/user.rb", created_at: Time.current }
+    ])
+
+    context = described_class.call(chat_session:, user:, sections: [ :review_comments ], github_client:)
+
+    expect(context).to include(
+      "review_comments" => [ { id: 12, author: "reviewer", body: "Use a guard clause", path: "app/models/user.rb", line: nil } ]
+    )
   end
 end
