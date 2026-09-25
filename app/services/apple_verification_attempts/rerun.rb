@@ -25,6 +25,7 @@ module AppleVerificationAttempts
           apple_worker_profile: @attempt.apple_worker_profile,
           source_digest: @attempt.source_digest,
           commit_sha: @attempt.commit_sha,
+          requested_capture: @attempt.requested_capture,
           lifecycle_gate: @attempt.lifecycle_gate,
           retry_number: @attempt.retry_number + 1,
           status: "queued"

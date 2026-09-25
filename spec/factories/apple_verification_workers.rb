@@ -63,7 +63,7 @@ FactoryBot.define do
     end
     source_digest { apple_verification_attempt.source_digest }
     lifecycle_gate { apple_verification_attempt.lifecycle_gate }
-    check_ids { [ "test" ] }
+    check_ids { apple_verification_attempt.apple_verification_workflow_revision.required_checks }
     reason { "Known simulator outage" }
     expires_at { 1.hour.from_now }
   end

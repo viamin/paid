@@ -99,25 +99,16 @@
   *Code:* `AppleVerificationAttempts::RetryPolicy`,
   `AppleVerificationAttempts::Rerun`
 
-- [x] **APPLE-ATTEMPT-011** — When the end-to-end guest-execution handoff is
-  available and an approved required workflow assigned to the
-  `completion_verification` gate has not succeeded for an agent run, the
-  system SHALL create and enqueue one attempt bound to that run's completion
-  commit before blocking the run from reporting success; before that handoff
-  is available, it SHALL leave the completion gate unavailable rather than
-  create an attempt that cannot release the run. When assigned to the
-  `pull_request_verification` gate, it SHALL block Paid's PR verification
-  result only after the same handoff can create and execute the required
-  attempt; before then it SHALL leave the PR gate unavailable. Enforcement
-  SHALL bind the approved committed workflow digest and its approved lifecycle
-  gate.
-  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
-  `spec/services/apple_verification_attempts/enqueue_completion_spec.rb`,
-  `spec/models/agent_run_spec.rb`,
-  `spec/services/reviews/verification/pipeline_spec.rb`
-  *Code:* `AppleVerificationAttempts::EnqueueCompletion`,
-  `AppleVerificationAttempts::GateEnforcement`, `AgentRun`,
-  `Reviews::Verification::Pipeline`
+- [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
+  the `completion_verification` gate has not succeeded for an agent run that
+  reports a committed result, the system SHALL block that agent run from
+  reporting success; it SHALL not block a completion without a result commit.
+  When assigned to the `pull_request_verification` gate, it SHALL block Paid's
+  PR verification result; enforcement SHALL bind the approved committed
+  workflow digest and its approved lifecycle gate.
+  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
+  *Code:* `AppleVerificationAttempts::GateEnforcement`,
+  `AgentRun#complete!`, `AgentRuns::VerificationResultRecorder`
 
 - [x] **APPLE-ATTEMPT-012** — A draft workflow revision or advisory check
   SHALL NOT block agent completion or PR verification, and a missing or failed
@@ -129,9 +120,26 @@
 - [x] **APPLE-ATTEMPT-013** — Required verification SHALL remain pending until
   it runs or is explicitly waived, and the system SHALL NOT silently skip
   required verification or fall back to executing project code on the
-  macOS host.
-  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`
-  *Code:* `AppleVerificationAttempts::GateEnforcement`
+  macOS host. Required-verification enforcement SHALL bind to the commit
+  being completed when a result commit is present: a successful attempt on a
+  different commit SHALL NOT satisfy the gate. A completion without a result
+  commit SHALL not be withheld. A withheld run SHALL be re-invoked via
+  `AppleVerificationAttempts::CompleteWithheldRun` by the waive flow,
+  by attempt-completion code when it records a `succeeded` attempt, and by
+  a 5-minute maintenance sweep so the run still completes when the gate
+  later relaxes without any of the synchronous callers firing.
+  *Tests:* `spec/services/apple_verification_attempts/gate_enforcement_spec.rb`,
+  `spec/services/apple_verification_attempts/complete_withheld_run_spec.rb`,
+  `spec/services/apple_verification_attempts/waive_spec.rb`,
+  `spec/jobs/apple_verification_withheld_run_sweep_job_spec.rb`,
+  `spec/models/agent_run_spec.rb`
+  *Code:* `AppleVerificationAttempts::GateEnforcement`,
+  `AgentRun#complete!` (withheld marker + payload),
+  `AgentRun.awaiting_completion_verification` (stale-running exemption),
+  `AppleVerificationAttempt` (succeeded transition),
+  `AppleVerificationAttempts::CompleteWithheldRun`,
+  `AppleVerificationAttempts::Waive`,
+  `AppleVerificationWithheldRunSweepJob`
 
 - [x] **APPLE-ATTEMPT-014** — After a control-plane restart, host restart,
   network interruption, timeout, or partial provisioning failure, lifecycle

@@ -219,7 +219,7 @@ RSpec.describe "Apple verification persistence", type: :model do
     attempt = create(:apple_verification_attempt)
 
     attempt.update!(status: "running", started_at: Time.current)
-    attempt.source_digest = digest
+    attempt.requested_capture = "ios-app.initial-screen"
 
     expect(attempt).not_to be_valid
     expect(attempt.errors[:base]).to include("attempt execution binding is immutable")
