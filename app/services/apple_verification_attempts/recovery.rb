@@ -9,6 +9,8 @@ module AppleVerificationAttempts
   # terminal failure buckets (cancellation_or_timeout or worker_infrastructure
   # as appropriate), and the durable external-resource ledger entries are
   # the source of truth for the VM inventory reconciliation that follows.
+  # Successful attempts whose process dies before completion are finalized on
+  # recovery too, so their VMs and credential authority are not left active.
   class Recovery
     Result = Data.define(:scanned, :reclassified, :orphans)
 
@@ -63,7 +65,7 @@ module AppleVerificationAttempts
 
     def finalize_incomplete_terminal_attempts
       @attempt_scope
-        .where(status: %w[failed cancelled timed_out unavailable], container_retained_until: nil)
+        .where(status: AppleVerificationAttempt::TERMINAL_STATES, container_retained_until: nil)
         .find_each { |attempt| @completion.call(attempt:) }
     end
   end

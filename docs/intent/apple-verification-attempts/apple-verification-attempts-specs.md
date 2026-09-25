@@ -136,7 +136,9 @@
   operations SHALL converge idempotently to a known external-resource ledger
   state; unknown or orphaned Paid-owned VMs SHALL be quarantined or destroyed
   according to ledger state and SHALL NOT be adopted as healthy without
-  validation.
+  validation. When a successful attempt was recorded before its finalization
+  completes, recovery SHALL retry its immediate VM destruction and credential
+  revocation.
   *Tests:* `spec/services/apple_verification_attempts/recovery_spec.rb`
   *Code:* `AppleVerificationAttempts::Recovery`
 
