@@ -64,7 +64,7 @@ module Reviews
           attempt += 1
           @attempt = attempt
           apple_gate = run_attempt!
-          return blocked_result(apple_gate) if apple_gate&.blocking?
+          return blocked_result(apple_gate) if apple_gate&.enforcing?
 
           break if head_stable?
           raise HeadMovedError, "head moved before posting on attempt #{attempt}" if attempt >= MAX_ATTEMPTS
@@ -92,7 +92,10 @@ module Reviews
           project: @project,
           lifecycle_gate: "pull_request_verification"
         )
-        return apple_gate if apple_gate.blocking?
+        # The PR gate only withholds while a required verification is still
+        # outstanding or has failed without a waiver (Decision#enforcing?);
+        # satisfied, waived, and not-required decisions all post normally.
+        return apple_gate if apple_gate.enforcing?
 
         files = fetch_files
         changed_lines = ChangedLines.from_files(files)
