@@ -54,39 +54,44 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       )
     end
 
-    it "does not enforce completion verification until execution is available" do
+    it "withholds completion verification until execution is available" do
       revision = approved_workflow
       attempt = attempt_for(revision, status: "failed")
 
       decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
 
-      expect(decision.status).to eq(:not_required)
+      expect(decision.status).to eq(:pending)
+      expect(decision).to be_enforcing
       expect(decision.gate).to eq("completion_verification")
       expect(decision.attempt).to be_nil
+      expect(decision.revision.id).to eq(revision.id)
       expect(decision.reason).to include("execution is unavailable")
       expect(attempt).to be_failed
     end
 
-    it "does not inspect completion attempts until execution is available" do
+    it "does not inspect completion attempts while execution is unavailable" do
       revision = approved_workflow
       attempt_for(revision, status: "succeeded")
 
       decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
 
-      expect(decision.status).to eq(:not_required)
+      expect(decision.status).to eq(:pending)
+      expect(decision).to be_enforcing
+      expect(decision.attempt).to be_nil
       expect(decision.reason).to include("execution is unavailable")
     end
 
-    it "does not block completion when a required workflow has no attempt" do
+    it "withholds completion when a required workflow has no attempt" do
       approved_workflow
 
       decision = described_class.call(agent_run: agent_run, lifecycle_gate: "completion_verification")
 
-      expect(decision.status).to eq(:not_required)
+      expect(decision.status).to eq(:pending)
+      expect(decision).to be_enforcing
       expect(decision.reason).to include("execution is unavailable")
     end
 
-    it "does not block PR verification when required execution is unavailable" do
+    it "withholds PR verification when required execution is unavailable" do
       approved_workflow(lifecycle_gate: "pull_request_verification")
 
       decision = described_class.call(
@@ -94,7 +99,8 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
         lifecycle_gate: "pull_request_verification"
       )
 
-      expect(decision.status).to eq(:not_required)
+      expect(decision.status).to eq(:pending)
+      expect(decision).to be_enforcing
       expect(decision.reason).to include("execution is unavailable")
     end
   end
