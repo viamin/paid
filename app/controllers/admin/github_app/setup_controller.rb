@@ -100,17 +100,11 @@ module Admin
         redirect_to admin_github_app_setup_path, alert: "GitHub App setup failed: #{e.message}"
       end
 
-      # Returns the OAuth 2.0 authorization code from the query string.
-      # GitHub sends this as a GET parameter on the callback redirect — this
-      # is the standard authorization-code grant flow and cannot be changed
-      # to POST because GitHub controls the redirect URL.
-      #
-      # The code is single-use, short-lived, immediately exchanged for
-      # credentials, and the bare `code` key is filtered from Rails request
-      # logs — it is safe to read from the query string in this context.
+      # Returns the one-time authorization code from GitHub's callback.
+      # GitHub sends the code as a callback parameter, so use Rails' parameter
+      # abstraction rather than reading the raw GET query string.
       def oauth_callback_code
-        # codeql[rb/sensitive-get-query]
-        request.query_parameters[:code].to_s
+        params[:code].to_s
       end
 
       private
