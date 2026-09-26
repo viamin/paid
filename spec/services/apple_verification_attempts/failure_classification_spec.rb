@@ -33,4 +33,16 @@ RSpec.describe AppleVerificationAttempts::FailureClassification do
     expect(described_class.classify(nil)).to be_nil
     expect(described_class.classify("")).to be_nil
   end
+
+  describe ".coerce" do
+    it "resolves values inside the taxonomy to their classification" do
+      expect(described_class.coerce("worker_infrastructure").value).to eq("worker_infrastructure")
+    end
+
+    it "resolves blank and unknown values to nil without raising" do
+      expect(described_class.coerce(nil).value).to be_nil
+      expect(described_class.coerce("").value).to be_nil
+      expect(described_class.coerce("code_defect").value).to be_nil
+    end
+  end
 end

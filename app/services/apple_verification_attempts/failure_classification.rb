@@ -50,6 +50,18 @@ module AppleVerificationAttempts
         raise InvalidClassificationError, "unknown Apple verification failure classification: #{value.inspect}"
       end
 
+      # Lenient classification for values read from an untrusted boundary:
+      # the attempt's persisted `failure_classification` column and the
+      # guest-result shape both accept any free-form string. Unknown
+      # non-blank values resolve to nil rather than raising — an unknown
+      # classification is not a deterministic project failure, so the
+      # attempt stays retryable. Strict `classify` remains for internal
+      # code paths, where an off-taxonomy value is a bug worth surfacing.
+      def coerce(value)
+        normalized = value.to_s
+        TAXONOMY.include?(normalized) ? new(normalized) : new(nil)
+      end
+
       def infrastructure?(classification)
         INFRASTRUCTURE_CLASSIFICATIONS.include?(classification.to_s)
       end
