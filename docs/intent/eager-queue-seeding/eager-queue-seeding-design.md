@@ -85,7 +85,7 @@ old 4-hour ceiling, and `consecutive_auto_pick_failure_count` is bounded at
 are not `failed` (e.g. `analyzed → new`) re-enqueue immediately with no
 delay.
 
-## Duplicate-PR prevention (#3432)
+## Duplicate-PR prevention (#3432, #4039)
 
 `DefaultCandidateSource.eligible_scope` excludes an issue whose most recent
 completed `create_pr` run already recorded `pull_request_number`, unless the
@@ -112,14 +112,23 @@ A synced, closed-unmerged PR row always lifts the exclusion immediately
 (no need to wait out the grace window), so legitimate replacement runs after
 an abandoned or rejected PR are not delayed.
 
-Permanent exclusions after the grace window require an authoritative link
-back from the PR row to the source issue. Today that linkage is
-`issues.parent_issue_id`: an open linked PR remains blocked by
-`Issue.open_pull_request_parent_issue_ids`, and a merged linked PR remains
-blocked by a dedicated merged-linked-PR filter in `base_scope`. Bare
-`pull_request_number` alone is intentionally not trusted past
-`PR_SYNC_GRACE_PERIOD`, so a stale or wrong recorded PR number cannot make an
-unrelated synced PR row keep the issue ineligible forever.
+The durable originating-run relationship is also authoritative: a completed
+`create_pr` run's `(project_id, issue_id, pull_request_number)` identifies its
+locally synced PR row even if that row is missing `parent_issue_id`. An open or
+merged PR found through that relationship blocks the source issue indefinitely;
+a closed-unmerged PR explicitly permits recovery. GitHub sync reconciles the
+missing `parent_issue_id` only when all recorded producing runs for that PR
+agree on one non-PR source issue. Conflicts are logged and left unlinked rather
+than guessed, while the run relationship still protects every reliably known
+source issue.
+
+Before publishing an implementation PR, the activity rechecks the same
+issue-scoped durable guard under the source-issue row lock. A competing run is
+cancelled with an explicit duplicate-implementation reason; it never reports
+another branch's PR as its own delivery. Missing local PR data continues to use
+the bounded sync grace period for queue recovery, but a path that reaches PR
+creation reconciles and rechecks rather than treating elapsed time as
+permission to publish a duplicate.
 
 ## Fair-stride impact
 

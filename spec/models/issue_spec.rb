@@ -2035,6 +2035,15 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:eligible)
     end
 
+    it "reports a source issue as in progress when its open generated PR has not been linked" do # @spec EAGER-QUEUE-009
+      issue = create(:issue, project: project, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue,
+        goal: "create_pr", pull_request_number: 42)
+      create(:issue, :pull_request, project: project, github_number: 42, github_state: "open", parent_issue_id: nil)
+
+      expect(described_class.lifecycle_statuses([ issue ])).to include(issue.id => :in_progress)
+    end
+
     it "returns :blocked for an issue with an open local dependency" do
       issue = create(:issue, project: project, github_state: "open")
       dep = create(:issue, project: project, github_state: "open")

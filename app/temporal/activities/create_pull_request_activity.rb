@@ -4,6 +4,15 @@ module Activities
   class CreatePullRequestActivity < BaseActivity
     activity_name "CreatePullRequest"
 
+    DuplicateImplementationPullRequest = Class.new(StandardError) do
+      attr_reader :pull_request
+
+      def initialize(pull_request)
+        @pull_request = pull_request
+        super("Existing open implementation PR ##{pull_request.github_number} blocks duplicate publication")
+      end
+    end
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -14,6 +23,8 @@ module Activities
         issue = agent_run.issue
 
         client = project.client
+        duplicate = reconcile_existing_implementation_pr(client, project, issue, agent_run)
+        return duplicate_implementation_result(agent_run, duplicate) if duplicate
 
         # Pre-run guard: verify the branch exists on GitHub and check for
         # an existing open PR. This eliminates orphan branches (#1125) by
@@ -63,6 +74,7 @@ module Activities
           pr, pr_action = create_pull_request_or_reuse(
             client, project, agent_run, issue, pr_body, agent_run_id: agent_run_id
           )
+          return pr if pr.is_a?(Hash)
         else
           # Branch confirmed missing (404). Raise so Temporal retries —
           # the branch may appear after a push that is still in flight.
@@ -156,6 +168,47 @@ module Activities
       }
     end
 
+    # A queue/recovery/manual run can reach this activity after its enqueue-time
+    # check. Reconcile recorded producer runs first, then use the same durable
+    # run-to-PR relationship as candidate selection. Do not claim another
+    # branch's PR as this run's delivery.
+    def reconcile_existing_implementation_pr(client, project, issue, agent_run) # @spec EAGER-QUEUE-009
+      return unless issue && !issue.is_pull_request?
+
+      issue.with_lock do
+        reconciled_existing_implementation_pr(client, project, issue, agent_run)
+      end
+    rescue GithubClient::NotFoundError
+      nil
+    end
+
+    def reconciled_existing_implementation_pr(client, project, issue, agent_run)
+      produced_pr_numbers(issue, agent_run).each do |pr_number|
+          github_issue = client.issue(project.full_name, pr_number)
+          Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+      end
+      issue.reload.associated_paid_pull_request
+    end
+
+    def produced_pr_numbers(issue, agent_run)
+      issue.agent_runs.where(goal: "create_pr")
+        .where.not(status: "cancelled")
+        .where.not(id: agent_run.id, pull_request_number: nil)
+        .pluck(:pull_request_number)
+    end
+
+    def duplicate_implementation_result(agent_run, pull_request)
+      reason = "Existing open implementation PR ##{pull_request.github_number} blocks duplicate publication"
+      agent_run.cancel!(error: reason)
+      logger.info(
+        message: "agent_execution.duplicate_implementation_pr_blocked",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        pull_request_number: pull_request.github_number
+      )
+      { agent_run_id: agent_run.id, skipped: true, duplicate_implementation_pr: true, reason: reason }
+    end
+
     # Checks whether the branch exists on GitHub via the refs API.
     # Returns true when confirmed or when the check fails transiently
     # (optimistic — lets the caller attempt PR creation so GitHub is
@@ -207,6 +260,19 @@ module Activities
     # re-query and reuse it instead of letting the 422 retry pointlessly.
     # Returns a [pr, action] tuple where action is "created" or "reused".
     def create_pull_request_or_reuse(client, project, agent_run, issue, pr_body, agent_run_id:)
+      return create_or_reuse_pull_request(client, project, agent_run, issue, pr_body, agent_run_id:) unless issue && !issue.is_pull_request?
+
+      issue.with_lock do
+        duplicate = reconciled_existing_implementation_pr(client, project, issue, agent_run)
+        raise DuplicateImplementationPullRequest, duplicate if duplicate
+
+        create_or_reuse_pull_request(client, project, agent_run, issue, pr_body, agent_run_id:)
+      end
+    rescue DuplicateImplementationPullRequest => e
+      duplicate_implementation_result(agent_run, e.pull_request)
+    end
+
+    def create_or_reuse_pull_request(client, project, agent_run, issue, pr_body, agent_run_id:)
       pr = client.create_pull_request(
         project.full_name,
         base: project.default_branch,
@@ -215,6 +281,7 @@ module Activities
         body: pr_body.fetch(:body),
         draft: true
       )
+      reserve_pull_request!(agent_run, pr)
       [ pr, "created" ]
     rescue GithubClient::ApiError => e
       raise e unless pr_already_exists_error?(e)
@@ -228,7 +295,12 @@ module Activities
       reused = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
       raise e if reused.nil?
 
+      reserve_pull_request!(agent_run, reused)
       [ reused, "reused" ]
+    end
+
+    def reserve_pull_request!(agent_run, pull_request)
+      agent_run.update!(pull_request_url: pull_request.html_url, pull_request_number: pull_request.number)
     end
 
     def pr_already_exists_error?(error)

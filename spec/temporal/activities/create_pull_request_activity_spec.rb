@@ -197,6 +197,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
       )
     end
 
+    it "stops instead of publishing a second branch when an open implementation PR lacks its parent link" do # @spec EAGER-QUEUE-009
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", pull_request_number: 42,
+        pull_request_url: "https://github.com/owner/repo/pull/42")
+      create(:issue, :pull_request, project: project, github_issue_id: 4242, github_number: 42,
+        github_state: "open", parent_issue_id: nil)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result).to include(skipped: true, duplicate_implementation_pr: true)
+      expect(github_client).not_to have_received(:create_pull_request)
+      expect(agent_run.reload.status).to eq("cancelled")
+      expect(agent_run.error_message).to include("Existing open implementation PR #42")
+    end
+
     it "adds paid-tests-ready-for-review on test-writing runs" do # @spec TDD-PR-001
       agent_run.update!(
         tdd_phase: "test_writing",
