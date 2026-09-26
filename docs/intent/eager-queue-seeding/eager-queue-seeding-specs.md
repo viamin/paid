@@ -85,21 +85,26 @@
 ## Duplicate-PR prevention
 
 - [x] **EAGER-QUEUE-009** — When a project issue has a completed `create_pr`
-  run that recorded a `pull_request_number` within `PR_SYNC_GRACE_PERIOD`,
-  and no local synced PR `Issue` row proves that PR closed without merging,
-  the system SHALL exclude that issue from `eligible_scope` regardless of
-  the issue's current `paid_state`, so auto-pick cannot open a second PR for
-  the same issue while GitHub sync is still catching up. The exclusion
-  SHALL lift immediately once a synced PR row shows the PR closed unmerged,
-  and SHALL lift after `PR_SYNC_GRACE_PERIOD` elapses with no synced PR row
-  at all, so missing or stale sync state cannot block the issue forever.
-  Any exclusion that outlives `PR_SYNC_GRACE_PERIOD` SHALL require an
-  authoritative link from the synced PR row back to the source issue (today:
-  `parent_issue_id`), so a stale or wrong recorded `pull_request_number`
-  cannot permanently strand the issue.
-  *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource.unsynced_pr_produced_issue_ids`,
-  `DefaultCandidateSource::PR_SYNC_GRACE_PERIOD`, `DefaultCandidateSource.base_scope`.
-  *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  run that recorded a `pull_request_number`, the system SHALL exclude that
+  issue from queue seeding and dequeue when its locally synced PR row is open
+  or merged, even if the PR row is missing `parent_issue_id` and the sync grace
+  period has elapsed. A locally synced closed-unmerged PR SHALL lift the
+  exclusion. When no local PR row exists, `PR_SYNC_GRACE_PERIOD` SHALL protect
+  the sync gap; a path reaching PR publication SHALL reconcile and recheck the
+  source issue rather than using elapsed time as authority to publish another
+  PR. Sync SHALL repair `parent_issue_id` only when producing-run records name
+  one unambiguous non-PR source issue; it SHALL not guess or close duplicates
+  on conflicting records. An issue-scoped lock SHALL prevent concurrent
+  publication attempts from bypassing this protection, and a stopped competing
+  run SHALL record an explicit reason rather than claiming the existing PR.
+  *Code:* `Issue.paid_generated_pull_request_source_issue_ids`,
+  `Issues::ReconcilePullRequestSource`,
+  `Automation::Strategies::AutoPick::DefaultCandidateSource`,
+  `Activities::CreatePullRequestActivity`.
+  *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`,
+  `spec/services/issues/reconcile_pull_request_source_spec.rb`.
 
 ## Capacity remains the single gate
 

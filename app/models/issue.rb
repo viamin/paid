@@ -570,8 +570,14 @@ class Issue < ApplicationRecord
       .distinct
       .pluck(:parent_issue_id)
       .to_set
+    paid_generated_open_pr_ids = issues.group_by(&:project).flat_map do |project, project_issues|
+      paid_generated_pull_request_source_issue_ids(
+        project: project,
+        github_state: "open"
+      ).where(issue_id: project_issues.map(&:id)).distinct.pluck(:issue_id)
+    end.to_set
 
-    in_progress_ids = active_run_ids | has_open_pr_ids
+    in_progress_ids = active_run_ids | has_open_pr_ids | paid_generated_open_pr_ids
     eligible_ids = auto_pick_eligible_paid_state_scope(where(id: issue_ids)).pluck(:id).to_set
 
     issues.each_with_object({}) do |issue, hash|
@@ -608,6 +614,27 @@ class Issue < ApplicationRecord
     scope = scope.where(project: project) if project
     scope = scope.where(parent_issue_id: issue_ids) if issue_ids
     scope.select(:parent_issue_id)
+  end
+
+  # Source issue ids for Paid-created PRs, derived from the durable producing
+  # run record rather than the convenience +parent_issue_id+ relationship.
+  # This remains valid while GitHub sync repairs a missing parent link.
+  def self.paid_generated_pull_request_source_issue_ids(project:, github_state:, pr_review_phase: nil) # @spec EAGER-QUEUE-009
+    runs = project.agent_runs
+      .where(goal: "create_pr", status: "completed")
+      .where.not(issue_id: nil, pull_request_number: nil)
+      .joins(:issue)
+      .merge(where(is_pull_request: false))
+
+    scope = runs.joins(<<~SQL.squish)
+      INNER JOIN issues produced_pull_requests
+        ON produced_pull_requests.project_id = agent_runs.project_id
+        AND produced_pull_requests.github_number = agent_runs.pull_request_number
+        AND produced_pull_requests.is_pull_request = TRUE
+    SQL
+      .where(produced_pull_requests: { github_state: github_state })
+    scope = scope.where(produced_pull_requests: { pr_review_phase: pr_review_phase }) if pr_review_phase
+    scope.select("agent_runs.issue_id")
   end
 
   # Returns a Hash mapping issue_id => the most recently updated open

@@ -220,7 +220,7 @@ module Automation
             end
           end
 
-          def base_scope(project, excluding_run_id: nil)
+          def base_scope(project, excluding_run_id: nil) # @spec EAGER-QUEUE-009
             blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil)
@@ -234,6 +234,7 @@ module Automation
               .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
+              .where.not(id: Issue.paid_generated_pull_request_source_issue_ids(project: project, github_state: "open"))
               # Applies regardless of paid_state so a completed create_pr run
               # that already recorded a PR number cannot be immediately
               # re-picked while local PR sync is still catching up (#3432).
@@ -245,6 +246,9 @@ module Automation
               # PR_SYNC_GRACE_PERIOD, so a stale or wrong recorded PR number
               # cannot strand the issue forever (#3432/#3588 review follow-up).
               .where.not(id: merged_linked_pr_parent_issue_ids(project))
+              .where.not(id: Issue.paid_generated_pull_request_source_issue_ids(
+                project: project, github_state: "closed", pr_review_phase: "merged"
+              ))
               # Issues abandoned because every available provider hit the per-issue
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).

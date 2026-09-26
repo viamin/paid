@@ -26,6 +26,8 @@ module Issues
         github_updated_at: github_issue.updated_at
       )
 
+      ReconcilePullRequestSource.call(issue) if issue.is_pull_request?
+
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       require_reopen_review(issue, was_closed: was_closed)
       maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
