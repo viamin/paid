@@ -4,9 +4,9 @@ module AppleVerificationAttempts
   # Tracks Apple worker health and drives quarantine / return-to-service state.
   #
   # Quarantining stops scheduling: a quarantined profile reports `available?`
-  # as false, so it is never handed a new attempt. Revoking credentials for
-  # in-flight attempts is the responsibility of
-  # AppleVerification::Revocation::Enforce, not this service.
+  # as false, so it is never handed a new attempt. Crossing the quarantine
+  # threshold also terminates in-flight attempts through their canonical
+  # completion path, which revokes their credential lanes.
   # @spec APPLE-ATTEMPT-015
   module WorkerHealth
     Result = Data.define(:quarantined, :consecutive_health_failures)
@@ -16,7 +16,7 @@ module AppleVerificationAttempts
         profile.consecutive_health_failures = profile.consecutive_health_failures.to_i + 1
         profile.last_health_failure_at = Time.current
 
-        if profile.consecutive_health_failures >= Config.worker_health_failure_threshold
+        if quarantine?(profile)
           profile.quarantined_at ||= Time.current
           # `quarantined?` requires `returned_to_service_at` to be clear, so a
           # profile that previously returned to service must drop that stamp
@@ -26,6 +26,7 @@ module AppleVerificationAttempts
         end
 
         profile.save!
+        terminate_active_attempts!(profile) if profile.quarantined?
         result_for(profile)
       end
 
@@ -60,6 +61,20 @@ module AppleVerificationAttempts
           quarantined: profile.quarantined?,
           consecutive_health_failures: profile.consecutive_health_failures
         )
+      end
+
+      def quarantine?(profile)
+        profile.consecutive_health_failures >= Config.worker_health_failure_threshold
+      end
+
+      def terminate_active_attempts!(profile)
+        profile.apple_verification_attempts.where(status: %w[provisioning running]).find_each do |attempt|
+          Complete.call(
+            attempt: attempt,
+            outcome: "unavailable",
+            failure_classification: "worker_infrastructure"
+          )
+        end
       end
     end
   end

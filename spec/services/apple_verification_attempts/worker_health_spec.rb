@@ -48,6 +48,27 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
       expect(profile).not_to be_available
       expect(profile.quarantine_reason).to eq("host disk full")
     end
+
+    it "terminates in-flight committed attempts so their credential lanes are revoked" do
+      profile = create(:apple_worker_profile)
+      project = create(:project, account: profile.account)
+      workflow = create(:apple_verification_workflow_revision, :approved, account: profile.account, project:, apple_worker_profile: profile)
+      attempt_attributes = {
+        account: profile.account,
+        project: project,
+        apple_verification_workflow_revision: workflow,
+        apple_worker_profile: profile,
+        lifecycle_gate: workflow.lifecycle_gate
+      }
+      provisioning = create(:apple_verification_attempt, :committed, **attempt_attributes, status: "provisioning")
+      running = create(:apple_verification_attempt, :committed, **attempt_attributes, status: "running")
+
+      3.times { described_class.record_failure!(profile:, reason: "worker crash") }
+
+      expect(provisioning.reload).to have_attributes(status: "unavailable", failure_classification: "worker_infrastructure")
+      expect(running.reload).to have_attributes(status: "unavailable", failure_classification: "worker_infrastructure")
+      expect(ExecutionAuditEvent.where(apple_verification_attempt: [ provisioning, running ], event_name: "apple_credential.revoked").count).to eq(2)
+    end
   end
 
   # @spec APPLE-ATTEMPT-015
