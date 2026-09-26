@@ -1,0 +1,20 @@
+<%# @spec QUESTION-EXPLORATION-015
+    The Inbox page keeps `py-8` below the stacked and split detail panes, so
+    its embedded panel must reserve that same 2rem of viewport space at every
+    breakpoint. The chat controller measures the panel's actual document
+    offset after this frame is installed; together these keep the conversation
+    scrollable and composer reachable without the full chat-page shell. %>
+<%= turbo_frame_tag frame_id do %>
+  <%= turbo_stream_from current_account, :chat_sessions %>
+  <%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.clarifying_question_issue.present? %>
+  <%= render "chat_sessions/chat_panel",
+             chat_session: chat_session,
+             chat_messages: chat_messages,
+             has_older_messages: has_older_messages,
+             can_update_chat_session: can_update_chat_session,
+             can_archive_chat_session: can_archive_chat_session,
+             can_unarchive_chat_session: can_unarchive_chat_session,
+             available_runners: available_runners,
+             available_models: available_models,
+             chat_panel_bottom_space: "2rem" %>
+<% end %>

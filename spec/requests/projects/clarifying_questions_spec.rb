@@ -308,6 +308,27 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       expect(response).to redirect_to(chat_session_path(chat))
     end
 
+    # @spec QUESTION-EXPLORATION-015
+    it "redirects an Inbox frame request to the frame-rendered chat panel" do
+      post project_issue_clarifying_questions_chat_path(project, issue),
+        headers: { "Turbo-Frame" => "inbox-detail" }
+
+      chat = ChatSession.find_by!(clarifying_question_issue: issue)
+      expect(response).to redirect_to(chat_session_path(chat, frame: "inbox-detail"))
+
+      get response.location, headers: { "Turbo-Frame" => "inbox-detail" }
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      frame = document.at_css("turbo-frame#inbox-detail")
+
+      expect(frame).to be_present
+      expect(frame.at_css("div[data-controller='chat']")).to be_present
+      expect(frame.at_css("textarea[name='content']")).to be_present
+      expect(frame.at_css("#chat-sessions-sidebar")).to be_nil
+      expect(frame.text).not_to include("New Chat")
+    end
+
     # @spec QUESTION-EXPLORATION-002
     it "denies users who cannot update the project" do
       member = create(:user, :member, account: account)

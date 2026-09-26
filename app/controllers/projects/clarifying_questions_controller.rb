@@ -73,9 +73,10 @@ module Projects
 
     # @spec QUESTION-EXPLORATION-001
     # @spec QUESTION-EXPLORATION-002
+    # @spec QUESTION-EXPLORATION-015
     def chat
       chat_session = ClarifyingQuestions::OpenChat.call(issue: @issue, user: current_user)
-      redirect_to chat_session_path(chat_session)
+      redirect_to chat_session_path(chat_session, frame: requested_turbo_frame)
     rescue GithubClient::Error => e
       redirect_back fallback_location: project_path(@project),
         alert: "Failed to load clarifying questions: #{e.message}"
@@ -175,6 +176,10 @@ module Projects
 
     def queue_param
       params[:queue].to_s
+    end
+
+    def requested_turbo_frame
+      request.headers["Turbo-Frame"].presence
     end
 
     # Resolves the project whose queue the user was browsing from

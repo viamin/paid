@@ -31,6 +31,11 @@ actions.
   references. Keep domain records for answers separate from transcript text;
   archiving a conversation must not destroy the feature's intent.
 - Reuse the existing chat renderer, Cable/SSE delivery, and agent tool loop.
+  When a clarifying-question detail pane opens its linked chat, render the
+  existing chat panel inside that Inbox Turbo Frame rather than navigating to
+  the full chat page. The frame response retains the panel's definite
+  viewport-height contract using the Inbox pane's chrome measurements; the
+  full `/chat` route continues to render its sidebar and page shell.
   A shared diagram card handles expansion, accessible textual representation,
   element selection and its own comment composer.
 - The chat system prompt carries the linked issue/PR and its pending questions.
