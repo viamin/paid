@@ -14,7 +14,6 @@ module Activities
         issue = agent_run.issue
 
         client = project.client
-
         # Pre-run guard: verify the branch exists on GitHub and check for
         # an existing open PR. This eliminates orphan branches (#1125) by
         # ensuring a PR is always created when the branch is present.
@@ -63,6 +62,7 @@ module Activities
           pr, pr_action = create_pull_request_or_reuse(
             client, project, agent_run, issue, pr_body, agent_run_id: agent_run_id
           )
+          return pr if pr.is_a?(Hash)
         else
           # Branch confirmed missing (404). Raise so Temporal retries —
           # the branch may appear after a push that is still in flight.
@@ -221,6 +221,7 @@ module Activities
       reused = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
       raise e if reused.nil?
 
+      reserve_pull_request!(agent_run, reused)
       [ reused, "reused" ]
     end
 
