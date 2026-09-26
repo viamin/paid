@@ -319,4 +319,50 @@ RSpec.describe AppleVerification::Lifecycle do
     allow(AppleVerification::HostClient).to receive(:new).with(endpoint: "https://macos-worker.example.test").and_return(host)
     AppleVerification::TartRunner.register_from_environment!
   end
+
+  describe "#stop" do
+    let(:project) { agent_run.project }
+    let(:account) { project.account }
+    let(:attempt) do
+      create(:apple_verification_attempt,
+        apple_verification_workflow_revision: create(:apple_verification_workflow_revision, project:, account:),
+        project:,
+        account:)
+    end
+
+    let!(:ledger_entry) do
+      create(:execution_resource_ledger_entry,
+        account:,
+        project:,
+        agent_run:,
+        apple_verification_attempt: attempt,
+        runner_type: "apple_tart",
+        backend: "tart",
+        resource_kind: "verification_vm",
+        status: "active",
+        provider_resource_id: "paid-vm-1")
+    end
+
+    it "stops a retained VM so its guest network is no longer active" do
+      allow(host).to receive(:call).with(
+        version: "v1", operation: "stop", token: "host-token",
+        payload: { "request_id" => "retention:1", "vm_id" => "paid-vm-1" }
+      ).and_return("vm_id" => "paid-vm-1", "state" => "stopped")
+
+      result = described_class.new(host:, token: "host-token").stop(attempt: attempt, request_id: "retention:1")
+
+      expect(result).to eq(:stopped)
+      expect(ledger_entry.reload).to have_attributes(status: "active")
+    end
+
+    it "returns :noop without calling host when no live VM exists" do
+      ledger_entry.destroy!
+      allow(host).to receive(:call)
+
+      result = described_class.new(host:, token: "host-token").stop(attempt: attempt, request_id: "retention:1")
+
+      expect(result).to eq(:noop)
+      expect(host).not_to have_received(:call)
+    end
+  end
 end

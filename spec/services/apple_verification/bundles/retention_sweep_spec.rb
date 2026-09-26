@@ -77,6 +77,18 @@ RSpec.describe AppleVerification::Bundles::RetentionSweep do
     expect(attempt.reload.container_retained_until).to be_present
   end
 
+  it "destroys a succeeded attempt whose immediate destroy fell back to the retention window" do
+    attempt = create(:apple_verification_attempt,
+      apple_verification_workflow_revision: workflow_revision, project: project, account: account,
+      status: "succeeded", container_retained_until: 1.minute.ago)
+
+    result = described_class.call(storage: storage, revocation: revocation, lifecycle: lifecycle)
+
+    expect(result.vms_revoked).to eq(1)
+    expect(lifecycle).to have_received(:destroy).with(attempt: attempt, request_id: "retention_sweep:destroy:#{attempt.id}")
+    expect(revocation).to have_received(:revoke_retained!)
+  end
+
   it "skips attempts whose retention deadline has not yet expired" do
     create(:apple_verification_attempt,
       apple_verification_workflow_revision: workflow_revision,

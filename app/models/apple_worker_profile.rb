@@ -29,6 +29,16 @@ class AppleWorkerProfile < ApplicationRecord
     status == "revoked"
   end
 
+  # @spec APPLE-ATTEMPT-015
+  def quarantined?
+    quarantined_at.present? && returned_to_service_at.nil?
+  end
+
+  # @spec APPLE-ATTEMPT-015
+  def available?
+    active? && !quarantined?
+  end
+
   private
 
   def creator_matches_account

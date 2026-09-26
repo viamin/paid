@@ -340,6 +340,41 @@ Rails.application.configure do
       cron: "6-59/5 * * * *",
       class: "AppleVerificationWithheldRunSweepJob",
       description: "Re-invoke completion for runs withheld at the completion-verification gate (APPLE-ATTEMPT-013)"
+    },
+    apple_verification_dispatch: {
+      # Run before the timeout and recovery sweeps. The job itself has a
+      # global GoodJob concurrency key because release one has one Apple VM.
+      cron: "7-59/5 * * * *",
+      class: "AppleVerificationDispatchJob",
+      description: "Admit and provision the fair Apple verification queue (APPLE-ATTEMPT-003)"
+    },
+    apple_verification_timeout: {
+      # Stagger onto 5-minute offsets (8/9) adjacent to the withheld-run sweep
+      # (6) so the Apple maintenance family shares the 5-minute window without
+      # co-firing on the same minute.
+      cron: "8-59/5 * * * *",
+      class: "AppleVerificationTimeoutJob",
+      description: "End Apple verification attempts that exceeded the attempt timeout (APPLE-ATTEMPT-004)"
+    },
+    apple_verification_recovery: {
+      cron: "9-59/5 * * * *",
+      class: "AppleVerificationRecoveryJob",
+      description: "Reconcile in-flight Apple verification attempts against the VM ledger (APPLE-ATTEMPT-014)"
+    },
+    apple_verification_host_safety: {
+      # Offset 10 runs after recovery (9) and before the next dispatch tick (12)
+      # so a host-safety termination frees the worker slot within the same window,
+      # staying clear of the offsets 1-5 wall-clock burst this family avoids.
+      cron: "10-59/5 * * * *",
+      class: "AppleVerificationHostSafetyJob",
+      description: "Terminate running Apple verification VMs on an actual host-safety condition (APPLE-ATTEMPT-002)"
+    },
+    apple_verification_retry: {
+      # Offset 11 follows host-safety so a re-enqueued retry is picked up by the
+      # next dispatch tick (12) in the same window.
+      cron: "11-59/5 * * * *",
+      class: "AppleVerificationRetryJob",
+      description: "Re-enqueue retryable Apple verification infrastructure failures (APPLE-ATTEMPT-010)"
     }
   }
 end

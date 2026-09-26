@@ -56,11 +56,12 @@ module AppleVerification
     end
 
     # Drives the real host-side destroy for an attempt's verification VM and
-    # confirms the ledger entry as deleted. The caller (e.g.
-    # {AppleVerification::Bundles::RetentionSweep}) is responsible for setting
-    # +container_retained_until+ before invoking this method so the audit
-    # event recorded downstream by {AppleVerification::Revocation::Enforce}
-    # reflects a real destroy rather than a no-op. The method is idempotent:
+    # confirms the ledger entry as deleted. Callers ({AppleVerificationAttempts::Complete}
+    # on the immediate-success path, {AppleVerification::Bundles::RetentionSweep}
+    # for retention-expired attempts) drive this method before
+    # {AppleVerification::Revocation::Enforce} records the `destroyed` audit
+    # event so that event reflects a real destroy rather than a no-op. The
+    # method is idempotent:
     # if the attempt has no live ledger entry or no recorded +vm_id+ it
     # returns +:noop+ without raising, which lets the sweep continue across
     # attempts whose VM was never provisioned (or was already destroyed by an
@@ -78,6 +79,20 @@ module AppleVerification
       entry.request_cleanup!
       entry.mark_deleted!
       :destroyed
+    end
+
+    # Stops a retained VM without deleting its ledger entry. A stopped Tart
+    # guest has no active Softnet connection, so this removes guest network
+    # authority while the retention sweep awaits its destruction deadline.
+    def stop(attempt:, request_id:)
+      require_enabled!(attempt.project)
+      require_request_id!(request_id)
+
+      entry = resource_entry_for_attempt(attempt)
+      return :noop unless entry&.provider_resource_id.present?
+
+      request("stop", "request_id" => request_id, "vm_id" => entry.provider_resource_id)
+      :stopped
     end
 
     private

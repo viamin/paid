@@ -21,6 +21,7 @@ module AppleVerification
     WorkflowUnavailableError = Class.new(StandardError)
     InvalidSourceError = Class.new(ArgumentError)
     QuotaExceededError = Class.new(StandardError)
+    QueueCapacityExceededError = Class.new(StandardError)
     CaptureNotDeclaredError = Class.new(StandardError)
 
     Request = Data.define(:revision, :source_digest, :commit_sha)
@@ -177,6 +178,8 @@ module AppleVerification
       end
 
       def create_attempt(project:, agent_run:, request:, requested_capture: nil)
+        raise QueueCapacityExceededError, "Apple verification queue is at capacity" if AppleVerificationAttempts::Queue.full?
+
         project.apple_verification_attempts.create!(
           account: project.account,
           agent_run: agent_run,
@@ -219,6 +222,7 @@ module AppleVerification
         {
           "attempt_id" => attempt.id,
           "status" => attempt.status,
+          "queue_position" => AppleVerificationAttempts::Queue.position(attempt: attempt),
           "failure_classification" => attempt.failure_classification,
           "lifecycle_gate" => attempt.lifecycle_gate,
           "source_digest" => attempt.source_digest,
