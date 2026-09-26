@@ -26,6 +26,7 @@ class AppleVerificationAttempt < ApplicationRecord
 
   validates :source_digest, format: { with: /\Asha256:[a-f0-9]{64}\z/ }
   validates :status, inclusion: { in: STATES }
+  validates :failure_classification, inclusion: { in: AppleVerificationAttempts::FailureClassification::ALL }, allow_nil: true
   validates :lifecycle_gate, inclusion: { in: LIFECYCLE_GATES }
   validates :retry_number, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :ownership_matches_workflow
@@ -35,6 +36,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
   validate :execution_binding_is_immutable, on: :update
+  before_validation :set_queue_entered_at, on: :create
   after_update_commit :complete_withheld_run, if: :completed_completion_verification?
 
   def terminal?
@@ -51,6 +53,10 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def retained_vm?
     execution_resource_ledger_entries.any? { |resource| resource.resource_kind == "verification_vm" && resource.status.in?(%w[active cleanup_failed orphaned]) }
+  end
+
+  def queue_position
+    AppleVerificationAttempts::Queue.new.position(self)
   end
 
   private
@@ -118,5 +124,9 @@ class AppleVerificationAttempt < ApplicationRecord
       will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
       will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
       will_save_change_to_requested_capture? || will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
+  end
+
+  def set_queue_entered_at
+    self.queue_entered_at ||= Time.current if status == "queued"
   end
 end

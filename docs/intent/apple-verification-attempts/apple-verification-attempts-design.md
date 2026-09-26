@@ -44,6 +44,20 @@ operator-configurable limits.
 Capacity exhaustion and infrastructure timeout are infrastructure results,
 never code failures (see failure classification below).
 
+`AppleVerificationAttempts::Queue` persists queue-entry time and computes a
+round-robin order across account and project heads. `Admission` serializes
+reservation through the database so concurrent scheduler processes cannot
+over-admit the single worker. Host capacity is supplied as a small,
+provider-neutral snapshot; it is deliberately injected at the control-plane
+boundary rather than inferred from a guest or from project code. The same
+snapshot format is used by the timeout monitor while work is active.
+
+`AppleVerificationWorkerHealth` persists health-failure counts and quarantine
+state for each worker profile. A quarantine blocks new admission until an
+operator records a passing isolation smoke test and explicitly returns the
+worker to service. This makes worker restart and control-plane restart safe:
+neither loses the quarantine decision.
+
 ## Attempt execution lifecycle
 
 Every attempt runs against a clean clone of an approved immutable image and

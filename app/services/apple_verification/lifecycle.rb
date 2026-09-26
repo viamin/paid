@@ -80,6 +80,21 @@ module AppleVerification
       :destroyed
     end
 
+    # Stops a live guest before retaining or cancelling it. The host operation
+    # is idempotent by request ID and leaves the ledger identity available for
+    # later timed destruction and restart reconciliation.
+    # @spec APPLE-ATTEMPT-006
+    def stop(attempt:, request_id:)
+      require_enabled!(attempt.project)
+      require_request_id!(request_id)
+
+      entry = resource_entry_for_attempt(attempt)
+      return :noop unless entry&.provider_resource_id
+
+      request("stop", "request_id" => request_id, "vm_id" => entry.provider_resource_id)
+      :stopped
+    end
+
     private
 
     attr_reader :host, :token, :environment
