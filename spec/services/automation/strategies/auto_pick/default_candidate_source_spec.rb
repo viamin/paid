@@ -452,9 +452,10 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
-    it "excludes a source issue when its synced open PR is missing a parent link after the grace window" do # @spec EAGER-QUEUE-009
-      # Regression for #4039: the producer run is the durable source link.
-      # Sync can omit parent_issue_id without allowing a second PR.
+    it "excludes an issue with an open synced PR from its completed run after the grace window when the link is missing" do # @spec EAGER-QUEUE-009
+      # Regression for #4039: this is the incident shape. The PR has synced,
+      # but the old sync path omitted parent_issue_id, so the one-hour grace
+      # expiry must not authorize a second implementation run.
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
@@ -467,13 +468,30 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
-    it "excludes a source issue when its failed producer recorded a synced open PR without a parent link" do # @spec EAGER-QUEUE-009
-      issue = create(:issue, project: project, paid_state: "new")
+    it "excludes an issue whose run failed after publishing when the open PR is unlinked, even past the grace window" do # @spec EAGER-QUEUE-009
+      # Review follow-up on #4039: reserve_pull_request! persists the PR
+      # number before complete! runs, so a completion-verification gate
+      # failure marks the run failed while its PR is open on GitHub. The
+      # recorded PR number — not the terminal status — is the source
+      # evidence, so the durable exclusion must hold after the grace
+      # window instead of wasting a re-pick that only the publication
+      # guard would reject.
+      issue = create(:issue, project: project, paid_state: "failed")
       create(:agent_run, :failed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
         parent_issue_id: nil)
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to be_empty
+    end
+
+    it "excludes an issue whose cancelled run recorded a PR number that has not synced yet" do # @spec EAGER-QUEUE-009
+      issue = create(:issue, project: project, paid_state: "failed")
+      create(:agent_run, :cancelled, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -508,7 +526,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    it "excludes a source issue when its synced merged PR is missing a parent link after the grace window" do # @spec EAGER-QUEUE-009
+    it "keeps an issue ineligible after the grace window when its completed run's PR is merged but unlinked" do # @spec EAGER-QUEUE-009
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",

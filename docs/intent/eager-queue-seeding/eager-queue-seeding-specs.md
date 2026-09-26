@@ -85,26 +85,36 @@
 ## Duplicate-PR prevention
 
 - [x] **EAGER-QUEUE-009** — When a project issue has a `create_pr` run that
-  recorded a `pull_request_number` and either completed or failed after PR
-  publication, the system SHALL exclude that issue from queue seeding and
-  dequeue when its locally synced PR row is open or merged, even if the PR row
-  is missing `parent_issue_id` and the sync grace period has elapsed. A locally
-  synced closed-unmerged PR SHALL lift the
-  exclusion. When no local PR row exists, `PR_SYNC_GRACE_PERIOD` SHALL protect
-  the sync gap; a path reaching PR publication SHALL reconcile and recheck the
-  source issue rather than using elapsed time as authority to publish another
-  PR. Sync SHALL repair `parent_issue_id` only when producing-run records name
-  one unambiguous non-PR source issue; it SHALL not guess or close duplicates
-  on conflicting records. An issue-scoped lock SHALL prevent concurrent
-  publication attempts from bypassing this protection, and a stopped competing
-  run SHALL record an explicit reason rather than claiming the existing PR.
-  *Code:* `Issue.paid_generated_pull_request_source_issue_ids`,
-  `Issues::ReconcilePullRequestSource`,
-  `Automation::Strategies::AutoPick::DefaultCandidateSource`,
-  `Activities::CreatePullRequestActivity`.
+  recorded a `pull_request_number`, the system SHALL exclude that issue from
+  queue seeding and dequeue eligibility while a synced PR in the same project
+  with that number is open or merged, regardless of elapsed time, a missing
+  `parent_issue_id`, or the run's terminal status — a run that fails or is
+  cancelled after publishing still counts, because the recorded number, not
+  the terminal status, is the produced-PR evidence. The exclusion SHALL lift
+  immediately when the synced PR is authoritatively closed unmerged. A
+  missing PR row is protected for `PR_SYNC_GRACE_PERIOD` (armed by the
+  `completed_at` every terminal transition stamps) and then triggers
+  reconciliation rather than being treated as proof that a second PR may be
+  created.
+  *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource`,
+  `Issue.open_paid_generated_pull_request_source_issue_ids`,
+  `Issues::ReconcilePullRequestSource`.
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
-  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
-  `spec/temporal/activities/create_pull_request_activity_spec.rb`,
+  `spec/services/issues/reconcile_pull_request_source_spec.rb`.
+
+- [x] **EAGER-QUEUE-010** — Before an issue implementation run publishes a
+  PR, the system SHALL serialize on the source issue and reject a new PR when
+  an open implementation PR already exists for that source, even if the new
+  run uses a different branch. After creating a PR, the originating run SHALL
+  durably reserve its URL and number before releasing the source-issue lock,
+  so concurrent branches can reconcile and discover it before terminal
+  completion. Rejected work SHALL not be marked delivered by returning the
+  existing PR URL. Reconciliation SHALL link a PR to a source only when all
+  matching originating runs agree, and SHALL preserve a PR-follow-up run's
+  original source relationship.
+  *Code:* `Activities::CreatePullRequestActivity`,
+  `Issues::ReconcilePullRequestSource`.
+  *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`,
   `spec/services/issues/reconcile_pull_request_source_spec.rb`.
 
 ## Capacity remains the single gate

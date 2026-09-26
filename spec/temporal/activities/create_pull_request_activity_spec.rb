@@ -83,6 +83,42 @@ RSpec.describe Activities::CreatePullRequestActivity do
   end
 
   describe "#execute" do
+    it "rejects a source-linked branch after reconciling a reserved PR" do # @spec EAGER-QUEUE-010
+      create(:agent_run, :cancelled, project: project, issue: issue, goal: "create_pr", pull_request_number: 42)
+      concurrent_issue = create(:issue, :pull_request, project: project, parent_issue: issue)
+      concurrent_run = create(:agent_run, project: project, issue: concurrent_issue, goal: "create_pr")
+      allow(github_client).to receive(:pull_request).with(project.full_name, 42).and_return(pr_response)
+
+      expect {
+        activity.execute(agent_run_id: concurrent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #42/)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
+    it "does not publish a different branch when the source issue already has an open implementation PR" do # @spec EAGER-QUEUE-010
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 41)
+      create(:issue, :pull_request, project: project, github_number: 41, github_state: "open", parent_issue_id: nil)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #41/)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
+    it "does not publish a follow-up for an unlinked implementation PR" do # @spec EAGER-QUEUE-010
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 41)
+      implementation_pr = create(:issue, :pull_request, project: project, github_number: 41, github_state: "open", parent_issue_id: nil)
+      follow_up_run = create(:agent_run, project: project, issue: implementation_pr, goal: "create_pr")
+
+      expect {
+        activity.execute(agent_run_id: follow_up_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #41/)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
     it "creates a pull request via the GitHub API" do
       issue.update!(title: "Resolve auth redirect bug")
 
@@ -99,6 +135,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
       expect(result[:pull_request_number]).to eq(42)
+      expect(project.issues.find_by(github_number: 42, is_pull_request: true).parent_issue).to eq(issue)
     end
 
     # @spec SESSION-SUMMARY-001
@@ -197,19 +234,18 @@ RSpec.describe Activities::CreatePullRequestActivity do
       )
     end
 
-    it "stops instead of publishing a second branch when an open implementation PR lacks its parent link" do # @spec EAGER-QUEUE-009
+    it "rejects a second branch when an open implementation PR lacks its parent link" do # @spec EAGER-QUEUE-010
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", pull_request_number: 42,
         pull_request_url: "https://github.com/owner/repo/pull/42")
       create(:issue, :pull_request, project: project, github_issue_id: 4242, github_number: 42,
         github_state: "open", parent_issue_id: nil)
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #42/)
 
-      expect(result).to include(skipped: true, duplicate_implementation_pr: true)
       expect(github_client).not_to have_received(:create_pull_request)
-      expect(agent_run.reload.status).to eq("cancelled")
-      expect(agent_run.error_message).to include("Existing open implementation PR #42")
     end
 
     it "continues reconciliation after a recorded implementation PR was deleted" do # @spec EAGER-QUEUE-009
@@ -223,12 +259,15 @@ RSpec.describe Activities::CreatePullRequestActivity do
       allow(github_client).to receive(:issue).with(project.full_name, 41)
         .and_raise(GithubClient::NotFoundError.new("Not Found"))
       allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(issue_response)
+      allow(github_client).to receive(:pull_request).with(project.full_name, 41)
+        .and_raise(GithubClient::NotFoundError.new("Not Found"))
+      allow(github_client).to receive(:pull_request).with(project.full_name, 42).and_return(pr_response)
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #42/)
 
-      expect(result).to include(skipped: true, duplicate_implementation_pr: true)
       expect(github_client).not_to have_received(:create_pull_request)
-      expect(agent_run.reload.status).to eq("cancelled")
     end
 
     it "ignores failed producer runs without a pull request number when reconciling an implementation PR" do # @spec EAGER-QUEUE-009
@@ -241,9 +280,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       expect(github_client).not_to receive(:issue).with(project.full_name, nil)
 
-      result = activity.execute(agent_run_id: agent_run.id)
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #42/)
 
-      expect(result).to include(skipped: true, duplicate_implementation_pr: true)
       expect(github_client).not_to have_received(:create_pull_request)
     end
 
@@ -330,7 +370,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       agent_run.reload
       expect(agent_run.status).to eq("cancelled")
-      expect(agent_run.pull_request_url).to be_nil
+      expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
+      expect(agent_run.pull_request_number).to eq(42)
       expect(github_client).to have_received(:add_labels_to_issue).with(
         project.full_name, 42, [ "paid-generated", "paid-automation" ]
       )

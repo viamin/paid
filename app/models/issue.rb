@@ -616,27 +616,30 @@ class Issue < ApplicationRecord
     scope.select(:parent_issue_id)
   end
 
-  # Source issue ids for Paid-created PRs, derived from the durable producing
-  # run record rather than the convenience +parent_issue_id+ relationship.
-  # This remains valid while GitHub sync repairs a missing parent link.
-  def self.paid_generated_pull_request_source_issue_ids(project:, github_state:, pr_review_phase: nil) # @spec EAGER-QUEUE-009
-    runs = project.agent_runs
-      .where(goal: "create_pr", status: %w[completed failed])
-      .where.not(issue_id: nil, pull_request_number: nil)
-      .joins(:issue)
-      .merge(where(is_pull_request: false))
-
-    scope = runs.joins(<<~SQL.squish)
-      INNER JOIN issues produced_pull_requests
-        ON produced_pull_requests.project_id = agent_runs.project_id
-        AND produced_pull_requests.github_number = agent_runs.pull_request_number
-        AND produced_pull_requests.is_pull_request = TRUE
-    SQL
-      .where(produced_pull_requests: { github_state: github_state })
-    scope = scope.where(produced_pull_requests: { pr_review_phase: pr_review_phase }) if pr_review_phase
-    scope.select("agent_runs.issue_id")
+  # Source issues whose implementation run recorded a PR that is currently
+  # open. This is independent of parent_issue_id so a missed sync link
+  # cannot authorize a duplicate implementation run, and independent of the
+  # run's terminal status so a run that fails or is cancelled after
+  # publishing still counts as source evidence.
+  def self.open_paid_generated_pull_request_source_issue_ids(project:)
+    paid_generated_pull_request_source_issue_ids(project: project, github_state: "open")
   end
 
+  def self.merged_paid_generated_pull_request_source_issue_ids(project:)
+    paid_generated_pull_request_source_issue_ids(project: project, pr_review_phase: "merged")
+  end
+
+  # A pull_request_number is persisted only once the PR exists on GitHub
+  # (reserved at publication or recorded at completion), so it — not the
+  # run's terminal status — is the produced-PR evidence.
+  def self.paid_generated_pull_request_source_issue_ids(project:, **conditions)
+    pull_requests = where(project: project, is_pull_request: true, **conditions)
+    AgentRun.where(project: project, goal: "create_pr")
+      .where.not(issue_id: nil, pull_request_number: nil)
+      .where(pull_request_number: pull_requests.select(:github_number))
+      .select(:issue_id)
+  end
+  private_class_method :paid_generated_pull_request_source_issue_ids
   # Returns a Hash mapping issue_id => the most recently updated open
   # paid-generated pull request (an Issue row with is_pull_request: true).
   # A PR is "paid-generated" when an AgentRun in the same project produced

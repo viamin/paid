@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -525,11 +525,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
   create_table "apple_worker_profiles", comment: "Immutable provider-neutral Apple verification worker profiles.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "capabilities", default: {}, null: false, comment: "Provider-neutral capability inventory."
+    t.integer "consecutive_health_failures", default: 0, null: false, comment: "Consecutive worker health failures since the last passing smoke test."
     t.jsonb "constraints", default: {}, null: false, comment: "Immutable platform, Xcode, runtime, and resource constraints."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", comment: "Operator that registered the profile."
     t.string "image_digest", null: false, comment: "Approved immutable guest image digest."
+    t.datetime "last_health_failure_at", comment: "When the most recent health failure was observed for this profile."
+    t.datetime "last_smoke_test_passed_at", comment: "When the profile last passed its smoke test."
     t.string "name", null: false
+    t.string "quarantine_reason", comment: "Failure taxonomy reason recorded when the profile was quarantined."
+    t.datetime "quarantined_at", comment: "When the profile was taken out of service for failing health checks."
+    t.datetime "returned_to_service_at", comment: "When a quarantined profile was returned to service after a passing smoke test."
     t.string "status", default: "active", null: false, comment: "active, deprecated, or revoked."
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_apple_worker_profiles_on_account_id_and_name", unique: true
@@ -730,9 +736,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
     t.datetime "updated_at", null: false
     t.string "workspace_volume"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
-    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
+    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
