@@ -11,12 +11,21 @@ RSpec.describe AppleVerificationAttempts::Queue do
   let(:project_b) { create(:project, account: account_b) }
 
   describe ".ordered" do
-    it "orders queued attempts by account, project, then created_at" do
-      older = create(:apple_verification_attempt, account: account_a, project: project_a, created_at: 2.days.ago)
+    it "gives each account a turn before scheduling a second attempt" do
+      older = create(:apple_verification_attempt, account: account_a, project: project_a, created_at: 3.days.ago)
       newer = create(:apple_verification_attempt, account: account_a, project: project_a, created_at: 1.day.ago)
-      other_account = create(:apple_verification_attempt, account: account_b, project: project_b, created_at: 3.days.ago)
+      other_account = create(:apple_verification_attempt, account: account_b, project: project_b, created_at: 2.days.ago)
 
-      expect(described_class.ordered.to_a).to eq([ older, newer, other_account ])
+      expect(described_class.ordered).to eq([ older, other_account, newer ])
+    end
+
+    it "gives each project within an account a turn before scheduling a second attempt" do
+      project_c = create(:project, account: account_a)
+      first_project_first = create(:apple_verification_attempt, account: account_a, project: project_a, created_at: 3.days.ago)
+      first_project_second = create(:apple_verification_attempt, account: account_a, project: project_a, created_at: 1.day.ago)
+      second_project = create(:apple_verification_attempt, account: account_a, project: project_c, created_at: 2.days.ago)
+
+      expect(described_class.ordered).to eq([ first_project_first, second_project, first_project_second ])
     end
 
     it "excludes non-queued attempts" do
@@ -24,7 +33,7 @@ RSpec.describe AppleVerificationAttempts::Queue do
       create(:apple_verification_attempt, :succeeded, account: account_a, project: project_a)
       create(:apple_verification_attempt, account: account_a, project: project_a, status: "running")
 
-      expect(described_class.ordered.to_a).to eq([ queued ])
+      expect(described_class.ordered).to eq([ queued ])
     end
   end
 
