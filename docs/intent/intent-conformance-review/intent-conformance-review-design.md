@@ -178,7 +178,7 @@ correlation), and asserting a model that never ran would be misleading.
   (#3867), but the shipped scanner computes the signal without invoking
   `IntentConformance::ReviewRun.call`; wiring that trigger is the gap the
   [2026-09-26 closeout audit](../../rdrs/audit-report-2026-09-26-rdr-067.md)
-  records, with a child issue still to be filed.
+  records and [#4050](https://github.com/viamin/paid/issues/4050) owns.
 - This segment does not populate `feature_intents.design_document_paths` —
   that is the RDR-066 approval-lifecycle's job (#3862/#3863) once a
   feature's design PRs are known. Until then, `design_document_paths` is
