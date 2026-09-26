@@ -15,15 +15,17 @@ prefix: INTENT-CONFORMANCE-REVIEW
 ## Purpose
 
 `IntentConformance::VerifyAtMerge` (#3868, shipped) reads the most recent
-`IntentConformanceVerdict` for an issue but never writes one — until this
-segment ships, every applicable PR is blocked with `verdict_missing`, which
-is correct fail-closed behavior for an unwired reviewer. This segment adds
-the reviewer that actually produces the verdict: a review run, separate from
+`IntentConformanceVerdict` for an issue but never writes one. This shipped
+segment provides the reviewer that produces the verdict: a review run, separate from
 the implementing `AgentRun`, that compares the PR against the feature's
 approved design at an exact git revision and records a cited, auditable
 outcome. The implementing agent's own self-report is never sufficient to
 authorize merge (RDR-067 §Alternatives Considered #1); this reviewer is the
 independent check the RDR requires.
+
+No production PR-scan caller currently invokes `ReviewRun`; the RDR-067
+closeout audit records that integration gap separately. Until it is wired,
+the final guard correctly fails closed with `verdict_missing`.
 
 ## Scope
 
