@@ -58,7 +58,7 @@
   one hour) with credentials revoked and networking disabled, and SHALL be
   destroyable earlier on request.
   *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`
-  *Code:* `AppleVerificationAttempts::Complete`
+  *Code:* `AppleVerificationAttempts::Complete`, `AppleVerificationAttempts::Cancel`
 
 - [ ] **APPLE-ATTEMPT-007** — When an attempt verifies committed source, the
   system SHALL supply the exact commit identity and a short-lived read-only

@@ -74,6 +74,8 @@
   deleted according to the RDR's rules and the action SHALL be recorded as an
   execution audit event without the credential token value.
   *Tests:* `spec/services/apple_verification/revocation/enforce_spec.rb`,
-  `spec/services/apple_verification/bundles/retention_sweep_spec.rb`
+  `spec/services/apple_verification/bundles/retention_sweep_spec.rb`,
+  `spec/jobs/apple_verification_bundle_retention_sweep_job_spec.rb`
   *Code:* `AppleVerification::Revocation::Enforce`,
-  `AppleVerification::Bundles::RetentionSweep`
+  `AppleVerification::Bundles::RetentionSweep`,
+  `AppleVerificationBundleRetentionSweepJob`

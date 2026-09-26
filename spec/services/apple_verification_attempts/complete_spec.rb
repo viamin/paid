@@ -35,6 +35,23 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(revocation).to have_received(:call)
   end
 
+  it "stops a failed VM before recording its terminal state" do
+    attempt = create(:apple_verification_attempt, status: "running")
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    revocation = instance_double(AppleVerification::Revocation::Enforce)
+    allow(lifecycle).to receive(:stop) do
+      expect(attempt.reload.status).to eq("running")
+      :stopped
+    end
+    allow(revocation).to receive(:call)
+
+    described_class.call(attempt:, status: "failed", failure_classification: "test_assertion", lifecycle:, revocation:)
+
+    expect(lifecycle).to have_received(:stop).with(attempt:, request_id: "attempt:stop:#{attempt.id}")
+    expect(revocation).to have_received(:call)
+    expect(attempt.reload.status).to eq("failed")
+  end
+
   it "rejects an invalid failure classification" do
     attempt = create(:apple_verification_attempt, status: "running")
 
