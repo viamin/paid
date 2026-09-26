@@ -1,4 +1,4 @@
-<%# @spec CHAT-API-009
+<%# @spec CHAT-API-009 @spec QUESTION-EXPLORATION-015
     Body of the "Session details" disclosure rendered from both the mobile
     and the desktop chat panel headers. The chat page is chat-first, so the
     disclosure is closed by default: the always-visible chrome is just the
@@ -19,6 +19,7 @@
       <% session_projects.each do |project| %>
         <%= link_to project.name,
                     project_path(project),
+                    data: { turbo_frame: "_top" },
                     class: "inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900" %>
       <% end %>
     <% else %>
@@ -109,12 +110,14 @@
         <%= button_to "Unarchive",
                       unarchive_chat_session_path(chat_session),
                       method: :patch,
+                      form: { data: { turbo_frame: "_top" } },
                       class: "inline-flex items-center rounded-md bg-emerald-400/15 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-400/25" %>
       <% end %>
       <% if can_archive_chat_session %>
         <%= button_to "Archive",
                       archive_chat_session_path(chat_session),
                       method: :patch,
+                      form: { data: { turbo_frame: "_top" } },
                       class: "inline-flex items-center rounded-md bg-amber-400/15 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-400/25" %>
       <% end %>
     </div>
