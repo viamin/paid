@@ -49,9 +49,9 @@ module AppleVerificationAttempts
     end
 
     def unsupported_capability_failure
-      return nil unless @attempt.apple_worker_profile&.revoked?
+      return nil if @attempt.apple_worker_profile&.available?
 
-      [ "unsupported_capability", "worker profile revoked" ]
+      [ "unsupported_capability", "worker profile unavailable" ]
     end
 
     def quota_failure

@@ -27,8 +27,10 @@
   and remain cancellable while queued; operator-configurable limits SHALL
   bound queue depth, runtime, retry count, retained storage, and attempts per
   agent run.
-  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`
-  *Code:* `AppleVerificationAttempts::Queue`
+  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`,
+  `spec/services/apple_verification_attempts/dispatcher_spec.rb`
+  *Code:* `AppleVerificationAttempts::Queue`,
+  `AppleVerificationAttempts::Dispatcher`, `AppleVerificationDispatchJob`
 
 - [x] **APPLE-ATTEMPT-004** — When an attempt exceeds the configured attempt
   timeout (default 45 minutes), the system SHALL end it in the `timed_out`
