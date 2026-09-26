@@ -39,15 +39,11 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     # renders open by default for this non-inline chat (per the
     # CHAT-API-009 spec — workspace chats keep the disclosure open so
     # the "Reopen with workspace" recovery path stays reachable). The
-    # capability panel's body — workspace label, clone form, and cloned
-    # repos — sits inside that disclosure and counts toward the header
-    # height, so the transcript share is materially smaller than for an
-    # inline chat (where the same disclosure renders closed). The hard
-    # 18rem floor on `transcriptH` above is the spec-mandated floor; this
-    # share check is a regression catcher against the original "sliver"
-    # failure (#3575) and is set against the actual new layout, not the
-    # old closed-by-default behaviour it replaced.
-    expect(metrics.fetch("transcriptShare")).to be >= 0.30
+    # The compact workspace recovery panel is open for this non-inline chat,
+    # but the transcript still needs to own most of the viewport-bound panel.
+    # This catches a return to the header-heavy layout that caused the
+    # original "sliver" failure (#3575, #3925).
+    expect(metrics.fetch("transcriptShare")).to be >= 0.45
   end
 
   def create_mobile_workspace_chat
@@ -111,6 +107,6 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     metrics.fetch("panelBottomGap").between?(-2, 4) &&
       metrics.fetch("documentOverflow") <= 4 &&
       metrics.fetch("transcriptH") >= 288 &&
-      metrics.fetch("transcriptShare") >= 0.30
+      metrics.fetch("transcriptShare") >= 0.45
   end
 end

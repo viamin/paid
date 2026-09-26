@@ -36,7 +36,7 @@
       details` disclosure. The `Workspace` disclosure remains a sibling
       and keeps its existing open-by-default rule for non-inline chats
       so the recovery path stays reachable. (@spec CHAT-API-009, #3925) %>
-  <header class="relative z-20 shrink-0 border-b border-gray-200 px-4 py-2 xl:hidden" data-chat-header="mobile">
+  <header class="relative z-20 shrink-0 border-b border-gray-200 px-3 py-1 xl:hidden" data-chat-header="mobile">
     <details class="group">
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
@@ -60,13 +60,13 @@
     <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
                     data: { chat_workspace_disclosure: true },
                     open: !chat_session.inline_only? do %>
-      <summary class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
+      <summary class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
         <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
         </svg>
         Workspace
       </summary>
-      <div class="px-2 pb-2">
+      <div class="px-2 pb-1">
         <%= render "capability_panel", chat_session: chat_session, dom_id_suffix: "_mobile" %>
       </div>
     <% end %>
