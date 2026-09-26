@@ -15,15 +15,17 @@ prefix: INTENT-CONFORMANCE-REVIEW
 ## Purpose
 
 `IntentConformance::VerifyAtMerge` (#3868, shipped) reads the most recent
-`IntentConformanceVerdict` for an issue but never writes one — until this
-segment ships, every applicable PR is blocked with `verdict_missing`, which
-is correct fail-closed behavior for an unwired reviewer. This segment adds
-the reviewer that actually produces the verdict: a review run, separate from
+`IntentConformanceVerdict` for an issue but never writes one. This shipped
+segment provides the reviewer that produces the verdict: a review run, separate from
 the implementing `AgentRun`, that compares the PR against the feature's
 approved design at an exact git revision and records a cited, auditable
 outcome. The implementing agent's own self-report is never sufficient to
 authorize merge (RDR-067 §Alternatives Considered #1); this reviewer is the
 independent check the RDR requires.
+
+No production PR-scan caller currently invokes `ReviewRun`; the RDR-067
+closeout audit records that integration gap separately. Until it is wired,
+the final guard correctly fails closed with `verdict_missing`.
 
 ## Scope
 
@@ -172,9 +174,11 @@ correlation), and asserting a model that never ran would be misleading.
 ### Non-goals
 
 - This segment does not decide *when* to run the reviewer (on PR push, on
-  scan, on demand) — that trigger belongs to the PR-scanner integration
-  (#3867), which will call `IntentConformance::ReviewRun.call` the same way
-  `VerifyAtMerge` is already wired into the merge activity.
+  scan, on demand) — that trigger was planned for the PR-scanner integration
+  (#3867), but the shipped scanner computes the signal without invoking
+  `IntentConformance::ReviewRun.call`; wiring that trigger is the gap the
+  [2026-09-26 closeout audit](../../rdrs/audit-report-2026-09-26-rdr-067.md)
+  records, with a child issue still to be filed.
 - This segment does not populate `feature_intents.design_document_paths` —
   that is the RDR-066 approval-lifecycle's job (#3862/#3863) once a
   feature's design PRs are known. Until then, `design_document_paths` is

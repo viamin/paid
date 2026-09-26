@@ -9,7 +9,7 @@ Those features use issue-level readiness and completion-blocking follow-ups;
 existing features retain their policy until deliberately migrated. Shared
 record types and ordinary CI/security/quality checks remain reusable.
 
-> Segment: approved-intent-conformance · Status: partial (issue #3867 scope)
+> Segment: approved-intent-conformance · Status: implemented (issue #3867 scope)
 > Specs: [approved-intent-conformance-specs.md](approved-intent-conformance-specs.md)
 > RDR: [RDR-067](../../rdrs/RDR-067-approved-intent-conformance.md)
 
@@ -18,7 +18,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 RDR-067 requires an independent conformance verdict on every feature PR, and
 material drift, uncertainty, missing evidence, or reviewer failure must block
 auto-merge until a human resolves it. Issue #3867 scopes the PR-scanner and
-Inbox half of that decision: persist the verdict, add it to the auto-merge
+Inbox half of that decision: read the persisted verdict, add it to the auto-merge
 blocker snapshot, and give a human a typed Inbox decision — cited claim,
 relevant diff, reviewer evidence, and the three resolution actions (fix PR,
 bounded exception, design amendment).
@@ -28,8 +28,7 @@ comparing PR diff to the approved design) and the final-merge-activity race
 check are out of this segment's scope — RDR-067's own implementation plan
 splits those into separate issues (the reviewer run, and final-merge
 enforcement). This segment defines the verdict/decision persistence contract
-because nothing else in the repository does yet, and the blocker/Inbox surface
-cannot exist without something to read.
+because the blocker/Inbox surface cannot exist without something to read.
 
 ## Approach
 
