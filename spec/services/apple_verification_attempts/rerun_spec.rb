@@ -14,4 +14,36 @@ RSpec.describe AppleVerificationAttempts::Rerun do
       retry_of_attempt: attempt
     )
   end
+
+  it "leaves no queued rerun behind when the fair queue refuses it" do
+    attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure")
+
+    with_env("APPLE_VERIFICATION_MAXIMUM_QUEUE_DEPTH" => "0") do
+      expect { described_class.call(attempt:) }
+        .to raise_error(ArgumentError, "Apple verification queue is full")
+    end
+    expect(AppleVerificationAttempt.where(retry_of_attempt: attempt)).to be_empty
+  end
+
+  it "leaves no queued rerun behind when the attempts-per-run limit refuses it" do
+    project = create(:project)
+    attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure",
+      project:, account: project.account, agent_run: create(:agent_run, project:))
+
+    with_env("APPLE_VERIFICATION_MAXIMUM_ATTEMPTS_PER_RUN" => "0") do
+      expect { described_class.call(attempt:) }
+        .to raise_error(ArgumentError, "Apple verification attempt limit reached for agent run")
+    end
+    expect(AppleVerificationAttempt.where(retry_of_attempt: attempt)).to be_empty
+  end
+
+  private
+
+  def with_env(overrides)
+    previous = overrides.keys.to_h { |key| [ key, ENV[key] ] }
+    overrides.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
 end

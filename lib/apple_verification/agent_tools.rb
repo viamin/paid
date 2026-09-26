@@ -177,20 +177,25 @@ module AppleVerification
       end
 
       def create_attempt(project:, agent_run:, request:, requested_capture: nil)
-        attempt = project.apple_verification_attempts.create!(
-          account: project.account,
-          agent_run: agent_run,
-          apple_verification_workflow_revision: request.revision,
-          apple_worker_profile: request.revision.apple_worker_profile,
-          source_digest: request.source_digest,
-          commit_sha: request.commit_sha,
-          requested_capture: requested_capture,
-          lifecycle_gate: request.revision.lifecycle_gate,
-          retry_number: 0,
-          status: "queued"
-        )
-        AppleVerificationAttempts::Queue.new.enqueue(attempt:)
-        attempt
+        # The insert and the queue admission share one transaction so a queue
+        # limit refusal rolls the queued attempt back instead of stranding a
+        # phantom row the scheduler would later admit.
+        AppleVerificationAttempt.transaction do
+          attempt = project.apple_verification_attempts.create!(
+            account: project.account,
+            agent_run: agent_run,
+            apple_verification_workflow_revision: request.revision,
+            apple_worker_profile: request.revision.apple_worker_profile,
+            source_digest: request.source_digest,
+            commit_sha: request.commit_sha,
+            requested_capture: requested_capture,
+            lifecycle_gate: request.revision.lifecycle_gate,
+            retry_number: 0,
+            status: "queued"
+          )
+          AppleVerificationAttempts::Queue.new.enqueue(attempt:)
+          attempt
+        end
       rescue ActiveRecord::RecordNotUnique
         # Backstop for the check-then-create race in ensure_quota: the partial
         # unique index on active attempts per agent run rejects the second

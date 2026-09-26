@@ -21,4 +21,34 @@ RSpec.describe AppleVerificationAttempts::TimeoutMonitor do
 
     expect(lifecycle).to have_received(:stop).with(attempt:, request_id: "attempt:stop:#{attempt.id}")
   end
+
+  it "still ends the attempt when stopping the VM is refused because workers are disabled" do
+    attempt = create(:apple_verification_attempt, status: "running", started_at: 46.minutes.ago)
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    allow(lifecycle).to receive(:stop)
+      .and_raise(AppleVerification::HostService::UnsupportedRequestError, "Apple verification workers are disabled")
+
+    expect { described_class.call(lifecycle:) }.to change { attempt.reload.status }.from("running").to("timed_out")
+    expect(attempt.reload).to have_attributes(failure_classification: "cancellation_or_timeout")
+  end
+
+  it "still ends the attempt when the host service is unreachable" do
+    attempt = create(:apple_verification_attempt, status: "running", started_at: 46.minutes.ago)
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    allow(lifecycle).to receive(:stop).and_raise(Faraday::ConnectionFailed.new("host down"))
+
+    expect { described_class.call(lifecycle:) }.to change { attempt.reload.status }.from("running").to("timed_out")
+  end
+
+  it "revokes credentials even when stopping the VM fails" do
+    attempt = create(:apple_verification_attempt, status: "running", started_at: 46.minutes.ago)
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    allow(lifecycle).to receive(:stop).and_raise(Faraday::ConnectionFailed.new("host down"))
+    revocation = instance_double(AppleVerification::Revocation::Enforce)
+    allow(revocation).to receive(:call)
+
+    AppleVerificationAttempts::Cancel.call(attempt:, lifecycle:, revocation:, outcome: "timed_out")
+
+    expect(revocation).to have_received(:call)
+  end
 end
