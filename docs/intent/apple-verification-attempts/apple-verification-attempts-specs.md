@@ -54,14 +54,16 @@
   *Code:* `AppleVerificationAttempts::Validate`
 
 - [x] **APPLE-ATTEMPT-006** — When an attempt finishes uploading its output
-  manifest and artifacts, the system SHALL revoke the attempt's credentials
-  and disable its network authority before recording a terminal state; a
-  successful attempt's VM SHALL be destroyed immediately, and a failed
-  attempt's VM SHALL be retained for at most the configured window (default
-  one hour) with credentials revoked and networking disabled, and SHALL be
-  destroyable earlier on request.
-  *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`
-  *Code:* `AppleVerificationAttempts::Complete`
+  manifest and artifacts, or is cancelled, the system SHALL revoke the
+  attempt's credentials and disable its network authority before recording a
+  terminal state; a successful attempt's VM SHALL be destroyed immediately,
+  and a failed or cancelled attempt's VM SHALL be retained for at most the
+  configured window (default one hour) with credentials revoked and networking
+  disabled, and SHALL be destroyable earlier on request.
+  *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`,
+  `spec/services/apple_verification_attempts/cancel_spec.rb`
+  *Code:* `AppleVerificationAttempts::Complete`,
+  `AppleVerificationAttempts::Cancel`
 
 - [ ] **APPLE-ATTEMPT-007** — When an attempt verifies committed source, the
   system SHALL supply the exact commit identity and a short-lived read-only
