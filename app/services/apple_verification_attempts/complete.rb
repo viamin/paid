@@ -3,9 +3,10 @@
 module AppleVerificationAttempts
   # The canonical terminal transition for an Apple verification attempt.
   #
-  # Persists the terminal +outcome+ (and optional +failure_classification+),
-  # then drives VM destruction on success (via the lifecycle boundary) and
-  # revocation/retention via {AppleVerification::Revocation::Enforce}. A
+  # Revokes the attempt's credentials and network authority, then drives VM
+  # destruction on success (via the lifecycle boundary) before persisting the
+  # terminal +outcome+ (and optional +failure_classification+) via
+  # {AppleVerification::Revocation::Enforce}. A
   # destroy failure on the immediate-success path is logged but tolerated so
   # it cannot corrupt an otherwise-valid terminal transition — the sweep and
   # retention windows still own the VM afterwards.
@@ -29,11 +30,9 @@ module AppleVerificationAttempts
     def call
       raise ArgumentError, "outcome must be a terminal state" unless outcome.in?(AppleVerificationAttempt::TERMINAL_STATES)
 
-      attempt.update!(status: outcome, finished_at: Time.current)
-      attempt.update!(failure_classification: failure_classification) if failure_classification.present?
-
-      destroy_vm if outcome == "succeeded"
       revocation_result = revocation.call
+      destroy_vm if outcome == "succeeded"
+      attempt.update!(terminal_attributes)
 
       Result.new(
         outcome: outcome,
@@ -47,7 +46,19 @@ module AppleVerificationAttempts
     attr_reader :attempt, :outcome, :failure_classification, :lifecycle
 
     def revocation
-      @revocation || AppleVerification::Revocation::Enforce.new(attempt: attempt)
+      @revocation || AppleVerification::Revocation::Enforce.new(
+        attempt: attempt,
+        outcome: outcome,
+        failed_vm_retention_hours: Config.failed_vm_retention_hours
+      )
+    end
+
+    def terminal_attributes
+      {
+        status: outcome,
+        finished_at: Time.current,
+        failure_classification: failure_classification.presence || attempt.failure_classification
+      }
     end
 
     def destroy_vm

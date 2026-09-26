@@ -52,6 +52,42 @@ RSpec.describe AppleVerificationAttempts::Complete do
         expect(lifecycle).not_to have_received(:destroy)
         expect(revocation).to have_received(:call)
       end
+
+      it "revokes credentials before recording the terminal state" do
+        allow(revocation).to receive(:call) do
+          expect(attempt.status).not_to eq("failed")
+          revocation_result
+        end
+
+        described_class.call(
+          attempt: attempt,
+          outcome: "failed",
+          failure_classification: "capacity_or_quota",
+          revocation: revocation
+        )
+      end
+    end
+
+    context "with the configured failed-VM retention window" do
+      around do |example|
+        original = ENV.fetch("APPLE_VERIFICATION_FAILED_VM_RETENTION_HOURS", nil)
+        ENV["APPLE_VERIFICATION_FAILED_VM_RETENTION_HOURS"] = "2"
+        example.run
+      ensure
+        ENV["APPLE_VERIFICATION_FAILED_VM_RETENTION_HOURS"] = original
+      end
+
+      it "uses the configured retention window" do
+        uncommitted_attempt = create(:apple_verification_attempt)
+
+        described_class.call(
+          attempt: uncommitted_attempt,
+          outcome: "failed",
+          failure_classification: "capacity_or_quota"
+        )
+
+        expect(uncommitted_attempt.reload.container_retained_until).to be_within(2.seconds).of(2.hours.from_now)
+      end
     end
 
     context "with a non-terminal outcome" do
