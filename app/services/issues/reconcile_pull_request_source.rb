@@ -20,9 +20,10 @@ module Issues
       return pull_request unless pull_request.is_pull_request?
       return pull_request if pull_request.parent_issue_id.present?
 
-      source = sources.first
+      matches = sources
+      source = matches.first
       return pull_request unless source
-      return conflict unless sources.one?
+      return conflict unless matches.one?
 
       pull_request.update!(parent_issue: source)
       pull_request
