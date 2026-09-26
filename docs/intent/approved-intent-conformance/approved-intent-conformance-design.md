@@ -49,10 +49,13 @@ because the blocker/Inbox surface cannot exist without something to read.
    for `material_drift`, `uncertain`, `not_evaluated`, and a missing verdict
    alike, since RDR-067 requires all four to fail closed.
 3. **Rollout gate** — enforcement is behind the `intent_conformance_enforcement`
-   feature flag (default off, per project). RDR-067's own rollout guard ties
-   enforcement to the RDR-066 named feature operating mode, which does not
-   exist in this codebase yet; the flag is the interim substitute and is
-   documented to be replaced once RDR-066 ships.
+   feature flag (default off, per project). Default-off does not prohibit an
+   operator from opting in: until #4050 wires the production reviewer trigger,
+   operators MUST NOT enable this flag for feature PRs because enforcement would
+   fail closed with `verdict_missing` without scheduling a fresh review.
+   RDR-067's own rollout guard ties enforcement to the RDR-066 named feature
+   operating mode, which does not exist in this codebase yet; the flag is the
+   interim substitute and is documented to be replaced once RDR-066 ships.
 4. **PR-scanner wiring** — `ScanPaidPrsActivity` already persists the auto-merge
    blocker snapshot to `issues.auto_merge_blockers` every scan pass
    (RDR-067's "PR scanner already persists blockers" precedent). This segment

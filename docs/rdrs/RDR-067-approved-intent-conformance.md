@@ -41,8 +41,11 @@ representative false-alarm and missed-drift evaluation results and rollout
 telemetry remain outstanding in open issue #3870. The RDR-066 lifecycle still
 owns population of `feature_intents.design_document_paths`; an empty list
 correctly yields `not_evaluated`. Open issue #4050 owns the reviewer trigger.
-The rollout flags remain default-off, so no project may enable the policy until
-that trigger is delivered.
+Although the rollout flags are default-off, they are tenant/project opt-ins
+rather than an enforcement boundary. Operators MUST NOT enable
+`intent_conformance_enforcement` or `approved_intent_amendments` for feature
+PRs until #4050 delivers the production trigger; otherwise enforcement can fail
+closed with `verdict_missing` without scheduling a fresh review.
 
 ## Problem Statement
 
