@@ -101,10 +101,13 @@
 - [x] **EAGER-QUEUE-010** — Before an issue implementation run publishes a
   PR, the system SHALL serialize on the source issue and reject a new PR when
   an open implementation PR already exists for that source, even if the new
-  run uses a different branch. Rejected work SHALL not be marked delivered by
-  returning the existing PR URL. Reconciliation SHALL link a PR to a source
-  only when all matching originating runs agree, and SHALL preserve a
-  PR-follow-up run's original source relationship.
+  run uses a different branch. After creating a PR, the originating run SHALL
+  durably reserve its URL and number before releasing the source-issue lock,
+  so concurrent branches can reconcile and discover it before terminal
+  completion. Rejected work SHALL not be marked delivered by returning the
+  existing PR URL. Reconciliation SHALL link a PR to a source only when all
+  matching originating runs agree, and SHALL preserve a PR-follow-up run's
+  original source relationship.
   *Code:* `Activities::CreatePullRequestActivity`,
   `Issues::ReconcilePullRequestSource`.
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`,

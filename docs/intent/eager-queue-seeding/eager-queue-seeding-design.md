@@ -123,11 +123,12 @@ than linking the PR to itself. Closed-unmerged PRs deliberately do not block
 recovery.
 
 Before publishing, `CreatePullRequestActivity` locks the source issue and
-checks this same durable open-PR association. A second branch cannot turn an
-existing implementation PR into a successful result: the duplicate activity
-stops non-retryably with the existing PR identified in its reason. Holding the
-source issue lock across the final GitHub creation call serializes concurrent
-attempts for that source issue.
+checks this same durable open-PR association. It records the returned PR URL
+and number on the originating run before releasing that lock, even though
+terminal completion occurs later. A second branch reconciles this reservation
+against GitHub and cannot turn the existing implementation PR into a
+successful result: the duplicate activity stops non-retryably with the
+existing PR identified in its reason.
 
 ## Fair-stride impact
 

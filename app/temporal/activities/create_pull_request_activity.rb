@@ -228,19 +228,23 @@ module Activities
     def create_pull_request_for_source_issue(client, project, agent_run, issue, pr_body)
       return create_pull_request(client, project, agent_run, issue, pr_body) unless issue
 
-      source_issue(issue).with_lock do
-        reconcile_missing_source_pull_requests!(client, project, source_issue(issue))
-        existing = source_issue(issue).associated_paid_pull_request
+      source = source_issue(issue)
+      source.with_lock do
+        reconcile_missing_source_pull_requests!(client, project, source)
+        existing = source.associated_paid_pull_request
         raise_existing_implementation_pr!(agent_run, existing) if existing
 
-        create_pull_request(client, project, agent_run, issue, pr_body)
+        pr = create_pull_request(client, project, agent_run, issue, pr_body)
+        reserve_pull_request!(agent_run, pr)
+        pr
       end
     end
 
-    # A completed run may know a PR number while GitHub sync has not created
-    # its local Issue row. Reconcile that authoritative remote record before
-    # allowing a second branch to publish; a transient lookup failure raises
-    # and is retried rather than becoming permission to duplicate work.
+    # A run reserves its PR number before releasing the source issue lock, but
+    # GitHub sync may not yet have created its local Issue row. Reconcile that
+    # authoritative remote record before allowing a second branch to publish;
+    # a transient lookup failure raises and is retried rather than becoming
+    # permission to duplicate work.
     def reconcile_missing_source_pull_requests!(client, project, source_issue)
       missing_pull_request_numbers(project, source_issue).each do |number|
         client.pull_request(project.full_name, number)
@@ -252,7 +256,7 @@ module Activities
     end
 
     def missing_pull_request_numbers(project, source_issue)
-      produced_numbers = source_issue.agent_runs.where(status: "completed", goal: "create_pr")
+      produced_numbers = source_issue.agent_runs.where(goal: "create_pr")
         .where.not(pull_request_number: nil).pluck(:pull_request_number)
       synced_numbers = project.issues.pull_requests_only.where(github_number: produced_numbers).pluck(:github_number)
       produced_numbers - synced_numbers
@@ -271,6 +275,15 @@ module Activities
         body: pr_body.fetch(:body),
         draft: true
       )
+    end
+
+    # Persist the remote PR identity while holding the source lock. Completion
+    # runs after that lock is released, so the reservation closes the interval
+    # in which a concurrent branch would otherwise see neither a completed run
+    # nor a synced PR record.
+    # @spec EAGER-QUEUE-010
+    def reserve_pull_request!(agent_run, pr)
+      agent_run.update!(pull_request_url: pr.html_url, pull_request_number: pr.number)
     end
 
     def raise_existing_implementation_pr!(agent_run, pull_request)
