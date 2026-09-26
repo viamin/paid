@@ -21,7 +21,7 @@ module AppleVerificationAttempts
       return attempt if attempt.terminal?
 
       validate_result!
-      destroy_successful_vm
+      lock_down_vm
       attempt.update!(status:, failure_classification:, finished_at: clock.current)
       revocation_service.call
       WorkerHealth.new(profile: attempt.apple_worker_profile).record_success if status == "succeeded"
@@ -33,7 +33,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :attempt, :status, :failure_classification, :lifecycle, :clock
+    attr_reader :attempt, :status, :failure_classification, :clock
 
     def validate_result!
       raise ArgumentError, "terminal status is required" unless AppleVerificationAttempt::TERMINAL_STATES.include?(status)
@@ -46,10 +46,10 @@ module AppleVerificationAttempts
     # Best-effort: a refused or unreachable destroy must never block the
     # terminal-state record or credential revocation. The structured warning
     # lets reconciliation converge the VM later (APPLE-ATTEMPT-014).
-    def destroy_successful_vm
-      return unless status == "succeeded" && lifecycle
+    def lock_down_vm
+      return unless lifecycle
 
-      lifecycle.destroy(attempt:, request_id: "attempt:destroy:#{attempt.id}")
+      status == "succeeded" ? destroy_vm : stop_vm
     rescue AppleVerification::HostService::AuthenticationError,
            AppleVerification::HostService::UnsupportedRequestError,
            AppleVerification::HostService::UnsafeRequestError,
@@ -60,6 +60,18 @@ module AppleVerificationAttempts
         error_class: error.class.name,
         error: error.message
       )
+    end
+
+    def destroy_vm
+      lifecycle.destroy(attempt:, request_id: "attempt:destroy:#{attempt.id}")
+    end
+
+    def stop_vm
+      lifecycle.stop(attempt:, request_id: "attempt:stop:#{attempt.id}")
+    end
+
+    def lifecycle
+      @lifecycle ||= AppleVerification::Lifecycle.from_environment
     end
 
     def revocation_service

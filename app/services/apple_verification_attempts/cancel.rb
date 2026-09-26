@@ -31,7 +31,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :attempt, :lifecycle, :outcome, :clock
+    attr_reader :attempt, :outcome, :clock
 
     # Best-effort: the stop request must never block the terminal-state
     # record or credential revocation. When the host service refuses or
@@ -52,6 +52,10 @@ module AppleVerificationAttempts
         error_class: error.class.name,
         error: error.message
       )
+    end
+
+    def lifecycle
+      @lifecycle ||= AppleVerification::Lifecycle.from_environment
     end
 
     def cancel_queued_attempt

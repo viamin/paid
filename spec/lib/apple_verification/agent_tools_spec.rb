@@ -393,6 +393,27 @@ RSpec.describe AppleVerification::AgentTools do
   end
 
   describe ".stop_apple_verification" do
+    # @spec APPLE-RESULT-006
+    it "stops the running VM through the discovered lifecycle" do
+      revision = draft_revision
+      attempt = create(
+        :apple_verification_attempt,
+        project:,
+        agent_run:,
+        apple_verification_workflow_revision: revision,
+        apple_worker_profile: revision.apple_worker_profile,
+        lifecycle_gate: revision.lifecycle_gate,
+        status: "running"
+      )
+      lifecycle = instance_double(AppleVerification::Lifecycle)
+      allow(AppleVerification::Lifecycle).to receive(:from_environment).and_return(lifecycle)
+      allow(lifecycle).to receive(:stop).and_return(:stopped)
+
+      described_class.stop_apple_verification(project:, agent_run:, attempt_id: attempt.id)
+
+      expect(lifecycle).to have_received(:stop).with(attempt:, request_id: "attempt:stop:#{attempt.id}")
+    end
+
     it "cancels the run's own active attempt" do
       revision = draft_revision
       attempt = create(

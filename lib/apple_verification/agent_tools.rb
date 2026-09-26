@@ -82,6 +82,7 @@ module AppleVerification
         attempt = project.apple_verification_attempts.find_by(id: attempt_id)
         raise AuthorityError, "attempt not found for this project" if attempt.nil?
         raise AuthorityError, "attempt belongs to a different agent run" unless attempt.agent_run_id == agent_run.id
+        raise ArgumentError, "attempt is no longer active" if attempt.terminal?
 
         AppleVerificationAttempts::Cancel.call(attempt: attempt)
         { "status" => "cancelled", "attempt_id" => attempt.id }
