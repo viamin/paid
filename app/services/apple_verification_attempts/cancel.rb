@@ -7,6 +7,7 @@ module AppleVerificationAttempts
   # in-flight attempt cannot leave a running verification VM behind.
   # @spec APPLE-VERIFY-006
   # @spec APPLE-ATTEMPT-014
+  # @spec APPLE-ATTEMPT-009
   class Cancel
     LIVE_VM_STATUSES = %w[provisioning active cleanup_pending cleanup_failed orphaned].freeze
 
@@ -22,7 +23,11 @@ module AppleVerificationAttempts
       @attempt.with_lock do
         raise ArgumentError, "attempt is no longer active" unless @attempt.cancellable?
 
-        AppleVerificationAttempts::Complete.call(attempt: @attempt, outcome: "cancelled")
+        AppleVerificationAttempts::Complete.call(
+          attempt: @attempt,
+          outcome: "cancelled",
+          failure_classification: "cancellation_or_timeout"
+        )
         converge_vm_ledger!
       end
     end

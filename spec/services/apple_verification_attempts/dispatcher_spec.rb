@@ -21,7 +21,13 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     )
   end
   let(:capacity_sampler) { ->(_attempt) { snapshot } }
-  let(:lifecycle) { instance_double(AppleVerification::Lifecycle, provision: instance_double(ExecutionRunners::RunnerHandle)) }
+  let(:lifecycle) do
+    instance_double(
+      AppleVerification::Lifecycle,
+      provision: instance_double(ExecutionRunners::RunnerHandle),
+      stop: :stopped
+    )
+  end
 
   before { FeatureFlags.enable!(:apple_verification_workers, project:) }
 
