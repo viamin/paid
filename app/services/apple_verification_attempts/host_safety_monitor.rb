@@ -4,9 +4,13 @@ module AppleVerificationAttempts
   # Stops every active verification attempt when the host is no longer safe to
   # run them: the readiness payload reports sustained critical memory pressure
   # or exhausted host disk. Each affected attempt is completed as
-  # `unavailable`/`worker_infrastructure`, driving VM revocation through
-  # `AppleVerificationAttempts::Complete`. Idempotent: a completed attempt is
-  # terminal, so a rerun finds none.
+  # `unavailable`/`worker_infrastructure`; the completion drives the real
+  # host-side destroy through the lifecycle boundary first (retaining the VM
+  # only when that destroy fails) so a host-safety violation actually relieves
+  # the memory/disk pressure rather than leaving the VM running for the
+  # failure-retention window. The status is rechecked under the attempt lock
+  # before completing so a concurrent cancellation is not overwritten.
+  # Idempotent: a completed attempt is terminal, so a rerun finds none.
   # @spec APPLE-ATTEMPT-002
   class HostSafetyMonitor
     ACTIVE_STATUSES = %w[provisioning running].freeze
@@ -36,8 +40,7 @@ module AppleVerificationAttempts
 
       AppleVerificationAttempt.where(status: ACTIVE_STATUSES).find_each do |attempt|
         scanned += 1
-        complete.call(attempt:, outcome: "unavailable", failure_classification: "worker_infrastructure")
-        terminated += 1
+        terminated += 1 if terminate?(attempt)
       end
 
       Result.new(terminated:, scanned:)
@@ -49,6 +52,26 @@ module AppleVerificationAttempts
 
     def active_attempts?
       AppleVerificationAttempt.where(status: ACTIVE_STATUSES).exists?
+    end
+
+    def terminate?(attempt)
+      attempt.with_lock do
+        attempt.reload
+        terminate_locked_attempt?(attempt)
+      end
+    end
+
+    def terminate_locked_attempt?(attempt)
+      return false unless attempt.status.in?(ACTIVE_STATUSES)
+
+      complete.call(
+        attempt: attempt,
+        outcome: "unavailable",
+        failure_classification: "worker_infrastructure",
+        lifecycle: lifecycle,
+        terminate_vm: true
+      )
+      true
     end
   end
 end

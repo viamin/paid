@@ -43,4 +43,34 @@ RSpec.describe AppleVerificationAttempts::HostCapacity do
 
     expect(sampler.call(attempt:).critical_memory_samples).to eq(0)
   end
+
+  it "returns nil when the readiness payload is missing the memory field" do
+    allow(host).to receive(:call).and_return("disk" => { "free_gib" => 100 })
+
+    expect(described_class.new(host:, token: "test-token", cache:).call(attempt:)).to be_nil
+  end
+
+  it "returns nil when the readiness payload is missing the disk field" do
+    allow(host).to receive(:call).and_return("memory" => { "free_percent" => 50, "pressure" => "nominal" })
+
+    expect(described_class.new(host:, token: "test-token", cache:).call(attempt:)).to be_nil
+  end
+
+  it "returns nil when the readiness payload is not an object" do
+    allow(host).to receive(:call).and_return(%w[unexpected])
+
+    expect(described_class.new(host:, token: "test-token", cache:).call(attempt:)).to be_nil
+  end
+
+  it "returns a nil host-safety snapshot when the readiness payload is missing the disk field" do
+    allow(host).to receive(:call).and_return("memory" => { "pressure" => "nominal" })
+
+    expect(described_class.new(host:, token: "test-token", cache:).host_safety_snapshot).to be_nil
+  end
+
+  it "returns a nil host-safety snapshot when the readiness payload is not an object" do
+    allow(host).to receive(:call).and_return("unexpected")
+
+    expect(described_class.new(host:, token: "test-token", cache:).host_safety_snapshot).to be_nil
+  end
 end

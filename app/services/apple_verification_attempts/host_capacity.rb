@@ -37,7 +37,7 @@ module AppleVerificationAttempts
     def host_safety_snapshot
       readiness = readiness_payload
       Snapshot.new(
-        capacity: { free_host_disk_gib: numeric!(readiness.fetch("disk").fetch("free_gib")) },
+        capacity: { free_host_disk_gib: numeric!(readiness_value(readiness, "disk", "free_gib")) },
         critical_memory_samples: critical_memory_samples(readiness)
       )
     rescue AppleVerification::HostService::AuthenticationError, AppleVerification::HostService::UnsupportedRequestError, Faraday::Error => error
@@ -54,13 +54,24 @@ module AppleVerificationAttempts
     end
 
     def capacity(readiness, attempt)
-      memory = readiness.fetch("memory")
-      disk = readiness.fetch("disk")
+      memory = readiness_value(readiness, "memory")
+      disk = readiness_value(readiness, "disk")
       {
-        free_host_disk_gib: numeric!(disk.fetch("free_gib")),
-        free_memory_percent: numeric!(memory.fetch("free_percent")),
+        free_host_disk_gib: numeric!(readiness_value(disk, "free_gib")),
+        free_memory_percent: numeric!(readiness_value(memory, "free_percent")),
         free_guest_disk_gib: guest_disk_gib(attempt)
       }
+    end
+
+    # Fetches a nested readiness field, normalizing a malformed payload (a
+    # missing key, or a non-object container such as a JSON array/string) to
+    # the same +UnsupportedRequestError+ the sampling methods already treat
+    # as "capacity unavailable", so a malformed host response pauses
+    # admission instead of crashing the scheduled job.
+    def readiness_value(readiness, *keys)
+      keys.reduce(readiness) { |value, key| value.fetch(key) }
+    rescue KeyError, TypeError, NoMethodError
+      raise AppleVerification::HostService::UnsupportedRequestError, "host readiness payload is malformed"
     end
 
     def guest_disk_gib(attempt)
