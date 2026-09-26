@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_26_055834) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -417,6 +417,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
 
   create_table "apple_verification_attempts", comment: "Apple verification attempt lifecycle and source provenance.", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.datetime "admission_reserved_at", comment: "Time the scheduler reserved the Apple worker slot for this attempt."
     t.bigint "agent_run_id"
     t.bigint "apple_verification_workflow_revision_id", null: false
     t.bigint "apple_worker_profile_id", null: false
@@ -428,6 +429,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
     t.datetime "finished_at"
     t.string "lifecycle_gate", null: false
     t.bigint "project_id", null: false
+    t.datetime "queue_entered_at", comment: "Time an Apple verification attempt entered the fair admission queue."
     t.string "requested_capture", comment: "Declared capture selected for this attempt; null for full workflow verification."
     t.integer "retry_number", default: 0, null: false
     t.bigint "retry_of_attempt_id", comment: "Terminal attempt this queued retry reruns."
@@ -445,6 +447,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
     t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
     t.index ["retry_of_attempt_id"], name: "idx_apple_attempts_one_retry_per_source", unique: true
+    t.index ["status", "queue_entered_at", "id"], name: "idx_apple_attempts_fair_queue"
     t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_attempts_gate"
     t.check_constraint "retry_number >= 0", name: "chk_apple_attempts_retry_nonnegative"
     t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'provisioning'::character varying::text, 'running'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'unavailable'::character varying::text])", name: "chk_apple_attempts_status"
@@ -494,6 +497,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
     t.index ["created_by_id"], name: "index_apple_verification_waivers_on_created_by_id"
     t.index ["project_id"], name: "index_apple_verification_waivers_on_project_id"
     t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_waivers_gate"
+  end
+
+  create_table "apple_verification_worker_healths", comment: "Persistent scheduling health and quarantine state for Apple verification workers.", force: :cascade do |t|
+    t.bigint "apple_worker_profile_id", null: false, comment: "Worker profile whose scheduler health this row tracks."
+    t.integer "consecutive_failures", default: 0, null: false, comment: "Consecutive infrastructure health failures observed by the scheduler."
+    t.datetime "created_at", null: false
+    t.datetime "isolation_smoke_tested_at", comment: "Passing isolation smoke-test time required before return to service."
+    t.datetime "quarantined_at", comment: "Time admission was stopped for repeated health failures."
+    t.string "status", default: "healthy", null: false, comment: "healthy or quarantined; quarantined workers cannot receive new attempts."
+    t.datetime "updated_at", null: false
+    t.index ["apple_worker_profile_id"], name: "idx_on_apple_worker_profile_id_35bb856a13", unique: true
+    t.check_constraint "consecutive_failures >= 0", name: "chk_apple_worker_health_failures"
+    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying, 'quarantined'::character varying]::text[])", name: "chk_apple_worker_health_status"
   end
 
   create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
@@ -730,9 +746,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
     t.datetime "updated_at", null: false
     t.string "workspace_volume"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
-    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
+    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
@@ -3774,6 +3790,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_155014) do
   add_foreign_key "apple_verification_waivers", "apple_verification_workflow_revisions"
   add_foreign_key "apple_verification_waivers", "projects"
   add_foreign_key "apple_verification_waivers", "users", column: "created_by_id"
+  add_foreign_key "apple_verification_worker_healths", "apple_worker_profiles"
   add_foreign_key "apple_verification_workflow_revisions", "accounts"
   add_foreign_key "apple_verification_workflow_revisions", "apple_worker_profiles"
   add_foreign_key "apple_verification_workflow_revisions", "projects"
