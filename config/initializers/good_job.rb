@@ -188,11 +188,6 @@ Rails.application.configure do
       class: "AppleVerificationBundleRetentionSweepJob",
       description: "Delete expired Apple verification bundles and VMs"
     },
-    apple_verification_attempt_scheduler: {
-      cron: "3-59/5 * * * *",
-      class: "AppleVerificationAttemptSchedulerJob",
-      description: "Admit and provision the next queued Apple verification attempt"
-    },
     container_pool_replenishment: {
       cron: "4-59/5 * * * *",
       class: "PoolReplenishmentJob",

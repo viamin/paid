@@ -34,8 +34,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     attempt = provisioning_attempt
     lifecycle = instance_double(AppleVerification::Lifecycle)
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
-    allow(lifecycle).to receive(:provision)
-    allow(lifecycle).to receive(:destroy)
+    allow(lifecycle).to receive_messages(provision: provisioned_handle, destroy: :destroyed)
     allow(guest_job).to receive(:call)
 
     described_class.new(lifecycle:, guest_job:).call(attempt)
@@ -50,7 +49,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     lifecycle = instance_double(AppleVerification::Lifecycle)
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
     completion = class_double(AppleVerificationAttempts::Complete)
-    allow(lifecycle).to receive(:provision)
+    allow(lifecycle).to receive(:provision).and_return(provisioned_handle)
     allow(guest_job).to receive(:call).and_raise(AppleVerification::GuestConnection::DispatchError, "executor unreachable")
     allow(completion).to receive(:call)
 

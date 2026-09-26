@@ -17,7 +17,7 @@ module AppleVerificationAttempts
 
       handle = provision_vm(attempt)
       dispatch_guest_job(attempt, handle:)
-      attempt.update!(status: "running", started_at: attempt.started_at || clock.current)
+      attempt.update!(status: "running", started_at: attempt.started_at || Time.current)
       complete_guest_result(attempt)
     end
 
@@ -33,8 +33,8 @@ module AppleVerificationAttempts
         request_id: "apple-verification-attempt:#{attempt.id}:provision",
         apple_verification_attempt: attempt
       )
-    rescue Faraday::Error, Timeout::Error
-      WorkerHealth.new(profile: attempt.apple_worker_profile).record_failure
+    rescue Faraday::Error, Timeout::Error => error
+      WorkerHealth.record_failure!(profile: attempt.apple_worker_profile, reason: error.class.name)
       raise
     end
 

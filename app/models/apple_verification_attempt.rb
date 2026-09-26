@@ -58,7 +58,7 @@ class AppleVerificationAttempt < ApplicationRecord
   end
 
   def queue_position
-    AppleVerificationAttempts::Queue.new.position(self)
+    AppleVerificationAttempts::Queue.position(attempt: self)
   end
 
   private
