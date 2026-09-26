@@ -16,6 +16,17 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     expect(pull_request.reload.parent_issue_id).to eq(source.id)
   end
 
+  it "repairs an unlinked PR from a failed producer that recorded its publication" do # @spec EAGER-QUEUE-009
+    source = create(:issue, project: project)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42, parent_issue_id: nil)
+    create(:agent_run, :failed, project: project, issue: source,
+      goal: "create_pr", pull_request_number: 42)
+
+    described_class.call(pull_request)
+
+    expect(pull_request.reload.parent_issue_id).to eq(source.id)
+  end
+
   it "does not guess when historical producer records conflict" do # @spec EAGER-QUEUE-009
     first_source = create(:issue, project: project)
     second_source = create(:issue, project: project)

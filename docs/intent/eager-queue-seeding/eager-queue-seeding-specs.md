@@ -84,11 +84,12 @@
 
 ## Duplicate-PR prevention
 
-- [x] **EAGER-QUEUE-009** — When a project issue has a completed `create_pr`
-  run that recorded a `pull_request_number`, the system SHALL exclude that
-  issue from queue seeding and dequeue when its locally synced PR row is open
-  or merged, even if the PR row is missing `parent_issue_id` and the sync grace
-  period has elapsed. A locally synced closed-unmerged PR SHALL lift the
+- [x] **EAGER-QUEUE-009** — When a project issue has a `create_pr` run that
+  recorded a `pull_request_number` and either completed or failed after PR
+  publication, the system SHALL exclude that issue from queue seeding and
+  dequeue when its locally synced PR row is open or merged, even if the PR row
+  is missing `parent_issue_id` and the sync grace period has elapsed. A locally
+  synced closed-unmerged PR SHALL lift the
   exclusion. When no local PR row exists, `PR_SYNC_GRACE_PERIOD` SHALL protect
   the sync gap; a path reaching PR publication SHALL reconcile and recheck the
   source issue rather than using elapsed time as authority to publish another

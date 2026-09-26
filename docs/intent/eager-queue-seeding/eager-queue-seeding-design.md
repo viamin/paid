@@ -87,10 +87,10 @@ delay.
 
 ## Duplicate-PR prevention (#3432, #4039)
 
-`DefaultCandidateSource.eligible_scope` excludes an issue whose most recent
-completed `create_pr` run already recorded `pull_request_number`, unless the
-local, synced PR `Issue` row proves that PR closed without merging. This
-covers two related situations:
+`DefaultCandidateSource.eligible_scope` excludes an issue whose `create_pr`
+run already recorded `pull_request_number` and either completed or failed after
+PR publication, unless the local, synced PR `Issue` row proves that PR closed
+without merging. This covers two related situations:
 
 - **Synced open PR** — `Issue.open_pull_request_parent_issue_ids` already
   excludes issues with a synced, open, `parent_issue_id`-linked PR row.
@@ -112,8 +112,9 @@ A synced, closed-unmerged PR row always lifts the exclusion immediately
 (no need to wait out the grace window), so legitimate replacement runs after
 an abandoned or rejected PR are not delayed.
 
-The durable originating-run relationship is also authoritative: a completed
-`create_pr` run's `(project_id, issue_id, pull_request_number)` identifies its
+The durable originating-run relationship is also authoritative: a `create_pr`
+run that completed or failed after PR publication has a
+`(project_id, issue_id, pull_request_number)` that identifies its
 locally synced PR row even if that row is missing `parent_issue_id`. An open or
 merged PR found through that relationship blocks the source issue indefinitely;
 a closed-unmerged PR explicitly permits recovery. GitHub sync reconciles the

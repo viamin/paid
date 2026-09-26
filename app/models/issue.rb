@@ -621,7 +621,7 @@ class Issue < ApplicationRecord
   # This remains valid while GitHub sync repairs a missing parent link.
   def self.paid_generated_pull_request_source_issue_ids(project:, github_state:, pr_review_phase: nil) # @spec EAGER-QUEUE-009
     runs = project.agent_runs
-      .where(goal: "create_pr", status: "completed")
+      .where(goal: "create_pr", status: %w[completed failed])
       .where.not(issue_id: nil, pull_request_number: nil)
       .joins(:issue)
       .merge(where(is_pull_request: false))

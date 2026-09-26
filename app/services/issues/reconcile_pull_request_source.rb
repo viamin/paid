@@ -32,7 +32,7 @@ module Issues
 
     def unambiguous_source_issue
       source_ids = pull_request.project.agent_runs
-        .where(goal: "create_pr", status: "completed", pull_request_number: pull_request.github_number)
+        .where(goal: "create_pr", status: %w[completed failed], pull_request_number: pull_request.github_number)
         .where.not(issue_id: nil)
         .joins(:issue)
         .merge(Issue.where(is_pull_request: false))
