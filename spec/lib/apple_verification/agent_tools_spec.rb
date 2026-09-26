@@ -228,6 +228,26 @@ RSpec.describe AppleVerification::AgentTools do
       expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
         .to raise_error(AppleVerification::AgentTools::QuotaExceededError, /quota/)
     end
+
+    it "surfaces the queue-depth refusal without persisting the attempt" do
+      draft_revision
+
+      with_env("APPLE_VERIFICATION_MAXIMUM_QUEUE_DEPTH" => "0") do
+        expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
+          .to raise_error(ArgumentError, "Apple verification queue is full")
+      end
+      expect(project.apple_verification_attempts.count).to eq(0)
+    end
+
+    it "surfaces the attempts-per-run refusal without persisting the attempt" do
+      draft_revision
+
+      with_env("APPLE_VERIFICATION_MAXIMUM_ATTEMPTS_PER_RUN" => "0") do
+        expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
+          .to raise_error(ArgumentError, "Apple verification attempt limit reached for agent run")
+      end
+      expect(project.apple_verification_attempts.count).to eq(0)
+    end
   end
 
   describe ".capture_apple_screenshot" do
@@ -450,5 +470,15 @@ RSpec.describe AppleVerification::AgentTools do
       expect { described_class.stop_apple_verification(project:, agent_run:, attempt_id: attempt.id) }
         .to raise_error(ArgumentError, /no longer active/)
     end
+  end
+
+  private
+
+  def with_env(overrides)
+    previous = overrides.keys.to_h { |key| [ key, ENV[key] ] }
+    overrides.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
   end
 end

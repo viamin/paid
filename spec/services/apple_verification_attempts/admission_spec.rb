@@ -35,6 +35,16 @@ RSpec.describe AppleVerificationAttempts::Admission do
     expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "capacity_or_quota")
   end
 
+  it "refuses admission when the projected guest disk alone falls short" do
+    tight_guest = capacity.with(free_host_disk_bytes: 70.gigabytes, free_guest_disk_bytes: 5.gigabytes)
+
+    result = described_class.call(attempt:, capacity: tight_guest)
+
+    expect(result).not_to be_admitted
+    expect(result.reason).to eq("insufficient guest disk")
+    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "capacity_or_quota")
+  end
+
   it "leaves the queued attempt in place while the active worker slot is occupied" do
     create(:apple_verification_attempt, status: "running")
 

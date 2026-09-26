@@ -12,8 +12,10 @@
   minimum free host disk before clone, 25% minimum free system memory, and
   15 GiB minimum free guest disk, and SHALL refuse admission during sustained
   critical memory pressure.
-  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
-  *Code:* `AppleVerificationAttempts::Admission`
+  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`,
+  `spec/services/apple_verification_attempts/host_capacity_spec.rb`
+  *Code:* `AppleVerificationAttempts::Admission`,
+  `AppleVerificationAttempts::HostCapacity`
 
 - [ ] **APPLE-ATTEMPT-002** — While an Apple verification attempt runs, the
   system SHALL recheck host disk and memory thresholds; crossing a normal

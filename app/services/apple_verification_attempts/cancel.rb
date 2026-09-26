@@ -33,10 +33,25 @@ module AppleVerificationAttempts
 
     attr_reader :attempt, :lifecycle, :outcome, :clock
 
+    # Best-effort: the stop request must never block the terminal-state
+    # record or credential revocation. When the host service refuses or
+    # cannot be reached, the structured warning lets reconciliation converge
+    # the VM later (APPLE-ATTEMPT-014) while the timeout/cancellation
+    # classification still lands.
     def stop_vm
       return unless lifecycle
 
       lifecycle.stop(attempt:, request_id: "attempt:stop:#{attempt.id}")
+    rescue AppleVerification::HostService::AuthenticationError,
+           AppleVerification::HostService::UnsupportedRequestError,
+           AppleVerification::HostService::UnsafeRequestError,
+           Faraday::Error => error
+      Rails.logger.warn(
+        message: "apple_verification.attempt_stop_failed",
+        apple_verification_attempt_id: attempt.id,
+        error_class: error.class.name,
+        error: error.message
+      )
     end
 
     def cancel_queued_attempt

@@ -43,10 +43,23 @@ module AppleVerificationAttempts
       raise ArgumentError, "invalid Apple verification failure classification"
     end
 
+    # Best-effort: a refused or unreachable destroy must never block the
+    # terminal-state record or credential revocation. The structured warning
+    # lets reconciliation converge the VM later (APPLE-ATTEMPT-014).
     def destroy_successful_vm
       return unless status == "succeeded" && lifecycle
 
       lifecycle.destroy(attempt:, request_id: "attempt:destroy:#{attempt.id}")
+    rescue AppleVerification::HostService::AuthenticationError,
+           AppleVerification::HostService::UnsupportedRequestError,
+           AppleVerification::HostService::UnsafeRequestError,
+           Faraday::Error => error
+      Rails.logger.warn(
+        message: "apple_verification.attempt_destroy_failed",
+        apple_verification_attempt_id: attempt.id,
+        error_class: error.class.name,
+        error: error.message
+      )
     end
 
     def revocation_service
