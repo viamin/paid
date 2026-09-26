@@ -37,20 +37,17 @@ module AppleVerificationAttempts
     end
 
     def next
-      ordered_attempts.first
+      candidates.first
     end
 
     def position(attempt)
       return nil unless attempt.status == "queued"
 
-      ordered_attempts.index { |candidate| candidate.id == attempt.id }.to_i + 1
+      candidates.index { |candidate| candidate.id == attempt.id }.to_i + 1
     end
 
-    private
-
-    attr_reader :configuration, :clock
-
-    def ordered_attempts
+    # Fair-ordered queued attempts, head first.
+    def candidates
       remaining = AppleVerificationAttempt.where(status: "queued").order(:queue_entered_at, :id).to_a
       ordered = []
       until remaining.empty?
@@ -58,6 +55,10 @@ module AppleVerificationAttempts
       end
       ordered
     end
+
+    private
+
+    attr_reader :configuration, :clock
 
     def enforce_limits!(attempt)
       queued_attempts = AppleVerificationAttempt.where(status: "queued").where.not(id: attempt.id)

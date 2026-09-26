@@ -154,5 +154,10 @@
   quarantine the worker, revoke its active credentials, and stop scheduling
   against it; a quarantined worker SHALL NOT receive work until an operator
   passes the isolation smoke test and explicitly returns it to service.
-  *Tests:* `spec/services/apple_verification_attempts/worker_health_spec.rb`
-  *Code:* `AppleVerificationAttempts::WorkerHealth`
+  Stopping scheduling against a quarantined worker SHALL leave its queued
+  attempts queued while scheduling continues for other workers.
+  *Tests:* `spec/services/apple_verification_attempts/worker_health_spec.rb`,
+  `spec/services/apple_verification_attempts/scheduler_spec.rb`
+  *Code:* `AppleVerificationAttempts::WorkerHealth`,
+  `AppleVerificationAttempts::Admission` (quarantine deferral),
+  `AppleVerificationAttempts::Scheduler` (skips quarantined queue heads)

@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Claims one fair queue entry and hands it to the caller's guest lifecycle.
+  # Claims the first admissible fair queue entry and hands it to the caller's
+  # guest lifecycle. Quarantine is per worker: a quarantined worker's attempt
+  # stays queued while later candidates are considered, so one quarantined
+  # profile stops receiving work without stalling every other profile.
   # @spec APPLE-ATTEMPT-003
+  # @spec APPLE-ATTEMPT-015
   class Scheduler
     def self.call(...)
       new(...).call
@@ -16,16 +20,26 @@ module AppleVerificationAttempts
     end
 
     def call
-      attempt = queue.next
-      return unless attempt
+      candidates = queue.candidates
+      return if candidates.empty?
 
-      result = Admission.call(attempt:, capacity: capacity.call, configuration:)
-      dispatcher.call(attempt) if result.admitted?
+      snapshot = capacity.call
+      result = nil
+      candidates.each do |attempt|
+        result = admit(attempt, snapshot)
+        return result unless result.worker_quarantined?
+      end
       result
     end
 
     private
 
     attr_reader :capacity, :dispatcher, :queue, :configuration
+
+    def admit(attempt, snapshot)
+      result = Admission.call(attempt:, capacity: snapshot, configuration:)
+      dispatcher.call(attempt) if result.admitted?
+      result
+    end
   end
 end

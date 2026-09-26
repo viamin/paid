@@ -4,9 +4,11 @@ module AppleVerificationAttempts
   # Serializes admission and turns capacity refusal into an infrastructure result.
   # @spec APPLE-ATTEMPT-001
   # @spec APPLE-ATTEMPT-005
+  # @spec APPLE-ATTEMPT-015
   class Admission
     ACTIVE_STATES = %w[provisioning running].freeze
     ADVISORY_LOCK_ID = 68_393_601
+    QUARANTINE_REASON = "worker is quarantined"
 
     Result = Data.define(:status, :attempt, :reason) do
       def admitted?
@@ -15,6 +17,12 @@ module AppleVerificationAttempts
 
       def deferred?
         status == :deferred
+      end
+
+      # Quarantine is scoped to one worker, so callers may skip this attempt
+      # and admit later candidates; other deferrals are queue-wide.
+      def worker_quarantined?
+        status == :deferred && reason == QUARANTINE_REASON
       end
     end
 
@@ -65,7 +73,7 @@ module AppleVerificationAttempts
     end
 
     def deferral_reason
-      return "worker is quarantined" if worker_health.quarantined?
+      return QUARANTINE_REASON if worker_health.quarantined?
 
       "active VM limit reached" if active_attempts >= configuration.active_vm_limit
     end
