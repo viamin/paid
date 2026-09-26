@@ -10,10 +10,11 @@ module AppleVerificationAttempts
       new(...).call
     end
 
-    def initialize(attempt:, lifecycle: nil, revocation: nil, outcome: "cancelled", clock: Time)
+    def initialize(attempt:, lifecycle: nil, revocation: nil, configuration: Configuration.new, outcome: "cancelled", clock: Time)
       @attempt = attempt
       @lifecycle = lifecycle
       @revocation = revocation
+      @configuration = configuration
       @outcome = outcome
       @clock = clock
     end
@@ -31,7 +32,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :attempt, :outcome, :clock
+    attr_reader :attempt, :configuration, :outcome, :clock
 
     # Best-effort: the stop request must never block the terminal-state
     # record or credential revocation. When the host service refuses or
@@ -64,7 +65,10 @@ module AppleVerificationAttempts
     end
 
     def revocation_service
-      @revocation ||= AppleVerification::Revocation::Enforce.new(attempt:)
+      @revocation ||= AppleVerification::Revocation::Enforce.new(
+        attempt:,
+        failed_vm_retention: configuration.failed_vm_retention
+      )
     end
   end
 end

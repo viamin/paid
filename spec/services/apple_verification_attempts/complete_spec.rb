@@ -52,6 +52,20 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(attempt.reload.status).to eq("failed")
   end
 
+  it "applies the configured failed-VM retention duration" do
+    attempt = create(:apple_verification_attempt, status: "running")
+    configuration = AppleVerificationAttempts::Configuration.new(failed_vm_retention: 5.minutes)
+
+    described_class.call(
+      attempt:,
+      status: "failed",
+      failure_classification: "test_assertion",
+      configuration:
+    )
+
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(5.minutes.from_now)
+  end
+
   it "rejects an invalid failure classification" do
     attempt = create(:apple_verification_attempt, status: "running")
 

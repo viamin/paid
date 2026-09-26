@@ -29,7 +29,7 @@ module AppleVerificationAttempts
     end
 
     def timeout(attempt)
-      cancellation.call(attempt:, outcome: "timed_out", lifecycle:, clock:)
+      cancellation.call(attempt:, configuration:, outcome: "timed_out", lifecycle:, clock:)
     end
   end
 end

@@ -8,12 +8,13 @@ module AppleVerificationAttempts
       new(...).call
     end
 
-    def initialize(attempt:, status:, failure_classification: nil, lifecycle: nil, revocation: nil, clock: Time)
+    def initialize(attempt:, status:, failure_classification: nil, lifecycle: nil, revocation: nil, configuration: Configuration.new, clock: Time)
       @attempt = attempt
       @status = status
       @failure_classification = failure_classification
       @lifecycle = lifecycle
       @revocation = revocation
+      @configuration = configuration
       @clock = clock
     end
 
@@ -33,7 +34,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :attempt, :status, :failure_classification, :clock
+    attr_reader :attempt, :status, :failure_classification, :configuration, :clock
 
     def validate_result!
       raise ArgumentError, "terminal status is required" unless AppleVerificationAttempt::TERMINAL_STATES.include?(status)
@@ -75,7 +76,10 @@ module AppleVerificationAttempts
     end
 
     def revocation_service
-      @revocation ||= AppleVerification::Revocation::Enforce.new(attempt:)
+      @revocation ||= AppleVerification::Revocation::Enforce.new(
+        attempt:,
+        failed_vm_retention: configuration.failed_vm_retention
+      )
     end
   end
 end
