@@ -56,6 +56,20 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(credential_lane).to have_received(:revoke!)
   end
 
+  it "uses the supplied outcome before the terminal status is persisted" do
+    expect {
+      described_class.call(
+        attempt: attempt,
+        outcome: "failed",
+        credential_lane: credential_lane,
+        failed_vm_retention_hours: 1
+      )
+    }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count }.by(1)
+
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+    expect(credential_lane).to have_received(:revoke!)
+  end
+
   it "leaves bundle_retained_until nil for a committed failed attempt" do
     committed = create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
     committed.update!(status: "failed", finished_at: Time.current)
