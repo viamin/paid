@@ -109,7 +109,7 @@ module Admin
       # credentials, and the bare `code` key is filtered from Rails request
       # logs — it is safe to read from the query string in this context.
       def oauth_callback_code
-        # lgtm[rb/sensitive-get-query]
+        # codeql[rb/sensitive-get-query]
         request.query_parameters[:code].to_s
       end
 
