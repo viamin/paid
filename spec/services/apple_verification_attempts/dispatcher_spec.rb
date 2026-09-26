@@ -87,6 +87,16 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     )
   end
 
+  it "converges an unexpected provision error to unavailable" do
+    attempt = queued_attempt
+    allow(lifecycle).to receive(:provision).and_raise(KeyError, "missing vm_id")
+
+    dispatch
+
+    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "worker_infrastructure")
+    expect(revision.apple_worker_profile.reload.consecutive_health_failures).to eq(1)
+  end
+
   it "quarantines a worker after repeated provisioning failures" do
     attempts = [ queued_attempt ]
     2.times { attempts << queued_attempt(agent_run: create(:agent_run, :running, project:)) }

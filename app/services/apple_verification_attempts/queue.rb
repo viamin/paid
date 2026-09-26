@@ -24,7 +24,7 @@ module AppleVerificationAttempts
     end
 
     def self.depth
-      ordered.count
+      AppleVerificationAttempt.where(status: "queued").count
     end
 
     def self.full?

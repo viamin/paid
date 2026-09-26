@@ -86,10 +86,17 @@ module AppleVerificationAttempts
       WorkerHealth.record_success!(profile: attempt.apple_worker_profile)
       attempt.update!(status: "running", started_at: Time.current)
       :started
-    rescue AppleVerification::HostService::AuthenticationError,
-      AppleVerification::HostService::UnsupportedRequestError,
-      Faraday::Error => error
+    # Lifecycle#provision rescues-and-re-raises ANY StandardError; a non-listed
+    # error would otherwise strand the attempt in `provisioning`. Converge every
+    # provision error to unavailable/worker_infrastructure while logging loudly.
+    rescue StandardError => error
       WorkerHealth.record_failure!(profile: attempt.apple_worker_profile, reason: error.class.name)
+      Rails.logger.error(
+        message: "apple_verification.dispatch.provision_failed",
+        attempt_id: attempt.id,
+        error_class: error.class.name,
+        error: error.message
+      )
       return :rejected if attempt.reload.terminal?
 
       complete.call(attempt:, outcome: "unavailable", failure_classification: "worker_infrastructure", lifecycle:)

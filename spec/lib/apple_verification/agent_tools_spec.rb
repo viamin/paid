@@ -228,6 +228,14 @@ RSpec.describe AppleVerification::AgentTools do
       expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
         .to raise_error(AppleVerification::AgentTools::QuotaExceededError, /quota/)
     end
+
+    it "raises when the verification queue is at capacity" do
+      draft_revision
+      allow(AppleVerificationAttempts::Queue).to receive(:full?).and_return(true)
+
+      expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
+        .to raise_error(AppleVerification::AgentTools::QueueCapacityExceededError)
+    end
   end
 
   describe ".capture_apple_screenshot" do
