@@ -178,16 +178,21 @@ module Activities
       issue.with_lock do
         reconciled_existing_implementation_pr(client, project, issue, agent_run)
       end
-    rescue GithubClient::NotFoundError
-      nil
     end
 
     def reconciled_existing_implementation_pr(client, project, issue, agent_run)
       produced_pr_numbers(issue, agent_run).each do |pr_number|
-          github_issue = client.issue(project.full_name, pr_number)
-          Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+        sync_produced_pull_request(client, project, pr_number)
       end
       issue.reload.associated_paid_pull_request
+    end
+
+    def sync_produced_pull_request(client, project, pr_number)
+      github_issue = client.issue(project.full_name, pr_number)
+      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+    rescue GithubClient::NotFoundError
+      # A deleted PR must not prevent reconciliation of later producer records.
+      nil
     end
 
     def produced_pr_numbers(issue, agent_run)

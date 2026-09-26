@@ -212,6 +212,25 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.error_message).to include("Existing open implementation PR #42")
     end
 
+    it "continues reconciliation after a recorded implementation PR was deleted" do # @spec EAGER-QUEUE-009
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", pull_request_number: 41,
+        pull_request_url: "https://github.com/owner/repo/pull/41")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", pull_request_number: 42,
+        pull_request_url: "https://github.com/owner/repo/pull/42")
+
+      allow(github_client).to receive(:issue).with(project.full_name, 41)
+        .and_raise(GithubClient::NotFoundError.new("Not Found"))
+      allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(issue_response)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result).to include(skipped: true, duplicate_implementation_pr: true)
+      expect(github_client).not_to have_received(:create_pull_request)
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
     it "ignores failed producer runs without a pull request number when reconciling an implementation PR" do # @spec EAGER-QUEUE-009
       create(:agent_run, :failed, :automatic, project: project, issue: issue, goal: "create_pr")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
