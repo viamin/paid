@@ -126,4 +126,16 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(described_class.call(run)).to be false
     expect(run.reload.status).to eq("queued")
   end
+
+  it "cancels a queued run when a completed source run has an open unlinked PR after the grace window" do # @spec EAGER-QUEUE-009
+    issue = create(:issue, project: project, github_state: "open", paid_state: "completed")
+    create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+      pull_request_number: 42,
+      completed_at: Automation::Strategies::AutoPick::DefaultCandidateSource::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+    create(:issue, :pull_request, project: project, github_number: 42, github_state: "open", parent_issue_id: nil)
+    run = queued_auto_pick_run(issue: issue)
+
+    expect(described_class.call(run)).to be true
+    expect(run.reload.status).to eq("cancelled")
+  end
 end
