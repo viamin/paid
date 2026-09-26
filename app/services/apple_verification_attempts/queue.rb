@@ -14,10 +14,10 @@ module AppleVerificationAttempts
     end
 
     def call(attempt:)
-      enqueue(attempt)
+      enqueue(attempt:)
     end
 
-    def enqueue(attempt)
+    def enqueue(attempt:)
       attempt.with_lock do
         return attempt unless attempt.status == "queued"
 
@@ -60,7 +60,8 @@ module AppleVerificationAttempts
     end
 
     def enforce_limits!(attempt)
-      raise ArgumentError, "Apple verification queue is full" if AppleVerificationAttempt.where(status: "queued").count >= configuration.maximum_queue_depth
+      queued_attempts = AppleVerificationAttempt.where(status: "queued").where.not(id: attempt.id)
+      raise ArgumentError, "Apple verification queue is full" if queued_attempts.count >= configuration.maximum_queue_depth
       return unless attempt.agent_run_id
 
       attempts = AppleVerificationAttempt.where(agent_run_id: attempt.agent_run_id).where.not(id: attempt.id).count

@@ -177,7 +177,7 @@ module AppleVerification
       end
 
       def create_attempt(project:, agent_run:, request:, requested_capture: nil)
-        project.apple_verification_attempts.create!(
+        attempt = project.apple_verification_attempts.create!(
           account: project.account,
           agent_run: agent_run,
           apple_verification_workflow_revision: request.revision,
@@ -189,6 +189,8 @@ module AppleVerification
           retry_number: 0,
           status: "queued"
         )
+        AppleVerificationAttempts::Queue.new.enqueue(attempt:)
+        attempt
       rescue ActiveRecord::RecordNotUnique
         # Backstop for the check-then-create race in ensure_quota: the partial
         # unique index on active attempts per agent run rejects the second

@@ -57,7 +57,7 @@ module Projects
 
     def cancel
       authorize @project, :manage_apple_verifications?
-      AppleVerificationAttempts::Cancel.call(attempt: attempt)
+      AppleVerificationAttempts::Cancel.call(attempt: attempt, lifecycle: AppleVerification::Lifecycle.from_environment)
       redirect_to project_apple_verification_path(@project), notice: "Verification attempt cancelled."
     rescue ArgumentError, ActiveRecord::RecordInvalid => e
       redirect_to project_apple_verification_path(@project), alert: e.message

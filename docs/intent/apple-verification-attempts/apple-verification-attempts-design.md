@@ -49,8 +49,7 @@ round-robin order across account and project heads. `Admission` serializes
 reservation through the database so concurrent scheduler processes cannot
 over-admit the single worker. Host capacity is supplied as a small,
 provider-neutral snapshot; it is deliberately injected at the control-plane
-boundary rather than inferred from a guest or from project code. The same
-snapshot format is used by the timeout monitor while work is active.
+boundary rather than inferred from a guest or from project code.
 
 `AppleVerificationWorkerHealth` persists health-failure counts and quarantine
 state for each worker profile. A quarantine blocks new admission until an

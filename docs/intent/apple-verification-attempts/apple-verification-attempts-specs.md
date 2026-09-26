@@ -15,26 +15,29 @@
   *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
   *Code:* `AppleVerificationAttempts::Admission`
 
-- [x] **APPLE-ATTEMPT-002** — While an Apple verification attempt runs, the
+- [ ] **APPLE-ATTEMPT-002** — While an Apple verification attempt runs, the
   system SHALL recheck host disk and memory thresholds; crossing a normal
   admission threshold SHALL stop new admissions, and a running attempt SHALL
   be terminated only for an actual host-safety condition.
-  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
-  *Code:* `AppleVerificationAttempts::Admission`
+  *Tests:* Not yet implemented.
+  *Code:* Not yet implemented.
 
 - [x] **APPLE-ATTEMPT-003** — When the active Apple worker slot is occupied,
   attempts SHALL queue fairly by account and project, expose queue position,
   and remain cancellable while queued; operator-configurable limits SHALL
   bound queue depth, runtime, retry count, retained storage, and attempts per
   agent run.
-  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`
-  *Code:* `AppleVerificationAttempts::Queue`
+  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`,
+  `spec/jobs/apple_verification_attempt_scheduler_job_spec.rb`
+  *Code:* `AppleVerificationAttempts::Queue`,
+  `AppleVerificationAttempts::Scheduler`,
+  `AppleVerificationAttemptSchedulerJob`
 
 - [x] **APPLE-ATTEMPT-004** — When an attempt exceeds the configured attempt
   timeout (default 45 minutes), the system SHALL end it in the `timed_out`
   state, and a capacity exhaustion or timeout outcome SHALL be reported as an
   infrastructure result, never as a code failure.
-  *Tests:* `spec/services/apple_verification_attempts/timeout_spec.rb`
+  *Tests:* `spec/services/apple_verification_attempts/timeout_monitor_spec.rb`
   *Code:* `AppleVerificationAttempts::TimeoutMonitor`
 
 - [x] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system

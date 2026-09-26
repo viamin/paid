@@ -16,7 +16,7 @@ module AppleVerificationAttempts
       raise ArgumentError, "only a completed attempt can be rerun" unless @attempt.terminal?
       raise ArgumentError, "attempt failure is not retryable" unless RetryPolicy.retryable?(@attempt)
 
-      @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
+      rerun_attempt = @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
         rerun_attempt.assign_attributes(
           account: @attempt.account,
           agent_run: @attempt.agent_run,
@@ -30,6 +30,8 @@ module AppleVerificationAttempts
           status: "queued"
         )
       end
+      Queue.new.enqueue(attempt: rerun_attempt)
+      rerun_attempt
     end
   end
 end

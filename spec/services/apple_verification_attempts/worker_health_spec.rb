@@ -17,4 +17,15 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
 
     expect(AppleVerificationWorkerHealth.last).to be_healthy
   end
+
+  it "revokes credentials for active attempts when it quarantines a worker" do
+    attempt = create(:apple_verification_attempt, status: "running")
+    profile = attempt.apple_worker_profile
+    revoker = ->(attempt:) { }
+    service = described_class.new(profile:, configuration: AppleVerificationAttempts::Configuration.new(health_failure_limit: 1), credential_revoker: revoker)
+
+    expect(revoker).to receive(:call).with(attempt:)
+
+    service.record_failure
+  end
 end

@@ -3,7 +3,6 @@
 module AppleVerificationAttempts
   # Serializes admission and turns capacity refusal into an infrastructure result.
   # @spec APPLE-ATTEMPT-001
-  # @spec APPLE-ATTEMPT-002
   # @spec APPLE-ATTEMPT-005
   class Admission
     ACTIVE_STATES = %w[provisioning running].freeze
@@ -12,6 +11,10 @@ module AppleVerificationAttempts
     Result = Data.define(:status, :attempt, :reason) do
       def admitted?
         status == :admitted
+      end
+
+      def deferred?
+        status == :deferred
       end
     end
 
@@ -34,6 +37,9 @@ module AppleVerificationAttempts
         return Result.new(status: :unchanged, attempt:, reason: "Apple verification workers are disabled") unless enabled?
         return validation_failure! unless validation.valid?
 
+        reason = deferral_reason
+        return Result.new(status: :deferred, attempt:, reason:) if reason
+
         reason = refusal_reason
         return refuse!(reason) if reason
 
@@ -52,12 +58,16 @@ module AppleVerificationAttempts
     end
 
     def refusal_reason
-      return "worker is quarantined" if worker_health.quarantined?
-      return "active VM limit reached" if active_attempts >= configuration.active_vm_limit
       return "critical memory pressure" if capacity.critical_memory_pressure
       return "insufficient host disk" if capacity.free_host_disk_bytes < configuration.minimum_host_disk_bytes
       return "insufficient host memory" if capacity.free_memory_fraction < configuration.minimum_memory_free_fraction
       "insufficient guest disk" if capacity.free_guest_disk_bytes < configuration.minimum_guest_disk_bytes
+    end
+
+    def deferral_reason
+      return "worker is quarantined" if worker_health.quarantined?
+
+      "active VM limit reached" if active_attempts >= configuration.active_vm_limit
     end
 
     def enabled?
