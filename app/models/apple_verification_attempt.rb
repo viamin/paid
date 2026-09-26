@@ -6,6 +6,8 @@ class AppleVerificationAttempt < ApplicationRecord
   STATES = %w[queued provisioning running succeeded failed cancelled timed_out unavailable].freeze
   TERMINAL_STATES = %w[succeeded failed cancelled timed_out unavailable].freeze
   LIFECYCLE_GATES = AppleVerificationWorkflowRevision::LIFECYCLE_GATES
+  # @spec APPLE-ATTEMPT-009
+  FAILURE_CLASSIFICATIONS = %w[project_configuration compile_or_link test_assertion launch_or_ui_flow required_capture network_policy unsupported_capability capacity_or_quota worker_infrastructure cancellation_or_timeout].freeze
 
   belongs_to :account
   belongs_to :project
@@ -28,6 +30,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validates :status, inclusion: { in: STATES }
   validates :lifecycle_gate, inclusion: { in: LIFECYCLE_GATES }
   validates :retry_number, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :failure_classification, inclusion: { in: FAILURE_CLASSIFICATIONS }, allow_nil: true
   validate :ownership_matches_workflow
   validate :workflow_is_eligible_for_gate
   validate :profile_matches_workflow
