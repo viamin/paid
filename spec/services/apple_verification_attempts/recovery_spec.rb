@@ -113,7 +113,7 @@ RSpec.describe AppleVerificationAttempts::Recovery do
   end
 
   it "converges idempotently: re-running after a reconcile finds none" do
-    attempt = attempt_with(status: "provisioning")
+    attempt_with(status: "provisioning")
     complete = lambda do |attempt:, outcome:, failure_classification:|
       attempt.update!(status: outcome, finished_at: Time.current, failure_classification:)
     end

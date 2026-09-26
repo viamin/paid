@@ -7,9 +7,9 @@ RSpec.describe AppleVerificationAttempts::Cancel do
   # @spec APPLE-ATTEMPT-014
   # @spec APPLE-ATTEMPT-009
   describe ".call" do
-    it "revokes credentials and retains the VM before cancelling and requesting ledger cleanup" do
-      attempt = create(:apple_verification_attempt, :committed, status: "running")
-      ledger_entry = create(
+    let(:attempt) { create(:apple_verification_attempt, :committed, status: "running") }
+    let(:ledger_entry) do
+      create(
         :execution_resource_ledger_entry,
         :active,
         apple_verification_attempt: attempt,
@@ -18,6 +18,10 @@ RSpec.describe AppleVerificationAttempts::Cancel do
         runner_type: "apple_tart",
         resource_kind: "verification_vm"
       )
+    end
+
+    it "revokes credentials and retains the VM before cancelling and requesting ledger cleanup" do
+      ledger_entry
 
       described_class.call(attempt: attempt)
       expect(attempt.reload).to have_attributes(

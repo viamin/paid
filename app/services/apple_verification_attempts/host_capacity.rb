@@ -69,8 +69,12 @@ module AppleVerificationAttempts
     # as "capacity unavailable", so a malformed host response pauses
     # admission instead of crashing the scheduled job.
     def readiness_value(readiness, *keys)
-      keys.reduce(readiness) { |value, key| value.fetch(key) }
-    rescue KeyError, TypeError, NoMethodError
+      keys.reduce(readiness) do |value, key|
+        raise TypeError unless value.respond_to?(:fetch)
+
+        value.fetch(key)
+      end
+    rescue KeyError, TypeError
       raise AppleVerification::HostService::UnsupportedRequestError, "host readiness payload is malformed"
     end
 
