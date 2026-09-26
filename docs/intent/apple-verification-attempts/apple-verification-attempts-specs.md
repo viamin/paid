@@ -59,8 +59,11 @@
   attempt's VM SHALL be retained for at most the configured window (default
   one hour) with credentials revoked and networking disabled, and SHALL be
   destroyable earlier on request.
-  *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`
-  *Code:* `AppleVerificationAttempts::Complete`, `AppleVerificationAttempts::Cancel`
+  *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`
+  *Code:* `AppleVerificationAttempts::Complete`,
+  `AppleVerificationAttempts::Provision` (routes the finished guest result
+  into completion), `AppleVerificationAttempts::Cancel`
 
 - [ ] **APPLE-ATTEMPT-007** — When an attempt verifies committed source, the
   system SHALL supply the exact commit identity and a short-lived read-only

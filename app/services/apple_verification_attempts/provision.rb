@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Starts the admitted VM and records the transition into guest execution.
+  # Starts the admitted VM, hands the closed-protocol job to the guest, and
+  # routes the finished guest result through completion.
   # @spec APPLE-ATTEMPT-003
+  # @spec APPLE-ATTEMPT-006
   class Provision
-    def initialize(lifecycle:, guest_job: AppleVerification::ExecuteGuestJob, clock: Time)
+    def initialize(lifecycle:, guest_job: AppleVerification::ExecuteGuestJob, completion: Complete, clock: Time)
       @lifecycle = lifecycle
       @guest_job = guest_job
+      @completion = completion
       @clock = clock
     end
 
@@ -22,11 +25,12 @@ module AppleVerificationAttempts
       )
       dispatch_guest_job(attempt)
       attempt.update!(status: "running", started_at: attempt.started_at || clock.current)
+      complete_guest_result(attempt)
     end
 
     private
 
-    attr_reader :lifecycle, :guest_job, :clock
+    attr_reader :lifecycle, :guest_job, :completion, :clock
 
     # The guest must receive its closed-protocol work before this attempt is
     # observable as running. `export_artifacts` gives the executor an explicit
@@ -37,6 +41,16 @@ module AppleVerificationAttempts
         image_digest: attempt.apple_worker_profile.image_digest,
         manifest: guest_manifest(attempt)
       )
+    end
+
+    # The dispatch is synchronous: a normal return means the guest executor
+    # finished the job and uploaded its output, so the attempt must leave
+    # provisioning through {Complete} — terminal state, immediate destroy of
+    # the successful VM, credential revocation — instead of occupying the
+    # active slot until the timeout sweep. A dispatch raise leaves the attempt
+    # non-terminal for TimeoutMonitor and Recovery.
+    def complete_guest_result(attempt)
+      completion.call(attempt:, status: "succeeded", lifecycle:, clock:)
     end
 
     def guest_manifest(attempt)

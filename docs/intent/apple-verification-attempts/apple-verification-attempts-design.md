@@ -93,6 +93,12 @@ follows one ordered contract:
 10. Retain a failed VM for at most the configured window (default one hour),
     or destroy it early on request.
 
+Steps 5–7 run inside the synchronous closed-protocol dispatch, so its normal
+return is the finished-upload moment: the provisioning flow applies steps 8–10
+immediately through `AppleVerificationAttempts::Complete` rather than leaving a
+finished attempt occupying the worker slot until the timeout sweep. A dispatch
+failure leaves the attempt non-terminal for the timeout and recovery paths.
+
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
 last five are terminal. Cancellation is available while an attempt is not
