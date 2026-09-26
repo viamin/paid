@@ -349,6 +349,24 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      it "renders only the chat panel inside a requested Turbo frame" do
+        # @spec QUESTION-EXPLORATION-001
+        create(:chat_message, :assistant, chat_session: chat_session, content: "Frame-rendered message")
+
+        get chat_session_path(chat_session), headers: { "Accept" => "text/html", "Turbo-Frame" => "inbox-detail" }
+
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        frame = doc.at_css("turbo-frame#inbox-detail")
+
+        expect(frame).to be_present
+        expect(frame.text).to include("Frame-rendered message")
+        expect(frame.at_css("[data-controller='chat']")).to be_present
+        expect(frame.at_css("#chat-sessions-sidebar")).to be_nil
+        expect(frame.text).not_to include("Create session")
+      end
+
       it "autosaves both chat runner and model selectors with visible status" do
         # @spec CHAT-SESSION-PREFERENCES-002
         get chat_session_path(chat_session)
@@ -778,6 +796,17 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("New Chat")
         expect(response.body).to include("Open page")
         expect(response.body).to include("Projects - Paid")
+      end
+
+      it "keeps the popup variant when a Turbo frame header is present" do
+        get chat_session_path(chat_session), params: { display: "popup" }, headers: {
+          "Accept" => "text/html",
+          "Turbo-Frame" => "inbox-detail"
+        }
+
+        expect(response).to have_http_status(:ok)
+        expect(Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail")).to be_nil
+        expect(response.body).to include("Open page")
       end
 
       it "wraps the popup capability panel inside the chat controller scope" do

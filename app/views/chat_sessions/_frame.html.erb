@@ -1,0 +1,19 @@
+<%= turbo_stream_from current_account, :chat_sessions %>
+<%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.clarifying_question_issue.present? %>
+
+<%# @spec QUESTION-EXPLORATION-001 @spec OPERATOR-INBOX-008
+    The inbox page owns 2rem of bottom padding at every breakpoint. The chat
+    controller measures this panel's actual document offset after it connects,
+    so these variables give the conversation a definite, inbox-sized height
+    without inheriting the chat page's responsive padding assumptions. %>
+<%= turbo_frame_tag frame_id, style: "display: block; --chat-panel-bottom-space: 2rem;" do %>
+  <%= render "chat_sessions/chat_panel",
+             chat_session: chat_session,
+             chat_messages: chat_messages,
+             has_older_messages: has_older_messages,
+             can_update_chat_session: can_update_chat_session,
+             can_archive_chat_session: can_archive_chat_session,
+             can_unarchive_chat_session: can_unarchive_chat_session,
+             available_runners: available_runners,
+             available_models: available_models %>
+<% end %>
