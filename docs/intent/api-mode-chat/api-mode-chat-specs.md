@@ -216,6 +216,7 @@
   viewport with the panel viewport-bound and a
   visible mobile history toggle, the transcript region
   (`[data-chat-target="container"]`) SHALL retain at least 18rem of height
+  and at least 45% of the panel height,
   and the document itself SHALL remain non-scrolling so the transcript
   stays the real scroll container.
 
