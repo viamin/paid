@@ -452,10 +452,10 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
-    it "recovers eligibility once the grace window elapses if the matched open PR row is still unlinked" do # @spec EAGER-QUEUE-009
-      # A synced PR row without parent_issue_id is not authoritative enough
-      # to block forever: if the run recorded the wrong PR number, an
-      # unrelated open PR with that number must not strand the source issue.
+    it "excludes an issue with an open synced PR from its completed run after the grace window when the link is missing" do # @spec EAGER-QUEUE-009
+      # Regression for #4039: this is the incident shape. The PR has synced,
+      # but the old sync path omitted parent_issue_id, so the one-hour grace
+      # expiry must not authorize a second implementation run.
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
@@ -465,7 +465,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       scope = described_class.eligible_scope(project)
 
-      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+      expect(scope.pluck(:id)).to be_empty
     end
 
     it "keeps an issue ineligible once a synced open PR row is linked back to it, even past the grace window" do
@@ -496,7 +496,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    it "recovers eligibility once the grace window elapses if the matched merged PR row is still unlinked" do # @spec EAGER-QUEUE-009
+    it "keeps an issue ineligible after the grace window when its completed run's PR is merged but unlinked" do # @spec EAGER-QUEUE-009
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
@@ -506,7 +506,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       scope = described_class.eligible_scope(project)
 
-      expect(scope.pluck(:id)).to contain_exactly(issue.id)
+      expect(scope.pluck(:id)).to be_empty
     end
 
     it "excludes completed issues when the produced PR is still open" do

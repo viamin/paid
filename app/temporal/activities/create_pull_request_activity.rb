@@ -207,14 +207,7 @@ module Activities
     # re-query and reuse it instead of letting the 422 retry pointlessly.
     # Returns a [pr, action] tuple where action is "created" or "reused".
     def create_pull_request_or_reuse(client, project, agent_run, issue, pr_body, agent_run_id:)
-      pr = client.create_pull_request(
-        project.full_name,
-        base: project.default_branch,
-        head: agent_run.branch_name,
-        title: pr_title(agent_run, issue),
-        body: pr_body.fetch(:body),
-        draft: true
-      )
+      pr = create_pull_request_for_source_issue(client, project, agent_run, issue, pr_body)
       [ pr, "created" ]
     rescue GithubClient::ApiError => e
       raise e unless pr_already_exists_error?(e)
@@ -229,6 +222,63 @@ module Activities
       raise e if reused.nil?
 
       [ reused, "reused" ]
+    end
+
+    # @spec EAGER-QUEUE-010
+    def create_pull_request_for_source_issue(client, project, agent_run, issue, pr_body)
+      return create_pull_request(client, project, agent_run, issue, pr_body) unless issue
+
+      source_issue(issue).with_lock do
+        reconcile_missing_source_pull_requests!(client, project, source_issue(issue))
+        existing = source_issue(issue).associated_paid_pull_request
+        raise_existing_implementation_pr!(agent_run, existing) if existing
+
+        create_pull_request(client, project, agent_run, issue, pr_body)
+      end
+    end
+
+    # A completed run may know a PR number while GitHub sync has not created
+    # its local Issue row. Reconcile that authoritative remote record before
+    # allowing a second branch to publish; a transient lookup failure raises
+    # and is retried rather than becoming permission to duplicate work.
+    def reconcile_missing_source_pull_requests!(client, project, source_issue)
+      missing_pull_request_numbers(project, source_issue).each do |number|
+        client.pull_request(project.full_name, number)
+        github_issue = client.issue(project.full_name, number)
+        Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+      rescue GithubClient::NotFoundError
+        next
+      end
+    end
+
+    def missing_pull_request_numbers(project, source_issue)
+      produced_numbers = source_issue.agent_runs.where(status: "completed", goal: "create_pr")
+        .where.not(pull_request_number: nil).pluck(:pull_request_number)
+      synced_numbers = project.issues.pull_requests_only.where(github_number: produced_numbers).pluck(:github_number)
+      produced_numbers - synced_numbers
+    end
+
+    def source_issue(issue)
+      issue.is_pull_request? ? issue.parent_issue || issue : issue
+    end
+
+    def create_pull_request(client, project, agent_run, issue, pr_body)
+      client.create_pull_request(
+        project.full_name,
+        base: project.default_branch,
+        head: agent_run.branch_name,
+        title: pr_title(agent_run, issue),
+        body: pr_body.fetch(:body),
+        draft: true
+      )
+    end
+
+    def raise_existing_implementation_pr!(agent_run, pull_request)
+      raise Temporalio::Error::ApplicationError.new(
+        "Source issue already has open implementation PR ##{pull_request.github_number}",
+        type: "ExistingImplementationPullRequest",
+        non_retryable: true
+      )
     end
 
     def pr_already_exists_error?(error)

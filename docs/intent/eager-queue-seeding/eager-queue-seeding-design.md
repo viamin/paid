@@ -85,7 +85,7 @@ old 4-hour ceiling, and `consecutive_auto_pick_failure_count` is bounded at
 are not `failed` (e.g. `analyzed → new`) re-enqueue immediately with no
 delay.
 
-## Duplicate-PR prevention (#3432)
+## Duplicate-PR prevention (#3432, #4039)
 
 `DefaultCandidateSource.eligible_scope` excludes an issue whose most recent
 completed `create_pr` run already recorded `pull_request_number`, unless the
@@ -112,14 +112,22 @@ A synced, closed-unmerged PR row always lifts the exclusion immediately
 (no need to wait out the grace window), so legitimate replacement runs after
 an abandoned or rejected PR are not delayed.
 
-Permanent exclusions after the grace window require an authoritative link
-back from the PR row to the source issue. Today that linkage is
-`issues.parent_issue_id`: an open linked PR remains blocked by
-`Issue.open_pull_request_parent_issue_ids`, and a merged linked PR remains
-blocked by a dedicated merged-linked-PR filter in `base_scope`. Bare
-`pull_request_number` alone is intentionally not trusted past
-`PR_SYNC_GRACE_PERIOD`, so a stale or wrong recorded PR number cannot make an
-unrelated synced PR row keep the issue ineligible forever.
+The completed originating run is also durable evidence when it agrees with a
+synced PR row in the same project: an open or merged PR whose
+`github_number` matches that run's `pull_request_number` blocks the run's
+source issue even if `parent_issue_id` was missing during a prior sync. PR
+sync reconciles a missing link from this evidence only when all matching runs
+resolve to one source issue; conflicting histories are logged and left
+unchanged. A PR-scoped follow-up resolves through its existing parent rather
+than linking the PR to itself. Closed-unmerged PRs deliberately do not block
+recovery.
+
+Before publishing, `CreatePullRequestActivity` locks the source issue and
+checks this same durable open-PR association. A second branch cannot turn an
+existing implementation PR into a successful result: the duplicate activity
+stops non-retryably with the existing PR identified in its reason. Holding the
+source issue lock across the final GitHub creation call serializes concurrent
+attempts for that source issue.
 
 ## Fair-stride impact
 

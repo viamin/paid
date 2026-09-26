@@ -610,6 +610,26 @@ class Issue < ApplicationRecord
     scope.select(:parent_issue_id)
   end
 
+  # Source issues whose completed implementation run recorded a PR that is
+  # currently open. This is independent of parent_issue_id so a missed sync
+  # link cannot authorize a duplicate implementation run.
+  def self.open_paid_generated_pull_request_source_issue_ids(project:)
+    paid_generated_pull_request_source_issue_ids(project: project, github_state: "open")
+  end
+
+  def self.merged_paid_generated_pull_request_source_issue_ids(project:)
+    paid_generated_pull_request_source_issue_ids(project: project, pr_review_phase: "merged")
+  end
+
+  def self.paid_generated_pull_request_source_issue_ids(project:, **conditions)
+    pull_requests = where(project: project, is_pull_request: true, **conditions)
+    AgentRun.where(project: project, status: "completed", goal: "create_pr")
+      .where.not(issue_id: nil, pull_request_number: nil)
+      .where(pull_request_number: pull_requests.select(:github_number))
+      .select(:issue_id)
+  end
+  private_class_method :paid_generated_pull_request_source_issue_ids
+
   # Returns a Hash mapping issue_id => the most recently updated open
   # paid-generated pull request (an Issue row with is_pull_request: true).
   # A PR is "paid-generated" when an AgentRun in the same project produced
