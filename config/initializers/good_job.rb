@@ -360,6 +360,21 @@ Rails.application.configure do
       cron: "9-59/5 * * * *",
       class: "AppleVerificationRecoveryJob",
       description: "Reconcile in-flight Apple verification attempts against the VM ledger (APPLE-ATTEMPT-014)"
+    },
+    apple_verification_host_safety: {
+      # Offset 10 runs after recovery (9) and before the next dispatch tick (12)
+      # so a host-safety termination frees the worker slot within the same window,
+      # staying clear of the offsets 1-5 wall-clock burst this family avoids.
+      cron: "10-59/5 * * * *",
+      class: "AppleVerificationHostSafetyJob",
+      description: "Terminate running Apple verification VMs on an actual host-safety condition (APPLE-ATTEMPT-002)"
+    },
+    apple_verification_retry: {
+      # Offset 11 follows host-safety so a re-enqueued retry is picked up by the
+      # next dispatch tick (12) in the same window.
+      cron: "11-59/5 * * * *",
+      class: "AppleVerificationRetryJob",
+      description: "Re-enqueue retryable Apple verification infrastructure failures (APPLE-ATTEMPT-010)"
     }
   }
 end

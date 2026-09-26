@@ -25,8 +25,21 @@ module AppleVerificationAttempts
     end
 
     def call(attempt:)
-      readiness = host.call(version: AppleVerification::HostService::API_VERSION, operation: "readiness", payload: {}, token:)
+      readiness = readiness_payload
       Snapshot.new(capacity: capacity(readiness, attempt), critical_memory_samples: critical_memory_samples(readiness))
+    rescue AppleVerification::HostService::AuthenticationError, AppleVerification::HostService::UnsupportedRequestError, Faraday::Error => error
+      Rails.logger.warn(message: "apple_verification.dispatch.capacity_unavailable", error_class: error.class.name)
+      nil
+    end
+
+    # Samples only host-level fields (no guest disk), used to decide whether
+    # an active host must be stopped for safety.
+    def host_safety_snapshot
+      readiness = readiness_payload
+      Snapshot.new(
+        capacity: { free_host_disk_gib: numeric!(readiness.fetch("disk").fetch("free_gib")) },
+        critical_memory_samples: critical_memory_samples(readiness)
+      )
     rescue AppleVerification::HostService::AuthenticationError, AppleVerification::HostService::UnsupportedRequestError, Faraday::Error => error
       Rails.logger.warn(message: "apple_verification.dispatch.capacity_unavailable", error_class: error.class.name)
       nil
@@ -35,6 +48,10 @@ module AppleVerificationAttempts
     private
 
     attr_reader :host, :token, :cache
+
+    def readiness_payload
+      host.call(version: AppleVerification::HostService::API_VERSION, operation: "readiness", payload: {}, token:)
+    end
 
     def capacity(readiness, attempt)
       memory = readiness.fetch("memory")
