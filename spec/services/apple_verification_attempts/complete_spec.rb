@@ -46,6 +46,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
   it "revokes credentials and finalizes the attempt when the lifecycle reports the destroy as a no-op" do
     revocation = instance_double(AppleVerification::Revocation::Enforce)
     expect(revocation).to receive(:revoke_credential!).once
+    expect(revocation).to receive(:persist_bundle_retention!).once
 
     lifecycle = instance_double(AppleVerification::Lifecycle)
     expect(lifecycle).to receive(:destroy).with(attempt: attempt, request_id: "complete:#{attempt.id}").and_return(:noop)
@@ -55,6 +56,17 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.outcome).to eq("succeeded")
     expect(result.destroy_request_id).to be_nil
     expect(attempt.reload.finalized_at).to be_present
+  end
+
+  it "persists the bundle retention deadline when an uncommitted attempt's destroy reports a no-op" do
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    expect(lifecycle).to receive(:destroy).with(attempt: attempt, request_id: "complete:#{attempt.id}").and_return(:noop)
+
+    result = described_class.call(attempt: attempt, lifecycle: lifecycle)
+
+    expect(result.outcome).to eq("succeeded")
+    expect(attempt.reload.finalized_at).to be_present
+    expect(attempt.bundle_retained_until).to be_present
   end
 
   it "revokes credentials and leaves finalization for the next sweep when the destroy raises" do

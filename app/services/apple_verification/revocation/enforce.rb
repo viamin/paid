@@ -98,6 +98,18 @@ module AppleVerification
         )
       end
 
+      # Persists the workspace-bundle retention deadline for an uncommitted
+      # attempt so {AppleVerification::Bundles::RetentionSweep} can delete the
+      # uploaded bundle once the window passes. Exposed for
+      # {AppleVerificationAttempts::Complete}, which finalizes a successful
+      # attempt whose VM destroy reported +:noop+ without entering {#call}
+      # (the only path that persists the deadline there); without this, the
+      # uploaded bundle would never be swept and would leak. Committed
+      # attempts ship no bundle, so this is a no-op for them.
+      def persist_bundle_retention!
+        persist_bundle_retained_until!
+      end
+
       private
 
       attr_reader :attempt, :credential_lane, :failed_vm_retention_hours, :bundle_retention_days, :clock

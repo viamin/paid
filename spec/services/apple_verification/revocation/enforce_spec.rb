@@ -55,6 +55,24 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(committed.reload.bundle_retained_until).to be_nil
   end
 
+  it "persists the bundle retention deadline for an uncommitted attempt via persist_bundle_retention!" do
+    uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
+    uncommitted.update!(status: "succeeded")
+
+    described_class.new(attempt: uncommitted, credential_lane: credential_lane, bundle_retention_days: 7).persist_bundle_retention!
+
+    expect(uncommitted.reload.bundle_retained_until).to be_within(2.seconds).of(7.days.from_now)
+  end
+
+  it "leaves bundle_retained_until nil for a committed attempt via persist_bundle_retention!" do
+    committed = create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
+    committed.update!(status: "succeeded")
+
+    described_class.new(attempt: committed, credential_lane: credential_lane, bundle_retention_days: 7).persist_bundle_retention!
+
+    expect(committed.reload.bundle_retained_until).to be_nil
+  end
+
   it "retains the failed VM and persists the retention deadline" do
     attempt.update!(status: "failed", finished_at: Time.current)
 
