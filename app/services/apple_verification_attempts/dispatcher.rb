@@ -83,11 +83,15 @@ module AppleVerificationAttempts
         request_id: "apple-verification-attempt:#{attempt.id}",
         apple_verification_attempt: attempt
       )
+      WorkerHealth.record_success!(profile: attempt.apple_worker_profile)
       attempt.update!(status: "running", started_at: Time.current)
       :started
     rescue AppleVerification::HostService::AuthenticationError,
       AppleVerification::HostService::UnsupportedRequestError,
-      Faraday::Error
+      Faraday::Error => error
+      WorkerHealth.record_failure!(profile: attempt.apple_worker_profile, reason: error.class.name)
+      return :rejected if attempt.reload.terminal?
+
       complete.call(attempt:, outcome: "unavailable", failure_classification: "worker_infrastructure", lifecycle:)
       :rejected
     end

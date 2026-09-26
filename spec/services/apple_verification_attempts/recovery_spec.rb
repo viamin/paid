@@ -54,6 +54,25 @@ RSpec.describe AppleVerificationAttempts::Recovery do
     )
   end
 
+  it "rechecks an attempt after acquiring its lock before reconciling it" do
+    attempt = attempt_with(status: "provisioning")
+    complete = spy
+    in_flight_attempts = instance_double(ActiveRecord::Relation)
+
+    allow(AppleVerificationAttempt).to receive(:where).with(status: described_class::IN_FLIGHT_STATUSES).and_return(in_flight_attempts)
+    allow(in_flight_attempts).to receive(:find_each).and_yield(attempt)
+    allow(attempt).to receive(:with_lock) do |&block|
+      attempt.update!(status: "running")
+      vm_entry(attempt, status: "active")
+      block.call
+    end
+
+    result = described_class.call(complete: complete)
+
+    expect(result.reconciled).to eq(0)
+    expect(complete).not_to have_received(:call)
+  end
+
   it "does not reconcile a running attempt with a live active VM" do
     attempt = attempt_with(status: "running")
     vm_entry(attempt, status: "active")
