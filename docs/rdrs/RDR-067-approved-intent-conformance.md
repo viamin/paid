@@ -14,7 +14,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 ## Metadata
 
 - **Date**: 2026-09-16
-- **Status**: Final
+- **Status**: Partially Implemented
 - **Type**: Review policy + orchestration safety
 - **Priority**: P1
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
@@ -24,37 +24,24 @@ record types and ordinary CI/security/quality checks remain reusable.
 
 ## Implementation Status
 
-Partially implemented as of September 17, 2026. The design amendment and
-revision-impact slice (#3869) has shipped — see
-`docs/intent/approved-intent-amendment/`. The final-merge precondition slice
-(#3868) has also shipped — see `docs/intent/approved-intent-merge-guard/`:
-`IntentConformanceVerdict` (the minimal verdict-identity record) and
-`IntentConformance::VerifyAtMerge`, wired into
-`Activities::MergePullRequestActivity`, re-verify PR head, approved design
-revision, and verdict identity immediately before merge. The independent
-conformance reviewer run (#3866) has also shipped — see
-`docs/intent/intent-conformance-review/`: `IntentConformance::ReviewRun`
-extends `IntentConformanceVerdict` with reviewer evidence (cited claims,
-cited diff locations, reasoning summary, reviewer run/model) and is the only
-writer of verdict rows; the implementing agent's self-report never supplies
-a passing verdict.
+Partially implemented as of September 26, 2026. The verdict/reviewer (#3866),
+PR-scanner signal and Inbox escalation (#3867), final-merge guard (#3868), and
+design-amendment/impact-mapping (#3869) slices have shipped. In particular,
+`IntentConformance::VerifyAtMerge`, called by
+`Activities::MergePullRequestActivity`, re-verifies the current PR head,
+approved design revision, and verdict identity immediately before merge; the
+scanner persists the conformance blocker and the Inbox displays its cited
+evidence and resolution path.
 
-Still missing: PR-scanner blockers plus Inbox escalation of drift verdicts
-(#3867), which is also what will call `IntentConformance::ReviewRun` on a PR
-event — until #3867 wires a caller, no verdicts are produced in production
-and every applicable merge stays blocked with `verdict_missing`, which is
-correct fail-closed behavior for an unwired trigger, not a defect. Per this
-RDR's rollout guard, the named mode stays off (the flag defaults off, and no
-project should enable it) until the scanner (#3867) and the final guard are
-active together. `feature_intents.design_document_paths` (added by #3866 for
-the reviewer to know which repository files constitute a feature's approved
-design) is not yet populated by anything — that wiring belongs to the
-RDR-066 approval-lifecycle issues (#3862/#3863); until it lands, `ReviewRun`
-correctly records `not_evaluated` for every feature intent. Evaluation/rollout
-telemetry (#3870) is also outstanding. The 2026-09-17 closeout audit
-(see #3871) predates this work; see
-[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md) for
-the state at that point in time.
+Two gaps prevent an Implemented status. `IntentConformance::ReviewRun` is a
+tested independent reviewer service, but no production PR-scan caller invokes
+it, so enabled feature PRs can remain correctly fail-closed with
+`verdict_missing` rather than receiving a fresh review. In addition,
+representative false-alarm and missed-drift evaluation results and rollout
+telemetry remain outstanding in open issue #3870. The RDR-066 lifecycle still
+owns population of `feature_intents.design_document_paths`; an empty list
+correctly yields `not_evaluated`. The rollout flags remain default-off, so no
+project may enable the policy until the reviewer trigger is delivered.
 
 ## Problem Statement
 
@@ -165,22 +152,19 @@ When a design revision supersedes approval, Paid identifies open PRs and unstart
 - Human-gated TDD continues to work when configured; automated test review is available without a routine human pause.
 - Rollout reports PR-to-merge conversion, human review time, false-alarm rate, escaped intent changes, rework, reviewer cost, and time to delivery.
 
-## 2026-09-17 Closeout Audit
+## 2026-09-26 Closeout Audit
 
-Closeout issue [#3871](https://github.com/viamin/paid/issues/3871) audited this
-RDR against the default branch (through #3874) following the
-[RDR Closeout Checklist](closeout-checklist.md). Findings, recorded in
-[audit-report-2026-09-17-rdr-067.md](audit-report-2026-09-17-rdr-067.md):
+Closeout issue [#3871](https://github.com/viamin/paid/issues/3871) audited the
+current branch following the [RDR Closeout Checklist](closeout-checklist.md).
+The evidence is recorded in
+[audit-report-2026-09-26-rdr-067.md](audit-report-2026-09-26-rdr-067.md).
 
-- **Nothing has shipped.** No verdict contract or persistence, no conformance
-  signal in `Automation::Strategies::AutoMerge`, no Inbox escalation kind, no
-  final-merge precondition, no amendment/impact mapping, and no false-alarm or
-  missed-drift evaluations exist in the codebase. Prerequisite RDR-066 (the
-  named feature operating mode) is also unimplemented.
-- **Status remains Final.** The evidence supports the current status exactly;
-  the audit updated neither this RDR's status nor its `docs/rdrs/README.md`
-  row, and filed no child issues because open issues #3866–#3870 already track
-  every gap.
-- **Epic #3861 must remain open.** The closeout PR uses non-closing tracking
-  language only; the epic closes when #3866–#3870 merge and a re-audit proves
-  the acceptance criteria.
+- **Current-head/current-design protection and Inbox escalation are shipped
+  and covered by passing specs.**
+- **Evaluation evidence is still absent.** Open issue #3870 owns the
+  false-alarm/missed-drift evaluation and rollout telemetry; the missing
+  production trigger for `ReviewRun` is a separate closeout gap.
+- **Status is Partially Implemented.** The implementation evidence supports
+  this status and the matching README row, but not an Implemented closeout.
+- **Epic #3861 remains open.** This PR must use tracking language only and
+  must not claim to close the epic.
