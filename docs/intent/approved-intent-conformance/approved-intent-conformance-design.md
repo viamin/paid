@@ -9,7 +9,7 @@ Those features use issue-level readiness and completion-blocking follow-ups;
 existing features retain their policy until deliberately migrated. Shared
 record types and ordinary CI/security/quality checks remain reusable.
 
-> Segment: approved-intent-conformance · Status: partial (issue #3867 scope)
+> Segment: approved-intent-conformance · Status: implemented (issue #3867 scope)
 > Specs: [approved-intent-conformance-specs.md](approved-intent-conformance-specs.md)
 > RDR: [RDR-067](../../rdrs/RDR-067-approved-intent-conformance.md)
 
@@ -18,7 +18,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 RDR-067 requires an independent conformance verdict on every feature PR, and
 material drift, uncertainty, missing evidence, or reviewer failure must block
 auto-merge until a human resolves it. Issue #3867 scopes the PR-scanner and
-Inbox half of that decision: persist the verdict, add it to the auto-merge
+Inbox half of that decision: read the persisted verdict, add it to the auto-merge
 blocker snapshot, and give a human a typed Inbox decision — cited claim,
 relevant diff, reviewer evidence, and the three resolution actions (fix PR,
 bounded exception, design amendment).
@@ -28,8 +28,7 @@ comparing PR diff to the approved design) and the final-merge-activity race
 check are out of this segment's scope — RDR-067's own implementation plan
 splits those into separate issues (the reviewer run, and final-merge
 enforcement). This segment defines the verdict/decision persistence contract
-because nothing else in the repository does yet, and the blocker/Inbox surface
-cannot exist without something to read.
+because the blocker/Inbox surface cannot exist without something to read.
 
 ## Approach
 
@@ -50,10 +49,13 @@ cannot exist without something to read.
    for `material_drift`, `uncertain`, `not_evaluated`, and a missing verdict
    alike, since RDR-067 requires all four to fail closed.
 3. **Rollout gate** — enforcement is behind the `intent_conformance_enforcement`
-   feature flag (default off, per project). RDR-067's own rollout guard ties
-   enforcement to the RDR-066 named feature operating mode, which does not
-   exist in this codebase yet; the flag is the interim substitute and is
-   documented to be replaced once RDR-066 ships.
+   feature flag (default off, per project). Default-off does not prohibit an
+   operator from opting in: until #4050 wires the production reviewer trigger,
+   operators MUST NOT enable this flag for feature PRs because enforcement would
+   fail closed with `verdict_missing` without scheduling a fresh review.
+   RDR-067's own rollout guard ties enforcement to the RDR-066 named feature
+   operating mode, which does not exist in this codebase yet; the flag is the
+   interim substitute and is documented to be replaced once RDR-066 ships.
 4. **PR-scanner wiring** — `ScanPaidPrsActivity` already persists the auto-merge
    blocker snapshot to `issues.auto_merge_blockers` every scan pass
    (RDR-067's "PR scanner already persists blockers" precedent). This segment
