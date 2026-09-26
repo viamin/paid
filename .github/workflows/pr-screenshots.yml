@@ -99,9 +99,13 @@ jobs:
 
     services:
       postgres:
-        # Use the Docker Official Images ECR Public mirror to avoid Docker Hub
-        # pull timeouts during service initialization on GitHub-hosted runners.
-        image: public.ecr.aws/docker/library/postgres:16.15
+        # Pull from Docker Hub, matching every other workflow in this repo
+        # (ci.yml, system_tests.yml, ephemeral_tests.yml, mutation.yml,
+        # pr-screenshots-publish.yml). The ECR Public mirror previously used
+        # here failed job initialization with "toomanyrequests: Data limit
+        # exceeded" once its anonymous per-IP data quota was exhausted, while
+        # sibling Docker Hub pulls on the same runners kept succeeding.
+        image: postgres:16.15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

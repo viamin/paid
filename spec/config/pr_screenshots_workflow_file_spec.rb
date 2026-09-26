@@ -73,9 +73,9 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   # PostgreSQL bump into a spec edit while asserting nothing extra.
   #
   # @spec TOOLCHAIN-PIN-020
-  it "pulls Postgres from the ECR Public mirror to avoid Docker Hub init failures" do
+  it "pulls Postgres from Docker Hub like every other workflow" do
     expect(workflow.fetch("jobs").fetch("capture").fetch("services").fetch("postgres")).to include(
-      "image" => "public.ecr.aws/docker/library/postgres:#{pinned_postgres_version}"
+      "image" => "postgres:#{pinned_postgres_version}"
     )
   end
 
