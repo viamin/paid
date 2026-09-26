@@ -51,7 +51,11 @@ module AppleVerificationAttempts
     # (no live ledger entry or no recorded vm_id), the call logs the skip
     # and surfaces the gap to the caller instead of asserting a destroy
     # that did not occur. A +:noop+ is permanent — there is no VM cleanup
-    # gap left to retry — so the attempt is finalized; an unavailable
+    # gap left to retry — so the attempt is finalized and, for an
+    # uncommitted attempt, the workspace-bundle retention deadline is still
+    # persisted (via
+    # {AppleVerification::Revocation::Enforce#persist_bundle_retention!}) so
+    # the sweep can delete the uploaded bundle; an unavailable
     # lifecycle or a failed destroy is transient and is left unfinalized
     # for the recovery sweep to retry. Mirrors the refusal pattern in
     # {AppleVerification::Bundles::RetentionSweep#revoke_vm!}.
@@ -64,6 +68,7 @@ module AppleVerificationAttempts
         destroy_now!
         unless @last_destroy_result == :destroyed
           @revocation.revoke_credential!
+          @revocation.persist_bundle_retention! if @last_destroy_skip_reason == "destroy_noop"
           mark_finalized! if @last_destroy_skip_reason == "destroy_noop"
           Rails.logger.warn(
             message: "apple_verification.complete_skipped",
