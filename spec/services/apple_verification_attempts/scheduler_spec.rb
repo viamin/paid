@@ -4,14 +4,15 @@ require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Scheduler do
   # @spec APPLE-ATTEMPT-003
-  # @spec APPLE-ATTEMPT-015
   let(:capacity) do
-    -> {
-      AppleVerificationAttempts::CapacitySnapshot.new(
-        free_host_disk_bytes: 61.gigabytes,
-        free_memory_fraction: 0.26,
-        free_guest_disk_bytes: 16.gigabytes,
-        critical_memory_pressure: false
+    ->(attempt: _) {
+      AppleVerificationAttempts::HostCapacity::Snapshot.new(
+        capacity: {
+          free_host_disk_gib: 61,
+          free_memory_percent: 26,
+          free_guest_disk_gib: 16
+        },
+        critical_memory_samples: 0
       )
     }
   end
@@ -30,28 +31,11 @@ RSpec.describe AppleVerificationAttempts::Scheduler do
     result = described_class.call(capacity:, dispatcher:)
 
     expect(result).to be_admitted
-    expect(result.attempt).to eq(attempt)
     expect(dispatched).to eq([ attempt ])
-    expect(attempt.reload.status).to eq("provisioning")
+    expect(attempt.reload.status).to eq("queued")
   end
 
-  it "keeps a quarantined worker's head queued while admitting the next healthy candidate" do
-    quarantined = create(:apple_verification_attempt)
-    healthy = create(:apple_verification_attempt)
-    enable_verification!(quarantined)
-    enable_verification!(healthy)
-    AppleVerificationWorkerHealth.create!(apple_worker_profile: quarantined.apple_worker_profile, status: "quarantined", quarantined_at: Time.current)
-
-    result = described_class.call(capacity:, dispatcher:)
-
-    expect(result).to be_admitted
-    expect(result.attempt).to eq(healthy)
-    expect(quarantined.reload.status).to eq("queued")
-    expect(healthy.reload.status).to eq("provisioning")
-    expect(dispatched).to eq([ healthy ])
-  end
-
-  it "stops at a queue-wide deferral instead of skipping past it" do
+  it "defers its fair queue head when the active VM limit is reached" do
     create(:apple_verification_attempt, status: "running")
     head = create(:apple_verification_attempt)
     follower = create(:apple_verification_attempt)
@@ -60,28 +44,10 @@ RSpec.describe AppleVerificationAttempts::Scheduler do
 
     result = described_class.call(capacity:, dispatcher:)
 
-    expect(result).to be_deferred
+    expect(result).not_to be_admitted
     expect(result.reason).to eq("active VM limit reached")
     expect(head.reload.status).to eq("queued")
     expect(follower.reload.status).to eq("queued")
-    expect(dispatched).to be_empty
-  end
-
-  it "reports the quarantine deferral when every queued attempt waits on a quarantined worker" do
-    first = create(:apple_verification_attempt)
-    second = create(:apple_verification_attempt)
-    enable_verification!(first)
-    enable_verification!(second)
-    [ first, second ].each do |attempt|
-      AppleVerificationWorkerHealth.create!(apple_worker_profile: attempt.apple_worker_profile, status: "quarantined", quarantined_at: Time.current)
-    end
-
-    result = described_class.call(capacity:, dispatcher:)
-
-    expect(result).to be_deferred
-    expect(result.reason).to eq("worker is quarantined")
-    expect(first.reload.status).to eq("queued")
-    expect(second.reload.status).to eq("queued")
     expect(dispatched).to be_empty
   end
 

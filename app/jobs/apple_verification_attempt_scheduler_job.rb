@@ -6,11 +6,12 @@ class AppleVerificationAttemptSchedulerJob < ApplicationJob
   queue_as :default
 
   def perform
-    return unless AppleVerificationAttempts::HostCapacity.configured?
+    capacity = AppleVerificationAttempts::HostCapacity.from_environment
+    return unless capacity
 
     lifecycle = AppleVerification::Lifecycle.from_environment
     AppleVerificationAttempts::Scheduler.call(
-      capacity: AppleVerificationAttempts::HostCapacity.new,
+      capacity:,
       dispatcher: AppleVerificationAttempts::Provision.new(lifecycle:)
     )
   end
