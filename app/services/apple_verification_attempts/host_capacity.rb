@@ -86,7 +86,7 @@ module AppleVerificationAttempts
     end
 
     def critical_memory_samples(readiness)
-      return reset_critical_memory_samples unless readiness.dig("memory", "pressure") == "critical"
+      return reset_critical_memory_samples unless readiness_value(readiness, "memory", "pressure") == "critical"
 
       cache.write(CRITICAL_MEMORY_CACHE_KEY, cache.read(CRITICAL_MEMORY_CACHE_KEY).to_i + 1, expires_in: CRITICAL_MEMORY_CACHE_TTL)
       cache.read(CRITICAL_MEMORY_CACHE_KEY)

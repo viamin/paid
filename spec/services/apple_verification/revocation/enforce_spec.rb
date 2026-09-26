@@ -9,6 +9,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
   let(:workflow_revision) { create(:apple_verification_workflow_revision, project: project, account: account) }
   let(:attempt) { create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account) }
   let(:credential_lane) { instance_double(AppleVerification::SourceLane::CredentialLane) }
+  let(:lifecycle) { instance_double(AppleVerification::Lifecycle, stop: :stopped) }
 
   before { allow(credential_lane).to receive(:revoke!) }
 
@@ -66,16 +67,27 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(committed.reload.bundle_retained_until).to be_nil
   end
 
-  it "retains the failed VM and persists the retention deadline" do
+  it "disables retained VM networking before persisting the retention deadline" do
     attempt.update!(status: "failed", finished_at: Time.current)
+    allow(lifecycle).to receive(:stop) do
+      expect(attempt.container_retained_until).to be_nil
+      :stopped
+    end
 
     expect {
-      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, bundle_retention_days: 7)
+      described_class.call(
+        attempt: attempt,
+        credential_lane: credential_lane,
+        lifecycle: lifecycle,
+        failed_vm_retention_hours: 1,
+        bundle_retention_days: 7
+      )
     }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count }.by(1)
 
     attempt.reload
     expect(attempt.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
     expect(attempt.bundle_retained_until).to be_nil
+    expect(lifecycle).to have_received(:stop).with(attempt: attempt, request_id: "revocation:stop:#{attempt.id}")
     expect(credential_lane).to have_received(:revoke!)
   end
 
