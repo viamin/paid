@@ -73,4 +73,13 @@ RSpec.describe AppleVerificationAttempts::HostCapacity do
 
     expect(described_class.new(host:, token: "test-token", cache:).host_safety_snapshot).to be_nil
   end
+
+  it "returns a nil host-safety snapshot when memory is malformed" do
+    allow(host).to receive(:call).and_return(
+      "memory" => "unknown",
+      "disk" => { "free_gib" => 100 }
+    )
+
+    expect(described_class.new(host:, token: "test-token", cache:).host_safety_snapshot).to be_nil
+  end
 end

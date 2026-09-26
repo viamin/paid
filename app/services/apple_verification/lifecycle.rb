@@ -81,6 +81,20 @@ module AppleVerification
       :destroyed
     end
 
+    # Stops a retained VM without deleting its ledger entry. A stopped Tart
+    # guest has no active Softnet connection, so this removes guest network
+    # authority while the retention sweep awaits its destruction deadline.
+    def stop(attempt:, request_id:)
+      require_enabled!(attempt.project)
+      require_request_id!(request_id)
+
+      entry = resource_entry_for_attempt(attempt)
+      return :noop unless entry&.provider_resource_id.present?
+
+      request("stop", "request_id" => request_id, "vm_id" => entry.provider_resource_id)
+      :stopped
+    end
+
     private
 
     attr_reader :host, :token, :environment

@@ -41,10 +41,11 @@ module AppleVerification
         end
       end
 
-      def initialize(attempt:, outcome: attempt.status, credential_lane: nil, failed_vm_retention_hours: DEFAULT_FAILED_VM_RETENTION_HOURS, bundle_retention_days: DEFAULT_BUNDLE_RETENTION_DAYS, clock: Time, vm_destroy_result: nil)
+      def initialize(attempt:, outcome: attempt.status, credential_lane: nil, lifecycle: AppleVerification::Lifecycle.from_environment, failed_vm_retention_hours: DEFAULT_FAILED_VM_RETENTION_HOURS, bundle_retention_days: DEFAULT_BUNDLE_RETENTION_DAYS, clock: Time, vm_destroy_result: nil)
         @attempt = attempt
         @outcome = outcome
         @credential_lane = credential_lane || SourceLane::CredentialLane.new(attempt: attempt)
+        @lifecycle = lifecycle
         @failed_vm_retention_hours = failed_vm_retention_hours
         @bundle_retention_days = bundle_retention_days
         @clock = clock
@@ -86,7 +87,7 @@ module AppleVerification
 
       private
 
-      attr_reader :attempt, :outcome, :credential_lane, :failed_vm_retention_hours, :bundle_retention_days, :clock, :vm_destroy_result
+      attr_reader :attempt, :outcome, :credential_lane, :lifecycle, :failed_vm_retention_hours, :bundle_retention_days, :clock, :vm_destroy_result
 
       def finalize_destroyed_vm
         record_vm_destroyed!
@@ -96,9 +97,18 @@ module AppleVerification
       end
 
       def finalize_retained_vm
+        disable_retained_vm_network!
         retain_failure_window!
         revoke_credential!
         Result.new(outcome: OUTCOME_RETAINED, retained_until: failed_vm_retained_until, audit_event: nil)
+      end
+
+      # A stopped Tart guest has no active Softnet connection. Keep its ledger
+      # entry live for the retention sweep, which later performs destruction.
+      # A missing entry is safe: {Lifecycle#stop} returns +:noop+ only when no
+      # VM exists to retain.
+      def disable_retained_vm_network!
+        lifecycle&.stop(attempt: attempt, request_id: "revocation:stop:#{attempt.id}")
       end
 
       def record_vm_destroyed!

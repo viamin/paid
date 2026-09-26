@@ -46,7 +46,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
       end
 
       it "retains the VM behind the failure window when the immediate destroy raises" do
-        failing_lifecycle = instance_double(AppleVerification::Lifecycle)
+        failing_lifecycle = instance_double(AppleVerification::Lifecycle, stop: :stopped)
         allow(failing_lifecycle).to receive(:destroy).and_raise(StandardError, "host unreachable")
 
         result = described_class.call(attempt: attempt, outcome: "succeeded", lifecycle: failing_lifecycle)
@@ -60,7 +60,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
       end
 
       it "retains the VM when the lifecycle destroy is a no-op" do
-        noop_lifecycle = instance_double(AppleVerification::Lifecycle, destroy: :noop)
+        noop_lifecycle = instance_double(AppleVerification::Lifecycle, destroy: :noop, stop: :stopped)
 
         described_class.call(attempt: attempt, outcome: "succeeded", lifecycle: noop_lifecycle)
 
@@ -161,7 +161,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
       end
 
       it "retains the VM when the host-safety destroy fails" do
-        failing_lifecycle = instance_double(AppleVerification::Lifecycle)
+        failing_lifecycle = instance_double(AppleVerification::Lifecycle, stop: :stopped)
         allow(failing_lifecycle).to receive(:destroy).and_raise(StandardError, "host unreachable")
 
         result = described_class.call(

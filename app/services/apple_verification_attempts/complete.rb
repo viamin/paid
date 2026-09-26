@@ -21,11 +21,11 @@ module AppleVerificationAttempts
   class Complete
     Result = Data.define(:outcome, :failure_classification, :retained_until)
 
-    def self.call(attempt:, outcome:, failure_classification: nil, lifecycle: nil, revocation: nil, terminate_vm: false)
+    def self.call(attempt:, outcome:, failure_classification: nil, lifecycle: AppleVerification::Lifecycle.from_environment, revocation: nil, terminate_vm: false)
       new(attempt:, outcome:, failure_classification:, lifecycle:, revocation:, terminate_vm:).call
     end
 
-    def initialize(attempt:, outcome:, failure_classification: nil, lifecycle: nil, revocation: nil, terminate_vm: false)
+    def initialize(attempt:, outcome:, failure_classification: nil, lifecycle: AppleVerification::Lifecycle.from_environment, revocation: nil, terminate_vm: false)
       @attempt = attempt
       @outcome = outcome
       @failure_classification = failure_classification
@@ -60,6 +60,7 @@ module AppleVerificationAttempts
       @revocation || AppleVerification::Revocation::Enforce.new(
         attempt: attempt,
         outcome: outcome,
+        lifecycle: lifecycle,
         failed_vm_retention_hours: Config.failed_vm_retention_hours,
         vm_destroy_result: destroy_result
       )
