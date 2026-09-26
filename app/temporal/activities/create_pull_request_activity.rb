@@ -193,7 +193,8 @@ module Activities
     def produced_pr_numbers(issue, agent_run)
       issue.agent_runs.where(goal: "create_pr")
         .where.not(status: "cancelled")
-        .where.not(id: agent_run.id, pull_request_number: nil)
+        .where.not(id: agent_run.id)
+        .where.not(pull_request_number: nil)
         .pluck(:pull_request_number)
     end
 

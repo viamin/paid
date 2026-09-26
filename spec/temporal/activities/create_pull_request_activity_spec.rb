@@ -212,6 +212,22 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.error_message).to include("Existing open implementation PR #42")
     end
 
+    it "ignores failed producer runs without a pull request number when reconciling an implementation PR" do # @spec EAGER-QUEUE-009
+      create(:agent_run, :failed, :automatic, project: project, issue: issue, goal: "create_pr")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", pull_request_number: 42,
+        pull_request_url: "https://github.com/owner/repo/pull/42")
+      create(:issue, :pull_request, project: project, github_issue_id: 4242, github_number: 42,
+        github_state: "open", parent_issue_id: nil)
+
+      expect(github_client).not_to receive(:issue).with(project.full_name, nil)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result).to include(skipped: true, duplicate_implementation_pr: true)
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
     it "adds paid-tests-ready-for-review on test-writing runs" do # @spec TDD-PR-001
       agent_run.update!(
         tdd_phase: "test_writing",
