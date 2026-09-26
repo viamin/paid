@@ -43,9 +43,10 @@ module AppleVerificationAttempts
 
     # Finalises an attempt. Successful attempts drive the real VM destroy
     # through the lifecycle boundary, then revoke credentials; failed
-    # attempts revoke credentials and, only when the attempt holds a live
-    # VM, persist the retention window (which the sweep enforces after the
-    # deadline passes). The success path refuses to record a `destroyed`
+    # attempts revoke credentials and persist workspace-bundle retention;
+    # attempts holding a live VM also persist the VM retention window (which
+    # the sweep enforces after the deadline passes). The success path refuses
+    # to record a `destroyed`
     # audit event when no real destroy happened: if the lifecycle is
     # unavailable (host not configured) or the lifecycle reports a +:noop+
     # (no live ledger entry or no recorded vm_id), the call logs the skip
@@ -85,6 +86,7 @@ module AppleVerificationAttempts
           @revocation.call
         else
           @revocation.revoke_credential!
+          @revocation.persist_bundle_retention!
         end
         mark_finalized!
         Result.new(outcome: OUTCOME_RETAINED, retained_until: @attempt.container_retained_until, destroy_request_id: nil)

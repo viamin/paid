@@ -108,7 +108,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(failed.reload.container_retained_until).to be_present
   end
 
-  it "revokes credentials without a retention window for a failed attempt with no VM" do
+  it "revokes credentials without a VM retention window for a failed attempt with no VM" do
     failed = create(
       :apple_verification_attempt,
       project: project, account: account,
@@ -125,6 +125,7 @@ RSpec.describe AppleVerificationAttempts::Complete do
     expect(result.outcome).to eq("verification_vm_retained")
     expect(result.retained_until).to be_nil
     expect(failed.reload.container_retained_until).to be_nil
+    expect(failed.bundle_retained_until).to be_present
     expect(failed.reload.finalized_at).to be_present
   end
 
