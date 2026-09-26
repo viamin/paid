@@ -16,14 +16,8 @@ module AppleVerificationAttempts
     def call(attempt)
       raise ArgumentError, "an Apple verification attempt requires an agent run" unless attempt.agent_run
 
-      lifecycle.provision(
-        agent_run: attempt.agent_run,
-        image_id: attempt.apple_worker_profile.image_digest,
-        profile_id: attempt.apple_worker_profile_id,
-        request_id: "apple-verification-attempt:#{attempt.id}:provision",
-        apple_verification_attempt: attempt
-      )
-      dispatch_guest_job(attempt)
+      handle = provision_vm(attempt)
+      dispatch_guest_job(attempt, handle:)
       attempt.update!(status: "running", started_at: attempt.started_at || clock.current)
       complete_guest_result(attempt)
     end
@@ -32,14 +26,28 @@ module AppleVerificationAttempts
 
     attr_reader :lifecycle, :guest_job, :completion, :clock
 
+    def provision_vm(attempt)
+      lifecycle.provision(
+        agent_run: attempt.agent_run,
+        image_id: attempt.apple_worker_profile.image_digest,
+        profile_id: attempt.apple_worker_profile_id,
+        request_id: "apple-verification-attempt:#{attempt.id}:provision",
+        apple_verification_attempt: attempt
+      )
+    rescue Faraday::Error, Timeout::Error
+      WorkerHealth.new(profile: attempt.apple_worker_profile).record_failure
+      raise
+    end
+
     # The guest must receive its closed-protocol work before this attempt is
     # observable as running. `export_artifacts` gives the executor an explicit
     # result handoff rather than leaving a provisioned VM without a result path.
-    def dispatch_guest_job(attempt)
+    def dispatch_guest_job(attempt, handle:)
       guest_job.call(
         agent_run: attempt.agent_run,
         image_digest: attempt.apple_worker_profile.image_digest,
-        manifest: guest_manifest(attempt)
+        manifest: guest_manifest(attempt),
+        guest_connection: AppleVerification::GuestConnection.new(connection: handle.metadata.fetch("guest_connection"))
       )
     end
 
