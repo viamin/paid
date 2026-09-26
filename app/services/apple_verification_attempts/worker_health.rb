@@ -8,9 +8,10 @@ module AppleVerificationAttempts
       new(...).call
     end
 
-    def initialize(profile:, configuration: Configuration.new, clock: Time)
+    def initialize(profile:, configuration: Configuration.new, credential_revoker: nil, clock: Time)
       @profile = profile
       @configuration = configuration
+      @credential_revoker = credential_revoker
       @clock = clock
     end
 
@@ -20,6 +21,7 @@ module AppleVerificationAttempts
         attrs = { consecutive_failures: failures }
         attrs.merge!(status: "quarantined", quarantined_at: clock.current) if failures >= configuration.health_failure_limit
         health.update!(attrs)
+        revoke_active_credentials if health.quarantined?
       end
     end
 
@@ -41,10 +43,24 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :profile, :configuration, :clock
+    attr_reader :profile, :configuration, :credential_revoker, :clock
 
     def health
       @health ||= AppleVerificationWorkerHealth.find_or_create_by!(apple_worker_profile: profile)
+    end
+
+    def revoke_active_credentials
+      active_attempts.find_each do |attempt|
+        credential_revoker.call(attempt:)
+      end
+    end
+
+    def active_attempts
+      AppleVerificationAttempt.where(apple_worker_profile: profile, status: Admission::ACTIVE_STATES)
+    end
+
+    def credential_revoker
+      @credential_revoker ||= ->(attempt:) { AppleVerification::SourceLane::CredentialLane.new(attempt:).revoke! }
     end
   end
 end

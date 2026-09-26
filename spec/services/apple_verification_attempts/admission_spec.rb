@@ -4,7 +4,6 @@ require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Admission do
   # @spec APPLE-ATTEMPT-001
-  # @spec APPLE-ATTEMPT-002
   let(:attempt) { create(:apple_verification_attempt) }
   let(:capacity) do
     AppleVerificationAttempts::CapacitySnapshot.new(
@@ -34,5 +33,14 @@ RSpec.describe AppleVerificationAttempts::Admission do
 
     expect(result).not_to be_admitted
     expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "capacity_or_quota")
+  end
+
+  it "leaves the queued attempt in place while the active worker slot is occupied" do
+    create(:apple_verification_attempt, status: "running")
+
+    result = described_class.call(attempt:, capacity:)
+
+    expect(result).to be_deferred
+    expect(attempt.reload).to have_attributes(status: "queued", failure_classification: nil)
   end
 end
