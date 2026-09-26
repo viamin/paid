@@ -341,6 +341,13 @@ Rails.application.configure do
       class: "AppleVerificationWithheldRunSweepJob",
       description: "Re-invoke completion for runs withheld at the completion-verification gate (APPLE-ATTEMPT-013)"
     },
+    apple_verification_dispatch: {
+      # Run before the timeout and recovery sweeps. The job itself has a
+      # global GoodJob concurrency key because release one has one Apple VM.
+      cron: "7-59/5 * * * *",
+      class: "AppleVerificationDispatchJob",
+      description: "Admit and provision the fair Apple verification queue (APPLE-ATTEMPT-003)"
+    },
     apple_verification_timeout: {
       # Stagger onto 5-minute offsets (8/9) adjacent to the withheld-run sweep
       # (6) so the Apple maintenance family shares the 5-minute window without

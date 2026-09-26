@@ -123,7 +123,17 @@ RSpec.describe AppleVerificationAttempts::Validate do
     result = described_class.call(attempt: subject)
 
     expect(result.classification).to eq("unsupported_capability")
-    expect(result.reason).to eq("worker profile revoked")
+    expect(result.reason).to eq("worker profile unavailable")
+    expect(subject.reload).to have_attributes(status: "failed", failure_classification: "unsupported_capability")
+  end
+
+  it "marks the attempt failed with unsupported_capability when the worker profile is quarantined" do
+    subject = attempt
+    subject.apple_worker_profile.update!(quarantined_at: Time.current)
+
+    result = described_class.call(attempt: subject)
+
+    expect(result).to have_attributes(valid: false, classification: "unsupported_capability", reason: "worker profile unavailable")
     expect(subject.reload).to have_attributes(status: "failed", failure_classification: "unsupported_capability")
   end
 
