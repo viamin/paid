@@ -36,7 +36,7 @@ module AppleVerificationAttempts
         revision = binding_revision(agent_run.project, gate)
         return not_required(gate) unless revision
         return not_required(gate) if revision.required_checks.empty?
-        return execution_unavailable(revision, gate) unless Schedule.execution_available?
+        return execution_not_released(gate) unless Schedule.execution_available?
 
         attempt = latest_attempt(agent_run, revision, result_commit)
         return pending(revision, gate, reason: "Required Apple verification has not run for this agent run") unless attempt
@@ -48,7 +48,7 @@ module AppleVerificationAttempts
         revision = binding_revision(project, gate)
         return not_required(gate) unless revision
         return not_required(gate) if revision.required_checks.empty?
-        return execution_unavailable(revision, gate) unless Schedule.execution_available?
+        return execution_not_released(gate) unless Schedule.execution_available?
 
         attempt = latest_pull_request_attempt(project, pull_request.head.sha, revision)
         return pending(revision, gate, reason: "Required Apple verification has not run for this pull request") unless attempt
@@ -102,14 +102,19 @@ module AppleVerificationAttempts
         Decision.new(status: :not_required, reason: "No approved required Apple verification workflow applies to the #{gate} gate", attempt: nil, revision: nil, gate: gate)
       end
 
-      # While the guest-execution handoff is unavailable, required completion
-      # and pull-request gates cannot be satisfied by any attempt the scheduler
-      # is able to complete. The decision stays +pending+ (enforcing) so an agent
-      # run is withheld and PR review stays blocked until a verification succeeds
-      # or is explicitly waived. APPLE-ATTEMPT-013 forbids silently skipping
-      # required verification that cannot run.
-      def execution_unavailable(revision, gate)
-        pending(revision, gate, reason: "Apple verification execution is unavailable for the #{gate} gate")
+      # The guest-execution handoff does not yet deliver source, run the
+      # verification, and ingest a terminal result. It is therefore not a
+      # released required-workflow capability: enforcing it would park agent
+      # runs and PR reviews behind attempts that cannot ever complete. The
+      # gate becomes active only with that end-to-end handoff.
+      def execution_not_released(gate)
+        Decision.new(
+          status: :not_required,
+          reason: "Apple verification required-workflow enforcement is not released for the #{gate} gate",
+          attempt: nil,
+          revision: nil,
+          gate:
+        )
       end
 
       def pending(revision, gate, reason:)

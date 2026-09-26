@@ -21,9 +21,9 @@ module AppleVerificationAttempts
 
       # The existing guest executor accepts a fully constructed manifest, but
       # no control-plane handoff yet supplies an attempt's source and records
-      # its terminal result. Required completion verification must therefore
-      # remain unavailable rather than enqueue an attempt that can never
-      # release its AgentRun gate.
+      # its terminal result. Required-workflow enforcement remains unreleased
+      # until that handoff exists; otherwise an enabled gate could withhold an
+      # AgentRun or PR behind work that cannot complete.
       def execution_available?
         false
       end
