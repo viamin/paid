@@ -22,10 +22,11 @@
     than the viewport, which is the document-scroll failure this bound
     exists to prevent.
     (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635) %>
+<% chat_panel_bottom_space = local_assigns[:chat_panel_bottom_space] %>
 <div class="flex flex-col overflow-x-hidden"
      data-controller="chat"
      data-chat-session-id-value="<%= chat_session.id %>"
-     style="height: calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem));">
+     style="<%= "--chat-panel-bottom-space: #{chat_panel_bottom_space};" if chat_panel_bottom_space %>height: calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem));">
   <%# The chat page is chat-first: the only always-visible chrome is a
       single compact line — the title and a "Session details" toggle —
       so the transcript and composer stay the dominant region of the

@@ -349,6 +349,25 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      # @spec QUESTION-EXPLORATION-015
+      it "renders only the chat panel in a requesting Inbox frame" do
+        create(:chat_message, :assistant, chat_session: chat_session, content: "Inbox conversation")
+
+        get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+
+        expect(response).to have_http_status(:ok)
+        document = Nokogiri::HTML(response.body)
+        frame = document.at_css("turbo-frame#inbox-detail")
+        panel = frame&.at_css("div[data-controller='chat']")
+
+        expect(frame).to be_present
+        expect(panel).to be_present
+        expect(panel["style"]).to include("--chat-panel-bottom-space: 2rem")
+        expect(frame.text).to include("Inbox conversation")
+        expect(response.body).not_to include('id="chat-list"')
+        expect(response.body).not_to include("New Chat")
+      end
+
       it "autosaves both chat runner and model selectors with visible status" do
         # @spec CHAT-SESSION-PREFERENCES-002
         get chat_session_path(chat_session)
@@ -778,6 +797,7 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("New Chat")
         expect(response.body).to include("Open page")
         expect(response.body).to include("Projects - Paid")
+        expect(response.body).not_to include("turbo-frame")
       end
 
       it "wraps the popup capability panel inside the chat controller scope" do

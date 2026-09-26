@@ -121,6 +121,9 @@ class ChatSessionsController < ApplicationController
             chat_messages: @chat_messages,
             has_older_messages: @has_older_messages
           }
+        elsif requested_frame.present?
+          load_chat_panel_data
+          render partial: "chat_sessions/frame", locals: chat_panel_locals.merge(frame_id: requested_frame)
         else
           load_sidebar_data(active_session: @chat_session)
         end
@@ -457,11 +460,15 @@ class ChatSessionsController < ApplicationController
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
     @new_chat_session = ChatSession.new(container_capability: "none", auto_approve: current_user.settings.default_auto_approve)
+    load_chat_panel_data
+    @available_projects = current_account.projects.order(:name)
+  end
+
+  def load_chat_panel_data
     @available_runners = current_user.runners.kept_only.for_chat.api_key
       .includes(:provider_api_key, :integration_credential)
       .ordered
       .select { |runner| ChatSessions::BuildLlmClient.usable_runner?(runner) }
-    @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)
   end
 
@@ -473,6 +480,25 @@ class ChatSessionsController < ApplicationController
 
   def popup_request?
     params[:display] == "popup"
+  end
+
+  def requested_frame
+    request.headers["Turbo-Frame"].presence || params[:frame].presence
+  end
+
+  def chat_panel_locals
+    archived_chat_session = @chat_session.archived?
+
+    {
+      chat_session: @chat_session,
+      chat_messages: @chat_messages,
+      has_older_messages: @has_older_messages,
+      can_update_chat_session: policy(@chat_session).update? && !archived_chat_session,
+      can_archive_chat_session: policy(@chat_session).archive? && !archived_chat_session,
+      can_unarchive_chat_session: policy(@chat_session).unarchive? && archived_chat_session,
+      available_runners: @available_runners,
+      available_models: @available_models
+    }
   end
 
   def pinned_sidebar_batch(active_session, archived:)
