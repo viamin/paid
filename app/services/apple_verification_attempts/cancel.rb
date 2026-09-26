@@ -2,6 +2,7 @@
 
 module AppleVerificationAttempts
   # Cancels an attempt that has not reached a terminal lifecycle state and
+  # revokes its credential lane before recording the terminal state. It then
   # converges any live VM ledger entries toward cleanup so a cancelled
   # in-flight attempt cannot leave a running verification VM behind.
   # @spec APPLE-VERIFY-006
@@ -18,10 +19,12 @@ module AppleVerificationAttempts
     end
 
     def call
-      raise ArgumentError, "attempt is no longer active" unless @attempt.cancellable?
+      @attempt.with_lock do
+        raise ArgumentError, "attempt is no longer active" unless @attempt.cancellable?
 
-      @attempt.update!(status: "cancelled", finished_at: Time.current)
-      converge_vm_ledger!
+        AppleVerificationAttempts::Complete.call(attempt: @attempt, outcome: "cancelled")
+        converge_vm_ledger!
+      end
     end
 
     private
