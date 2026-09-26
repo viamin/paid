@@ -107,6 +107,18 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(github_client).not_to have_received(:create_pull_request)
     end
 
+    it "does not publish a follow-up for an unlinked implementation PR" do # @spec EAGER-QUEUE-010
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 41)
+      implementation_pr = create(:issue, :pull_request, project: project, github_number: 41, github_state: "open", parent_issue_id: nil)
+      follow_up_run = create(:agent_run, project: project, issue: implementation_pr, goal: "create_pr")
+
+      expect {
+        activity.execute(agent_run_id: follow_up_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #41/)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
     it "creates a pull request via the GitHub API" do
       issue.update!(title: "Resolve auth redirect bug")
 

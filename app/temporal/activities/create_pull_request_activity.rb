@@ -263,7 +263,22 @@ module Activities
     end
 
     def source_issue(issue)
-      issue.is_pull_request? ? issue.parent_issue || issue : issue
+      return issue unless issue.is_pull_request?
+
+      issue.parent_issue || source_issue_from_producing_run(issue) || issue
+    end
+
+    def source_issue_from_producing_run(pull_request)
+      AgentRun.joins(:issue)
+        .where(
+          project: pull_request.project,
+          goal: "create_pr",
+          pull_request_number: pull_request.github_number,
+          issues: { is_pull_request: false }
+        )
+        .order(created_at: :asc)
+        .first
+        &.issue
     end
 
     def create_pull_request(client, project, agent_run, issue, pr_body)
