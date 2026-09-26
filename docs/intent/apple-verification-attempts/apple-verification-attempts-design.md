@@ -68,8 +68,10 @@ follows one ordered contract:
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
 last five are terminal. Cancellation is available while an attempt is not
-terminal, and a rerun is an idempotent queued retry bound to its terminal
-source attempt (APPLE-VERIFY-006).
+terminal. It revokes the credential lane and persists the failed-VM retention
+deadline before recording the terminal state, while separately requesting
+durable cleanup for every live VM ledger entry. A rerun is an idempotent
+queued retry bound to its terminal source attempt (APPLE-VERIFY-006).
 
 ## Source and credential transfer
 

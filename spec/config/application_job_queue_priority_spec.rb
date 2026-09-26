@@ -32,7 +32,12 @@ RSpec.describe ApplicationJob, :no_db do
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
         AgentRunResourceJanitorJob
+        AppleVerificationDispatchJob
+        AppleVerificationHostSafetyJob
+        AppleVerificationRecoveryJob
+        AppleVerificationRetryJob
         AppleVerificationWithheldRunSweepJob
+        AppleVerificationTimeoutJob
         AuditEventRetentionJob
         BillingPeriodManagementJob
         DependencyBackfillJob

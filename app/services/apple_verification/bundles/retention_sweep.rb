@@ -14,7 +14,9 @@ module AppleVerification
     # screenshots, diagnostics) uploaded by
     # {AppleVerification::ArtifactIngestion::Ingest} live under sibling keys
     # in the same namespace and follow their own retention window. For each
-    # attempt whose +container_retained_until+ has passed, the sweep first
+    # attempt whose +container_retained_until+ has passed — a failed attempt
+    # retained at completion, or a succeeded attempt whose immediate destroy
+    # could not be backed by a real host action — the sweep first
     # drives the real VM destruction through the {AppleVerification::Lifecycle}
     # boundary (a Tart +host.destroy+ over the same authenticated channel the
     # lifecycle used to provision) so the audit event recorded downstream by
@@ -93,8 +95,12 @@ module AppleVerification
       end
 
       def expired_vms
+        # Includes `succeeded` attempts whose immediate destroy could not be
+        # backed by a real host action at completion time and fell back to the
+        # retention window; a normally-completed succeeded attempt has a NULL
+        # `container_retained_until` and never matches.
         AppleVerificationAttempt
-          .where(status: AppleVerificationAttempt::TERMINAL_STATES - %w[succeeded])
+          .where(status: AppleVerificationAttempt::TERMINAL_STATES)
           .where("container_retained_until IS NOT NULL AND container_retained_until <= ?", clock.current)
       end
 

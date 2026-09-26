@@ -9,6 +9,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
   let(:workflow_revision) { create(:apple_verification_workflow_revision, project: project, account: account) }
   let(:attempt) { create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account) }
   let(:credential_lane) { instance_double(AppleVerification::SourceLane::CredentialLane) }
+  let(:lifecycle) { instance_double(AppleVerification::Lifecycle, stop: :stopped) }
 
   before { allow(credential_lane).to receive(:revoke!) }
 
@@ -16,7 +17,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     attempt.update!(status: "succeeded")
 
     expect {
-      described_class.call(attempt: attempt, credential_lane: credential_lane, bundle_retention_days: 7)
+      described_class.call(attempt: attempt, credential_lane: credential_lane, bundle_retention_days: 7, vm_destroy_result: :destroyed)
     }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }.by(1)
       .and change { ExecutionAuditEvent.where(event_name: "apple_credential.revoked").count }.by(1)
 
@@ -25,11 +26,34 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(attempt.bundle_retained_until).to be_nil
   end
 
+  it "falls back to the retention window when the immediate destroy did not happen" do
+    attempt.update!(status: "succeeded")
+
+    expect {
+      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, vm_destroy_result: nil)
+    }.not_to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }
+
+    expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count).to eq(1)
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+    expect(credential_lane).to have_received(:revoke!)
+  end
+
+  it "falls back to the retention window when the lifecycle destroy was a no-op" do
+    attempt.update!(status: "succeeded")
+
+    expect {
+      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, vm_destroy_result: :noop)
+    }.not_to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }
+
+    expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count).to eq(1)
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+  end
+
   it "persists the bundle retention deadline for an uncommitted successful attempt" do
     uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
     uncommitted.update!(status: "succeeded")
 
-    described_class.call(attempt: uncommitted, credential_lane: credential_lane, bundle_retention_days: 7)
+    described_class.call(attempt: uncommitted, credential_lane: credential_lane, bundle_retention_days: 7, vm_destroy_result: :destroyed)
 
     expect(uncommitted.reload.bundle_retained_until).to be_within(2.seconds).of(7.days.from_now)
   end
@@ -38,21 +62,46 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     committed = create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
     committed.update!(status: "succeeded")
 
-    described_class.call(attempt: committed, credential_lane: credential_lane, bundle_retention_days: 7)
+    described_class.call(attempt: committed, credential_lane: credential_lane, bundle_retention_days: 7, vm_destroy_result: :destroyed)
 
     expect(committed.reload.bundle_retained_until).to be_nil
   end
 
-  it "retains the failed VM and persists the retention deadline" do
+  it "disables retained VM networking before persisting the retention deadline" do
     attempt.update!(status: "failed", finished_at: Time.current)
+    allow(lifecycle).to receive(:stop) do
+      expect(attempt.container_retained_until).to be_nil
+      :stopped
+    end
 
     expect {
-      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, bundle_retention_days: 7)
+      described_class.call(
+        attempt: attempt,
+        credential_lane: credential_lane,
+        lifecycle: lifecycle,
+        failed_vm_retention_hours: 1,
+        bundle_retention_days: 7
+      )
     }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count }.by(1)
 
     attempt.reload
     expect(attempt.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
     expect(attempt.bundle_retained_until).to be_nil
+    expect(lifecycle).to have_received(:stop).with(attempt: attempt, request_id: "revocation:stop:#{attempt.id}")
+    expect(credential_lane).to have_received(:revoke!)
+  end
+
+  it "uses the supplied outcome before the terminal status is persisted" do
+    expect {
+      described_class.call(
+        attempt: attempt,
+        outcome: "failed",
+        credential_lane: credential_lane,
+        failed_vm_retention_hours: 1
+      )
+    }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count }.by(1)
+
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
     expect(credential_lane).to have_received(:revoke!)
   end
 
@@ -65,6 +114,23 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     committed.reload
     expect(committed.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
     expect(committed.bundle_retained_until).to be_nil
+  end
+
+  it "records the VM destruction audit event and skips retention when a non-success outcome reports a real destroy" do
+    attempt.update!(status: "unavailable", finished_at: Time.current)
+
+    expect {
+      described_class.call(
+        attempt: attempt,
+        credential_lane: credential_lane,
+        failed_vm_retention_hours: 1,
+        vm_destroy_result: :destroyed
+      )
+    }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }.by(1)
+
+    attempt.reload
+    expect(attempt.container_retained_until).to be_nil
+    expect(credential_lane).to have_received(:revoke!)
   end
 
   it "records the VM destruction audit event and clears the retention deadline for a retained VM" do
