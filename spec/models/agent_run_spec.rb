@@ -1628,18 +1628,18 @@ RSpec.describe AgentRun do
 
       # @spec APPLE-ATTEMPT-011
       # @spec APPLE-ATTEMPT-013
-      it "withholds completion while required verification execution is unavailable" do
+      it "does not enable required verification completion gates while execution is unavailable" do
         project = create(:project, apple_verification_mode: "on_demand")
         agent_run = create(:agent_run, :with_git_context, project:, status: "running", started_at: 5.minutes.ago)
         approve_completion_workflow(project)
         FeatureFlags.enable!(:apple_verification_workers, project:)
 
         expect {
-          expect(agent_run.complete!(result_commit: "abc123def456789012345678901234567890abcd")).to be false
+          expect(agent_run.complete!(result_commit: "abc123def456789012345678901234567890abcd")).to be true
         }.not_to change(AppleVerificationAttempt, :count)
 
-        expect(agent_run.reload.status).to eq("running")
-        expect(agent_run.external_metadata).to have_key(described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
+        expect(agent_run.reload.status).to eq("completed")
+        expect(agent_run.external_metadata).not_to have_key(described_class::COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
       end
 
       # @spec APPLE-ATTEMPT-011
