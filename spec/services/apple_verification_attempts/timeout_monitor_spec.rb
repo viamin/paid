@@ -83,4 +83,25 @@ RSpec.describe AppleVerificationAttempts::TimeoutMonitor do
       expect(complete).not_to have_received(:call).with(hash_including(attempt: fresh))
     end
   end
+
+  it "does not time out an attempt cancelled before the completion lock is acquired" do
+    travel_to(Time.current) do
+      attempt = create(:apple_verification_attempt, status: "running", started_at: 46.minutes.ago)
+      complete = spy
+      active_attempts = instance_double(ActiveRecord::Relation)
+
+      allow(AppleVerificationAttempt).to receive(:where).with(status: described_class::ACTIVE_STATUSES).and_return(active_attempts)
+      allow(active_attempts).to receive(:find_each).and_yield(attempt)
+      allow(attempt).to receive(:with_lock) do |&block|
+        attempt.update!(status: "cancelled")
+        block.call
+      end
+
+      result = described_class.call(complete: complete)
+
+      expect(result.timed_out).to eq(0)
+      expect(result.scanned).to eq(1)
+      expect(complete).not_to have_received(:call)
+    end
+  end
 end

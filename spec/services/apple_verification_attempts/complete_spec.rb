@@ -140,6 +140,45 @@ RSpec.describe AppleVerificationAttempts::Complete do
       end
     end
 
+    context "with a host-safety termination (terminate_vm)" do
+      it "drives the destroy for a non-success outcome and records a real destroy" do
+        lifecycle = instance_double(AppleVerification::Lifecycle, destroy: :destroyed)
+
+        result = described_class.call(
+          attempt: attempt,
+          outcome: "unavailable",
+          failure_classification: "worker_infrastructure",
+          lifecycle: lifecycle,
+          terminate_vm: true
+        )
+
+        expect(result.outcome).to eq("unavailable")
+        expect(result.retained_until).to be_nil
+        expect(lifecycle).to have_received(:destroy).with(attempt: attempt, request_id: "complete:#{attempt.id}")
+        expect(attempt.reload.status).to eq("unavailable")
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed", apple_verification_attempt_id: attempt.id).count).to eq(1)
+        expect(attempt.container_retained_until).to be_nil
+      end
+
+      it "retains the VM when the host-safety destroy fails" do
+        failing_lifecycle = instance_double(AppleVerification::Lifecycle)
+        allow(failing_lifecycle).to receive(:destroy).and_raise(StandardError, "host unreachable")
+
+        result = described_class.call(
+          attempt: attempt,
+          outcome: "unavailable",
+          failure_classification: "worker_infrastructure",
+          lifecycle: failing_lifecycle,
+          terminate_vm: true
+        )
+
+        expect(result.retained_until).to be_within(2.seconds).of(1.hour.from_now)
+        expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed", apple_verification_attempt_id: attempt.id).count).to eq(0)
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained", apple_verification_attempt_id: attempt.id).count).to eq(1)
+      end
+    end
+
     context "with a non-terminal outcome" do
       it "raises ArgumentError" do
         expect do

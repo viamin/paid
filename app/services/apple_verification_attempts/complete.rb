@@ -3,8 +3,10 @@
 module AppleVerificationAttempts
   # The canonical terminal transition for an Apple verification attempt.
   #
-  # On success, drives VM destruction through the lifecycle boundary first,
-  # then revokes the attempt's credentials and network authority via
+  # On success — and, when +terminate_vm+ is set, on any terminal outcome
+  # (e.g. a host-safety termination that must relieve memory/disk pressure
+  # immediately) — drives VM destruction through the lifecycle boundary
+  # first, then revokes the attempt's credentials and network authority via
   # {AppleVerification::Revocation::Enforce} — which records the `destroyed`
   # audit event only when the lifecycle destroy actually happened — before
   # persisting the terminal +outcome+ (and optional +failure_classification+).
@@ -19,22 +21,23 @@ module AppleVerificationAttempts
   class Complete
     Result = Data.define(:outcome, :failure_classification, :retained_until)
 
-    def self.call(attempt:, outcome:, failure_classification: nil, lifecycle: nil, revocation: nil)
-      new(attempt:, outcome:, failure_classification:, lifecycle:, revocation:).call
+    def self.call(attempt:, outcome:, failure_classification: nil, lifecycle: nil, revocation: nil, terminate_vm: false)
+      new(attempt:, outcome:, failure_classification:, lifecycle:, revocation:, terminate_vm:).call
     end
 
-    def initialize(attempt:, outcome:, failure_classification: nil, lifecycle: nil, revocation: nil)
+    def initialize(attempt:, outcome:, failure_classification: nil, lifecycle: nil, revocation: nil, terminate_vm: false)
       @attempt = attempt
       @outcome = outcome
       @failure_classification = failure_classification
       @lifecycle = lifecycle
       @revocation = revocation
+      @terminate_vm = terminate_vm
     end
 
     def call
       raise ArgumentError, "outcome must be a terminal state" unless outcome.in?(AppleVerificationAttempt::TERMINAL_STATES)
 
-      destroy_result = destroy_vm if outcome == "succeeded"
+      destroy_result = destroy_vm if terminate_vm_requested?
       revocation_result = revocation(destroy_result).call
       attempt.update!(terminal_attributes)
 
@@ -48,6 +51,10 @@ module AppleVerificationAttempts
     private
 
     attr_reader :attempt, :outcome, :failure_classification, :lifecycle
+
+    def terminate_vm_requested?
+      outcome == "succeeded" || @terminate_vm
+    end
 
     def revocation(destroy_result)
       @revocation || AppleVerification::Revocation::Enforce.new(
