@@ -43,8 +43,8 @@ bundle exec rspec \
    `verdict_missing` result without receiving the review required by RDR-067.
    A focused child issue must schedule/de-duplicate review runs per current
    PR HEAD and approved design revision. The audit attempted to file it, but
-   the environment has no GitHub write credential; it must be filed before
-   closing #3871.
+   the environment has no GitHub write credential. Until that issue exists,
+   this report tracks #3871 rather than closing it.
 2. **Evaluation and rollout evidence.** No false-alarm/missed-drift results
    are recorded. Existing open issue [#3870](https://github.com/viamin/paid/issues/3870)
    already owns this gap, so no duplicate issue is needed.
@@ -63,6 +63,6 @@ code and documentation.
 ## Epic Closure
 
 Do **not** close [#3861](https://github.com/viamin/paid/issues/3861). The PR
-description must say `Tracks #3861`, not `Closes #3861`; it may close #3871
-only after the child gap issue exists and the issue owner accepts this partial
-closeout workflow.
+description must say `Tracks #3861` and `Tracks #3871`, not `Closes` either
+issue. #3871 remains open until the child gap issue exists and the issue owner
+accepts this partial closeout workflow.
