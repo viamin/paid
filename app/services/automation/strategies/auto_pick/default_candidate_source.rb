@@ -223,7 +223,7 @@ module Automation
             end
           end
 
-          def base_scope(project, excluding_run_id: nil)
+          def base_scope(project, excluding_run_id: nil) # @spec EAGER-QUEUE-009
             blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil)

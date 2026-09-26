@@ -570,8 +570,14 @@ class Issue < ApplicationRecord
       .distinct
       .pluck(:parent_issue_id)
       .to_set
+    paid_generated_open_pr_ids = issues.group_by(&:project).flat_map do |project, project_issues|
+      paid_generated_pull_request_source_issue_ids(
+        project: project,
+        github_state: "open"
+      ).where(issue_id: project_issues.map(&:id)).distinct.pluck(:issue_id)
+    end.to_set
 
-    in_progress_ids = active_run_ids | has_open_pr_ids
+    in_progress_ids = active_run_ids | has_open_pr_ids | paid_generated_open_pr_ids
     eligible_ids = auto_pick_eligible_paid_state_scope(where(id: issue_ids)).pluck(:id).to_set
 
     issues.each_with_object({}) do |issue, hash|
@@ -634,7 +640,6 @@ class Issue < ApplicationRecord
       .select(:issue_id)
   end
   private_class_method :paid_generated_pull_request_source_issue_ids
-
   # Returns a Hash mapping issue_id => the most recently updated open
   # paid-generated pull request (an Issue row with is_pull_request: true).
   # A PR is "paid-generated" when an AgentRun in the same project produced
