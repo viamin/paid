@@ -31,6 +31,23 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
       expect(profile.reload.quarantined_at).to eq(original_stamp)
       expect(profile).to be_quarantined
     end
+
+    it "re-quarantines a profile that fails again after returning to service" do
+      profile = create(:apple_worker_profile)
+      3.times { described_class.record_failure!(profile:, reason: "worker crash") }
+      described_class.return_to_service!(profile:, smoke_test_passed: true)
+      expect(profile.reload).not_to be_quarantined
+
+      2.times { described_class.record_failure!(profile:, reason: "host disk full") }
+      expect(profile.reload).not_to be_quarantined
+
+      result = described_class.record_failure!(profile:, reason: "host disk full")
+
+      expect(result.quarantined).to be(true)
+      expect(profile.reload).to be_quarantined
+      expect(profile).not_to be_available
+      expect(profile.quarantine_reason).to eq("host disk full")
+    end
   end
 
   # @spec APPLE-ATTEMPT-015

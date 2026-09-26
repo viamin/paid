@@ -27,6 +27,56 @@ RSpec.describe AppleVerificationAttempts::Complete do
         expect(lifecycle).to have_received(:destroy).with(attempt: attempt, request_id: "complete:#{attempt.id}")
         expect(revocation).to have_received(:call)
       end
+
+      it "drives the destroy before revocation and before recording the terminal state" do
+        order = []
+        allow(lifecycle).to receive(:destroy) { order << :destroy; :destroyed }
+        allow(revocation).to receive(:call) { order << :revoke; revocation_result }
+
+        described_class.call(attempt: attempt, outcome: "succeeded", lifecycle: lifecycle, revocation: revocation)
+
+        expect(order).to eq([ :destroy, :revoke ])
+      end
+
+      it "records the destroyed audit event only when the lifecycle destroy really happened" do
+        described_class.call(attempt: attempt, outcome: "succeeded", lifecycle: lifecycle)
+
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed", apple_verification_attempt_id: attempt.id).count).to eq(1)
+        expect(attempt.reload.container_retained_until).to be_nil
+      end
+
+      it "retains the VM behind the failure window when the immediate destroy raises" do
+        failing_lifecycle = instance_double(AppleVerification::Lifecycle)
+        allow(failing_lifecycle).to receive(:destroy).and_raise(StandardError, "host unreachable")
+
+        result = described_class.call(attempt: attempt, outcome: "succeeded", lifecycle: failing_lifecycle)
+
+        expect(result.outcome).to eq("succeeded")
+        expect(result.retained_until).to be_within(2.seconds).of(1.hour.from_now)
+        expect(attempt.reload.status).to eq("succeeded")
+        expect(attempt.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed", apple_verification_attempt_id: attempt.id).count).to eq(0)
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained", apple_verification_attempt_id: attempt.id).count).to eq(1)
+      end
+
+      it "retains the VM when the lifecycle destroy is a no-op" do
+        noop_lifecycle = instance_double(AppleVerification::Lifecycle, destroy: :noop)
+
+        described_class.call(attempt: attempt, outcome: "succeeded", lifecycle: noop_lifecycle)
+
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed", apple_verification_attempt_id: attempt.id).count).to eq(0)
+        expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+      end
+
+      it "retains the VM when no lifecycle is configured instead of recording a destroy it cannot back up" do
+        result = described_class.call(attempt: attempt, outcome: "succeeded")
+
+        expect(result.retained_until).to be_within(2.seconds).of(1.hour.from_now)
+        expect(attempt.reload.status).to eq("succeeded")
+        expect(attempt.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed", apple_verification_attempt_id: attempt.id).count).to eq(0)
+        expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained", apple_verification_attempt_id: attempt.id).count).to eq(1)
+      end
     end
 
     context "with a failed outcome" do

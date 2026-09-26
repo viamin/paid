@@ -34,7 +34,7 @@
   timeout (default 45 minutes), the system SHALL end it in the `timed_out`
   state, and a capacity exhaustion or timeout outcome SHALL be reported as an
   infrastructure result, never as a code failure.
-  *Tests:* `spec/services/apple_verification_attempts/timeout_spec.rb`
+  *Tests:* `spec/services/apple_verification_attempts/timeout_monitor_spec.rb`
   *Code:* `AppleVerificationAttempts::TimeoutMonitor`
 
 - [x] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system

@@ -18,6 +18,10 @@ module AppleVerificationAttempts
 
         if profile.consecutive_health_failures >= Config.worker_health_failure_threshold
           profile.quarantined_at ||= Time.current
+          # `quarantined?` requires `returned_to_service_at` to be clear, so a
+          # profile that previously returned to service must drop that stamp
+          # for the re-quarantine to take effect.
+          profile.returned_to_service_at = nil
           profile.quarantine_reason = reason
         end
 
