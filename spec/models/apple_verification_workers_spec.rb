@@ -408,4 +408,44 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(event).to be_invalid
     expect(event.errors[:account]).to include("must match the Apple verification attempt's account")
   end
+
+  describe "#quarantined?" do # @spec APPLE-ATTEMPT-015
+    it "is false for a fresh profile" do
+      profile = create(:apple_worker_profile)
+
+      expect(profile.quarantined?).to be(false)
+    end
+
+    it "is true once quarantined and not yet returned to service" do
+      profile = create(:apple_worker_profile, quarantined_at: Time.current)
+
+      expect(profile.quarantined?).to be(true)
+    end
+
+    it "is false once returned to service" do
+      profile = create(:apple_worker_profile, quarantined_at: Time.current, returned_to_service_at: Time.current)
+
+      expect(profile.quarantined?).to be(false)
+    end
+  end
+
+  describe "#available?" do # @spec APPLE-ATTEMPT-015
+    it "is true for an active, non-quarantined profile" do
+      profile = create(:apple_worker_profile)
+
+      expect(profile.available?).to be(true)
+    end
+
+    it "is false for a revoked profile" do
+      profile = create(:apple_worker_profile, status: "revoked")
+
+      expect(profile.available?).to be(false)
+    end
+
+    it "is false for a quarantined profile" do
+      profile = create(:apple_worker_profile, quarantined_at: Time.current)
+
+      expect(profile.available?).to be(false)
+    end
+  end
 end

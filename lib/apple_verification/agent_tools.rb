@@ -21,6 +21,7 @@ module AppleVerification
     WorkflowUnavailableError = Class.new(StandardError)
     InvalidSourceError = Class.new(ArgumentError)
     QuotaExceededError = Class.new(StandardError)
+    QueueCapacityExceededError = Class.new(StandardError)
     CaptureNotDeclaredError = Class.new(StandardError)
 
     Request = Data.define(:revision, :source_digest, :commit_sha)
@@ -82,7 +83,6 @@ module AppleVerification
         attempt = project.apple_verification_attempts.find_by(id: attempt_id)
         raise AuthorityError, "attempt not found for this project" if attempt.nil?
         raise AuthorityError, "attempt belongs to a different agent run" unless attempt.agent_run_id == agent_run.id
-        raise ArgumentError, "attempt is no longer active" if attempt.terminal?
 
         AppleVerificationAttempts::Cancel.call(attempt: attempt)
         { "status" => "cancelled", "attempt_id" => attempt.id }
@@ -178,25 +178,20 @@ module AppleVerification
       end
 
       def create_attempt(project:, agent_run:, request:, requested_capture: nil)
-        # The insert and the queue admission share one transaction so a queue
-        # limit refusal rolls the queued attempt back instead of stranding a
-        # phantom row the scheduler would later admit.
-        AppleVerificationAttempt.transaction do
-          attempt = project.apple_verification_attempts.create!(
-            account: project.account,
-            agent_run: agent_run,
-            apple_verification_workflow_revision: request.revision,
-            apple_worker_profile: request.revision.apple_worker_profile,
-            source_digest: request.source_digest,
-            commit_sha: request.commit_sha,
-            requested_capture: requested_capture,
-            lifecycle_gate: request.revision.lifecycle_gate,
-            retry_number: 0,
-            status: "queued"
-          )
-          AppleVerificationAttempts::Queue.new.enqueue(attempt:)
-          attempt
-        end
+        raise QueueCapacityExceededError, "Apple verification queue is at capacity" if AppleVerificationAttempts::Queue.full?
+
+        project.apple_verification_attempts.create!(
+          account: project.account,
+          agent_run: agent_run,
+          apple_verification_workflow_revision: request.revision,
+          apple_worker_profile: request.revision.apple_worker_profile,
+          source_digest: request.source_digest,
+          commit_sha: request.commit_sha,
+          requested_capture: requested_capture,
+          lifecycle_gate: request.revision.lifecycle_gate,
+          retry_number: 0,
+          status: "queued"
+        )
       rescue ActiveRecord::RecordNotUnique
         # Backstop for the check-then-create race in ensure_quota: the partial
         # unique index on active attempts per agent run rejects the second
@@ -227,6 +222,7 @@ module AppleVerification
         {
           "attempt_id" => attempt.id,
           "status" => attempt.status,
+          "queue_position" => AppleVerificationAttempts::Queue.position(attempt: attempt),
           "failure_classification" => attempt.failure_classification,
           "lifecycle_gate" => attempt.lifecycle_gate,
           "source_digest" => attempt.source_digest,

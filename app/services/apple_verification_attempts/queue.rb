@@ -1,85 +1,66 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Fair, persisted round-robin queue across account and project heads.
+  # Fair, deterministic ordering of queued Apple verification attempts for the
+  # single-worker scheduler. Accounts take turns, as do projects within each
+  # account; attempts remain FIFO within a project.
   # @spec APPLE-ATTEMPT-003
   class Queue
-    def self.call(...)
-      new(...).call
-    end
+    FIFO_ORDER = { created_at: :asc, id: :asc }.freeze
 
-    def initialize(configuration: Configuration.new, clock: Time)
-      @configuration = configuration
-      @clock = clock
-    end
-
-    def call(attempt:)
-      enqueue(attempt:)
-    end
-
-    def enqueue(attempt:)
-      attempt.with_lock do
-        return attempt unless attempt.status == "queued"
-
-        enforce_limits!(attempt)
-        attempt.update!(queue_entered_at: attempt.queue_entered_at || clock.current)
+    def self.ordered
+      account_queues = queued_attempts.group_by(&:account_id).transform_values do |attempts|
+        project_queues(attempts)
       end
-      attempt
+
+      round_robin(account_queues)
     end
 
-    def cancel(attempt)
-      attempt.with_lock do
-        return attempt if attempt.terminal?
-
-        attempt.update!(status: "cancelled", failure_classification: "cancellation_or_timeout", finished_at: clock.current)
-      end
-      attempt
-    end
-
-    def next
-      candidates.first
-    end
-
-    def position(attempt)
+    def self.position(attempt:)
       return nil unless attempt.status == "queued"
 
-      candidates.index { |candidate| candidate.id == attempt.id }.to_i + 1
+      ids = ordered.map(&:id)
+      ids.index(attempt.id)&.+(1)
     end
 
-    # Fair-ordered queued attempts, head first.
-    def candidates
-      remaining = AppleVerificationAttempt.where(status: "queued").order(:queue_entered_at, :id).to_a
-      ordered = []
-      until remaining.empty?
-        fair_account_order(remaining).each { |account_id| ordered << shift_fair_head(remaining, account_id) }
+    def self.depth
+      AppleVerificationAttempt.where(status: "queued").count
+    end
+
+    def self.full?
+      depth >= Config.max_queue_depth
+    end
+
+    def self.queued_attempts
+      AppleVerificationAttempt.where(status: "queued").order(FIFO_ORDER).to_a
+    end
+    private_class_method :queued_attempts
+
+    def self.project_queues(attempts)
+      attempts.group_by(&:project_id).sort_by { |_project_id, queue| queue.first.slice(:created_at, :id).values }.to_h
+    end
+    private_class_method :project_queues
+
+    def self.round_robin(account_queues)
+      ordered_accounts = account_queues.sort_by { |_account_id, projects| projects.values.first.first.slice(:created_at, :id).values }
+      interleave(ordered_accounts.map { |_account_id, projects| round_robin_projects(projects) })
+    end
+    private_class_method :round_robin
+
+    def self.round_robin_projects(projects)
+      interleave(projects.values)
+    end
+    private_class_method :round_robin_projects
+
+    def self.interleave(queues)
+      queues = queues.map(&:dup)
+      [].tap do |attempts|
+        until queues.empty?
+          queues.each { |queue| attempts << queue.shift if queue.any? }
+          queues.reject!(&:empty?)
+        end
       end
-      ordered
     end
-
-    private
-
-    attr_reader :configuration, :clock
-
-    def enforce_limits!(attempt)
-      queued_attempts = AppleVerificationAttempt.where(status: "queued").where.not(id: attempt.id)
-      raise ArgumentError, "Apple verification queue is full" if queued_attempts.count >= configuration.maximum_queue_depth
-      return unless attempt.agent_run_id
-
-      attempts = AppleVerificationAttempt.where(agent_run_id: attempt.agent_run_id).where.not(id: attempt.id).count
-      raise ArgumentError, "Apple verification attempt limit reached for agent run" if attempts >= configuration.maximum_attempts_per_run
-    end
-
-    def fair_account_order(remaining)
-      remaining.group_by(&:account_id).values.map(&:first)
-        .sort_by { |candidate| [ candidate.queue_entered_at || candidate.created_at, candidate.id ] }
-        .map(&:account_id)
-    end
-
-    def shift_fair_head(remaining, account_id)
-      project_heads = remaining.select { |candidate| candidate.account_id == account_id }.group_by(&:project_id).values.map(&:first)
-      next_attempt = project_heads.min_by { |candidate| [ candidate.queue_entered_at || candidate.created_at, candidate.id ] }
-      remaining.delete(next_attempt)
-      next_attempt
-    end
+    private_class_method :interleave
   end
 end

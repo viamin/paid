@@ -1,107 +1,44 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Serializes admission and turns capacity refusal into an infrastructure result.
+  # Decides whether a queued attempt may start a verification VM, and whether
+  # a running host must be stopped for host safety.
   # @spec APPLE-ATTEMPT-001
-  # @spec APPLE-ATTEMPT-005
-  # @spec APPLE-ATTEMPT-015
+  # @spec APPLE-ATTEMPT-002
   class Admission
-    ACTIVE_STATES = %w[provisioning running].freeze
-    ADVISORY_LOCK_ID = 68_393_601
-    QUARANTINE_REASON = "worker is quarantined"
+    Result = Data.define(:admitted, :reason, :classification)
 
-    Result = Data.define(:status, :attempt, :reason) do
-      def admitted?
-        status == :admitted
-      end
-
-      def deferred?
-        status == :deferred
-      end
-
-      # Quarantine is scoped to one worker, so callers may skip this attempt
-      # and admit later candidates; other deferrals are queue-wide.
-      def worker_quarantined?
-        status == :deferred && reason == QUARANTINE_REASON
-      end
+    def self.call(attempt:, capacity:, active_vms:, critical_memory_samples:)
+      new(attempt:, capacity:, active_vms:, critical_memory_samples:).call
     end
 
-    def self.call(...)
-      new(...).call
+    def self.host_safety_violation?(capacity:, critical_memory_samples:)
+      critical_memory_samples >= Config.critical_memory_pressure_samples ||
+        capacity[:free_host_disk_gib] <= 0
     end
 
-    def initialize(attempt:, capacity:, configuration: Configuration.new, clock: Time)
+    def initialize(attempt:, capacity:, active_vms:, critical_memory_samples:)
       @attempt = attempt
       @capacity = capacity
-      @configuration = configuration
-      @clock = clock
+      @active_vms = active_vms
+      @critical_memory_samples = critical_memory_samples
     end
 
     def call
-      AppleVerificationAttempt.transaction do
-        lock_scheduler!
-        attempt.lock!
-        return Result.new(status: :unchanged, attempt:, reason: nil) unless attempt.status == "queued"
-        return Result.new(status: :unchanged, attempt:, reason: "Apple verification workers are disabled") unless enabled?
-        return validation_failure! unless validation.valid?
+      reason = refusal_reason
+      return Result.new(admitted: false, reason:, classification: "capacity_or_quota") if reason
 
-        reason = deferral_reason
-        return Result.new(status: :deferred, attempt:, reason:) if reason
-
-        reason = refusal_reason
-        return refuse!(reason) if reason
-
-        attempt.update!(status: "provisioning", admission_reserved_at: clock.current, started_at: attempt.started_at || clock.current)
-        Result.new(status: :admitted, attempt:, reason: nil)
-      end
+      Result.new(admitted: true, reason: nil, classification: nil)
     end
 
     private
 
-    attr_reader :attempt, :capacity, :configuration, :clock
-
-    def lock_scheduler!
-      quoted_id = AppleVerificationAttempt.connection.quote(ADVISORY_LOCK_ID)
-      AppleVerificationAttempt.connection.execute("SELECT pg_advisory_xact_lock(#{quoted_id})")
-    end
-
     def refusal_reason
-      return "critical memory pressure" if capacity.critical_memory_pressure
-      return "insufficient host disk" if capacity.free_host_disk_bytes < configuration.minimum_host_disk_bytes
-      return "insufficient host memory" if capacity.free_memory_fraction < configuration.minimum_memory_free_fraction
-      "insufficient guest disk" if capacity.free_guest_disk_bytes < configuration.minimum_guest_disk_bytes
-    end
-
-    def deferral_reason
-      return QUARANTINE_REASON if worker_health.quarantined?
-
-      "active VM limit reached" if active_attempts >= configuration.active_vm_limit
-    end
-
-    def enabled?
-      FeatureFlags.enabled?(:apple_verification_workers, project: attempt.project)
-    end
-
-    def validation
-      @validation ||= Validate.call(attempt:)
-    end
-
-    def validation_failure!
-      attempt.update!(status: "failed", failure_classification: validation.failure_classification, finished_at: clock.current)
-      Result.new(status: :invalid, attempt:, reason: validation.reason)
-    end
-
-    def active_attempts
-      AppleVerificationAttempt.where(status: ACTIVE_STATES).count
-    end
-
-    def worker_health
-      AppleVerificationWorkerHealth.find_or_create_by!(apple_worker_profile: attempt.apple_worker_profile)
-    end
-
-    def refuse!(reason)
-      attempt.update!(status: "unavailable", failure_classification: "capacity_or_quota", finished_at: clock.current)
-      Result.new(status: :unavailable, attempt:, reason:)
+      return "active VM limit reached" if @active_vms >= Config.max_active_vms
+      return "insufficient free host disk" if @capacity[:free_host_disk_gib] < Config.min_free_host_disk_gib
+      return "insufficient free memory" if @capacity[:free_memory_percent] < Config.min_free_memory_percent
+      return "sustained critical memory pressure" if @critical_memory_samples >= Config.critical_memory_pressure_samples
+      "insufficient free guest disk" if @capacity[:free_guest_disk_gib] < Config.min_free_guest_disk_gib
     end
   end
 end

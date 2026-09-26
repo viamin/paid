@@ -25,7 +25,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     expect(lifecycle).to have_received(:provision)
     expect(guest_job).to have_received(:call)
-    expect(completion).to have_received(:call).with(attempt:, status: "succeeded", lifecycle:, clock: Time)
+    expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", lifecycle:)
     expect(attempt.reload.status).to eq("running")
   end
 
@@ -40,7 +40,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     described_class.new(lifecycle:, guest_job:).call(attempt)
 
-    expect(lifecycle).to have_received(:destroy).with(attempt:, request_id: "attempt:destroy:#{attempt.id}")
+    expect(lifecycle).to have_received(:destroy).with(attempt:, request_id: "complete:#{attempt.id}")
     expect(attempt.reload).to have_attributes(status: "succeeded", failure_classification: nil)
     expect(attempt.reload.finished_at).to be_present
   end

@@ -1,35 +1,63 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Ends overdue attempts as infrastructure timeouts and requests VM cleanup.
+  # Times out attempts stuck in a non-terminal `provisioning`/`running` state
+  # beyond the configured attempt timeout. Each stale attempt is completed as
+  # `timed_out`/`cancellation_or_timeout`, which drives VM revocation and
+  # retention through `AppleVerificationAttempts::Complete`. The status is
+  # status and timeout age are rechecked under the attempt lock before
+  # completing so a concurrent update is not overwritten with `timed_out`.
+  # Idempotent: a timed
+  # out attempt is terminal, so a rerun finds none.
   # @spec APPLE-ATTEMPT-004
   class TimeoutMonitor
-    def self.call(...)
-      new(...).call
+    ACTIVE_STATUSES = %w[provisioning running].freeze
+
+    Result = Data.define(:timed_out, :scanned)
+
+    def self.call(now: Time.current, complete: nil)
+      new(now: now, complete: complete).call
     end
 
-    def initialize(configuration: Configuration.new, cancellation: Cancel, lifecycle: AppleVerification::Lifecycle.from_environment, clock: Time)
-      @configuration = configuration
-      @cancellation = cancellation
-      @lifecycle = lifecycle
-      @clock = clock
+    def initialize(now:, complete:)
+      @now = now
+      @complete = complete || AppleVerificationAttempts::Complete
     end
 
     def call
-      overdue.find_each.map { |attempt| timeout(attempt) }
+      cutoff = @now - Config.attempt_timeout_minutes.minutes
+      scanned = 0
+      timed_out = 0
+
+      AppleVerificationAttempt.where(status: ACTIVE_STATUSES).find_each do |attempt|
+        scanned += 1
+        next unless (attempt.started_at || attempt.created_at) <= cutoff
+
+        timed_out += 1 if time_out?(attempt, cutoff)
+      end
+
+      Result.new(timed_out: timed_out, scanned: scanned)
     end
 
     private
 
-    attr_reader :configuration, :cancellation, :lifecycle, :clock
-
-    def overdue
-      AppleVerificationAttempt.where(status: %w[provisioning running])
-        .where("started_at <= ?", clock.current - configuration.attempt_timeout)
+    def time_out?(attempt, cutoff)
+      attempt.with_lock do
+        attempt.reload
+        time_out_locked_attempt?(attempt, cutoff)
+      end
     end
 
-    def timeout(attempt)
-      cancellation.call(attempt:, configuration:, outcome: "timed_out", lifecycle:, clock:)
+    def time_out_locked_attempt?(attempt, cutoff)
+      return false unless attempt.status.in?(ACTIVE_STATUSES)
+      return false if (attempt.started_at || attempt.created_at) > cutoff
+
+      @complete.call(
+        attempt: attempt,
+        outcome: "timed_out",
+        failure_classification: "cancellation_or_timeout"
+      )
+      true
     end
   end
 end

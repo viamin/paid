@@ -1,23 +1,24 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Closed result taxonomy that keeps infrastructure outcomes out of code failures.
+  # Taxonomy for classifying Apple verification attempt failures.
   # @spec APPLE-ATTEMPT-009
-  class FailureClassification
-    ALL = %w[
-      project_configuration compile_or_link test_assertion launch_or_ui_flow
-      required_capture network_policy unsupported_capability capacity_or_quota
-      worker_infrastructure cancellation_or_timeout
-    ].freeze
+  # @spec APPLE-ATTEMPT-010
+  module FailureClassification
+    TAXONOMY = AppleVerificationAttempt::FAILURE_CLASSIFICATIONS
     INFRASTRUCTURE = %w[capacity_or_quota worker_infrastructure cancellation_or_timeout].freeze
-    PROJECT_FAILURES = ALL - INFRASTRUCTURE
+    PROJECT = (TAXONOMY - INFRASTRUCTURE).freeze
+
+    def self.valid?(classification)
+      TAXONOMY.include?(classification)
+    end
 
     def self.infrastructure?(classification)
       INFRASTRUCTURE.include?(classification)
     end
 
-    def self.valid?(classification)
-      ALL.include?(classification)
+    def self.project?(classification)
+      PROJECT.include?(classification)
     end
   end
 end

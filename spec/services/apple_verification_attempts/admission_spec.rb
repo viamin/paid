@@ -4,53 +4,123 @@ require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Admission do
   # @spec APPLE-ATTEMPT-001
-  let(:attempt) { create(:apple_verification_attempt) }
+  # @spec APPLE-ATTEMPT-002
+
+  let(:attempt) { create(:apple_verification_attempt, :committed) }
+
   let(:capacity) do
-    AppleVerificationAttempts::CapacitySnapshot.new(
-      free_host_disk_bytes: 61.gigabytes,
-      free_memory_fraction: 0.26,
-      free_guest_disk_bytes: 16.gigabytes,
-      critical_memory_pressure: false
+    {
+      free_host_disk_gib: AppleVerificationAttempts::Config.min_free_host_disk_gib,
+      free_memory_percent: AppleVerificationAttempts::Config.min_free_memory_percent,
+      free_guest_disk_gib: AppleVerificationAttempts::Config.min_free_guest_disk_gib
+    }
+  end
+
+  def call(active_vms:, critical_memory_samples:)
+    described_class.call(
+      attempt:,
+      capacity:,
+      active_vms:,
+      critical_memory_samples:
     )
   end
 
-  before do
-    attempt.project.update!(apple_verification_mode: "on_demand")
-    FeatureFlags.enable!(:apple_verification_workers, project: attempt.project)
+  it "admits when every resource sits exactly at its threshold" do
+    expect(call(
+      active_vms: AppleVerificationAttempts::Config.max_active_vms - 1,
+      critical_memory_samples: AppleVerificationAttempts::Config.critical_memory_pressure_samples - 1
+    )).to eq(
+      described_class::Result.new(admitted: true, reason: nil, classification: nil)
+    )
   end
 
-  it "reserves the single worker slot when capacity passes" do
-    result = described_class.call(attempt:, capacity:)
-
-    expect(result).to be_admitted
-    expect(attempt.reload).to have_attributes(status: "provisioning", admission_reserved_at: be_present)
+  it "refuses when the active VM limit is reached" do
+    expect(call(
+      active_vms: AppleVerificationAttempts::Config.max_active_vms,
+      critical_memory_samples: 0
+    )).to eq(
+      described_class::Result.new(
+        admitted: false,
+        reason: "active VM limit reached",
+        classification: "capacity_or_quota"
+      )
+    )
   end
 
-  it "reports capacity refusal as infrastructure rather than a code failure" do
-    limited_capacity = capacity.with(free_host_disk_bytes: 59.gigabytes)
+  it "refuses when host disk is below the minimum" do
+    capacity[:free_host_disk_gib] = AppleVerificationAttempts::Config.min_free_host_disk_gib - 1
 
-    result = described_class.call(attempt:, capacity: limited_capacity)
-
-    expect(result).not_to be_admitted
-    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "capacity_or_quota")
+    expect(call(
+      active_vms: AppleVerificationAttempts::Config.max_active_vms - 1,
+      critical_memory_samples: 0
+    )).to eq(
+      described_class::Result.new(
+        admitted: false,
+        reason: "insufficient free host disk",
+        classification: "capacity_or_quota"
+      )
+    )
   end
 
-  it "refuses admission when the projected guest disk alone falls short" do
-    tight_guest = capacity.with(free_host_disk_bytes: 70.gigabytes, free_guest_disk_bytes: 5.gigabytes)
+  it "refuses when free memory is below the minimum" do
+    capacity[:free_memory_percent] = AppleVerificationAttempts::Config.min_free_memory_percent - 1
 
-    result = described_class.call(attempt:, capacity: tight_guest)
-
-    expect(result).not_to be_admitted
-    expect(result.reason).to eq("insufficient guest disk")
-    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "capacity_or_quota")
+    expect(call(
+      active_vms: AppleVerificationAttempts::Config.max_active_vms - 1,
+      critical_memory_samples: 0
+    )).to eq(
+      described_class::Result.new(
+        admitted: false,
+        reason: "insufficient free memory",
+        classification: "capacity_or_quota"
+      )
+    )
   end
 
-  it "leaves the queued attempt in place while the active worker slot is occupied" do
-    create(:apple_verification_attempt, status: "running")
+  it "refuses under sustained critical memory pressure" do
+    expect(call(
+      active_vms: AppleVerificationAttempts::Config.max_active_vms - 1,
+      critical_memory_samples: AppleVerificationAttempts::Config.critical_memory_pressure_samples
+    )).to eq(
+      described_class::Result.new(
+        admitted: false,
+        reason: "sustained critical memory pressure",
+        classification: "capacity_or_quota"
+      )
+    )
+  end
 
-    result = described_class.call(attempt:, capacity:)
+  it "refuses when guest disk is below the minimum" do
+    capacity[:free_guest_disk_gib] = AppleVerificationAttempts::Config.min_free_guest_disk_gib - 1
 
-    expect(result).to be_deferred
-    expect(attempt.reload).to have_attributes(status: "queued", failure_classification: nil)
+    expect(call(
+      active_vms: AppleVerificationAttempts::Config.max_active_vms - 1,
+      critical_memory_samples: 0
+    )).to eq(
+      described_class::Result.new(
+        admitted: false,
+        reason: "insufficient free guest disk",
+        classification: "capacity_or_quota"
+      )
+    )
+  end
+
+  describe ".host_safety_violation?" do
+    it "is true under sustained critical memory pressure" do
+      expect(described_class.host_safety_violation?(
+        capacity:,
+        critical_memory_samples: AppleVerificationAttempts::Config.critical_memory_pressure_samples
+      )).to be(true)
+    end
+
+    it "is true when host disk is exhausted" do
+      capacity[:free_host_disk_gib] = 0
+
+      expect(described_class.host_safety_violation?(capacity:, critical_memory_samples: 0)).to be(true)
+    end
+
+    it "is false at normal thresholds" do
+      expect(described_class.host_safety_violation?(capacity:, critical_memory_samples: 0)).to be(false)
+    end
   end
 end

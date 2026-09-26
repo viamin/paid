@@ -6,11 +6,10 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-003
   # @spec APPLE-ATTEMPT-006
   class Provision
-    def initialize(lifecycle:, guest_job: AppleVerification::ExecuteGuestJob, completion: Complete, clock: Time)
+    def initialize(lifecycle:, guest_job: AppleVerification::ExecuteGuestJob, completion: Complete)
       @lifecycle = lifecycle
       @guest_job = guest_job
       @completion = completion
-      @clock = clock
     end
 
     def call(attempt)
@@ -24,7 +23,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :lifecycle, :guest_job, :completion, :clock
+    attr_reader :lifecycle, :guest_job, :completion
 
     def provision_vm(attempt)
       lifecycle.provision(
@@ -58,7 +57,7 @@ module AppleVerificationAttempts
     # active slot until the timeout sweep. A dispatch raise leaves the attempt
     # non-terminal for TimeoutMonitor and Recovery.
     def complete_guest_result(attempt)
-      completion.call(attempt:, status: "succeeded", lifecycle:, clock:)
+      completion.call(attempt:, outcome: "succeeded", lifecycle:)
     end
 
     def guest_manifest(attempt)
