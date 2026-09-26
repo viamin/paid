@@ -32,6 +32,19 @@ RSpec.describe AppleVerification::GuestConnection do # @spec APPLE-VERIFY-005
     )
   end
 
+  it "uses the provisioned VM connection instead of image provenance" do
+    allow(transport).to receive(:post).and_return(response(code: 200, body: { "operations" => [] }.to_json))
+    connection = described_class.new(
+      connection: { "url" => "https://provisioned-vm.example.test/v1/jobs" },
+      token: "guest-token",
+      transport:
+    )
+
+    connection.dispatch!(image:, manifest:, network_contract:)
+
+    expect(transport).to have_received(:post).with(hash_including(uri: URI("https://provisioned-vm.example.test/v1/jobs")))
+  end
+
   it "rejects an unauthenticated executor response" do
     allow(transport).to receive(:post).and_return(response(code: 401, body: ""))
 

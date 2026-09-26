@@ -9,13 +9,14 @@ RSpec.describe AppleVerificationAttempts::Provision do
     lifecycle = instance_double(AppleVerification::Lifecycle)
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
     completion = class_double(AppleVerificationAttempts::Complete)
-    allow(lifecycle).to receive(:provision)
+    allow(lifecycle).to receive(:provision).and_return(provisioned_handle)
     allow(guest_job).to receive(:call) do |**arguments|
       expect(attempt.reload.status).to eq("provisioning")
       expect(arguments).to include(
         agent_run: attempt.agent_run,
         image_digest: attempt.apple_worker_profile.image_digest,
-        manifest: guest_manifest_for(attempt)
+        manifest: guest_manifest_for(attempt),
+        guest_connection: be_a(AppleVerification::GuestConnection)
       )
     end
     allow(completion).to receive(:call)
@@ -60,6 +61,18 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.reload.status).to eq("provisioning")
   end
 
+  # @spec APPLE-ATTEMPT-015
+  it "records a worker health failure when VM provisioning cannot reach the host" do
+    attempt = provisioning_attempt
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    allow(lifecycle).to receive(:provision).and_raise(Faraday::ConnectionFailed, "host unavailable")
+
+    expect { described_class.new(lifecycle:).call(attempt) }.to raise_error(Faraday::ConnectionFailed)
+
+    expect(AppleVerificationWorkerHealth.find_by!(apple_worker_profile: attempt.apple_worker_profile))
+      .to have_attributes(consecutive_failures: 1, status: "healthy")
+  end
+
   def provisioning_attempt
     project = create(:project)
     create(
@@ -68,6 +81,13 @@ RSpec.describe AppleVerificationAttempts::Provision do
       project:,
       account: project.account,
       agent_run: create(:agent_run, project:)
+    )
+  end
+
+  def provisioned_handle
+    instance_double(
+      ExecutionRunners::RunnerHandle,
+      metadata: { "guest_connection" => { "url" => "https://vm-1.example.test/v1/jobs" } }
     )
   end
 
