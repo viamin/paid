@@ -56,7 +56,7 @@ module AppleVerificationAttempts
     def call
       return deny("not_terminal") unless @attempt.terminal?
 
-      classification = FailureClassification.new(@attempt.failure_classification)
+      classification = FailureClassification.coerce(@attempt.failure_classification)
       return deny("not_infrastructure", classification.value) if deny_deterministic_failure?(classification)
       return deny("cancelled", classification.value) if @attempt.status == "cancelled"
       return deny("max_retries_exceeded", classification.value) if retry_budget_exhausted?
