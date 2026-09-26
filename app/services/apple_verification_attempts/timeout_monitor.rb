@@ -5,8 +5,9 @@ module AppleVerificationAttempts
   # beyond the configured attempt timeout. Each stale attempt is completed as
   # `timed_out`/`cancellation_or_timeout`, which drives VM revocation and
   # retention through `AppleVerificationAttempts::Complete`. The status is
-  # rechecked under the attempt lock before completing so a concurrent
-  # cancellation is not overwritten with `timed_out`. Idempotent: a timed
+  # status and timeout age are rechecked under the attempt lock before
+  # completing so a concurrent update is not overwritten with `timed_out`.
+  # Idempotent: a timed
   # out attempt is terminal, so a rerun finds none.
   # @spec APPLE-ATTEMPT-004
   class TimeoutMonitor
@@ -32,7 +33,7 @@ module AppleVerificationAttempts
         scanned += 1
         next unless (attempt.started_at || attempt.created_at) <= cutoff
 
-        timed_out += 1 if time_out?(attempt)
+        timed_out += 1 if time_out?(attempt, cutoff)
       end
 
       Result.new(timed_out: timed_out, scanned: scanned)
@@ -40,15 +41,16 @@ module AppleVerificationAttempts
 
     private
 
-    def time_out?(attempt)
+    def time_out?(attempt, cutoff)
       attempt.with_lock do
         attempt.reload
-        time_out_locked_attempt?(attempt)
+        time_out_locked_attempt?(attempt, cutoff)
       end
     end
 
-    def time_out_locked_attempt?(attempt)
+    def time_out_locked_attempt?(attempt, cutoff)
       return false unless attempt.status.in?(ACTIVE_STATUSES)
+      return false if (attempt.started_at || attempt.created_at) > cutoff
 
       @complete.call(
         attempt: attempt,
