@@ -1356,10 +1356,10 @@ RSpec.describe "ChatSessions" do
     # @spec CHAT-API-009
     # Workspace chats render their outer disclosure open so recovery controls
     # do not depend on JavaScript. The potentially tall clone configuration is
-    # nested, preserving the transcript's 18rem floor while keeping it
-    # reachable.
+    # nested, preserving the transcript's required height and dominant share
+    # while keeping it reachable.
     mobile_capability_panel = mobile_header.at_css("[data-chat-target='capabilityPanel']")
-    expect(mobile_capability_panel["class"].split).to include("p-3", "sm:p-4")
+    expect(mobile_capability_panel["class"].split).to include("p-2", "sm:p-4")
     workspace_options = mobile_capability_panel.at_css("details[data-chat-workspace-options]")
     expect(workspace_options).to be_present
     expect(workspace_options["open"]).to be_nil
