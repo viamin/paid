@@ -37,34 +37,35 @@ module AppleVerification
         end
       end
 
-      def initialize(attempt:, outcome: attempt.status, credential_lane: nil, failed_vm_retention_hours: DEFAULT_FAILED_VM_RETENTION_HOURS, bundle_retention_days: DEFAULT_BUNDLE_RETENTION_DAYS, clock: Time)
+      def initialize(attempt:, outcome: attempt.status, credential_lane: nil, failed_vm_retention_hours: DEFAULT_FAILED_VM_RETENTION_HOURS, bundle_retention_days: DEFAULT_BUNDLE_RETENTION_DAYS, clock: Time, vm_destroy_result: :destroyed)
         @attempt = attempt
         @outcome = outcome
         @credential_lane = credential_lane || SourceLane::CredentialLane.new(attempt: attempt)
         @failed_vm_retention_hours = failed_vm_retention_hours
         @bundle_retention_days = bundle_retention_days
         @clock = clock
+        @vm_destroy_result = vm_destroy_result
       end
 
       # Persists the retention deadlines on the attempt and either records the
       # VM destruction audit event (success) or marks the retention window
       # (failure). The actual VM destruction is the caller's responsibility —
-      # the immediate-success path invokes the lifecycle boundary after
-      # revocation, and the sweep drives destruction via the lifecycle
+      # the immediate-success path drives the lifecycle boundary before
+      # revocation and reports the destroy outcome through
+      # +vm_destroy_result+, so the `destroyed` audit event is recorded only
+      # for a destroy that actually happened; any other result (missing
+      # lifecycle, destroy error, or no-op) falls back to the failure
+      # retention window so {AppleVerification::Bundles::RetentionSweep}
+      # retries the destroy. The sweep drives destruction via the lifecycle
       # boundary before calling {#revoke_retained!}. Always revokes the
       # credential lane entry so a retained failed VM cannot reuse a cached
       # installation token.
       def call
         case outcome
         when "succeeded"
-          record_vm_destroyed!
-          revoke_credential!
-          persist_bundle_retained_until!
-          Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, audit_event: nil)
+          vm_destroy_result == :destroyed ? finalize_destroyed_vm : finalize_retained_vm
         when "failed", "cancelled", "timed_out", "unavailable"
-          retain_failure_window!
-          revoke_credential!
-          Result.new(outcome: OUTCOME_RETAINED, retained_until: failed_vm_retained_until, audit_event: nil)
+          finalize_retained_vm
         else
           Result.new(outcome: outcome, retained_until: nil, audit_event: nil)
         end
@@ -85,7 +86,20 @@ module AppleVerification
 
       private
 
-      attr_reader :attempt, :outcome, :credential_lane, :failed_vm_retention_hours, :bundle_retention_days, :clock
+      attr_reader :attempt, :outcome, :credential_lane, :failed_vm_retention_hours, :bundle_retention_days, :clock, :vm_destroy_result
+
+      def finalize_destroyed_vm
+        record_vm_destroyed!
+        revoke_credential!
+        persist_bundle_retained_until!
+        Result.new(outcome: OUTCOME_DESTROYED, retained_until: nil, audit_event: nil)
+      end
+
+      def finalize_retained_vm
+        retain_failure_window!
+        revoke_credential!
+        Result.new(outcome: OUTCOME_RETAINED, retained_until: failed_vm_retained_until, audit_event: nil)
+      end
 
       def record_vm_destroyed!
         # The actual VM destroy call lives on the lifecycle boundary; this

@@ -3,13 +3,17 @@
 module AppleVerificationAttempts
   # The canonical terminal transition for an Apple verification attempt.
   #
-  # Revokes the attempt's credentials and network authority, then drives VM
-  # destruction on success (via the lifecycle boundary) before persisting the
-  # terminal +outcome+ (and optional +failure_classification+) via
-  # {AppleVerification::Revocation::Enforce}. A
-  # destroy failure on the immediate-success path is logged but tolerated so
-  # it cannot corrupt an otherwise-valid terminal transition — the sweep and
-  # retention windows still own the VM afterwards.
+  # On success, drives VM destruction through the lifecycle boundary first,
+  # then revokes the attempt's credentials and network authority via
+  # {AppleVerification::Revocation::Enforce} — which records the `destroyed`
+  # audit event only when the lifecycle destroy actually happened — before
+  # persisting the terminal +outcome+ (and optional +failure_classification+).
+  # When the immediate destroy cannot be backed by a real host action (no
+  # lifecycle configured, destroy error, or a no-op), revocation falls back to
+  # the failure retention window and persists +container_retained_until+ so
+  # {AppleVerification::Bundles::RetentionSweep} retries the destroy. A
+  # destroy error is logged but tolerated so it cannot corrupt an
+  # otherwise-valid terminal transition.
   #
   # @spec APPLE-ATTEMPT-006
   class Complete
@@ -30,8 +34,8 @@ module AppleVerificationAttempts
     def call
       raise ArgumentError, "outcome must be a terminal state" unless outcome.in?(AppleVerificationAttempt::TERMINAL_STATES)
 
-      revocation_result = revocation.call
-      destroy_vm if outcome == "succeeded"
+      destroy_result = destroy_vm if outcome == "succeeded"
+      revocation_result = revocation(destroy_result).call
       attempt.update!(terminal_attributes)
 
       Result.new(
@@ -45,11 +49,12 @@ module AppleVerificationAttempts
 
     attr_reader :attempt, :outcome, :failure_classification, :lifecycle
 
-    def revocation
+    def revocation(destroy_result)
       @revocation || AppleVerification::Revocation::Enforce.new(
         attempt: attempt,
         outcome: outcome,
-        failed_vm_retention_hours: Config.failed_vm_retention_hours
+        failed_vm_retention_hours: Config.failed_vm_retention_hours,
+        vm_destroy_result: destroy_result
       )
     end
 
@@ -61,14 +66,20 @@ module AppleVerificationAttempts
       }
     end
 
+    # Returns the lifecycle destroy outcome (`:destroyed`, `:noop`, nil when
+    # no lifecycle is configured, `:destroy_failed` on error) so the
+    # revocation service only records a `destroyed` audit event for a destroy
+    # that actually happened.
     def destroy_vm
       lifecycle&.destroy(attempt: attempt, request_id: "complete:#{attempt.id}")
     rescue StandardError => e
       Rails.logger.warn(
         message: "apple_verification.complete.destroy_failed",
         attempt_id: attempt.id,
+        error_class: e.class.name,
         error: e.message
       )
+      :destroy_failed
     end
   end
 end

@@ -25,6 +25,29 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     expect(attempt.bundle_retained_until).to be_nil
   end
 
+  it "falls back to the retention window when the immediate destroy did not happen" do
+    attempt.update!(status: "succeeded")
+
+    expect {
+      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, vm_destroy_result: nil)
+    }.not_to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }
+
+    expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count).to eq(1)
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+    expect(credential_lane).to have_received(:revoke!)
+  end
+
+  it "falls back to the retention window when the lifecycle destroy was a no-op" do
+    attempt.update!(status: "succeeded")
+
+    expect {
+      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, vm_destroy_result: :noop)
+    }.not_to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.destroyed").count }
+
+    expect(ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count).to eq(1)
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)
+  end
+
   it "persists the bundle retention deadline for an uncommitted successful attempt" do
     uncommitted = create(:apple_verification_attempt, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
     uncommitted.update!(status: "succeeded")
