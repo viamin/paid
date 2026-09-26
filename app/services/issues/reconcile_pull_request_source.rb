@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 module Issues
-  # Restores a PR's source issue only when its completed implementation-run
-  # history has one unambiguous source. Conflicting historical records are
-  # intentionally left for an operator rather than guessed.
+  # Restores a PR's source issue only when its implementation-run history
+  # has one unambiguous source. A run that recorded the PR's number counts
+  # regardless of terminal status — the number is persisted at publication,
+  # so the run can fail or be cancelled after the PR already exists.
+  # Conflicting historical records are intentionally left for an operator
+  # rather than guessed.
   class ReconcilePullRequestSource
     def self.call(...)
       new(...).call
@@ -31,7 +34,7 @@ module Issues
 
     def sources
       pull_request.project.agent_runs
-        .where(status: "completed", goal: "create_pr", pull_request_number: pull_request.github_number)
+        .where(goal: "create_pr", pull_request_number: pull_request.github_number)
         .includes(issue: :parent_issue)
         .filter_map { |run| source_issue(run.issue) }
         .uniq

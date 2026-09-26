@@ -15,6 +15,20 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     expect(pull_request.reload.parent_issue).to eq(source)
   end
 
+  it "links a PR to the source recorded by a run that failed after publishing it" do # @spec EAGER-QUEUE-009
+    # Review follow-up on #4039: reserve_pull_request! persists the PR
+    # number before complete! runs, so a completion-gate failure marks the
+    # run failed while its PR is already open on GitHub. The recorded
+    # number is the source evidence, not the terminal status.
+    source = create(:issue, project: project)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42, parent_issue_id: nil)
+    create(:agent_run, :failed, project: project, issue: source, goal: "create_pr", pull_request_number: 42)
+
+    described_class.call(pull_request: pull_request)
+
+    expect(pull_request.reload.parent_issue).to eq(source)
+  end
+
   it "does not guess when runs for the same PR disagree about the source" do # @spec EAGER-QUEUE-010
     first_source = create(:issue, project: project)
     second_source = create(:issue, project: project)

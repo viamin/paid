@@ -84,14 +84,18 @@
 
 ## Duplicate-PR prevention
 
-- [x] **EAGER-QUEUE-009** — When a project issue has a completed `create_pr`
-  run that recorded a `pull_request_number`, the system SHALL exclude that
-  issue from queue seeding and dequeue eligibility while a synced PR in the
-  same project with that number is open or merged, regardless of elapsed
-  time or a missing `parent_issue_id`. The exclusion SHALL lift immediately
-  when the synced PR is authoritatively closed unmerged. A missing PR row is
-  protected for `PR_SYNC_GRACE_PERIOD` and then triggers reconciliation
-  rather than being treated as proof that a second PR may be created.
+- [x] **EAGER-QUEUE-009** — When a project issue has a `create_pr` run that
+  recorded a `pull_request_number`, the system SHALL exclude that issue from
+  queue seeding and dequeue eligibility while a synced PR in the same project
+  with that number is open or merged, regardless of elapsed time, a missing
+  `parent_issue_id`, or the run's terminal status — a run that fails or is
+  cancelled after publishing still counts, because the recorded number, not
+  the terminal status, is the produced-PR evidence. The exclusion SHALL lift
+  immediately when the synced PR is authoritatively closed unmerged. A
+  missing PR row is protected for `PR_SYNC_GRACE_PERIOD` (armed by the
+  `completed_at` every terminal transition stamps) and then triggers
+  reconciliation rather than being treated as proof that a second PR may be
+  created.
   *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource`,
   `Issue.open_paid_generated_pull_request_source_issue_ids`,
   `Issues::ReconcilePullRequestSource`.
