@@ -60,18 +60,6 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.reload.status).to eq("provisioning")
   end
 
-  # @spec APPLE-ATTEMPT-015
-  it "records a worker health failure when VM provisioning cannot reach the host" do
-    attempt = provisioning_attempt
-    lifecycle = instance_double(AppleVerification::Lifecycle)
-    allow(lifecycle).to receive(:provision).and_raise(Faraday::ConnectionFailed, "host unavailable")
-
-    expect { described_class.new(lifecycle:).call(attempt) }.to raise_error(Faraday::ConnectionFailed)
-
-    expect(AppleVerificationWorkerHealth.find_by!(apple_worker_profile: attempt.apple_worker_profile))
-      .to have_attributes(consecutive_failures: 1, status: "healthy")
-  end
-
   def provisioning_attempt
     project = create(:project)
     create(

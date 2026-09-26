@@ -33,9 +33,6 @@ module AppleVerificationAttempts
         request_id: "apple-verification-attempt:#{attempt.id}:provision",
         apple_verification_attempt: attempt
       )
-    rescue Faraday::Error, Timeout::Error => error
-      WorkerHealth.record_failure!(profile: attempt.apple_worker_profile, reason: error.class.name)
-      raise
     end
 
     # The guest must receive its closed-protocol work before this attempt is

@@ -7,6 +7,7 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-001
   # @spec APPLE-ATTEMPT-003
   # @spec APPLE-ATTEMPT-005
+  # @spec APPLE-ATTEMPT-006
   class Dispatcher
     Result = Data.define(:started, :rejected, :skipped)
 
@@ -76,15 +77,8 @@ module AppleVerificationAttempts
 
     def provision(attempt)
       attempt.update!(status: "provisioning")
-      lifecycle.provision(
-        agent_run: attempt.agent_run,
-        image_id: attempt.apple_worker_profile.image_digest,
-        profile_id: attempt.apple_worker_profile.name,
-        request_id: "apple-verification-attempt:#{attempt.id}",
-        apple_verification_attempt: attempt
-      )
+      Provision.new(lifecycle:, completion: complete).call(attempt)
       WorkerHealth.record_success!(profile: attempt.apple_worker_profile)
-      attempt.update!(status: "running", started_at: Time.current)
       :started
     # Lifecycle#provision rescues-and-re-raises ANY StandardError; a non-listed
     # error would otherwise strand the attempt in `provisioning`. Converge every
