@@ -12,6 +12,15 @@ RSpec.describe AppleVerificationAttempts::TimeoutMonitor do
     expect(attempt.reload).to have_attributes(status: "timed_out", failure_classification: "cancellation_or_timeout")
   end
 
+  it "applies its configured failed-VM retention duration" do
+    attempt = create(:apple_verification_attempt, status: "running", started_at: 2.minutes.ago)
+    configuration = AppleVerificationAttempts::Configuration.new(attempt_timeout: 1.minute, failed_vm_retention: 5.minutes)
+
+    described_class.call(configuration:)
+
+    expect(attempt.reload.container_retained_until).to be_within(2.seconds).of(5.minutes.from_now)
+  end
+
   it "stops the VM before recording the timeout" do
     attempt = create(:apple_verification_attempt, status: "running", started_at: 46.minutes.ago)
     lifecycle = instance_double(AppleVerification::Lifecycle)

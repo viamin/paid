@@ -47,7 +47,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     attempt.update!(status: "failed", finished_at: Time.current)
 
     expect {
-      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention_hours: 1, bundle_retention_days: 7)
+      described_class.call(attempt: attempt, credential_lane: credential_lane, failed_vm_retention: 1.hour, bundle_retention_days: 7)
     }.to change { ExecutionAuditEvent.where(event_name: "apple_verification_vm.retained").count }.by(1)
 
     attempt.reload
@@ -60,7 +60,7 @@ RSpec.describe AppleVerification::Revocation::Enforce do
     committed = create(:apple_verification_attempt, :committed, apple_verification_workflow_revision: workflow_revision, project: project, account: account)
     committed.update!(status: "failed", finished_at: Time.current)
 
-    described_class.call(attempt: committed, credential_lane: credential_lane, failed_vm_retention_hours: 1, bundle_retention_days: 7)
+    described_class.call(attempt: committed, credential_lane: credential_lane, failed_vm_retention: 1.hour, bundle_retention_days: 7)
 
     committed.reload
     expect(committed.container_retained_until).to be_within(2.seconds).of(1.hour.from_now)

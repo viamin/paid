@@ -37,10 +37,10 @@ module AppleVerification
         end
       end
 
-      def initialize(attempt:, credential_lane: nil, failed_vm_retention_hours: DEFAULT_FAILED_VM_RETENTION_HOURS, bundle_retention_days: DEFAULT_BUNDLE_RETENTION_DAYS, clock: Time)
+      def initialize(attempt:, credential_lane: nil, failed_vm_retention: DEFAULT_FAILED_VM_RETENTION_HOURS.hours, bundle_retention_days: DEFAULT_BUNDLE_RETENTION_DAYS, clock: Time)
         @attempt = attempt
         @credential_lane = credential_lane || SourceLane::CredentialLane.new(attempt: attempt)
-        @failed_vm_retention_hours = failed_vm_retention_hours
+        @failed_vm_retention = failed_vm_retention
         @bundle_retention_days = bundle_retention_days
         @clock = clock
       end
@@ -84,7 +84,7 @@ module AppleVerification
 
       private
 
-      attr_reader :attempt, :credential_lane, :failed_vm_retention_hours, :bundle_retention_days, :clock
+      attr_reader :attempt, :credential_lane, :failed_vm_retention, :bundle_retention_days, :clock
 
       def record_vm_destroyed!
         # The actual VM destroy call lives on the lifecycle boundary; this
@@ -179,7 +179,7 @@ module AppleVerification
       end
 
       def failed_vm_retained_until
-        @failed_vm_retained_until ||= clock.current + failed_vm_retention_hours.hours
+        @failed_vm_retained_until ||= clock.current + failed_vm_retention
       end
 
       def bundle_retained_until

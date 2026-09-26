@@ -30,8 +30,10 @@
   bound queue depth, runtime, retry count, retained storage, and attempts per
   agent run.
   *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`,
   `spec/jobs/apple_verification_attempt_scheduler_job_spec.rb`
   *Code:* `AppleVerificationAttempts::Queue`,
+  `AppleVerificationAttempts::Provision`,
   `AppleVerificationAttempts::Scheduler`,
   `AppleVerificationAttemptSchedulerJob`
 
