@@ -296,6 +296,24 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       expect(response).to redirect_to(chat_session_path(chat))
     end
 
+    it "opens the linked chat in the inbox detail frame" do
+      # @spec QUESTION-EXPLORATION-001
+      post project_issue_clarifying_questions_chat_path(project, issue),
+        headers: { "Accept" => "text/html", "Turbo-Frame" => "inbox-detail" }
+
+      chat = ChatSession.find_by!(clarifying_question_issue: issue)
+      expect(response).to redirect_to(chat_session_path(chat))
+
+      get chat_session_path(chat), headers: { "Accept" => "text/html", "Turbo-Frame" => "inbox-detail" }
+
+      expect(response).to have_http_status(:ok)
+      frame = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail")
+
+      expect(frame).to be_present
+      expect(frame.at_css("[data-controller='chat']")).to be_present
+      expect(frame.at_css("#chat-sessions-sidebar")).to be_nil
+    end
+
     # @spec QUESTION-EXPLORATION-001
     it "reuses the existing linked chat on repeated opens" do
       post project_issue_clarifying_questions_chat_path(project, issue)

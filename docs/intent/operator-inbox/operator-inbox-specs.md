@@ -257,10 +257,15 @@
   or GitHub-post failure the system SHALL redirect back into the same detail
   frame and SHALL repopulate the submitted answers from a one-shot flash so
   the operator does not retype them, bounded to a byte budget that keeps the
-  serialized session cookie under its size ceiling.
-  *Code:* `app/controllers/projects/clarifying_questions_controller.rb`,
+  serialized session cookie under its size ceiling. Choosing Answer in chat
+  SHALL replace the detail content with the linked chat panel while preserving
+  the Inbox master-detail layout.
+  *Code:* `app/controllers/chat_sessions_controller.rb`,
+  `app/controllers/projects/clarifying_questions_controller.rb`,
+  `app/views/chat_sessions/_frame.html.erb`,
   `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`.
-  *Test:* `spec/requests/projects/clarifying_questions_spec.rb`.
+  *Test:* `spec/requests/chat_sessions_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`.
 
 - [x] **OPERATOR-INBOX-009** — When a signed-in user opens `/inbox/:entry_id`
   for a stale or invalid entry in their current queue scope, the system SHALL
