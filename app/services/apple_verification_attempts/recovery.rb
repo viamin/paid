@@ -38,6 +38,15 @@ module AppleVerificationAttempts
     private
 
     def reconcile?(attempt)
+      attempt.with_lock do
+        attempt.reload
+        reconcile_locked_attempt?(attempt)
+      end
+    end
+
+    def reconcile_locked_attempt?(attempt)
+      return false unless attempt.status.in?(IN_FLIGHT_STATUSES)
+
       entries = attempt.execution_resource_ledger_entries.where(resource_kind: "verification_vm")
       return false unless entries.where(status: LIVE_STATUSES).empty? || entries.where(status: "orphaned").exists?
 

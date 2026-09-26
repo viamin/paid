@@ -57,6 +57,51 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     )
   end
 
+  it "resets prior worker health failures after provisioning succeeds" do
+    revision.apple_worker_profile.update!(
+      consecutive_health_failures: 2,
+      last_health_failure_at: 1.minute.ago
+    )
+    queued_attempt
+
+    dispatch
+
+    expect(revision.apple_worker_profile.reload.consecutive_health_failures).to eq(0)
+  end
+
+  it "records a worker health failure when provisioning fails" do
+    attempt = queued_attempt
+    allow(lifecycle).to receive(:provision).and_raise(
+      AppleVerification::HostService::AuthenticationError,
+      "unauthenticated"
+    )
+
+    result = dispatch
+
+    expect(result).to have_attributes(started: 0, rejected: 1, skipped: false)
+    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "worker_infrastructure")
+    expect(revision.apple_worker_profile.reload).to have_attributes(
+      consecutive_health_failures: 1,
+      last_health_failure_at: be_present,
+      quarantine_reason: nil
+    )
+  end
+
+  it "quarantines a worker after repeated provisioning failures" do
+    attempts = [ queued_attempt ]
+    2.times { attempts << queued_attempt(agent_run: create(:agent_run, :running, project:)) }
+    allow(lifecycle).to receive(:provision).and_raise(
+      AppleVerification::HostService::AuthenticationError,
+      "unauthenticated"
+    )
+
+    result = dispatch
+
+    expect(result).to have_attributes(started: 0, rejected: 3, skipped: false)
+    expect(revision.apple_worker_profile.reload).to be_quarantined
+    expect(attempts.map { |attempt| attempt.reload.status }).to all(eq("unavailable"))
+  end
+
   it "leaves the queue head queued when capacity refuses admission" do
     snapshot.capacity[:free_host_disk_gib] = 10
     attempt = queued_attempt
