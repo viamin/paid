@@ -368,6 +368,39 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("New Chat")
       end
 
+      # @spec QUESTION-EXPLORATION-015
+      it "navigates project links and archive as full-page destinations from an inbox detail frame" do
+        project = create(:project, account: account)
+        chat_session.update!(project: project)
+
+        get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+
+        expect(response).to have_http_status(:ok)
+        frame = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail")
+
+        project_link = frame.at_css("a[href='#{project_path(project)}']")
+        archive_form = frame.at_css("form[action='#{archive_chat_session_path(chat_session)}']")
+
+        expect(project_link).to be_present
+        expect(project_link["data-turbo-frame"]).to eq("_top")
+        expect(archive_form).to be_present
+        expect(archive_form["data-turbo-frame"]).to eq("_top")
+      end
+
+      # @spec QUESTION-EXPLORATION-015
+      it "navigates unarchive as a full-page destination from an inbox detail frame" do
+        chat_session.update!(status: "archived")
+
+        get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+
+        expect(response).to have_http_status(:ok)
+        frame = Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-detail")
+        unarchive_form = frame.at_css("form[action='#{unarchive_chat_session_path(chat_session)}']")
+
+        expect(unarchive_form).to be_present
+        expect(unarchive_form["data-turbo-frame"]).to eq("_top")
+      end
+
       it "autosaves both chat runner and model selectors with visible status" do
         # @spec CHAT-SESSION-PREFERENCES-002
         get chat_session_path(chat_session)
