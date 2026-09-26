@@ -5,39 +5,46 @@
 > Phase 0); the `Tests:` and `Code:` surfaces below are the ones those issues
 > will add.
 
-- [ ] **APPLE-ATTEMPT-001** — When an Apple verification attempt is submitted,
+- [x] **APPLE-ATTEMPT-001** — When an Apple verification attempt is submitted,
   the system SHALL admit it only when the active-VM limit and the host disk,
   host memory, and guest disk thresholds are satisfied, with
   operator-configurable defaults of one active Apple verification VM, 60 GiB
   minimum free host disk before clone, 25% minimum free system memory, and
   15 GiB minimum free guest disk, and SHALL refuse admission during sustained
   critical memory pressure.
-  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
-  *Code:* `AppleVerificationAttempts::Admission`
+  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`,
+  `spec/services/apple_verification_attempts/host_capacity_spec.rb`
+  *Code:* `AppleVerificationAttempts::Admission`,
+  `AppleVerificationAttempts::HostCapacity`
 
 - [ ] **APPLE-ATTEMPT-002** — While an Apple verification attempt runs, the
   system SHALL recheck host disk and memory thresholds; crossing a normal
   admission threshold SHALL stop new admissions, and a running attempt SHALL
   be terminated only for an actual host-safety condition.
-  *Tests:* `spec/services/apple_verification_attempts/admission_spec.rb`
-  *Code:* `AppleVerificationAttempts::Admission`
+  *Tests:* Not yet implemented.
+  *Code:* Not yet implemented.
 
-- [ ] **APPLE-ATTEMPT-003** — When the active Apple worker slot is occupied,
+- [x] **APPLE-ATTEMPT-003** — When the active Apple worker slot is occupied,
   attempts SHALL queue fairly by account and project, expose queue position,
   and remain cancellable while queued; operator-configurable limits SHALL
   bound queue depth, runtime, retry count, retained storage, and attempts per
   agent run.
-  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`
-  *Code:* `AppleVerificationAttempts::Queue`
+  *Tests:* `spec/services/apple_verification_attempts/queue_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`,
+  `spec/jobs/apple_verification_attempt_scheduler_job_spec.rb`
+  *Code:* `AppleVerificationAttempts::Queue`,
+  `AppleVerificationAttempts::Provision`,
+  `AppleVerificationAttempts::Scheduler`,
+  `AppleVerificationAttemptSchedulerJob`
 
-- [ ] **APPLE-ATTEMPT-004** — When an attempt exceeds the configured attempt
+- [x] **APPLE-ATTEMPT-004** — When an attempt exceeds the configured attempt
   timeout (default 45 minutes), the system SHALL end it in the `timed_out`
   state, and a capacity exhaustion or timeout outcome SHALL be reported as an
   infrastructure result, never as a code failure.
-  *Tests:* `spec/services/apple_verification_attempts/timeout_spec.rb`
+  *Tests:* `spec/services/apple_verification_attempts/timeout_monitor_spec.rb`
   *Code:* `AppleVerificationAttempts::TimeoutMonitor`
 
-- [ ] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system
+- [x] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system
   SHALL validate project approval, workflow state, source identity,
   capabilities, policy, and quota, and SHALL fail the attempt with a
   `project_configuration` or `unsupported_capability` classification instead
@@ -45,15 +52,18 @@
   *Tests:* `spec/services/apple_verification_attempts/validate_spec.rb`
   *Code:* `AppleVerificationAttempts::Validate`
 
-- [ ] **APPLE-ATTEMPT-006** — When an attempt finishes uploading its output
+- [x] **APPLE-ATTEMPT-006** — When an attempt finishes uploading its output
   manifest and artifacts, the system SHALL revoke the attempt's credentials
   and disable its network authority before recording a terminal state; a
   successful attempt's VM SHALL be destroyed immediately, and a failed
   attempt's VM SHALL be retained for at most the configured window (default
   one hour) with credentials revoked and networking disabled, and SHALL be
   destroyable earlier on request.
-  *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`
-  *Code:* `AppleVerificationAttempts::Complete`
+  *Tests:* `spec/services/apple_verification_attempts/complete_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`
+  *Code:* `AppleVerificationAttempts::Complete`,
+  `AppleVerificationAttempts::Provision` (routes the finished guest result
+  into completion), `AppleVerificationAttempts::Cancel`
 
 - [ ] **APPLE-ATTEMPT-007** — When an attempt verifies committed source, the
   system SHALL supply the exact commit identity and a short-lived read-only
@@ -74,7 +84,7 @@
   *Tests:* `spec/services/apple_verification_attempts/uncommitted_bundle_spec.rb`
   *Code:* `AppleVerificationAttempts::UncommittedBundle`
 
-- [ ] **APPLE-ATTEMPT-009** — Each terminal attempt SHALL classify its failure
+- [x] **APPLE-ATTEMPT-009** — Each terminal attempt SHALL classify its failure
   within the closed taxonomy of `project_configuration`, `compile_or_link`,
   `test_assertion`, `launch_or_ui_flow`, `required_capture`,
   `network_policy`, `unsupported_capability`, `capacity_or_quota`,
@@ -83,7 +93,7 @@
   *Tests:* `spec/services/apple_verification_attempts/failure_classification_spec.rb`
   *Code:* `AppleVerificationAttempts::FailureClassification`
 
-- [ ] **APPLE-ATTEMPT-010** — The system MAY retry safe infrastructure
+- [x] **APPLE-ATTEMPT-010** — The system MAY retry safe infrastructure
   failures within policy and SHALL NOT silently retry deterministic project
   failures or represent an infrastructure failure as a code defect.
   *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`
@@ -131,7 +141,7 @@
   `AppleVerificationAttempts::Waive`,
   `AppleVerificationWithheldRunSweepJob`
 
-- [ ] **APPLE-ATTEMPT-014** — After a control-plane restart, host restart,
+- [x] **APPLE-ATTEMPT-014** — After a control-plane restart, host restart,
   network interruption, timeout, or partial provisioning failure, lifecycle
   operations SHALL converge idempotently to a known external-resource ledger
   state; unknown or orphaned Paid-owned VMs SHALL be quarantined or destroyed
@@ -140,7 +150,7 @@
   *Tests:* `spec/services/apple_verification_attempts/recovery_spec.rb`
   *Code:* `AppleVerificationAttempts::Recovery`
 
-- [ ] **APPLE-ATTEMPT-015** — Repeated Apple worker health failures SHALL
+- [x] **APPLE-ATTEMPT-015** — Repeated Apple worker health failures SHALL
   quarantine the worker, revoke its active credentials, and stop scheduling
   against it; a quarantined worker SHALL NOT receive work until an operator
   passes the isolation smoke test and explicitly returns it to service.

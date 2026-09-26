@@ -14,20 +14,28 @@ module AppleVerificationAttempts
 
     def call
       raise ArgumentError, "only a completed attempt can be rerun" unless @attempt.terminal?
+      raise ArgumentError, "attempt failure is not retryable" unless RetryPolicy.retryable?(@attempt)
 
-      @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
-        rerun_attempt.assign_attributes(
-          account: @attempt.account,
-          agent_run: @attempt.agent_run,
-          apple_verification_workflow_revision: @attempt.apple_verification_workflow_revision,
-          apple_worker_profile: @attempt.apple_worker_profile,
-          source_digest: @attempt.source_digest,
-          commit_sha: @attempt.commit_sha,
-          requested_capture: @attempt.requested_capture,
-          lifecycle_gate: @attempt.lifecycle_gate,
-          retry_number: @attempt.retry_number + 1,
-          status: "queued"
-        )
+      # The insert and the queue admission share one transaction so a queue
+      # limit refusal rolls the queued rerun back instead of stranding a
+      # phantom attempt the scheduler would later admit.
+      AppleVerificationAttempt.transaction do
+        rerun_attempt = @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
+          rerun_attempt.assign_attributes(
+            account: @attempt.account,
+            agent_run: @attempt.agent_run,
+            apple_verification_workflow_revision: @attempt.apple_verification_workflow_revision,
+            apple_worker_profile: @attempt.apple_worker_profile,
+            source_digest: @attempt.source_digest,
+            commit_sha: @attempt.commit_sha,
+            requested_capture: @attempt.requested_capture,
+            lifecycle_gate: @attempt.lifecycle_gate,
+            retry_number: @attempt.retry_number + 1,
+            status: "queued"
+          )
+        end
+        Queue.new.enqueue(attempt: rerun_attempt)
+        rerun_attempt
       end
     end
   end

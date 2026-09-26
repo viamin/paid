@@ -148,8 +148,8 @@ RSpec.describe "Projects::AppleVerifications" do
   end
 
   describe "POST /projects/:project_id/apple_verification/rerun" do
-    it "queues one retry when an authorized user submits the rerun twice" do # @spec APPLE-VERIFY-006
-      attempt = create(:apple_verification_attempt, project:, status: "failed", retry_number: 2)
+    it "queues one retry when an authorized user submits a retryable rerun twice" do # @spec APPLE-VERIFY-006
+      attempt = create(:apple_verification_attempt, project:, status: "failed", failure_classification: "worker_infrastructure", retry_number: 0)
       sign_in_project_administrator
 
       post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
@@ -158,8 +158,19 @@ RSpec.describe "Projects::AppleVerifications" do
       expect(response).to redirect_to(project_apple_verification_path(project))
       expect(project.apple_verification_attempts.count).to eq(2)
       expect(project.apple_verification_attempts.order(:created_at).last).to have_attributes(
-        status: "queued", retry_number: 3, source_digest: attempt.source_digest, retry_of_attempt: attempt
+        status: "queued", retry_number: 1, source_digest: attempt.source_digest, retry_of_attempt: attempt
       )
+    end
+
+    it "refuses a non-retryable rerun with an alert" do # @spec APPLE-ATTEMPT-010
+      attempt = create(:apple_verification_attempt, project:, status: "failed", failure_classification: "test_assertion")
+      sign_in_project_administrator
+
+      post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
+
+      expect(response).to redirect_to(project_apple_verification_path(project))
+      expect(flash[:alert]).to eq("attempt failure is not retryable")
+      expect(project.apple_verification_attempts.count).to eq(1)
     end
   end
 

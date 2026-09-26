@@ -44,6 +44,34 @@ operator-configurable limits.
 Capacity exhaustion and infrastructure timeout are infrastructure results,
 never code failures (see failure classification below).
 
+`AppleVerificationAttempts::Queue` persists queue-entry time and computes a
+round-robin order across account and project heads. `Admission` serializes
+reservation through the database so concurrent scheduler processes cannot
+over-admit the single worker. Host capacity is supplied as a small,
+provider-neutral snapshot; it is deliberately injected at the control-plane
+boundary rather than inferred from a guest or from project code. The host
+service reports a single host-level disk reading, so the snapshot projects
+the free guest disk as the host free space beyond the reserved host minimum:
+admission requires the host floor plus the guest minimum in total, and a
+missing capacity reading fails closed as a capacity refusal rather than a
+code failure.
+
+A queued attempt is admitted or refused inside one transaction with its
+persistence: a queue-depth or attempts-per-run refusal rolls the queued row
+back instead of stranding a phantom attempt the scheduler would later admit.
+
+Host-side stop and destroy requests at cancellation, timeout, and completion
+are best-effort. When the host service refuses the request (for example the
+rollout flag is disabled) or cannot be reached, the operation logs a
+structured warning and never blocks the terminal state or credential
+revocation; reconciliation converges the VM later.
+
+`AppleVerificationWorkerHealth` persists health-failure counts and quarantine
+state for each worker profile. A quarantine blocks new admission until an
+operator records a passing isolation smoke test and explicitly returns the
+worker to service. This makes worker restart and control-plane restart safe:
+neither loses the quarantine decision.
+
 ## Attempt execution lifecycle
 
 Every attempt runs against a clean clone of an approved immutable image and
@@ -64,6 +92,12 @@ follows one ordered contract:
 9. Destroy a successful VM immediately.
 10. Retain a failed VM for at most the configured window (default one hour),
     or destroy it early on request.
+
+Steps 5–7 run inside the synchronous closed-protocol dispatch, so its normal
+return is the finished-upload moment: the provisioning flow applies steps 8–10
+immediately through `AppleVerificationAttempts::Complete` rather than leaving a
+finished attempt occupying the worker slot until the timeout sweep. A dispatch
+failure leaves the attempt non-terminal for the timeout and recovery paths.
 
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
