@@ -22,6 +22,7 @@ module Projects
   # @spec PROJECT-CREATION-003
   # @spec PROJECT-CREATION-004
   # @spec PROJECT-CREATION-005
+  # @spec PROJECT-CREATION-012
   class CreateBlank
     Result = Data.define(:project, :bootstrap_issue_url)
 
@@ -68,9 +69,15 @@ module Projects
     private
 
     def validate_credential!
-      return if [ @github_token, @github_installation ].compact.size == 1
+      unless [ @github_token, @github_installation ].compact.size == 1
+        raise ValidationError, "exactly one GitHub credential (token or installation) is required"
+      end
 
-      raise ValidationError, "exactly one GitHub credential (token or installation) is required"
+      return unless installation_user?
+
+      raise ValidationError,
+        "GitHub App installations can't create repositories under a personal account. " \
+        "Select a personal access token as the credential, or choose an organization owner where the app is installed."
     end
 
     # @spec PROJECT-CREATION-005

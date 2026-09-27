@@ -54,6 +54,13 @@
   error contexts), `spec/services/projects/create_blank_spec.rb`.
   *Code:* `ProjectsController#create`, `Projects::CreateBlank`.
 
+- [x] **PROJECT-CREATION-012** - When create mode uses a GitHub App
+  installation targeting a personal account, the system SHALL reject the
+  request before a GitHub write and explain that the user must select a PAT or
+  an organization owner where the app is installed.
+  *Tests:* `spec/services/projects/create_blank_spec.rb`.
+  *Code:* `Projects::CreateBlank`.
+
 ## Bootstrap guidance
 
 - [x] **PROJECT-CREATION-007** - When a blank project's `setup_status` is not
