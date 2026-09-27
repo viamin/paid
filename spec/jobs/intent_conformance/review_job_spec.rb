@@ -113,6 +113,29 @@ RSpec.describe IntentConformance::ReviewJob do
     expect(schedule.reload.attempts_count).to eq(2)
   end
 
+  it "clears last_failure_reason once a retry produces a terminal verdict" do
+    # First attempt: transient failure persists last_failure_reason and a
+    # not_evaluated verdict, then raises for the framework retry.
+    stub_review_run(verdict_traits: [ :not_evaluated ], failure_reason: "unsuccessful_response")
+    described_class.perform_now(project.id, schedule.id)
+
+    expect(schedule.reload.last_failure_reason).to eq("unsuccessful_response")
+
+    # Second attempt: a real verdict. The job must clear the stale reason so
+    # the schedule reads as a successful completed run, not a failed one.
+    allow(IntentConformance::ReviewRun).to receive(:new) do
+      verdict = create(:intent_conformance_verdict, project: project, issue: issue,
+        pr_head_sha: "head-v1", approved_design_revision: "design-v1")
+      instance_double(IntentConformance::ReviewRun, call: verdict, failure_reason: nil)
+    end
+
+    described_class.perform_now(project.id, schedule.id)
+
+    expect(schedule.reload).to be_completed
+    expect(schedule.reload.last_failure_reason).to be_nil
+    expect(current_verdict).to be_within_scope
+  end
+
   it "marks the schedule completed once bounded retries are exhausted, keeping the fail-closed verdict" do
     stub_review_run(verdict_traits: [ :not_evaluated ], failure_reason: "unsuccessful_response")
     described_class.perform_now(project.id, schedule.id)

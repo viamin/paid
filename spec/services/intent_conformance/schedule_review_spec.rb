@@ -2,6 +2,13 @@
 
 require "rails_helper"
 
+# `not_change` matches RSpec's `change` matcher for compound expectations and
+# is also used by several existing examples here; `not_have_enqueued_job`
+# complements rspec-rails' `have_enqueued_job`. Defined locally so the file is
+# self-contained.
+RSpec::Matchers.define_negated_matcher :not_change, :change
+RSpec::Matchers.define_negated_matcher :not_have_enqueued_job, :have_enqueued_job
+
 # @spec INTENT-CONFORMANCE-010
 RSpec.describe IntentConformance::ScheduleReview do
   include ActiveJob::TestHelper
@@ -137,6 +144,27 @@ RSpec.describe IntentConformance::ScheduleReview do
     expect {
       schedule
     }.not_to have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
+  it "does not re-enqueue a fresh running schedule whose job may still be in-flight" do
+    create_schedule(status: "running", enqueued_at: 5.minutes.ago)
+
+    expect {
+      schedule
+    }.not_to have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
+  it "recovers a stale running schedule whose perform was lost (timeout, crash, kill)" do
+    existing = create_schedule(status: "running", enqueued_at: 2.hours.ago)
+
+    expect {
+      schedule
+    }.to have_enqueued_job(IntentConformance::ReviewJob)
+      .and not_change(IntentConformanceReviewSchedule, :count)
+
+    expect(existing.reload).to be_pending
+    expect(existing.reload.completed_at).to be_nil
+    expect(existing.reload.enqueued_at).to be > 1.hour.ago
   end
 
   describe "structured logging" do

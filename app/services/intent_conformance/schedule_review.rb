@@ -49,10 +49,21 @@ module IntentConformance
     end
 
     def reschedule(schedule)
-      return unless schedule.completed? || schedule.pending? && schedule.enqueued_at < STALE_ENQUEUE_AFTER.ago
+      return unless schedule.completed? || stale_active_schedule?(schedule)
 
       schedule.update!(status: "pending", completed_at: nil, enqueued_at: Time.current)
       enqueue(schedule)
+    end
+
+    # A `running` schedule whose `enqueued_at` predates STALE_ENQUEUE_AFTER must
+    # have either timed out (perform_timeout = 2.minutes on the review job) or
+    # lost the perform that flipped it to `running` (process crash, kill, etc.) —
+    # nothing else flips a schedule back off `running`, so without this branch a
+    # single lost perform leaves the schedule permanently stuck at `running`,
+    # occupies a `pending|running` slot in the per-project cap, and silently
+    # no-ops every later scan via `existing_schedule`.
+    def stale_active_schedule?(schedule)
+      (schedule.pending? || schedule.running?) && schedule.enqueued_at < STALE_ENQUEUE_AFTER.ago
     end
 
     def pending_cap_reached?
