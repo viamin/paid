@@ -589,6 +589,78 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    describe "synthetic code-scanning issues (#4052)" do
+      let(:alert_number) { 1838 }
+      let(:synthetic_github_number) { 200_001_838 }
+
+      def create_code_scanning_issue(**attrs)
+        create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_number: synthetic_github_number,
+          github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + alert_number,
+          **attrs)
+      end
+
+      it "excludes a synthetic issue with an open synced PR from its completed run after the grace window when the link is missing" do # @spec EAGER-QUEUE-009 EAGER-QUEUE-011
+        # Same shape as the ordinary-issue regression above (#4039): a
+        # synthetic code-scanning issue's PR sync race must be caught the
+        # same way an ordinary issue's is.
+        issue = create_code_scanning_issue(paid_state: "new")
+        create(:agent_run, :completed, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+        create(:issue, project: project, github_number: 4047, is_pull_request: true, github_state: "open",
+          parent_issue_id: nil)
+
+        scope = described_class.eligible_scope(project)
+
+        expect(scope.pluck(:id)).to be_empty
+        queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+        expect(described_class.eligible_for_dequeue?(project, issue.id, excluding_run_id: queued_run.id)).to be false
+      end
+
+      it "keeps a merged remediation PR blocking the issue until the next scanner reconciliation" do # @spec EAGER-QUEUE-011
+        issue = create_code_scanning_issue(paid_state: "completed")
+        create(:agent_run, :completed, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+        create(:issue, :pull_request, :closed, project: project, github_number: 4047, pr_review_phase: "merged", parent_issue: issue)
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+      end
+
+      it "lifts the merged-PR guard once a security scan reconfirms the alert is still open (recurrent)" do # @spec EAGER-QUEUE-011
+        # A merge alone is never proof the CodeQL alert is fixed — only the
+        # scanner's own next reconciliation pass is. Until that pass runs,
+        # the issue must stay blocked (see the spec above) rather than
+        # allowing an immediate re-pick right after merge.
+        issue = create_code_scanning_issue(paid_state: "completed")
+        create(:agent_run, :completed, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+        create(:issue, :pull_request, :closed, project: project, github_number: 4047, pr_review_phase: "merged", parent_issue: issue)
+
+        SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(
+          [ { number: alert_number, state: "open", severity: "high", created_at: 1.day.ago, updated_at: Time.current } ]
+        )
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
+      end
+
+      it "does not resurrect an ordinary GitHub issue's permanent merged-PR guard" do # @spec EAGER-QUEUE-011
+        # Regression guard: the code-scanning carve-out must not leak into
+        # the ordinary-issue path covered by "does not recover completed
+        # issues when the produced PR was merged" above.
+        issue = create(:issue, project: project, paid_state: "completed")
+        create(:agent_run, :completed, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+        create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged", parent_issue: issue)
+
+        SecurityAlerts::ProcessCodeScanningAlerts.new(project).call([])
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+      end
+    end
+
     it "blocks recovery when one PR is closed but another is still open" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
