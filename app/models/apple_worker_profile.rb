@@ -9,6 +9,7 @@ class AppleWorkerProfile < ApplicationRecord
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
+  has_one :apple_verification_worker_health, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :restrict_with_exception
   has_many :apple_verification_attempts, dependent: :restrict_with_exception
 

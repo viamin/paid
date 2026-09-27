@@ -79,7 +79,7 @@ module AppleVerificationAttempts
     # provenance, so only forward a connection override that actually carries
     # a usable url.
     def usable_connection(handle)
-      connection = handle.metadata.fetch("guest_connection")
+      connection = handle.metadata.fetch("guest_connection", nil) if handle.metadata.is_a?(Hash)
       connection if connection.is_a?(Hash) && connection["url"].present?
     end
 

@@ -136,4 +136,14 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
       expect(described_class.quarantined?(profile:)).to be(true)
     end
   end
+
+  describe "worker profile lifecycle" do
+    it "destroys durable health with its worker profile" do
+      profile = create(:apple_worker_profile)
+      described_class.record_failure!(profile:, reason: "worker crash")
+
+      expect { profile.destroy! }
+        .to change(AppleVerificationWorkerHealth, :count).from(1).to(0)
+    end
+  end
 end

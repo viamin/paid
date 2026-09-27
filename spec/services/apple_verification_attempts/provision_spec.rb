@@ -46,6 +46,24 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(AppleVerification::GuestConnection).to have_received(:new).with(connection: nil, read_timeout: anything)
   end
 
+  # @spec APPLE-ATTEMPT-004
+  it "falls back to the image's guest executor url when the host omits connection metadata" do
+    attempt = provisioning_attempt
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    allow(lifecycle).to receive(:provision).and_return(
+      instance_double(ExecutionRunners::RunnerHandle, metadata: {})
+    )
+    allow(completion).to receive(:call)
+    allow(guest_job).to receive(:call).and_return(guest_result_for(guest_manifest_for(attempt)))
+    allow(AppleVerification::GuestConnection).to receive(:new).and_call_original
+
+    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+
+    expect(AppleVerification::GuestConnection).to have_received(:new).with(connection: nil, read_timeout: anything)
+  end
+
   # @spec APPLE-ATTEMPT-006
   it "completes the finished guest result with the success cleanup before leaving provisioning" do
     attempt = provisioning_attempt
