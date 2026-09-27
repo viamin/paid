@@ -635,7 +635,8 @@ class Issue < ApplicationRecord
   def self.paid_generated_pull_request_source_issue_ids(project:, **conditions)
     pull_requests = where(project: project, is_pull_request: true, **conditions)
     AgentRun.where(project: project, goal: "create_pr")
-      .where.not(issue_id: nil, pull_request_number: nil)
+      .where.not(issue_id: nil)
+      .where.not(pull_request_number: nil)
       .where(pull_request_number: pull_requests.select(:github_number))
       .select(:issue_id)
   end
