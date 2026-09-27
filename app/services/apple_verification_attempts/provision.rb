@@ -65,10 +65,22 @@ module AppleVerificationAttempts
         image_digest: attempt.apple_worker_profile.image_digest,
         manifest: guest_manifest(attempt),
         guest_connection: AppleVerification::GuestConnection.new(
-          connection: handle.metadata.fetch("guest_connection"),
+          connection: usable_connection(handle),
           read_timeout: Config.attempt_timeout_minutes.minutes + GUEST_DISPATCH_CANCELLATION_GRACE
         )
       )
+    end
+
+    # The host may reply to `start` with a readiness-only payload (for example
+    # `{ "ready" => true }`) before it can hand back the guest executor's own
+    # URL. Passing that payload straight through as the connection would make
+    # {AppleVerification::GuestConnection} raise `ConfigurationError` instead
+    # of falling back to the image's validated `guest_executor_url`
+    # provenance, so only forward a connection override that actually carries
+    # a usable url.
+    def usable_connection(handle)
+      connection = handle.metadata.fetch("guest_connection")
+      connection if connection.is_a?(Hash) && connection["url"].present?
     end
 
     # The dispatch is synchronous, but a normal HTTP response is not proof of

@@ -24,6 +24,28 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.reload.status).to eq("running")
   end
 
+  # @spec APPLE-ATTEMPT-004
+  it "falls back to the image's guest executor url instead of a readiness-only host connection payload" do
+    attempt = provisioning_attempt
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    allow(lifecycle).to receive(:provision).and_return(
+      instance_double(ExecutionRunners::RunnerHandle, metadata: { "guest_connection" => { "ready" => true } })
+    )
+    allow(completion).to receive(:call)
+    allow(guest_job).to receive(:call).and_return(guest_result_for(guest_manifest_for(attempt)))
+    allow(AppleVerification::GuestConnection).to receive(:new).and_call_original
+
+    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+
+    # A `connection:` of nil (rather than the url-less `{ "ready" => true }` the host
+    # returned) is what lets AppleVerification::GuestConnection fall back to the
+    # image's validated `guest_executor_url` provenance instead of raising
+    # ConfigurationError. See guest_connection_spec.rb for that fallback dispatch.
+    expect(AppleVerification::GuestConnection).to have_received(:new).with(connection: nil, read_timeout: anything)
+  end
+
   # @spec APPLE-ATTEMPT-006
   it "completes the finished guest result with the success cleanup before leaving provisioning" do
     attempt = provisioning_attempt
