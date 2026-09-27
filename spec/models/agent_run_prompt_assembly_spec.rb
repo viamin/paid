@@ -100,6 +100,27 @@ RSpec.describe AgentRun do
 
       expect(issue.reload.github_state).to eq("closed")
     end
+
+    it "stops a code-scanning run on an App-auth project (no PAT) when its refreshed alert is resolved" do
+      # @spec GITHUB-SYNC-015
+      alert_number = 1668
+      issue.update!(
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + alert_number
+      )
+      agent_run.update!(custom_prompt: "Fix the reported alert")
+      github_client = instance_double(GithubClient)
+      allow(project).to receive_messages(github_token: nil, client: github_client)
+      allow(github_client).to receive(:code_scanning_alert)
+        .with(project.full_name, alert_number, default_branch: project.default_branch)
+        .and_return(number: alert_number, state: "dismissed")
+
+      expect {
+        agent_run.effective_prompt
+      }.to raise_error(PromptAssembly::BuildIssuePrompt::AlertResolvedError, /no longer open/)
+
+      expect(issue.reload.github_state).to eq("closed")
+    end
   end
 
   describe "#effective_prompt marketplace dedup" do

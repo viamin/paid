@@ -2470,7 +2470,7 @@ class AgentRun < ApplicationRecord
     @prompt_assembly_result = PromptAssembly::BuildIssuePrompt.call(
       issue: issue,
       project: project,
-      github_client: project.github_token&.client,
+      github_client: project.client,
       agent_run: self
     )
     @prompt_assembly_result.text
@@ -2554,7 +2554,7 @@ class AgentRun < ApplicationRecord
     PromptAssembly::BuildIssuePrompt.refresh_code_scanning_context(
       issue: issue,
       project: project,
-      github_client: project.github_token&.client,
+      github_client: project.client,
       agent_run: self
     )
   end
