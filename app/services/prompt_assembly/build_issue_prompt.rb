@@ -28,6 +28,10 @@ class PromptAssembly::BuildIssuePrompt
     new(...).call
   end
 
+  def self.refresh_code_scanning_context(...)
+    new(...).refresh_code_scanning_context
+  end
+
   attr_reader :issue, :project, :github_client, :agent_run
 
   def initialize(issue:, project:, github_client: nil, agent_run: nil)
@@ -127,4 +131,6 @@ class PromptAssembly::BuildIssuePrompt
       error: e.message
     )
   end
+
+  public :refresh_code_scanning_context
 end

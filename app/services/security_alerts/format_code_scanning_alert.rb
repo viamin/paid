@@ -104,10 +104,15 @@ module SecurityAlerts
 
       lines << "### Source excerpt at analyzed commit (untrusted evidence)"
       lines << ""
-      lines << "```"
+      fence = source_excerpt_fence(alert[:source_excerpt])
+      lines << fence
       lines << alert[:source_excerpt]
-      lines << "```"
+      lines << fence
       lines << ""
+    end
+
+    def source_excerpt_fence(source_excerpt)
+      "`" * [ source_excerpt.scan(/`+/).map(&:length).max.to_i + 1, 3 ].max
     end
 
     def alert_identifier(alert)
