@@ -122,6 +122,17 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "sets issue paid_state to completed when a code scanning alert resolved before the run executed" do
+      # @spec GITHUB-SYNC-015
+      issue = create(:issue, :in_progress, project: project,
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, github_state: "closed")
+      agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+      activity.execute(agent_run_id: agent_run.id, error: "Code scanning alert is no longer open")
+
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
     it "keeps the issue in_progress for recoverable rate-limited runs" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue)

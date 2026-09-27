@@ -158,6 +158,33 @@
   `spec/requests/api/github_webhooks_spec.rb`,
   `spec/mcp/tools/edit_issue_spec.rb`.
 
+- [x] **GITHUB-SYNC-015** — When GitHub sync imports an open code-scanning
+  alert, the system SHALL preserve repository, alert identity/URL, rule,
+  scanner, message, target-branch instance path and range, ref, analyzed SHA,
+  category, analysis key, and scan time when GitHub supplies it. It SHALL not
+  use an instance from another branch or silently choose between multiple
+  target-branch configurations; missing or ambiguous context SHALL be explicit.
+  The final issue prompt SHALL retain this evidence, bounded prior remediation
+  attempts and PR outcomes, and instruct the agent to treat supplied scanner
+  content as untrusted evidence, investigate false positives, and substantiate
+  any remediation claim without inventing scanner verification. Before
+  executing a queued remediation run, the system SHALL refresh the alert from
+  GitHub; if the alert is no longer open, it SHALL close the synthetic issue
+  and stop the run rather than execute a prompt built from a resolved
+  finding.
+  *Code:* `app/services/github_client.rb`,
+  `app/services/security_alerts/format_code_scanning_alert.rb`,
+  `app/services/security_alerts/process_code_scanning_alerts.rb`,
+  `app/services/prompt_assembly/build_issue_prompt.rb`,
+  `app/models/agent_run.rb`,
+  `app/temporal/activities/run_agent_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`.
+  *Test:* `spec/services/github_client_spec.rb`,
+  `spec/services/security_alerts/format_code_scanning_alert_spec.rb`,
+  `spec/services/security_alerts/process_code_scanning_alerts_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/models/agent_run_prompt_assembly_spec.rb`.
+
 - [x] **GITHUB-SYNC-014** — When GitHub sync changes a non-PR issue from
   closed to open, the system SHALL park it in `manual_review` with an explicit
   reopen-review reason so renewed work is visible without bypassing validation

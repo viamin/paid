@@ -5006,6 +5006,19 @@ expect(container_service).to receive(:execute).with(
       }
     end
 
+    it "raises CodeScanningAlertResolved when the alert resolved before the run executed" do
+      # @spec GITHUB-SYNC-015
+      allow(agent_run).to receive(:effective_prompt)
+        .and_raise(PromptAssembly::BuildIssuePrompt::AlertResolvedError, "Code scanning alert #1667 is no longer open (state: fixed)")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.message).to include("Code scanning alert #1667 is no longer open")
+        expect(error.type).to eq("CodeScanningAlertResolved")
+      }
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       allow(AgentRun).to receive(:find).and_call_original
 

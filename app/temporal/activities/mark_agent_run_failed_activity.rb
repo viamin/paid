@@ -52,6 +52,12 @@ module Activities
             "completed"
           elsif agent_run.enhance_issue_goal? && agent_run.issue.paid_state == "manual_review"
             "manual_review"
+          elsif agent_run.issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE && agent_run.issue.github_state != "open"
+            # The alert was fixed/dismissed upstream between queuing and
+            # execution (caught by BuildIssuePrompt's pre-run refresh, which
+            # already closed the synthetic issue's github_state). Nothing to
+            # remediate, so this isn't a failure.
+            "completed"
           else
             "failed"
           end

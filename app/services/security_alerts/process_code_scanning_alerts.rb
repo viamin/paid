@@ -12,8 +12,15 @@ module SecurityAlerts
       @project = project
     end
 
-    def call(alerts) # @spec EAGER-QUEUE-011
-      open_alerts = alerts.select { |a| a[:state] == "open" }
+    # @param alerts [Array<Hash>] Enriched alert payloads from GithubClient
+    # @param excluding_run_id [Integer, nil] Agent run to omit from the prior
+    #   attempts history — the run whose prompt refresh triggers processing is
+    #   not a prior attempt
+    # @spec GITHUB-SYNC-015
+    # @spec EAGER-QUEUE-011
+    def call(alerts, excluding_run_id: nil)
+      open_alerts, resolved_alerts = alerts.partition { |a| a[:state] == "open" }
+      close_resolved_issues(resolved_alerts)
       return [] if open_alerts.empty?
 
       synthetic_ids = open_alerts.map { |a| synthetic_issue_id(a) }
@@ -27,9 +34,9 @@ module SecurityAlerts
         if existing.nil?
           create_issue_for_alert(alert)
         elsif existing.github_state != "open"
-          reopen_closed_issue(existing, alert)
+          reopen_closed_issue(existing, alert, excluding_run_id:)
         else
-          update_metadata_if_changed(existing, alert)
+          update_metadata_if_changed(existing, alert, excluding_run_id:)
         end
       end
 
@@ -37,6 +44,23 @@ module SecurityAlerts
     end
 
     private
+
+    # The periodic scan (Activities::ScanSecurityAlertsActivity) reconciles
+    # resolved alerts separately via ReconcileResolved against a full-repo
+    # snapshot, and never passes non-open alerts here. This handles the
+    # narrower case of a single alert refreshed just before a queued
+    # remediation run executes: if it was fixed or dismissed since the run
+    # was queued, close the synthetic issue instead of leaving it open for a
+    # stale remediation prompt.
+    def close_resolved_issues(alerts)
+      return if alerts.empty?
+
+      ids = alerts.map { |a| synthetic_issue_id(a) }
+      now = Time.current
+      @project.issues.where(source: SYNTHETIC_SOURCE, github_issue_id: ids, github_state: "open").find_each do |issue|
+        issue.update!(github_state: "closed", github_updated_at: now)
+      end
+    end
 
     # Every pass over an alert still reported as open is a scanner
     # reconciliation of that alert, whether or not its title/body/labels
@@ -55,7 +79,7 @@ module SecurityAlerts
         github_issue_id: synthetic_issue_id(alert),
         github_number: synthetic_number(alert),
         title: FormatCodeScanningAlert.title(alert),
-        body: FormatCodeScanningAlert.body(alert),
+        body: FormatCodeScanningAlert.body(alert.merge(repository: @project.full_name)),
         github_state: "open",
         github_creator_login: trusted_login,
         github_created_at: parse_alert_time(alert[:created_at]) || now,
@@ -84,10 +108,10 @@ module SecurityAlerts
       )
     end
 
-    def reopen_closed_issue(issue, alert)
+    def reopen_closed_issue(issue, alert, excluding_run_id: nil)
       issue.update!(
         title: FormatCodeScanningAlert.title(alert),
-        body: FormatCodeScanningAlert.body(alert),
+        body: formatted_body(issue, alert, excluding_run_id:),
         github_state: "open",
         paid_state: "new",
         labels: labels_for_alert(alert),
@@ -96,9 +120,9 @@ module SecurityAlerts
       stamp_reconciled!(issue)
     end
 
-    def update_metadata_if_changed(issue, alert)
+    def update_metadata_if_changed(issue, alert, excluding_run_id: nil)
       new_title = FormatCodeScanningAlert.title(alert)
-      new_body = FormatCodeScanningAlert.body(alert)
+      new_body = formatted_body(issue, alert, excluding_run_id:)
       new_labels = labels_for_alert(alert)
 
       # Stamped even when nothing else changed: this pass is itself the
@@ -121,6 +145,14 @@ module SecurityAlerts
       value.is_a?(String) ? Time.zone.parse(value) : value
     rescue ArgumentError
       nil
+    end
+
+    def formatted_body(issue, alert, excluding_run_id: nil)
+      scope = excluding_run_id ? issue.agent_runs.where.not(id: excluding_run_id) : issue.agent_runs
+      FormatCodeScanningAlert.body(
+        alert.merge(repository: @project.full_name),
+        prior_attempts: scope.order(created_at: :desc).limit(5)
+      )
     end
 
     def synthetic_issue_id(alert)

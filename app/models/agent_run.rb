@@ -2470,7 +2470,7 @@ class AgentRun < ApplicationRecord
     @prompt_assembly_result = PromptAssembly::BuildIssuePrompt.call(
       issue: issue,
       project: project,
-      github_client: project.github_token&.client,
+      github_client: project.client,
       agent_run: self
     )
     @prompt_assembly_result.text
@@ -2531,6 +2531,7 @@ class AgentRun < ApplicationRecord
   #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
+    refresh_code_scanning_context if custom_prompt.present?
     base = custom_prompt.presence || prompt_for_goal
 
     unless prompt_assembly_marketplace_handled?
@@ -2543,6 +2544,21 @@ class AgentRun < ApplicationRecord
     persist_prompt_assembly_provenance!
     base
   end
+
+  # Refresh before honoring custom_prompt so that it cannot cause a queued
+  # remediation run to execute against a finding resolved after it was queued.
+  # @spec GITHUB-SYNC-015
+  def refresh_code_scanning_context
+    return unless issue
+
+    PromptAssembly::BuildIssuePrompt.refresh_code_scanning_context(
+      issue: issue,
+      project: project,
+      github_client: project.client,
+      agent_run: self
+    )
+  end
+  private :refresh_code_scanning_context
 
   # Whether the PromptAssembly result already included marketplace content,
   # so {#effective_prompt} can skip the separate injection step.
