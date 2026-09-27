@@ -73,6 +73,8 @@ module AppleVerificationAttempts
     end
 
     def classification_for(operation)
+      return "worker_infrastructure" unless operation.is_a?(Hash)
+
       case operation["type"]
       when "build" then "compile_or_link"
       when "test" then "test_assertion"

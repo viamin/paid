@@ -32,4 +32,14 @@ RSpec.describe AppleVerificationAttempts::GuestResult do
 
     expect(result).to have_attributes(status: "failed", failure_classification: "worker_infrastructure")
   end
+
+  # @spec APPLE-ATTEMPT-009
+  it "classifies a malformed guest operation as worker infrastructure" do
+    revision = build_stubbed(:apple_verification_workflow_revision, required_checks: [])
+    manifest = { "operations" => [ { "type" => "materialize_source", "payload" => {} } ] }
+
+    result = described_class.call(revision:, manifest:, operations: [ [] ])
+
+    expect(result).to have_attributes(status: "failed", failure_classification: "worker_infrastructure")
+  end
 end
