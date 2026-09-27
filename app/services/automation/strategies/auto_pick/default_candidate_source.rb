@@ -252,6 +252,11 @@ module Automation
               # For a synthetic code-scanning issue the guard is provisional,
               # not permanent — see +merged_block_issue_ids+ (#4052).
               .where.not(id: merged_block_issue_ids(project))
+              # A code-scanning remediation remains blocked until a matching
+              # post-merge analysis records a terminal verification result.
+              # In particular, a still-open finding moves to manual review,
+              # rather than being silently re-enqueued into another fix loop.
+              .where.not(id: code_scanning_verification_block_issue_ids(project))
               # Issues abandoned because every available provider hit the per-issue
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
@@ -324,6 +329,13 @@ module Automation
             return merged_ids if code_scanning_ids.empty?
 
             merged_ids - verified_recurrent_code_scanning_issue_ids(project, code_scanning_ids)
+          end
+
+          def code_scanning_verification_block_issue_ids(project) # @spec EAGER-QUEUE-013
+            CodeScanningRemediationAttempt.blocking_automation
+              .joins(:issue)
+              .where(issues: { project_id: project.id, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE })
+              .select(:issue_id)
           end
 
           # Code-scanning issue ids where a later scanner pass has already

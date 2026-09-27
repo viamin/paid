@@ -80,6 +80,12 @@ module Activities
       open_alerts = all_alerts.select { |a| a[:state] == "open" }
       heartbeat("scan_security_alerts.process_open", project_id: project.id, alert_count: open_alerts.size)
       SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(open_alerts)
+      SecurityAlerts::RecordMergedRemediationAttempts.new(
+        project:, alerts: open_alerts, github_client: project.client
+      ).call
+      SecurityAlerts::VerifyMergedRemediationAttempts.new(
+        project:, alerts: open_alerts, github_client: project.client
+      ).call
 
       # Record scan timestamp only after successful processing. Retryable
       # errors (5xx) intentionally skip this so Temporal retries within the
