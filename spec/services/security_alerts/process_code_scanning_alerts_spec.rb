@@ -43,6 +43,20 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       expect(existing.body).to include("Run ##{existing.agent_runs.first.id}: failed")
     end
 
+    # @spec GITHUB-SYNC-015
+    it "excludes the specified run from prior attempts so a run being started does not list itself" do
+      existing = create(:issue, project: project, github_issue_id: id_offset + 1667,
+        github_number: 200_001_667, source: source, github_state: "open", paid_state: "new")
+      current_run = create(:agent_run, project: project, issue: existing, status: "running")
+      prior_run = create(:agent_run, project: project, issue: existing, status: "failed",
+        created_at: 1.day.ago, pull_request_url: "https://github.com/owner/repo/pull/3")
+
+      described_class.new(project).call([ alert ], excluding_run_id: current_run.id)
+
+      expect(existing.reload.body).to include("Run ##{prior_run.id}: failed")
+      expect(existing.body).not_to include("Run ##{current_run.id}:")
+    end
+
 
     it "carries the alert-1838 finding context into the final issue prompt" do
       # @spec GITHUB-SYNC-015

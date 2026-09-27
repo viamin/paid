@@ -12,7 +12,11 @@ module SecurityAlerts
       @project = project
     end
 
-    def call(alerts)
+    # @param alerts [Array<Hash>] Enriched alert payloads from GithubClient
+    # @param excluding_run_id [Integer, nil] Agent run to omit from the prior
+    #   attempts history — the run whose prompt refresh triggers processing is
+    #   not a prior attempt
+    def call(alerts, excluding_run_id: nil)
       open_alerts = alerts.select { |a| a[:state] == "open" }
       return [] if open_alerts.empty?
 
@@ -27,9 +31,9 @@ module SecurityAlerts
         if existing.nil?
           create_issue_for_alert(alert)
         elsif existing.github_state != "open"
-          reopen_closed_issue(existing, alert)
+          reopen_closed_issue(existing, alert, excluding_run_id:)
         else
-          update_metadata_if_changed(existing, alert)
+          update_metadata_if_changed(existing, alert, excluding_run_id:)
         end
       end
 
@@ -73,10 +77,10 @@ module SecurityAlerts
       )
     end
 
-    def reopen_closed_issue(issue, alert)
+    def reopen_closed_issue(issue, alert, excluding_run_id: nil)
       issue.update!(
         title: FormatCodeScanningAlert.title(alert),
-        body: formatted_body(issue, alert),
+        body: formatted_body(issue, alert, excluding_run_id:),
         github_state: "open",
         paid_state: "new",
         labels: labels_for_alert(alert),
@@ -84,9 +88,9 @@ module SecurityAlerts
       )
     end
 
-    def update_metadata_if_changed(issue, alert)
+    def update_metadata_if_changed(issue, alert, excluding_run_id: nil)
       new_title = FormatCodeScanningAlert.title(alert)
-      new_body = formatted_body(issue, alert)
+      new_body = formatted_body(issue, alert, excluding_run_id:)
       new_labels = labels_for_alert(alert)
 
       return if issue.title == new_title && issue.body == new_body && issue.labels == new_labels
@@ -107,10 +111,11 @@ module SecurityAlerts
       nil
     end
 
-    def formatted_body(issue, alert)
+    def formatted_body(issue, alert, excluding_run_id: nil)
+      scope = excluding_run_id ? issue.agent_runs.where.not(id: excluding_run_id) : issue.agent_runs
       FormatCodeScanningAlert.body(
         alert.merge(repository: @project.full_name),
-        prior_attempts: issue.agent_runs.order(created_at: :desc).limit(5)
+        prior_attempts: scope.order(created_at: :desc).limit(5)
       )
     end
 

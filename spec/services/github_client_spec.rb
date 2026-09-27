@@ -2391,6 +2391,68 @@ RSpec.describe GithubClient do
       expect(alert[:location]).to be_nil
     end
 
+    context "with multiple alerts on the same target ref" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+          .with(query: { "state" => "open", "per_page" => "100" })
+          .to_return(status: 200,
+            body: [ { number: 5, state: "open", rule: {}, tool: {} },
+                    { number: 6, state: "open", rule: {}, tool: {} } ].to_json,
+            headers: { "Content-Type" => "application/json" })
+      end
+
+      def stub_target_branch_instance(alert_number)
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/#{alert_number}/instances")
+          .with(query: { "per_page" => "100" })
+          .to_return(status: 200,
+            body: [ { ref: "refs/heads/main", analysis_key: "dynamic/codeql", commit_sha: "a" * 40,
+                      analysis_created_at: "2026-03-29T09:00:00Z",
+                      location: { path: "app/controllers/runners_controller.rb", start_line: 69,
+                                  end_line: 69, start_column: 36, end_column: 42 } } ].to_json,
+            headers: { "Content-Type" => "application/json" })
+        stub_request(:get, "#{api_base}/repos/#{repo}/contents/app/controllers/runners_controller.rb")
+          .with(query: { "ref" => "a" * 40 })
+          .to_return(status: 200, body: { content: Base64.strict_encode64("one\n") }.to_json,
+            headers: { "Content-Type" => "application/json" })
+      end
+
+      def stub_analyses_for_ref
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/analyses")
+          .with(query: { "ref" => "refs/heads/main", "per_page" => "100" })
+          .to_return(status: 200, body: [ { analysis_key: "dynamic/codeql", commit_sha: "a" * 40,
+                                            created_at: "2026-03-29T09:00:00Z" } ].to_json,
+            headers: { "Content-Type" => "application/json" })
+      end
+
+      it "fetches analyses once per ref across alerts sharing that ref" do
+        stub_target_branch_instance(5)
+        stub_target_branch_instance(6)
+        analyses_stub = stub_analyses_for_ref
+
+        alerts = client.code_scanning_alerts(repo, default_branch: "main")
+
+        expect(alerts.map { |alert| alert[:scan_time]&.iso8601 }).to all(eq("2026-03-29T09:00:00Z"))
+        expect(analyses_stub).to have_been_requested.once
+      end
+
+      it "degrades to an explicit status instead of failing the batch when one alert's instances fetch fails" do
+        # @spec GITHUB-SYNC-015
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/5/instances")
+          .with(query: { "per_page" => "100" })
+          .to_return(status: 500, body: { message: "Server Error" }.to_json)
+        stub_target_branch_instance(6)
+        stub_analyses_for_ref
+
+        alerts = client.code_scanning_alerts(repo, default_branch: "main")
+        degraded = alerts.find { |alert| alert[:number] == 5 }
+        healthy = alerts.find { |alert| alert[:number] == 6 }
+
+        expect(degraded[:location_context_status]).to eq("instance_fetch_failed")
+        expect(degraded[:location]).to be_nil
+        expect(healthy[:location_context_status]).to eq("available")
+      end
+    end
+
     context "when code scanning is not enabled" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
@@ -2419,6 +2481,78 @@ RSpec.describe GithubClient do
 
         expect(result).to eq([])
       end
+    end
+  end
+
+  describe "#code_scanning_alert" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667")
+        .to_return(
+          status: 200,
+          body: {
+            number: 1667,
+            state: "open",
+            html_url: "https://github.com/owner/repo/security/code-scanning/1667",
+            created_at: "2026-03-29T10:00:00Z",
+            updated_at: "2026-03-29T12:00:00Z",
+            rule: {
+              id: "py/sensitive-get-query",
+              description: "Sensitive data read from GET request",
+              security_severity_level: "high"
+            },
+            tool: { name: "CodeQL" },
+            most_recent_instance: {
+              message: { text: "Reading sensitive data from a GET request." }
+            }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667/instances")
+        .with(query: { "per_page" => "100" })
+        .to_return(
+          status: 200,
+          body: [
+            {
+              ref: "refs/heads/main", commit_sha: "a" * 40,
+              analysis_key: "dynamic/codeql", category: "/language:ruby",
+              analysis_created_at: "2026-03-29T09:00:00Z",
+              message: { text: "Reading sensitive data from a GET request." },
+              location: { path: "app/controllers/runners_controller.rb", start_line: 69,
+                          end_line: 69, start_column: 36, end_column: 42 }
+            }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      stub_request(:get, "#{api_base}/repos/#{repo}/contents/app/controllers/runners_controller.rb")
+        .with(query: { "ref" => "a" * 40 })
+        .to_return(status: 200, body: { content: Base64.strict_encode64("one\ntwo\nthree\nfour\n") }.to_json,
+          headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/analyses")
+        .with(query: { "ref" => "refs/heads/main", "per_page" => "100" })
+        .to_return(status: 200, body: [ { analysis_key: "dynamic/codeql", commit_sha: "a" * 40,
+                                          created_at: "2026-03-29T09:00:00Z" } ].to_json,
+          headers: { "Content-Type" => "application/json" })
+    end
+
+    it "returns the target-branch-enriched payload for the requested alert" do
+      # @spec GITHUB-SYNC-015
+      alert = client.code_scanning_alert(repo, 1667, default_branch: "main")
+
+      expect(alert[:number]).to eq(1667)
+      expect(alert[:location]).to include(path: "app/controllers/runners_controller.rb", start_line: 69)
+      expect(alert[:ref]).to eq("refs/heads/main")
+      expect(alert[:commit_sha]).to eq("a" * 40)
+      expect(alert[:scan_time]&.iso8601).to eq("2026-03-29T09:00:00Z")
+      expect(alert[:location_context_status]).to eq("available")
+    end
+
+    it "costs a fixed number of requests without listing sibling alerts" do
+      client.code_scanning_alert(repo, 1667, default_branch: "main")
+
+      expect(a_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+        .with(query: hash_including("state"))).not_to have_been_made
     end
   end
 

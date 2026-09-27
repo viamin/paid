@@ -98,9 +98,11 @@ class PromptAssembly::BuildIssuePrompt
     return unless github_client && issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
 
     alert_number = issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
-    alerts = github_client.code_scanning_alerts(project.full_name, default_branch: project.default_branch)
-    alert = alerts.find { |candidate| candidate[:number] == alert_number }
-    SecurityAlerts::ProcessCodeScanningAlerts.new(project).call([ alert ]) if alert
+    alert = github_client.code_scanning_alert(project.full_name, alert_number, default_branch: project.default_branch)
+    if alert
+      SecurityAlerts::ProcessCodeScanningAlerts.new(project)
+        .call([ alert ], excluding_run_id: agent_run&.id)
+    end
     issue.reload
   rescue GithubClient::Error => e
     Rails.logger.warn(

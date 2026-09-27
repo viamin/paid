@@ -1154,18 +1154,37 @@ class GithubClient
         **params
       )
 
-      Array(all_alerts).map { |alert| code_scanning_alert_payload(repo, alert, default_branch:) }
+      # Analyses for a given ref are shared by every alert on that ref; fetch
+      # each ref's list once per invocation instead of once per alert.
+      analyses_cache = {}
+      Array(all_alerts).map { |alert| code_scanning_alert_payload(repo, alert, default_branch:, analyses_cache:) }
+    end
+  end
+
+  # Fetches a single code scanning alert with the same target-branch enrichment
+  # as {#code_scanning_alerts} at a fixed API cost, regardless of how many
+  # other alerts are open on the repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Alert number
+  # @param default_branch [String, nil] Branch whose instance selects the remediation location
+  # @return [Hash] Alert payload with the same keys as {#code_scanning_alerts} entries
+  # @spec GITHUB-SYNC-015
+  def code_scanning_alert(repo, number, default_branch: nil)
+    handle_errors do
+      alert = client.get("#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{number}")
+      code_scanning_alert_payload(repo, alert, default_branch:, analyses_cache: {})
     end
   end
 
   private
 
-  def code_scanning_alert_payload(repo, alert, default_branch:)
+  def code_scanning_alert_payload(repo, alert, default_branch:, analyses_cache:)
     rule = alert.rule
     tool = alert.tool
     instances = code_scanning_alert_instances(repo, alert.number)
     target_ref = default_branch.present? ? "refs/heads/#{default_branch}" : nil
-    target_instances = target_ref ? instances.select { |instance| instance[:ref] == target_ref } : []
+    target_instances = target_ref && instances ? instances.select { |instance| instance[:ref] == target_ref } : []
     selected = target_instances.one? ? target_instances.first : nil
     excerpt = selected ? code_scanning_source_excerpt(repo, selected) : nil
 
@@ -1178,15 +1197,20 @@ class GithubClient
       target_instances: target_instances, location: selected&.dig(:location),
       ref: selected&.dig(:ref), commit_sha: selected&.dig(:commit_sha),
       analysis_key: selected&.dig(:analysis_key), category: selected&.dig(:category),
-      scan_time: selected && code_scanning_analysis_time(repo, selected),
+      scan_time: selected && code_scanning_analysis_time(repo, selected, analyses_cache),
       source_excerpt: excerpt,
-      location_context_status: location_context_status(target_ref, target_instances)
+      location_context_status: location_context_status(target_ref, instances, target_instances)
     }
   end
 
+  # Returns nil when the instances fetch fails so the payload can distinguish a
+  # degraded fetch from a genuinely empty instance list.
   def code_scanning_alert_instances(repo, alert_number)
     path = "#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{alert_number}/instances"
-    Array(client.paginate(path, per_page: 100)).map { |instance| code_scanning_instance(instance) }
+    instances = handle_errors { Array(client.paginate(path, per_page: 100)) }
+    instances.map { |instance| code_scanning_instance(instance) }
+  rescue GithubClient::Error
+    nil
   end
 
   def code_scanning_instance(instance)
@@ -1219,10 +1243,12 @@ class GithubClient
     nil
   end
 
-  def code_scanning_analysis_time(repo, instance)
+  def code_scanning_analysis_time(repo, instance, analyses_cache)
     path = "#{Octokit::Repository.path(repo)}/code-scanning/analyses"
-    analyses = Array(client.paginate(path, ref: instance[:ref], per_page: 100))
-    analysis = analyses.find do |candidate|
+    analyses_cache[instance[:ref]] ||= handle_errors do
+      Array(client.paginate(path, ref: instance[:ref], per_page: 100))
+    end
+    analysis = analyses_cache[instance[:ref]].find do |candidate|
       candidate.analysis_key == instance[:analysis_key] && candidate.commit_sha == instance[:commit_sha]
     end
     analysis&.created_at || instance[:analysis_created_at]
@@ -1230,7 +1256,8 @@ class GithubClient
     instance[:analysis_created_at]
   end
 
-  def location_context_status(target_ref, target_instances)
+  def location_context_status(target_ref, instances, target_instances)
+    return "instance_fetch_failed" if instances.nil?
     return "target_branch_unknown" unless target_ref
     return "target_branch_instance_missing" if target_instances.empty?
     return "target_branch_instance_ambiguous" if target_instances.many?
