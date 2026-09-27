@@ -108,3 +108,31 @@
   `app/services/pull_requests/blocked_only_on_approval.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/services/pull_requests/blocked_only_on_approval_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-010** — For a feature pull request enrolled in the
+  approved-intent operating mode, when the PR scanner observes a released
+  Feature Intent with an approved design revision and no verdict or active
+  review schedule for the exact `(pull request, PR HEAD SHA, approved design
+  revision)` identity, the system SHALL schedule one independent review. A
+  repeated scan SHALL not schedule another review for that identity, while a
+  new PR HEAD or approved design revision SHALL schedule one fresh review.
+  PRs without a released Feature Intent or approved revision SHALL not be
+  scheduled.
+  *Code:* `app/services/intent_conformance/schedule_review.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/services/intent_conformance/schedule_review_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-011** — When an independent intent-conformance
+  review is scheduled, the system SHALL run it with bounded per-project
+  concurrency and retry only classified transient reviewer failures using
+  bounded exponential backoff. Missing diffs, untrusted issues, empty design
+  document lists, invalid reviewer output, and non-retryable reviewer failures
+  SHALL persist a `not_evaluated` verdict and SHALL leave the merge block and
+  Inbox resolution path in place. Scheduling and terminal outcomes SHALL emit
+  structured logs with project, issue, PR HEAD, and design revision correlation
+  fields.
+  *Code:* `app/jobs/intent_conformance/review_job.rb`,
+  `app/services/intent_conformance/review_run.rb`.
+  *Test:* `spec/jobs/intent_conformance/review_job_spec.rb`,
+  `spec/services/intent_conformance/review_run_spec.rb`.

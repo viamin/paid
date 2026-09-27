@@ -80,6 +80,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:review_goal_max_retries).with(project).and_return(3)
       allow(activity).to receive(:check_rate_budget!).with(client)
       allow(activity).to receive(:fetch_pr_data)
+      allow(IntentConformance::ScheduleReview).to receive(:call)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
       allow(activity).to receive(:focus_for).and_return("review_feedback")
       allow(activity).to receive(:update_stuck_confirmation!)
