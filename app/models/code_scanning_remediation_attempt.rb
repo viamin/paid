@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Durable scanner evidence for one merged remediation. A merged PR is never a
-# resolution; only this record's verified_fixed state is one. # @spec EAGER-QUEUE-011
+# resolution; only this record's verified_fixed state is one. # @spec EAGER-QUEUE-013
 class CodeScanningRemediationAttempt < ApplicationRecord
   STATUSES = %w[awaiting_verification verified_fixed verification_failed verification_blocked].freeze
 
