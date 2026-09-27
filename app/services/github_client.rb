@@ -1177,6 +1177,26 @@ class GithubClient
     end
   end
 
+  # Fetches normalized code-scanning analyses used to verify merged remediations.
+  #
+  # @return [Array<Hash>] Scanner analyses, including their configuration and commit evidence
+  # @spec EAGER-QUEUE-013
+  def code_scanning_analyses(repo, per_page: 100)
+    handle_errors do
+      path = "#{Octokit::Repository.path(repo)}/code-scanning/analyses"
+      client.paginate(path, per_page:).map do |analysis|
+        {
+          id: analysis.id.to_s,
+          status: analysis.status,
+          ref: analysis.ref&.delete_prefix("refs/heads/"),
+          commit_sha: analysis.commit_sha,
+          tool_name: analysis.tool&.name,
+          category: analysis.category
+        }
+      end
+    end
+  end
+
   private
 
   def code_scanning_alert_payload(repo, alert, default_branch:, analyses_cache:)

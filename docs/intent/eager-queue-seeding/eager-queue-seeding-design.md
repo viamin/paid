@@ -140,7 +140,7 @@ against GitHub and cannot turn the existing implementation PR into a
 successful result: the duplicate activity stops non-retryably with the
 existing PR identified in its reason.
 
-## Code-scanning verification lifecycle (#4052)
+## Code-scanning verification lifecycle (#4053)
 
 Synthetic code-scanning issues (`Issue::SYNTHETIC_CODE_SCANNING_SOURCE`,
 seeded by `SecurityAlerts::ProcessCodeScanningAlerts` from CodeQL alerts) walk

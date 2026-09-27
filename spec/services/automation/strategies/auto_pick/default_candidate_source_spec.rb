@@ -64,6 +64,13 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
   end
 
   describe ".eligible_scope" do
+    it "keeps a scanner-verification-failed finding out of automatic remediation" do # @spec EAGER-QUEUE-013
+      issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+      create(:code_scanning_remediation_attempt, issue:, status: "verification_failed")
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+    end
+
     it "returns a scope limited to eligible issues" do
       eligible = create(:issue, project: project)
       create(:issue, project: project, labels: [ "planning" ])

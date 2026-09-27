@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_051833) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_074129) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -747,6 +747,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_051833) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "code_scanning_remediation_attempts", comment: "Durable scanner-verification evidence for merged code-scanning remediation PRs.", force: :cascade do |t|
+    t.bigint "agent_run_id", comment: "Run that produced the remediation PR."
+    t.text "blocked_reason"
+    t.string "category"
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false, comment: "Alert, PR, and analysis evidence retained for operator review."
+    t.bigint "issue_id", null: false, comment: "Synthetic code-scanning issue for the finding."
+    t.string "merge_commit_sha", null: false, comment: "Merge commit that scanner evidence must contain."
+    t.datetime "merged_at", null: false
+    t.integer "pull_request_number", null: false
+    t.string "status", default: "awaiting_verification", null: false, comment: "awaiting_verification, verified_fixed, verification_failed, or verification_blocked."
+    t.string "tool_name"
+    t.datetime "updated_at", null: false
+    t.string "verification_analysis_id"
+    t.string "verification_commit_sha"
+    t.string "verification_ref"
+    t.datetime "verified_at"
+    t.index ["agent_run_id"], name: "index_code_scanning_remediation_attempts_on_agent_run_id"
+    t.index ["issue_id", "pull_request_number"], name: "idx_code_scanning_remediation_attempts_unique_pr", unique: true
+    t.index ["issue_id", "status"], name: "idx_on_issue_id_status_9b22a66bc2"
+    t.index ["issue_id"], name: "index_code_scanning_remediation_attempts_on_issue_id"
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -3809,6 +3832,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_051833) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "code_scanning_remediation_attempts", "agent_runs"
+  add_foreign_key "code_scanning_remediation_attempts", "issues"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify
