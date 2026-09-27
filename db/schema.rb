@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_051833) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_061548) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1836,6 +1836,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_051833) do
     t.index ["project_id"], name: "index_intent_conformance_resolutions_on_project_id"
     t.index ["resolution_type"], name: "index_intent_conformance_resolutions_on_resolution_type"
     t.index ["resolved_by_id"], name: "index_intent_conformance_resolutions_on_resolved_by_id"
+  end
+
+  create_table "intent_conformance_review_schedules", comment: "Durable review schedules de-duplicating independent intent-conformance review runs per (issue, PR HEAD SHA, approved design revision) identity (RDR-067 #4050). Exactly one review chain (including bounded transient retries) runs per identity.", force: :cascade do |t|
+    t.string "approved_design_revision", null: false, comment: "Approved design revision the review is de-duplicated against; a re-approved revision schedules a fresh review."
+    t.integer "attempts_count", default: 0, null: false, comment: "Review attempts executed for this schedule, including transient retries."
+    t.datetime "completed_at", comment: "When the schedule reached its terminal status."
+    t.datetime "created_at", null: false
+    t.datetime "enqueued_at", comment: "When the review job was last enqueued; a stale value allows lost-job recovery."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) the independent review targets."
+    t.string "last_failure_reason", comment: "Classified failure reason recorded when the schedule completed without a terminal reviewer outcome."
+    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA the review is de-duplicated against; a new head schedules a fresh review."
+    t.bigint "project_id", null: false, comment: "Project whose pull request is reviewed."
+    t.string "status", default: "pending", null: false, comment: "pending while the review chain (including retries) is active; completed once terminal (see IntentConformanceReviewSchedule::STATUSES)."
+    t.datetime "updated_at", null: false
+    t.index ["issue_id", "pr_head_sha", "approved_design_revision"], name: "idx_intent_review_schedules_unique_identity", unique: true, comment: "Repeated scans of the same (pull request, PR head, approved design revision) never spawn a second review chain."
+    t.index ["issue_id"], name: "index_intent_conformance_review_schedules_on_issue_id"
+    t.index ["project_id", "status"], name: "idx_intent_review_schedules_project_status", comment: "Backs the bounded per-project pending-schedule check."
+    t.index ["project_id"], name: "index_intent_conformance_review_schedules_on_project_id"
   end
 
   create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|
@@ -3911,6 +3929,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_051833) do
   add_foreign_key "intent_conformance_resolutions", "issues"
   add_foreign_key "intent_conformance_resolutions", "projects"
   add_foreign_key "intent_conformance_resolutions", "users", column: "resolved_by_id"
+  add_foreign_key "intent_conformance_review_schedules", "issues"
+  add_foreign_key "intent_conformance_review_schedules", "projects"
   add_foreign_key "intent_conformance_verdicts", "agent_runs", column: "reviewer_run_id"
   add_foreign_key "intent_conformance_verdicts", "issues"
   add_foreign_key "intent_conformance_verdicts", "projects"
