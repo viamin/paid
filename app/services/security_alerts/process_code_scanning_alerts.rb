@@ -16,8 +16,10 @@ module SecurityAlerts
     # @param excluding_run_id [Integer, nil] Agent run to omit from the prior
     #   attempts history — the run whose prompt refresh triggers processing is
     #   not a prior attempt
+    # @spec GITHUB-SYNC-015
     def call(alerts, excluding_run_id: nil)
-      open_alerts = alerts.select { |a| a[:state] == "open" }
+      open_alerts, resolved_alerts = alerts.partition { |a| a[:state] == "open" }
+      close_resolved_issues(resolved_alerts)
       return [] if open_alerts.empty?
 
       synthetic_ids = open_alerts.map { |a| synthetic_issue_id(a) }
@@ -41,6 +43,23 @@ module SecurityAlerts
     end
 
     private
+
+    # The periodic scan (Activities::ScanSecurityAlertsActivity) reconciles
+    # resolved alerts separately via ReconcileResolved against a full-repo
+    # snapshot, and never passes non-open alerts here. This handles the
+    # narrower case of a single alert refreshed just before a queued
+    # remediation run executes: if it was fixed or dismissed since the run
+    # was queued, close the synthetic issue instead of leaving it open for a
+    # stale remediation prompt.
+    def close_resolved_issues(alerts)
+      return if alerts.empty?
+
+      ids = alerts.map { |a| synthetic_issue_id(a) }
+      now = Time.current
+      @project.issues.where(source: SYNTHETIC_SOURCE, github_issue_id: ids, github_state: "open").find_each do |issue|
+        issue.update!(github_state: "closed", github_updated_at: now)
+      end
+    end
 
     def create_issue_for_alert(alert)
       now = Time.current

@@ -2389,6 +2389,26 @@ RSpec.describe GithubClient do
 
       expect(alert[:location_context_status]).to eq("target_branch_instance_ambiguous")
       expect(alert[:location]).to be_nil
+      expect(alert[:summary]).to be_nil
+    end
+
+    it "does not fall back to another branch's message when the target branch has no instance" do
+      # @spec GITHUB-SYNC-015
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+        .with(query: { "state" => "open", "per_page" => "100" })
+        .to_return(status: 200, body: [ { number: 5, state: "open", rule: {}, tool: {},
+                                           most_recent_instance: { message: { text: "From feature branch" } } } ].to_json,
+          headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/5/instances")
+        .with(query: { "per_page" => "100" })
+        .to_return(status: 200, body: [ { ref: "refs/heads/feature",
+                                           message: { text: "From feature branch" } } ].to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      alert = client.code_scanning_alerts(repo, default_branch: "main").first
+
+      expect(alert[:location_context_status]).to eq("target_branch_instance_missing")
+      expect(alert[:summary]).to be_nil
     end
 
     context "with multiple alerts on the same target ref" do

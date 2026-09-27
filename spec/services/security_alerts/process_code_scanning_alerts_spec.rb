@@ -126,6 +126,18 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       expect(project.issues.where(source: source).count).to eq(0)
     end
 
+    it "closes an existing open issue when a refreshed alert is no longer open" do
+      # @spec GITHUB-SYNC-015
+      existing = create(:issue, project: project, github_issue_id: id_offset + 1667,
+        github_number: 200_001_667, source: source, github_state: "open", paid_state: "in_progress")
+      dismissed_alert = alert.merge(state: "dismissed")
+
+      described_class.new(project).call([ dismissed_alert ])
+
+      existing.reload
+      expect(existing.github_state).to eq("closed")
+    end
+
     it "reopens a closed issue when the alert reappears" do
       existing = create(:issue,
         project: project,

@@ -345,6 +345,23 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(result.text).to include("Fix login redirect")
     end
+
+    it "stops the run instead of building a stale prompt when the alert resolved since queuing" do
+      # @spec GITHUB-SYNC-015
+      resolved_payload = alert_payload.merge(state: "fixed")
+      allow(github_client).to receive(:code_scanning_alert)
+        .with(project.full_name, alert_number, default_branch: "main")
+        .and_return(resolved_payload)
+      processor = instance_double(SecurityAlerts::ProcessCodeScanningAlerts)
+      allow(SecurityAlerts::ProcessCodeScanningAlerts).to receive(:new).with(project).and_return(processor)
+      allow(processor).to receive(:call)
+
+      expect {
+        described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+      }.to raise_error(PromptAssembly::BuildIssuePrompt::AlertResolvedError, /no longer open/)
+
+      expect(processor).to have_received(:call).with([ resolved_payload ], excluding_run_id: nil)
+    end
   end
 
   describe "trusted comments" do

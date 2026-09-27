@@ -181,6 +181,12 @@ module Activities
             type: "UntrustedIssue",
             non_retryable: true
           )
+        rescue PromptAssembly::BuildIssuePrompt::AlertResolvedError => error
+          raise Temporalio::Error::ApplicationError.new(
+            error.message,
+            type: "CodeScanningAlertResolved",
+            non_retryable: true
+          )
         end
 
         unless prompt

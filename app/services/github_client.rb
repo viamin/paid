@@ -1191,7 +1191,7 @@ class GithubClient
     {
       number: alert.number, state: alert.state, severity: rule&.security_severity_level,
       rule_id: rule&.id, rule_description: rule&.description, tool_name: tool&.name,
-      summary: selected&.dig(:message) || alert.most_recent_instance&.message&.text,
+      summary: selected&.dig(:message),
       html_url: alert.html_url, created_at: alert.created_at,
       updated_at: alert.updated_at || alert.created_at, target_ref: target_ref,
       target_instances: target_instances, location: selected&.dig(:location),
