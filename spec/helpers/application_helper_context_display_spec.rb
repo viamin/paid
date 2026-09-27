@@ -109,7 +109,9 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("<details")
+        expect(result).to include('class="relative inline-block group"')
         expect(result).to include('role="tooltip"')
+        expect(result).to include("group-open:block")
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 

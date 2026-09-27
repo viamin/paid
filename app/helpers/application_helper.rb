@@ -751,7 +751,7 @@ module ApplicationHelper
     tag.span(class: "inline-flex items-center gap-1 relative") do
       safe_join([
         inner,
-        tag.details(class: "relative inline-block") do
+        tag.details(class: "relative inline-block group") do
           safe_join([
             tag.summary(
               tag.svg(
