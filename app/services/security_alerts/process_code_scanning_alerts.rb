@@ -45,7 +45,7 @@ module SecurityAlerts
         github_issue_id: synthetic_issue_id(alert),
         github_number: synthetic_number(alert),
         title: FormatCodeScanningAlert.title(alert),
-        body: FormatCodeScanningAlert.body(alert),
+        body: FormatCodeScanningAlert.body(alert.merge(repository: @project.full_name)),
         github_state: "open",
         github_creator_login: trusted_login,
         github_created_at: parse_alert_time(alert[:created_at]) || now,
@@ -76,7 +76,7 @@ module SecurityAlerts
     def reopen_closed_issue(issue, alert)
       issue.update!(
         title: FormatCodeScanningAlert.title(alert),
-        body: FormatCodeScanningAlert.body(alert),
+        body: formatted_body(issue, alert),
         github_state: "open",
         paid_state: "new",
         labels: labels_for_alert(alert),
@@ -86,7 +86,7 @@ module SecurityAlerts
 
     def update_metadata_if_changed(issue, alert)
       new_title = FormatCodeScanningAlert.title(alert)
-      new_body = FormatCodeScanningAlert.body(alert)
+      new_body = formatted_body(issue, alert)
       new_labels = labels_for_alert(alert)
 
       return if issue.title == new_title && issue.body == new_body && issue.labels == new_labels
@@ -105,6 +105,13 @@ module SecurityAlerts
       value.is_a?(String) ? Time.zone.parse(value) : value
     rescue ArgumentError
       nil
+    end
+
+    def formatted_body(issue, alert)
+      FormatCodeScanningAlert.body(
+        alert.merge(repository: @project.full_name),
+        prior_attempts: issue.agent_runs.order(created_at: :desc).limit(5)
+      )
     end
 
     def synthetic_issue_id(alert)

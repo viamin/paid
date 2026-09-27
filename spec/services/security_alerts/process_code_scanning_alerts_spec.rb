@@ -27,6 +27,43 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
   end
 
   describe "#call" do
+    # @spec GITHUB-SYNC-015
+    it "refreshes an existing issue with finding context and prior run evidence" do
+      existing = create(:issue, project: project, github_issue_id: id_offset + 1667,
+        github_number: 200_001_667, source: source, github_state: "open", paid_state: "new")
+      create(:agent_run, project: project, issue: existing, status: "failed", pull_request_url: "https://github.com/owner/repo/pull/3")
+      enriched = alert.merge(ref: "refs/heads/main", commit_sha: "a" * 40,
+        analysis_key: "dynamic/codeql", category: "/language:ruby",
+        location: { path: "app/controllers/runners_controller.rb", start_line: 69, end_line: 69,
+                    start_column: 36, end_column: 42 })
+
+      described_class.new(project).call([ enriched ])
+
+      expect(existing.reload.body).to include("app/controllers/runners_controller.rb:69:36-69:42")
+      expect(existing.body).to include("Run ##{existing.agent_runs.first.id}: failed")
+    end
+
+
+    it "carries the alert-1838 finding context into the final issue prompt" do
+      # @spec GITHUB-SYNC-015
+      alert_1838 = alert.merge(number: 1838, rule_id: "rb/sensitive-get-query",
+        summary: "Sensitive data read from a GET request.", ref: "refs/heads/main",
+        commit_sha: "7cabdb70d31b3056128f97f629213260dad4be49",
+        analysis_key: "dynamic/github-code-scanning/codeql:analyze", category: "/language:ruby",
+        location: { path: "app/controllers/runners_controller.rb", start_line: 69, end_line: 69,
+                    start_column: 36, end_column: 42 })
+      described_class.new(project).call([ alert_1838 ])
+      issue = project.issues.find_by!(github_issue_id: id_offset + 1838)
+
+      prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
+
+      expect(prompt).to include("app/controllers/runners_controller.rb:69:36-69:42")
+      expect(prompt).to include("refs/heads/main")
+      expect(prompt).to include("7cabdb70d31b3056128f97f629213260dad4be49")
+      expect(prompt).to include("dynamic/github-code-scanning/codeql:analyze")
+      expect(prompt).to include("Sensitive data read from a GET request.")
+    end
+
     it "creates a synthetic issue for a new alert" do
       described_class.new(project).call([ alert ])
 
@@ -113,7 +150,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
 
     it "updates priority label when an existing open issue severity changes" do
       title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
-      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert.merge(repository: project.full_name))
       existing = create(:issue,
         project: project,
         github_issue_id: id_offset + 1667,
@@ -132,7 +169,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
 
     it "does not update when metadata is unchanged" do
       title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
-      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert.merge(repository: project.full_name))
 
       existing = create(:issue,
         project: project,

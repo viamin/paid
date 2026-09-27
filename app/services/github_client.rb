@@ -189,6 +189,7 @@ class GithubClient
 
   def file_content(repo, path:, ref: nil)
     data = contents(repo, path: path, ref: ref)
+    return data if data.is_a?(String)
     return nil unless data&.content
 
     Base64.decode64(data.content).force_encoding("UTF-8")
@@ -1139,10 +1140,11 @@ class GithubClient
   # @param repo [String] Repository in "owner/name" format
   # @param severity [String, nil] Filter by security severity: "low", "medium", "high", or "critical"
   # @param state [String] Alert state to filter by: "open", "dismissed", or "fixed"
-  # @return [Array<Hash>] Alerts with :number, :state, :severity, :rule_id,
-  #   :rule_description, :tool_name, :summary, :html_url,
-  #   :created_at, :updated_at keys
-  def code_scanning_alerts(repo, severity: nil, state: "open", per_page: 100)
+  # @return [Array<Hash>] Alerts enriched with the instance for +default_branch+.
+  # The alert list's most_recent_instance can belong to a different branch, so
+  # it is never used as the remediation location without branch selection.
+  # @spec GITHUB-SYNC-015
+  def code_scanning_alerts(repo, severity: nil, state: "open", per_page: 100, default_branch: nil)
     handle_errors do
       params = { state: state, per_page: per_page }
       params[:severity] = severity if severity.present?
@@ -1152,25 +1154,91 @@ class GithubClient
         **params
       )
 
-      Array(all_alerts).map do |alert|
-        rule = alert.rule
-        tool = alert.tool
-
-        {
-          number: alert.number,
-          state: alert.state,
-          severity: rule&.security_severity_level,
-          rule_id: rule&.id,
-          rule_description: rule&.description,
-          tool_name: tool&.name,
-          summary: alert.most_recent_instance&.message&.text,
-          html_url: alert.html_url,
-          created_at: alert.created_at,
-          updated_at: alert.updated_at || alert.created_at
-        }
-      end
+      Array(all_alerts).map { |alert| code_scanning_alert_payload(repo, alert, default_branch:) }
     end
   end
+
+  private
+
+  def code_scanning_alert_payload(repo, alert, default_branch:)
+    rule = alert.rule
+    tool = alert.tool
+    instances = code_scanning_alert_instances(repo, alert.number)
+    target_ref = default_branch.present? ? "refs/heads/#{default_branch}" : nil
+    target_instances = target_ref ? instances.select { |instance| instance[:ref] == target_ref } : []
+    selected = target_instances.one? ? target_instances.first : nil
+    excerpt = selected ? code_scanning_source_excerpt(repo, selected) : nil
+
+    {
+      number: alert.number, state: alert.state, severity: rule&.security_severity_level,
+      rule_id: rule&.id, rule_description: rule&.description, tool_name: tool&.name,
+      summary: selected&.dig(:message) || alert.most_recent_instance&.message&.text,
+      html_url: alert.html_url, created_at: alert.created_at,
+      updated_at: alert.updated_at || alert.created_at, target_ref: target_ref,
+      target_instances: target_instances, location: selected&.dig(:location),
+      ref: selected&.dig(:ref), commit_sha: selected&.dig(:commit_sha),
+      analysis_key: selected&.dig(:analysis_key), category: selected&.dig(:category),
+      scan_time: selected && code_scanning_analysis_time(repo, selected),
+      source_excerpt: excerpt,
+      location_context_status: location_context_status(target_ref, target_instances)
+    }
+  end
+
+  def code_scanning_alert_instances(repo, alert_number)
+    path = "#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{alert_number}/instances"
+    Array(client.paginate(path, per_page: 100)).map { |instance| code_scanning_instance(instance) }
+  end
+
+  def code_scanning_instance(instance)
+    location = instance.location
+    {
+      ref: instance.ref, commit_sha: instance.commit_sha, analysis_key: instance.analysis_key,
+      category: instance.category, analysis_created_at: instance.analysis_created_at,
+      message: instance.message&.text,
+      location: location && {
+        path: location.path, start_line: location.start_line, end_line: location.end_line,
+        start_column: location.start_column, end_column: location.end_column
+      }
+    }
+  end
+
+  def code_scanning_source_excerpt(repo, instance)
+    location = instance[:location]
+    return unless location&.dig(:path) && instance[:commit_sha].present?
+
+    source = file_content(repo, path: location[:path], ref: instance[:commit_sha])
+    source_lines = source.to_s.lines
+    start_line = [ location[:start_line].to_i - 3, 1 ].max
+    end_line = [ location[:end_line].to_i + 3, source_lines.length ].min
+    return if source_lines.empty? || start_line > source_lines.length
+
+    source_lines[(start_line - 1)..(end_line - 1)].each_with_index.map do |line, index|
+      "%4d | %s" % [ start_line + index, line ]
+    end.join
+  rescue GithubClient::Error
+    nil
+  end
+
+  def code_scanning_analysis_time(repo, instance)
+    path = "#{Octokit::Repository.path(repo)}/code-scanning/analyses"
+    analyses = Array(client.paginate(path, ref: instance[:ref], per_page: 100))
+    analysis = analyses.find do |candidate|
+      candidate.analysis_key == instance[:analysis_key] && candidate.commit_sha == instance[:commit_sha]
+    end
+    analysis&.created_at || instance[:analysis_created_at]
+  rescue GithubClient::Error
+    instance[:analysis_created_at]
+  end
+
+  def location_context_status(target_ref, target_instances)
+    return "target_branch_unknown" unless target_ref
+    return "target_branch_instance_missing" if target_instances.empty?
+    return "target_branch_instance_ambiguous" if target_instances.many?
+
+    target_instances.first[:location].present? ? "available" : "location_missing"
+  end
+
+  public
 
   # Fetches reactions on a pull request (actually an issue endpoint in GitHub's API).
   #

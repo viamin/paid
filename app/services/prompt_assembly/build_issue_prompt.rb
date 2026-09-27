@@ -36,6 +36,8 @@ class PromptAssembly::BuildIssuePrompt
     raise UntrustedIssueError,
       "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
 
+    refresh_code_scanning_context
+
     context = PromptAssembly::Context.new(
       issue: issue,
       project: project,
@@ -86,5 +88,26 @@ class PromptAssembly::BuildIssuePrompt
     rescue GithubClient::Error
       []
     end
+  end
+
+  # A poll snapshot can be old by the time a queued run starts. Refreshing the
+  # synthetic issue here ensures the final prompt is built from the current
+  # target-branch finding rather than relying on a private GitHub alert URL.
+  # @spec GITHUB-SYNC-015
+  def refresh_code_scanning_context
+    return unless github_client && issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+
+    alert_number = issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
+    alerts = github_client.code_scanning_alerts(project.full_name, default_branch: project.default_branch)
+    alert = alerts.find { |candidate| candidate[:number] == alert_number }
+    SecurityAlerts::ProcessCodeScanningAlerts.new(project).call([ alert ]) if alert
+    issue.reload
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "github_sync.code_scanning_prompt_refresh_failed",
+      project_id: project.id,
+      alert_number: alert_number,
+      error: e.message
+    )
   end
 end

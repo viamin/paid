@@ -119,7 +119,7 @@ module Activities
 
     def fetch_code_scanning_alerts(project)
       client = project.client
-      client.code_scanning_alerts(project.full_name)
+      client.code_scanning_alerts(project.full_name, default_branch: project.default_branch)
     rescue GithubClient::NotFoundError => e
       logger.warn(
         message: "github_sync.code_scanning_fetch_failed",

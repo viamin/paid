@@ -2314,10 +2314,35 @@ RSpec.describe GithubClient do
             ].to_json,
             headers: { "Content-Type" => "application/json" }
           )
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667/instances")
+          .with(query: { "per_page" => "100" })
+          .to_return(
+            status: 200,
+            body: [
+              {
+                ref: "refs/heads/main", commit_sha: "a" * 40,
+                analysis_key: "dynamic/codeql", category: "/language:ruby",
+                analysis_created_at: "2026-03-29T09:00:00Z",
+                message: { text: "Reading sensitive data from a GET request." },
+                location: { path: "app/controllers/runners_controller.rb", start_line: 69,
+                            end_line: 69, start_column: 36, end_column: 42 }
+              }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+        stub_request(:get, "#{api_base}/repos/#{repo}/contents/app/controllers/runners_controller.rb")
+          .with(query: { "ref" => "a" * 40 })
+          .to_return(status: 200, body: { content: Base64.strict_encode64("one\ntwo\nthree\nfour\n") }.to_json,
+            headers: { "Content-Type" => "application/json" })
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/analyses")
+          .with(query: { "ref" => "refs/heads/main", "per_page" => "100" })
+          .to_return(status: 200, body: [ { analysis_key: "dynamic/codeql", commit_sha: "a" * 40,
+                                             created_at: "2026-03-29T09:00:00Z" } ].to_json,
+            headers: { "Content-Type" => "application/json" })
       end
 
       it "returns parsed alert data" do
-        result = client.code_scanning_alerts(repo)
+        result = client.code_scanning_alerts(repo, default_branch: "main")
 
         expect(result.size).to eq(1)
         alert = result.first
@@ -2330,13 +2355,40 @@ RSpec.describe GithubClient do
         expect(alert[:summary]).to eq("Reading sensitive data from a GET request.")
       end
 
+      it "preserves branch-selected location and analysis identity" do
+        # @spec GITHUB-SYNC-015
+        alert = client.code_scanning_alerts(repo, default_branch: "main").first
+
+        expect(alert[:location]).to include(path: "app/controllers/runners_controller.rb", start_line: 69)
+        expect(alert[:ref]).to eq("refs/heads/main")
+        expect(alert[:commit_sha]).to eq("a" * 40)
+        expect(alert[:analysis_key]).to eq("dynamic/codeql")
+      end
+
       it "returns timestamps as Time objects" do
-        alert = client.code_scanning_alerts(repo).first
+        alert = client.code_scanning_alerts(repo, default_branch: "main").first
 
         expect(alert[:created_at]).to be_a(Time)
         expect(alert[:created_at].iso8601).to eq("2026-03-29T10:00:00Z")
         expect(alert[:updated_at]).to be_a(Time)
       end
+    end
+
+    it "marks multiple target-branch configurations as ambiguous" do
+      # @spec GITHUB-SYNC-015
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+        .with(query: { "state" => "open", "per_page" => "100" })
+        .to_return(status: 200, body: [ { number: 5, state: "open", rule: {}, tool: {} } ].to_json,
+          headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/5/instances")
+        .with(query: { "per_page" => "100" })
+        .to_return(status: 200, body: [ { ref: "refs/heads/main" }, { ref: "refs/heads/main" } ].to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      alert = client.code_scanning_alerts(repo, default_branch: "main").first
+
+      expect(alert[:location_context_status]).to eq("target_branch_instance_ambiguous")
+      expect(alert[:location]).to be_nil
     end
 
     context "when code scanning is not enabled" do
