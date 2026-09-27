@@ -88,6 +88,7 @@ class Issue < ApplicationRecord
   has_many :sub_issues, class_name: "Issue", foreign_key: :parent_issue_id,
                         inverse_of: :parent_issue, dependent: :nullify
   has_many :agent_runs, dependent: :nullify
+  has_many :code_scanning_remediation_attempts, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :change_intents, dependent: :nullify
   has_many :issue_merge_subscriptions, dependent: :destroy
