@@ -55,8 +55,10 @@ Two columns on `projects`:
 3. Validate the repository name against GitHub's naming rules and reject
    owner/repo pairs that already exist as Paid projects in the account.
 4. Create the repository through `GithubClient#create_repository`. Organization
-   installations pass their authorized installation owner; user installations
-   create under the authenticated user. The repo is created with `auto_init:
+   installations pass their authorized installation owner. GitHub App
+   installation tokens cannot create repositories under personal accounts, so
+   user installations are rejected before a GitHub write with guidance to use
+   a PAT or an organization installation. The repo is created with `auto_init:
    true` so a default branch ref exists — Paid's worktree and branch machinery
    requires a base commit; a commit-less repository cannot host a run.
 5. Persist the `Project` with metadata from the creation response
