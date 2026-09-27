@@ -39,11 +39,18 @@ module AppleVerificationAttempts
     end
 
     def self.fetch(key)
-      value = ENV["APPLE_VERIFICATION_#{key.to_s.upcase}"]
+      value = ENV["APPLE_VERIFICATION_#{key.to_s.upcase}"] || maximum_limit_value(key)
       return Integer(value) if value.present?
 
       DEFAULTS.fetch(key)
     end
     private_class_method :fetch
+
+    def self.maximum_limit_value(key)
+      return unless key.in?(%i[max_queue_depth max_attempts_per_run])
+
+      ENV["APPLE_VERIFICATION_MAXIMUM_#{key.to_s.delete_prefix("max_").upcase}"]
+    end
+    private_class_method :maximum_limit_value
   end
 end

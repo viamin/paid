@@ -211,9 +211,21 @@ RSpec.describe AppleVerification::AgentTools do
         .to raise_error(AppleVerification::AgentTools::QuotaExceededError, /active/)
     end
 
+    # @spec APPLE-ATTEMPT-003
+    it "enforces the configured per-run attempt quota before queuing an attempt" do
+      revision = draft_revision
+
+      with_env("APPLE_VERIFICATION_MAXIMUM_ATTEMPTS_PER_RUN" => "1") do
+        attempt_for(revision, agent_run:, status: "cancelled")
+
+        expect { described_class.verify_apple_project(project:, agent_run:, bundle_digest:) }
+          .to raise_error(AppleVerification::AgentTools::QuotaExceededError, /quota of 1/)
+      end
+    end
+
     it "raises when the run exceeds the per-run attempt quota" do
       revision = draft_revision
-      AppleVerification::AgentTools::MAX_ATTEMPTS_PER_RUN.times do
+      AppleVerificationAttempts::Config.max_attempts_per_run.times do
         create(
           :apple_verification_attempt,
           project:,
@@ -458,5 +470,15 @@ RSpec.describe AppleVerification::AgentTools do
       expect { described_class.stop_apple_verification(project:, agent_run:, attempt_id: attempt.id) }
         .to raise_error(ArgumentError, /no longer active/)
     end
+  end
+
+  private
+
+  def with_env(overrides)
+    previous = overrides.keys.to_h { |key| [ key, ENV[key] ] }
+    overrides.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
   end
 end

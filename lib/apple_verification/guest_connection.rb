@@ -21,11 +21,15 @@ module AppleVerification
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 30
 
+      def initialize(read_timeout: READ_TIMEOUT)
+        @read_timeout = read_timeout
+      end
+
       def post(uri:, headers:, body:)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = true
         http.open_timeout = OPEN_TIMEOUT
-        http.read_timeout = READ_TIMEOUT
+        http.read_timeout = @read_timeout
 
         response = http.start { |client| client.request(Net::HTTP::Post.new(uri, headers).tap { |request| request.body = body }) }
         Response.new(code: response.code.to_i, body: response.body)
@@ -35,9 +39,14 @@ module AppleVerification
       end
     end
 
-    def initialize(token: ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", nil), transport: HttpTransport.new)
+    attr_reader :read_timeout
+
+    def initialize(connection: nil, token: ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", nil),
+      read_timeout: HttpTransport::READ_TIMEOUT, transport: nil)
+      @connection = connection
       @token = token
-      @transport = transport
+      @read_timeout = read_timeout
+      @transport = transport || HttpTransport.new(read_timeout:)
     end
 
     def dispatch!(image:, manifest:, network_contract:)
@@ -55,12 +64,18 @@ module AppleVerification
     def executor_uri(image)
       raise ConfigurationError, "guest executor token is not configured" if @token.blank?
 
-      uri = URI.parse(image.provenance.fetch("guest_executor_url"))
+      uri = URI.parse(executor_url(image))
       return uri if uri.is_a?(URI::HTTPS) && uri.host.present? && uri.userinfo.blank?
 
       raise ConfigurationError, "guest executor URL must be an HTTPS URL without credentials"
     rescue KeyError, TypeError, URI::InvalidURIError
       raise ConfigurationError, "guest executor URL is not configured"
+    end
+
+    def executor_url(image)
+      return image.provenance.fetch("guest_executor_url") unless @connection
+
+      @connection.fetch("url")
     end
 
     def headers

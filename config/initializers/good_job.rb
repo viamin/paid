@@ -178,6 +178,11 @@ Rails.application.configure do
       class: "ExecutionResourceReconciliationJob",
       description: "Reconcile execution resource ledger rows against runner/provider state"
     },
+    apple_verification_bundle_retention_sweep: {
+      cron: "1-59/5 * * * *",
+      class: "AppleVerificationBundleRetentionSweepJob",
+      description: "Delete expired Apple verification bundles and VMs"
+    },
     container_pool_replenishment: {
       cron: "4-59/5 * * * *",
       class: "PoolReplenishmentJob",

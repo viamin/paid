@@ -6,10 +6,11 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
   # @spec APPLE-ATTEMPT-001
   # @spec APPLE-ATTEMPT-003
   # @spec APPLE-ATTEMPT-005
+  # @spec APPLE-ATTEMPT-006
   let(:account) { create(:account) }
   let(:project) { create(:project, account:, apple_verification_mode: "on_demand") }
   let(:agent_run) { create(:agent_run, :running, project:) }
-  let(:revision) { create(:apple_verification_workflow_revision, :approved, project:) }
+  let(:revision) { create(:apple_verification_workflow_revision, :approved, project:, required_checks: []) }
   let(:snapshot) do
     AppleVerificationAttempts::HostCapacity::Snapshot.new(
       capacity: {
@@ -24,12 +25,16 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
   let(:lifecycle) do
     instance_double(
       AppleVerification::Lifecycle,
-      provision: instance_double(ExecutionRunners::RunnerHandle),
+      provision: provisioned_handle,
+      destroy: :destroyed,
       stop: :stopped
     )
   end
 
-  before { FeatureFlags.enable!(:apple_verification_workers, project:) }
+  before do
+    FeatureFlags.enable!(:apple_verification_workers, project:)
+    allow(AppleVerification::ExecuteGuestJob).to receive(:call).and_return(guest_result)
+  end
 
   def queued_attempt(project: self.project, agent_run: self.agent_run, revision: self.revision)
     create(
@@ -47,20 +52,26 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     described_class.call(capacity_sampler:, lifecycle:)
   end
 
-  it "starts the fair queue head after admission" do
+  it "dispatches and completes the fair queue head after admission" do
     attempt = queued_attempt
+    allow(AppleVerification::ExecuteGuestJob).to receive(:call) do
+      expect(attempt.reload).to have_attributes(status: "provisioning", started_at: be_present)
+      guest_result
+    end
 
     result = dispatch
 
     expect(result).to have_attributes(started: 1, rejected: 0, skipped: false)
-    expect(attempt.reload).to have_attributes(status: "running", started_at: be_present)
+    expect(attempt.reload).to have_attributes(status: "succeeded", started_at: be_present, finished_at: be_present)
     expect(lifecycle).to have_received(:provision).with(
       agent_run:,
       image_id: revision.apple_worker_profile.image_digest,
       profile_id: revision.apple_worker_profile.name,
-      request_id: "apple-verification-attempt:#{attempt.id}",
+      request_id: "apple-verification-attempt:#{attempt.id}:provision",
       apple_verification_attempt: attempt
     )
+    expect(AppleVerification::ExecuteGuestJob).to have_received(:call)
+    expect(lifecycle).to have_received(:destroy).with(attempt:, request_id: "complete:#{attempt.id}")
   end
 
   it "resets prior worker health failures after provisioning succeeds" do
@@ -103,6 +114,18 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     expect(revision.apple_worker_profile.reload.consecutive_health_failures).to eq(1)
   end
 
+  # @spec APPLE-ATTEMPT-015
+  it "records one worker health failure when provisioning cannot reach the host" do
+    attempt = queued_attempt
+    allow(lifecycle).to receive(:provision).and_raise(Faraday::ConnectionFailed, "host unavailable")
+
+    dispatch
+
+    expect(AppleVerificationWorkerHealth.find_by!(apple_worker_profile: revision.apple_worker_profile))
+      .to have_attributes(consecutive_failures: 1, status: "healthy")
+    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "worker_infrastructure")
+  end
+
   it "quarantines a worker after repeated provisioning failures" do
     attempts = [ queued_attempt ]
     2.times { attempts << queued_attempt(agent_run: create(:agent_run, :running, project:)) }
@@ -141,6 +164,26 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
 
     expect(result).to have_attributes(started: 1, rejected: 1, skipped: false)
     expect(invalid_attempt.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
-    expect(valid_attempt.reload.status).to eq("running")
+    expect(valid_attempt.reload.status).to eq("succeeded")
+  end
+
+  def provisioned_handle
+    instance_double(
+      ExecutionRunners::RunnerHandle,
+      metadata: { "guest_connection" => { "url" => "https://vm-1.example.test/v1/jobs" } }
+    )
+  end
+
+  # Matches the fixed manifest Provision#guest_manifest builds (materialize_source
+  # and export_artifacts) so GuestResult resolves to "succeeded" for a revision
+  # with no required checks.
+  def guest_result
+    AppleVerification::ExecuteGuestJob::Result.new(
+      image: nil,
+      operations: [
+        { "type" => "materialize_source", "status" => "succeeded" },
+        { "type" => "export_artifacts", "status" => "succeeded" }
+      ]
+    )
   end
 end

@@ -41,9 +41,16 @@
 - [x] **APPLE-ATTEMPT-004** — When an attempt exceeds the configured attempt
   timeout (default 45 minutes), the system SHALL end it in the `timed_out`
   state, and a capacity exhaustion or timeout outcome SHALL be reported as an
-  infrastructure result, never as a code failure.
-  *Tests:* `spec/services/apple_verification_attempts/timeout_monitor_spec.rb`
-  *Code:* `AppleVerificationAttempts::TimeoutMonitor`
+  infrastructure result, never as a code failure. The synchronous guest
+  dispatch SHALL use an attempt-bounded timeout with a bounded cancellation
+  grace period, and SHALL allow cancellation and timeout monitoring to
+  terminate an in-flight dispatch without a late guest result replacing its
+  terminal outcome.
+  *Tests:* `spec/services/apple_verification_attempts/timeout_monitor_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`,
+  `spec/lib/apple_verification/guest_connection_spec.rb`
+  *Code:* `AppleVerificationAttempts::TimeoutMonitor`,
+  `AppleVerificationAttempts::Provision`, `AppleVerification::GuestConnection`
 
 - [x] **APPLE-ATTEMPT-005** — Before reserving worker capacity, the system
   SHALL validate project approval, workflow state, source identity,

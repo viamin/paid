@@ -13,27 +13,33 @@ module AppleVerificationAttempts
 
     class << self
       def record_failure!(profile:, reason:)
-        profile.consecutive_health_failures = profile.consecutive_health_failures.to_i + 1
-        profile.last_health_failure_at = Time.current
+        profile.with_lock do
+          profile.consecutive_health_failures = profile.consecutive_health_failures.to_i + 1
+          profile.last_health_failure_at = Time.current
 
-        if quarantine?(profile)
-          profile.quarantined_at ||= Time.current
-          # `quarantined?` requires `returned_to_service_at` to be clear, so a
-          # profile that previously returned to service must drop that stamp
-          # for the re-quarantine to take effect.
-          profile.returned_to_service_at = nil
-          profile.quarantine_reason = reason
+          if quarantine?(profile)
+            profile.quarantined_at ||= Time.current
+            # `quarantined?` requires `returned_to_service_at` to be clear, so a
+            # profile that previously returned to service must drop that stamp
+            # for the re-quarantine to take effect.
+            profile.returned_to_service_at = nil
+            profile.quarantine_reason = reason
+          end
+
+          profile.save!
+          persist_health!(profile)
+          terminate_active_attempts!(profile) if profile.quarantined?
+          result_for(profile)
         end
-
-        profile.save!
-        terminate_active_attempts!(profile) if profile.quarantined?
-        result_for(profile)
       end
 
       def record_success!(profile:)
-        profile.consecutive_health_failures = 0
-        profile.save!
-        result_for(profile)
+        profile.with_lock do
+          profile.consecutive_health_failures = 0
+          profile.save!
+          persist_health!(profile)
+          result_for(profile)
+        end
       end
 
       def return_to_service!(profile:, smoke_test_passed:)
@@ -41,13 +47,16 @@ module AppleVerificationAttempts
           raise ArgumentError, "isolation smoke test must pass before returning worker to service"
         end
 
-        profile.returned_to_service_at = Time.current
-        profile.last_smoke_test_passed_at = Time.current
-        profile.quarantined_at = nil
-        profile.consecutive_health_failures = 0
-        profile.save!
+        profile.with_lock do
+          profile.returned_to_service_at = Time.current
+          profile.last_smoke_test_passed_at = Time.current
+          profile.quarantined_at = nil
+          profile.consecutive_health_failures = 0
+          profile.save!
+          persist_health!(profile)
 
-        Result.new(quarantined: false, consecutive_health_failures: 0)
+          Result.new(quarantined: false, consecutive_health_failures: 0)
+        end
       end
 
       def quarantined?(profile:)
@@ -65,6 +74,16 @@ module AppleVerificationAttempts
 
       def quarantine?(profile)
         profile.consecutive_health_failures >= Config.worker_health_failure_threshold
+      end
+
+      def persist_health!(profile)
+        health = AppleVerificationWorkerHealth.find_or_initialize_by(apple_worker_profile: profile)
+        health.update!(
+          consecutive_failures: profile.consecutive_health_failures,
+          status: profile.quarantined? ? "quarantined" : "healthy",
+          quarantined_at: profile.quarantined_at,
+          isolation_smoke_tested_at: profile.last_smoke_test_passed_at
+        )
       end
 
       def terminate_active_attempts!(profile)
