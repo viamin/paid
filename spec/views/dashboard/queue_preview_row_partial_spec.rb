@@ -70,4 +70,24 @@ RSpec.describe "dashboard/_queue_preview_row", :no_db, type: :view do
     expect(row.css("a").find { |a| a.text == "View" }["class"]).to include("min-h-11")
     expect(row.css("button").find { |b| b.text == "Cancel" }["class"]).to include("min-h-11")
   end
+
+  it "renders the context label as a sibling of <details> so it stays visible while details is closed" do
+    wrapped = '<details class="relative inline-block">' \
+      '<summary>icon</summary>' \
+      '<span id="context_7" role="tooltip">Queue focus badge rendering</span>' \
+      '</details>'.html_safe
+    inner_link = '<a href="https://github.com/o/r/issues/99" target="_blank" rel="noopener noreferrer" ' \
+      'class="text-indigo-600 hover:text-indigo-900" title="Queue focus badge rendering" ' \
+      'aria-describedby="context_7">Issue #99</a>'.html_safe
+    helper_output = "<span class=\"inline-flex items-center gap-1 relative\">#{inner_link}#{wrapped}</span>".html_safe
+    allow(view).to receive(:agent_run_context_display).with(run).and_return(helper_output)
+
+    render partial: "dashboard/queue_preview_row", locals: { entry: entry }
+
+    row = Nokogiri::HTML.fragment(rendered).at_css("tr#agent_run_7_queue_preview_row")
+    expect(row).to be_present
+    details = row.at_css("details")
+    expect(details).to be_present
+    expect(row.at_css("a").ancestors).not_to include(details)
+  end
 end

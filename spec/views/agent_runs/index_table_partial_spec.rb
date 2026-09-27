@@ -75,4 +75,38 @@ RSpec.describe "agent_runs/_index_table", :no_db, type: :view do
     expect(row.css("td")[context_index].text.squish).to eq("PR #87")
     expect(row.css("td")[provider_index].text.squish).to eq("Cursor Stable")
   end
+
+  it "renders the context label as a sibling of <details> so it stays visible while details is closed" do
+    allow(view).to receive(:agent_run_context_display).with(run)
+      .and_return(build_context_wrapper_html("PR #87", "https://github.com/o/r/pull/87"))
+
+    render partial: "agent_runs/index_table", locals: {
+      agent_runs: [ run ],
+      q: nil,
+      pagy: pagy,
+      show_project: false,
+      project: project
+    }
+
+    fragment = Nokogiri::HTML.fragment(rendered)
+    headers = fragment.css("thead th").map { |header| header.text.squish }
+    row = fragment.at_css("tr#agent_run_123")
+    expect(row).to be_present
+
+    context_index = headers.index("Context")
+    context_cell = row.css("td")[context_index]
+    expect(context_cell.at_css("details")).to be_present
+    expect(context_cell.at_css("a").ancestors).not_to include(context_cell.at_css("details"))
+  end
+
+  def build_context_wrapper_html(label, url)
+    wrapped = '<details class="relative inline-block">' \
+      '<summary>icon</summary>' \
+      '<span id="context_123" role="tooltip">PR #87</span>' \
+      '</details>'.html_safe
+    inner_link = '<a href="' + url + '" target="_blank" rel="noopener noreferrer" ' \
+      'class="text-indigo-600 hover:text-indigo-900" title="' + label + '" ' \
+      'aria-describedby="context_123">' + label + '</a>'.html_safe
+    "<span class=\"inline-flex items-center gap-1 relative\">#{inner_link}#{wrapped}</span>".html_safe
+  end
 end
