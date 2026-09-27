@@ -41,7 +41,9 @@ module SecurityAlerts
       return if merge_sha.blank? || pull_request.merged_at.blank?
 
       issue = run.issue
-      alert = alerts[alert_number(issue)] || github_client.code_scanning_alert(project.full_name, alert_number(issue))
+      alert = github_client.code_scanning_alert(
+        project.full_name, alert_number(issue), default_branch: project.default_branch
+      )
       CodeScanningRemediationAttempt.find_or_create_by!(issue:, pull_request_number: run.pull_request_number) do |attempt|
         attempt.assign_attributes(agent_run: run, merge_commit_sha: merge_sha, merged_at: pull_request.merged_at,
           tool_name: alert&.dig(:tool_name), category: alert&.dig(:category),

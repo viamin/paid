@@ -1158,10 +1158,13 @@ class GithubClient
 
   # Fetches one code scanning alert, including resolved alerts that are absent
   # from the normal open-alert reconciliation snapshot.
-  def code_scanning_alert(repo, number)
+  def code_scanning_alert(repo, number, default_branch: nil)
     handle_errors do
       path = "#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{number}"
-      code_scanning_alert_attributes(client.get(path))
+      attributes = code_scanning_alert_attributes(client.get(path))
+      next attributes unless default_branch
+
+      attributes.merge(category: code_scanning_alert_category(repo, number, default_branch))
     end
   end
 
@@ -1173,7 +1176,7 @@ class GithubClient
         {
           id: analysis.id.to_s,
           status: analysis.status,
-          ref: analysis.ref,
+          ref: analysis.ref&.delete_prefix("refs/heads/"),
           commit_sha: analysis.commit_sha,
           tool_name: analysis.tool&.name,
           category: analysis.category
@@ -1488,6 +1491,13 @@ class GithubClient
       created_at: alert.created_at,
       updated_at: alert.updated_at || alert.created_at
     }
+  end
+
+  def code_scanning_alert_category(repo, alert_number, default_branch)
+    path = "#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{alert_number}/instances"
+    target_ref = "refs/heads/#{default_branch}"
+    instance = client.paginate(path, per_page: 100).find { |candidate| candidate.ref == target_ref }
+    instance&.category
   end
 
   def issue_comments_batch_query(repo, owner, name, issue_numbers)

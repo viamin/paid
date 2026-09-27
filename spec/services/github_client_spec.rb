@@ -2373,6 +2373,20 @@ RSpec.describe GithubClient do
   describe "#code_scanning_alert" do
     let(:repo) { "owner/repo" }
 
+    def stub_alert_with_branch_instances
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667")
+        .to_return(status: 200, body: {
+          number: 1667, state: "open", tool: { name: "CodeQL" },
+          most_recent_instance: { category: "/language:javascript" }
+        }.to_json, headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667/instances")
+        .with(query: { "per_page" => "100" })
+        .to_return(status: 200, body: [
+          { ref: "refs/heads/feature", category: "/language:javascript" },
+          { ref: "refs/heads/main", category: "/language:ruby" }
+        ].to_json, headers: { "Content-Type" => "application/json" })
+    end
+
     it "returns configuration for a resolved alert" do
       stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667")
         .to_return(
@@ -2388,6 +2402,14 @@ RSpec.describe GithubClient do
         number: 1667, state: "fixed", tool_name: "CodeQL", category: "/language:ruby"
       )
     end
+
+    it "selects configuration from the default branch instance" do
+      stub_alert_with_branch_instances
+
+      alert = client.code_scanning_alert(repo, 1667, default_branch: "main")
+
+      expect(alert[:category]).to eq("/language:ruby")
+    end
   end
 
   describe "#code_scanning_analyses" do
@@ -2399,7 +2421,7 @@ RSpec.describe GithubClient do
         .to_return(
           status: 200,
           body: [
-            { id: 1842809913, status: "succeeded", ref: "main", commit_sha: "abc123",
+            { id: 1842809913, status: "succeeded", ref: "refs/heads/main", commit_sha: "abc123",
               tool: { name: "CodeQL" }, category: "/language:ruby" }
           ].to_json,
           headers: { "Content-Type" => "application/json" }

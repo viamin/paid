@@ -21,6 +21,9 @@ RSpec.describe SecurityAlerts::RecordMergedRemediationAttempts do
     pull_request
     github_pr = Struct.new(:merge_commit_sha, :merged_at).new("b" * 40, Time.current)
     allow(github_client).to receive(:pull_request).with(project.full_name, 4034).and_return(github_pr)
+    allow(github_client).to receive(:code_scanning_alert)
+      .with(project.full_name, 1838, default_branch: project.default_branch)
+      .and_return(number: 1838, tool_name: "CodeQL", category: "/language:ruby")
 
     described_class.new(project:, alerts: [ { number: 1838,
       tool_name: "CodeQL", category: "/language:ruby" } ], github_client:).call
@@ -46,12 +49,30 @@ RSpec.describe SecurityAlerts::RecordMergedRemediationAttempts do
     github_pr = Struct.new(:merge_commit_sha, :merged_at).new("b" * 40, Time.current)
     resolved_alert = { number: 1838, tool_name: "CodeQL", category: "/language:ruby" }
     allow(github_client).to receive(:pull_request).with(project.full_name, 4034).and_return(github_pr)
-    allow(github_client).to receive(:code_scanning_alert).with(project.full_name, 1838).and_return(resolved_alert)
+    allow(github_client).to receive(:code_scanning_alert)
+      .with(project.full_name, 1838, default_branch: project.default_branch)
+      .and_return(resolved_alert)
 
     described_class.new(project:, alerts: [], github_client:).call
 
     expect(issue.code_scanning_remediation_attempts.last).to have_attributes(
       tool_name: "CodeQL", category: "/language:ruby"
     )
+  end
+
+  it "records the target branch configuration instead of the open alert's latest instance" do # @spec EAGER-QUEUE-013
+    run
+    pull_request
+    github_pr = Struct.new(:merge_commit_sha, :merged_at).new("b" * 40, Time.current)
+    target_alert = { number: 1838, tool_name: "CodeQL", category: "/language:ruby" }
+    allow(github_client).to receive(:pull_request).with(project.full_name, 4034).and_return(github_pr)
+    allow(github_client).to receive(:code_scanning_alert)
+      .with(project.full_name, 1838, default_branch: project.default_branch)
+      .and_return(target_alert)
+
+    described_class.new(project:, alerts: [ { number: 1838, tool_name: "CodeQL", category: "/language:javascript" } ],
+      github_client:).call
+
+    expect(issue.code_scanning_remediation_attempts.last.category).to eq("/language:ruby")
   end
 end
