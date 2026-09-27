@@ -275,6 +275,95 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  describe "code scanning context refresh" do
+    let(:github_client) { instance_double(GithubClient) }
+    let(:alert_number) { 1667 }
+    let(:code_scanning_issue) do
+      OpenStruct.new(
+        issue.to_h.merge(
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + alert_number
+        )
+      ).tap do |i|
+        i.define_singleton_method(:trusted?) { true }
+        i.define_singleton_method(:reload) { self }
+      end
+    end
+    let(:alert_payload) do
+      {
+        number: alert_number, state: "open", severity: "high",
+        rule_id: "py/sensitive-get-query", rule_description: "Sensitive data read from GET request",
+        tool_name: "CodeQL", summary: "Reading sensitive data from a GET request.",
+        html_url: "https://github.com/owner-1/repo-1/security/code-scanning/1667",
+        created_at: "2026-03-29T10:00:00Z", updated_at: "2026-03-29T12:00:00Z"
+      }
+    end
+
+    before do
+      project.default_branch = "main"
+      allow(github_client).to receive(:issue_comments).and_return([])
+      allow(github_client).to receive(:code_scanning_alerts)
+      allow(github_client).to receive(:code_scanning_alert)
+        .with(project.full_name, alert_number, default_branch: "main")
+        .and_return(alert_payload)
+    end
+
+    it "refreshes only the target alert instead of listing every open alert" do
+      # @spec GITHUB-SYNC-015
+      processor = instance_double(SecurityAlerts::ProcessCodeScanningAlerts)
+      allow(SecurityAlerts::ProcessCodeScanningAlerts).to receive(:new).with(project).and_return(processor)
+      allow(processor).to receive(:call)
+
+      described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+
+      expect(github_client).to have_received(:code_scanning_alert)
+        .with(project.full_name, alert_number, default_branch: "main")
+      expect(github_client).not_to have_received(:code_scanning_alerts)
+    end
+
+    it "excludes the run being started from the prior attempts history" do
+      # @spec GITHUB-SYNC-015
+      agent_run = create(:agent_run, goal: "create_pr")
+      processor = instance_double(SecurityAlerts::ProcessCodeScanningAlerts)
+      allow(SecurityAlerts::ProcessCodeScanningAlerts).to receive(:new).with(project).and_return(processor)
+      allow(processor).to receive(:call)
+
+      described_class.call(
+        issue: code_scanning_issue, project: project,
+        github_client: github_client, agent_run: agent_run
+      )
+
+      expect(processor).to have_received(:call)
+        .with([ alert_payload ], excluding_run_id: agent_run.id)
+    end
+
+    it "keeps building the prompt when the refresh fetch fails" do
+      allow(github_client).to receive(:code_scanning_alert)
+        .and_raise(GithubClient::ApiError.new("boom"))
+
+      result = described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+
+      expect(result.text).to include("Fix login redirect")
+    end
+
+    it "stops the run instead of building a stale prompt when the alert resolved since queuing" do
+      # @spec GITHUB-SYNC-015
+      resolved_payload = alert_payload.merge(state: "fixed")
+      allow(github_client).to receive(:code_scanning_alert)
+        .with(project.full_name, alert_number, default_branch: "main")
+        .and_return(resolved_payload)
+      processor = instance_double(SecurityAlerts::ProcessCodeScanningAlerts)
+      allow(SecurityAlerts::ProcessCodeScanningAlerts).to receive(:new).with(project).and_return(processor)
+      allow(processor).to receive(:call)
+
+      expect {
+        described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+      }.to raise_error(PromptAssembly::BuildIssuePrompt::AlertResolvedError, /no longer open/)
+
+      expect(processor).to have_received(:call).with([ resolved_payload ], excluding_run_id: nil)
+    end
+  end
+
   describe "trusted comments" do
     let(:github_client) { instance_double(GithubClient) }
     let(:trusted_comment) do

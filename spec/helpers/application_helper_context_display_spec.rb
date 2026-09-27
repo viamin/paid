@@ -109,20 +109,38 @@ RSpec.describe ApplicationHelper, :no_db do
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("<details")
+        expect(result).to include('class="relative inline-block group"')
         expect(result).to include('role="tooltip"')
+        expect(result).to include("group-open:block")
         expect(result).to include("@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))")
       end
 
-      it "reveals the tooltip on keyboard focus even when the info icon is hidden on fine-pointer devices" do
+      it "renders the focusable link as a sibling of <details> so it is not hidden when details is closed" do
         issue = stub_issue(github_number: 42, github_url: "https://github.com/o/r/issues/42",
           title: "Fix the login bug")
-        run = stub_run("create_pr_goal?": true, issue: issue)
-        result = helper.agent_run_context_display(run)
+        run = stub_run(id: 42, "create_pr_goal?": true, issue: issue)
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
 
-        # The disclosure triangle is hidden on hover-capable fine-pointer devices, but the
-        # tooltip content must still be reachable by focusing the underlying link/span so
-        # keyboard users on desktop are not locked out (see #3517 review feedback).
-        expect(result).to include("group-focus-within:block")
+        # The disclosure trigger is hidden on hover-capable fine-pointer devices, so
+        # keyboard users on desktop must still be able to focus the link to read
+        # the tooltip via aria-describedby (see #3517 / #4042).
+        link = fragment.at_css("a")
+        expect(link).to be_present
+        details = fragment.at_css("details")
+        expect(details).to be_present
+        expect(link.ancestors).not_to include(details)
+        expect(link["aria-describedby"]).to eq("context_42")
+      end
+
+      it "renders the focusable text label as a sibling of <details> so it is not hidden when details is closed" do
+        run = stub_run(id: 55, "create_pr_goal?": true, custom_prompt: "Refactor the flaky dashboard queue rows")
+        fragment = Nokogiri::HTML5.fragment(helper.agent_run_context_display(run))
+
+        label = fragment.at_css('span[tabindex="0"]')
+        expect(label).to be_present
+        details = fragment.at_css("details")
+        expect(details).to be_present
+        expect(label.ancestors).not_to include(details)
       end
 
       it "falls back to the issue label tooltip when the issue title is absent" do

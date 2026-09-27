@@ -8,6 +8,7 @@ require "ostruct"
 # @spec PROJECT-CREATION-004
 # @spec PROJECT-CREATION-005
 # @spec PROJECT-CREATION-008
+# @spec PROJECT-CREATION-012
 RSpec.describe Projects::CreateBlank do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
@@ -241,16 +242,21 @@ RSpec.describe Projects::CreateBlank do
       expect(project.owner).to eq("acme-org")
     end
 
-    it "creates under the authenticated user for a user installation" do
+    it "rejects user installations before creating a repository" do
       installation.update!(target_type: "User")
-      allow(client).to receive(:create_repository).and_return(repo_response(owner_login: "acme-org"))
+      allow(client).to receive(:create_repository)
 
-      described_class.call(
-        account: account, user: user, github_installation: installation, repo_name: "fresh-start"
+      expect {
+        described_class.call(
+          account: account, user: user, github_installation: installation, repo_name: "fresh-start"
+        )
+      }.to raise_error(
+        Projects::CreateBlank::ValidationError,
+        "GitHub App installations can't create repositories under a personal account. " \
+        "Select a personal access token as the credential, or choose an organization owner where the app is installed."
       )
 
-      expect(client).to have_received(:create_repository)
-        .with("fresh-start", organization: nil, private: true, description: nil)
+      expect(client).not_to have_received(:create_repository)
     end
 
     it "rejects an owner that differs from the installation account" do
