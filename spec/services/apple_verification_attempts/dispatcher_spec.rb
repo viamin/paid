@@ -54,6 +54,9 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
 
   it "dispatches and completes the fair queue head after admission" do
     attempt = queued_attempt
+    allow(AppleVerification::ExecuteGuestJob).to receive(:call) do
+      expect(attempt.reload).to have_attributes(status: "provisioning", started_at: be_present)
+    end
 
     result = dispatch
 

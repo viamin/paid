@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Provision do
+  # @spec APPLE-ATTEMPT-004
   # @spec APPLE-ATTEMPT-003
   it "dispatches the guest manifest before recording the attempt as running" do
     attempt = provisioning_attempt
@@ -16,7 +17,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
         agent_run: attempt.agent_run,
         image_digest: attempt.apple_worker_profile.image_digest,
         manifest: guest_manifest_for(attempt),
-        guest_connection: be_a(AppleVerification::GuestConnection)
+        guest_connection: have_attributes(read_timeout: 50.minutes)
       )
     end
     allow(completion).to receive(:call)
@@ -58,6 +59,22 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     expect(completion).not_to have_received(:call)
     expect(attempt.reload.status).to eq("provisioning")
+  end
+
+  # @spec APPLE-ATTEMPT-004
+  it "does not replace a timeout outcome when an in-flight guest call returns" do
+    attempt = provisioning_attempt
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    allow(lifecycle).to receive(:provision).and_return(provisioned_handle)
+    allow(guest_job).to receive(:call) { attempt.update!(status: "timed_out") }
+    allow(completion).to receive(:call)
+
+    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+
+    expect(completion).not_to have_received(:call)
+    expect(attempt.reload.status).to eq("timed_out")
   end
 
   def provisioning_attempt

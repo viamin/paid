@@ -46,6 +46,16 @@ module AppleVerificationAttempts
     end
 
     def dispatch(attempt)
+      admission_result = reserve_admission(attempt)
+      return admission_result unless admission_result == :admitted
+
+      provision(attempt)
+    end
+
+    # Guest execution may take the full attempt lifetime. Release the
+    # admission lock after recording the active state so cancellation and the
+    # timeout monitor can converge the live VM while the guest is executing.
+    def reserve_admission(attempt)
       attempt.with_lock do
         return :stale unless queue_head?(attempt)
         return :rejected unless Validate.call(attempt:).valid
@@ -54,7 +64,8 @@ module AppleVerificationAttempts
         return :blocked unless snapshot
         return :blocked unless admitted?(attempt, snapshot)
 
-        provision(attempt)
+        attempt.update!(status: "provisioning", started_at: Time.current)
+        :admitted
       end
     end
 
@@ -76,7 +87,6 @@ module AppleVerificationAttempts
     end
 
     def provision(attempt)
-      attempt.update!(status: "provisioning")
       Provision.new(lifecycle:, completion: complete).call(attempt)
       WorkerHealth.record_success!(profile: attempt.apple_worker_profile)
       :started

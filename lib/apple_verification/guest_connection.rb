@@ -21,11 +21,15 @@ module AppleVerification
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 30
 
+      def initialize(read_timeout: READ_TIMEOUT)
+        @read_timeout = read_timeout
+      end
+
       def post(uri:, headers:, body:)
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = true
         http.open_timeout = OPEN_TIMEOUT
-        http.read_timeout = READ_TIMEOUT
+        http.read_timeout = @read_timeout
 
         response = http.start { |client| client.request(Net::HTTP::Post.new(uri, headers).tap { |request| request.body = body }) }
         Response.new(code: response.code.to_i, body: response.body)
@@ -35,10 +39,14 @@ module AppleVerification
       end
     end
 
-    def initialize(connection: nil, token: ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", nil), transport: HttpTransport.new)
+    attr_reader :read_timeout
+
+    def initialize(connection: nil, token: ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", nil),
+      read_timeout: HttpTransport::READ_TIMEOUT, transport: nil)
       @connection = connection
       @token = token
-      @transport = transport
+      @read_timeout = read_timeout
+      @transport = transport || HttpTransport.new(read_timeout:)
     end
 
     def dispatch!(image:, manifest:, network_contract:)

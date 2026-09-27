@@ -98,6 +98,12 @@ return is the finished-upload moment: the provisioning flow applies steps 8–10
 immediately through `AppleVerificationAttempts::Complete` rather than leaving a
 finished attempt occupying the worker slot until the timeout sweep. A dispatch
 failure leaves the attempt non-terminal for the timeout and recovery paths.
+The dispatch transport receives the configured attempt timeout plus a bounded
+cancellation grace period; it is never subject to the ordinary short request
+timeout. Admission commits the `provisioning` state and attempt start time
+before dispatching, then releases its row lock so cancellation and timeout
+monitoring can revoke and destroy an in-flight VM. A late normal guest return
+cannot overwrite an already-terminal cancellation or timeout.
 
 Attempts use the explicit states `queued`, `provisioning`, `running`,
 `succeeded`, `failed`, `cancelled`, `timed_out`, and `unavailable`; only the
