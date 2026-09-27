@@ -90,6 +90,8 @@ module IntentConformance
       new(...).call
     end
 
+    attr_reader :failure_reason
+
     def initialize(project:, issue:, pr_head_sha:)
       @project = project
       @issue = issue
@@ -299,6 +301,7 @@ module IntentConformance
     end
 
     def persist_not_evaluated(reason)
+      @failure_reason = reason
       log_failure(reason)
 
       IntentConformanceVerdict.create!(

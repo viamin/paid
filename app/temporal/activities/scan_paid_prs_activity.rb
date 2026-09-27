@@ -463,6 +463,8 @@ module Activities
         head_sha: head_sha,
         head_updated_at: head_updated_at
       }
+      # @spec INTENT-CONFORMANCE-010
+      IntentConformance::ScheduleReview.call(project: project, issue: issue, pr_head_sha: head_sha)
 
       progress_state = pr_progress_state(
         project,
