@@ -12,6 +12,17 @@ module Issues
       new(...).call
     end
 
+    # Read-only preview of what +call+ would link, for repair/reporting
+    # tools (the `issues:repair_pull_request_source_links` rake task) that
+    # need to distinguish an unambiguous match from a conflicting history
+    # without writing. Mirrors +call+'s early-out: an already-linked PR has
+    # nothing left to reconcile.
+    def self.candidate_source_issues(pull_request) # @spec EAGER-QUEUE-012
+      return [] if pull_request.parent_issue_id.present?
+
+      new(pull_request: pull_request).sources
+    end
+
     def initialize(pull_request:)
       @pull_request = pull_request
     end
@@ -29,10 +40,6 @@ module Issues
       pull_request
     end
 
-    private
-
-    attr_reader :pull_request
-
     def sources
       pull_request.project.agent_runs
         .where(goal: "create_pr", pull_request_number: pull_request.github_number)
@@ -40,6 +47,10 @@ module Issues
         .filter_map { |run| source_issue(run.issue) }
         .uniq
     end
+
+    private
+
+    attr_reader :pull_request
 
     def source_issue(issue)
       return unless issue

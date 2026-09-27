@@ -149,6 +149,54 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
         .not_to change { existing.reload.updated_at }
     end
 
+    it "stamps last_scanner_reconciled_at on every pass, even when nothing else changed" do # @spec EAGER-QUEUE-011
+      # DefaultCandidateSource compares this timestamp against a merged
+      # remediation PR's observed time to tell an unverified merge from a
+      # scanner-confirmed still-open (recurrent) alert (#4052). It must
+      # advance on every pass, not only when title/body/labels changed —
+      # otherwise a rescan that finds nothing new would never verify
+      # anything.
+      title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      existing = create(:issue,
+        project: project,
+        github_issue_id: id_offset + 1667,
+        github_number: 200_001_667,
+        source: source,
+        github_state: "open",
+        paid_state: "new",
+        title: title,
+        body: body,
+        labels: %w[security code-scanning P1],
+        last_scanner_reconciled_at: 1.day.ago)
+
+      described_class.new(project).call([ alert ])
+
+      expect(existing.reload.last_scanner_reconciled_at).to be_within(5.seconds).of(Time.current)
+    end
+
+    it "stamps last_scanner_reconciled_at when creating a new synthetic issue" do
+      described_class.new(project).call([ alert ])
+
+      issue = project.issues.find_by(source: source, github_issue_id: id_offset + 1667)
+      expect(issue.last_scanner_reconciled_at).to be_within(5.seconds).of(Time.current)
+    end
+
+    it "stamps last_scanner_reconciled_at when reopening a closed issue" do
+      existing = create(:issue,
+        project: project,
+        github_issue_id: id_offset + 1667,
+        github_number: 200_001_667,
+        source: source,
+        github_state: "closed",
+        paid_state: "completed",
+        last_scanner_reconciled_at: 1.day.ago)
+
+      described_class.new(project).call([ alert ])
+
+      expect(existing.reload.last_scanner_reconciled_at).to be_within(5.seconds).of(Time.current)
+    end
+
     it "handles duplicate creation race gracefully" do
       create(:issue,
         project: project,
