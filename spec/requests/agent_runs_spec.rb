@@ -186,12 +186,14 @@ RSpec.describe "AgentRuns" do
         context_cell = cell_for_run(parsed_html, run, "Context")
         tooltip_wrapper = context_cell.at_css('details')
         tooltip_content = tooltip_wrapper&.at_css('span[role="tooltip"]')
+        focusable_link = context_cell.at_css('a[aria-describedby]')
 
         expect(context_cell.text).to include("PR ##{run.source_pull_request_number}")
         expect(tooltip_wrapper).to be_present
         expect(tooltip_content).to be_present
         expect(tooltip_content.text).to include(source_pull_request.title)
-        expect(tooltip_wrapper.at_css("a")["aria-describedby"]).to eq(tooltip_content["id"])
+        expect(focusable_link).to be_present
+        expect(focusable_link["aria-describedby"]).to eq(tooltip_content["id"])
       end
 
       it "shows custom prompt context separately from the goal label" do

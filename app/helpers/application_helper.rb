@@ -715,15 +715,25 @@ module ApplicationHelper
   end
 
   # Wraps content with a mobile-friendly info-icon tooltip using CSS-only details.
-  # Desktop users see the native title attribute on hover, and the popover on
-  # keyboard focus of +inner+ (group-focus-within); on touch devices the icon
-  # toggles the popover instead. Returns +inner+ unchanged when +tooltip_text+
-  # is blank.
+  # Desktop users see the native title attribute on hover; on touch devices the
+  # icon toggles the popover. Returns +inner+ unchanged when +tooltip_text+ is
+  # blank.
+  #
+  # The primary content (`inner`) MUST live OUTSIDE the `<details>` so it
+  # always renders: closed `<details>` hides non-summary children via
+  # `content-visibility` that author CSS cannot override, so leaving the
+  # label/link inside would blank out the cell on desktop (where the icon
+  # trigger is hidden by media query) and only show it on mobile when the
+  # user taps the icon (see #4042).
   #
   # Callers MUST wire `aria-describedby: dom_id` onto the focusable trigger
   # they pass in, otherwise assistive technology cannot associate the
   # `role="tooltip"` content with its trigger and screen reader users who
   # focus the link/span hear no description (see #3517 review feedback).
+  # `aria-describedby` continues to work for screen readers even though the
+  # tooltip span sits inside a `<details>` and is visually hidden by default;
+  # the same element is still referenced via `id="dom_id"` and assistive tech
+  # announces it on focus regardless of computed visibility.
   #
   # `<details>` was kept over the Popover API (also raised in #3517 review
   # feedback) because positioning a `[popover]` next to its trigger without
@@ -738,25 +748,29 @@ module ApplicationHelper
   def mobile_tooltip_wrapper(inner, tooltip_text, dom_id, aria_label: "Show details")
     return inner if tooltip_text.blank?
 
-    tag.details(class: "inline-flex items-center gap-1 group relative") do
+    tag.span(class: "inline-flex items-center gap-1 relative") do
       safe_join([
-        tag.summary(
-          tag.svg(
-            tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
-            class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
-            "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
-            aria: { hidden: "true" }, focusable: "false"
-          ),
-          class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden cursor-pointer text-gray-400 hover:text-gray-600 list-none [&::-webkit-details-marker]:hidden",
-          aria: { label: aria_label, describedby: dom_id }
-        ),
         inner,
-        tag.span(
-          tooltip_text,
-          id: dom_id,
-          role: "tooltip",
-          class: "hidden group-open:block group-focus-within:block absolute left-0 top-full mt-1 z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
-        )
+        tag.details(class: "relative inline-block") do
+          safe_join([
+            tag.summary(
+              tag.svg(
+                tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
+                class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
+                "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
+                aria: { hidden: "true" }, focusable: "false"
+              ),
+              class: "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:hidden cursor-pointer text-gray-400 hover:text-gray-600 list-none [&::-webkit-details-marker]:hidden",
+              aria: { label: aria_label, describedby: dom_id }
+            ),
+            tag.span(
+              tooltip_text,
+              id: dom_id,
+              role: "tooltip",
+              class: "hidden group-open:block absolute left-0 top-full mt-1 z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg"
+            )
+          ])
+        end
       ])
     end
   end
