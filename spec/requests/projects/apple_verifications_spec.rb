@@ -52,7 +52,7 @@ RSpec.describe "Projects::AppleVerifications" do
     end
 
     it "namespaces waiver form inputs under the waiver scope" do # @spec APPLE-VERIFY-006
-      attempt = create(:apple_verification_attempt, project:, status: "failed")
+      create(:apple_verification_attempt, project:, status: "failed")
       sign_in_project_administrator
 
       get project_apple_verification_path(project)
