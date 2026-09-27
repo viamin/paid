@@ -511,6 +511,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.last_scanned_head_sha).to eq("abc123")
       end
 
+      # @spec INTENT-CONFORMANCE-010
+      it "schedules one independent review for the live head of a released feature intent" do
+        project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+        feature_intent = create(:feature_intent,
+          project: project,
+          status: "released",
+          approved_design_revision: "design-v1")
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: pr_issue)
+
+        activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
+
+        expect(IntentConformanceReviewSchedule.where(
+          issue: pr_issue,
+          pr_head_sha: "abc123",
+          approved_design_revision: "design-v1"
+        ).count).to eq(1)
+      end
+
       # @spec INTENT-CONFORMANCE-007
       it "overwrites the scanned HEAD SHA when a new commit changes the PR HEAD" do
         project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
@@ -526,6 +545,75 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         activity.execute(project_id: project.id)
 
         expect(pr_issue.reload.last_scanned_head_sha).to eq("def456")
+      end
+
+      # @spec INTENT-CONFORMANCE-010
+      context "with the approved-intent operating mode enrolled" do
+        let(:feature_intent) do
+          create(:feature_intent, project: project, status: "released", approved_design_revision: "design-v1")
+        end
+
+        before do
+          project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+          create(:feature_intent_issue, feature_intent: feature_intent, issue: pr_issue)
+        end
+
+        it "schedules exactly one independent review for the scanned feature PR head" do
+          pr_issue.update!(pr_review_phase: "ready")
+          stub_owner_approval_ready_signals
+
+          expect {
+            activity.execute(project_id: project.id)
+          }.to change(IntentConformanceReviewSchedule, :count).by(1)
+
+          schedule = IntentConformanceReviewSchedule.last
+          expect(schedule.issue).to eq(pr_issue)
+          expect(schedule.pr_head_sha).to eq("abc123")
+          expect(schedule.approved_design_revision).to eq("design-v1")
+          expect(schedule.enqueued_at).to be_present
+        end
+
+        it "does not schedule a second review for a repeated scan of the same head" do
+          pr_issue.update!(pr_review_phase: "ready")
+          stub_owner_approval_ready_signals
+
+          activity.execute(project_id: project.id)
+          pr_issue.update_columns(github_updated_at: Time.current)
+
+          expect {
+            activity.execute(project_id: project.id)
+          }.not_to change(IntentConformanceReviewSchedule, :count)
+        end
+
+        it "does not schedule when the feature intent is not released" do
+          feature_intent.update!(status: "revising")
+          pr_issue.update!(pr_review_phase: "ready")
+          stub_owner_approval_ready_signals
+
+          expect {
+            activity.execute(project_id: project.id)
+          }.not_to change(IntentConformanceReviewSchedule, :count)
+        end
+
+        it "does not schedule when the rollout flag is disabled" do
+          project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => false })
+          pr_issue.update!(pr_review_phase: "ready")
+          stub_owner_approval_ready_signals
+
+          expect {
+            activity.execute(project_id: project.id)
+          }.not_to change(IntentConformanceReviewSchedule, :count)
+        end
+      end
+
+      it "does not schedule an intent-conformance review for PRs without a feature intent" do
+        project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change(IntentConformanceReviewSchedule, :count)
       end
 
       it "re-requests review from the owner when auto-merge is blocked only by a stale approval" do

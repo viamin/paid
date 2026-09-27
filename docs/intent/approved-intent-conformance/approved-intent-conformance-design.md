@@ -9,7 +9,7 @@ Those features use issue-level readiness and completion-blocking follow-ups;
 existing features retain their policy until deliberately migrated. Shared
 record types and ordinary CI/security/quality checks remain reusable.
 
-> Segment: approved-intent-conformance · Status: implemented (issue #3867 scope)
+> Segment: approved-intent-conformance · Status: implemented (issues #3867, #4050 scope)
 > Specs: [approved-intent-conformance-specs.md](approved-intent-conformance-specs.md)
 > RDR: [RDR-067](../../rdrs/RDR-067-approved-intent-conformance.md)
 
@@ -56,13 +56,24 @@ because the blocker/Inbox surface cannot exist without something to read.
    RDR-067's own rollout guard ties enforcement to the RDR-066 named feature
    operating mode, which does not exist in this codebase yet; the flag is the
    interim substitute and is documented to be replaced once RDR-066 ships.
-4. **PR-scanner wiring** — `ScanPaidPrsActivity` already persists the auto-merge
+4. **Review scheduling** — after resolving a live PR HEAD, `ScanPaidPrsActivity`
+   asks `IntentConformance::ScheduleReview` to create one durable review
+   schedule for a released Feature Intent's exact `(issue, PR HEAD, approved
+   design revision)` identity. The scheduler never enqueues PRs without a
+   released intent or approved revision, and an existing verdict or schedule
+   for that identity makes a repeat scan a no-op. A changed HEAD or re-approved
+   revision therefore creates a distinct schedule. `IntentConformance::ReviewJob`
+   owns the external reviewer call: it has a bounded per-project GoodJob
+   concurrency limit and retries only classified transient reviewer failures
+   with framework backoff. Business failures remain `not_evaluated`, preserving
+   the fail-closed merge block and Inbox resolution path.
+5. **PR-scanner wiring** — `ScanPaidPrsActivity` already persists the auto-merge
    blocker snapshot to `issues.auto_merge_blockers` every scan pass
    (RDR-067's "PR scanner already persists blockers" precedent). This segment
    adds `issues.last_scanned_head_sha`, persisted alongside the snapshot, so
    the Inbox can look up the verdict for the exact HEAD the scanner just
    evaluated without an extra GitHub call.
-5. **Inbox lane** (`intent_conformance` kind) — `Inbox::IntentConformance`
+6. **Inbox lane** (`intent_conformance` kind) — `Inbox::IntentConformance`
    mirrors `Inbox::MergeApproval`'s "read the persisted blocker snapshot,
    filter to one signal" shape, but the `intent_conformance_ok` signal is
    deliberately excluded from `Inbox::MergeApproval::APPROVAL_SIGNALS` so a
@@ -70,7 +81,7 @@ because the blocker/Inbox surface cannot exist without something to read.
    owner-approval wait (RDR-067 Decision section). The detail pane shows the
    verdict's cited design claims, cited diff locations, reasoning summary,
    and outcome, plus the most recent human decision if one exists.
-6. **Human decision** (`IntentConformanceDecision`) — one row per resolution,
+7. **Human decision** (`IntentConformanceDecision`) — one row per resolution,
    scoped to `(issue, action, head_sha)`. `bounded_exception` only clears the
    blocker while the PR HEAD still matches the recorded `head_sha`
    (`IntentConformanceDecision.active_bounded_exception?`); a new commit
@@ -83,7 +94,6 @@ because the blocker/Inbox surface cannot exist without something to read.
 
 ## Non-goals (this segment)
 
-- Producing a verdict (the independent `agent_harness` reviewer run).
 - Final-merge-activity race enforcement (a fresh verdict/head check
   immediately before requesting merge).
 - Design-amendment impact mapping across open PRs, unstarted issues, and

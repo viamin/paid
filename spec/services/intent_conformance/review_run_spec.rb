@@ -286,4 +286,37 @@ RSpec.describe IntentConformance::ReviewRun do
       expect(later.pr_head_sha).to eq("head_new")
     end
   end
+
+  # @spec INTENT-CONFORMANCE-011 — the scheduling job classifies retries from
+  # this machine-readable reason instead of parsing the reasoning prose.
+  describe "#failure_reason" do
+    it "exposes the classified reason of a not_evaluated verdict" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: nil, success: false))
+
+      review = described_class.new(project: project, issue: issue, pr_head_sha: pr_head_sha)
+      review.call
+
+      expect(review.failure_reason).to eq("unsuccessful_response")
+    end
+
+    it "exposes the classified reason of an untrusted issue without calling the reviewer" do
+      issue.update!(github_creator_login: "attacker")
+
+      review = described_class.new(project: project, issue: issue, pr_head_sha: pr_head_sha)
+      review.call
+
+      expect(review.failure_reason).to eq("issue_untrusted")
+    end
+
+    it "is nil after a successful review" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK"
+      }.to_json))
+
+      review = described_class.new(project: project, issue: issue, pr_head_sha: pr_head_sha)
+      review.call
+
+      expect(review.failure_reason).to be_nil
+    end
+  end
 end
