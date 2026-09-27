@@ -128,6 +128,10 @@ logged and left unchanged. A PR-scoped follow-up resolves through its
 existing parent rather than linking the PR to itself. Closed-unmerged PRs
 deliberately do not block recovery.
 
+The originating-run exclusion requires both a source issue ID and a recorded
+PR number. Runs without a source issue cannot block other issues; exclusion
+subqueries must never return null issue IDs.
+
 Before publishing, `CreatePullRequestActivity` locks the source issue and
 checks this same durable open-PR association. It records the returned PR URL
 and number on the originating run before releasing that lock, even though
@@ -135,6 +139,56 @@ terminal completion occurs later. A second branch reconciles this reservation
 against GitHub and cannot turn the existing implementation PR into a
 successful result: the duplicate activity stops non-retryably with the
 existing PR identified in its reason.
+
+## Code-scanning verification lifecycle (#4052)
+
+Synthetic code-scanning issues (`Issue::SYNTHETIC_CODE_SCANNING_SOURCE`,
+seeded by `SecurityAlerts::ProcessCodeScanningAlerts` from CodeQL alerts) walk
+the same duplicate-PR-prevention guards above, with one deliberate exception:
+a merged remediation PR does not permanently block the issue the way it does
+for an ordinary GitHub issue. A merge is not proof the underlying alert is
+fixed — the agent's patch might not actually close the CodeQL finding, or a
+regression could reintroduce it. Only the scanner itself, on its next pass
+over the live alert list, can say whether the alert is actually gone.
+
+`Issue#last_scanner_reconciled_at` records when
+`SecurityAlerts::ProcessCodeScanningAlerts` last reconciled a given alert
+against the live scan results. Every pass over an alert still reported open
+stamps this timestamp, whether or not the issue's title/body/labels changed
+— a rescan that finds nothing new is still evidence the scanner looked.
+`DefaultCandidateSource#merged_block_issue_ids` compares this timestamp
+against the most recent merged remediation PR's observed time
+(`Issue#updated_at` on the merged PR row, via either evidence path from
+EAGER-QUEUE-009):
+
+- **Not yet reconciled** (`last_scanner_reconciled_at` is `nil` or older than
+  the merge) — the issue stays blocked, exactly like an ordinary issue,
+  giving the next scheduled scan time to run before any re-pick is possible.
+- **Reconciled since the merge** — the block lifts. If the scanner no longer
+  reports the alert, `SecurityAlerts::ReconcileResolved` has already closed
+  the issue (`github_state: "closed"`) via the ordinary GitHub-open-authority
+  gate, so lifting this guard is moot. If the scanner still reports the
+  alert open, the issue is genuinely recurrent and becomes eligible for a
+  fresh remediation attempt.
+
+Ordinary GitHub issues are unaffected: `merged_block_issue_ids` only relaxes
+the exclusion for `SYNTHETIC_CODE_SCANNING_SOURCE` issues, so a merged
+implementation PR keeps blocking a regular issue forever, as before.
+
+## Idempotent PR/issue link repair (#4052)
+
+`Issues::ReconcilePullRequestSource.candidate_source_issues` exposes the same
+evidence-matching `sources` lookup `#call` uses, without writing, so the
+`issues:repair_pull_request_source_links` rake task can report and backfill
+missing `parent_issue_id` links for PRs that synced before their originating
+run's evidence was reconciled (e.g. a PR that stayed open past
+`PR_SYNC_GRACE_PERIOD` before its local row existed). The task is safe to
+re-run: it only ever links a PR with exactly one candidate source issue,
+logs (and skips) any PR with conflicting candidates rather than guessing,
+and — because a repaired link can retroactively prove a queued run is a
+duplicate — routes any such run through the normal
+`AgentRuns::RecheckIssueEligibility` cancellation path instead of leaving it
+runnable.
 
 ## Fair-stride impact
 

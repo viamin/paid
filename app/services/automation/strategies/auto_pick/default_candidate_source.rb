@@ -223,7 +223,7 @@ module Automation
             end
           end
 
-          def base_scope(project, excluding_run_id: nil)
+          def base_scope(project, excluding_run_id: nil) # @spec EAGER-QUEUE-009
             blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil)
@@ -243,13 +243,15 @@ module Automation
               # while local PR sync is still catching up (#3432).
               .where.not(id: unsynced_pr_produced_issue_ids(project))
               # Once a merged PR row is authoritatively linked back to its
-              # source issue via +parent_issue_id+, the issue stays ineligible
+              # source issue (via +parent_issue_id+ or the originating run's
+              # recorded +pull_request_number+), the issue stays ineligible
               # regardless of paid_state. This permanent guard intentionally
               # does NOT trust bare +pull_request_number+ alone past
               # PR_SYNC_GRACE_PERIOD, so a stale or wrong recorded PR number
               # cannot strand the issue forever (#3432/#3588 review follow-up).
-              .where.not(id: merged_linked_pr_parent_issue_ids(project))
-              .where.not(id: Issue.merged_paid_generated_pull_request_source_issue_ids(project: project).distinct)
+              # For a synthetic code-scanning issue the guard is provisional,
+              # not permanent — see +merged_block_issue_ids+ (#4052).
+              .where.not(id: merged_block_issue_ids(project))
               # Issues abandoned because every available provider hit the per-issue
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
@@ -303,6 +305,67 @@ module Automation
             Issue.where(project: project, is_pull_request: true, pr_review_phase: "merged")
               .where.not(parent_issue_id: nil)
               .select(:parent_issue_id)
+          end
+
+          # Union of both merged-PR evidence sources, with the permanent
+          # exclusion relaxed for synthetic code-scanning issues: a merge is
+          # not proof a scanner-reported alert is fixed, only the next
+          # SecurityAlerts::ProcessCodeScanningAlerts pass is (#4052). An
+          # ordinary GitHub issue's merged PR keeps blocking it forever, same
+          # as before.
+          def merged_block_issue_ids(project) # @spec EAGER-QUEUE-011
+            merged_ids = (
+              merged_linked_pr_parent_issue_ids(project).pluck(:parent_issue_id) +
+              Issue.merged_paid_generated_pull_request_source_issue_ids(project: project).pluck(:issue_id)
+            ).uniq
+            return [] if merged_ids.empty?
+
+            code_scanning_ids = Issue.where(id: merged_ids, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE).pluck(:id)
+            return merged_ids if code_scanning_ids.empty?
+
+            merged_ids - verified_recurrent_code_scanning_issue_ids(project, code_scanning_ids)
+          end
+
+          # Code-scanning issue ids where a later scanner pass has already
+          # reconciled the alert since the most recent merged remediation PR
+          # was observed — i.e. the scanner confirmed the alert is still open
+          # (recurrent) rather than the merge simply not having been rescanned
+          # yet. These lift out of the merged-PR block; everything else stays
+          # blocked until the next scan runs.
+          def verified_recurrent_code_scanning_issue_ids(project, issue_ids)
+            last_merge_observed_at = merged_pr_last_observed_at_by_issue_id(project, issue_ids)
+            return [] if last_merge_observed_at.empty?
+
+            last_reconciled_at = Issue.where(id: last_merge_observed_at.keys).pluck(:id, :last_scanner_reconciled_at).to_h
+
+            last_merge_observed_at.filter_map do |issue_id, merged_at|
+              reconciled_at = last_reconciled_at[issue_id]
+              issue_id if reconciled_at && reconciled_at >= merged_at
+            end
+          end
+
+          # Latest +updated_at+ among the merged PR rows recorded as evidence
+          # for each issue id, combining both evidence sources (authoritative
+          # +parent_issue_id+ link and the originating run's recorded
+          # +pull_request_number+) the same way +merged_block_issue_ids+ does.
+          def merged_pr_last_observed_at_by_issue_id(project, issue_ids)
+            linked = Issue.where(project: project, is_pull_request: true, pr_review_phase: "merged", parent_issue_id: issue_ids)
+              .pluck(:parent_issue_id, :updated_at)
+
+            run_linked = AgentRun.where(project: project, goal: "create_pr", issue_id: issue_ids)
+              .where.not(pull_request_number: nil)
+              .joins(<<~SQL.squish)
+                INNER JOIN issues merged_prs
+                  ON merged_prs.project_id = agent_runs.project_id
+                 AND merged_prs.github_number = agent_runs.pull_request_number
+                 AND merged_prs.is_pull_request = TRUE
+                 AND merged_prs.pr_review_phase = 'merged'
+              SQL
+              .pluck("agent_runs.issue_id", "merged_prs.updated_at")
+
+            (linked + run_linked).each_with_object({}) do |(issue_id, updated_at), result|
+              result[issue_id] = updated_at if result[issue_id].nil? || updated_at > result[issue_id]
+            end
           end
 
           def without_open_non_pr_subissues(scope)

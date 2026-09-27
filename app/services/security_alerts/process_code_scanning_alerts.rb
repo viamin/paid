@@ -12,7 +12,7 @@ module SecurityAlerts
       @project = project
     end
 
-    def call(alerts)
+    def call(alerts) # @spec EAGER-QUEUE-011
       open_alerts = alerts.select { |a| a[:state] == "open" }
       return [] if open_alerts.empty?
 
@@ -38,10 +38,20 @@ module SecurityAlerts
 
     private
 
+    # Every pass over an alert still reported as open is a scanner
+    # reconciliation of that alert, whether or not its title/body/labels
+    # changed. `default_candidate_source.rb` compares this timestamp against
+    # the most recent merged remediation PR to tell a merge that has not yet
+    # been re-scanned from a scanner-confirmed still-open (recurrent) alert —
+    # a merge alone is never treated as proof the alert is fixed (#4052).
+    def stamp_reconciled!(issue)
+      issue.update_column(:last_scanner_reconciled_at, Time.current)
+    end
+
     def create_issue_for_alert(alert)
       now = Time.current
 
-      @project.issues.create!(
+      issue = @project.issues.create!(
         github_issue_id: synthetic_issue_id(alert),
         github_number: synthetic_number(alert),
         title: FormatCodeScanningAlert.title(alert),
@@ -54,6 +64,7 @@ module SecurityAlerts
         labels: labels_for_alert(alert),
         source: SYNTHETIC_SOURCE
       )
+      stamp_reconciled!(issue)
     rescue ActiveRecord::RecordNotUnique => e
       Rails.logger.warn(
         message: "github_sync.code_scanning_issue_creation_race",
@@ -82,6 +93,7 @@ module SecurityAlerts
         labels: labels_for_alert(alert),
         github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
       )
+      stamp_reconciled!(issue)
     end
 
     def update_metadata_if_changed(issue, alert)
@@ -89,6 +101,10 @@ module SecurityAlerts
       new_body = FormatCodeScanningAlert.body(alert)
       new_labels = labels_for_alert(alert)
 
+      # Stamped even when nothing else changed: this pass is itself the
+      # scanner's reconfirmation that the alert is still open, which is what
+      # lifts a merged-PR guard left over from a prior remediation attempt.
+      stamp_reconciled!(issue)
       return if issue.title == new_title && issue.body == new_body && issue.labels == new_labels
 
       issue.update!(
