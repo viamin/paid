@@ -1163,6 +1163,7 @@ class GithubClient
           rule_id: rule&.id,
           rule_description: rule&.description,
           tool_name: tool&.name,
+          category: alert.most_recent_instance&.category,
           summary: alert.most_recent_instance&.message&.text,
           html_url: alert.html_url,
           created_at: alert.created_at,
