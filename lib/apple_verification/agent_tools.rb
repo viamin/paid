@@ -10,7 +10,6 @@ module AppleVerification
   # policy, select privileged images, create waivers, or exceed quotas.
   # @spec APPLE-RESULT-006
   module AgentTools
-    MAX_ATTEMPTS_PER_RUN = 3
     ADVISORY_GATE = "agent_iteration"
     SHA256_PATTERN = /\Asha256:[a-f0-9]{64}\z/
     COMMIT_SHA_PATTERN = /\A[0-9a-f]{40}\z/
@@ -165,9 +164,10 @@ module AppleVerification
         if attempts.where.not(status: AppleVerificationAttempt::TERMINAL_STATES).exists?
           raise QuotaExceededError, "an active Apple verification attempt already exists for this agent run"
         end
-        return unless attempts.count >= MAX_ATTEMPTS_PER_RUN
+        maximum_attempts = AppleVerificationAttempts::Config.max_attempts_per_run
+        return unless attempts.count >= maximum_attempts
 
-        raise QuotaExceededError, "agent run exceeded the quota of #{MAX_ATTEMPTS_PER_RUN} Apple verification attempts"
+        raise QuotaExceededError, "agent run exceeded the quota of #{maximum_attempts} Apple verification attempts"
       end
 
       def ensure_declared_capture!(revision, capture_id)

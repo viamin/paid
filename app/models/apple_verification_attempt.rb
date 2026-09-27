@@ -38,6 +38,7 @@ class AppleVerificationAttempt < ApplicationRecord
   validate :lifecycle_gate_matches_workflow
   validate :agent_run_matches_project
   validate :execution_binding_is_immutable, on: :update
+  before_validation :set_queue_entered_at, on: :create
   after_update_commit :complete_withheld_run, if: :completed_completion_verification?
 
   def terminal?
@@ -54,6 +55,10 @@ class AppleVerificationAttempt < ApplicationRecord
 
   def retained_vm?
     execution_resource_ledger_entries.any? { |resource| resource.resource_kind == "verification_vm" && resource.status.in?(%w[active cleanup_failed orphaned]) }
+  end
+
+  def queue_position
+    AppleVerificationAttempts::Queue.position(attempt: self)
   end
 
   private
@@ -121,5 +126,9 @@ class AppleVerificationAttempt < ApplicationRecord
       will_save_change_to_apple_verification_workflow_revision_id? || will_save_change_to_apple_worker_profile_id? ||
       will_save_change_to_source_digest? || will_save_change_to_commit_sha? || will_save_change_to_lifecycle_gate? ||
       will_save_change_to_requested_capture? || will_save_change_to_retry_number? || will_save_change_to_retry_of_attempt_id?
+  end
+
+  def set_queue_entered_at
+    self.queue_entered_at ||= Time.current if status == "queued"
   end
 end

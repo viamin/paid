@@ -16,6 +16,11 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
       expect(profile.reload).to be_quarantined
       expect(profile).not_to be_available
       expect(profile.quarantine_reason).to eq("host disk full")
+      expect(AppleVerificationWorkerHealth.find_by!(apple_worker_profile: profile)).to have_attributes(
+        consecutive_failures: 3,
+        status: "quarantined",
+        quarantined_at: profile.quarantined_at
+      )
     end
 
     it "does not double-stamp quarantined_at on further failures" do
@@ -83,6 +88,10 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
       expect(result.consecutive_health_failures).to eq(0)
       expect(profile.reload).to be_quarantined
       expect(profile.consecutive_health_failures).to eq(0)
+      expect(AppleVerificationWorkerHealth.find_by!(apple_worker_profile: profile)).to have_attributes(
+        consecutive_failures: 0,
+        status: "quarantined"
+      )
     end
   end
 
@@ -107,6 +116,12 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
       expect(profile.reload).not_to be_quarantined
       expect(profile).to be_available
       expect(profile.last_smoke_test_passed_at).not_to be_nil
+      expect(AppleVerificationWorkerHealth.find_by!(apple_worker_profile: profile)).to have_attributes(
+        consecutive_failures: 0,
+        status: "healthy",
+        quarantined_at: nil,
+        isolation_smoke_tested_at: profile.last_smoke_test_passed_at
+      )
     end
   end
 
@@ -119,6 +134,16 @@ RSpec.describe AppleVerificationAttempts::WorkerHealth do
 
       profile.update!(quarantined_at: Time.current)
       expect(described_class.quarantined?(profile:)).to be(true)
+    end
+  end
+
+  describe "worker profile lifecycle" do
+    it "destroys durable health with its worker profile" do
+      profile = create(:apple_worker_profile)
+      described_class.record_failure!(profile:, reason: "worker crash")
+
+      expect { profile.destroy! }
+        .to change(AppleVerificationWorkerHealth, :count).from(1).to(0)
     end
   end
 end

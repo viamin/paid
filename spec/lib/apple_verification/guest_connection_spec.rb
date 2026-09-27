@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerification::GuestConnection do # @spec APPLE-VERIFY-005
+  # @spec APPLE-ATTEMPT-004
   # @spec APPLE-NETWORK-001
   let(:transport) { instance_spy(described_class::HttpTransport) }
   let(:image) { create(:apple_verification_image, :active) }
@@ -30,6 +31,43 @@ RSpec.describe AppleVerification::GuestConnection do # @spec APPLE-VERIFY-005
         "network_contract" => network_contract.to_h
       }.to_json
     )
+  end
+
+  it "uses the provisioned VM connection instead of image provenance" do
+    allow(transport).to receive(:post).and_return(response(code: 200, body: { "operations" => [] }.to_json))
+    connection = described_class.new(
+      connection: { "url" => "https://provisioned-vm.example.test/v1/jobs" },
+      token: "guest-token",
+      transport:
+    )
+
+    connection.dispatch!(image:, manifest:, network_contract:)
+
+    expect(transport).to have_received(:post).with(hash_including(uri: URI("https://provisioned-vm.example.test/v1/jobs")))
+  end
+
+  it "preserves an attempt-bounded read timeout for its transport" do
+    connection = described_class.new(token: "guest-token", read_timeout: 50.minutes)
+
+    expect(connection.read_timeout).to eq(50.minutes)
+  end
+
+  it "applies the configured read timeout to the HTTP request" do
+    http = instance_double(Net::HTTP)
+    client = instance_double(Net::HTTP)
+    response = instance_double(Net::HTTPOK, code: "200", body: "{}")
+    allow(Net::HTTP).to receive(:new).and_return(http)
+    allow(http).to receive(:use_ssl=)
+    allow(http).to receive(:open_timeout=)
+    expect(http).to receive(:read_timeout=).with(50.minutes)
+    allow(http).to receive(:start).and_yield(client)
+    allow(client).to receive(:request).and_return(response)
+
+    result = described_class::HttpTransport.new(read_timeout: 50.minutes).post(
+      uri: URI("https://apple-executor.example.test/v1/jobs"), headers: {}, body: "{}"
+    )
+
+    expect(result).to eq(response(code: 200, body: "{}"))
   end
 
   it "rejects an unauthenticated executor response" do
