@@ -20,7 +20,9 @@ module IntentConformance
     def perform(project_id, schedule_id)
       schedule = IntentConformanceReviewSchedule.find(schedule_id)
       return if schedule.project_id != project_id || schedule.completed?
-      return complete(schedule) if current_verdict?(schedule)
+
+      verdict = terminal_verdict(schedule)
+      return complete(schedule, verdict) if verdict
 
       schedule.update!(status: "running", attempts_count: schedule.attempts_count + 1)
       review = ReviewRun.new(project: schedule.project, issue: schedule.issue, pr_head_sha: schedule.pr_head_sha)
@@ -44,10 +46,19 @@ module IntentConformance
 
     private
 
-    def current_verdict?(schedule)
-      IntentConformanceVerdict.current_for(issue: schedule.issue, head_sha: schedule.pr_head_sha)&.current_for?(
+    # Only an evaluated (terminal) verdict short-circuits the chain. Retryable
+    # failures persist a not_evaluated verdict before raising for a bounded
+    # retry, so treating a current not_evaluated verdict as terminal would
+    # complete the schedule on the first retry without re-running the review —
+    # the configured retries would never execute.
+    def terminal_verdict(schedule)
+      verdict = IntentConformanceVerdict.current_for(issue: schedule.issue, head_sha: schedule.pr_head_sha)
+      return unless verdict&.current_for?(
         pr_head_sha: schedule.pr_head_sha, approved_design_revision: schedule.approved_design_revision
       )
+      return if verdict.not_evaluated?
+
+      verdict
     end
 
     def retryable_failure?(reason) = %w[unsuccessful_response no_diff transient_reviewer_failure].include?(reason)
