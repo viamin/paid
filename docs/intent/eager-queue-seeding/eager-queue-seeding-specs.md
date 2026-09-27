@@ -119,6 +119,35 @@
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`,
   `spec/services/issues/reconcile_pull_request_source_spec.rb`.
 
+- [x] **EAGER-QUEUE-011** — For a synthetic code-scanning issue specifically,
+  a merged remediation PR SHALL exclude the issue from queue seeding and
+  dequeue eligibility only until `SecurityAlerts::ProcessCodeScanningAlerts`
+  next reconciles that alert — a merge alone SHALL NOT be treated as proof
+  the alert is fixed. Every reconciliation pass over an alert still reported
+  as open SHALL stamp `last_scanner_reconciled_at`, whether or not the
+  issue's title/body/labels changed. Once that timestamp is at or after the
+  most recent merged remediation PR's observed time, the exclusion SHALL
+  lift so a still-open (recurrent) alert can be re-picked. An ordinary
+  GitHub issue's merged-PR exclusion SHALL remain permanent, unaffected by
+  this carve-out.
+  *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource#merged_block_issue_ids`,
+  `SecurityAlerts::ProcessCodeScanningAlerts`.
+  *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/services/security_alerts/process_code_scanning_alerts_spec.rb`.
+
+- [x] **EAGER-QUEUE-012** — An operator-invoked repair path SHALL exist to
+  backfill a missing `parent_issue_id` link between an existing PR and its
+  originating `create_pr` run, using the same run-evidence matching as
+  `Issues::ReconcilePullRequestSource` (idempotent; a PR history with more
+  than one distinct candidate source issue SHALL be reported, not guessed
+  or auto-linked). After repairing links, any queued run the repair proves
+  is now a duplicate SHALL be cancelled through the normal dequeue
+  eligibility/cancellation path (`AgentRuns::RecheckIssueEligibility`)
+  rather than left runnable.
+  *Code:* `Issues::ReconcilePullRequestSource.candidate_source_issues`,
+  `lib/tasks/issues.rake` (`issues:repair_pull_request_source_links`).
+  *Test:* `spec/tasks/issues_rake_spec.rb`.
+
 ## Capacity remains the single gate
 
 - [x] **EAGER-QUEUE-008** — Eager seeding SHALL NOT itself limit concurrency

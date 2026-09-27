@@ -37,4 +37,55 @@ namespace :issues do
       puts dry_run ? "Dry run only. Re-run with DRY_RUN=false to apply." : "Done."
     end
   end
+
+  desc "Idempotently link create_pr runs to their generated PRs (repairs a missing parent_issue_id), " \
+    "then cancels any queued run the repair reveals as a now-provable duplicate (#4052). " \
+    "Ambiguous PR/issue histories are reported, never guessed. Scope with PROJECT_ID=<id>; DRY_RUN=false to apply."
+  task repair_pull_request_source_links: :environment do # @spec EAGER-QUEUE-012
+    dry_run = ENV.fetch("DRY_RUN", "true") != "false"
+    linked_source_issue_ids = []
+    ambiguous_count = 0
+
+    TenantContext.with_system_access do
+      scope = Issue.pull_requests_only.where(parent_issue_id: nil)
+      scope = scope.where(project_id: ENV["PROJECT_ID"]) if ENV["PROJECT_ID"].present?
+
+      scope.find_each do |pull_request|
+        candidates = Issues::ReconcilePullRequestSource.candidate_source_issues(pull_request)
+        next if candidates.empty?
+
+        if candidates.size > 1
+          ambiguous_count += 1
+          puts "  AMBIGUOUS PR ##{pull_request.github_number} (project=#{pull_request.project.full_name}): " \
+            "#{candidates.size} conflicting source issues #{candidates.map(&:id)} — left unlinked"
+          next
+        end
+
+        source = candidates.first
+        puts "  PR ##{pull_request.github_number} (project=#{pull_request.project.full_name}) -> issue ##{source.github_number}"
+        next if dry_run
+
+        pull_request.update!(parent_issue: source)
+        linked_source_issue_ids << source.id
+      end
+
+      puts "Ambiguous: #{ambiguous_count}."
+      if dry_run
+        puts "Dry run only. Re-run with DRY_RUN=false to apply."
+        next
+      end
+
+      puts "Linked #{linked_source_issue_ids.uniq.size} pull request(s)."
+
+      # A repaired link can prove a queued run is now a duplicate (the exact
+      # incident shape in #4052: a completed run's PR outlived the one-hour
+      # sync grace period without ever getting linked). Route through the
+      # normal recheck/cancel path instead of leaving it runnable.
+      cancelled = 0
+      AgentRun.where(issue_id: linked_source_issue_ids.uniq, status: "queued", auto_pick: true).find_each do |run|
+        cancelled += 1 if AgentRuns::RecheckIssueEligibility.call(run)
+      end
+      puts "Cancelled #{cancelled} now-ineligible queued run(s)."
+    end
+  end
 end
