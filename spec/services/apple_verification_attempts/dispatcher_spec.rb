@@ -10,7 +10,7 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:, apple_verification_mode: "on_demand") }
   let(:agent_run) { create(:agent_run, :running, project:) }
-  let(:revision) { create(:apple_verification_workflow_revision, :approved, project:) }
+  let(:revision) { create(:apple_verification_workflow_revision, :approved, project:, required_checks: []) }
   let(:snapshot) do
     AppleVerificationAttempts::HostCapacity::Snapshot.new(
       capacity: {
@@ -33,7 +33,7 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
-    allow(AppleVerification::ExecuteGuestJob).to receive(:call)
+    allow(AppleVerification::ExecuteGuestJob).to receive(:call).and_return(guest_result)
   end
 
   def queued_attempt(project: self.project, agent_run: self.agent_run, revision: self.revision)
@@ -56,6 +56,7 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     attempt = queued_attempt
     allow(AppleVerification::ExecuteGuestJob).to receive(:call) do
       expect(attempt.reload).to have_attributes(status: "provisioning", started_at: be_present)
+      guest_result
     end
 
     result = dispatch
@@ -170,6 +171,19 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     instance_double(
       ExecutionRunners::RunnerHandle,
       metadata: { "guest_connection" => { "url" => "https://vm-1.example.test/v1/jobs" } }
+    )
+  end
+
+  # Matches the fixed manifest Provision#guest_manifest builds (materialize_source
+  # and export_artifacts) so GuestResult resolves to "succeeded" for a revision
+  # with no required checks.
+  def guest_result
+    AppleVerification::ExecuteGuestJob::Result.new(
+      image: nil,
+      operations: [
+        { "type" => "materialize_source", "status" => "succeeded" },
+        { "type" => "export_artifacts", "status" => "succeeded" }
+      ]
     )
   end
 end
