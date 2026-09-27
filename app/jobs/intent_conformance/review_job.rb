@@ -61,7 +61,7 @@ module IntentConformance
       verdict
     end
 
-    def retryable_failure?(reason) = %w[unsuccessful_response no_diff transient_reviewer_failure].include?(reason)
+    def retryable_failure?(reason) = %w[unsuccessful_response no_diff].include?(reason)
 
     def complete(schedule, verdict = nil)
       schedule.update!(status: "completed", completed_at: Time.current)
