@@ -134,7 +134,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         free_models_sync
         ab_test_analysis process_run_queue auto_pick_queue_backfill
         auto_pick_eligibility_sweep service_container_reconciliation execution_resource_reconciliation screenshot_cleanup
-        apple_verification_attempt_recovery apple_verification_bundle_retention_sweep
+        apple_verification_recovery apple_verification_bundle_retention_sweep
         knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
         runner_quota_balance account_health_check_sweep
         claude_auth_health_check style_guide_evolution
@@ -144,6 +144,8 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
       expected_jobs.each do |job_key|
         expect(cron).to have_key(job_key), "Expected cron job #{job_key} to be defined"
       end
+
+      expect(cron).not_to have_key(:apple_verification_attempt_recovery)
     end
 
     it "staggers frequent maintenance jobs across minute boundaries" do
