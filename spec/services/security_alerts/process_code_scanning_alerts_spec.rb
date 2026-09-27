@@ -27,6 +27,57 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
   end
 
   describe "#call" do
+    # @spec GITHUB-SYNC-015
+    it "refreshes an existing issue with finding context and prior run evidence" do
+      existing = create(:issue, project: project, github_issue_id: id_offset + 1667,
+        github_number: 200_001_667, source: source, github_state: "open", paid_state: "new")
+      create(:agent_run, project: project, issue: existing, status: "failed", pull_request_url: "https://github.com/owner/repo/pull/3")
+      enriched = alert.merge(ref: "refs/heads/main", commit_sha: "a" * 40,
+        analysis_key: "dynamic/codeql", category: "/language:ruby",
+        location: { path: "app/controllers/runners_controller.rb", start_line: 69, end_line: 69,
+                    start_column: 36, end_column: 42 })
+
+      described_class.new(project).call([ enriched ])
+
+      expect(existing.reload.body).to include("app/controllers/runners_controller.rb:69:36-69:42")
+      expect(existing.body).to include("Run ##{existing.agent_runs.first.id}: failed")
+    end
+
+    # @spec GITHUB-SYNC-015
+    it "excludes the specified run from prior attempts so a run being started does not list itself" do
+      existing = create(:issue, project: project, github_issue_id: id_offset + 1667,
+        github_number: 200_001_667, source: source, github_state: "open", paid_state: "new")
+      current_run = create(:agent_run, project: project, issue: existing, status: "running")
+      prior_run = create(:agent_run, project: project, issue: existing, status: "failed",
+        created_at: 1.day.ago, pull_request_url: "https://github.com/owner/repo/pull/3")
+
+      described_class.new(project).call([ alert ], excluding_run_id: current_run.id)
+
+      expect(existing.reload.body).to include("Run ##{prior_run.id}: failed")
+      expect(existing.body).not_to include("Run ##{current_run.id}:")
+    end
+
+
+    it "carries the alert-1838 finding context into the final issue prompt" do
+      # @spec GITHUB-SYNC-015
+      alert_1838 = alert.merge(number: 1838, rule_id: "rb/sensitive-get-query",
+        summary: "Sensitive data read from a GET request.", ref: "refs/heads/main",
+        commit_sha: "7cabdb70d31b3056128f97f629213260dad4be49",
+        analysis_key: "dynamic/github-code-scanning/codeql:analyze", category: "/language:ruby",
+        location: { path: "app/controllers/runners_controller.rb", start_line: 69, end_line: 69,
+                    start_column: 36, end_column: 42 })
+      described_class.new(project).call([ alert_1838 ])
+      issue = project.issues.find_by!(github_issue_id: id_offset + 1838)
+
+      prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
+
+      expect(prompt).to include("app/controllers/runners_controller.rb:69:36-69:42")
+      expect(prompt).to include("refs/heads/main")
+      expect(prompt).to include("7cabdb70d31b3056128f97f629213260dad4be49")
+      expect(prompt).to include("dynamic/github-code-scanning/codeql:analyze")
+      expect(prompt).to include("Sensitive data read from a GET request.")
+    end
+
     it "creates a synthetic issue for a new alert" do
       described_class.new(project).call([ alert ])
 
@@ -75,6 +126,18 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       expect(project.issues.where(source: source).count).to eq(0)
     end
 
+    it "closes an existing open issue when a refreshed alert is no longer open" do
+      # @spec GITHUB-SYNC-015
+      existing = create(:issue, project: project, github_issue_id: id_offset + 1667,
+        github_number: 200_001_667, source: source, github_state: "open", paid_state: "in_progress")
+      dismissed_alert = alert.merge(state: "dismissed")
+
+      described_class.new(project).call([ dismissed_alert ])
+
+      existing.reload
+      expect(existing.github_state).to eq("closed")
+    end
+
     it "reopens a closed issue when the alert reappears" do
       existing = create(:issue,
         project: project,
@@ -113,7 +176,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
 
     it "updates priority label when an existing open issue severity changes" do
       title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
-      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert.merge(repository: project.full_name))
       existing = create(:issue,
         project: project,
         github_issue_id: id_offset + 1667,
@@ -132,7 +195,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
 
     it "does not update when metadata is unchanged" do
       title = SecurityAlerts::FormatCodeScanningAlert.title(alert)
-      body = SecurityAlerts::FormatCodeScanningAlert.body(alert)
+      body = SecurityAlerts::FormatCodeScanningAlert.body(alert.merge(repository: project.full_name))
 
       existing = create(:issue,
         project: project,

@@ -19,8 +19,17 @@
 class PromptAssembly::BuildIssuePrompt
   UntrustedIssueError = Prompts::BuildForIssue::UntrustedIssueError
 
+  # Raised when a queued code-scanning remediation run's alert was fixed or
+  # dismissed upstream since the run was queued. Signals the caller to stop
+  # this run rather than execute a remediation prompt for a resolved finding.
+  class AlertResolvedError < StandardError; end
+
   def self.call(...)
     new(...).call
+  end
+
+  def self.refresh_code_scanning_context(...)
+    new(...).refresh_code_scanning_context
   end
 
   attr_reader :issue, :project, :github_client, :agent_run
@@ -35,6 +44,8 @@ class PromptAssembly::BuildIssuePrompt
   def call
     raise UntrustedIssueError,
       "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
+
+    refresh_code_scanning_context
 
     context = PromptAssembly::Context.new(
       issue: issue,
@@ -87,4 +98,39 @@ class PromptAssembly::BuildIssuePrompt
       []
     end
   end
+
+  # A poll snapshot can be old by the time a queued run starts. Refreshing the
+  # synthetic issue here ensures the final prompt is built from the current
+  # target-branch finding rather than relying on a private GitHub alert URL.
+  #
+  # If the refresh finds the alert is no longer open, ProcessCodeScanningAlerts
+  # closes the synthetic issue and this raises AlertResolvedError so the caller
+  # stops the run instead of executing a remediation prompt for a finding that
+  # was already fixed or dismissed upstream.
+  # @spec GITHUB-SYNC-015
+  def refresh_code_scanning_context
+    return unless github_client && issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+
+    alert_number = issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
+    alert = github_client.code_scanning_alert(project.full_name, alert_number, default_branch: project.default_branch)
+    if alert
+      SecurityAlerts::ProcessCodeScanningAlerts.new(project)
+        .call([ alert ], excluding_run_id: agent_run&.id)
+    end
+    issue.reload
+
+    if alert && alert[:state] != "open"
+      raise AlertResolvedError,
+        "Code scanning alert ##{alert_number} is no longer open (state: #{alert[:state]})"
+    end
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "github_sync.code_scanning_prompt_refresh_failed",
+      project_id: project.id,
+      alert_number: alert_number,
+      error: e.message
+    )
+  end
+
+  public :refresh_code_scanning_context
 end

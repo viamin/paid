@@ -36,6 +36,19 @@ Issue and PR state is cached locally at multiple layers:
 - request-time API objects such as issues, pull requests, and repo metadata use
   cache invalidation keyed by GitHub webhook event type
 
+Code-scanning alerts are represented as synthetic issues, but their remediation
+context is not reduced to a rule title. Sync selects instances matching the
+project's target branch explicitly. It retains the alert identity, rule/tool,
+message, location range, ref, analyzed commit, category, and analysis key. If
+there are no target-branch instances or more than one configuration supplies a
+candidate, that ambiguity is rendered as insufficient context rather than
+silently using an arbitrary most-recent instance. Scanner timestamps are scan
+identity when supplied by GitHub; alert update timestamps are never presented
+as scan freshness. The rendered issue carries bounded, untrusted evidence and
+prior run/PR outcomes into the final agent prompt. Agents must compare a
+historical location to their checkout, investigate false-positive status, and
+must not claim scanner resolution without supporting verification.
+
 When sync observes a non-PR issue transition from closed back to open, it
 resets Paid's internal state to `new`. This makes GitHub's reopened state the
 authoritative renewal signal and prevents a prior completion or recommendation
