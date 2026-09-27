@@ -128,6 +128,10 @@ logged and left unchanged. A PR-scoped follow-up resolves through its
 existing parent rather than linking the PR to itself. Closed-unmerged PRs
 deliberately do not block recovery.
 
+The originating-run exclusion requires both a source issue ID and a recorded
+PR number. Runs without a source issue cannot block other issues; exclusion
+subqueries must never return null issue IDs.
+
 Before publishing, `CreatePullRequestActivity` locks the source issue and
 checks this same durable open-PR association. It records the returned PR URL
 and number on the originating run before releasing that lock, even though

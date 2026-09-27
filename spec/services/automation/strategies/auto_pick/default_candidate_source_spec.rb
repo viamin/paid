@@ -452,6 +452,23 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to be_empty
     end
 
+    %w[open merged].each do |pr_state|
+      it "keeps unrelated issues eligible when a run without a source issue produced a PR that is #{pr_state}" do # @spec EAGER-QUEUE-009
+        issue = create(:issue, project: project)
+        create(:agent_run, :completed, project: project, issue: nil, custom_prompt: "Update documentation",
+          goal: "create_pr", pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
+        create(:issue, :pull_request, project: project, github_number: 42,
+          github_state: pr_state == "merged" ? "closed" : "open",
+          pr_review_phase: pr_state == "merged" ? "merged" : "draft", parent_issue: nil)
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
+
+        queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true)
+        expect(described_class.eligible_for_dequeue?(project, issue.id, excluding_run_id: queued_run.id)).to be true
+      end
+    end
+
     it "excludes an issue with an open synced PR from its completed run after the grace window when the link is missing" do # @spec EAGER-QUEUE-009
       # Regression for #4039: this is the incident shape. The PR has synced,
       # but the old sync path omitted parent_issue_id, so the one-hour grace

@@ -95,7 +95,9 @@
   missing PR row is protected for `PR_SYNC_GRACE_PERIOD` (armed by the
   `completed_at` every terminal transition stamps) and then triggers
   reconciliation rather than being treated as proof that a second PR may be
-  created.
+  created. Runs without a source issue SHALL NOT exclude unrelated issues
+  from queue seeding or dequeue eligibility, even when their recorded PR is
+  open or merged.
   *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource`,
   `Issue.open_paid_generated_pull_request_source_issue_ids`,
   `Issues::ReconcilePullRequestSource`.
