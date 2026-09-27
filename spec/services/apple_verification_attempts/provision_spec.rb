@@ -23,7 +23,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
 
-    expect(lifecycle).to have_received(:provision)
+    expect_provision_for(attempt, lifecycle)
     expect(guest_job).to have_received(:call)
     expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", lifecycle:)
     expect(attempt.reload.status).to eq("running")
@@ -75,6 +75,14 @@ RSpec.describe AppleVerificationAttempts::Provision do
     instance_double(
       ExecutionRunners::RunnerHandle,
       metadata: { "guest_connection" => { "url" => "https://vm-1.example.test/v1/jobs" } }
+    )
+  end
+
+  def expect_provision_for(attempt, lifecycle)
+    expect(lifecycle).to have_received(:provision).with(
+      agent_run: attempt.agent_run, image_id: attempt.apple_worker_profile.image_digest,
+      profile_id: attempt.apple_worker_profile.name,
+      request_id: "apple-verification-attempt:#{attempt.id}:provision", apple_verification_attempt: attempt
     )
   end
 

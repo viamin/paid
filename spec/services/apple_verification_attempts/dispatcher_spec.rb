@@ -62,7 +62,7 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     expect(lifecycle).to have_received(:provision).with(
       agent_run:,
       image_id: revision.apple_worker_profile.image_digest,
-      profile_id: revision.apple_worker_profile.id,
+      profile_id: revision.apple_worker_profile.name,
       request_id: "apple-verification-attempt:#{attempt.id}:provision",
       apple_verification_attempt: attempt
     )

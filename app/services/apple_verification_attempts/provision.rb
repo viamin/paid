@@ -29,7 +29,7 @@ module AppleVerificationAttempts
       lifecycle.provision(
         agent_run: attempt.agent_run,
         image_id: attempt.apple_worker_profile.image_digest,
-        profile_id: attempt.apple_worker_profile_id,
+        profile_id: attempt.apple_worker_profile.name,
         request_id: "apple-verification-attempt:#{attempt.id}:provision",
         apple_verification_attempt: attempt
       )
