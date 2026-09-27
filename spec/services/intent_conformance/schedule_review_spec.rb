@@ -54,7 +54,7 @@ RSpec.describe IntentConformance::ScheduleReview do
 
     expect {
       schedule
-    }.not_to change(IntentConformanceReviewSchedule, :count)
+    }.to not_change(IntentConformanceReviewSchedule, :count)
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 
@@ -72,7 +72,7 @@ RSpec.describe IntentConformance::ScheduleReview do
 
     expect {
       schedule
-    }.not_to change(IntentConformanceReviewSchedule, :count)
+    }.to not_change(IntentConformanceReviewSchedule, :count)
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 
@@ -81,7 +81,7 @@ RSpec.describe IntentConformance::ScheduleReview do
 
     expect {
       schedule
-    }.not_to change(IntentConformanceReviewSchedule, :count)
+    }.to not_change(IntentConformanceReviewSchedule, :count)
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 
@@ -91,7 +91,7 @@ RSpec.describe IntentConformance::ScheduleReview do
 
     expect {
       schedule
-    }.not_to change(IntentConformanceReviewSchedule, :count)
+    }.to not_change(IntentConformanceReviewSchedule, :count)
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 
@@ -111,7 +111,7 @@ RSpec.describe IntentConformance::ScheduleReview do
 
     expect {
       schedule
-    }.not_to change(IntentConformanceReviewSchedule, :count)
+    }.to not_change(IntentConformanceReviewSchedule, :count)
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 

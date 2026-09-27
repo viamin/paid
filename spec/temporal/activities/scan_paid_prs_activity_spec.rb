@@ -519,8 +519,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           status: "released",
           approved_design_revision: "design-v1")
         create(:feature_intent_issue, feature_intent: feature_intent, issue: pr_issue)
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
 
         activity.execute(project_id: project.id)
+        pr_issue.update_columns(github_updated_at: Time.current)
         activity.execute(project_id: project.id)
 
         expect(IntentConformanceReviewSchedule.where(

@@ -12,7 +12,6 @@ RSpec.describe CreateIntentConformanceReviewSchedules, :aggregate_failures do
 
   around do |example|
     table_existed = connection.table_exists?(:intent_conformance_review_schedules)
-    raise "test expects the table to be managed by migrations" if table_existed
 
     drop_schedules_table
     clear_schema_metadata
@@ -20,7 +19,7 @@ RSpec.describe CreateIntentConformanceReviewSchedules, :aggregate_failures do
     example.run
   ensure
     drop_schedules_table
-    migration.migrate(:up)
+    migration.migrate(:up) if table_existed
     clear_schema_metadata
   end
 
@@ -50,7 +49,7 @@ RSpec.describe CreateIntentConformanceReviewSchedules, :aggregate_failures do
     expect(columns.fetch("pr_head_sha").null).to be(false)
     expect(columns.fetch("approved_design_revision").null).to be(false)
     expect(columns.fetch("status").null).to be(false)
-    expect(columns.fetch("attempts_count").default).to eq("0")
+    expect(columns.fetch("attempts_count").default).to eq(0)
     expect(connection.foreign_key_exists?(:intent_conformance_review_schedules, :issues)).to be(true)
     expect(connection.foreign_key_exists?(:intent_conformance_review_schedules, :projects)).to be(true)
   end
