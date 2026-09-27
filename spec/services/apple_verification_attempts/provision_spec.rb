@@ -11,22 +11,16 @@ RSpec.describe AppleVerificationAttempts::Provision do
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
     completion = class_double(AppleVerificationAttempts::Complete)
     allow(lifecycle).to receive(:provision).and_return(provisioned_handle)
-    allow(guest_job).to receive(:call) do |**arguments|
-      expect(attempt.reload.status).to eq("provisioning")
-      expect(arguments).to include(
-        agent_run: attempt.agent_run,
-        image_digest: attempt.apple_worker_profile.image_digest,
-        manifest: guest_manifest_for(attempt),
-        guest_connection: have_attributes(read_timeout: 50.minutes)
-      )
-    end
+    stub_guest_dispatch(guest_job, attempt)
     allow(completion).to receive(:call)
 
     described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
 
     expect_provision_for(attempt, lifecycle)
     expect(guest_job).to have_received(:call)
-    expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", lifecycle:)
+    expect(completion).to have_received(:call).with(
+      attempt:, outcome: "failed", failure_classification: "project_configuration", lifecycle:
+    )
     expect(attempt.reload.status).to eq("running")
   end
 
@@ -35,13 +29,12 @@ RSpec.describe AppleVerificationAttempts::Provision do
     attempt = provisioning_attempt
     lifecycle = instance_double(AppleVerification::Lifecycle)
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
-    allow(lifecycle).to receive_messages(provision: provisioned_handle, destroy: :destroyed)
-    allow(guest_job).to receive(:call)
+    allow(lifecycle).to receive_messages(provision: provisioned_handle, destroy: :destroyed, stop: :stopped)
+    allow(guest_job).to receive(:call).and_return(guest_result_for(guest_manifest_for(attempt)))
 
     described_class.new(lifecycle:, guest_job:).call(attempt)
 
-    expect(lifecycle).to have_received(:destroy).with(attempt:, request_id: "complete:#{attempt.id}")
-    expect(attempt.reload).to have_attributes(status: "succeeded", failure_classification: nil)
+    expect(attempt.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
     expect(attempt.reload.finished_at).to be_present
   end
 
@@ -61,6 +54,31 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.reload.status).to eq("provisioning")
   end
 
+  # @spec APPLE-ATTEMPT-009
+  it "classifies a failed required guest operation instead of accepting its HTTP response as success" do
+    attempt = provisioning_attempt
+    lifecycle = instance_double(AppleVerification::Lifecycle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    allow(lifecycle).to receive(:provision).and_return(provisioned_handle)
+    allow(guest_job).to receive(:call).and_return(
+      guest_result_for(
+        "operations" => [
+          { "type" => "materialize_source", "payload" => { "digest" => attempt.source_digest } },
+          { "type" => "test", "payload" => { "scheme" => "App" } },
+          { "type" => "export_artifacts", "payload" => {} }
+        ]
+      ).tap { |result| result.operations[1]["status"] = "failed" }
+    )
+    allow(completion).to receive(:call)
+
+    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+
+    expect(completion).to have_received(:call).with(
+      attempt:, outcome: "failed", failure_classification: "test_assertion", lifecycle:
+    )
+  end
+
   # @spec APPLE-ATTEMPT-004
   it "does not replace a timeout outcome when an in-flight guest call returns" do
     attempt = provisioning_attempt
@@ -68,7 +86,10 @@ RSpec.describe AppleVerificationAttempts::Provision do
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
     completion = class_double(AppleVerificationAttempts::Complete)
     allow(lifecycle).to receive(:provision).and_return(provisioned_handle)
-    allow(guest_job).to receive(:call) { attempt.update!(status: "timed_out") }
+    allow(guest_job).to receive(:call) do
+      attempt.update!(status: "timed_out")
+      AppleVerification::ExecuteGuestJob::Result.new(image: nil, operations: [])
+    end
     allow(completion).to receive(:call)
 
     described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
@@ -103,6 +124,17 @@ RSpec.describe AppleVerificationAttempts::Provision do
     )
   end
 
+  def stub_guest_dispatch(guest_job, attempt)
+    allow(guest_job).to receive(:call) do |**arguments|
+      expect(attempt.reload.status).to eq("provisioning")
+      expect(arguments).to include(
+        agent_run: attempt.agent_run, image_digest: attempt.apple_worker_profile.image_digest,
+        manifest: guest_manifest_for(attempt), guest_connection: have_attributes(read_timeout: 50.minutes)
+      )
+      guest_result_for(guest_manifest_for(attempt))
+    end
+  end
+
   def guest_manifest_for(attempt)
     {
       "version" => AppleVerification::GuestProtocol::VERSION,
@@ -111,5 +143,12 @@ RSpec.describe AppleVerificationAttempts::Provision do
         { "type" => "export_artifacts", "payload" => {} }
       ]
     }
+  end
+
+  def guest_result_for(manifest)
+    AppleVerification::ExecuteGuestJob::Result.new(
+      image: nil,
+      operations: manifest.fetch("operations").map { |operation| { "type" => operation.fetch("type"), "status" => "succeeded" } }
+    )
   end
 end

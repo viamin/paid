@@ -24,10 +24,10 @@ module AppleVerificationAttempts
       handle = provision_active_attempt(attempt)
       return unless handle
 
-      dispatch_guest_job(attempt, handle:)
+      result = dispatch_guest_job(attempt, handle:)
       return unless mark_running(attempt)
 
-      complete_guest_result(attempt)
+      complete_guest_result(attempt, result:)
     end
 
     private
@@ -71,17 +71,21 @@ module AppleVerificationAttempts
       )
     end
 
-    # The dispatch is synchronous: a normal return means the guest executor
-    # finished the job and uploaded its output, so the attempt must leave
-    # provisioning through {Complete} — terminal state, immediate destroy of
-    # the successful VM, credential revocation — instead of occupying the
-    # active slot until the timeout sweep. A dispatch raise leaves the attempt
-    # non-terminal for TimeoutMonitor and Recovery.
-    def complete_guest_result(attempt)
+    # The dispatch is synchronous, but a normal HTTP response is not proof of
+    # verification. Derive the terminal outcome from every guest operation so
+    # a missing or failed required check cannot unblock a completion gate.
+    # A dispatch raise leaves the attempt non-terminal for TimeoutMonitor and
+    # Recovery.
+    def complete_guest_result(attempt, result:)
       attempt.with_lock do
         return if attempt.reload.terminal?
 
-        completion.call(attempt:, outcome: "succeeded", lifecycle:)
+        outcome = GuestResult.call(
+          revision: attempt.apple_verification_workflow_revision,
+          manifest: guest_manifest(attempt),
+          operations: result.operations
+        )
+        completion.call(attempt:, outcome: outcome.status, failure_classification: outcome.failure_classification, lifecycle:)
       end
     end
 
@@ -95,6 +99,11 @@ module AppleVerificationAttempts
     end
 
     def guest_manifest(attempt)
+      # An approved revision currently persists the required check identifiers,
+      # not the protocol payloads (scheme, bundle ID, and declared UI flow)
+      # needed to execute them. Do not invent those values here: GuestResult
+      # fails this manifest closed whenever the revision requires test or
+      # capture work, so a 2xx response can never satisfy that verification.
       {
         "version" => AppleVerification::GuestProtocol::VERSION,
         "operations" => [
