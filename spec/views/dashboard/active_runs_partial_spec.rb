@@ -83,4 +83,24 @@ RSpec.describe "dashboard/_active_runs", :no_db, type: :view do
     expect(row).to be_present
     expect(row.text).not_to include("Review Feedback")
   end
+
+  it "renders the context label as a sibling of <details> so it stays visible while details is closed" do
+    wrapped = '<details class="relative inline-block">' \
+      '<summary>icon</summary>' \
+      '<span id="context_123" role="tooltip">Fix the login bug</span>' \
+      '</details>'.html_safe
+    inner_link = '<a href="https://github.com/o/r/issues/42" target="_blank" rel="noopener noreferrer" ' \
+      'class="text-indigo-600 hover:text-indigo-900" title="Fix the login bug" ' \
+      'aria-describedby="context_123">Issue #42</a>'.html_safe
+    helper_output = "<span class=\"inline-flex items-center gap-1 relative\">#{inner_link}#{wrapped}</span>".html_safe
+    allow(view).to receive(:agent_run_context_display).with(run).and_return(helper_output)
+
+    render partial: "dashboard/active_run_row", locals: { run: run, runner_displays: {} }
+
+    row = Nokogiri::HTML.fragment(rendered).at_css("tr#agent_run_123_dashboard_row")
+    expect(row).to be_present
+    details = row.at_css("details")
+    expect(details).to be_present
+    expect(row.at_css("a").ancestors).not_to include(details)
+  end
 end
