@@ -83,6 +83,9 @@ module Activities
       SecurityAlerts::RecordMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
+      SecurityAlerts::VerifyMergedRemediationAttempts.new(
+        project:, alerts: open_alerts, github_client: project.client
+      ).call
 
       # Record scan timestamp only after successful processing. Retryable
       # errors (5xx) intentionally skip this so Temporal retries within the

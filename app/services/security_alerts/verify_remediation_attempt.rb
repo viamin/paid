@@ -33,8 +33,8 @@ module SecurityAlerts
       {
         "pull_request_number" => attempt.pull_request_number,
         "merge_commit_sha" => attempt.merge_commit_sha,
-        "analysis_id" => analysis[:id], "analysis_commit_sha" => analysis[:commit_sha],
-        "analysis_ref" => analysis[:ref], "alert_number" => alert&.fetch(:number, nil)
+        "analysis_id" => analysis&.dig(:id), "analysis_commit_sha" => analysis&.dig(:commit_sha),
+        "analysis_ref" => analysis&.dig(:ref), "alert_number" => alert&.fetch(:number, nil)
       }.compact
     end
 

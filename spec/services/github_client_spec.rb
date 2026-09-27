@@ -2370,6 +2370,48 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#code_scanning_alert" do
+    let(:repo) { "owner/repo" }
+
+    it "returns configuration for a resolved alert" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/1667")
+        .to_return(
+          status: 200,
+          body: {
+            number: 1667, state: "fixed", tool: { name: "CodeQL" },
+            most_recent_instance: { category: "/language:ruby" }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      expect(client.code_scanning_alert(repo, 1667)).to include(
+        number: 1667, state: "fixed", tool_name: "CodeQL", category: "/language:ruby"
+      )
+    end
+  end
+
+  describe "#code_scanning_analyses" do
+    let(:repo) { "owner/repo" }
+
+    it "returns normalized analysis evidence" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/analyses")
+        .with(query: { "per_page" => "100" })
+        .to_return(
+          status: 200,
+          body: [
+            { id: 1842809913, status: "succeeded", ref: "main", commit_sha: "abc123",
+              tool: { name: "CodeQL" }, category: "/language:ruby" }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      expect(client.code_scanning_analyses(repo)).to eq([
+        id: "1842809913", status: "succeeded", ref: "main", commit_sha: "abc123",
+        tool_name: "CodeQL", category: "/language:ruby"
+      ])
+    end
+  end
+
   describe "#review_comment_reactions_batch" do
     let(:repo) { "owner/repo" }
 

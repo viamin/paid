@@ -29,4 +29,29 @@ RSpec.describe SecurityAlerts::RecordMergedRemediationAttempts do
       pull_request_number: 4034, merge_commit_sha: "b" * 40, status: "awaiting_verification"
     )
   end
+
+  it "does not fetch historical pull requests whose attempts already exist" do # @spec EAGER-QUEUE-013
+    create(:code_scanning_remediation_attempt, issue:, agent_run: run,
+      pull_request_number: 4034, merge_commit_sha: "b" * 40, merged_at: Time.current)
+    allow(github_client).to receive(:pull_request)
+
+    described_class.new(project:, alerts: [], github_client:).call
+
+    expect(github_client).not_to have_received(:pull_request)
+  end
+
+  it "gets configuration from a resolved alert when it is absent from open alerts" do # @spec EAGER-QUEUE-013
+    run
+    pull_request
+    github_pr = Struct.new(:merge_commit_sha, :merged_at).new("b" * 40, Time.current)
+    resolved_alert = { number: 1838, tool_name: "CodeQL", category: "/language:ruby" }
+    allow(github_client).to receive(:pull_request).with(project.full_name, 4034).and_return(github_pr)
+    allow(github_client).to receive(:code_scanning_alert).with(project.full_name, 1838).and_return(resolved_alert)
+
+    described_class.new(project:, alerts: [], github_client:).call
+
+    expect(issue.code_scanning_remediation_attempts.last).to have_attributes(
+      tool_name: "CodeQL", category: "/language:ruby"
+    )
+  end
 end

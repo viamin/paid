@@ -44,4 +44,12 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
 
     expect(attempt.reload.status).to eq("verification_failed")
   end
+
+  it "records unavailable analysis evidence without raising" do # @spec EAGER-QUEUE-013
+    expect { verify(analysis: nil, contains_merge_commit: false) }.not_to raise_error
+
+    expect(attempt.reload).to have_attributes(
+      status: "verification_blocked", blocked_reason: "analysis is unavailable"
+    )
+  end
 end

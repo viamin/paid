@@ -21,6 +21,7 @@ module SecurityAlerts
     def merged_runs
       AgentRun.where(project:, goal: "create_pr", issue: code_scanning_issues)
         .where.not(pull_request_number: nil)
+        .where.not(id: CodeScanningRemediationAttempt.select(:agent_run_id))
         .joins(<<~SQL.squish)
           INNER JOIN issues merged_remediation_prs
             ON merged_remediation_prs.project_id = agent_runs.project_id
@@ -40,7 +41,7 @@ module SecurityAlerts
       return if merge_sha.blank? || pull_request.merged_at.blank?
 
       issue = run.issue
-      alert = alerts[alert_number(issue)]
+      alert = alerts[alert_number(issue)] || github_client.code_scanning_alert(project.full_name, alert_number(issue))
       CodeScanningRemediationAttempt.find_or_create_by!(issue:, pull_request_number: run.pull_request_number) do |attempt|
         attempt.assign_attributes(agent_run: run, merge_commit_sha: merge_sha, merged_at: pull_request.merged_at,
           tool_name: alert&.dig(:tool_name), category: alert&.dig(:category),

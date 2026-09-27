@@ -14,6 +14,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:code_scanning_analyses).and_return([])
   end
 
   describe "#execute" do

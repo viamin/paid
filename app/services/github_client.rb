@@ -1152,22 +1152,31 @@ class GithubClient
         **params
       )
 
-      Array(all_alerts).map do |alert|
-        rule = alert.rule
-        tool = alert.tool
+      Array(all_alerts).map { |alert| code_scanning_alert_attributes(alert) }
+    end
+  end
 
+  # Fetches one code scanning alert, including resolved alerts that are absent
+  # from the normal open-alert reconciliation snapshot.
+  def code_scanning_alert(repo, number)
+    handle_errors do
+      path = "#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{number}"
+      code_scanning_alert_attributes(client.get(path))
+    end
+  end
+
+  # Fetches code-scanning analyses used to verify a merged remediation.
+  def code_scanning_analyses(repo, per_page: 100)
+    handle_errors do
+      path = "#{Octokit::Repository.path(repo)}/code-scanning/analyses"
+      client.paginate(path, per_page: per_page).map do |analysis|
         {
-          number: alert.number,
-          state: alert.state,
-          severity: rule&.security_severity_level,
-          rule_id: rule&.id,
-          rule_description: rule&.description,
-          tool_name: tool&.name,
-          category: alert.most_recent_instance&.category,
-          summary: alert.most_recent_instance&.message&.text,
-          html_url: alert.html_url,
-          created_at: alert.created_at,
-          updated_at: alert.updated_at || alert.created_at
+          id: analysis.id.to_s,
+          status: analysis.status,
+          ref: analysis.ref,
+          commit_sha: analysis.commit_sha,
+          tool_name: analysis.tool&.name,
+          category: analysis.category
         }
       end
     end
@@ -1461,6 +1470,25 @@ class GithubClient
   }.freeze
 
   private
+
+  def code_scanning_alert_attributes(alert)
+    rule = alert.rule
+    tool = alert.tool
+
+    {
+      number: alert.number,
+      state: alert.state,
+      severity: rule&.security_severity_level,
+      rule_id: rule&.id,
+      rule_description: rule&.description,
+      tool_name: tool&.name,
+      category: alert.most_recent_instance&.category,
+      summary: alert.most_recent_instance&.message&.text,
+      html_url: alert.html_url,
+      created_at: alert.created_at,
+      updated_at: alert.updated_at || alert.created_at
+    }
+  end
 
   def issue_comments_batch_query(repo, owner, name, issue_numbers)
     nodes_subquery = issue_numbers.map do |number|
