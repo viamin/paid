@@ -51,6 +51,18 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).not_to match(/<details[^>]*open/)
   end
 
+  # @spec CHAT-API-020
+  it "gives non-pending tool calls a muted left-railed silhouette" do
+    render partial: "chat_messages/tool_call", locals: { message: tool_message }
+
+    expect(rendered).to include("border-gray-300")
+    expect(rendered).to include("border-l-4")
+    expect(rendered).to include("border-l-gray-400")
+    expect(rendered).to include("bg-gray-50")
+    expect(rendered).to include('text-gray-600"> · 3 matches')
+    expect(rendered).to include("rounded-lg bg-gray-950")
+  end
+
   it "summarizes workspace grep results that report total_matches" do
     render partial: "chat_messages/tool_call", locals: {
       message: tool_message(
@@ -63,7 +75,8 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).to include("3 matches")
   end
 
-  it "keeps pending confirmations open for review" do
+  # @spec CHAT-API-020
+  it "keeps pending confirmations open with their amber treatment" do
     render partial: "chat_messages/tool_call", locals: {
       message: tool_message(
         role: "assistant",
@@ -75,6 +88,8 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     }
 
     expect(rendered).to match(/<details[^>]*open/)
+    expect(rendered).to include("border-gray-200 bg-white/80 shadow-sm shadow-gray-100/60 ring-2 ring-amber-300")
+    expect(rendered).not_to include("border-l-4")
     expect(rendered).to include("Assistant wants to run this action")
   end
 
