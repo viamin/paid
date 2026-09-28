@@ -452,6 +452,34 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Clarifying Questions for PR #9: Ship it")
       end
 
+      # @spec QUESTION-EXPLORATION-016
+      it "renders choice questions with their canonical option lines instead of raw markers" do
+        chat_session.update!(metadata: {
+          "clarifying_question_issue_id" => issue.id,
+          "clarifying_questions" => [
+            "Which storage backend should the export use? " \
+              "- ( ) SQLite) local file, zero setup " \
+              "- ( ) Postgres) already used for app data"
+          ]
+        })
+
+        expect(prompt).to include("1. Which storage backend should the export use?")
+        expect(prompt).to include("- SQLite (local file, zero setup)")
+        expect(prompt).to include("- Postgres (already used for app data)")
+        expect(prompt).not_to include("( ) SQLite)")
+      end
+
+      # @spec QUESTION-EXPLORATION-016
+      it "tells the assistant which answer forms the validator accepts for choice questions" do
+        chat_session.update!(metadata: {
+          "clarifying_question_issue_id" => issue.id,
+          "clarifying_questions" => [ "Should this be behind a flag?" ]
+        })
+
+        expect(prompt).to include("its number, or its letter")
+        expect(prompt).to include("Other: <description>")
+      end
+
       it "reads the snapshot without resolving questions from GitHub" do
         allow(ClarifyingQuestions::Load).to receive(:call)
           .and_raise(RuntimeError, "must not be called from the prompt builder")

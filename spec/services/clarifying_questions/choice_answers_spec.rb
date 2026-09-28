@@ -131,5 +131,52 @@ RSpec.describe ClarifyingQuestions::ChoiceAnswers, :no_db do
       expect(described_class.error_for(question: multi_question, answer: answer))
         .to include("Details cannot accompany Other")
     end
+
+    # Chat-composed answers echo the question as the assistant rendered it
+    # rather than the widget's hidden canonical strings, so every spelling
+    # that unambiguously picks an offered option validates.
+    # @spec QUESTION-EXPLORATION-016
+    context "with chat-composed selections" do
+      it "accepts an option's 1-based number or letter, in any case" do
+        expect(described_class.error_for(question: single_question, answer: "2")).to be_nil
+        expect(described_class.error_for(question: single_question, answer: "B")).to be_nil
+        expect(described_class.error_for(question: single_question, answer: "b")).to be_nil
+      end
+
+      it "accepts the bare option label" do
+        expect(described_class.error_for(question: single_question, answer: "SQLite")).to be_nil
+      end
+
+      it "accepts the marker-prefixed echo of the rendered question" do
+        expect(described_class.error_for(question: single_question, answer: "- ( ) SQLite) local file, zero setup")).to be_nil
+        expect(described_class.error_for(question: single_question, answer: "( ) SQLite) local file, zero setup")).to be_nil
+        expect(described_class.error_for(question: multi_question, answer: "[ ] Chrome) primary browser")).to be_nil
+        expect(described_class.error_for(question: multi_question, answer: "- [x] Firefox) required by the support team")).to be_nil
+      end
+
+      it "accepts rationale appended after the option text" do
+        answer = "SQLite (local file, zero setup) - ops already approved this"
+
+        expect(described_class.error_for(question: single_question, answer: answer)).to be_nil
+      end
+
+      it "accepts joined selections for a multi-choice question in echoed form" do
+        answer = "- [ ] Chrome) primary browser\nFirefox (required by the support team)"
+
+        expect(described_class.error_for(question: multi_question, answer: answer)).to be_nil
+      end
+
+      it "rejects numbers and letters that pick no offered option" do
+        expect(described_class.error_for(question: single_question, answer: "3"))
+          .to include("isn't one of the offered options")
+        expect(described_class.error_for(question: single_question, answer: "Z"))
+          .to include("isn't one of the offered options")
+      end
+
+      it "rejects an identifier that starts a longer non-offered answer" do
+        expect(described_class.error_for(question: single_question, answer: "Both options are wrong"))
+          .to include("isn't one of the offered options")
+      end
+    end
   end
 end

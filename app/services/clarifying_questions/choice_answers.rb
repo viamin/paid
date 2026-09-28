@@ -15,7 +15,15 @@ module ClarifyingQuestions
   # selections are not offered options or a specified "Other". Questions whose
   # parser result is nil (free text) skip validation — the textarea answer is
   # authoritative as typed.
+  #
+  # Chat answers (QUESTION-EXPLORATION-016) are composed by the assistant from
+  # the conversation, not by the widget, so a selection is accepted in any
+  # spelling that still unambiguously picks an offered option: the canonical
+  # line (optionally with appended rationale), the marker-prefixed echo of the
+  # rendered question, the bare option label, or the option's 1-based number
+  # or letter. The offered-option invariant of the tamper guard is unchanged.
   # @spec OPERATOR-INBOX-012
+  # @spec QUESTION-EXPLORATION-016
   module ChoiceAnswers
     # A bare "Other:" with no following whitespace is NOT an Other line: it
     # stays a selection so validation rejects it as a non-offered option. The
@@ -23,6 +31,9 @@ module ClarifyingQuestions
     # "Other: " (a specified-but-empty Other, rejected by its own message).
     OTHER_LINE_PATTERN = /\AOther:\s+(.*)\z/.freeze
     DETAILS_LINE_PATTERN = /\ADetails:\s+(.*)\z/.freeze
+    # Leading choice-marker spellings a chat answer may echo from the
+    # rendered question: `- ( ) `, `( ) `, `- [ ] `, `[x] `, and `- [x] `.
+    MARKER_PREFIX_PATTERN = /\A(?:-\s*)?(?:\(\s*\)|\[\s*[xX]?\s*\])\s+/.freeze
 
     module_function
 
@@ -65,9 +76,8 @@ module ClarifyingQuestions
       return nil if answer.to_s.strip.empty?
 
       parsed = parse(answer: answer)
-      offered = choices[:options].map { |option| option_line(label: option[:label], text: option[:text]) }
 
-      not_offered = parsed[:selections].reject { |selection| offered.include?(selection) }
+      not_offered = parsed[:selections].reject { |selection| offered_selection?(selection, choices:) }
       if not_offered.any?
         return format_error("#{not_offered.first.inspect} isn't one of the offered options.", position)
       end
@@ -90,6 +100,25 @@ module ClarifyingQuestions
       end
 
       nil
+    end
+
+    # True when a selection line picks one of the question's offered options
+    # in any accepted spelling: the canonical `Label (text)` line or the
+    # rendered `Label) text` echo (either may carry appended rationale), the
+    # bare label, the 1-based number, or the letter. Matching is
+    # case-insensitive; the label and the identifiers match the whole line so
+    # they cannot be stretched into unrelated prose.
+    def offered_selection?(selection, choices:)
+      cleaned = selection.sub(MARKER_PREFIX_PATTERN, "").downcase
+      choices[:options].each_with_index.any? do |option, index|
+        exact_matches = [ option[:label], (index + 1).to_s, (65 + index).chr ].map(&:downcase)
+        next true if exact_matches.include?(cleaned)
+
+        cleaned.start_with?(
+          option_line(label: option[:label], text: option[:text]).downcase,
+          "#{option[:label]}) #{option[:text]}".downcase
+        )
+      end
     end
 
     def format_error(message, position)
