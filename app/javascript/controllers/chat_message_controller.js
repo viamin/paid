@@ -44,16 +44,99 @@ export default class extends Controller {
     return end < 0 ? "" : rawContent.slice(end + closingTag.length).trimStart()
   }
 
+  // @spec CHAT-API-021
   async copyCode(event) {
     const button = event.currentTarget
     const originalText = button.textContent
+    const content = button.dataset.copyContent || ""
 
     try {
-      await window.navigator.clipboard.writeText(button.dataset.copyContent || "")
-      button.textContent = "Copied"
-      window.setTimeout(() => { button.textContent = originalText }, 1200)
-    } catch {
-      button.textContent = originalText
+      await this.writeToClipboard(content)
+      this.flashButton(button, "Copied", originalText, 1200)
+    } catch (error) {
+      this.flashButton(button, "Copy failed", originalText, 1600)
+      this.reportCopyFailure(error)
+    }
+  }
+
+  async writeToClipboard(content) {
+    if (this.canUseClipboardApi()) {
+      try {
+        await window.navigator.clipboard.writeText(content)
+        return
+      } catch (clipboardError) {
+        // Insecure context, sandboxed iframe, denied permission, or a
+        // synchronous clipboard failure all land here. Fall through to the
+        // execCommand path so users still get a working button instead of
+        // a silent no-op (#4070).
+        try {
+          this.legacyCopy(content)
+          return
+        } catch (fallbackError) {
+          const error = new Error(
+            "clipboard.writeText and execCommand both failed: " +
+            `${clipboardError.message} / ${fallbackError.message}`
+          )
+          error.cause = fallbackError
+          throw error
+        }
+      }
+    }
+
+    this.legacyCopy(content)
+  }
+
+  canUseClipboardApi() {
+    return typeof window !== "undefined"
+      && typeof window.navigator !== "undefined"
+      && !!window.navigator.clipboard
+      && typeof window.navigator.clipboard.writeText === "function"
+  }
+
+  legacyCopy(content) {
+    if (typeof document === "undefined") {
+      throw new Error("document is unavailable; cannot run execCommand fallback")
+    }
+
+    const textarea = document.createElement("textarea")
+    textarea.value = content
+    textarea.setAttribute("readonly", "")
+    textarea.dataset.chatMessageCopyFallback = "true"
+    textarea.style.position = "fixed"
+    textarea.style.top = "0"
+    textarea.style.left = "0"
+    textarea.style.opacity = "0"
+    textarea.style.pointerEvents = "none"
+
+    const previouslyFocused = document.activeElement
+    document.body.appendChild(textarea)
+    textarea.select()
+
+    try {
+      if (document.execCommand("copy") !== true) {
+        throw new Error("document.execCommand('copy') returned false")
+      }
+    } finally {
+      document.body.removeChild(textarea)
+      if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+        previouslyFocused.focus()
+      }
+    }
+  }
+
+  flashButton(button, message, originalText, restoreDelayMs) {
+    button.textContent = message
+    window.setTimeout(() => { button.textContent = originalText }, restoreDelayMs)
+  }
+
+  reportCopyFailure(error) {
+    if (typeof window === "undefined" || !window.console) return
+
+    const consoleLike = window.console
+    if (typeof consoleLike.warn === "function") {
+      consoleLike.warn("chat-message#copyCode: clipboard write failed", error)
+    } else if (typeof consoleLike.error === "function") {
+      consoleLike.error("chat-message#copyCode: clipboard write failed", error)
     }
   }
 

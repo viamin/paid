@@ -401,3 +401,20 @@
   `ChatSessions::ResumeRateLimitedJob`,
   `ChatSessions::AutoResumeRateLimitedSweepJob`,
   `TenantSetting#chat_auto_resume_rate_limited`.
+
+- [x] **CHAT-API-021** — When a user clicks the copy button rendered next to
+  a fenced code block in a chat reply, the system SHALL write the code
+  block's plain text to the system clipboard. On success the button SHALL
+  display a transient `Copied` indicator and revert to its original label.
+  When the modern Clipboard API is unavailable (insecure context, sandboxed
+  iframe, missing permission, missing implementation) or its promise rejects,
+  the system SHALL fall back to `document.execCommand("copy")` against a
+  temporary `textarea`. When both copy paths fail, the button SHALL display
+  `Copy failed` and the underlying error SHALL be surfaced via the browser
+  console so a developer can diagnose it — the click SHALL NOT be a silent
+  no-op (#4070).
+  *Tests:* `spec/lib/chat_message_controller_node_harness_spec.rb`.
+  *Code:* `app/javascript/controllers/chat_message_controller.js#copyCode`,
+  `app/javascript/controllers/chat_message_controller.js#writeToClipboard`,
+  `app/javascript/controllers/chat_message_controller.js#legacyCopy`,
+  `app/javascript/controllers/chat_message_controller.js#decorateCodeBlocks`.
