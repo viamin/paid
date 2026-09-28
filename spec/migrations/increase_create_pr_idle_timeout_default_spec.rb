@@ -39,7 +39,7 @@ RSpec.describe IncreaseCreatePrIdleTimeoutDefault, :aggregate_failures do
     expect(legacy_default_user_setting.reload.create_pr_idle_timeout_seconds).to eq(360)
     expect(custom_user_setting.reload.create_pr_idle_timeout_seconds).to eq(420)
     expect(preexisting_360_user_setting.reload.create_pr_idle_timeout_seconds).to eq(360)
-    expect(default_for(:create_pr_idle_timeout_seconds)).to eq(360)
+    expect(default_for(:create_pr_idle_timeout_seconds)).to eq("360")
 
     migration.migrate(:down)
     UserSetting.reset_column_information
@@ -47,7 +47,7 @@ RSpec.describe IncreaseCreatePrIdleTimeoutDefault, :aggregate_failures do
     expect(legacy_default_user_setting.reload.create_pr_idle_timeout_seconds).to eq(360)
     expect(custom_user_setting.reload.create_pr_idle_timeout_seconds).to eq(420)
     expect(preexisting_360_user_setting.reload.create_pr_idle_timeout_seconds).to eq(360)
-    expect(default_for(:create_pr_idle_timeout_seconds)).to eq(300)
+    expect(default_for(:create_pr_idle_timeout_seconds)).to eq("300")
   end
 
   private
