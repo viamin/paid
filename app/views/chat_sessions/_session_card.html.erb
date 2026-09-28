@@ -23,7 +23,7 @@
             } do %>
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0 flex-1">
-      <p class="truncate text-sm font-semibold text-gray-900"><%= session_title %></p>
+      <p class="truncate text-sm font-semibold text-gray-900" title="<%= session_title %>"><%= session_title %></p>
       <p class="mt-1 truncate text-xs text-gray-500"><%= session_preview %></p>
     </div>
     <%= chat_session_status_badge(chat_session) %>

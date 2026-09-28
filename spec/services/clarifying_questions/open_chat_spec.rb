@@ -19,14 +19,14 @@ RSpec.describe ClarifyingQuestions::OpenChat do
 
   describe ".call" do
     # @spec QUESTION-EXPLORATION-001
-    it "creates the canonical linked chat under the issue's account with the generic title" do
+    it "creates the canonical linked chat under the issue's account with its repository and number" do
       chat = described_class.call(issue: issue, user: user)
 
       expect(chat.account).to eq(account)
       expect(chat.created_by).to eq(user)
       expect(chat.project).to eq(project)
       expect(chat.clarifying_question_issue).to eq(issue)
-      expect(chat.title).to eq("Clarifying questions")
+      expect(chat.title).to eq("Clarifying questions for #{project.full_name}##{issue.github_number}")
     end
 
     # @spec QUESTION-EXPLORATION-001
@@ -63,6 +63,17 @@ RSpec.describe ClarifyingQuestions::OpenChat do
 
       expect(second.id).to eq(first.id)
       expect(ChatSession.where(clarifying_question_issue: issue).count).to eq(1)
+    end
+
+    # @spec QUESTION-EXPLORATION-001
+    it "updates a reused chat to the title identifying its linked issue" do
+      chat = create(:chat_session, account: account, created_by: user, project: project,
+        clarifying_question_issue: issue, title: "Clarifying questions")
+
+      reused_chat = described_class.call(issue: issue, user: user)
+
+      expect(reused_chat).to eq(chat)
+      expect(reused_chat.reload.title).to eq("Clarifying questions for #{project.full_name}##{issue.github_number}")
     end
 
     # @spec QUESTION-EXPLORATION-001
