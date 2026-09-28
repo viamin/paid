@@ -382,24 +382,31 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
   end
 
   def create_assignment_backed_project_for(experiment, run_count:)
-    50.times do
-      project = create(:project, account: experiment.account)
-      next if experiment.includes_traffic?(project: project)
-
-      runs = Array.new(run_count) do
-        create(:agent_run,
-          :completed,
-          project: project,
-          issue: create(:issue, project: project),
-          goal: "create_pr")
-      end
-
-      next unless runs.all? { |run| experiment.includes_traffic?(agent_run: run) }
-
-      return [ project, runs ]
+    project = create(:project, account: experiment.account, id: excluded_project_id(experiment))
+    runs = included_run_ids(experiment, count: run_count).map do |id|
+      create(:agent_run,
+        :completed,
+        id: id,
+        project: project,
+        issue: create(:issue, project: project),
+        goal: "create_pr")
     end
 
-    raise "Could not create a project excluded from project rollout with included assigned runs"
+    [ project, runs ]
+  end
+
+  # Rollout uses IDs in its hash, so choose known IDs before persisting records
+  # instead of relying on a probabilistic factory loop.
+  def excluded_project_id(experiment)
+    rollout_ids.find { |id| !experiment.includes_traffic?(project: Project.new(id: id)) }
+  end
+
+  def included_run_ids(experiment, count:)
+    rollout_ids.lazy.select { |id| experiment.includes_traffic?(agent_run: AgentRun.new(id: id)) }.first(count)
+  end
+
+  def rollout_ids
+    (1_000_000..)
   end
 
   def mock_optimizer_selection
