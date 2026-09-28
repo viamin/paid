@@ -95,7 +95,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
     end
 
     it "avoids action-managed Bundler caching in the artifact-publishing job" do
-      expect(workflow_source).to include("uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9")
+      expect(workflow_source).to include("uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8")
       expect(workflow_source).not_to include("bundler-cache: true")
       expect(workflow_source).to include("name: Install Ruby dependencies")
       expect(workflow_source).to include("run: bundle install --jobs 4 --retry 3")
