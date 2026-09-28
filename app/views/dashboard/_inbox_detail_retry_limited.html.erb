@@ -34,6 +34,10 @@
       <% else %>
         <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">Retry Cap</span>
       <% end %>
+      <% returns = issue.runner_retry_abandonment_count - 1 %>
+      <% if returns.positive? %>
+        <span class="text-xs font-medium text-gray-600">×<%= returns %> returns</span>
+      <% end %>
       <span class="text-xs text-gray-500">
         Abandoned <%= entry.waiting_since ? "#{time_ago_in_words(entry.waiting_since)} ago" : "—" %>
       </span>
@@ -41,6 +45,13 @@
   </div>
 
   <div class="flex flex-wrap items-center gap-3">
+    <% if Inbox::InteractiveChatAccess.allowed?(user: current_user, project: entry.project) %>
+      <%= button_to "Investigate in chat",
+            inbox_interactive_chat_path(entry),
+            method: :post,
+            class: "inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700",
+            form: { data: { turbo_frame: "_top" } } %>
+    <% end %>
     <%= link_to "View on GitHub",
           issue.github_url,
           target: "_blank",
