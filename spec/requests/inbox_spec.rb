@@ -142,6 +142,20 @@ RSpec.describe "Inbox" do
     expect(ChatSession.last).to have_attributes(created_by: user, inbox_item_key: "clarifying_questions:#{issue.id}")
   end
 
+  # @spec OPERATOR-INBOX-002F
+  it "opens the retry-limited investigation chat through the Inbox route" do
+    issue = create_retry_limited_issue(title: "Capped issue", github_number: 4632)
+
+    post inbox_interactive_chat_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, issue)), as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(ChatSession.last).to have_attributes(
+      inbox_item_key: "retry_limited:#{issue.id}",
+      title: "#{project.full_name}#4632: retry exhaustion chat"
+    )
+    expect(ChatSession.last.inbox_item_metadata).to include("issue_id" => issue.id)
+  end
+
   it "selects the requested entry on the member route" do
     create(:issue, :needs_input, project: project, github_number: 11, body: questions_body)
     second_issue = create(:issue, :needs_input, project: project, github_number: 22, body: questions_body)
@@ -500,6 +514,19 @@ RSpec.describe "Inbox" do
     expect(push_blocked_row.text).not_to include("Retry Cap")
   end
 
+  # @spec OPERATOR-INBOX-002F
+  it "shows the retry return count in the list and detail views" do
+    capped = create_retry_limited_issue(title: "Capped issue", github_number: 518, runner_retry_abandonment_count: 3)
+
+    get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    expect(response.body).to include("×3 returns")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped), kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    expect(response.body).to include("×3 returns")
+  end
+
   # @spec OPERATOR-INBOX-002E
   it "renders the retry_limited detail with the abandon reason and the Retry Cap badge for runner-cap abandonments" do
     capped = create_retry_limited_issue(
@@ -557,6 +584,20 @@ RSpec.describe "Inbox" do
     expect(form["data-turbo-confirm"]).to include("retry-cap flag").and include("queue a run from the project page")
     expect(form.at_css('button').text).to include("Re-enable")
     expect(form.at_css('input[name="return_to"]')["value"]).to eq(inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND))
+  end
+
+  # @spec OPERATOR-INBOX-002F
+  it "renders an authorized Investigate in chat button for retry-limited entries" do
+    capped = create_retry_limited_issue(title: "Capped issue", github_number: 519)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped), kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    form = Nokogiri::HTML(response.body).at_css(
+      %(form[action="#{inbox_interactive_chat_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped))}"])
+    )
+
+    expect(form).to be_present
+    expect(form.at_css("button").text).to include("Investigate in chat")
   end
 
   # @spec OPERATOR-INBOX-002E

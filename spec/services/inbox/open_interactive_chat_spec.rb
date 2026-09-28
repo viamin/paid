@@ -45,4 +45,37 @@ RSpec.describe Inbox::OpenInteractiveChat do
 
     expect { described_class.call(user: viewer, entry:) }.to raise_error(Pundit::NotAuthorizedError)
   end
+
+  # @spec OPERATOR-INBOX-002F
+  it "reuses a retry-limited investigation chat with a reason-specific title" do
+    issue.update!(
+      github_number: 4632,
+      runner_retry_abandoned_at: Time.current,
+      runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3)."
+    )
+    retry_entry = Inbox::Queue.call(user:, project:, kind: Inbox::Queue::RETRY_LIMITED_KIND).sole
+
+    first = described_class.call(user:, entry: retry_entry)
+    second = described_class.call(user:, entry: retry_entry)
+
+    expect(second).to eq(first)
+    expect(first).to have_attributes(
+      inbox_item_key: "retry_limited:#{issue.id}",
+      title: "#{project.full_name}#4632: retry exhaustion chat"
+    )
+    expect(first.inbox_item_metadata).to include("issue_id" => issue.id)
+  end
+
+  # @spec OPERATOR-INBOX-002F
+  it "titles a push-blocked investigation chat with its reason" do
+    issue.update!(
+      runner_retry_abandoned_at: Time.current,
+      runner_retry_abandon_reason: "#{Issue::PUSH_PERMISSION_ABANDON_PREFIX} missing workflows permission"
+    )
+    retry_entry = Inbox::Queue.call(user:, project:, kind: Inbox::Queue::RETRY_LIMITED_KIND).sole
+
+    chat = described_class.call(user:, entry: retry_entry)
+
+    expect(chat.title).to eq("#{project.full_name}##{issue.github_number}: push blocked chat")
+  end
 end

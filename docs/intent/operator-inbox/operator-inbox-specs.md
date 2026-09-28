@@ -177,6 +177,24 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002F** — When an issue or pull request re-enters the
+  `retry_limited` Inbox lane after its retry abandonment has been cleared, the
+  system SHALL retain and increment its abandonment count, and SHALL show that
+  count in both the queue row and detail pane without changing the existing
+  Push Blocked / Retry Cap visual distinction. An operator with interactive
+  chat access SHALL be able to open an investigation chat from that detail
+  pane. The system SHALL reuse one active chat per user and retry-limited Inbox
+  item, link it to the issue or pull request, title it with the repository,
+  GitHub number, and abandonment reason, and make the queue metadata and recent
+  run output available through the explicit Inbox chat-context sections.
+  *Code:* `app/models/issue.rb`, `app/services/inbox/open_interactive_chat.rb`,
+  `app/services/inbox/chat_context.rb`,
+  `app/views/dashboard/_inbox_list.html.erb`,
+  `app/views/dashboard/_inbox_detail_retry_limited.html.erb`.
+  *Test:* `spec/models/issue_spec.rb`,
+  `spec/services/inbox/open_interactive_chat_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

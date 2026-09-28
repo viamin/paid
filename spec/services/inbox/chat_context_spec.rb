@@ -75,6 +75,26 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("review_comments").map { |comment| comment.fetch(:body) }).to eq([ "Trusted review" ])
   end
 
+  # @spec OPERATOR-INBOX-002F
+  it "exposes retry metadata and recent run output to an investigation chat" do
+    chat_session.update!(
+      inbox_item_key: "retry_limited:#{issue.id}",
+      inbox_item_metadata: {
+        "kind" => "retry_limited",
+        "issue_id" => issue.id,
+        "return_count" => 2,
+        "reason" => "All available runners reached the retry cap."
+      }
+    )
+    run = create(:agent_run, project:, issue: issue, status: "failed")
+    create(:agent_run_log, agent_run: run, content: "runner exhausted")
+
+    context = described_class.call(chat_session:, user:, sections: %i[queue_metadata agent_run_output])
+
+    expect(context.fetch("queue_metadata")).to include("return_count" => 2, "reason" => "All available runners reached the retry cap.")
+    expect(context.fetch("agent_run_output")).to include(hash_including(id: run.id, output: [ "runner exhausted" ]))
+  end
+
   def github_comment(id:, login:, body:)
     user = Struct.new(:login).new(login)
     Struct.new(:id, :user, :body, :created_at).new(id, user, body, Time.current)

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Inbox
-  # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
+  # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014 @spec OPERATOR-INBOX-002F
   class OpenInteractiveChat
     def self.call(...)
       new(...).call
@@ -41,7 +41,7 @@ module Inbox
         account: user.account,
         user:,
         project_id: project.id,
-        title: authoritative_entry.title,
+        title: chat_title,
         metadata: { "inbox_item" => audit_metadata },
         inbox_item_key: authoritative_entry.id,
         inbox_item_metadata: audit_metadata,
@@ -59,8 +59,20 @@ module Inbox
         "issue_id" => authoritative_entry.issue&.id,
         "record_id" => authoritative_entry.record&.id,
         "record_type" => authoritative_entry.record&.class&.name,
-        "waiting_since" => authoritative_entry.waiting_since&.iso8601
+        "waiting_since" => authoritative_entry.waiting_since&.iso8601,
+        "reason" => authoritative_entry.summary.presence,
+        "return_count" => authoritative_entry.issue&.runner_retry_abandonment_count
       }.compact
+    end
+
+    def chat_title
+      return authoritative_entry.title unless authoritative_entry.retry_limited?
+
+      "#{project.full_name}##{authoritative_entry.issue.github_number}: #{retry_limited_reason} chat"
+    end
+
+    def retry_limited_reason
+      authoritative_entry.issue.push_permission_abandoned? ? "push blocked" : "retry exhaustion"
     end
   end
 end
