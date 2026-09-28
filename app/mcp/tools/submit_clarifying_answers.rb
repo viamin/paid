@@ -4,6 +4,7 @@ module Tools
   # Posts a linked chat's final clarifying answers through the standard
   # inbox answer path. Confirmation-gated like every chat write tool.
   # @spec QUESTION-EXPLORATION-002
+  # @spec QUESTION-EXPLORATION-016
   class SubmitClarifyingAnswers < BaseTool
     authorize :update?, ->(_args) { project_for_session }, policy_class: ProjectPolicy
 
@@ -23,7 +24,12 @@ module Tools
       {
         type: "object",
         properties: {
-          answers: { type: "array", items: { type: "string" }, description: "Final answers in pending-question order" },
+          answers: {
+            type: "array",
+            items: { type: "string" },
+            description: "Final answers in pending-question order. For a choice question: the offered option's " \
+                         "text (extra rationale may follow), its number, its letter, or 'Other: <description>'"
+          },
           confirmed: { type: "boolean", description: "True after the user confirms posting" }
         },
         required: %w[answers confirmed]

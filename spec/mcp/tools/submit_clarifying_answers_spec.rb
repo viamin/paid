@@ -122,6 +122,58 @@ RSpec.describe Tools::SubmitClarifyingAnswers do
       expect(result).to eq(posted: true, issue_id: issue.id, issue_number: issue.github_number)
     end
 
+    # @spec QUESTION-EXPLORATION-016
+    it "posts a choice answer selected by option letter" do
+      issue.update!(needs_input_questions: [
+        "Which database? - ( ) SQLite) local file - ( ) Postgres) shared service",
+        questions.second
+      ])
+
+      result = tool.call(answers: %w[B Yes], confirmed: true)
+
+      expect(github_client).to have_received(:add_comment).with(
+        project.full_name,
+        issue.github_number,
+        a_string_including("**A1:** B")
+      )
+      expect(issue.reload.paid_state).to eq("new")
+      expect(result).to eq(posted: true, issue_id: issue.id, issue_number: issue.github_number)
+    end
+
+    # @spec QUESTION-EXPLORATION-016
+    it "posts a choice answer that appends rationale to the offered option text" do
+      issue.update!(needs_input_questions: [
+        "Which database? - ( ) SQLite) local file - ( ) Postgres) shared service",
+        questions.second
+      ])
+      decision = "Postgres (shared service) - reuse the app database connection"
+
+      tool.call(answers: [ decision, "Yes, by default" ], confirmed: true)
+
+      expect(github_client).to have_received(:add_comment).with(
+        project.full_name,
+        issue.github_number,
+        a_string_including("**A1:** #{decision}")
+      )
+    end
+
+    # @spec QUESTION-EXPLORATION-016
+    it "posts a hybrid multi-choice answer assembled from offered options" do
+      issue.update!(needs_input_questions: [
+        "Which checks must run? - [ ] Lint) static checks - [ ] Tests) dynamic checks",
+        questions.second
+      ])
+      hybrid = "Lint (static checks) - only new code\nTests (dynamic checks) - keep the suite green"
+
+      tool.call(answers: [ hybrid, "Yes, by default" ], confirmed: true)
+
+      expect(github_client).to have_received(:add_comment).with(
+        project.full_name,
+        issue.github_number,
+        a_string_including("**A1:** #{hybrid}")
+      )
+    end
+
     it "rejects a user who cannot update the project" do
       member = create(:user, :member, account: account)
 
