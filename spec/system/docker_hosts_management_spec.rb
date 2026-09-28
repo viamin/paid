@@ -71,6 +71,8 @@ RSpec.describe "Docker host management", system_driver: :rack_test, type: :syste
     expect(page).to have_content("Generic remote Linux")
     expect(page).to have_content("Docker TLS connectivity test")
     expect(find_field("Docker save load", type: "textarea").value).to include("docker save paid-agent:latest")
+    command_ids = all("textarea[id^='setup-command-']").map { |field| field[:id] }
+    expect(command_ids).to eq(command_ids.uniq)
   end
 
   it "shows QNAP / NAS specific setup guidance" do
