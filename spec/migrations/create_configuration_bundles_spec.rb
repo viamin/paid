@@ -112,7 +112,7 @@ RSpec.describe CreateConfigurationBundles, :aggregate_failures do
     expect(columns.fetch("configuration_bundle_id").null).to be(false)
     expect(columns.fetch("agent_run_id").null).to be(false)
     expect(columns.fetch("success").null).to be(false)
-    expect(columns.fetch("success").default).to be(false)
+    expect(columns.fetch("success").default).to eq("false")
     expect(default_expression_for(:bundle_outcomes, "metrics")).to include("'{}'::jsonb")
     expect(connection.foreign_key_exists?(:bundle_outcomes, :configuration_bundles)).to be(true)
     expect(connection.foreign_key_exists?(:bundle_outcomes, :agent_runs)).to be(true)

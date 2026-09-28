@@ -41,7 +41,7 @@ RSpec.describe MakeCreatePrIdleTimeoutSecondsNullable, :aggregate_failures do
 
     expect(legacy_360_setting.reload.create_pr_idle_timeout_seconds).to eq(360)
     expect(custom_420_setting.reload.create_pr_idle_timeout_seconds).to eq(420)
-    expect(default_for(:create_pr_idle_timeout_seconds)).to eq(360)
+    expect(default_for(:create_pr_idle_timeout_seconds)).to eq("360")
     expect(nullable?(:create_pr_idle_timeout_seconds)).to be(false)
   end
 
