@@ -212,10 +212,12 @@ by the cache invalidation `saved_change_to_runner_retry_abandoned_at?` adds to
 `Issue#inbox_count_cache_invalidation_needed?`.
 
 Each abandonment increments `runner_retry_abandonment_count`, which survives
-the flag-clearing cycle. The retry-limited row and detail pane expose it as a
-lightweight return signal beside the existing reason badge, so an operator can
-distinguish a first stop from a recurring one without changing the Push Blocked
-or Retry Cap semantics. The detail pane also opens the existing interactive
+the flag-clearing cycle. The retry-limited row and detail pane render that
+count minus one as a lightweight return signal (a "×N returns" badge) beside
+the existing reason badge, so an operator can distinguish a first stop from a
+recurring one without changing the Push Blocked or Retry Cap semantics — the
+first abandonment has no badge, a second shows "×1 returns", and so on. The
+detail pane also opens the existing interactive
 Inbox chat route when `InteractiveChatAccess` permits it. Its active-chat key
 remains the retry-limited entry ID, so reuse is per user and Inbox kind; its
 title names the repository, issue/PR number, and reason (`retry exhaustion` or

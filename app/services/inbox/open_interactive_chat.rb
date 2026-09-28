@@ -61,8 +61,15 @@ module Inbox
         "record_type" => authoritative_entry.record&.class&.name,
         "waiting_since" => authoritative_entry.waiting_since&.iso8601,
         "reason" => authoritative_entry.summary.presence,
-        "return_count" => authoritative_entry.issue&.runner_retry_abandonment_count
+        "return_count" => return_count
       }.compact
+    end
+
+    def return_count
+      issue = authoritative_entry.issue
+      return unless issue
+
+      [ issue.runner_retry_abandonment_count - 1, 0 ].max
     end
 
     def chat_title

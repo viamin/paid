@@ -28,8 +28,9 @@
                 <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.issue.push_permission_abandoned? ? 'bg-orange-100 text-orange-700' : 'bg-red-50 text-red-700' %>">
                   <%= entry.issue.push_permission_abandoned? ? "Push Blocked" : "Retry Cap" %>
                 </span>
-                <% if entry.issue.runner_retry_abandonment_count.positive? %>
-                  <span class="text-xs font-medium text-gray-500">×<%= entry.issue.runner_retry_abandonment_count %> returns</span>
+                <% returns = entry.issue.runner_retry_abandonment_count - 1 %>
+                <% if returns.positive? %>
+                  <span class="text-xs font-medium text-gray-500">×<%= returns %> returns</span>
                 <% end %>
               <% end %>
               <% if entry.issue && (entry.issue.is_pull_request? || entry.clarifying_questions?) %>

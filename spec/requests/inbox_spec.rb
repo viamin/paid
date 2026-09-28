@@ -520,11 +520,24 @@ RSpec.describe "Inbox" do
 
     get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
 
-    expect(response.body).to include("×3 returns")
+    expect(response.body).to include("×2 returns")
 
     get inbox_entry_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, capped), kind: Inbox::Queue::RETRY_LIMITED_KIND)
 
-    expect(response.body).to include("×3 returns")
+    expect(response.body).to include("×2 returns")
+  end
+
+  # @spec OPERATOR-INBOX-002F
+  it "hides the retry return badge for a first-time abandonment" do
+    first_timer = create_retry_limited_issue(title: "First cap", github_number: 520, runner_retry_abandonment_count: 1)
+
+    get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    expect(response.body).not_to include("×1 returns")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, first_timer), kind: Inbox::Queue::RETRY_LIMITED_KIND)
+
+    expect(response.body).not_to include("×1 returns")
   end
 
   # @spec OPERATOR-INBOX-002E
