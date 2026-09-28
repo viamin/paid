@@ -44,6 +44,13 @@ actions.
   `submit_clarifying_answers` chat tool posts the final ordered answers through
   `ClarifyingQuestions::SubmitAnswers`. That existing path adjusts labels and
   clears the inbox item only after GitHub accepts the comment.
+- Chat answers are assistant-composed, not widget-composed, so the choice
+  validator accepts any selection spelling that unambiguously picks an offered
+  option (canonical line or rendered echo with optional marker prefix and
+  appended rationale, bare label, 1-based number, or letter), and the system
+  prompt renders choice questions with their canonical option lines plus the
+  accepted answer forms. The offered-option invariant of the OPERATOR-INBOX-012
+  tamper guard and single/multi selection counting are unchanged.
 - Persist extracted answer/evidence context for the facet-confidence segment.
   Update canonical RDR/LLD/EARS through normal design PRs when intent changes.
 

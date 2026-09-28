@@ -159,15 +159,32 @@ module ChatSessions
     # ClarifyingQuestions::OpenChat before the session row is inserted, so
     # this section never performs GitHub I/O while ChatSessions::Create's
     # insert transaction is open.
+    # @spec QUESTION-EXPLORATION-016
     def clarifying_questions_context
       issue = clarifying_question_issue
       questions = Array(chat_session.metadata&.dig("clarifying_questions"))
       <<~PROMPT.strip
         ## Clarifying Questions for #{issue.is_pull_request? ? "PR" : "Issue"} ##{issue.github_number}: #{issue.title}
-        #{questions.each_with_index.map { |question, index| "#{index + 1}. #{question}" }.join("\n")}
+        #{questions.each_with_index.map { |question, index| render_pending_question(question, index:) }.join("\n")}
 
-        Help the user explore these questions and ask focused follow-ups when needed. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
+        Help the user explore these questions and ask focused follow-ups when needed. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
       PROMPT
+    end
+
+    # @spec QUESTION-EXPLORATION-016
+    # Choice questions are rendered with their canonical option lines (not the
+    # folded `- ( ) Label) text` marker form stored in the snapshot) so the
+    # assistant can echo a selectable string exactly as the validator accepts
+    # it. Free-text questions render unchanged.
+    def render_pending_question(question, index:)
+      choices = ClarifyingQuestions::Choices.call(question: question)
+      return "#{index + 1}. #{question}" if choices.nil?
+
+      prose = question.split(ClarifyingQuestions::Choices::ANY_MARKER).first.to_s.strip
+      option_lines = choices[:options].map do |option|
+        "   - #{ClarifyingQuestions::ChoiceAnswers.option_line(label: option[:label], text: option[:text])}"
+      end
+      ([ "#{index + 1}. #{prose}" ] + option_lines).join("\n")
     end
 
     def cross_project_context
