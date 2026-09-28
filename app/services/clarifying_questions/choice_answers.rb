@@ -108,20 +108,39 @@ module ClarifyingQuestions
     # True when a selection line picks one of the question's offered options
     # in any accepted spelling: the canonical `Label (text)` line or the
     # rendered `Label) text` echo (either may carry appended rationale), the
-    # bare label, the 1-based number, or the letter. Matching is
-    # case-insensitive; the label and the identifiers match the whole line so
-    # they cannot be stretched into unrelated prose.
+    # bare label, the 1-based number, or the letter. Canonical lines identify
+    # their option through its text; shorthand must identify exactly one option.
+    # Matching is case-insensitive; the label and identifiers match the whole
+    # line so they cannot be stretched into unrelated prose.
     def offered_selection?(selection, choices:)
       cleaned = selection.sub(MARKER_PREFIX_PATTERN, "").downcase
-      choices[:options].each_with_index.any? do |option, index|
-        exact_matches = [ option[:label], (index + 1).to_s, (65 + index).chr ].map(&:downcase)
-        next true if exact_matches.include?(cleaned)
 
-        cleaned.start_with?(
-          option_line(label: option[:label], text: option[:text]).downcase,
-          "#{option[:label]}) #{option[:text]}".downcase
-        )
+      return true if canonical_selection?(cleaned, choices:)
+
+      shorthand_match_count(cleaned, choices:) == 1
+    end
+
+    def canonical_selection?(cleaned, choices:)
+      choices[:options].any? do |option|
+        canonical_option_prefixes(option).any? { |prefix| cleaned.start_with?(prefix) }
       end
+    end
+
+    def canonical_option_prefixes(option)
+      [
+        option_line(label: option[:label], text: option[:text]),
+        "#{option[:label]}) #{option[:text]}"
+      ].map(&:downcase)
+    end
+
+    def shorthand_match_count(cleaned, choices:)
+      choices[:options].each_with_index.count do |option, index|
+        shorthand_for(option, index).include?(cleaned)
+      end
+    end
+
+    def shorthand_for(option, index)
+      [ option[:label], (index + 1).to_s, (65 + index).chr ].map(&:downcase)
     end
 
     def format_error(message, position)

@@ -14,6 +14,16 @@ RSpec.describe ClarifyingQuestions::ChoiceAnswers, :no_db do
       "- [ ] Chrome) primary browser " \
       "- [ ] Firefox) required by the support team"
   end
+  let(:ambiguous_shorthand_question) do
+    "Which deployment should we use? " \
+      "- ( ) B) blue deployment " \
+      "- ( ) A) green deployment"
+  end
+  let(:ambiguous_number_question) do
+    "Which deployment should we use? " \
+      "- ( ) 2) blue deployment " \
+      "- ( ) A) green deployment"
+  end
   let(:free_text_question) { "What is the expected behavior?" }
 
   describe ".option_line" do
@@ -181,6 +191,19 @@ RSpec.describe ClarifyingQuestions::ChoiceAnswers, :no_db do
           .to include("isn't one of the offered options")
         expect(described_class.error_for(question: single_question, answer: "Z"))
           .to include("isn't one of the offered options")
+      end
+
+      it "rejects shorthand that identifies more than one offered option" do
+        expect(described_class.error_for(question: ambiguous_shorthand_question, answer: "B"))
+          .to include("isn't one of the offered options")
+        expect(described_class.error_for(question: ambiguous_number_question, answer: "2"))
+          .to include("isn't one of the offered options")
+      end
+
+      it "accepts the canonical option text when its label conflicts with another option's letter" do
+        answer = "B (blue deployment) - lower operational overhead"
+
+        expect(described_class.error_for(question: ambiguous_shorthand_question, answer: answer)).to be_nil
       end
 
       it "rejects an identifier that starts a longer non-offered answer" do
