@@ -41,8 +41,8 @@ RSpec.describe AdjustDefaultAgentRunTimeouts, :aggregate_failures do
     expect(explicit_3600_setting.reload.agent_timeout_seconds).to eq(3600)
     expect(project_default.reload.max_execution_seconds).to eq(7200)
     expect(explicit_3600_project.reload.max_execution_seconds).to eq(3600)
-    expect(default_for(:user_settings, :agent_timeout_seconds)).to eq(5400)
-    expect(default_for(:projects, :max_execution_seconds)).to eq(7200)
+    expect(default_for(:user_settings, :agent_timeout_seconds)).to eq("5400")
+    expect(default_for(:projects, :max_execution_seconds)).to eq("7200")
   end
 
   it "reverts untouched backfilled rows and restores legacy defaults on down without clobbering explicit values" do
@@ -61,8 +61,8 @@ RSpec.describe AdjustDefaultAgentRunTimeouts, :aggregate_failures do
     expect(explicit_5400_setting.reload.agent_timeout_seconds).to eq(5400)
     expect(untouched_project.reload.max_execution_seconds).to eq(3600)
     expect(explicit_7200_project.reload.max_execution_seconds).to eq(7200)
-    expect(default_for(:user_settings, :agent_timeout_seconds)).to eq(3600)
-    expect(default_for(:projects, :max_execution_seconds)).to eq(3600)
+    expect(default_for(:user_settings, :agent_timeout_seconds)).to eq("3600")
+    expect(default_for(:projects, :max_execution_seconds)).to eq("3600")
   end
 
   private

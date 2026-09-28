@@ -3,7 +3,7 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 8.1.3"
+gem "rails", "~> 8.1.4"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
 # Use postgresql as the database for Active Record
@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.2.5"
+gem "avo", "4.2.6"
 
 # Pin json to 2.x. json 3.0.0 changed JSON.parse/json options to
 # keyword-only arguments, which is incompatible with Rails 8.1.x's
@@ -78,7 +78,7 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-gem "agent-harness", "0.38.0"
+gem "agent-harness", "0.39.0"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
