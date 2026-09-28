@@ -53,4 +53,15 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
     expect(rendered).to include('href="/chat/42"')
     expect(rendered).to include("Investigate CI failure")
   end
+
+  it "truncates the displayed title while retaining the full title as a tooltip" do
+    session_title = "Clarifying questions for owner-with-a-very-long-name/repository-with-a-very-long-name#3445"
+    allow(view).to receive(:chat_session_title).with(chat_session).and_return(session_title)
+
+    render partial: "chat_sessions/session_card", locals: { chat_session: chat_session }
+
+    title = Nokogiri::HTML.fragment(rendered).at_css("p.font-semibold")
+    expect(title["class"]).to include("truncate")
+    expect(title["title"]).to eq(session_title)
+  end
 end

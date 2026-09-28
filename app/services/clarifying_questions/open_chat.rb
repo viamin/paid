@@ -2,8 +2,6 @@
 
 module ClarifyingQuestions
   class OpenChat
-    TITLE = "Clarifying questions"
-
     def self.call(...)
       new(...).call
     end
@@ -23,11 +21,13 @@ module ClarifyingQuestions
 
     attr_reader :issue, :user
 
+    # @spec QUESTION-EXPLORATION-001
     def existing_chat
       chat = ChatSession.where(clarifying_question_issue: issue).order(updated_at: :desc).first
       return unless chat
 
       ChatSessions::Unarchive.call(chat_session: chat) if chat.archived?
+      chat.update!(title:) unless chat.title == title
       chat
     end
 
@@ -44,13 +44,17 @@ module ClarifyingQuestions
         account: issue.project.account,
         user: user,
         project_id: issue.project_id,
-        title: TITLE,
+        title:,
         metadata: {
           "clarifying_question_issue_id" => issue.id,
           "clarifying_questions" => questions
         },
         clarifying_question_issue: issue
       )
+    end
+
+    def title
+      "Clarifying questions for #{issue.project.full_name}##{issue.github_number}"
     end
   end
 end

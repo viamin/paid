@@ -25,8 +25,9 @@ actions.
 - `ChatSession#clarifying_question_issue` separately links the shipped shared exploration
   flow to its inbox issue or PR. The database permits one non-archived chat
   per linked item; concurrent opens converge on it, and an archived linked
-  chat is restored rather than replaced. It is created under the initiating
-  user's account with the generic title "Clarifying questions".
+  chat is restored rather than replaced. Its title identifies the linked
+  repository and issue or PR number (`Clarifying questions for owner/repo#123`)
+  whenever it is created or reopened.
 - Extend `ChatMessage` with actor and question/facet context and typed diagram
   references. Keep domain records for answers separate from transcript text;
   archiving a conversation must not destroy the feature's intent.

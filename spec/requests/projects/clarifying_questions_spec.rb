@@ -289,7 +289,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       chat = ChatSession.find_by(clarifying_question_issue: issue)
       expect(chat.created_by).to eq(user)
       expect(chat.account).to eq(account)
-      expect(chat.title).to eq("Clarifying questions")
+      expect(chat.title).to eq("Clarifying questions for #{project.full_name}##{issue.github_number}")
       expect(chat.metadata["clarifying_questions"]).to eq(
         [ "What is the expected behavior?", "Should this be behind a flag?" ]
       )
