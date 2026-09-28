@@ -251,6 +251,16 @@
   disclosure body), `app/javascript/controllers/chat_controller.js#toggleCapabilityActions`,
   `app/views/chat_sessions/_popup.html.erb` (established pattern).
 
+- [x] **CHAT-API-020** — When a chat transcript renders a completed or
+  otherwise non-pending tool call, it SHALL use a muted card silhouette with a
+  visible left rail and WCAG AA light-mode summary text contrast, so it is
+  distinguishable from assistant prose without reading its label. The treatment
+  SHALL remain consistent while collapsed and expanded, including around the
+  dark payload block. A pending confirmation SHALL retain its existing amber
+  approval treatment as the transcript's loudest visual signal.
+  *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`.
+  *Code:* `app/views/chat_messages/_tool_call.html.erb`.
+
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
   client for a project, the system SHALL prefer the project's own credential
