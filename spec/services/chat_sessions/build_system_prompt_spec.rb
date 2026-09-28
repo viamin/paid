@@ -470,6 +470,30 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       end
 
       # @spec QUESTION-EXPLORATION-016
+      # The validator must accept every option line exactly as the prompt
+      # renders it (with the leading Markdown list marker), or the
+      # assistant's verbatim echo would be rejected as a non-offered
+      # selection even though it picks an offered option.
+      it "renders choice options the validator accepts as offered selections" do
+        question = "Which storage backend should the export use? " \
+                   "- ( ) SQLite) local file, zero setup " \
+                   "- ( ) Postgres) already used for app data"
+        chat_session.update!(metadata: {
+          "clarifying_question_issue_id" => issue.id,
+          "clarifying_questions" => [ question ]
+        })
+
+        rendered_lines = prompt.lines.map(&:chomp).select { |line| line.match?(/\A\s*-\s+/) && line.include?("(") }
+
+        aggregate_failures do
+          rendered_lines.each do |line|
+            answer = line.strip
+            expect(ClarifyingQuestions::ChoiceAnswers.error_for(question: question, answer: answer)).to be_nil
+          end
+        end
+      end
+
+      # @spec QUESTION-EXPLORATION-016
       it "tells the assistant which answer forms the validator accepts for choice questions" do
         chat_session.update!(metadata: {
           "clarifying_question_issue_id" => issue.id,

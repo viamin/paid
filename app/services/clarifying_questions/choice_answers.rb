@@ -32,8 +32,11 @@ module ClarifyingQuestions
     OTHER_LINE_PATTERN = /\AOther:\s+(.*)\z/.freeze
     DETAILS_LINE_PATTERN = /\ADetails:\s+(.*)\z/.freeze
     # Leading choice-marker spellings a chat answer may echo from the
-    # rendered question: `- ( ) `, `( ) `, `- [ ] `, `[x] `, and `- [x] `.
-    MARKER_PREFIX_PATTERN = /\A(?:-\s*)?(?:\(\s*\)|\[\s*[xX]?\s*\])\s+/.freeze
+    # rendered question: `- ( ) `, `( ) `, `- [ ] `, `[x] `, and `- [x] `,
+    # plus the bare `- ` Markdown list marker that wraps the option line the
+    # prompt actually renders. The dash variant is greedy with `?`/backtrack
+    # so `- ( ) Label ...` still peels off the checkbox marker first.
+    MARKER_PREFIX_PATTERN = /\A(?:-\s*)?(?:\(\s*\)|\[\s*[xX]?\s*\])?\s+/.freeze
 
     module_function
 

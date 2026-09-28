@@ -154,6 +154,16 @@ RSpec.describe ClarifyingQuestions::ChoiceAnswers, :no_db do
         expect(described_class.error_for(question: multi_question, answer: "- [x] Firefox) required by the support team")).to be_nil
       end
 
+      # Regression for the prompt-rendered Markdown list item: each option
+      # line is shown to the assistant as `- Label (text)`, so echoing that
+      # line verbatim must validate as an offered option.
+      it "accepts the option line as the prompt renders it (with the leading Markdown list marker)" do
+        expect(described_class.error_for(question: single_question, answer: "- SQLite (local file, zero setup)")).to be_nil
+        expect(described_class.error_for(question: single_question, answer: "- Postgres (already used for app data)")).to be_nil
+        expect(described_class.error_for(question: multi_question, answer: "- Chrome (primary browser)")).to be_nil
+        expect(described_class.error_for(question: multi_question, answer: "- Firefox (required by the support team)")).to be_nil
+      end
+
       it "accepts rationale appended after the option text" do
         answer = "SQLite (local file, zero setup) - ops already approved this"
 
