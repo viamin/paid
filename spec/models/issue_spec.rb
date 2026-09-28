@@ -2383,6 +2383,7 @@ RSpec.describe Issue do
     let(:issue) { create(:issue, project: project) }
 
     it "stamps the abandonment timestamp and reason" do
+      # @spec OPERATOR-INBOX-002F
       freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
       travel_to(freeze_time) do
         issue.abandon_due_to_runner_retry_cap!(
@@ -2394,7 +2395,18 @@ RSpec.describe Issue do
         issue.reload
         expect(issue.runner_retry_abandoned_at).to eq(freeze_time)
         expect(issue.runner_retry_abandon_reason).to eq("all capped")
+        expect(issue.runner_retry_abandonment_count).to eq(1)
       end
+    end
+
+    # @spec OPERATOR-INBOX-002F
+    it "increments the return count after clearing and re-abandoning" do
+      issue.abandon_due_to_runner_retry_cap!(reason: "first", cap: 10, runner_keys: [ "claude" ])
+      issue.clear_runner_retry_abandonment!
+
+      issue.abandon_due_to_runner_retry_cap!(reason: "second", cap: 10, runner_keys: [ "claude" ])
+
+      expect(issue.reload.runner_retry_abandonment_count).to eq(2)
     end
 
     it "is idempotent when the issue is already abandoned" do
@@ -2517,6 +2529,7 @@ RSpec.describe Issue do
     let(:issue) { create(:issue, project: project) }
 
     it "stamps the abandonment timestamp and a push-prefixed reason" do
+      # @spec OPERATOR-INBOX-002F
       freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
       travel_to(freeze_time) do
         issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
@@ -2524,6 +2537,7 @@ RSpec.describe Issue do
         issue.reload
         expect(issue.runner_retry_abandoned_at).to eq(freeze_time)
         expect(issue.runner_retry_abandon_reason).to eq("Push rejected: App lacks workflows permission")
+        expect(issue.runner_retry_abandonment_count).to eq(1)
       end
     end
 

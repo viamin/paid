@@ -1057,13 +1057,17 @@ class Issue < ApplicationRecord
     runner_retry_abandoned_at.present?
   end
 
-  # Marks the issue as abandoned due to the retry cap. Idempotent: a no-op when
-  # the issue is already abandoned. Emits a structured log event so monitoring
-  # can track how many issues are abandoned due to the retry cap.
+  # Marks the issue as abandoned due to the retry cap. Idempotent for an active
+  # abandonment, while retaining the number of distinct entries into the lane.
+  # @spec OPERATOR-INBOX-002F
   def abandon_due_to_runner_retry_cap!(reason:, cap:, runner_keys:)
     return if runner_retry_abandoned_at.present?
 
-    update!(runner_retry_abandoned_at: Time.current, runner_retry_abandon_reason: reason)
+    update!(
+      runner_retry_abandoned_at: Time.current,
+      runner_retry_abandon_reason: reason,
+      runner_retry_abandonment_count: runner_retry_abandonment_count + 1
+    )
 
     Rails.logger.info(
       message: "issue.runner_retry_abandoned",
@@ -1147,11 +1151,16 @@ class Issue < ApplicationRecord
   # so re-enqueuing only wastes runs. Reuses the runner_retry_abandoned_at gate
   # (already filtered out of auto-pick and cleared on a successful manual run).
   # Idempotent: a no-op when the issue is already abandoned.
+  # @spec OPERATOR-INBOX-002F
   def abandon_due_to_push_permission_rejection!(reason:)
     reason = "#{PUSH_PERMISSION_ABANDON_PREFIX} #{reason}" unless reason.to_s.start_with?(PUSH_PERMISSION_ABANDON_PREFIX)
     return if runner_retry_abandoned_at.present?
 
-    update!(runner_retry_abandoned_at: Time.current, runner_retry_abandon_reason: reason)
+    update!(
+      runner_retry_abandoned_at: Time.current,
+      runner_retry_abandon_reason: reason,
+      runner_retry_abandonment_count: runner_retry_abandonment_count + 1
+    )
 
     Rails.logger.info(
       message: "issue.push_permission_abandoned",

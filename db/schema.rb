@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_074129) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_28_164429) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2005,6 +2005,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_074129) do
     t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
+    t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
