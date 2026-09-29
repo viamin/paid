@@ -3074,6 +3074,31 @@ RSpec.describe "Projects" do
       end
     end
 
+    # @spec UPSTREAM-GATE-004
+    context "when the project targets PRs at the upstream repository" do
+      before { sign_in user }
+
+      it "redirects with an alert and leaves auto_merge_mode off" do
+        project = create(:project, :upstream_pr_target, account: account, github_token: github_token)
+
+        post toggle_auto_merge_project_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to include("Auto-merge is not available")
+        expect(project.reload.auto_merge_mode).to eq("off")
+      end
+
+      it "does not cycle auto_merge_mode even when the request asks for turbo_stream" do
+        project = create(:project, :upstream_pr_target, account: account, github_token: github_token)
+
+        post toggle_auto_merge_project_path(project),
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.auto_merge_mode).to eq("off")
+      end
+    end
+
     context "when authenticated as viewer" do
       let(:viewer_user) { create(:user, :viewer, account: account) }
 
