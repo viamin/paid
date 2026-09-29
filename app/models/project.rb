@@ -1373,6 +1373,8 @@ class Project < ApplicationRecord
   # fallback (driven by AgentExecutionWorkflow after every agent run)
   # would request bot reviews on projects that have opted out of review.
   def review_bot_request_login
+    return nil unless upstream_feature_enabled?(:pr_reviews)
+
     automation_configuration.auto_review.bot_request_login
   end
 
@@ -1382,6 +1384,8 @@ class Project < ApplicationRecord
   # primary is unavailable (e.g. Copilot rate-limited). Returns +[]+ when
   # reviews are globally disabled or no bot-backed method is enabled.
   def review_bot_request_chain
+    return [] unless upstream_feature_enabled?(:pr_reviews)
+
     automation_configuration.auto_review.bot_request_chain
   end
 
