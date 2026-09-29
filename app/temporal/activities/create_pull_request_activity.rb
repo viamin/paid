@@ -184,7 +184,7 @@ module Activities
     def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
         pull_request_repository(project),
-        head: pull_request_head(project, branch_name),
+        head: existing_pr_head(project, branch_name),
         state: "open"
       )
       existing.first
@@ -315,6 +315,16 @@ module Activities
     def pull_request_head(project, branch_name)
       return branch_name unless project.upstream_pr_target?
 
+      "#{project.owner}:#{branch_name}"
+    end
+
+    # The existing-PR lookup filter is always owner-qualified: for local runs
+    # the qualified form matches same-repo heads, and for upstream runs it is
+    # required to match the cross-repo fork head. A bare branch filter can
+    # fail to match an already-open PR, so a retry would attempt a second
+    # create, hit the 422 already-exists conflict, and repeat the same
+    # failed bare-head lookup instead of reusing the PR.
+    def existing_pr_head(project, branch_name)
       "#{project.owner}:#{branch_name}"
     end
 
