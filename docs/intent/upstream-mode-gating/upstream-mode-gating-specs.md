@@ -74,7 +74,10 @@
   `upstream_owner` and `upstream_repo` SHALL also be rejected
   (`upstream_target_requires_upstream_repo`). Switching `pr_target` back
   to `"own_repo"` SHALL clear the gate and restore normal validation
-  behavior so the previously-stored gated values can be saved.
+  behavior so the previously-stored gated values can be saved. When the
+  upstream target is incomplete, the edit form SHALL preserve the selected
+  upstream state and display the upstream fields and their validation errors
+  so the user can correct the configuration.
   `ProjectsController#toggle_auto_merge` SHALL redirect with an alert
   and SHALL NOT cycle `auto_merge_mode` when the project targets PRs
   upstream, so the toggle cannot turn auto-merge on in upstream mode

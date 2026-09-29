@@ -2330,6 +2330,21 @@ RSpec.describe "Projects" do
           expect(project.reload.pr_target).to eq("own_repo")
         end
 
+        it "keeps the upstream fields visible after an incomplete upstream target is rejected" do # @spec UPSTREAM-GATE-004
+          [ { upstream_owner: "", upstream_repo: "widgets" }, { upstream_owner: "acme", upstream_repo: "" } ].each do |target|
+            patch project_path(project), params: { project: { pr_target: "upstream", **target } }
+
+            expect(response).to have_http_status(:unprocessable_content)
+            expect(response.body).to match(/value="upstream"[^>]*checked="checked"/)
+            expect(response.body).to include(
+              '<div class="mt-4 grid grid-cols-2 gap-3" data-project-settings-form-target="prTargetUpstreamPanel">'
+            )
+            expect(response.body).to include("Upstream owner")
+            expect(response.body).to include("Upstream repository")
+            expect(response.body).to include("is required when PR target is upstream")
+          end
+        end
+
         it "rejects upstream_full_name matching the project's own repository" do # @spec PR-TARGET-008
           patch project_path(project), params: {
             project: { pr_target: "upstream", upstream_full_name: "stenoai/stenoai" }

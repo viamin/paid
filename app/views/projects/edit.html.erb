@@ -285,7 +285,7 @@
             </div>
           </fieldset>
 
-          <% pr_target_upstream = @project.upstream_pr_target? %>
+          <% pr_target_upstream = @project.pr_target == "upstream" %>
           <% prefill_owner = @project.upstream_owner.presence || @upstream_prefill&.upstream_owner %>
           <% prefill_repo = @project.upstream_repo.presence || @upstream_prefill&.upstream_repo %>
           <fieldset id="pr-target" class="rounded-md border border-gray-200 p-4">
