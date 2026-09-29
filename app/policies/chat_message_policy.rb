@@ -8,7 +8,7 @@ class ChatMessagePolicy < ApplicationPolicy
   def create?
     return false unless user_in_account?
     # @spec QUESTION-EXPLORATION-001
-    return false if chat_session.interactive_inbox_chat? && chat_session.closed?
+    return false if chat_session.archived?
     return chat_session_visible? if chat_session.interactive_inbox_chat?
 
     has_any_account_role?(:owner, :admin, :member)
