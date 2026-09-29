@@ -167,6 +167,15 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-09-29
+  upstream-issue-pickup:
+    title: Upstream Issue Pickup
+    path: docs/intent/upstream-issue-pickup/upstream-issue-pickup-design.md
+    specs: docs/intent/upstream-issue-pickup/upstream-issue-pickup-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: MAPPED
+    sampled: 2026-09-29
+    blockedBy: [upstream-pr-target]
   toolchain-pin-management:
     title: Toolchain Pin Management
     path: docs/intent/toolchain-pin-management/toolchain-pin-management-design.md

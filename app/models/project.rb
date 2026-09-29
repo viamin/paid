@@ -455,6 +455,22 @@ class Project < ApplicationRecord
     upstream_full_name.presence
   end
 
+  # Repository from which this project reads work items. Forks configured to
+  # contribute upstream do not have an independent issue tracker; their
+  # trusted work items live beside the target pull requests. @spec UPSTREAM-ISSUE-001
+  def issue_target_repository
+    pr_target_repository
+  end
+
+  # Upstream issues are public input. Only an explicitly allowlisted human or
+  # the owner of the configured fork may introduce that input into Paid.
+  # @spec UPSTREAM-ISSUE-002
+  def trusted_upstream_issue_author?(login)
+    return false if login.blank?
+
+    trusted_github_user?(login) || owner.casecmp?(login)
+  end
+
   # @spec PR-TARGET-002, PR-TARGET-003
   def upstream_disabled?(attribute)
     upstream_pr_target? && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)

@@ -138,6 +138,25 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(project.issues.find_by(github_number: 42, is_pull_request: true).parent_issue).to eq(issue)
     end
 
+    it "opens the PR against the upstream issue repository and closes the synced upstream issue" do # @spec UPSTREAM-ISSUE-003
+      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+      allow(github_client).to receive(:repository)
+        .with("stenolabs/stenoai")
+        .and_return(OpenStruct.new(default_branch: "main"))
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        "stenolabs/stenoai",
+        base: "main",
+        head: "#{project.owner}:#{agent_run.branch_name}",
+        title: anything,
+        body: a_string_including("Closes ##{issue.github_number}"),
+        draft: true
+      )
+      expect(github_client).to have_received(:issue).with("stenolabs/stenoai", 42)
+    end
+
     # @spec SESSION-SUMMARY-001
     it "enqueues session-summary capture once the pull request is created" do
       expect { activity.execute(agent_run_id: agent_run.id) }

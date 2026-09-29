@@ -182,7 +182,7 @@ module Activities
 
     def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
-        project.full_name,
+        pull_request_repository(project),
         head: "#{project.owner}:#{branch_name}",
         state: "open"
       )
@@ -248,8 +248,8 @@ module Activities
     # permission to duplicate work.
     def reconcile_missing_source_pull_requests!(client, project, source_issue)
       missing_pull_request_numbers(project, source_issue).each do |number|
-        client.pull_request(project.full_name, number)
-        github_issue = client.issue(project.full_name, number)
+        client.pull_request(pull_request_repository(project), number)
+        github_issue = client.issue(pull_request_repository(project), number)
         Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
       rescue GithubClient::NotFoundError
         next
@@ -284,13 +284,30 @@ module Activities
 
     def create_pull_request(client, project, agent_run, issue, pr_body)
       client.create_pull_request(
-        project.full_name,
-        base: project.default_branch,
-        head: agent_run.branch_name,
+        pull_request_repository(project),
+        base: pull_request_base(client, project),
+        head: pull_request_head(project, agent_run.branch_name),
         title: pr_title(agent_run, issue),
         body: pr_body.fetch(:body),
         draft: true
       )
+    end
+
+    # @spec UPSTREAM-ISSUE-003
+    def pull_request_repository(project)
+      project.pr_target_repository
+    end
+
+    def pull_request_head(project, branch_name)
+      return branch_name unless project.upstream_pr_target?
+
+      "#{project.owner}:#{branch_name}"
+    end
+
+    def pull_request_base(client, project)
+      return project.default_branch unless project.upstream_pr_target?
+
+      client.repository(project.pr_target_repository).default_branch
     end
 
     # Persist the remote PR identity while holding the source lock. Completion
@@ -1001,6 +1018,16 @@ module Activities
 
     # @spec TDD-PR-001
     def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+      if project.upstream_pr_target?
+        logger.info(
+          message: "agent_execution.upstream_issue_write_skipped",
+          project_id: project.id,
+          pull_request_number: pr_number,
+          operation: "add_pr_labels"
+        )
+        return
+      end
+
       labels = []
       labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?
@@ -1017,12 +1044,12 @@ module Activities
 
     # @spec TDD-PR-001
     def refresh_pull_request_body(client, project, pr_number, body)
-      client.update_pull_request(project.full_name, pr_number, body: body)
+      client.update_pull_request(pull_request_repository(project), pr_number, body: body)
       sync_pull_request_record(client, project, pr_number)
     end
 
     def sync_pull_request_record(client, project, pr_number)
-      github_issue = client.issue(project.full_name, pr_number)
+      github_issue = client.issue(pull_request_repository(project), pr_number)
       Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
     rescue => e
       logger.warn(

@@ -452,6 +452,65 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when the project targets upstream pull requests" do # @spec UPSTREAM-ISSUE-001 UPSTREAM-ISSUE-002 UPSTREAM-ISSUE-003
+      let(:project) do
+        create(:project,
+          pr_target: "upstream",
+          upstream_full_name: "stenolabs/stenoai",
+          allowed_github_usernames: [ "trusted-maintainer" ])
+      end
+      let(:trusted_issue) { github_issue(91, id: 9091, title: "Trusted upstream issue") }
+      let(:untrusted_issue) do
+        github_issue(92, id: 9092, title: "Untrusted upstream issue").tap do |issue|
+          issue.user = OpenStruct.new(login: "outside-contributor")
+          issue.body = "This body must never be persisted or logged."
+        end
+      end
+
+      before do
+        trusted_issue.user = OpenStruct.new(login: "trusted-maintainer")
+        stub_issues_by_label(nil => [ trusted_issue, untrusted_issue ])
+      end
+
+      it "fetches and persists only trusted upstream issues" do
+        result = activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          "stenolabs/stenoai",
+          hash_including(labels: nil, state: "open")
+        )
+        expect(project.issues.pluck(:github_issue_id)).to contain_exactly(9091)
+        expect(result[:issues].map { |issue| issue[:github_number] }).to eq([ 91 ])
+      end
+
+      it "accepts the fork owner without requiring a duplicate allowlist entry" do
+        trusted_issue.user = OpenStruct.new(login: project.owner)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.issues.find_by(github_issue_id: 9091)).to be_present
+      end
+
+      it "logs skipped untrusted upstream issues without their body" do
+        allow(Rails.logger).to receive(:info)
+
+        activity.execute(project_id: project.id)
+
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "github_sync.untrusted_upstream_issue_skipped",
+          creator: "outside-contributor"
+        ))
+        expect(project.issues.find_by(github_issue_id: 9092)).to be_nil
+      end
+
+      it "does not mutate labels on trusted upstream issues" do # @spec UPSTREAM-ISSUE-004
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+      end
+    end
+
     # @spec ISSUE-ENHANCEMENT-016
     context "when a trusted collaborator edits the issue body" do
       let(:existing_issue) do
