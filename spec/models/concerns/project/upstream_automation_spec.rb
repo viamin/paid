@@ -168,6 +168,18 @@ RSpec.describe Project::UpstreamAutomation do
       expect(upstream_project.review_bot_request_chain).to eq([])
     end
 
+    it "does not expose configured review bots from legacy upstream settings" do
+      upstream_project.update_columns(review_settings: {
+        "enabled" => true,
+        "methods" => { "copilot" => { "enabled" => true } }
+      })
+      upstream_project.reload
+
+      expect(upstream_project.review_enabled?).to be false
+      expect(upstream_project.review_bot_request_login).to be_nil
+      expect(upstream_project.review_bot_request_chain).to eq([])
+    end
+
     it "disables auto-merge predicates even with a stored mode" do
       upstream_project.update_columns(auto_merge_mode: "all", allow_bot_authored_pr_auto_merge: true)
       upstream_project.reload
