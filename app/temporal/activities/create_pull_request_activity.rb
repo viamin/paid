@@ -397,7 +397,9 @@ module Activities
         end
       end
       best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
-      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) unless project.upstream_pr_target? }
+      best_effort(agent_run_id, context: "add_pr_labels") do
+        add_pr_labels(client, project, pr.number, agent_run, issue: issue) if project.upstream_feature_enabled?(:upstream_issue_labeling)
+      end
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
       best_effort(agent_run_id, context: "structured_log") do

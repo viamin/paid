@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Project::UpstreamAutomation do
-  # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002 UPSTREAM-GATE-003 UPSTREAM-GATE-004
+  # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002 UPSTREAM-GATE-003 UPSTREAM-GATE-004 UPSTREAM-GATE-006
   describe "#upstream_pr_target?" do
     it "is false for the default own_repo target" do
       expect(create(:project).upstream_pr_target?).to be false
@@ -94,7 +94,7 @@ RSpec.describe Project::UpstreamAutomation do
 
       expect(project).not_to be_valid
       expect(project.errors.attribute_names).to include(
-        :auto_add_labels_enabled, :inherit_priority_labels, :auto_fix_merge_conflicts
+        :auto_add_labels_enabled, :inherit_priority_labels
       )
       expect(project.reload.pr_target).to eq("own_repo")
     end
@@ -106,8 +106,7 @@ RSpec.describe Project::UpstreamAutomation do
         [ :auto_release_granularity, "patch_only", :auto_release_granularity ],
         [ :auto_add_labels_enabled, true, :auto_add_labels_enabled ],
         [ :inherit_priority_labels, true, :inherit_priority_labels ],
-        [ :owner_reviewer_login, "viamin", :owner_reviewer_login ],
-        [ :auto_fix_merge_conflicts, true, :auto_fix_merge_conflicts ]
+        [ :owner_reviewer_login, "viamin", :owner_reviewer_login ]
       ].each do |(attribute, value, error_attribute)|
         project = create(:project, :upstream_pr_target)
         project.public_send("#{attribute}=", value)
@@ -209,8 +208,10 @@ RSpec.describe Project::UpstreamAutomation do
       expect(upstream_project.pr_auto_labels_enabled?).to be false
     end
 
-    it "disables merge-conflict fixing" do
-      expect(upstream_project.auto_fix_merge_conflicts?).to be false
+    it "keeps merge-conflict fixing enabled" do
+      upstream_project.update!(auto_fix_merge_conflicts: true)
+
+      expect(upstream_project.auto_fix_merge_conflicts?).to be true
     end
 
     it "disables screenshots" do

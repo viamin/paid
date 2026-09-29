@@ -412,6 +412,9 @@ class ProjectsController < ApplicationController
 
   def ensure_labels
     authorize @project, :update?
+    unless @project.upstream_feature_enabled?(:upstream_issue_labeling)
+      return redirect_to edit_project_path(@project), alert: "Syncing labels to the upstream repository is unavailable in upstream mode."
+    end
 
     result = Projects::EnsureStandardLabels.call(project: @project)
 

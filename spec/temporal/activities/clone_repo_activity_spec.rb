@@ -147,6 +147,43 @@ RSpec.describe Activities::CloneRepoActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      context "when fixing a merge conflict for an upstream PR" do
+        let(:project) { create(:project, :upstream_pr_target) }
+        let(:fork_head) { OpenStruct.new(ref: "existing-feature-branch", repo: OpenStruct.new(full_name: project.full_name)) }
+        let(:pr_data) { OpenStruct.new(state: "open", head: fork_head) }
+
+        before do
+          agent_run.update!(focus: "merge_conflict")
+          allow(github_client).to receive(:pull_request)
+            .with(project.upstream_full_name, 135)
+            .and_return(pr_data)
+        end
+
+        it "checks out only the fork-owned head branch" do # @spec UPSTREAM-GATE-006
+          expect(git_ops).to receive(:clone_and_checkout_branch).with(
+            branch_name: "existing-feature-branch",
+            pull_request_number: 135
+          )
+
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(github_client).to have_received(:pull_request).with(project.upstream_full_name, 135)
+        end
+
+        it "rejects a conflict fix whose head is owned by the upstream repository" do # @spec UPSTREAM-GATE-006
+          upstream_head = OpenStruct.new(ref: "main", repo: OpenStruct.new(full_name: project.upstream_full_name))
+          allow(github_client).to receive(:pull_request)
+            .with(project.upstream_full_name, 135)
+            .and_return(OpenStruct.new(state: "open", head: upstream_head))
+
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /fork-owned PR head branch/) do |error|
+              expect(error.type).to eq("UpstreamConflictFixTargetRejected")
+            end
+          expect(git_ops).not_to have_received(:clone_and_checkout_branch)
+        end
+      end
+
       it "installs artifact excludes after checking out existing PR branch" do
         expect(git_ops).to receive(:clone_and_checkout_branch).ordered
         expect(git_ops).to receive(:install_artifact_excludes).ordered

@@ -34,11 +34,12 @@
 #   - `auto_merge`
 #   - `auto_release`
 #   - `auto_scan_prs`
-#   - `auto_fix_merge_conflicts`
 #   - `pr_labeling`
 #   - `owner_review_requests`
 #   - `draft_review_rounds`
 #   - `screenshots`
+#   - `upstream_issue_labeling`
+#   - `upstream_issue_comments`
 # - `upstream_automation_allowed?(feature)` — the capability check every
 #   gated feature must consult.
 # - `upstream_feature_enabled?(feature)` — capability check with the
@@ -57,7 +58,7 @@
 # while `pr_target` is `"upstream"`, the project cannot store an enabled
 # value for any gated setting (`auto_merge_mode`, `allow_bot_authored_pr_auto_merge`,
 # `auto_release_granularity`, `review_settings`, `auto_add_labels_enabled`,
-# `inherit_priority_labels`, `owner_reviewer_login`, `auto_fix_merge_conflicts`,
+# `inherit_priority_labels`, `owner_reviewer_login`,
 # `screenshot_settings`). The UI grays the settings out (#4076); the model
 # is the authority, so the form cannot be circumvented by a chat-driven
 # `update_project_settings` call or by a manual SQL update.
@@ -80,10 +81,11 @@
 #
 # ### Issue-side automation
 #
-# Issue polling, auto-pick, enhance, and issue labeling are deliberately
-# NOT gated: issues live in the project's own fork, which Paid controls.
-# Only PR-side automation (and the configuration that controls it) is
-# affected.
+# Issue polling, auto-pick, and enhancement remain available. Writes to
+# upstream issues (labels and comments) and Sync Labels are gated. Conflict
+# fixes remain available only after verifying that the PR head belongs to the
+# fork; a fix targeting an upstream-owned base branch is rejected before
+# checkout and push.
 #
 # ## Code
 #

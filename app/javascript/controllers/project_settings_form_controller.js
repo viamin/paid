@@ -34,9 +34,8 @@ const UPSTREAM_DISABLED_ATTRIBUTES = new Set([
   "max_draft_review_rounds",
   "max_pr_auto_continue_tokens",
   "auto_add_labels_enabled",
-  "generated_label_name",
-  "automation_label_name",
   "automation_on_label_enabled",
+  "sync_labels_to_github",
   "screenshot_settings"
 ])
 

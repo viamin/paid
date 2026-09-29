@@ -2010,6 +2010,7 @@ class Project < ApplicationRecord
       combined = "#{normalized_owner}/#{normalized_repo}"
       if combined.casecmp?(full_name)
         errors.add(:upstream_repo, "must differ from this project's repository (#{full_name})")
+        errors.add(:upstream_full_name, "must differ from this project's repository (#{full_name})")
       end
     end
 
@@ -2017,20 +2018,24 @@ class Project < ApplicationRecord
 
     if normalized_owner.blank?
       errors.add(:upstream_owner, "is required when PR target is upstream")
+      errors.add(:upstream_full_name, "is required when PR target is upstream")
     end
 
     if normalized_repo.blank?
       errors.add(:upstream_repo, "is required when PR target is upstream")
+      errors.add(:upstream_full_name, "is required when PR target is upstream")
     end
 
     return if normalized_owner.blank? || normalized_repo.blank?
 
     if normalized_owner !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?\z/
       errors.add(:upstream_owner, "must be a valid GitHub owner (letters, digits, hyphens)")
+      errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")
     end
 
     if normalized_repo !~ /\A[A-Za-z0-9._-]{1,100}\z/
       errors.add(:upstream_repo, "must be a valid GitHub repository name")
+      errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")
     end
   end
 

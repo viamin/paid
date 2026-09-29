@@ -188,6 +188,12 @@ module Project::UpstreamAutomation
     "#{upstream_owner}/#{upstream_repo}"
   end
 
+  def upstream_full_name=(value)
+    owner, repo = value.to_s.strip.split("/", 2)
+    self.upstream_owner = owner
+    self.upstream_repo = repo
+  end
+
   private
 
   # Upstream PR targeting is meaningless without the upstream repository to
