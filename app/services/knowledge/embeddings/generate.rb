@@ -77,21 +77,32 @@ module Knowledge
       def call(texts:)
         return [] if texts.empty?
 
-        self.class.results_from_body(request_embeddings(texts))
+        self.class.results_from_response(request_embeddings(texts))
       end
 
       Result = Struct.new(:vector, :token_count, keyword_init: true)
 
       def self.results_from_body(body)
-        embeddings = body.fetch("data").sort_by { |d| d["index"] }
+        embeddings = body.fetch("data").sort_by { |embedding| embedding["index"] }
         return [] if embeddings.empty?
 
-        total_tokens = body.dig("usage", "total_tokens") || 0
+        results_from_vectors(
+          embeddings.map { |embedding| embedding.fetch("embedding") },
+          body.dig("usage", "total_tokens") || 0
+        )
+      end
 
-        embeddings.map do |entry|
+      def self.results_from_response(response)
+        results_from_vectors(response.vectors, response.usage.fetch(:input_tokens) || 0)
+      end
+
+      def self.results_from_vectors(vectors, total_tokens)
+        return [] if vectors.empty?
+
+        vectors.map do |vector|
           Result.new(
-            vector: entry.fetch("embedding"),
-            token_count: total_tokens / embeddings.size
+            vector: vector,
+            token_count: total_tokens / vectors.size
           )
         end
       end
@@ -106,11 +117,11 @@ module Knowledge
           sleep_fn: method(:sleep)
         ) do
           AgentHarness.embed(
-            texts,
+            inputs: texts,
             model: model,
             dimensions: dimensions,
-            base_url: normalized_base_url,
-            api_key: api_key,
+            endpoint: normalized_base_url,
+            credentials: { api_key: api_key },
             headers: request_headers,
             timeout:
           )
