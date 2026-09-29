@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  upstream-pull-requests:
+    title: Upstream Pull Requests
+    path: docs/intent/upstream-pull-requests/upstream-pull-requests-design.md
+    specs: docs/intent/upstream-pull-requests/upstream-pull-requests-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: MAPPED
+    next: "Open fork branches as draft pull requests against an upstream repository"
   question-exploration:
     title: Question-Centered Chat Exploration
     path: docs/intent/question-exploration/question-exploration-design.md

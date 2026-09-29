@@ -23,6 +23,7 @@ class Project < ApplicationRecord
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
   PAID_AGENT_REVIEW_BOT_ALLOWLIST_LOGINS = %w[paid-code-reviewer[bot]].freeze
   GITHUB_AUTH_SOURCES = %w[app pat].freeze
+  PR_TARGETS = %w[fork upstream].freeze
   SCREENSHOT_DRIVERS = {
     "playwright" => "Best for modern browser flows and JavaScript-heavy apps.",
     "cuprite" => "Best for Rails and other server-rendered apps using Capybara."
@@ -360,6 +361,8 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
+  validates :pr_target, inclusion: { in: PR_TARGETS }
+  validates :upstream_full_name, presence: true, if: :upstream_pr_target?
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :exactly_one_github_credential, if: :validate_github_credential_presence?
@@ -402,6 +405,11 @@ class Project < ApplicationRecord
 
   def full_name
     "#{owner}/#{repo}"
+  end
+
+  # @spec UPSTREAM-PR-001
+  def upstream_pr_target?
+    pr_target == "upstream"
   end
 
   # Normalized primary language key (downcased) used by the prompt-building

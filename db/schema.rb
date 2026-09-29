@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_164429) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_181306) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2876,6 +2876,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_164429) do
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
     t.text "webhook_secret"
+    t.string "upstream_full_name", comment: "Repository that receives cross-repository pull requests when pr_target is upstream"
+    t.string "pr_target", default: "fork", null: false, comment: "Pull request destination: fork or upstream"
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true

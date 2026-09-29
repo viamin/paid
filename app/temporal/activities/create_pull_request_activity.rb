@@ -13,7 +13,7 @@ module Activities
         project = agent_run.project
         issue = agent_run.issue
 
-        client = project.client
+        client = pull_request_client(project)
         # Pre-run guard: verify the branch exists on GitHub and check for
         # an existing open PR. This eliminates orphan branches (#1125) by
         # ensuring a PR is always created when the branch is present.
@@ -180,10 +180,11 @@ module Activities
       true
     end
 
+    # @spec UPSTREAM-PR-002
     def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
-        project.full_name,
-        head: "#{project.owner}:#{branch_name}",
+        pull_request_repository(project),
+        head: pull_request_head(project, branch_name),
         state: "open"
       )
       existing.first
@@ -210,6 +211,7 @@ module Activities
       pr = create_pull_request_for_source_issue(client, project, agent_run, issue, pr_body)
       [ pr, "created" ]
     rescue GithubClient::ApiError => e
+      raise_upstream_permission_error!(project, e) if upstream_permission_error?(e)
       raise e unless pr_already_exists_error?(e)
 
       logger.info(
@@ -223,6 +225,18 @@ module Activities
 
       reserve_pull_request!(agent_run, reused)
       [ reused, "reused" ]
+    rescue GithubClient::AuthenticationError => e
+      raise_upstream_permission_error!(project, e)
+    end
+
+    def raise_upstream_permission_error!(project, error)
+      raise error unless project.upstream_pr_target?
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Unable to create upstream pull request: configure an active PAT fallback with access to #{project.upstream_full_name}",
+        type: "UpstreamPullRequestPermissionDenied",
+        non_retryable: true
+      )
     end
 
     # @spec EAGER-QUEUE-010
@@ -282,15 +296,40 @@ module Activities
         &.issue
     end
 
+    # @spec UPSTREAM-PR-002
     def create_pull_request(client, project, agent_run, issue, pr_body)
       client.create_pull_request(
-        project.full_name,
-        base: project.default_branch,
-        head: agent_run.branch_name,
+        pull_request_repository(project),
+        base: pull_request_base(client, project),
+        head: pull_request_head(project, agent_run.branch_name),
         title: pr_title(agent_run, issue),
         body: pr_body.fetch(:body),
         draft: true
       )
+    end
+
+    def pull_request_repository(project)
+      project.upstream_pr_target? ? project.upstream_full_name : project.full_name
+    end
+
+    def pull_request_head(project, branch_name)
+      return branch_name unless project.upstream_pr_target?
+
+      "#{project.owner}:#{branch_name}"
+    end
+
+    def pull_request_base(client, project)
+      return project.default_branch unless project.upstream_pr_target?
+
+      Rails.cache.fetch([ "upstream-default-branch", project.cache_key_with_version, project.upstream_full_name ], expires_in: 1.hour) do
+        client.repository(project.upstream_full_name).default_branch
+      end
+    end
+
+    def pull_request_client(project)
+      return project.client unless project.upstream_pr_target?
+
+      project.git_push_fallback_client || project.client
     end
 
     # Persist the remote PR identity while holding the source lock. Completion
@@ -314,6 +353,10 @@ module Activities
       return false unless error.respond_to?(:status) && error.status == 422
 
       error.message.to_s.match?(/a pull request already exists|pull request.*already exist/i)
+    end
+
+    def upstream_permission_error?(error)
+      error.status == 403
     end
 
     def best_effort(agent_run_id, context: nil)
@@ -344,7 +387,7 @@ module Activities
         end
       end
       best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
-      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) }
+      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) unless project.upstream_pr_target? }
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
       best_effort(agent_run_id, context: "structured_log") do
@@ -1017,13 +1060,17 @@ module Activities
 
     # @spec TDD-PR-001
     def refresh_pull_request_body(client, project, pr_number, body)
-      client.update_pull_request(project.full_name, pr_number, body: body)
+      client.update_pull_request(pull_request_repository(project), pr_number, body: body)
       sync_pull_request_record(client, project, pr_number)
     end
 
     def sync_pull_request_record(client, project, pr_number)
-      github_issue = client.issue(project.full_name, pr_number)
-      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+      github_issue = client.issue(pull_request_repository(project), pr_number)
+      Issues::UpsertFromGithub.call(
+        project: project,
+        github_issue: github_issue,
+        source: project.upstream_pr_target? ? Issue::UPSTREAM_PULL_REQUEST_SOURCE : Issue::GITHUB_SOURCE
+      )
     rescue => e
       logger.warn(
         message: "agent_execution.sync_created_pull_request_failed",
