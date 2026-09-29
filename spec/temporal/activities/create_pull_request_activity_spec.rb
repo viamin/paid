@@ -138,6 +138,49 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(project.issues.find_by(github_number: 42, is_pull_request: true).parent_issue).to eq(issue)
     end
 
+    context "when the project targets an upstream repository" do
+      before do
+        project.update!(pr_target: "upstream", upstream_owner: "upstream", upstream_repo: "repo")
+        allow(github_client).to receive(:repository).with("upstream/repo")
+          .and_return(OpenStruct.new(default_branch: "trunk"))
+      end
+
+      it "creates a draft against the upstream default branch with the fork-qualified head" do # @spec UPSTREAM-PR-002
+        expect(github_client).to receive(:create_pull_request).with(
+          "upstream/repo",
+          base: "trunk",
+          head: "#{project.owner}:#{agent_run.branch_name}",
+          title: anything,
+          body: a_string_including("Closes ##{issue.github_number}"),
+          draft: true
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:repository).once
+        expect(github_client).to have_received(:issue).with("upstream/repo", 42)
+        expect(project.issues.find_by(github_issue_id: 4242).source).to eq("upstream_pull_request")
+      end
+
+      it "reuses an existing upstream PR found by its qualified head" do # @spec UPSTREAM-PR-003
+        allow(github_client).to receive(:pull_requests).with(
+          "upstream/repo", head: "#{project.owner}:#{agent_run.branch_name}", state: "open"
+        ).and_return([ pr_response ])
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).not_to have_received(:create_pull_request)
+      end
+
+      it "fails explicitly when upstream creation is denied" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:create_pull_request)
+          .and_raise(GithubClient::ApiError.new("Resource not accessible", status: 403))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
+      end
+    end
+
     # @spec SESSION-SUMMARY-001
     it "enqueues session-summary capture once the pull request is created" do
       expect { activity.execute(agent_run_id: agent_run.id) }

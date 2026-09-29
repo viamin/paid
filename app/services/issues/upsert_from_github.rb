@@ -7,7 +7,7 @@ module Issues
   RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
 
   class UpsertFromGithub
-    def self.call(project:, github_issue:, body: github_issue.body)
+    def self.call(project:, github_issue:, body: github_issue.body, source: Issue::GITHUB_SOURCE)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
       was_open = issue.github_state == "open"
       was_closed = issue.persisted? && issue.github_state == "closed"
@@ -23,7 +23,8 @@ module Issues
         labels: new_labels,
         is_pull_request: pull_request_payload(github_issue).present?,
         github_created_at: github_issue.created_at,
-        github_updated_at: github_issue.updated_at
+        github_updated_at: github_issue.updated_at,
+        source: source
       )
 
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?

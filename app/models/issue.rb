@@ -53,11 +53,12 @@ class Issue < ApplicationRecord
   # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
   GITHUB_SOURCE = "github"
+  UPSTREAM_PULL_REQUEST_SOURCE = "upstream_pull_request"
   SYNTHETIC_CODE_SCANNING_SOURCE = "code_scanning_alert"
   # Legacy source kept in VALID_SOURCES so existing Dependabot rows pass
   # validation on update (e.g. from agent-run completion activities).
   DEPENDABOT_ALERT_SOURCE = "dependabot_alert"
-  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
+  VALID_SOURCES = [ GITHUB_SOURCE, UPSTREAM_PULL_REQUEST_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
   SEVERITY_TO_PRIORITY = { "critical" => "P1", "high" => "P1", "medium" => "P2", "low" => "P3" }.freeze
   TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
@@ -172,6 +173,7 @@ class Issue < ApplicationRecord
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
+  scope :local_repository, -> { where(source: GITHUB_SOURCE) }
   # List surfaces (blocked PRs, retry-limited issues, recent activity) never
   # render the issue body; skipping it keeps the largest TEXT column off
   # list queries. Raises MissingAttributeError if a view starts using body —
@@ -229,6 +231,8 @@ class Issue < ApplicationRecord
   }
 
   def github_url
+    return "https://github.com/#{project.upstream_full_name}/pull/#{github_number}" if source == UPSTREAM_PULL_REQUEST_SOURCE
+
     # Legacy Dependabot synthetic issues link to the Dependabot alert page.
     # No new Dependabot issues are created, but existing rows use synthetic
     # github_number values that don't correspond to real GitHub issues.

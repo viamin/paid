@@ -10,7 +10,11 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
+<<<<<<< HEAD
 ActiveRecord::Schema[8.1].define(version: 2026_09_29_183232) do
+=======
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_181306) do
+>>>>>>> 6435964 (feat: Open PRs against an upstream repository (cross-repo head, upstream default branch))
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2876,6 +2880,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_183232) do
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
     t.text "webhook_secret"
+<<<<<<< HEAD
     t.string "pr_target", default: "own_repo", null: false, comment: "Where Paid opens pull requests: \"own_repo\" (default) targets the project's own fork; \"upstream\" targets the configured upstream repository (#4076)."
     t.string "upstream_owner", comment: "GitHub owner (login or org) of the upstream repository PRs target when pr_target is \"upstream\". Required for upstream mode."
     t.string "upstream_repo", comment: "GitHub repository name of the upstream repository PRs target when pr_target is \"upstream\". Required for upstream mode."

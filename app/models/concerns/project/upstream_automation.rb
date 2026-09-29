@@ -157,6 +157,15 @@ module Project::UpstreamAutomation
       .keys
   end
 
+  # Combined +owner/repo+ form of the upstream repository. Returns nil when
+  # upstream mode is not active or either half is blank so callers can
+  # branch on +upstream_pr_target?+ separately from "configured upstream".
+  def upstream_full_name
+    return nil unless upstream_owner.present? && upstream_repo.present?
+
+    "#{upstream_owner}/#{upstream_repo}"
+  end
+
   private
 
   # Upstream PR targeting is meaningless without the upstream repository to
