@@ -523,6 +523,61 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(project.reload.last_issue_sync_at).to be_within(1.second).of(latest_updated - 1.second)
         expect(project.issues).to be_empty
       end
+
+      context "when a previously trusted author is revoked from the allowlist" do # @spec UPSTREAM-ISSUE-007
+        let(:revoked_issue) do
+          create(:issue, project: project, github_issue_id: 9091, github_number: 91,
+                   github_state: "open", paid_state: "new",
+                   github_creator_login: "revoked-maintainer")
+        end
+        let(:revoked_pr) do
+          create(:issue, :pull_request, project: project, github_issue_id: 9092, github_number: 92,
+                   github_state: "open", paid_state: "new",
+                   github_creator_login: "revoked-maintainer")
+        end
+        let(:trusted_record) do
+          create(:issue, project: project, github_issue_id: 9093, github_number: 93,
+                   github_state: "open", paid_state: "new",
+                   github_creator_login: "trusted-maintainer")
+        end
+
+        before do
+          revoked_issue
+          revoked_pr
+          trusted_record
+          project.update_columns(last_issue_sync_at: 10.minutes.ago, last_issue_reconciliation_at: Time.current)
+          stub_issues_by_label(nil => [])
+        end
+
+        it "retires locally open records instead of re-queueing them through the rescan fallback" do
+          result = activity.execute(project_id: project.id)
+
+          expect(revoked_issue.reload.github_state).to eq("closed")
+          expect(revoked_pr.reload.github_state).to eq("closed")
+          returned_ids = result[:issues].map { |issue| issue[:id] }
+          expect(returned_ids).not_to include(revoked_issue.id)
+          expect(returned_ids).not_to include(revoked_pr.id)
+        end
+
+        it "still re-queues trusted records that were not updated on GitHub" do
+          result = activity.execute(project_id: project.id)
+
+          expect(trusted_record.reload.github_state).to eq("open")
+          expect(result[:issues].map { |issue| issue[:id] }).to include(trusted_record.id)
+        end
+
+        it "logs the retirement without issue bodies" do
+          allow(Rails.logger).to receive(:info)
+
+          activity.execute(project_id: project.id)
+
+          expect(Rails.logger).to have_received(:info).with(hash_including(
+            message: "github_sync.untrusted_upstream_issues_retired",
+            count: 2,
+            creators: [ "revoked-maintainer" ]
+          ))
+        end
+      end
     end
 
     # @spec ISSUE-ENHANCEMENT-016
@@ -2612,6 +2667,17 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         returned_ids = result[:issues].map { |i| i[:id] }
         expect(returned_ids).not_to include(waiting_for_answers.id)
+      end
+
+      it "keeps re-scanning records from untrusted authors on own-repository projects" do # @spec UPSTREAM-ISSUE-007
+        untrusted = create(:issue, project: project, github_issue_id: 5003,
+                           github_number: 53, github_state: "open", paid_state: "new",
+                           github_creator_login: "outside-contributor")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(untrusted.reload.github_state).to eq("open")
+        expect(result[:issues].map { |i| i[:id] }).to include(untrusted.id)
       end
 
       it "does not duplicate issues already in the incremental fetch results" do

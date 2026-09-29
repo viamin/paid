@@ -95,6 +95,9 @@ module Activities
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
         sync_changed = closed_count.positive? || sync_changed
 
+        retired_untrusted_count = retire_untrusted_upstream_issues(project)
+        sync_changed = retired_untrusted_count.positive? || sync_changed
+
         if incremental && !truncated
           stale_pr_result = reconcile_open_pull_requests(project, client)
           stale_pr_count = stale_pr_result[:closed_count]
@@ -354,6 +357,41 @@ module Activities
         creator: github_issue.user&.login || "unknown"
       )
       false
+    end
+
+    # Trust revocation must also retire what was previously persisted: the
+    # fetch filter above only stops new writes, incremental syncs skip stale
+    # closure, and the rescan fallback below re-queues every locally open
+    # record — so without this pass a revoked author's records would stay
+    # displayed and keep reaching auto-pick and LLM prompts. Runs on every
+    # sync so a retirement can never be missed by a change-detection gap.
+    # @spec UPSTREAM-ISSUE-007
+    def retire_untrusted_upstream_issues(project)
+      return 0 unless project.upstream_pr_target?
+
+      untrusted_logins = untrusted_open_creator_logins(project)
+      return 0 if untrusted_logins.empty?
+
+      retired_count = project.issues
+        .where(github_state: "open", source: Issue::GITHUB_SOURCE, github_creator_login: untrusted_logins)
+        .update_all(github_state: "closed", updated_at: Time.current)
+      return 0 if retired_count.zero?
+
+      logger.info(
+        message: "github_sync.untrusted_upstream_issues_retired",
+        project_id: project.id,
+        count: retired_count,
+        creators: untrusted_logins.sort
+      )
+      retired_count
+    end
+
+    def untrusted_open_creator_logins(project)
+      project.issues
+        .where(github_state: "open", source: Issue::GITHUB_SOURCE)
+        .distinct
+        .pluck(:github_creator_login)
+        .reject { |login| project.trusted_upstream_issue_author?(login) }
     end
 
     # @spec ISSUE-ENHANCEMENT-016

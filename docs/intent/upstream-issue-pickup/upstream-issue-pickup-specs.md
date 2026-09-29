@@ -41,3 +41,12 @@
   archive locally open GitHub issues and pull requests from the previous
   target before reconciling the new target. *Tests:* `spec/models/project_spec.rb`.
   *Code:* `Project#reset_issue_sync_state`, `Project#archive_previous_target_issues`.
+
+- [x] **UPSTREAM-ISSUE-007** - When an upstream author's trusted status is
+  revoked, the poller SHALL retire locally open records it previously
+  persisted for that author so they are neither displayed nor returned to
+  the auto-pick/LLM queue, including through the incremental rescan
+  fallback. Own-repository projects SHALL NOT retire records from
+  untrusted authors, matching their persist-without-body behavior.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  *Code:* `FetchIssuesActivity#retire_untrusted_upstream_issues`.

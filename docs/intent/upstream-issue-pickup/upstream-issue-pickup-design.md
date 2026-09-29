@@ -23,6 +23,13 @@ The incremental watermark is nevertheless derived from the complete fetched
 page so a capped page of untrusted issues cannot prevent later trusted work
 from being reached.
 
+Revoking an author's trust also retires what was previously persisted: every
+sync closes locally open upstream records whose creator is no longer trusted.
+Without that retirement pass, a revoked author's records would survive the
+fetch filter (incremental syncs skip stale closure) and re-enter the pipeline
+through the incremental rescan fallback, keeping untrusted content displayed
+and queued for LLM pickup.
+
 Changing the issue target repository invalidates repository-scoped polling
 state. Paid clears the issue cursors and archives locally open GitHub work
 items from the previous target before polling the new target. This prevents a
