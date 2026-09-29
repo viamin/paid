@@ -344,12 +344,13 @@
                   Enter the <code>owner/repo</code> slug of the upstream repository. This can be a repository that is not GitHub's literal fork parent.
                 <% end %>
               </p>
-              <% if @project.errors[:upstream_full_name].any? %>
-                <% @project.errors[:upstream_full_name].each do |msg| %>
-                  <p class="mt-1 text-xs text-red-600"><%= msg %></p>
-                <% end %>
-              <% end %>
             </div>
+
+            <% if @project.errors[:upstream_full_name].any? %>
+              <% @project.errors[:upstream_full_name].each do |msg| %>
+                <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+              <% end %>
+            <% end %>
 
             <p class="<%= [ "mt-4 rounded-md bg-amber-50 p-3 text-xs text-amber-800", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamNote">
               Paid only opens the PR upstream; review/merge/label automation is limited to your own repository. Server-side enforcement of these limits is tracked in a follow-up.

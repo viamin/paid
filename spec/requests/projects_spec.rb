@@ -2342,6 +2342,20 @@ RSpec.describe "Projects" do
           expect(project.reload.pr_target).to eq("own_repo")
         end
 
+        it "shows the self-match error when own_repo is selected" do # @spec PR-TARGET-008
+          patch project_path(project), params: {
+            project: { pr_target: "own_repo", upstream_full_name: "stenoai/stenoai" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include("must differ from this project's repository (stenoai/stenoai)")
+          document = Nokogiri::HTML5(response.body)
+          upstream_panel = document.at_css('[data-project-settings-form-target="prTargetUpstreamPanel"]')
+          expect(upstream_panel["class"]).to include("hidden")
+          expect(upstream_panel.at_xpath('.//p[contains(., "must differ")]')).to be_nil
+          expect(project.reload.pr_target).to eq("own_repo")
+        end
+
         it "rejects a malformed upstream_full_name slug" do # @spec PR-TARGET-006
           patch project_path(project), params: {
             project: { pr_target: "upstream", upstream_full_name: "not a slug" }
