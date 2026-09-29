@@ -19,6 +19,15 @@ The upstream is public input. Before any row is created or any automation sees
 an issue, the poller compares the issue author's login with the project's
 trusted GitHub author list. Untrusted issues are dropped and logged only with
 safe identifiers; their titles and bodies are neither persisted nor logged.
+The incremental watermark is nevertheless derived from the complete fetched
+page so a capped page of untrusted issues cannot prevent later trusted work
+from being reached.
+
+Changing the issue target repository invalidates repository-scoped polling
+state. Paid clears the issue cursors and archives locally open GitHub work
+items from the previous target before polling the new target. This prevents a
+same-number issue or pull request in a fork from suppressing the corresponding
+upstream item during reconciliation.
 
 ## Routing and writes
 
@@ -28,6 +37,7 @@ The pull-request activity uses that same target for its upstream PR, so a
 source issue's `Closes #N` reference resolves in the correct repository.
 
 Paid does not mutate upstream issues. Poll recovery paths that would add or
-remove labels skip the remote operation with an info log. Enhancement flows
-that need a public issue comment are outside this automated path; their
-questions must be surfaced in the agent run's pull request instead.
+remove labels skip the remote operation with an info log. The same centralized
+guard applies to feature clarification, enhancement, and no-output outcome
+comments and labels. Their durable local state and run output remain available
+for the dashboard and pull-request-based degraded path.

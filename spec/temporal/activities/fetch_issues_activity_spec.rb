@@ -509,6 +509,20 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(github_client).not_to have_received(:add_labels_to_issue)
         expect(github_client).not_to have_received(:remove_labels_from_issue)
       end
+
+      it "advances a truncated incremental cursor from untrusted fetched issues" do # @spec UPSTREAM-ISSUE-005
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 1)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_MAX_PAGES", 1)
+        latest_updated = 5.minutes.ago
+        project.update_columns(last_issue_sync_at: 1.hour.ago)
+        untrusted_issue.updated_at = latest_updated
+        allow(github_client).to receive(:issues).and_return([ untrusted_issue ], [ untrusted_issue ])
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload.last_issue_sync_at).to be_within(1.second).of(latest_updated - 1.second)
+        expect(project.issues).to be_empty
+      end
     end
 
     # @spec ISSUE-ENHANCEMENT-016

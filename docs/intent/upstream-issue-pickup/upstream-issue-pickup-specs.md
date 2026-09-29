@@ -21,7 +21,23 @@
   *Code:* `CreatePullRequestActivity#pull_request_repository`.
 
 - [x] **UPSTREAM-ISSUE-004** - When polling upstream issues, the system SHALL
-  skip label mutations and log the skipped operation at info level.
-  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
-  *Code:* `FetchIssuesActivity#upstream_issue_write_skipped?`,
+  skip issue comment and label mutations from polling, feature clarification,
+  enhancement, and no-output outcome paths, and log each skipped operation at
+  info level. *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`, and
+  `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `Activities::BaseActivity#upstream_issue_write_skipped?` and
   `Issues::UpsertFromGithub.remove_recommend_close_label`.
+
+- [x] **UPSTREAM-ISSUE-005** - When a capped GitHub issue page contains only
+  untrusted upstream authors, the system SHALL advance its incremental cursor
+  from the complete fetched page while persisting none of those issues.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  *Code:* `FetchIssuesActivity#execute`.
+
+- [x] **UPSTREAM-ISSUE-006** - When a Project's issue target repository
+  changes, the system SHALL clear repository-scoped issue sync state and
+  archive locally open GitHub issues and pull requests from the previous
+  target before reconciling the new target. *Tests:* `spec/models/project_spec.rb`.
+  *Code:* `Project#reset_issue_sync_state`, `Project#archive_previous_target_issues`.

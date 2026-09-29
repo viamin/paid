@@ -34,8 +34,8 @@ module Activities
       sync_started_at = Time.current
 
       heartbeat("fetch_issues.github_list", project_id: project_id, incremental: incremental)
-      github_issues, truncated = fetch_all_issues(client, project.issue_target_repository, since: project.last_issue_sync_at)
-      github_issues = github_issues.select { |github_issue| trusted_github_issue?(project, github_issue) }
+      fetched_github_issues, truncated = fetch_all_issues(client, project.issue_target_repository, since: project.last_issue_sync_at)
+      github_issues = fetched_github_issues.select { |github_issue| trusted_github_issue?(project, github_issue) }
 
       synced_issues = nil
       sync_changed = false
@@ -127,7 +127,7 @@ module Activities
       end
 
       if truncated && incremental
-        latest_updated = github_issues.filter_map(&:updated_at).max
+        latest_updated = fetched_github_issues.filter_map(&:updated_at).max
         if latest_updated
           inclusive_cursor = latest_updated - 1.second
           new_watermark = if inclusive_cursor <= project.last_issue_sync_at
@@ -354,17 +354,6 @@ module Activities
         creator: github_issue.user&.login || "unknown"
       )
       false
-    end
-
-    def upstream_issue_write_skipped?(project, operation)
-      return false unless project.upstream_pr_target?
-
-      logger.info(
-        message: "github_sync.upstream_issue_write_skipped",
-        project_id: project.id,
-        operation: operation
-      )
-      true
     end
 
     # @spec ISSUE-ENHANCEMENT-016

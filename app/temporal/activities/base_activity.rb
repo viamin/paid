@@ -263,6 +263,24 @@ module Activities
       )
     end
 
+    # Upstream work items are an untrusted, read-only input surface. Keep this
+    # check at activity mutation boundaries so new outcome paths cannot
+    # accidentally address a same-number issue in the configured fork.
+    # @spec UPSTREAM-ISSUE-004
+    def upstream_issue_write_skipped?(project, operation, issue: nil, agent_run_id: nil)
+      return false unless project.upstream_pr_target?
+
+      logger.info({
+        message: "github_sync.upstream_issue_write_skipped",
+        project_id: project.id,
+        issue_id: issue&.id,
+        github_number: issue&.github_number,
+        agent_run_id: agent_run_id,
+        operation: operation
+      }.compact)
+      true
+    end
+
     def record_draft_review_round_if_needed(agent_run)
       return unless agent_run.count_toward_draft_review_round?
 

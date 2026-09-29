@@ -266,6 +266,29 @@ RSpec.describe Project do
         expect(project.pr_target_repository).to eq(project.full_name)
       end
 
+      it "resets repository-scoped sync state and archives open work items when the issue target changes" do # @spec UPSTREAM-ISSUE-006
+        project = create(:project, last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: 1.hour.ago)
+        issue = create(:issue, project: project, github_state: "open", is_pull_request: false)
+        pull_request = create(:issue, project: project, github_state: "open", is_pull_request: true)
+
+        project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+
+        expect(project.reload.last_issue_sync_at).to eq(Time.at(0).utc)
+        expect(project.last_issue_reconciliation_at).to be_nil
+        expect([ issue.reload.github_state, pull_request.reload.github_state ]).to all(eq("closed"))
+      end
+
+      it "preserves repository-scoped sync state on unrelated project updates" do # @spec UPSTREAM-ISSUE-006
+        synced_at = 1.hour.ago.change(usec: 0)
+        project = create(:project, last_issue_sync_at: synced_at)
+        issue = create(:issue, project: project, github_state: "open")
+
+        project.update!(name: "Renamed project")
+
+        expect(project.reload.last_issue_sync_at).to be_within(1.second).of(synced_at)
+        expect(issue.reload.github_state).to eq("open")
+      end
+
       it "exposes upstream_disabled? based on the upstream disabled list" do # @spec PR-TARGET-002, PR-TARGET-003
         project = build(:project, pr_target: "upstream")
 

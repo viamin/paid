@@ -2348,8 +2348,8 @@ RSpec.describe "Projects" do
           }
 
           expect(response).to have_http_status(:unprocessable_content)
-          expect(response.body).to include("must differ from this project's repository (stenoai/stenoai)")
           document = Nokogiri::HTML5(response.body)
+          expect(document.text).to include("must differ from this project's repository (stenoai/stenoai)")
           upstream_panel = document.at_css('[data-project-settings-form-target="prTargetUpstreamPanel"]')
           expect(upstream_panel["class"]).to include("hidden")
           expect(upstream_panel.at_xpath('.//p[contains(., "must differ")]')).to be_nil
