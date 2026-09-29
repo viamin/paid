@@ -286,7 +286,7 @@
           </fieldset>
 
           <% pr_target_upstream = @project.upstream_pr_target? %>
-          <% upstream_full_name = @project.upstream_full_name.presence || @upstream_prefill&.upstream_full_name %>
+          <% upstream_full_name = @project.upstream_full_name.nil? ? @upstream_prefill&.upstream_full_name : @project.upstream_full_name %>
           <fieldset id="pr-target" class="rounded-md border border-gray-200 p-4">
             <legend class="px-1 text-sm font-semibold text-gray-900">Open Source / Upstream Contributions</legend>
             <p class="mt-1 text-sm text-gray-600">

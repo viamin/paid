@@ -333,6 +333,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
+  before_validation :normalize_upstream_full_name
   before_validation :normalize_interop_settings
   before_validation :normalize_llm_provider_routing
   before_validation :ensure_paid_reviewer_bot_allowlisted
@@ -1953,22 +1954,27 @@ class Project < ApplicationRecord
     end
   end
 
+  def normalize_upstream_full_name
+    return unless upstream_full_name.is_a?(String)
+
+    self.upstream_full_name = upstream_full_name.strip
+  end
+
   # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-007, PR-TARGET-008
   def upstream_pr_target_valid
-    normalized_upstream = upstream_full_name.is_a?(String) ? upstream_full_name.strip : nil
-    if normalized_upstream.present? && normalized_upstream.casecmp?(full_name)
+    if upstream_full_name.present? && upstream_full_name.casecmp?(full_name)
       errors.add(:upstream_full_name, "must differ from this project's repository (#{full_name})")
     end
 
     return unless pr_target == "upstream"
 
-    if normalized_upstream.blank?
+    if upstream_full_name.blank?
       errors.add(:upstream_full_name, "is required when PR target is upstream")
       return
     end
 
-    owner_part, repo_part = normalized_upstream.split("/", 2)
-    if owner_part.blank? || repo_part.blank? || normalized_upstream.count("/") != 1 ||
+    owner_part, repo_part = upstream_full_name.split("/", 2)
+    if owner_part.blank? || repo_part.blank? || upstream_full_name.count("/") != 1 ||
         owner_part !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?\z/ ||
         repo_part !~ /\A[A-Za-z0-9._-]{1,100}\z/
       errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")

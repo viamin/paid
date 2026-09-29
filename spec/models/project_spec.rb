@@ -250,6 +250,15 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
 
+      it "persists a whitespace-padded upstream_full_name as a normalized slug" do # @spec PR-TARGET-006
+        project = create(:project, pr_target: "upstream", upstream_full_name: " acme/widgets ")
+
+        expect(project.reload).to have_attributes(
+          upstream_full_name: "acme/widgets",
+          pr_target_repository: "acme/widgets"
+        )
+      end
+
       it "allows upstream_full_name to be set when pr_target=own_repo but ignores it for routing" do # @spec PR-TARGET-004
         project = build(:project, pr_target: "own_repo", upstream_full_name: "acme/widgets")
 

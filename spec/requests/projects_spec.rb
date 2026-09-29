@@ -2316,12 +2316,19 @@ RSpec.describe "Projects" do
         end
 
         it "rejects pr_target=upstream when upstream_full_name is missing" do # @spec PR-TARGET-005
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+          )
+
           patch project_path(project), params: {
             project: { pr_target: "upstream", upstream_full_name: "" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("required when PR target is upstream")
+          expect(response.body).to match(
+            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="")[^>]*>/
+          )
           expect(project.reload.pr_target).to eq("own_repo")
         end
 
