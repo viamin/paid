@@ -33,8 +33,6 @@
 module Project::UpstreamAutomation
   extend ActiveSupport::Concern
 
-  PR_TARGETS = %w[own_repo upstream].freeze
-
   # The canonical upstream-mode disable set. Keys are the feature symbols
   # accepted by {#upstream_automation_allowed?}; each entry documents the
   # concrete settings and code paths it silences:
@@ -110,7 +108,6 @@ module Project::UpstreamAutomation
   GATED_SETTING_ERROR = "is not available while PRs target the upstream repository"
 
   included do
-    validates :pr_target, inclusion: { in: PR_TARGETS }
     validate :upstream_target_requires_upstream_repo
     validate :upstream_mode_automation_settings_valid
   end
