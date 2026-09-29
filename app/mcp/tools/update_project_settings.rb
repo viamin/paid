@@ -76,6 +76,17 @@ module Tools
 
       project = project_for(project_id)
       attrs = settings.symbolize_keys.slice(*PERMITTED_ATTRIBUTES)
+      # Upstream mode (#4078): the chat path must not bypass the form's
+      # disabled inputs — gated settings cannot be turned on while the
+      # project targets PRs at the upstream repository. The model
+      # validation remains the authority; this guard gives the chat a
+      # precise, actionable error. @spec UPSTREAM-GATE-005
+      violations = project.upstream_gated_setting_violations(attrs)
+      if violations.any?
+        raise ArgumentError,
+          "Cannot enable #{violations.join(', ')} while the project targets PRs at the upstream repository"
+      end
+
       project.update!(attrs)
       record_activity!(project) if project.saved_changes.except("updated_at").any?
       serialize(project)

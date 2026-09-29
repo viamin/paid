@@ -442,6 +442,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    # @spec UPSTREAM-GATE-002 — upstream-targeted PRs are never scanned: no
+    # CI signals, bot/human review signals, owner-approval auto-merge,
+    # escalation, label triggers, or draft-review budgets ride the scan.
+    context "when the project targets PRs at the upstream repository" do
+      let(:upstream_project) { create(:project, :upstream_pr_target) }
+
+      before do
+        create(:issue, :pull_request, project: upstream_project, github_number: 77,
+          github_state: "open", labels: [ upstream_project.automation_label_name ], paid_state: "completed")
+      end
+
+      it "returns an empty result without scanning and logs upstream_mode_skipped" do
+        allow(Rails.logger).to receive(:info)
+
+        result = activity.execute(project_id: upstream_project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(result[:automation_results]).to eq([])
+        expect(result).not_to have_key(:project_missing)
+        expect(Rails.logger).to have_received(:info)
+          .with(hash_including(message: "upstream_mode_skipped", project_id: upstream_project.id, feature: "auto_scan_prs"))
+      end
+    end
+
     context "when automation results are produced" do
       let(:pr_issue) do
         create(:issue, :pull_request,

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_164429) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_183232) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -509,7 +509,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_164429) do
     t.datetime "updated_at", null: false
     t.index ["apple_worker_profile_id"], name: "idx_on_apple_worker_profile_id_35bb856a13", unique: true
     t.check_constraint "consecutive_failures >= 0", name: "chk_apple_worker_health_failures"
-    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying, 'quarantined'::character varying]::text[])", name: "chk_apple_worker_health_status"
+    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying::text, 'quarantined'::character varying::text])", name: "chk_apple_worker_health_status"
   end
 
   create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
@@ -2876,6 +2876,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_164429) do
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
     t.text "webhook_secret"
+    t.string "pr_target", default: "own_repo", null: false, comment: "Where Paid opens pull requests: \"own_repo\" (default) targets the project's own fork; \"upstream\" targets the configured upstream repository (#4076)."
+    t.string "upstream_owner", comment: "GitHub owner (login or org) of the upstream repository PRs target when pr_target is \"upstream\". Required for upstream mode."
+    t.string "upstream_repo", comment: "GitHub repository name of the upstream repository PRs target when pr_target is \"upstream\". Required for upstream mode."
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
