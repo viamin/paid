@@ -80,9 +80,8 @@ module Activities
       # re-requests. Paid doesn't hold trusted access to the upstream repo,
       # and upstream review content is an untrusted input channel.
       # @spec UPSTREAM-GATE-002
-      if project.upstream_pr_target?
-        feature = reviewers.any? { |login| !bot_reviewer?(login) } ? :owner_review_requests : :pr_reviews
-        project.log_upstream_mode_skipped(feature, pr_number: pr_number)
+      feature = reviewers.any? { |login| !bot_reviewer?(login) } ? :owner_review_requests : :pr_reviews
+      unless project.upstream_feature_enabled?(feature)
         return { requested: [], upstream_mode_skipped: true }
       end
 
