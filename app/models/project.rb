@@ -77,9 +77,9 @@ class Project < ApplicationRecord
   # @spec PR-TARGET-001
   PR_TARGETS = %w[own_repo upstream].freeze
   DEFAULT_PR_TARGET = "own_repo".freeze
-  # Field set whose values are forced off whenever pr_target=upstream because
-  # Paid no longer owns or trusts the host repository. Grayed out in the
-  # settings UI; server-side enforcement lives in a follow-up issue. This list
+  # Field set disabled in the settings UI whenever pr_target=upstream because
+  # Paid no longer owns or trusts the host repository. Server-side enforcement
+  # lives in a follow-up issue. This list
   # is the canonical source of truth — both the view and the controller consult
   # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
   PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[

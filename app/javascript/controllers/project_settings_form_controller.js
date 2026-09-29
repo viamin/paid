@@ -127,7 +127,6 @@ export default class extends Controller {
   setFieldDisabledState(container, disabled) {
     const inputs = container.querySelectorAll("input, select, textarea, button")
     inputs.forEach((input) => {
-      if (input.type === "hidden") return
       input.disabled = disabled
     })
     container.classList.toggle("opacity-50", disabled)
