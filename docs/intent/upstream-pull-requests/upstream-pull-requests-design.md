@@ -10,7 +10,8 @@ Changing either project setting changes that key and invalidates the cache.
 
 An App installation limited to the fork often cannot use the upstream API.
 For upstream PRs Paid therefore uses the existing, opt-in git-push fallback
-PAT client when configured. If GitHub still returns 401/403, the run fails
+PAT client when configured. If GitHub cannot access the upstream repository
+(including 401, 403, or inaccessible-repository responses), the run fails
 non-retryably with an actionable configuration error; it never silently opens
 a fork PR instead.
 

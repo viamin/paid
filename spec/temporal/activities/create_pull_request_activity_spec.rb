@@ -179,6 +179,30 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect { activity.execute(agent_run_id: agent_run.id) }
           .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
       end
+
+      it "fails explicitly when fetching the upstream default branch is denied" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:repository).with("upstream/repo")
+          .and_raise(GithubClient::ApiError.new("Resource not accessible", status: 403))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
+      end
+
+      it "fails explicitly when looking up an existing upstream PR is denied" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:pull_requests)
+          .and_raise(GithubClient::ApiError.new("Resource not accessible", status: 403))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
+      end
+
+      it "fails explicitly when syncing the upstream PR is denied" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:issue).with("upstream/repo", 42)
+          .and_raise(GithubClient::ApiError.new("Resource not accessible", status: 403))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
+      end
     end
 
     # @spec SESSION-SUMMARY-001

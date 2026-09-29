@@ -180,7 +180,7 @@ module Activities
       true
     end
 
-    # @spec UPSTREAM-PR-002
+    # @spec UPSTREAM-PR-002 UPSTREAM-PR-004
     def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
         pull_request_repository(project),
@@ -188,18 +188,27 @@ module Activities
         state: "open"
       )
       existing.first
+    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e) if project.upstream_pr_target?
+
+      log_pull_request_lookup_failure(agent_run_id, branch_name, e)
+      nil
     rescue StandardError => e
       # Lookup is best-effort: a transient failure (including network-level
       # errors like Faraday::TimeoutError) must not become a new failure
       # mode introduced by the idempotency fix. Fall through to
       # create_pull_request and let GitHub be the source of truth.
+      log_pull_request_lookup_failure(agent_run_id, branch_name, e)
+      nil
+    end
+
+    def log_pull_request_lookup_failure(agent_run_id, branch_name, error)
       logger.warn(
         message: "agent_execution.pull_request_lookup_failed",
         agent_run_id: agent_run_id,
         branch: branch_name,
-        error: e.message
+        error: error.message
       )
-      nil
     end
 
     # Creates the PR, but treats a GitHub 422 "pull request already exists"
@@ -296,7 +305,7 @@ module Activities
         &.issue
     end
 
-    # @spec UPSTREAM-PR-002
+    # @spec UPSTREAM-PR-002 UPSTREAM-PR-004
     def create_pull_request(client, project, agent_run, issue, pr_body)
       client.create_pull_request(
         pull_request_repository(project),
@@ -328,12 +337,15 @@ module Activities
       "#{project.owner}:#{branch_name}"
     end
 
+    # @spec UPSTREAM-PR-002 UPSTREAM-PR-004
     def pull_request_base(client, project)
       return project.default_branch unless project.upstream_pr_target?
 
       Rails.cache.fetch([ "upstream-default-branch", project.cache_key_with_version, project.upstream_full_name ], expires_in: 1.hour) do
         client.repository(project.upstream_full_name).default_branch
       end
+    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e)
     end
 
     def pull_request_client(project)
@@ -396,7 +408,11 @@ module Activities
           )
         end
       end
-      best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
+      if project.upstream_pr_target?
+        sync_pull_request_record(client, project, pr.number)
+      else
+        best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
+      end
       best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) unless project.upstream_pr_target? }
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
@@ -1074,6 +1090,7 @@ module Activities
       sync_pull_request_record(client, project, pr_number)
     end
 
+    # @spec UPSTREAM-PR-004
     def sync_pull_request_record(client, project, pr_number)
       github_issue = client.issue(pull_request_repository(project), pr_number)
       Issues::UpsertFromGithub.call(
@@ -1081,13 +1098,8 @@ module Activities
         github_issue: github_issue,
         source: project.upstream_pr_target? ? Issue::UPSTREAM_PULL_REQUEST_SOURCE : Issue::GITHUB_SOURCE
       )
-    rescue => e
-      logger.warn(
-        message: "agent_execution.sync_created_pull_request_failed",
-        project_id: project.id,
-        pr_number: pr_number,
-        error: e.message
-      )
+    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e)
     end
 
     def merge_local_pr_labels(project, pr_number, labels)

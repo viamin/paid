@@ -15,10 +15,12 @@
   *Code:* `app/temporal/activities/create_pull_request_activity.rb`.
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`.
 
-- [x] **UPSTREAM-PR-004** — When upstream creation is denied, Paid SHALL use
-  the configured fallback PAT when available and otherwise fail explicitly;
-  it SHALL NOT silently create a fork PR. Upstream PR records SHALL be
-  excluded from local PR scanning.
+- [x] **UPSTREAM-PR-004** — When access to the upstream repository is denied
+  or unavailable, Paid SHALL use the configured fallback PAT when available
+  and otherwise fail explicitly; it SHALL NOT silently create a fork PR.
+  This includes creation, existing-PR lookup, default-branch lookup, and PR
+  synchronization. Upstream PR records SHALL be excluded from local PR
+  scanning.
   *Code:* `app/temporal/activities/create_pull_request_activity.rb`,
   `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`.
