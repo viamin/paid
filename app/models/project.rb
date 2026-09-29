@@ -92,9 +92,8 @@ class Project < ApplicationRecord
     max_draft_review_rounds
     max_pr_auto_continue_tokens
     auto_add_labels_enabled
-    generated_label_name
-    automation_label_name
     automation_on_label_enabled
+    sync_labels_to_github
     screenshot_settings
   ].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
@@ -215,7 +214,7 @@ class Project < ApplicationRecord
     { label: "Auto-Pick Issues", attribute: :auto_pick_enabled,
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
     { label: "Auto-Fix Merge Conflicts", attribute: :auto_fix_merge_conflicts,
-     description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts against the base branch." }.freeze,
+     description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts; upstream-mode fixes push only to the fork head branch." }.freeze,
     { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
      description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze,
     { label: "Auto-enhance before PR", attribute: :auto_enhance_enabled,
@@ -335,6 +334,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
+  before_validation :normalize_upstream_target
   before_validation :normalize_interop_settings
   before_validation :normalize_llm_provider_routing
   before_validation :ensure_paid_reviewer_bot_allowlisted
@@ -1994,6 +1994,11 @@ class Project < ApplicationRecord
     self.priority_labels = priority_labels.each_with_object({}) do |(k, v), h|
       h[k] = v.is_a?(String) ? v.strip : v
     end
+  end
+
+  def normalize_upstream_target
+    self.upstream_owner = upstream_owner.strip if upstream_owner.is_a?(String)
+    self.upstream_repo = upstream_repo.strip if upstream_repo.is_a?(String)
   end
 
   # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-007, PR-TARGET-008
