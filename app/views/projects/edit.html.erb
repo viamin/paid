@@ -285,6 +285,77 @@
             </div>
           </fieldset>
 
+          <% pr_target_upstream = @project.upstream_pr_target? %>
+          <% upstream_full_name = @project.upstream_full_name.presence || @upstream_prefill&.upstream_full_name %>
+          <fieldset id="pr-target" class="rounded-md border border-gray-200 p-4">
+            <legend class="px-1 text-sm font-semibold text-gray-900">Open Source / Upstream Contributions</legend>
+            <p class="mt-1 text-sm text-gray-600">
+              Use this when <strong><%= @project.full_name %></strong> is a fork and you want Paid to open pull requests against the upstream repository instead of your fork.
+            </p>
+
+            <div class="mt-4 space-y-3">
+              <label class="block cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-300">
+                <div class="flex items-start gap-3">
+                  <%= form.radio_button :pr_target, "own_repo",
+                    checked: !pr_target_upstream,
+                    class: "mt-1 h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                    data: { action: "change->project-settings-form#prTargetChanged", project_settings_form_target: "prTarget" } %>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-gray-900">Open PRs in this repository</span>
+                      <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">Default</span>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-600">
+                      Paid opens pull requests in <strong><%= @project.full_name %></strong> and runs the full automation suite.
+                    </p>
+                  </div>
+                </div>
+              </label>
+
+              <label class="block cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-300">
+                <div class="flex items-start gap-3">
+                  <%= form.radio_button :pr_target, "upstream",
+                    checked: pr_target_upstream,
+                    class: "mt-1 h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                    data: { action: "change->project-settings-form#prTargetChanged", project_settings_form_target: "prTarget" } %>
+                  <div>
+                    <span class="text-sm font-medium text-gray-900">Open PRs in the upstream repository</span>
+                    <p class="mt-1 text-sm text-gray-600">
+                      Use this for forks contributing to an open-source project. Paid only opens the PR upstream; review, merge, label, and screenshot automation is limited to your own repository.
+                    </p>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div class="<%= [ "mt-4", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamPanel">
+              <%= form.label :upstream_full_name, "Upstream repository (owner/repo)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :upstream_full_name,
+                  value: upstream_full_name,
+                  placeholder: @upstream_prefill&.detected? ? @upstream_prefill.upstream_full_name : "acme/widgets",
+                  autocomplete: "off",
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                <% if @upstream_prefill&.detected? %>
+                  Detected from fork parent: <strong><%= @upstream_prefill.upstream_full_name %></strong>. Edit if your fork targets a different upstream.
+                <% else %>
+                  Enter the <code>owner/repo</code> slug of the upstream repository. This can be a repository that is not GitHub's literal fork parent.
+                <% end %>
+              </p>
+              <% if @project.errors[:upstream_full_name].any? %>
+                <% @project.errors[:upstream_full_name].each do |msg| %>
+                  <p class="mt-1 text-xs text-red-600"><%= msg %></p>
+                <% end %>
+              <% end %>
+            </div>
+
+            <p class="<%= [ "mt-4 rounded-md bg-amber-50 p-3 text-xs text-amber-800", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamNote">
+              Paid only opens the PR upstream; review/merge/label automation is limited to your own repository. Server-side enforcement of these limits is tracked in a follow-up.
+            </p>
+          </fieldset>
+
           <div>
             <%= form.label :name, "Display Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
@@ -343,7 +414,7 @@
             </div>
           </div>
 
-          <div id="owner-reviewer">
+          <div id="owner-reviewer" data-project-settings-form-target="prTargetGatedField" data-attribute="owner_reviewer_login" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:owner_reviewer_login) %>">
             <%= form.label :owner_reviewer_login, "Owner Reviewer Login", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.text_field :owner_reviewer_login, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "github-username" %>
@@ -402,7 +473,7 @@
             </div>
           </fieldset>
 
-          <div>
+          <div data-project-settings-form-target="prTargetGatedField" data-attribute="max_draft_review_rounds" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:max_draft_review_rounds) %>">
             <%= form.label :max_draft_review_rounds, "Max Draft Review Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.number_field :max_draft_review_rounds, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
@@ -410,7 +481,7 @@
             <p class="mt-1 text-xs text-gray-500">Maximum Copilot review rounds before escalating to the owner (0 to skip draft review phase).</p>
           </div>
 
-          <div>
+          <div data-project-settings-form-target="prTargetGatedField" data-attribute="max_pr_auto_continue_tokens" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:max_pr_auto_continue_tokens) %>">
             <%= form.label :max_pr_auto_continue_tokens, "Max PR Auto-Continue Tokens", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.number_field :max_pr_auto_continue_tokens, min: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
@@ -418,7 +489,7 @@
             <p class="mt-1 text-xs text-gray-500">Maximum recorded tokens automatic PR follow-ups may spend on one pull request before escalation pauses them.</p>
           </div>
 
-          <div>
+          <div data-project-settings-form-target="prTargetGatedField" data-attribute="pr_approval_escalation_hours" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:pr_approval_escalation_hours) %>">
             <%= form.label :pr_approval_escalation_hours, "PR Approval Escalation (hours)", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.number_field :pr_approval_escalation_hours, min: 0, max: 720, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
@@ -436,7 +507,7 @@
 
           <%# Review Settings Section %>
           <% rs = @project.effective_review_settings %>
-          <fieldset id="review-settings" class="space-y-4 rounded-md border border-gray-200 p-4">
+          <fieldset id="review-settings" class="space-y-4 rounded-md border border-gray-200 p-4 <%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:review_settings) %>" data-project-settings-form-target="prTargetGatedField" data-attribute="review_settings">
             <legend class="text-sm font-semibold leading-6 text-gray-900">PR Review Settings</legend>
 
             <div>
@@ -754,7 +825,7 @@
               <%= link_to "Sync Labels to GitHub", ensure_labels_project_path(@project), data: { turbo_method: :post }, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
             </div>
 
-            <div>
+            <div data-project-settings-form-target="prTargetGatedField" data-attribute="generated_label_name" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:generated_label_name) %>">
               <%= form.label :generated_label_name, "Generated Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2">
                 <%= form.text_field :generated_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
@@ -762,7 +833,7 @@
               <p class="mt-1 text-xs text-gray-500">Label added to PRs and issues created by Paid.</p>
             </div>
 
-            <div>
+            <div data-project-settings-form-target="prTargetGatedField" data-attribute="automation_label_name" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:automation_label_name) %>">
               <%= form.label :automation_label_name, "Automation Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2">
                 <%= form.text_field :automation_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
@@ -817,7 +888,8 @@
             <legend class="text-sm font-semibold leading-6 text-gray-900">Automation</legend>
 
             <% Project::AUTOMATION_SETTINGS.each do |setting| %>
-              <div>
+              <% gated = Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(setting[:attribute]) %>
+              <div<%= raw " data-project-settings-form-target=\"prTargetGatedField\" data-attribute=\"#{setting[:attribute]}\" class=\"#{"opacity-50 pointer-events-none" if gated && @project.upstream_disabled?(setting[:attribute])}\"" if gated %>>
                 <div class="flex items-center">
                   <%= form.check_box setting[:attribute], class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
                   <%= form.label setting[:attribute], setting[:label], class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
@@ -871,7 +943,7 @@
             </div>
           </fieldset>
 
-          <fieldset id="auto-release" class="space-y-4">
+          <fieldset id="auto-release" class="space-y-4 <%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:auto_merge_mode) %>" data-project-settings-form-target="prTargetGatedField" data-attribute="auto_merge_mode">
             <legend class="text-sm font-semibold leading-6 text-gray-900">Auto-Merge &amp; Auto-Release</legend>
 
             <div>
@@ -927,6 +999,7 @@
             </div>
           </fieldset>
 
+          <div data-project-settings-form-target="prTargetGatedField" data-attribute="screenshot_settings" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:screenshot_settings) %>">
           <%= render "screenshot_settings", form: form,
                 screenshot_settings: @screenshot_settings,
                 screenshot_service_options: @screenshot_service_options,
@@ -934,6 +1007,7 @@
                 screenshot_repo_config_result: @screenshot_repo_config_result,
                 screenshot_preview_config: @screenshot_preview_config,
                 screenshot_conflicts: @screenshot_conflicts %>
+          </div>
 
           <fieldset id="pre-commit-requirements" class="space-y-3 rounded-md border border-gray-200 p-4">
             <legend class="px-1 text-sm font-semibold text-gray-900">Pre-Commit Requirements</legend>
