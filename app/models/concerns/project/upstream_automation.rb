@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 # Central server-side authority for upstream-mode feature restrictions
-# (#4078). When a project's pull requests target a configured upstream
-# repository ("upstream mode"), Paid has no trusted access to that
-# repository, so no automation may act on it or on the PRs opened in it
-# beyond creating the PR and editing our own PR's title/body/draft state.
+# (#4078, corrected in #4082). When a project's pull requests target a
+# configured upstream repository ("upstream mode"), Paid has no trusted
+# access to that repository, so no automation may act on it or on the PRs
+# opened in it beyond creating the PR and editing our own PR's title,
+# body, and draft state.
 #
 # This concern is the ONE place that decides what upstream mode disables:
 #
@@ -21,11 +22,14 @@
 #   feature. The UI grays the settings out (#4076); the model is the
 #   authority.
 #
-# Issue-side automation (issue polling, auto-pick, enhance, issue labeling)
-# is deliberately NOT gated: issues live in the project's own fork, which
-# Paid controls.
+# Issue-side automation on the project's own fork (issue polling, auto-pick,
+# enhance, issue labeling on fork issues) is deliberately NOT gated: those
+# issues live in the project's own fork, which Paid controls. The
+# +upstream_issue_labeling+ and +upstream_issue_comments+ keys gate the
+# upstream-side paths (#4079 / #4082).
 #
 # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002 UPSTREAM-GATE-004
+# @spec UPSTREAM-GATE-006
 module Project::UpstreamAutomation
   extend ActiveSupport::Concern
 
@@ -44,9 +48,9 @@ module Project::UpstreamAutomation
   #   interaction.
   # - +auto_scan_prs+ — ScanPaidPrsActivity follow-up scanning (CI signals,
   #   bot/human review signals, label-triggered follow-ups).
-  # - +auto_fix_merge_conflicts+ — conflict-fix follow-up runs.
   # - +pr_labeling+ — labels Paid adds to PRs it opens (auto_add_labels on
-  #   PRs, priority-label inheritance). Issue labeling stays allowed.
+  #   PRs, priority-label inheritance). Issue labeling on the project's own
+  #   fork stays allowed.
   # - +owner_review_requests+ — owner_reviewer_login review requests and
   #   pr_approval_escalation_hours escalation.
   # - +draft_review_rounds+ — max_draft_review_rounds and
@@ -54,6 +58,21 @@ module Project::UpstreamAutomation
   #   or follow-up runs are ever produced because scanning is skipped).
   # - +screenshots+ — screenshot capture and PR comments on agent-created
   #   PRs.
+  # - +upstream_issue_labeling+ — labeling writes against issues and PRs
+  #   hosted in the upstream repository. The "Sync Labels to GitHub" action
+  #   (Projects::EnsureStandardLabels) is gated under this feature because
+  #   it touches the upstream repository's label set, and the
+  #   label-application paths in CreatePullRequestActivity /
+  #   CreateAggregatedPullRequestActivity are gated because they would write
+  #   to upstream PRs (#4079 / #4082).
+  # - +upstream_issue_comments+ — comment writes against issues and PRs
+  #   hosted in the upstream repository (#4079 / #4082).
+  #
+  # Note: +auto_fix_merge_conflicts+ is deliberately NOT in this set.
+  # Conflict-fix runs only ever push to the fork-owned head branch — the
+  # agent run's working copy on the project's own repository — so they
+  # never write the upstream base. They remain fully active in upstream
+  # mode (#4082). See {UPSTREAM-GATE-006}.
   #
   # @spec UPSTREAM-GATE-001
   DISABLED_FEATURES = %i[
@@ -61,17 +80,21 @@ module Project::UpstreamAutomation
     auto_merge
     auto_release
     auto_scan_prs
-    auto_fix_merge_conflicts
     pr_labeling
     owner_review_requests
     draft_review_rounds
     screenshots
+    upstream_issue_labeling
+    upstream_issue_comments
   ].freeze
 
   # Save-time gate: maps each gated setting to a predicate over its value
   # that returns true when the value would ENABLE the gated feature. Shared
   # by the model validation and Tools::UpdateProjectSettings so the
   # "enabled value" definition lives in exactly one place.
+  #
+  # +auto_fix_merge_conflicts+ is NOT in this map: the setting stays
+  # editable in upstream mode and conflict-fix runs remain active (#4082).
   # @spec UPSTREAM-GATE-004
   GATED_SETTING_CHECKS = {
     "auto_merge_mode" => ->(value) { value.present? && value != "off" },
@@ -81,7 +104,6 @@ module Project::UpstreamAutomation
     "auto_add_labels_enabled" => ->(value) { cast_bool(value) },
     "inherit_priority_labels" => ->(value) { cast_bool(value) },
     "owner_reviewer_login" => ->(value) { value.present? },
-    "auto_fix_merge_conflicts" => ->(value) { cast_bool(value) },
     "screenshot_settings" => ->(value) { screenshot_settings_enable_automation?(value) }
   }.freeze
 

@@ -70,6 +70,33 @@ class Project < ApplicationRecord
   }.freeze
   DEFAULT_REVIEW_DEPTH = "balanced".freeze
   DATA_CLASSIFICATIONS = %w[open internal confidential restricted].freeze
+  # PR target setting for open-source fork projects (issue #4076). "own_repo"
+  # is the default Paid behavior (PRs open in the project's own repository).
+  # "upstream" switches to opening PRs in the configured upstream repository;
+  # features that operate against the PR's host repository (auto-merge,
+  # review automation, etc.) are gated while upstream is selected.
+  # @spec PR-TARGET-001
+  DEFAULT_PR_TARGET = "own_repo".freeze
+  # Field set whose values are forced off whenever pr_target=upstream because
+  # Paid no longer owns or trusts the host repository. Grayed out in the
+  # settings UI; server-side enforcement lives in a follow-up issue. This list
+  # is the canonical source of truth — both the view and the controller consult
+  # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
+  PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[
+    review_settings
+    auto_merge_mode
+    allow_bot_authored_pr_auto_merge
+    auto_release_granularity
+    owner_reviewer_login
+    pr_approval_escalation_hours
+    max_draft_review_rounds
+    max_pr_auto_continue_tokens
+    auto_add_labels_enabled
+    generated_label_name
+    automation_label_name
+    automation_on_label_enabled
+    screenshot_settings
+  ].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
     "driver" => "playwright",
@@ -409,6 +436,23 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
+  # Repository where new PRs are opened for this project. For "own_repo"
+  # projects this is the project's own full_name; for "upstream" projects it
+  # is the configured upstream repository's full_name. Returns nil when
+  # upstream mode is selected but the upstream repository is missing — the
+  # model validation will have rejected that combination before save.
+  # @spec PR-TARGET-001, PR-TARGET-004
+  def pr_target_repository
+    return full_name unless upstream_pr_target?
+
+    upstream_full_name
+  end
+
+  # @spec PR-TARGET-002, PR-TARGET-003
+  def upstream_disabled?(attribute)
+    upstream_pr_target? && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)
+  end
+
   # Normalized primary language key (downcased) used by the prompt-building
   # services (e.g. Prompts::LanguageCommands) to select test/lint commands.
   # Returns nil when no language has been detected for the repository.
@@ -597,11 +641,11 @@ class Project < ApplicationRecord
     upstream_feature_enabled?(:pr_labeling) && super
   end
 
-  # No conflict-fix follow-up runs against upstream PRs.
-  # @spec UPSTREAM-GATE-002
-  def auto_fix_merge_conflicts?
-    upstream_feature_enabled?(:auto_fix_merge_conflicts) && super
-  end
+  # +auto_fix_merge_conflicts?+ is NOT gated upstream-mode. Conflict-fix
+  # runs only ever push to the fork-owned head branch (#4082), so the
+  # upstream repository is never written. The default column predicate
+  # applies.
+  # @spec UPSTREAM-GATE-006
 
   def worktree_service
     @worktree_service ||= WorktreeService.new(self)
@@ -1949,6 +1993,39 @@ class Project < ApplicationRecord
 
     self.priority_labels = priority_labels.each_with_object({}) do |(k, v), h|
       h[k] = v.is_a?(String) ? v.strip : v
+    end
+  end
+
+  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-007, PR-TARGET-008
+  def upstream_pr_target_valid
+    normalized_owner = upstream_owner.is_a?(String) ? upstream_owner.strip : nil
+    normalized_repo = upstream_repo.is_a?(String) ? upstream_repo.strip : nil
+
+    if normalized_owner.present? && normalized_repo.present?
+      combined = "#{normalized_owner}/#{normalized_repo}"
+      if combined.casecmp?(full_name)
+        errors.add(:upstream_repo, "must differ from this project's repository (#{full_name})")
+      end
+    end
+
+    return unless pr_target == "upstream"
+
+    if normalized_owner.blank?
+      errors.add(:upstream_owner, "is required when PR target is upstream")
+    end
+
+    if normalized_repo.blank?
+      errors.add(:upstream_repo, "is required when PR target is upstream")
+    end
+
+    return if normalized_owner.blank? || normalized_repo.blank?
+
+    if normalized_owner !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?\z/
+      errors.add(:upstream_owner, "must be a valid GitHub owner (letters, digits, hyphens)")
+    end
+
+    if normalized_repo !~ /\A[A-Za-z0-9._-]{1,100}\z/
+      errors.add(:upstream_repo, "must be a valid GitHub repository name")
     end
   end
 

@@ -70,6 +70,7 @@ RSpec.describe Project do
     it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
     it { is_expected.to validate_inclusion_of(:data_classification).in_array(described_class::DATA_CLASSIFICATIONS) }
     it { is_expected.to validate_inclusion_of(:tdd_mode).in_array(described_class::TDD_MODES) }
+    it { is_expected.to validate_inclusion_of(:pr_target).in_array(described_class::PR_TARGETS) }
 
     it "defaults max_execution_seconds to 7200" do
       project = build(:project)
@@ -201,6 +202,71 @@ RSpec.describe Project do
     it "defaults knowledge_status to pending" do
       project = build(:project)
       expect(project.knowledge_status).to eq("pending")
+    end
+
+    describe "PR target / upstream_full_name (#4076)" do # @spec PR-TARGET-001
+      it "defaults pr_target to own_repo" do
+        expect(build(:project).pr_target).to eq("own_repo")
+      end
+
+      it "accepts each value in Project::PR_TARGETS" do
+        described_class::PR_TARGETS.each do |target|
+          project = build(:project, pr_target: target, upstream_full_name: target == "upstream" ? "acme/widgets" : nil)
+          expect(project).to be_valid, "expected pr_target=#{target.inspect} to be valid"
+        end
+      end
+
+      it "rejects an unknown pr_target value" do
+        project = build(:project, pr_target: "downstream")
+
+        expect(project).not_to be_valid
+        expect(project.errors[:pr_target]).to be_present
+      end
+
+      it "requires upstream_full_name when pr_target=upstream" do # @spec PR-TARGET-005
+        project = build(:project, pr_target: "upstream", upstream_full_name: nil)
+
+        expect(project).not_to be_valid
+        expect(project.errors[:upstream_full_name]).to be_present
+      end
+
+      it "rejects a malformed upstream_full_name slug" do # @spec PR-TARGET-006
+        project = build(:project, pr_target: "upstream", upstream_full_name: "not a slug")
+
+        expect(project).not_to be_valid
+        expect(project.errors[:upstream_full_name]).to be_present
+      end
+
+      it "rejects upstream_full_name matching the project's own repository" do # @spec PR-TARGET-008
+        project = build(:project, owner: "octo", repo: "hello", pr_target: "upstream", upstream_full_name: "octo/hello")
+
+        expect(project).not_to be_valid
+        expect(project.errors[:upstream_full_name].join).to include("must differ")
+      end
+
+      it "accepts an upstream_full_name that differs from the project's own repository" do # @spec PR-TARGET-006
+        project = build(:project, owner: "octo", repo: "hello", pr_target: "upstream", upstream_full_name: "acme/hello")
+
+        expect(project).to be_valid
+      end
+
+      it "allows upstream_full_name to be set when pr_target=own_repo but ignores it for routing" do # @spec PR-TARGET-004
+        project = build(:project, pr_target: "own_repo", upstream_full_name: "acme/widgets")
+
+        expect(project).to be_valid
+        expect(project.pr_target_repository).to eq(project.full_name)
+      end
+
+      it "exposes upstream_disabled? based on the upstream disabled list" do # @spec PR-TARGET-002, PR-TARGET-003
+        project = build(:project, pr_target: "upstream")
+
+        expect(project.upstream_disabled?(:review_settings)).to be(true)
+        expect(project.upstream_disabled?(:owner_reviewer_login)).to be(true)
+        expect(project.upstream_disabled?(:unrelated_attribute)).to be(false)
+
+        project.pr_target = "own_repo"
+        expect(project.upstream_disabled?(:review_settings)).to be(false)
+      end
     end
 
     # @spec PR-ESCALATION-024
