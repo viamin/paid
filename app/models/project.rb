@@ -1975,7 +1975,7 @@ class Project < ApplicationRecord
 
     owner_part, repo_part = upstream_full_name.split("/", 2)
     if owner_part.blank? || repo_part.blank? || upstream_full_name.count("/") != 1 ||
-        owner_part !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?\z/ ||
+        owner_part !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\z/ ||
         repo_part !~ /\A[A-Za-z0-9._-]{1,100}\z/
       errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")
     end
