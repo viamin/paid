@@ -180,6 +180,14 @@ RSpec.describe Activities::CreatePullRequestActivity do
           .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
       end
 
+      it "fails explicitly when upstream creation returns 404 for an inaccessible repository" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:create_pull_request)
+          .and_raise(GithubClient::NotFoundError.new("Not Found"))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /configure an active PAT fallback/)
+      end
+
       it "fails explicitly when fetching the upstream default branch is denied" do # @spec UPSTREAM-PR-004
         allow(github_client).to receive(:repository).with("upstream/repo")
           .and_raise(GithubClient::ApiError.new("Resource not accessible", status: 403))

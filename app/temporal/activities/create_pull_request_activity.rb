@@ -234,7 +234,7 @@ module Activities
 
       reserve_pull_request!(agent_run, reused)
       [ reused, "reused" ]
-    rescue GithubClient::AuthenticationError => e
+    rescue GithubClient::AuthenticationError, GithubClient::NotFoundError => e
       raise_upstream_permission_error!(project, e)
     end
 
