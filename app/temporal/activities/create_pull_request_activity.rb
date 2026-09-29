@@ -1001,6 +1001,11 @@ module Activities
 
     # @spec TDD-PR-001
     def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+      # Upstream mode (#4078): no label writes on PRs opened in the upstream
+      # repository — not generated/automation labels, not priority labels,
+      # not the TDD round-trip label. @spec UPSTREAM-GATE-002
+      return unless project.upstream_feature_enabled?(:pr_labeling)
+
       labels = []
       labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?
