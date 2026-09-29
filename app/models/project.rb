@@ -1960,7 +1960,7 @@ class Project < ApplicationRecord
     self.upstream_full_name = upstream_full_name.strip
   end
 
-  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-007, PR-TARGET-008
+  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
   def upstream_pr_target_valid
     if upstream_full_name.present? && upstream_full_name.casecmp?(full_name)
       errors.add(:upstream_full_name, "must differ from this project's repository (#{full_name})")
