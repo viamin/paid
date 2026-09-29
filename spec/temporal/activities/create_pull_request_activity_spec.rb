@@ -1962,6 +1962,23 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(agent_run.reload.status).to eq("completed")
       end
 
+      it "reuses the existing PR after a 422 conflict using the owner-qualified head filter" do
+        # The lookup filter must stay owner-qualified for local runs: a bare
+        # branch head can fail to match an open PR, so the post-conflict
+        # lookup would miss it and re-raise the 422 on every retry.
+        allow(github_client).to receive(:pull_requests)
+          .with(project.full_name, head: "#{project.owner}:#{agent_run.branch_name}", state: "open")
+          .and_return([], [ existing_pr ])
+        allow(github_client).to receive(:create_pull_request)
+          .and_raise(GithubClient::ApiError.new("Validation Failed: A pull request already exists for owner:branch.", status: 422))
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:create_pull_request).once
+        expect(result[:pull_request_number]).to eq(99)
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
       it "re-raises a non-already-exists 422 instead of treating it as a reuse signal" do
         allow(github_client).to receive(:pull_requests).and_return([])
         allow(github_client).to receive(:create_pull_request)
