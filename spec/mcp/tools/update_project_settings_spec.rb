@@ -107,5 +107,48 @@ RSpec.describe Tools::UpdateProjectSettings do
         )
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    # @spec UPSTREAM-GATE-005
+    context "when the project targets PRs at the upstream repository" do
+      let(:upstream_session) do
+        create(:chat_session, account:, created_by: owner, project: upstream_project)
+      end
+      let(:upstream_project) { create(:project, :upstream_pr_target, account:) }
+
+      def upstream_call(settings:, confirmed: true, user: owner)
+        described_class.new(user:, session: upstream_session).call(
+          project_id: upstream_project.id, settings:, confirmed:
+        )
+      end
+
+      it "rejects enabling a gated setting while upstream mode is active" do
+        expect {
+          upstream_call(settings: { "auto_merge_mode" => "all" })
+        }.to raise_error(ArgumentError, /auto_merge_mode/)
+      end
+
+      it "lists every violating gated setting in the error" do
+        expect {
+          upstream_call(settings: {
+            "auto_merge_mode" => "all",
+            "auto_release_granularity" => "all",
+            "auto_add_labels_enabled" => true,
+            "paused" => false
+          })
+        }.to raise_error(ArgumentError, /auto_merge_mode.*auto_release_granularity.*auto_add_labels_enabled/)
+      end
+
+      it "still allows non-gated permitted attributes to be saved" do
+        upstream_call(settings: { "paused" => true, "auto_pick_enabled" => false })
+
+        expect(upstream_project.reload).to have_attributes(paused: true, auto_pick_enabled: false)
+      end
+
+      it "permits a setting that would not enable the gated feature" do
+        expect {
+          upstream_call(settings: { "auto_merge_mode" => "off", "owner_reviewer_login" => nil })
+        }.not_to raise_error
+      end
+    end
   end
 end
