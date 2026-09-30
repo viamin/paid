@@ -255,8 +255,12 @@ class Issue < ApplicationRecord
     labels.include?(label)
   end
 
-  def trusted?
-    project.trusted_github_author?(github_creator_login)
+  def trusted? # @spec UPSTREAM-ISSUE-002
+    if project.upstream_pr_target?
+      project.trusted_upstream_issue_author?(github_creator_login)
+    else
+      project.trusted_github_author?(github_creator_login)
+    end
   end
 
   # @spec ISSUE-REOPEN-REVIEW-001

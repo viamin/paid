@@ -1403,6 +1403,17 @@ RSpec.describe Issue do
 
       expect(issue.trusted?).to be true
     end
+
+    it "trusts the fork owner for an upstream project without an allowlist entry" do # @spec UPSTREAM-ISSUE-002
+      upstream_project = create(:project,
+        owner: "fork-owner",
+        pr_target: "upstream",
+        upstream_full_name: "upstream/widgets",
+        allowed_github_usernames: [ "trusted-maintainer" ])
+      issue = build(:issue, project: upstream_project, github_creator_login: "fork-owner")
+
+      expect(issue.trusted?).to be true
+    end
   end
 
   describe "github_creator_login validation" do

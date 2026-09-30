@@ -10,9 +10,12 @@
 
 - [x] **UPSTREAM-ISSUE-002** - When polling an upstream repository, the
   system SHALL persist and expose an issue only when its author is trusted by
-  the Project. It SHALL log each rejected issue at info level without its body.
-  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
-  *Code:* `FetchIssuesActivity#trusted_github_issue?`.
+  the Project, including its configured fork owner. The same trust policy
+  SHALL apply when the persisted issue is evaluated for automation and prompt
+  assembly. It SHALL log each rejected issue at info level without its body.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/models/issue_spec.rb`.
+  *Code:* `FetchIssuesActivity#trusted_github_issue?`, `Issue#trusted?`.
 
 - [x] **UPSTREAM-ISSUE-003** - When a run is sourced from a synced upstream
   issue, the system SHALL open and synchronize its PR against the upstream

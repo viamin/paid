@@ -17,8 +17,11 @@ upstream repository while continuing to execute code changes from the fork.
 
 The upstream is public input. Before any row is created or any automation sees
 an issue, the poller compares the issue author's login with the project's
-trusted GitHub author list. Untrusted issues are dropped and logged only with
-safe identifiers; their titles and bodies are neither persisted nor logged.
+trusted GitHub author policy: its trusted GitHub author list or the configured
+fork owner. The same policy applies when a persisted issue is later evaluated
+for automation and prompt assembly. Untrusted issues are dropped and logged
+only with safe identifiers; their titles and bodies are neither persisted nor
+logged.
 The incremental watermark is nevertheless derived from the complete fetched
 page so a capped page of untrusted issues cannot prevent later trusted work
 from being reached.
