@@ -143,6 +143,18 @@ module Activities
         scanned_prs.each_with_index do |issue, index|
           heartbeat("scan_paid_prs.pr", project_id: project_id, issue_id: issue.id, pr_number: issue.github_number, index: index, total: scanned_prs.size)
 
+          if upstream_conflict_scan?(project)
+            result = scan_merge_conflict_only(project, client, issue)
+            if result && result != :skipped
+              scanned_count += 1
+              persist_scan_metadata(issue, Time.current)
+              collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle: nil)
+            else
+              unchanged_count += 1
+            end
+            next
+          end
+
           if skip_unchanged_pr?(project, issue)
             if merge_conflict_rescan_needed?(project, issue)
               result = scan_merge_conflict_only(project, client, issue)
@@ -218,11 +230,15 @@ module Activities
     private
 
     def pr_scanning_enabled?(project)
+      return upstream_conflict_scan_enabled?(project) if upstream_conflict_scan?(project)
+
       # Upstream mode (#4078): no PR follow-up scanning at all — CI signals,
       # bot/human review signals, label triggers, owner-approval auto-merge,
       # escalation, and draft-review budgets all ride on this scan, and none
       # of them may act on the upstream repository or on PRs opened in it.
-      # @spec UPSTREAM-GATE-002
+      # The conflict-only exception above is safe because it only queues work
+      # on the fork-owned PR head branch (#4082).
+      # @spec UPSTREAM-GATE-002 UPSTREAM-GATE-006
       return false unless project.upstream_feature_enabled?(:auto_scan_prs)
 
       return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")
@@ -230,6 +246,15 @@ module Activities
       return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_fix_merge_conflicts")
 
       false
+    end
+
+    def upstream_conflict_scan?(project)
+      project.upstream_pr_target?
+    end
+
+    def upstream_conflict_scan_enabled?(project)
+      project.upstream_feature_enabled?(:auto_scan_prs)
+      project.auto_fix_merge_conflicts?
     end
 
     def collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle:)
@@ -325,6 +350,8 @@ module Activities
 
     # @spec PR-ESCALATION-003
     def find_paid_prs(project)
+      return upstream_conflict_fix_prs(project) if upstream_conflict_scan?(project)
+
       candidate_prs = project.issues
         .pull_requests_only
         .local_repository
@@ -352,6 +379,15 @@ module Activities
       end
 
       trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
+    end
+
+    # @spec UPSTREAM-GATE-006
+    def upstream_conflict_fix_prs(project)
+      project.issues
+        .pull_requests_only
+        .where(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+        .auto_continue_active
+        .where(github_state: "open")
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008
@@ -2198,7 +2234,24 @@ module Activities
     end
 
     def fetch_pr_data(client, project, issue)
+      return fetch_upstream_pr_data(client, project, issue) if issue.source == Issue::UPSTREAM_PULL_REQUEST_SOURCE
+
       pull_request_collector(project, client:).fetch_pull_request(issue:)
+    end
+
+    # @spec UPSTREAM-GATE-006
+    def fetch_upstream_pr_data(client, project, issue)
+      client.pull_request(project.upstream_full_name, issue.github_number)
+    rescue GithubClient::AuthenticationError
+      raise
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_scanner.fetch_upstream_pr_failed",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+      nil
     end
 
     # --- CI checks ---

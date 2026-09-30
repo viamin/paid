@@ -85,7 +85,10 @@
 # upstream issues (labels and comments) and Sync Labels are gated. Conflict
 # fixes remain available only after verifying that the PR head belongs to the
 # fork; a fix targeting an upstream-owned base branch is rejected before
-# checkout and push.
+# checkout and push. `ScanPaidPrsActivity` retains a separate conflict-only
+# path for saved upstream PR records: it reads mergeability from the upstream
+# repository and can queue a fix on the fork-owned head, but does not run CI,
+# review, merge, label, or lifecycle automation.
 #
 # ## Code
 #
