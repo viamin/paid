@@ -94,6 +94,13 @@ RSpec.describe ChatSession do
 
       expect(chat_session).to be_closed
     end
+
+    it "identifies a closed workspace session as read-only pending workspace reopen" do
+      # @spec QUESTION-EXPLORATION-001
+      expect(build(:chat_session, status: "closed", container_capability: "stopped")).to be_closed_workspace_session
+      expect(build(:chat_session, status: "closed", container_capability: "none")).not_to be_closed_workspace_session
+      expect(build(:chat_session, status: "active", container_capability: "stopped")).not_to be_closed_workspace_session
+    end
   end
 
   describe "legacy provider alias" do

@@ -23,10 +23,10 @@ module ChatSessions
     end
 
     def call
+      # @spec QUESTION-EXPLORATION-001
       chat_session.with_lock do
-        chat_session.reload
         validate!
-        resume! if chat_session.status == "closed"
+        resume! if chat_session.closed?
       end
 
       chat_session
@@ -44,6 +44,7 @@ module ChatSessions
     def resume!
       chat_session.update!(
         status: "active",
+        closed_at: nil,
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
         metadata: resumed_metadata
       )

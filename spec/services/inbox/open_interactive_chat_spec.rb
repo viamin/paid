@@ -39,11 +39,47 @@ RSpec.describe Inbox::OpenInteractiveChat do
     expect(described_class.call(user:, entry:)).not_to eq(first)
   end
 
+  it "resumes the same transcript after the idle reaper closes it" do
+    # @spec QUESTION-EXPLORATION-001
+    first = described_class.call(user:, entry:)
+    message = create(:chat_message, chat_session: first, role: "user", content: "Keep investigating")
+    first.update!(idle_timeout_at: 1.minute.ago)
+    ChatSessions::IdleReaperJob.perform_now
+    expect(first.reload).to be_closed
+
+    resumed = described_class.call(user:, entry:)
+
+    expect(resumed).to eq(first)
+    expect(resumed).to be_active
+    expect(resumed.closed_at).to be_nil
+    expect(resumed.messages).to include(message)
+  end
+
   it "does not allow a viewer to create an inbox chat" do
     # @spec QUESTION-EXPLORATION-007
     viewer = create(:user, :viewer, account:)
 
     expect { described_class.call(user: viewer, entry:) }.to raise_error(Pundit::NotAuthorizedError)
+  end
+
+  it "returns a closed workspace transcript for explicit workspace recovery" do
+    # @spec QUESTION-EXPLORATION-001
+    chat = create(:chat_session, :closed, :workspace, account:, created_by: user, project:,
+      inbox_item_key: entry.id, container_capability: "stopped", container_id: nil, workspace_volume: nil)
+
+    expect(described_class.call(user:, entry:)).to eq(chat)
+    expect(chat.reload).to be_closed
+    expect(chat).to be_container_stopped
+  end
+
+  it "selects the most recently updated active transcript without modifying older ones" do
+    # @spec QUESTION-EXPLORATION-001
+    older = described_class.call(user:, entry:)
+    older.update!(updated_at: 1.hour.ago)
+    newer = create(:chat_session, account:, created_by: user, project:, inbox_item_key: entry.id)
+
+    expect(described_class.call(user:, entry:)).to eq(newer)
+    expect(older.reload).to be_active
   end
 
   # @spec OPERATOR-INBOX-002F

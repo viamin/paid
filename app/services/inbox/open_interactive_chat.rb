@@ -14,9 +14,7 @@ module Inbox
 
     def call
       authorize!
-      active_chat || create_chat
-    rescue ActiveRecord::RecordNotUnique
-      active_chat || raise
+      user.with_lock { active_chat || resume_closed_chat || create_chat }
     end
 
     private
@@ -33,7 +31,16 @@ module Inbox
     end
 
     def active_chat
-      ChatSession.active.find_by(created_by: user, inbox_item_key: authoritative_entry.id)
+      ChatSession.active.where(created_by: user, inbox_item_key: authoritative_entry.id)
+        .order(updated_at: :desc, id: :desc).first
+    end
+
+    def resume_closed_chat
+      chat = ChatSession.where(created_by: user, inbox_item_key: authoritative_entry.id, status: "closed")
+        .order(updated_at: :desc, id: :desc).first
+      return chat unless chat&.inline_only?
+
+      ChatSessions::Resume.call(chat_session: chat)
     end
 
     def create_chat

@@ -16,12 +16,24 @@ actions.
 ## Components and ownership
 
 - Extend `ChatSession` linkage to an Inbox item. The first backend increment
-  uses one active conversation per `(creator, inbox item)` so a user’s
+  selects a conversation per `(creator, inbox item)` so a user’s
   exploratory transcript remains private; a future shared-feature conversation
   must be an explicit collaboration model, not an accidental reuse of a
   personal popup. Persist the inbox key, creator, open/close timestamps and an
-  audit snapshot of queue metadata. Add uniqueness/concurrency protection to
-  avoid duplicate conversations on simultaneous Inbox opens.
+  audit snapshot of queue metadata. Serialize creation to
+  avoid duplicate conversations on simultaneous Inbox opens. Closed conversations
+  remain resumable after inactivity; Inbox opens reuse the active conversation
+  or resume the most recently updated closed conversation. Only archived
+  conversations are excluded from reuse. Messaging and pending confirmations
+  resume the same transcript. Serialize Inbox opens per creator to prevent
+  duplicate creation, and select the most recently updated active transcript.
+  Resuming an older transcript must not alter another conversation or its
+  workspace; multiple historical transcripts may be active concurrently.
+  Claim pending confirmations and resume under the session row lock in one
+  transaction, checking current archive state before any mutation. Rejected
+  or duplicate confirmations must not change session state.
+  Closed workspace transcripts remain accessible through Inbox; their workspace
+  is restored through the existing explicit workspace-reopen control.
 - `ChatSession#clarifying_question_issue` separately links the shipped shared exploration
   flow to its inbox issue or PR. The database permits one non-archived chat
   per linked item; concurrent opens converge on it, and an archived linked
