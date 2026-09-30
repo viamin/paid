@@ -800,10 +800,21 @@ class Issue < ApplicationRecord
   # issues (code-scanning/Dependabot alerts): those have a synthetic
   # github_number with no backing GitHub issue, so pushing a label would
   # 404. The local `paused` flag still excludes them from auto-pick.
+  #
+  # Also a no-op for upstream projects: the issue was synced from a
+  # repository Paid does not own, and `project.full_name` (the fork) is
+  # not the GitHub issue's actual home. Pushing the label there would
+  # either 404 (no fork issue at that number) or, worse, modify a
+  # different fork issue that happens to share the upstream issue's
+  # number — violating the read-only contract for upstream work items
+  # (UPSTREAM-ISSUE-004). The local `paused` flag still excludes the
+  # issue from auto-pick until the next sync reflects upstream state.
+  # @spec UPSTREAM-ISSUE-004
   def sync_paused_label_to_github
     return if destroyed?
     return unless github_number
     return unless source == GITHUB_SOURCE
+    return if project&.upstream_pr_target?
 
     client = project&.client
     return unless client

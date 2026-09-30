@@ -2382,6 +2382,55 @@ RSpec.describe Issue do
       expect(github_client).not_to have_received(:add_labels_to_issue)
       expect(issue.reload.paused).to be(true)
     end
+
+    context "when the project has pr_target=upstream" do # @spec UPSTREAM-ISSUE-004
+      let(:project) do
+        create(:project,
+          owner: "fork-owner",
+          repo: "my-fork",
+          pr_target: "upstream",
+          upstream_full_name: "upstream/widgets")
+      end
+
+      it "does not push the paid-paused label when pausing" do
+        issue = create(:issue, project: project, github_number: 42, paused: false)
+
+        issue.update!(paused: true)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(issue.reload.paused).to be(true)
+      end
+
+      it "does not push a label remove when unpausing" do
+        issue = create(:issue, project: project, github_number: 42, paused: true)
+
+        issue.update!(paused: false)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(issue.reload.paused).to be(false)
+      end
+
+      it "does not address the fork repo at the upstream issue number" do
+        issue = create(:issue, project: project, github_number: 42, paused: false)
+
+        issue.update!(paused: true)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+          .with("fork-owner/my-fork", 42, anything)
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+          .with("upstream/widgets", 42, anything)
+      end
+
+      it "still stamps paused_at so the local flag is observable" do
+        issue = create(:issue, project: project, paused: false)
+
+        freeze_time do
+          issue.update!(paused: true)
+
+          expect(issue.reload.paused_at).to eq(Time.current)
+        end
+      end
+    end
   end
 
   describe "#runner_retry_abandoned?" do
