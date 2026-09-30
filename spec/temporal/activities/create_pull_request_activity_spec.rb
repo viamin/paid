@@ -13,7 +13,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:issue) { fixture_repository.issue }
   let(:agent_run) { fixture_repository.agent_run }
   let(:github_client) { instance_double(GithubClient) }
-  let(:pr_response) { Struct.new(:html_url, :number, :body, :title).new("https://github.com/owner/repo/pull/42", 42, "PR body", "PR title") }
+  let(:pr_response) { Struct.new(:html_url, :number, :body, :title).new("https://github.com/#{project.full_name}/pull/42", 42, "PR body", "PR title") }
   let(:issue_response) do
     OpenStruct.new(
       id: 4242,
@@ -22,7 +22,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       body: "PR body",
       state: "open",
       labels: [],
-      pull_request: OpenStruct.new(html_url: "https://github.com/owner/repo/pull/42"),
+      pull_request: OpenStruct.new(html_url: "https://github.com/#{project.full_name}/pull/42"),
       user: OpenStruct.new(login: "viamin"),
       created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
       updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
@@ -84,7 +84,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
   describe "#execute" do
     it "rejects a source-linked branch after reconciling a reserved PR" do # @spec EAGER-QUEUE-010
-      create(:agent_run, :cancelled, project: project, issue: issue, goal: "create_pr", pull_request_number: 42)
+      create(:agent_run, :cancelled, project: project, issue: issue, goal: "create_pr",
+        pull_request_number: 42, pull_request_url: "https://github.com/#{project.full_name}/pull/42")
       concurrent_issue = create(:issue, :pull_request, project: project, parent_issue: issue)
       concurrent_run = create(:agent_run, project: project, issue: concurrent_issue, goal: "create_pr")
       allow(github_client).to receive(:pull_request).with(project.full_name, 42).and_return(pr_response)
@@ -97,7 +98,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     it "does not publish a different branch when the source issue already has an open implementation PR" do # @spec EAGER-QUEUE-010
-      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 41)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+        pull_request_number: 41, pull_request_url: "https://github.com/#{project.full_name}/pull/41")
       create(:issue, :pull_request, project: project, github_number: 41, github_state: "open", parent_issue_id: nil)
 
       expect {
@@ -108,7 +110,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     it "does not publish a follow-up for an unlinked implementation PR" do # @spec EAGER-QUEUE-010
-      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 41)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+        pull_request_number: 41, pull_request_url: "https://github.com/#{project.full_name}/pull/41")
       implementation_pr = create(:issue, :pull_request, project: project, github_number: 41, github_state: "open", parent_issue_id: nil)
       follow_up_run = create(:agent_run, project: project, issue: implementation_pr, goal: "create_pr")
 
@@ -133,7 +136,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       result = activity.execute(agent_run_id: agent_run.id)
 
-      expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       expect(result[:pull_request_number]).to eq(42)
       expect(project.issues.find_by(github_number: 42, is_pull_request: true).parent_issue).to eq(issue)
     end
@@ -202,7 +205,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
 
       it "reconciles a missing source PR against the upstream repository, not a same-numbered fork PR" do # @spec UPSTREAM-PR-004
-        create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 99)
+        create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+          pull_request_number: 99, pull_request_url: "https://github.com/upstream/repo/pull/99")
         create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
           source: Issue::GITHUB_SOURCE, parent_issue_id: nil)
 
@@ -373,7 +377,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
     it "rejects a second branch when an open implementation PR lacks its parent link" do # @spec EAGER-QUEUE-010
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", pull_request_number: 42,
-        pull_request_url: "https://github.com/owner/repo/pull/42")
+        pull_request_url: "https://github.com/#{project.full_name}/pull/42")
       create(:issue, :pull_request, project: project, github_issue_id: 4242, github_number: 42,
         github_state: "open", parent_issue_id: nil)
 
@@ -387,10 +391,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
     it "continues reconciliation after a recorded implementation PR was deleted" do # @spec EAGER-QUEUE-009
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", pull_request_number: 41,
-        pull_request_url: "https://github.com/owner/repo/pull/41")
+        pull_request_url: "https://github.com/#{project.full_name}/pull/41")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", pull_request_number: 42,
-        pull_request_url: "https://github.com/owner/repo/pull/42")
+        pull_request_url: "https://github.com/#{project.full_name}/pull/42")
 
       allow(github_client).to receive(:issue).with(project.full_name, 41)
         .and_raise(GithubClient::NotFoundError.new("Not Found"))
@@ -410,7 +414,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       create(:agent_run, :failed, :automatic, project: project, issue: issue, goal: "create_pr")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", pull_request_number: 42,
-        pull_request_url: "https://github.com/owner/repo/pull/42")
+        pull_request_url: "https://github.com/#{project.full_name}/pull/42")
       create(:issue, :pull_request, project: project, github_issue_id: 4242, github_number: 42,
         github_state: "open", parent_issue_id: nil)
 
@@ -443,7 +447,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       agent_run.reload
       expect(agent_run.status).to eq("completed")
-      expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
+      expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/42")
       expect(agent_run.pull_request_number).to eq(42)
     end
 
@@ -500,13 +504,13 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect {
         result = activity.execute(agent_run_id: agent_run.id)
 
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
         expect(result[:pull_request_number]).to eq(42)
       }.to change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1)
 
       agent_run.reload
       expect(agent_run.status).to eq("cancelled")
-      expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
+      expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/42")
       expect(agent_run.pull_request_number).to eq(42)
       expect(github_client).to have_received(:add_labels_to_issue).with(
         project.full_name, 42, [ "paid-generated", "paid-automation" ]
@@ -527,7 +531,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       log = agent_run.agent_run_logs.last
       expect(log.log_type).to eq("system")
       expect(log.content).to include("PR created:")
-      expect(log.content).to include("https://github.com/owner/repo/pull/42")
+      expect(log.content).to include("https://github.com/#{project.full_name}/pull/42")
     end
 
     it "uses deterministic fallback body when LLM description is nil" do
@@ -735,7 +739,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       ).and_return(pr_response)
 
       result = activity.execute(agent_run_id: agent_run_no_issue.id)
-      expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
     end
 
     # @spec CHAT-PR-PROPOSAL-006
@@ -811,7 +815,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       ).and_return(pr_response)
 
       result = activity.execute(agent_run_id: agent_run_no_issue.id)
-      expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
     end
 
     context "when the goal is lid_planning" do
@@ -837,7 +841,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         ).and_return(pr_response)
 
         result = activity.execute(agent_run_id: lid_agent_run.id)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
 
       it "fetches changed files once for both allowlist and contract checks" do
@@ -1173,7 +1177,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         ).and_return(pr_response)
 
         result = activity.execute(agent_run_id: feature_agent_run.id)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
 
       it "uses a create_feature-specific PR body" do
@@ -1344,7 +1348,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
     def existing_test_writing_pr
       Struct.new(:html_url, :number, :body, :title).new(
-        "https://github.com/owner/repo/pull/42",
+        "https://github.com/#{project.full_name}/pull/42",
         42,
         "## Summary\n\nExisting draft body",
         "Existing PR"
@@ -1635,7 +1639,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "still creates the PR successfully" do
         result = activity.execute(agent_run_id: agent_run.id)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
     end
 
@@ -1864,7 +1868,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "still creates the PR successfully" do
         result = activity.execute(agent_run_id: agent_run.id)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
 
       it "logs the scope check failure" do
@@ -1912,7 +1916,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(github_client).to have_received(:create_pull_request)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
 
       it "raises when branch is confirmed missing (404)" do
@@ -1935,7 +1939,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(github_client).to have_received(:create_pull_request)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
 
       it "logs branch not found at info level" do
@@ -1975,7 +1979,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     context "with idempotent retries" do
-      let(:existing_pr) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/99", 99) }
+      let(:existing_pr) { Struct.new(:html_url, :number).new("https://github.com/#{project.full_name}/pull/99", 99) }
 
       it "reuses an existing open PR instead of creating a new one" do
         allow(github_client).to receive(:pull_requests).and_return([ existing_pr ])
@@ -1983,10 +1987,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(github_client).not_to have_received(:create_pull_request)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/99")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/99")
         expect(result[:pull_request_number]).to eq(99)
         expect(agent_run.reload.status).to eq("completed")
-        expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/99")
+        expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/99")
       end
 
       it "still marks the run completed when post-processing raises" do
@@ -1996,7 +2000,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(agent_run.reload.status).to eq("completed")
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
 
       it "reuses existing PR on retry after partial failure with already-completed run" do
@@ -2051,7 +2055,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
         expect(github_client).to have_received(:create_pull_request).once
         expect(result[:pull_request_number]).to eq(99)
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/99")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/99")
         expect(agent_run.reload.status).to eq("completed")
       end
 
@@ -2092,8 +2096,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(agent_run.reload.status).to eq("completed")
-        expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
-        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+        expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       end
     end
   end

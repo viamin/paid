@@ -8,7 +8,8 @@ RSpec.describe Issues::ReconcilePullRequestSource do
   it "links a synced PR to the one source issue recorded by its completed run" do # @spec EAGER-QUEUE-009
     source = create(:issue, project: project)
     pull_request = create(:issue, :pull_request, project: project, github_number: 42, parent_issue_id: nil)
-    create(:agent_run, :completed, project: project, issue: source, goal: "create_pr", pull_request_number: 42)
+    create(:agent_run, :completed, project: project, issue: source, goal: "create_pr",
+      pull_request_number: 42, pull_request_url: pull_request.github_url)
 
     described_class.call(pull_request: pull_request)
 
@@ -22,7 +23,8 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     # number is the source evidence, not the terminal status.
     source = create(:issue, project: project)
     pull_request = create(:issue, :pull_request, project: project, github_number: 42, parent_issue_id: nil)
-    create(:agent_run, :failed, project: project, issue: source, goal: "create_pr", pull_request_number: 42)
+    create(:agent_run, :failed, project: project, issue: source, goal: "create_pr",
+      pull_request_number: 42, pull_request_url: pull_request.github_url)
 
     described_class.call(pull_request: pull_request)
 
@@ -33,8 +35,10 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     first_source = create(:issue, project: project)
     second_source = create(:issue, project: project)
     pull_request = create(:issue, :pull_request, project: project, github_number: 42, parent_issue_id: nil)
-    create(:agent_run, :completed, project: project, issue: first_source, goal: "create_pr", pull_request_number: 42)
-    create(:agent_run, :completed, project: project, issue: second_source, goal: "create_pr", pull_request_number: 42)
+    create(:agent_run, :completed, project: project, issue: first_source, goal: "create_pr",
+      pull_request_number: 42, pull_request_url: pull_request.github_url)
+    create(:agent_run, :completed, project: project, issue: second_source, goal: "create_pr",
+      pull_request_number: 42, pull_request_url: pull_request.github_url)
 
     described_class.call(pull_request: pull_request)
 
@@ -45,10 +49,29 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     source = create(:issue, project: project)
     follow_up_pr = create(:issue, :pull_request, project: project, github_number: 41, parent_issue: source)
     pull_request = create(:issue, :pull_request, project: project, github_number: 42, parent_issue_id: nil)
-    create(:agent_run, :completed, project: project, issue: follow_up_pr, goal: "create_pr", pull_request_number: 42)
+    create(:agent_run, :completed, project: project, issue: follow_up_pr, goal: "create_pr",
+      pull_request_number: 42, pull_request_url: pull_request.github_url)
 
     described_class.call(pull_request: pull_request)
 
     expect(pull_request.reload.parent_issue).to eq(source)
+  end
+
+  it "does not attribute a run to an upstream-synced PR that collides in number with a fork PR" do
+    # GitHub PR numbers are per-repo, so a fork-side Issue row and an
+    # upstream-synced Issue row (source: upstream_pull_request) can share the
+    # same github_number in the same project. Matching on number alone would
+    # wrongly treat the run that produced the fork PR as evidence for the
+    # unrelated upstream PR.
+    source = create(:issue, project: project)
+    fork_pull_request = create(:issue, :pull_request, project: project, github_number: 42)
+    upstream_pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+      source: Issue::UPSTREAM_PULL_REQUEST_SOURCE, parent_issue_id: nil)
+    create(:agent_run, :completed, project: project, issue: source, goal: "create_pr",
+      pull_request_number: 42, pull_request_url: fork_pull_request.github_url)
+
+    described_class.call(pull_request: upstream_pull_request)
+
+    expect(upstream_pull_request.reload.parent_issue_id).to be_nil
   end
 end

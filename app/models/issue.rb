@@ -653,6 +653,13 @@ class Issue < ApplicationRecord
   # Views and controllers precompute this hash once per request so per-issue
   # renders can look up the PR without re-querying (fixes the partial N+1
   # that would otherwise fire for each rendered issue with an open paid PR).
+  # `pull_request_number` alone is not a safe join key: GitHub PR numbers are
+  # per-repo, so a fork PR and an upstream-synced PR (Issue rows in the same
+  # project, distinguished only by `source`) can share a number. The
+  # persisted `pull_request_url` on the agent_run and the Issue's computed
+  # `github_url` are both built from the real, repo-qualified GitHub URL, so
+  # matching on that instead of the bare number keeps fork and upstream PRs
+  # distinct.
   def self.open_paid_generated_prs_by_issue_id(project:, issue_ids:)
     issue_ids = Array(issue_ids).compact
     return {} if issue_ids.empty?
@@ -661,20 +668,20 @@ class Issue < ApplicationRecord
       .where(issue_id: issue_ids)
       .where.not(pull_request_number: nil)
       .distinct
-      .pluck(:issue_id, :pull_request_number)
+      .pluck(:issue_id, :pull_request_number, :pull_request_url)
     return {} if issue_pr_pairs.empty?
 
-    pr_numbers = issue_pr_pairs.map(&:last).uniq
-    open_prs_by_number = project.issues
+    pr_numbers = issue_pr_pairs.map { |(_issue_id, pr_number, _pr_url)| pr_number }.uniq
+    open_prs_by_url = project.issues
       .pull_requests_only
       .where(github_state: "open", github_number: pr_numbers)
-      .index_by(&:github_number)
-    return {} if open_prs_by_number.empty?
+      .index_by(&:github_url)
+    return {} if open_prs_by_url.empty?
 
     recency = ->(pr) { [ pr.github_updated_at || Time.at(0), pr.updated_at || Time.at(0) ] }
 
-    issue_pr_pairs.each_with_object({}) do |(issue_id, pr_number), result|
-      pr = open_prs_by_number[pr_number]
+    issue_pr_pairs.each_with_object({}) do |(issue_id, _pr_number, pr_url), result|
+      pr = open_prs_by_url[pr_url]
       next unless pr
 
       existing = result[issue_id]

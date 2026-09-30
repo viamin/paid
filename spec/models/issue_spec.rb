@@ -1060,8 +1060,7 @@ RSpec.describe Issue do
         issue = create(:issue, project: project)
         pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_number: pr.github_number, pull_request_url: pr.github_url)
 
         expect(issue.associated_paid_pull_request).to eq(pr)
       end
@@ -1077,8 +1076,7 @@ RSpec.describe Issue do
         issue = create(:issue, project: project)
         pr = create(:issue, :pull_request, :closed, project: project, github_number: 99)
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_number: pr.github_number, pull_request_url: pr.github_url)
 
         expect(issue.associated_paid_pull_request).to be_nil
       end
@@ -1087,8 +1085,7 @@ RSpec.describe Issue do
         issue = create(:issue, project: project)
         pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_number: pr.github_number, pull_request_url: pr.github_url)
 
         expect(pr.associated_paid_pull_request).to be_nil
       end
@@ -1096,12 +1093,26 @@ RSpec.describe Issue do
       it "ignores PRs from other projects with matching numbers" do
         other_project = create(:project)
         issue = create(:issue, project: project)
-        create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
+        other_project_pr = create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: 99,
-          pull_request_url: "https://github.com/example/repo/pull/99")
+          pull_request_number: 99, pull_request_url: other_project_pr.github_url)
 
         expect(issue.associated_paid_pull_request).to be_nil
+      end
+
+      it "ignores an upstream-synced PR that collides in number with the run's fork PR" do
+        # GitHub PR numbers are per-repo, so a fork PR and an upstream-synced
+        # PR (source: upstream_pull_request) can share a github_number in the
+        # same project. The run's persisted pull_request_url must match the
+        # PR it actually produced, not just its number.
+        issue = create(:issue, project: project)
+        fork_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: 99, pull_request_url: fork_pr.github_url)
+
+        expect(issue.associated_paid_pull_request).to eq(fork_pr)
       end
     end
 
@@ -1112,8 +1123,7 @@ RSpec.describe Issue do
         issue_with_paid_pr = create(:issue, project: project)
         paid_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
         create(:agent_run, :completed, project: project, issue: issue_with_paid_pr,
-          pull_request_number: paid_pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{paid_pr.github_number}")
+          pull_request_number: paid_pr.github_number, pull_request_url: paid_pr.github_url)
 
         issue_without_paid_pr = create(:issue, project: project)
         create(:issue, :pull_request, project: project, parent_issue: issue_without_paid_pr,
@@ -1131,8 +1141,7 @@ RSpec.describe Issue do
         issue = create(:issue, project: project)
         paid_pr = create(:issue, :pull_request, :closed, project: project, github_number: 99)
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: paid_pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{paid_pr.github_number}")
+          pull_request_number: paid_pr.github_number, pull_request_url: paid_pr.github_url)
 
         result = described_class.open_paid_generated_prs_by_issue_id(
           project: project, issue_ids: [ issue.id ]
@@ -1153,11 +1162,9 @@ RSpec.describe Issue do
         newer_pr = create(:issue, :pull_request, project: project, github_number: 99,
           github_state: "open", github_updated_at: 1.minute.ago)
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: older_pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{older_pr.github_number}")
+          pull_request_number: older_pr.github_number, pull_request_url: older_pr.github_url)
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: newer_pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{newer_pr.github_number}")
+          pull_request_number: newer_pr.github_number, pull_request_url: newer_pr.github_url)
 
         result = described_class.open_paid_generated_prs_by_issue_id(
           project: project, issue_ids: [ issue.id ]
@@ -1169,10 +1176,9 @@ RSpec.describe Issue do
       it "ignores PRs from other projects with matching numbers" do
         other_project = create(:project)
         issue = create(:issue, project: project)
-        create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
+        other_project_pr = create(:issue, :pull_request, project: other_project, github_number: 99, github_state: "open")
         create(:agent_run, :completed, project: project, issue: issue,
-          pull_request_number: 99,
-          pull_request_url: "https://github.com/example/repo/pull/99")
+          pull_request_number: 99, pull_request_url: other_project_pr.github_url)
 
         result = described_class.open_paid_generated_prs_by_issue_id(
           project: project, issue_ids: [ issue.id ]
@@ -1181,13 +1187,30 @@ RSpec.describe Issue do
         expect(result).to be_empty
       end
 
+      it "ignores an upstream-synced PR that collides in number with the run's fork PR" do
+        # GitHub PR numbers are per-repo, so a fork PR and an upstream-synced
+        # PR can share a github_number in the same project. Matching on
+        # number alone would wrongly surface the unrelated upstream PR.
+        issue = create(:issue, project: project)
+        fork_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
+        create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+        create(:agent_run, :completed, project: project, issue: issue,
+          pull_request_number: 99, pull_request_url: fork_pr.github_url)
+
+        result = described_class.open_paid_generated_prs_by_issue_id(
+          project: project, issue_ids: [ issue.id ]
+        )
+
+        expect(result).to eq(issue.id => fork_pr)
+      end
+
       it "issues a bounded number of queries regardless of issue count" do
         issues = Array.new(5) { create(:issue, project: project) }
         issues.each_with_index do |issue, idx|
           pr = create(:issue, :pull_request, project: project, github_number: 100 + idx, github_state: "open")
           create(:agent_run, :completed, project: project, issue: issue,
-            pull_request_number: pr.github_number,
-            pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+            pull_request_number: pr.github_number, pull_request_url: pr.github_url)
         end
 
         # Two queries: agent_runs pairs, then open PRs by number.

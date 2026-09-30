@@ -318,12 +318,17 @@ module Activities
       issue.parent_issue || source_issue_from_producing_run(issue) || issue
     end
 
+    # `pull_request_number` alone can collide across repos (see the comment
+    # on #missing_pull_request_numbers), so require the persisted
+    # `pull_request_url` to match this PR's actual, repo-qualified GitHub URL
+    # before treating the run as its producer.
     def source_issue_from_producing_run(pull_request)
       AgentRun.joins(:issue)
         .where(
           project: pull_request.project,
           goal: "create_pr",
           pull_request_number: pull_request.github_number,
+          pull_request_url: pull_request.github_url,
           issues: { is_pull_request: false }
         )
         .order(created_at: :asc)
