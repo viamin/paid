@@ -94,6 +94,9 @@ module Issues
     private_class_method :maybe_unpark_recommend_close_dependents
 
     def self.remove_recommend_close_label(issue)
+      label = recommend_close_label(issue.project)
+      return true unless issue.labels.include?(label)
+
       if issue.project.upstream_pr_target?
         Rails.logger.info(
           message: "github_sync.upstream_issue_write_skipped",
@@ -102,11 +105,8 @@ module Issues
           github_number: issue.github_number,
           operation: "remove_recommend_close_label"
         )
-        return false
+        return true
       end
-
-      label = recommend_close_label(issue.project)
-      return true unless issue.labels.include?(label)
 
       client = issue.project.client
       if client.nil?

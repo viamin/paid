@@ -510,6 +510,39 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(github_client).not_to have_received(:remove_labels_from_issue)
       end
 
+      it "skips upstream reconciliation writes but clears stale labels locally" do # @spec UPSTREAM-ISSUE-004
+        project.update_columns(last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
+        stale_pr = create(:issue, :pull_request, project: project, github_number: 50,
+          github_state: "open", github_creator_login: "trusted-maintainer",
+          pr_review_phase: "escalated", labels: [ "paid-escalated" ])
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.issue_target_repository, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true))
+        allow(github_client).to receive(:remove_label_from_issue)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(stale_pr.reload.labels).not_to include("paid-escalated")
+      end
+
+      it "does not backfill untrusted upstream work items from reconciliation lists" do # @spec UPSTREAM-ISSUE-002
+        project.update_columns(last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: 2.hours.ago)
+        untrusted_pr = OpenStruct.new(number: 51, user: OpenStruct.new(login: "outside-contributor"))
+        untrusted_issue_list_item = OpenStruct.new(number: 52, pull_request: nil,
+          user: OpenStruct.new(login: "outside-contributor"))
+        allow(github_client).to receive(:issues) do |_repo, **options|
+          options[:state] == "open" ? [ untrusted_issue_list_item ] : [ trusted_issue ]
+        end
+        allow(github_client).to receive(:pull_requests).and_return([ untrusted_pr ])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:issue)
+        expect(project.issues).to be_empty
+      end
+
       it "advances a truncated incremental cursor from untrusted fetched issues" do # @spec UPSTREAM-ISSUE-005
         stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 1)
         stub_const("Activities::FetchIssuesActivity::DEFAULT_MAX_PAGES", 1)

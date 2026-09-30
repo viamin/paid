@@ -158,13 +158,24 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     it "does not create a pull request for a source issue archived by a target change" do # @spec UPSTREAM-ISSUE-006
-      issue.update!(github_state: "closed")
+      agent_run.update!(goal: "create_pr", status: "running")
+      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
 
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(github_client).not_to have_received(:create_pull_request)
       expect(result).to include(cancelled: true)
       expect(agent_run.reload.status).to eq("cancelled")
+    end
+
+    it "still creates a pull request when an own-repository source issue closes" do
+      agent_run.update!(status: "running")
+      issue.update!(github_state: "closed")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:pull_request_number]).to eq(pr_response.number)
+      expect(agent_run.reload.status).to eq("completed")
     end
 
     # @spec SESSION-SUMMARY-001

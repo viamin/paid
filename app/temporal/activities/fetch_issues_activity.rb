@@ -304,7 +304,14 @@ module Activities
       body_before_upsert = existing_issue&.body
 
       unless trusted
-        unless project.upstream_pr_target?
+        if project.upstream_pr_target?
+          logger.info(
+            message: "github_sync.untrusted_upstream_issue_skipped",
+            project_id: project.id,
+            github_number: github_issue.number,
+            creator: creator_login
+          )
+        else
           logger.warn(
             message: "github_sync.untrusted_issue_skipped",
             project_id: project.id,
@@ -1214,7 +1221,7 @@ module Activities
     end
 
     def reconcile_open_pull_requests(project, client)
-      open_pr_numbers, truncated = fetch_open_pull_request_numbers(client, project.issue_target_repository)
+      open_pr_numbers, truncated = fetch_open_pull_request_numbers(client, project)
       return { changed: false, closed_count: 0, open_pull_request_numbers: [] } if truncated
 
       backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
@@ -1228,17 +1235,18 @@ module Activities
       }
     end
 
-    def fetch_open_pull_request_numbers(client, repo_full_name)
+    def fetch_open_pull_request_numbers(client, project)
       prs = []
       page = 1
       truncated = false
+      repo_full_name = project.issue_target_repository
 
       loop do
         heartbeat("fetch_issues.pull_request_page", repo: repo_full_name, page: page)
         page_prs = client.pull_requests(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
         break if page_prs.empty?
 
-        prs.concat(page_prs)
+        prs.concat(page_prs.select { |pr| trusted_github_issue?(project, pr) })
         break if page_prs.size < DEFAULT_PER_PAGE
 
         page += 1
@@ -1367,7 +1375,9 @@ module Activities
         next unless issue.has_label?(PAID_ESCALATED_LABEL)
 
         begin
-          client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+          unless upstream_issue_write_skipped?(project, "remove_escalated_label", issue: issue)
+            client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+          end
         rescue GithubClient::Error => e
           logger.warn(
             message: "github_sync.remove_stale_escalation_label_failed",
@@ -1387,7 +1397,7 @@ module Activities
     def reconcile_open_issues(project, client, eager_queue_enabled: false, eligible_issues: nil, open_pull_request_numbers: [])
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
-      open_numbers, truncated = fetch_open_issue_numbers(client, project.issue_target_repository)
+      open_numbers, truncated = fetch_open_issue_numbers(client, project)
       synced_issues = []
 
       project.update_columns(last_issue_reconciliation_at: Time.current)
@@ -1532,17 +1542,23 @@ module Activities
       candidate_ids.uniq.map { |id| { id: id } }
     end
 
-    def fetch_open_issue_numbers(client, repo_full_name)
+    def fetch_open_issue_numbers(client, project)
       numbers = []
       page = 1
       truncated = false
+      repo_full_name = project.issue_target_repository
 
       loop do
         heartbeat("fetch_issues.issue_page", repo: repo_full_name, page: page)
         page_issues = client.issues(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
         break if page_issues.empty?
 
-        numbers.concat(page_issues.reject { |i| i.respond_to?(:pull_request) && i.pull_request }.filter_map(&:number))
+        numbers.concat(
+          page_issues
+            .reject { |issue| issue.respond_to?(:pull_request) && issue.pull_request }
+            .select { |issue| trusted_github_issue?(project, issue) }
+            .filter_map(&:number)
+        )
         break if page_issues.size < DEFAULT_PER_PAGE
 
         page += 1
