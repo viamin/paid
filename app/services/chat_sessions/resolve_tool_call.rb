@@ -71,6 +71,11 @@ module ChatSessions
 
     def validate_session_state!
       raise ArgumentError, "Chat session is archived." if chat_session.archived?
+      # @spec QUESTION-EXPLORATION-001
+      # Closed workspace transcripts stay read-only until ChatSessions::Reopen
+      # restores the workspace: close already tore down the container an
+      # approved tool would dispatch against.
+      raise ArgumentError, "workspace chat sessions cannot be resumed" if chat_session.closed_workspace_session?
     end
 
     # Atomically transition this tool call from +pending+ to its decision status

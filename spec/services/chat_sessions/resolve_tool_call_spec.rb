@@ -273,6 +273,31 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(llm_client.seen_conversations).to be_empty
     end
 
+    it "rejects resolving a pending confirmation on a closed workspace session" do
+      # @spec QUESTION-EXPLORATION-001
+      workspace_session = create(:chat_session, :closed, :workspace, account: account, created_by: user)
+      workspace_session.update!(container_id: nil, workspace_volume: nil, container_capability: "stopped")
+      workspace_confirmation = create(:chat_message,
+        chat_session: workspace_session,
+        role: "assistant",
+        content: nil,
+        tool_name: "trigger_agent_run",
+        tool_call_id: "call_ws",
+        tool_arguments: { "project_id" => 1 },
+        tool_status: "pending")
+      allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result)
+
+      expect {
+        described_class.call(chat_session: workspace_session, tool_call_message: workspace_confirmation,
+          decision: :approve, llm_client: llm_client)
+      }.to raise_error(ArgumentError, /cannot be resumed/)
+
+      expect(workspace_confirmation.reload.tool_status).to eq("pending")
+      expect(workspace_session.reload.status).to eq("closed")
+      expect(Tools::Registry).not_to have_received(:dispatch)
+      expect(llm_client.seen_conversations).to be_empty
+    end
+
     it "rejects an unknown decision" do
       expect {
         described_class.call(
