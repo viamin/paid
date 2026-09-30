@@ -245,6 +245,59 @@ RSpec.describe ChatSessions::ResolveToolCall do
       }.to raise_error(ArgumentError, /not awaiting confirmation/)
     end
 
+    it "does not reopen a closed chat for an already resolved confirmation" do
+      # @spec QUESTION-EXPLORATION-001
+      chat_session.update!(status: "closed", inbox_item_key: "clarifying_questions:1")
+      tool_call_message.update!(tool_status: "denied")
+
+      expect {
+        described_class.call(chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :deny, llm_client: llm_client)
+      }.to raise_error(ArgumentError, /not awaiting confirmation/)
+
+      expect(chat_session.reload).to be_closed
+      expect(chat_session.metadata).not_to have_key("resume_count")
+    end
+
+    it "does not resolve a confirmation from a stale session object after archive" do
+      # @spec QUESTION-EXPLORATION-001
+      tool_call_message
+      ChatSession.find(chat_session.id).update!(status: "archived")
+
+      expect {
+        described_class.call(chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :deny, llm_client: llm_client)
+      }.to raise_error(ArgumentError, /archived/)
+
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+      expect(llm_client.seen_conversations).to be_empty
+    end
+
+    it "rejects resolving a pending confirmation on a closed workspace session" do
+      # @spec QUESTION-EXPLORATION-001
+      workspace_session = create(:chat_session, :closed, :workspace, account: account, created_by: user)
+      workspace_session.update!(container_id: nil, workspace_volume: nil, container_capability: "stopped")
+      workspace_confirmation = create(:chat_message,
+        chat_session: workspace_session,
+        role: "assistant",
+        content: nil,
+        tool_name: "trigger_agent_run",
+        tool_call_id: "call_ws",
+        tool_arguments: { "project_id" => 1 },
+        tool_status: "pending")
+      allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result)
+
+      expect {
+        described_class.call(chat_session: workspace_session, tool_call_message: workspace_confirmation,
+          decision: :approve, llm_client: llm_client)
+      }.to raise_error(ArgumentError, /cannot be resumed/)
+
+      expect(workspace_confirmation.reload.tool_status).to eq("pending")
+      expect(workspace_session.reload.status).to eq("closed")
+      expect(Tools::Registry).not_to have_received(:dispatch)
+      expect(llm_client.seen_conversations).to be_empty
+    end
+
     it "rejects an unknown decision" do
       expect {
         described_class.call(
@@ -267,18 +320,17 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(tool_call_message.reload.tool_status).to eq("pending")
     end
 
-    it "rejects resolving a tool call when an interactive inbox chat is closed" do
+    it "resumes a closed interactive inbox chat when resolving a pending tool call" do
       # @spec QUESTION-EXPLORATION-001
       chat_session.update!(status: "closed", inbox_item_key: "clarifying_questions:1")
 
-      expect {
-        described_class.call(
-          chat_session: chat_session, tool_call_message: tool_call_message,
-          decision: :approve, llm_client: llm_client
-        )
-      }.to raise_error(ArgumentError, /interactive inbox chat sessions cannot be resumed/)
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :deny, llm_client: llm_client
+      )
 
-      expect(tool_call_message.reload.tool_status).to eq("pending")
+      expect(tool_call_message.reload.tool_status).to eq("denied")
+      expect(chat_session.reload.status).to eq("active")
     end
   end
 
