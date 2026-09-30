@@ -533,9 +533,10 @@ RSpec.describe Activities::FetchIssuesActivity do
         untrusted_issue_list_item = OpenStruct.new(number: 52, pull_request: nil,
           user: OpenStruct.new(login: "outside-contributor"))
         allow(github_client).to receive(:issues) do |_repo, **options|
-          options[:state] == "open" ? [ untrusted_issue_list_item ] : [ trusted_issue ]
+          options[:state] == "open" ? [ untrusted_issue_list_item ] : []
         end
         allow(github_client).to receive(:pull_requests).and_return([ untrusted_pr ])
+        allow(github_client).to receive(:issue)
 
         activity.execute(project_id: project.id)
 
