@@ -28,9 +28,15 @@
 - [x] **UPSTREAM-PR-005** — When Paid synchronizes or reconciles an upstream
   PR, it SHALL retain the canonical URL supplied by GitHub, use it to
   distinguish fork and upstream PRs with colliding numbers, and close the
-  local upstream record when the upstream PR is closed or merged.
+  local upstream record when the upstream PR is closed or merged. It SHALL
+  reconcile only runs whose recorded URL identifies the upstream repository,
+  and SHALL not recover Paid-managed labels for upstream PRs.
   *Code:* `app/services/issues/upsert_from_github.rb`, `app/models/issue.rb`,
-  `app/temporal/activities/fetch_issues_activity.rb`.
+  `app/temporal/activities/fetch_issues_activity.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`,
+  `app/jobs/recover_missing_pull_request_labels_job.rb`.
   *Test:* `spec/models/issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`,
-  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`,
+  `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.

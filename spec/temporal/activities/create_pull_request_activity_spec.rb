@@ -64,6 +64,12 @@ RSpec.describe Activities::CreatePullRequestActivity do
     ).and_return([ Array(changed_files).join("\n").concat("\n"), "", success_status ])
   end
 
+  def upstream_issue_response(number)
+    OpenStruct.new(
+      issue_response.to_h.merge(id: 9999, number: number, html_url: "https://github.com/upstream/repo/pull/#{number}")
+    )
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -210,13 +216,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
           source: Issue::GITHUB_SOURCE, parent_issue_id: nil)
 
-        upstream_issue_response = OpenStruct.new(
-          issue_response.to_h.merge(
-            id: 9999,
-            number: 99,
-            html_url: "https://github.com/upstream/repo/pull/99"
-          )
-        )
+        upstream_issue_response = upstream_issue_response(99)
         allow(github_client).to receive(:pull_request).with("upstream/repo", 99).and_return(pr_response)
         allow(github_client).to receive(:issue).with("upstream/repo", 99).and_return(upstream_issue_response)
         allow(Issues::UpsertFromGithub).to receive(:call).and_call_original
@@ -231,6 +231,18 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(github_client).to have_received(:pull_request).with("upstream/repo", 99)
         expect(github_client).not_to have_received(:pull_request).with(project.full_name, 99)
         expect(github_client).not_to have_received(:create_pull_request)
+      end
+
+      it "does not reconcile fork-era PR runs against the upstream repository" do # @spec UPSTREAM-PR-005 EAGER-QUEUE-010
+        create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+          pull_request_number: 99, pull_request_url: "https://github.com/#{project.full_name}/pull/99")
+        allow(github_client).to receive(:pull_request)
+        allow(github_client).to receive(:issue)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).not_to have_received(:pull_request).with("upstream/repo", 99)
+        expect(github_client).not_to have_received(:issue).with("upstream/repo", 99)
       end
 
       it "reuses an existing upstream PR found by its qualified head" do # @spec UPSTREAM-PR-003

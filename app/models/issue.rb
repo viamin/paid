@@ -600,8 +600,24 @@ class Issue < ApplicationRecord
 
   AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
     SELECT 1 FROM issues closed_prs
+    INNER JOIN projects closed_pr_projects
+      ON closed_pr_projects.id = closed_prs.project_id
     WHERE closed_prs.project_id = agent_runs.project_id
       AND closed_prs.github_number = agent_runs.pull_request_number
+      AND (
+        closed_prs.github_html_url = agent_runs.pull_request_url
+        OR (
+          closed_prs.github_html_url IS NULL
+          AND agent_runs.pull_request_url = CONCAT(
+            'https://github.com/',
+            closed_pr_projects.owner,
+            '/',
+            closed_pr_projects.repo,
+            '/pull/',
+            closed_prs.github_number
+          )
+        )
+      )
       AND closed_prs.is_pull_request = TRUE
       AND closed_prs.github_state = 'closed'
       AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'

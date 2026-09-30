@@ -305,14 +305,31 @@ module Activities
     # treated as already-synced and the real upstream PR would never be
     # reconciled.
     def missing_pull_request_numbers(project, source_issue)
-      produced_numbers = source_issue.agent_runs.where(goal: "create_pr")
-        .where.not(pull_request_number: nil).pluck(:pull_request_number).uniq
+      produced_numbers = produced_pull_request_numbers(project, source_issue)
       synced_pull_requests = project.issues.pull_requests_only.where(github_number: produced_numbers)
       return produced_numbers - synced_pull_requests.pluck(:github_number) unless project.upstream_pr_target?
 
       synced_upstream = synced_pull_requests.where(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
       (produced_numbers - synced_upstream.pluck(:github_number)) |
         synced_upstream.where(github_state: "open").pluck(:github_number)
+    end
+
+    # A project can switch from fork to upstream PRs. Fork-era runs retain
+    # their fork URL, so treating their numbers as upstream PRs would fetch and
+    # persist unrelated upstream records when repository numbering diverges.
+    # @spec UPSTREAM-PR-005 EAGER-QUEUE-010
+    def produced_pull_request_numbers(project, source_issue)
+      runs = source_issue.agent_runs.where(goal: "create_pr").where.not(pull_request_number: nil)
+      runs = runs.where("pull_request_url LIKE ?", upstream_pull_request_url_pattern(project)) if project.upstream_pr_target?
+      runs.pluck(:pull_request_number).uniq
+    end
+
+    def upstream_pull_request_url_prefix(project)
+      "https://github.com/#{project.upstream_full_name}/pull/"
+    end
+
+    def upstream_pull_request_url_pattern(project)
+      "#{ActiveRecord::Base.sanitize_sql_like(upstream_pull_request_url_prefix(project))}%"
     end
 
     def source_issue(issue)

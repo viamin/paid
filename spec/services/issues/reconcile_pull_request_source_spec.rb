@@ -66,7 +66,8 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     source = create(:issue, project: project)
     fork_pull_request = create(:issue, :pull_request, project: project, github_number: 42)
     upstream_pull_request = create(:issue, :pull_request, project: project, github_number: 42,
-      source: Issue::UPSTREAM_PULL_REQUEST_SOURCE, parent_issue_id: nil)
+      source: Issue::UPSTREAM_PULL_REQUEST_SOURCE, parent_issue_id: nil,
+      github_html_url: "https://github.com/upstream/repo/pull/42")
     create(:agent_run, :completed, project: project, issue: source, goal: "create_pr",
       pull_request_number: 42, pull_request_url: fork_pull_request.github_url)
 
