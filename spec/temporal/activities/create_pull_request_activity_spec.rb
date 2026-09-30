@@ -151,7 +151,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
           base: "trunk",
           head: "#{project.owner}:#{agent_run.branch_name}",
           title: anything,
-          body: a_string_including("Closes ##{issue.github_number}"),
+          body: a_string_including("Closes #{project.full_name}##{issue.github_number}"),
           draft: true
         ).and_return(pr_response)
 
@@ -160,6 +160,67 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(github_client).to have_received(:repository).once
         expect(github_client).to have_received(:issue).with("upstream/repo", 42)
         expect(project.issues.find_by(github_issue_id: 4242).source).to eq("upstream_pull_request")
+      end
+
+      it "does not resolve the closing keyword against an unqualified issue number" do
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(captured_body).not_to include("Closes ##{issue.github_number}")
+        expect(captured_body).to include("Closes #{project.full_name}##{issue.github_number}")
+      end
+
+      it "does not convert a transient server error during the existing-PR lookup into a fatal permission failure" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:pull_requests)
+          .and_raise(GithubClient::ApiError.new("Server Error", status: 502))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(GithubClient::ApiError, "Server Error")
+      end
+
+      it "does not convert a transient server error fetching the upstream default branch into a fatal permission failure" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:repository).with("upstream/repo")
+          .and_raise(GithubClient::ApiError.new("Server Error", status: 502))
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(GithubClient::ApiError, "Server Error")
+      end
+
+      it "does not fail the run when a non-GithubClient error occurs syncing the upstream PR record" do # @spec UPSTREAM-PR-004
+        allow(github_client).to receive(:issue).with("upstream/repo", 42)
+          .and_raise(Faraday::TimeoutError.new("timed out"))
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:pull_request_number]).to eq(42)
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
+      it "reconciles a missing source PR against the upstream repository, not a same-numbered fork PR" do # @spec UPSTREAM-PR-004
+        create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 99)
+        create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
+          source: Issue::GITHUB_SOURCE, parent_issue_id: nil)
+
+        upstream_issue_response = OpenStruct.new(issue_response.to_h.merge(id: 9999, number: 99))
+        allow(github_client).to receive(:pull_request).with("upstream/repo", 99).and_return(pr_response)
+        allow(github_client).to receive(:issue).with("upstream/repo", 99).and_return(upstream_issue_response)
+        allow(Issues::UpsertFromGithub).to receive(:call).and_call_original
+        expect(Issues::UpsertFromGithub).to receive(:call)
+          .with(project: project, github_issue: upstream_issue_response, source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+          .and_call_original
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /already has open implementation PR #99/)
+
+        expect(github_client).to have_received(:pull_request).with("upstream/repo", 99)
+        expect(github_client).not_to have_received(:pull_request).with(project.full_name, 99)
+        expect(github_client).not_to have_received(:create_pull_request)
       end
 
       it "reuses an existing upstream PR found by its qualified head" do # @spec UPSTREAM-PR-003

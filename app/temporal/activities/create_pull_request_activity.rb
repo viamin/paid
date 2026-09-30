@@ -238,14 +238,27 @@ module Activities
       raise_upstream_permission_error!(project, e)
     end
 
+    # Converts only permission-class failures (401/403/404) into the fatal,
+    # non-retryable UpstreamPullRequestPermissionDenied error. A transient
+    # failure (e.g. a 5xx ApiError) must not become fatal here — the local
+    # project path deliberately treats these as retryable/best-effort, and
+    # upstream runs must not be held to a stricter standard than that for
+    # infrastructure hiccups (see the comment on #find_existing_pr).
     def raise_upstream_permission_error!(project, error)
       raise error unless project.upstream_pr_target?
+      raise error unless permission_denied_error?(error)
 
       raise Temporalio::Error::ApplicationError.new(
         "Unable to create upstream pull request: configure an active PAT fallback with access to #{project.upstream_full_name}",
         type: "UpstreamPullRequestPermissionDenied",
         non_retryable: true
       )
+    end
+
+    def permission_denied_error?(error)
+      error.is_a?(GithubClient::AuthenticationError) ||
+        error.is_a?(GithubClient::NotFoundError) ||
+        (error.is_a?(GithubClient::ApiError) && error.status == 403)
     end
 
     # @spec EAGER-QUEUE-010
@@ -270,20 +283,33 @@ module Activities
     # a transient lookup failure raises and is retried rather than becoming
     # permission to duplicate work.
     def reconcile_missing_source_pull_requests!(client, project, source_issue)
+      repo = pull_request_repository(project)
       missing_pull_request_numbers(project, source_issue).each do |number|
-        client.pull_request(project.full_name, number)
-        github_issue = client.issue(project.full_name, number)
-        Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+        client.pull_request(repo, number)
+        github_issue = client.issue(repo, number)
+        Issues::UpsertFromGithub.call(
+          project: project,
+          github_issue: github_issue,
+          source: project.upstream_pr_target? ? Issue::UPSTREAM_PULL_REQUEST_SOURCE : Issue::GITHUB_SOURCE
+        )
       rescue GithubClient::NotFoundError
         next
       end
     end
 
+    # `agent_runs.pull_request_number` holds upstream PR numbers for upstream
+    # projects, so the local rows that can satisfy them must be restricted to
+    # rows synced from the upstream repo (source: upstream_pull_request).
+    # Without this restriction, a fork-side Issue row with a colliding number
+    # (issue/PR numbers are per-repo, so collisions are ordinary) would be
+    # treated as already-synced and the real upstream PR would never be
+    # reconciled.
     def missing_pull_request_numbers(project, source_issue)
       produced_numbers = source_issue.agent_runs.where(goal: "create_pr")
         .where.not(pull_request_number: nil).pluck(:pull_request_number)
-      synced_numbers = project.issues.pull_requests_only.where(github_number: produced_numbers).pluck(:github_number)
-      produced_numbers - synced_numbers
+      synced_pull_requests = project.issues.pull_requests_only.where(github_number: produced_numbers)
+      synced_pull_requests = synced_pull_requests.where(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE) if project.upstream_pr_target?
+      produced_numbers - synced_pull_requests.pluck(:github_number)
     end
 
     def source_issue(issue)
@@ -409,7 +435,7 @@ module Activities
         end
       end
       if project.upstream_pr_target?
-        sync_pull_request_record(client, project, pr.number)
+        sync_upstream_pull_request_record(agent_run_id, client, project, pr.number)
       else
         best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
       end
@@ -487,10 +513,22 @@ module Activities
       if issue
         parts << "---"
         parts << ""
-        parts << "Closes ##{issue.github_number}"
+        parts << "Closes #{issue_reference(issue, agent_run.project)}"
       end
 
       parts.join("\n")
+    end
+
+    # A bare `#N` reference resolves against the repository the PR is opened
+    # in. For upstream runs that repository is the upstream repo, not the
+    # fork the issue lives in — issue/PR numbers are per-repo, so a collision
+    # with an unrelated upstream issue is the common case, not an edge case.
+    # Qualify the reference so it links to the correct (fork) issue instead
+    # of silently closing/resolving against an unrelated upstream one.
+    def issue_reference(issue, project)
+      return "##{issue.github_number}" unless project.upstream_pr_target?
+
+      "#{project.full_name}##{issue.github_number}"
     end
 
     # Builds a goal-specific PR body for lid_planning runs.
@@ -578,7 +616,7 @@ module Activities
         "branch_name" => agent_run.branch_name.to_s,
         "issue_number" => issue&.github_number.to_s,
         "issue_title" => issue&.title.to_s,
-        "issue_url" => issue ? "##{issue.github_number}" : "",
+        "issue_url" => issue ? issue_reference(issue, agent_run.project) : "",
         "quality_warnings" => quality_warnings.to_s
       }
       template.render(variables)
@@ -648,7 +686,8 @@ module Activities
 
     def fallback_description(issue, agent_run)
       if issue
-        [ issue.title, "", "See ##{issue.github_number} for context." ].join("\n")
+        reference = agent_run ? issue_reference(issue, agent_run.project) : "##{issue.github_number}"
+        [ issue.title, "", "See #{reference} for context." ].join("\n")
       elsif agent_run&.custom_prompt.present?
         custom_prompt_excerpt(agent_run.custom_prompt)
       else
@@ -1100,6 +1139,28 @@ module Activities
       )
     rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
       raise_upstream_permission_error!(project, e)
+    end
+
+    # Upstream sync is fail-explicit only for permission-class failures
+    # (surfaced as a non-retryable Temporalio::Error::ApplicationError by
+    # sync_pull_request_record above). A transient, non-GithubClient failure
+    # here (e.g. Faraday::TimeoutError, an ActiveRecord blip) must not raise
+    # out of the activity after agent_run.complete! has already persisted —
+    # retries short-circuit on agent_run.finished?, so there would be no way
+    # to retry the sync. Treat it as best-effort instead: the local Issue row
+    # is healed on a later run via reconcile_missing_source_pull_requests!.
+    def sync_upstream_pull_request_record(agent_run_id, client, project, pr_number)
+      sync_pull_request_record(client, project, pr_number)
+    rescue Temporalio::Error::ApplicationError
+      raise
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.post_processing_failed",
+        agent_run_id: agent_run_id,
+        context: "sync_created_pull_request",
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def merge_local_pr_labels(project, pr_number, labels)
