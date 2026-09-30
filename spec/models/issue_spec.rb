@@ -616,6 +616,15 @@ RSpec.describe Issue do
         expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
       end
 
+      it "returns normal issue and pull request URLs for the upstream work-item repository" do # @spec UPSTREAM-ISSUE-001
+        project = build(:project, owner: "viamin", repo: "paid", pr_target: "upstream", upstream_full_name: "acme/widgets")
+        issue = build(:issue, project: project, github_number: 42)
+        pull_request = build(:issue, :pull_request, project: project, github_number: 43)
+
+        expect(issue.github_url).to eq("https://github.com/acme/widgets/issues/42")
+        expect(pull_request.github_url).to eq("https://github.com/acme/widgets/pull/43")
+      end
+
       it "returns the Dependabot alert URL for legacy Dependabot synthetic issues" do
         project = build(:project, owner: "viamin", repo: "paid")
         offset = Issue::LEGACY_DEPENDABOT_ID_OFFSET

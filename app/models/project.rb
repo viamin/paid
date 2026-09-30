@@ -432,7 +432,8 @@ class Project < ApplicationRecord
   after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
   before_update :reset_issue_sync_state, if: :will_change_issue_target_repository?
-  after_update_commit :archive_previous_target_issues, if: :saved_change_to_issue_target_repository?
+  before_update :archive_previous_target_issues, if: :will_change_issue_target_repository?
+  after_update_commit :cancel_previous_target_issue_runs, if: :saved_change_to_issue_target_repository?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
@@ -1654,8 +1655,30 @@ class Project < ApplicationRecord
   end
 
   def archive_previous_target_issues # @spec UPSTREAM-ISSUE-006
-    issues.where(source: Issue::GITHUB_SOURCE, github_state: "open")
-      .update_all(github_state: "closed", updated_at: Time.current)
+    previous_target_issue_ids = issues.where(source: Issue::GITHUB_SOURCE, github_state: "open").pluck(:id)
+    @previous_target_create_pr_run_ids = agent_runs.active.where(
+      goal: "create_pr", issue_id: previous_target_issue_ids
+    ).pluck(:id)
+    issues.where(id: previous_target_issue_ids).update_all(github_state: "closed", updated_at: Time.current)
+  end
+
+  def cancel_previous_target_issue_runs # @spec UPSTREAM-ISSUE-006
+    previous_target_create_pr_run_ids.each do |agent_run_id|
+      cancel_previous_target_issue_run(agent_run_id)
+    end
+  ensure
+    @previous_target_create_pr_run_ids = nil
+  end
+
+  def previous_target_create_pr_run_ids
+    @previous_target_create_pr_run_ids || []
+  end
+
+  def cancel_previous_target_issue_run(agent_run_id)
+    agent_run = AgentRun.find_by(id: agent_run_id)
+    return unless agent_run&.cancel!(error: "Issue target repository changed")
+
+    AgentRunCancellationJob.perform_later(agent_run.id)
   end
 
   def will_change_issue_target_repository?

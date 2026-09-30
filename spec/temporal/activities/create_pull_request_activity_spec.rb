@@ -157,6 +157,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(github_client).to have_received(:issue).with("stenolabs/stenoai", 42)
     end
 
+    it "does not create a pull request for a source issue archived by a target change" do # @spec UPSTREAM-ISSUE-006
+      issue.update!(github_state: "closed")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+      expect(result).to include(cancelled: true)
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
     # @spec SESSION-SUMMARY-001
     it "enqueues session-summary capture once the pull request is created" do
       expect { activity.execute(agent_run_id: agent_run.id) }

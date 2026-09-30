@@ -248,7 +248,7 @@ class Issue < ApplicationRecord
     end
 
     path = is_pull_request? ? "pull" : "issues"
-    "#{project.github_url}/#{path}/#{github_number}"
+    "https://github.com/#{project.issue_target_repository}/#{path}/#{github_number}"
   end
 
   def has_label?(label)

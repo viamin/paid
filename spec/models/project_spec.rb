@@ -266,16 +266,20 @@ RSpec.describe Project do
         expect(project.pr_target_repository).to eq(project.full_name)
       end
 
-      it "resets repository-scoped sync state and archives open work items when the issue target changes" do # @spec UPSTREAM-ISSUE-006
+      it "resets repository-scoped sync state, archives work items, and cancels their active PR runs when the issue target changes" do # @spec UPSTREAM-ISSUE-006
         project = create(:project, last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: 1.hour.ago)
         issue = create(:issue, project: project, github_state: "open", is_pull_request: false)
         pull_request = create(:issue, project: project, github_state: "open", is_pull_request: true)
+        agent_run = create(:agent_run, project: project, issue: issue, goal: "create_pr", status: "running")
 
-        project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+        expect {
+          project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+        }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
 
         expect(project.reload.last_issue_sync_at).to eq(Time.at(0).utc)
         expect(project.last_issue_reconciliation_at).to be_nil
         expect([ issue.reload.github_state, pull_request.reload.github_state ]).to all(eq("closed"))
+        expect(agent_run.reload.status).to eq("cancelled")
       end
 
       it "preserves repository-scoped sync state on unrelated project updates" do # @spec UPSTREAM-ISSUE-006

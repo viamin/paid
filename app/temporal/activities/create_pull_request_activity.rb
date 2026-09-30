@@ -3,11 +3,13 @@
 module Activities
   class CreatePullRequestActivity < BaseActivity
     activity_name "CreatePullRequest"
+    SourceIssueClosedError = Class.new(StandardError)
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
       return completion_result(agent_run) if agent_run.finished?
+      return cancel_closed_source_issue_run(agent_run) unless source_issue_open?(agent_run.issue)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "create_pull_request", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
@@ -156,6 +158,21 @@ module Activities
       }
     end
 
+    # A project target change closes its old source issues before exposing the
+    # new target. Do not let an already-started activity publish that old work
+    # item to the new repository.
+    # @spec UPSTREAM-ISSUE-006
+    def cancel_closed_source_issue_run(agent_run)
+      agent_run.cancel!(error: "Source issue is closed")
+      completion_result(agent_run.reload)
+    end
+
+    def source_issue_open?(issue)
+      return true unless issue
+
+      source_issue(issue.reload).github_state == "open"
+    end
+
     # Checks whether the branch exists on GitHub via the refs API.
     # Returns true when confirmed or when the check fails transiently
     # (optimistic — lets the caller attempt PR creation so GitHub is
@@ -209,6 +226,8 @@ module Activities
     def create_pull_request_or_reuse(client, project, agent_run, issue, pr_body, agent_run_id:)
       pr = create_pull_request_for_source_issue(client, project, agent_run, issue, pr_body)
       [ pr, "created" ]
+    rescue SourceIssueClosedError
+      cancel_closed_source_issue_run(agent_run)
     rescue GithubClient::ApiError => e
       raise e unless pr_already_exists_error?(e)
 
@@ -231,6 +250,8 @@ module Activities
 
       source = source_issue(issue)
       source.with_lock do
+        raise SourceIssueClosedError unless source.github_state == "open"
+
         reconcile_missing_source_pull_requests!(client, project, source)
         existing = source.associated_paid_pull_request
         raise_existing_implementation_pr!(agent_run, existing) if existing

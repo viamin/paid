@@ -35,9 +35,11 @@ and queued for LLM pickup.
 
 Changing the issue target repository invalidates repository-scoped polling
 state. Paid clears the issue cursors and archives locally open GitHub work
-items from the previous target before polling the new target. This prevents a
-same-number issue or pull request in a fork from suppressing the corresponding
-upstream item during reconciliation.
+items from the previous target before polling the new target, and cancels
+active `create_pr` runs sourced from those items. This prevents a same-number
+issue or pull request in a fork from suppressing the corresponding upstream
+item during reconciliation or closing an unrelated issue through a PR
+published to the new target.
 
 ## Routing and writes
 

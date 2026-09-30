@@ -42,8 +42,12 @@
 - [x] **UPSTREAM-ISSUE-006** - When a Project's issue target repository
   changes, the system SHALL clear repository-scoped issue sync state and
   archive locally open GitHub issues and pull requests from the previous
-  target before reconciling the new target. *Tests:* `spec/models/project_spec.rb`.
-  *Code:* `Project#reset_issue_sync_state`, `Project#archive_previous_target_issues`.
+  target before reconciling the new target. It SHALL cancel active
+  source-issue `create_pr` runs from that target so they cannot publish a PR
+  against the new target. *Tests:* `spec/models/project_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `Project#reset_issue_sync_state`, `Project#archive_previous_target_issues`,
+  `Project#cancel_previous_target_issue_runs`, `CreatePullRequestActivity`.
 
 - [x] **UPSTREAM-ISSUE-007** - When an upstream author's trusted status is
   revoked, the poller SHALL retire locally open records it previously
