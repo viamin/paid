@@ -16,8 +16,7 @@ module Knowledge
       # default; callers that need model-specific pricing can compute it
       # themselves.
       DEFAULT_COST_PER_MILLION_TOKENS = 0.13
-      MAX_RETRIES = 3
-      BASE_DELAY = 1.0
+      MAX_ATTEMPTS = 4
 
       # Backward-compatible aliases. Older callers and tests still reference
       # the +MODEL+ and +DIMENSIONS+ constants; they are now the defaults, not
@@ -27,16 +26,6 @@ module Knowledge
       COST_PER_MILLION_TOKENS = DEFAULT_COST_PER_MILLION_TOKENS
 
       attr_reader :model, :dimensions
-
-      RETRYABLE_PROVIDER_STATUSES = [ 500, 502, 503, 504 ].freeze
-      RETRYABLE_PROVIDER_ERRORS = [
-        EOFError,
-        IOError,
-        OpenSSL::SSL::SSLError,
-        SocketError,
-        Errno::ECONNREFUSED,
-        Errno::ECONNRESET
-      ].freeze
 
       def initialize(
         model: DEFAULT_MODEL,
@@ -109,46 +98,20 @@ module Knowledge
 
       private
 
+      # @spec KNOWLEDGE-EMBED-002
       def request_embeddings(texts)
-        RetryHelper.with_retries(
-          max_attempts: MAX_RETRIES + 1,
-          retryable: ->(error) { retryable_error?(error) },
-          delay_fn: ->(attempt, error) { retry_delay(error, attempt) },
-          sleep_fn: method(:sleep)
-        ) do
-          AgentHarness.embed(
-            inputs: texts,
-            model: model,
-            dimensions: dimensions,
-            endpoint: normalized_base_url,
-            credentials: { api_key: api_key },
-            headers: request_headers,
-            timeout:
-          )
-        end
+        AgentHarness.embed(
+          inputs: texts,
+          model: model,
+          dimensions: dimensions,
+          endpoint: normalized_base_url,
+          credentials: { api_key: api_key },
+          headers: request_headers,
+          timeout:,
+          max_attempts: MAX_ATTEMPTS
+        )
       rescue AgentHarness::Error => e
-        message = if retryable_error?(e)
-                    "Embedding API request failed after #{MAX_RETRIES} retries: #{e.message}"
-        else
-                    "Embedding API request failed: #{e.message}"
-        end
-        raise EmbeddingError, message
-      end
-
-      def retryable_error?(error)
-        return true if error.is_a?(AgentHarness::RateLimitError)
-        return true if error.is_a?(AgentHarness::TimeoutError)
-        return retryable_provider_error?(error) if error.is_a?(AgentHarness::ProviderError)
-
-        false
-      end
-
-      # Respects Retry-After header when present, otherwise uses exponential backoff.
-      def retry_delay(error, attempt)
-        retry_after = error.context.dig(:headers, "retry-after")
-        return retry_after.to_f if retry_after.present?
-
-        BASE_DELAY * (2**(attempt - 1))
+        raise EmbeddingError, "Embedding API request failed: #{e.message}", cause: e
       end
 
       attr_reader :base_url, :headers, :timeout
@@ -163,13 +126,6 @@ module Knowledge
 
       def request_headers
         headers.except("Authorization").compact
-      end
-
-      def retryable_provider_error?(error)
-        status = error.context[:status]
-        return RETRYABLE_PROVIDER_STATUSES.include?(status) if status
-
-        RETRYABLE_PROVIDER_ERRORS.any? { |klass| error.original_error.is_a?(klass) }
       end
 
       def self.estimate_cost(token_count, cost_per_million_tokens: COST_PER_MILLION_TOKENS)

@@ -245,6 +245,21 @@
   `spec/services/knowledge/runner_selector_spec.rb`,
   `spec/services/knowledge/provider_selector_spec.rb`.
 
+- [x] **KNOWLEDGE-EMBED-002** — When Paid generates a knowledge embedding
+  batch on either the host or an isolated embedding container, it SHALL call
+  public `AgentHarness.embed` with the secrets-proxy endpoint, explicit
+  credentials, provider-routing header, configured model, dimensions, timeout,
+  and a four-attempt request bound. Agent Harness SHALL remain the sole owner
+  of request retries, including `Retry-After` and transient/auth error
+  classification. Returned vectors SHALL remain in provider input order and
+  compatible with stored vectors; provider-reported batch usage SHALL remain
+  aggregate (or unknown), never an allocated per-vector provider measurement.
+  Replacing this transport SHALL NOT require a schema migration or re-embed.
+  *Code:* `app/services/knowledge/embeddings/generate.rb`,
+  `app/services/knowledge/embedding_runner.rb`.
+  *Test:* `spec/services/knowledge/embeddings/generate_spec.rb`,
+  `spec/services/knowledge/embedding_runner_spec.rb`.
+
 - [x] **KNOWLEDGE-URI-001** — When Paid generates a handle for an active
   knowledge artifact or chunk, the system SHALL build a canonical
   `paidkb://project/<project_id>/...` URI using percent-encoded scope/

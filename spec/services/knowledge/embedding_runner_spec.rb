@@ -131,14 +131,24 @@ RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   end
 
   describe "#script_env" do
-    it "uses AgentHarness transport in the generated embedding proxy script" do
+    # @spec KNOWLEDGE-EMBED-002
+    it "uses native AgentHarness embeddings in the generated embedding proxy script" do
       runner = described_class.new(project: project, knowledge_run: knowledge_run)
 
-      expect(runner.send(:script)).to include('AgentHarness::OpenAICompatibleTransport.new(')
-      expect(runner.send(:script)).to include("transport.embed(inputs: texts, model: model, dimensions: dimensions)")
-      expect(runner.send(:script)).to include("handle_embedding_error_response(http_response, status_code) unless status_code == 200")
-      expect(runner.send(:script)).to include('OpenSSL::SSL::SSLError')
-      expect(runner.send(:script)).to include('raise AgentHarness::ProviderError.new("HTTP connection error:')
+      expect(runner.send(:script)).to include("AgentHarness.embed(")
+      expect(runner.send(:script)).to include("max_attempts: 4")
+      expect(runner.send(:script)).to include('"X-Paid-Knowledge-Provider" => provider')
+      expect(runner.send(:script)).not_to include("PaidEmbeddingTransportPatch")
+      expect(runner.send(:script)).not_to include("OpenAICompatibleTransport.new")
+    end
+
+    # @spec KNOWLEDGE-EMBED-002
+    it "preserves a container rate-limit classification from the native harness" do
+      runner = described_class.new(project: project, knowledge_run: knowledge_run)
+      output = JSON.generate(error: { "class" => "AgentHarness::RateLimitError", "message" => "rate limited" })
+
+      expect { runner.send(:parse_results, output) }
+        .to raise_error(described_class::RateLimitError, "rate limited")
     end
 
     it "uses the external proxy URL for remote backends" do

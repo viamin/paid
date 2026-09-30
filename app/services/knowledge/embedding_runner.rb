@@ -11,6 +11,8 @@ module Knowledge
     class Error < StandardError; end
     class ContainerError < Error; end
     class TimeoutError < ContainerError; end
+    class RateLimitError < ContainerError; end
+    class AuthenticationError < ContainerError; end
 
     # Input is streamed into the container as a tar archive (see
     # #stream_input_to_container!) rather than bind-mounted from a host temp
@@ -44,6 +46,7 @@ module Knowledge
       false
     end
 
+    # @spec KNOWLEDGE-EMBED-002
     def generate(texts:, provider:, model:, dimensions:, timeout: CONTAINER_DEFAULTS[:timeout_seconds])
       ensure_container!
       stream_input_to_container!(texts)
@@ -162,6 +165,8 @@ module Knowledge
 
     def parse_results(output)
       body = JSON.parse(output)
+      raise_harness_error!(body.fetch("error")) if body.key?("error")
+
       Knowledge::Embeddings::Generate.results_from_body(body)
     rescue JSON::ParserError => e
       raise ContainerError, "Failed to parse embedding container output: #{e.message}"
@@ -169,6 +174,18 @@ module Knowledge
 
     def apply_network_restrictions!
       ExecutionRunners::LocalDockerRunner.apply_firewall_rules(@container, backend: Containers.backend)
+    end
+
+    def raise_harness_error!(error)
+      error_class = harness_error_class(error.fetch("class"))
+      raise error_class, error.fetch("message")
+    end
+
+    def harness_error_class(name)
+      return RateLimitError if name == "AgentHarness::RateLimitError"
+      return AuthenticationError if name == "AgentHarness::AuthenticationError"
+
+      ContainerError
     end
 
     def script_env(provider:, model:, dimensions:, timeout:)
@@ -189,101 +206,6 @@ module Knowledge
         require "json"
         require "agent_harness"
 
-        module PaidEmbeddingTransportPatch
-          PAID_TRANSPORT_ERRORS = [
-            EOFError,
-            OpenSSL::SSL::SSLError
-          ].freeze
-
-          def initialize(base_url:, api_key:, model:, logger: nil, extra_headers: {}, timeout: self.class::DEFAULT_TIMEOUT)
-            @paid_extra_headers = extra_headers
-            @paid_timeout = timeout
-            super(base_url:, api_key:, model:, logger:)
-          end
-
-          def embed(inputs:, model: nil, dimensions: nil)
-            uri = URI("#{@base_url}/embeddings")
-            body = {
-              input: inputs,
-              model: model || @model
-            }
-            body[:dimensions] = dimensions if dimensions
-
-            http_response = make_request(uri, body)
-            status_code = http_response.code.to_i
-            handle_embedding_error_response(http_response, status_code) unless status_code == 200
-
-            JSON.parse(http_response.body)
-          rescue *PAID_TRANSPORT_ERRORS => e
-            raise AgentHarness::ProviderError.new("HTTP connection error: #{e.message}", original_error: e)
-          rescue JSON::ParserError => e
-            raise AgentHarness::ProviderError.new(
-              "Invalid JSON in embedding API response: #{e.message}",
-              original_error: e
-            )
-          end
-
-          private
-
-          def build_http(uri)
-            http = super
-            http.read_timeout = @paid_timeout if @paid_timeout
-            http
-          end
-
-          def build_post_request(uri, body)
-            request = super
-            @paid_extra_headers.each { |key, value| request[key] = value }
-            request
-          end
-
-          def handle_embedding_error_response(http_response, status_code)
-            headers = http_response.each_header.to_h.transform_keys(&:downcase)
-            context = {
-              status: status_code,
-              headers: headers
-            }
-            message = embedding_error_message(http_response.body)
-
-            case status_code
-            when 401
-              raise AgentHarness::AuthenticationError.new(
-                "API authentication failed: #{message}",
-                provider: :openai_compatible,
-                context:
-              )
-            when 403
-              raise AgentHarness::AuthenticationError.new(
-                "API access forbidden: #{message}",
-                provider: :openai_compatible,
-                context:
-              )
-            when 429
-              raise AgentHarness::RateLimitError.new(
-                "API rate limit exceeded: #{message}",
-                provider: :openai_compatible,
-                context:
-              )
-            when 400
-              raise AgentHarness::ProviderError.new("Bad request: #{message}", context:)
-            when 500, 502, 503, 504
-              raise AgentHarness::ProviderError.new("Server error (#{status_code}): #{message}", context:)
-            else
-              raise AgentHarness::ProviderError.new("HTTP #{status_code}: #{message}", context:)
-            end
-          end
-
-          def embedding_error_message(body_string)
-            body = JSON.parse(body_string)
-            body.dig("error", "message") || body.dig("error", "type") || body_string
-          rescue JSON::ParserError
-            body_string
-          end
-        end
-
-        AgentHarness::OpenAICompatibleTransport.prepend(PaidEmbeddingTransportPatch) unless
-          AgentHarness::OpenAICompatibleTransport < PaidEmbeddingTransportPatch
-
         proxy_url = ENV.fetch("PROXY_BASE_URL")
         run_id = ENV.fetch("KNOWLEDGE_RUN_ID")
         token = ENV.fetch("PROXY_TOKEN")
@@ -294,18 +216,28 @@ module Knowledge
         input_path = ENV.fetch("INPUT_PATH")
 
         texts = JSON.parse(File.read(input_path))
-        transport = AgentHarness::OpenAICompatibleTransport.new(
-          base_url: "#{proxy_url}/api/proxy/openai/v1",
-          api_key: "paid-knowledge-run:#{run_id}:#{token}",
-          model: model,
-          extra_headers: {
-            "X-Paid-Knowledge-Provider" => provider
-          },
-          timeout: timeout
-        )
+        begin
+          result = AgentHarness.embed(
+            inputs: texts,
+            model: model,
+            dimensions: dimensions,
+            endpoint: "#{proxy_url}/api/proxy/openai/v1",
+            credentials: { api_key: "paid-knowledge-run:#{run_id}:#{token}" },
+            headers: {
+              "X-Paid-Knowledge-Provider" => provider
+            },
+            timeout: timeout,
+            max_attempts: 4
+          )
 
-        body = transport.embed(inputs: texts, model: model, dimensions: dimensions)
-        $stdout.print(JSON.generate(body))
+          body = {
+            "data" => result.vectors.each_with_index.map { |vector, index| { "embedding" => vector, "index" => index } },
+            "usage" => { "total_tokens" => result.usage[:input_tokens] }
+          }
+          $stdout.print(JSON.generate(body))
+        rescue AgentHarness::Error => error
+          $stdout.print(JSON.generate(error: { "class" => error.class.name, "message" => error.message }))
+        end
       RUBY
     end
 
