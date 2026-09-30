@@ -890,7 +890,8 @@
 
             <% Project::AUTOMATION_SETTINGS.each do |setting| %>
               <% gated = Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(setting[:attribute]) %>
-              <div<%= raw " data-project-settings-form-target=\"prTargetGatedField\" data-attribute=\"#{setting[:attribute]}\" class=\"#{"opacity-50 pointer-events-none" if gated && @project.upstream_disabled?(setting[:attribute])}\"" if gated %>>
+              <% disabled_now = gated && @project.upstream_disabled?(setting[:attribute]) %>
+              <div<% if gated %> data-project-settings-form-target="prTargetGatedField" data-attribute="<%= setting[:attribute] %>"<% end %><% if disabled_now %> class="opacity-50 pointer-events-none"<% end %>>
                 <div class="flex items-center">
                   <%= form.check_box setting[:attribute], class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
                   <%= form.label setting[:attribute], setting[:label], class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>

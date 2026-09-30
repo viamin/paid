@@ -25,20 +25,20 @@ module Projects
     end
 
     def call
-      client = github_client || @project.client
+      client = github_client || project.client
       return Prefill.unavailable("no_github_credential") if client.nil?
 
-      payload = client.repository(@project.full_name)
+      payload = client.repository(project.full_name)
       parent_full_name = read_parent_full_name(payload)
       return Prefill.unavailable("not_a_fork") if parent_full_name.blank?
-      return Prefill.unavailable("same_as_project") if parent_full_name.casecmp?(@project.full_name)
+      return Prefill.unavailable("same_as_project") if parent_full_name.casecmp?(project.full_name)
 
       Prefill.detected(parent_full_name)
     rescue GithubClient::Error, Octokit::Error => e
       Rails.logger.info(
         message: "projects.fork_parent_prefill.skipped",
         component: "project_settings",
-        project_id: @project.id,
+        project_id: project.id,
         reason: e.class.name
       )
       Prefill.unavailable("github_request_failed")
@@ -46,11 +46,7 @@ module Projects
 
     private
 
-    attr_reader :project
-
-    def github_client
-      @github_client
-    end
+    attr_reader :project, :github_client
 
     def read_parent_full_name(payload)
       parent = if payload.respond_to?(:[])
