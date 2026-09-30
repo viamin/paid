@@ -2241,7 +2241,8 @@ module Activities
 
     # @spec UPSTREAM-GATE-006
     def fetch_upstream_pr_data(client, project, issue)
-      client.pull_request(project.upstream_full_name, issue.github_number)
+      upstream_client = project.git_push_fallback_client || client
+      upstream_client.pull_request(project.upstream_full_name, issue.github_number)
     rescue GithubClient::AuthenticationError
       raise
     rescue GithubClient::Error => e

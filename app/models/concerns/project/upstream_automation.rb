@@ -110,6 +110,18 @@ module Project::UpstreamAutomation
   included do
     validate :upstream_target_requires_upstream_repo
     validate :upstream_mode_automation_settings_valid
+    # When pr_target transitions into upstream mode, atomically clear any
+    # currently-enabled gated setting so the save can proceed. The UI grays
+    # those inputs out (#4076) so the request only submits the new
+    # pr_target / upstream_repo and the persisted defaults (e.g.
+    # auto_add_labels_enabled=true, inherit_priority_labels=true) would
+    # otherwise fail the {#upstream_mode_automation_settings_valid} check
+    # (#4082). Defense-in-depth: the chat path still checks submitted attrs
+    # via {#upstream_gated_setting_violations} (UPSTREAM-GATE-005), so an
+    # explicit attempt to enable a gated setting on an existing upstream
+    # project is rejected by the validation, not silently overridden here.
+    # @spec UPSTREAM-GATE-004
+    before_validation :clear_gated_settings_on_upstream_transition
   end
 
   # True when this project opens PRs against a configured upstream
@@ -213,7 +225,50 @@ module Project::UpstreamAutomation
     return if pr_target != "upstream"
 
     GATED_SETTING_CHECKS.each do |attribute, check|
-      errors.add(attribute.to_sym, GATED_SETTING_ERROR) if check.call(public_send(attribute))
+      next unless will_save_change_to_attribute?(attribute.to_sym)
+      next unless check.call(public_send(attribute))
+
+      errors.add(attribute.to_sym, GATED_SETTING_ERROR)
+    end
+  end
+
+  # When pr_target transitions from "own_repo" (or unset on a new record)
+  # into "upstream", reset every gated setting to its disabled default so
+  # the persisted column defaults (notably auto_add_labels_enabled=true and
+  # inherit_priority_labels=true) do not block the transition. The
+  # {#upstream_mode_automation_settings_valid} check then sees cleared
+  # values and the save proceeds. This callback only clears attributes
+  # that are currently enabled, so a project that was already on upstream
+  # mode (and whose gated settings were therefore already disabled) is
+  # untouched on subsequent updates.
+  # @spec UPSTREAM-GATE-004
+  def clear_gated_settings_on_upstream_transition
+    return unless pr_target == "upstream"
+    return if pr_target_was == "upstream"
+
+    GATED_SETTING_CHECKS.each do |attribute, check|
+      value = public_send(attribute)
+      next unless check.call(value)
+
+      public_send("#{attribute}=", upstream_gated_disabled_default(attribute))
+    end
+  end
+
+  # The "disabled" default for each gated setting: anything that makes
+  # the corresponding {GATED_SETTING_CHECKS} predicate return false.
+  # Centralized here so the transition-clear behavior and any future
+  # programmatic reset (e.g. a "Switch back to own_repo" admin action)
+  # cannot drift apart.
+  def upstream_gated_disabled_default(attribute)
+    case attribute.to_s
+    when "auto_merge_mode", "auto_release_granularity"
+      "off"
+    when "owner_reviewer_login"
+      nil
+    when "review_settings", "screenshot_settings"
+      {}
+    else
+      false
     end
   end
 
