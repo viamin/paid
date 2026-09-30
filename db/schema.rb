@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_181306) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_031657) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -509,7 +509,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_181306) do
     t.datetime "updated_at", null: false
     t.index ["apple_worker_profile_id"], name: "idx_on_apple_worker_profile_id_35bb856a13", unique: true
     t.check_constraint "consecutive_failures >= 0", name: "chk_apple_worker_health_failures"
-    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying, 'quarantined'::character varying]::text[])", name: "chk_apple_worker_health_status"
+    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying::text, 'quarantined'::character varying::text])", name: "chk_apple_worker_health_status"
   end
 
   create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
@@ -2006,6 +2006,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_181306) do
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
+    t.string "github_html_url", comment: "Canonical GitHub HTML URL captured from the sync payload; stable across repository retargeting"
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin

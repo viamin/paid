@@ -306,10 +306,13 @@ module Activities
     # reconciled.
     def missing_pull_request_numbers(project, source_issue)
       produced_numbers = source_issue.agent_runs.where(goal: "create_pr")
-        .where.not(pull_request_number: nil).pluck(:pull_request_number)
+        .where.not(pull_request_number: nil).pluck(:pull_request_number).uniq
       synced_pull_requests = project.issues.pull_requests_only.where(github_number: produced_numbers)
-      synced_pull_requests = synced_pull_requests.where(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE) if project.upstream_pr_target?
-      produced_numbers - synced_pull_requests.pluck(:github_number)
+      return produced_numbers - synced_pull_requests.pluck(:github_number) unless project.upstream_pr_target?
+
+      synced_upstream = synced_pull_requests.where(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+      (produced_numbers - synced_upstream.pluck(:github_number)) |
+        synced_upstream.where(github_state: "open").pluck(:github_number)
     end
 
     def source_issue(issue)

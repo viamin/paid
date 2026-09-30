@@ -24,3 +24,13 @@
   *Code:* `app/temporal/activities/create_pull_request_activity.rb`,
   `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+
+- [x] **UPSTREAM-PR-005** — When Paid synchronizes or reconciles an upstream
+  PR, it SHALL retain the canonical URL supplied by GitHub, use it to
+  distinguish fork and upstream PRs with colliding numbers, and close the
+  local upstream record when the upstream PR is closed or merged.
+  *Code:* `app/services/issues/upsert_from_github.rb`, `app/models/issue.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/models/issue_spec.rb`,
+  `spec/services/issues/upsert_from_github_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`.

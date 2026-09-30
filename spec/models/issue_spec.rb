@@ -616,6 +616,18 @@ RSpec.describe Issue do
         expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
       end
 
+      # @spec UPSTREAM-PR-005
+      it "returns the persisted upstream pull request URL after the project is retargeted" do
+        project = build(:project, owner: "viamin", repo: "paid", pr_target: "upstream", upstream_full_name: "upstream/repo")
+        pr = build(:issue, :pull_request, project: project, github_number: 7,
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+          github_html_url: "https://github.com/upstream/repo/pull/7")
+
+        project.upstream_full_name = nil
+
+        expect(pr.github_url).to eq("https://github.com/upstream/repo/pull/7")
+      end
+
       it "returns the Dependabot alert URL for legacy Dependabot synthetic issues" do
         project = build(:project, owner: "viamin", repo: "paid")
         offset = Issue::LEGACY_DEPENDABOT_ID_OFFSET
@@ -1108,7 +1120,8 @@ RSpec.describe Issue do
         issue = create(:issue, project: project)
         fork_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
         create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
-          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+          github_html_url: "https://github.com/upstream/repo/pull/99")
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: 99, pull_request_url: fork_pr.github_url)
 
@@ -1194,7 +1207,8 @@ RSpec.describe Issue do
         issue = create(:issue, project: project)
         fork_pr = create(:issue, :pull_request, project: project, github_number: 99, github_state: "open")
         create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
-          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+          github_html_url: "https://github.com/upstream/repo/pull/99")
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: 99, pull_request_url: fork_pr.github_url)
 
@@ -1203,6 +1217,21 @@ RSpec.describe Issue do
         )
 
         expect(result).to eq(issue.id => fork_pr)
+      end
+
+      # @spec UPSTREAM-PR-005
+      it "does not treat an open fork PR as an open upstream PR with the same number" do
+        upstream_project = create(:project, pr_target: "upstream", upstream_full_name: "upstream/repo")
+        issue = create(:issue, project: upstream_project)
+        upstream_url = "https://github.com/upstream/repo/pull/99"
+        create(:issue, :pull_request, :closed, project: upstream_project, github_number: 99,
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE, github_html_url: upstream_url)
+        create(:issue, :pull_request, project: upstream_project, github_number: 99,
+          github_html_url: "https://github.com/#{upstream_project.full_name}/pull/99")
+        create(:agent_run, :completed, project: upstream_project, issue: issue,
+          pull_request_number: 99, pull_request_url: upstream_url)
+
+        expect(described_class.open_paid_generated_pull_request_source_issue_ids(project: upstream_project)).to be_empty
       end
 
       it "issues a bounded number of queries regardless of issue count" do
@@ -2061,8 +2090,10 @@ RSpec.describe Issue do
     it "reports a source issue as in progress when its open generated PR has not been linked" do # @spec EAGER-QUEUE-009
       issue = create(:issue, project: project, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue,
-        goal: "create_pr", pull_request_number: 42)
-      create(:issue, :pull_request, project: project, github_number: 42, github_state: "open", parent_issue_id: nil)
+        goal: "create_pr", pull_request_number: 42,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/42")
+      create(:issue, :pull_request, project: project, github_number: 42, github_state: "open",
+        github_html_url: "https://github.com/#{project.full_name}/pull/42", parent_issue_id: nil)
 
       expect(described_class.lifecycle_statuses([ issue ])).to include(issue.id => :in_progress)
     end

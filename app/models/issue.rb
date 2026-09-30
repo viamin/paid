@@ -231,8 +231,6 @@ class Issue < ApplicationRecord
   }
 
   def github_url
-    return "https://github.com/#{project.upstream_full_name}/pull/#{github_number}" if source == UPSTREAM_PULL_REQUEST_SOURCE
-
     # Legacy Dependabot synthetic issues link to the Dependabot alert page.
     # No new Dependabot issues are created, but existing rows use synthetic
     # github_number values that don't correspond to real GitHub issues.
@@ -250,6 +248,8 @@ class Issue < ApplicationRecord
       alert_number = github_issue_id - SYNTHETIC_CODE_SCANNING_ID_OFFSET
       return "#{project.github_url}/security/code-scanning/#{alert_number}"
     end
+
+    return github_html_url if github_html_url.present?
 
     path = is_pull_request? ? "pull" : "issues"
     "#{project.github_url}/#{path}/#{github_number}"
@@ -636,13 +636,35 @@ class Issue < ApplicationRecord
 
   # A pull_request_number is persisted only once the PR exists on GitHub
   # (reserved at publication or recorded at completion), so it — not the
-  # run's terminal status — is the produced-PR evidence.
+  # run's terminal status — is the produced-PR evidence. The GitHub URL is
+  # the repository-qualified key: PR numbers collide between a fork and its
+  # upstream repository.
   def self.paid_generated_pull_request_source_issue_ids(project:, **conditions)
-    pull_requests = where(project: project, is_pull_request: true, **conditions)
-    AgentRun.where(project: project, goal: "create_pr")
+    AgentRun.joins(<<~SQL.squish)
+      INNER JOIN issues pull_requests
+        ON pull_requests.project_id = agent_runs.project_id
+        AND pull_requests.github_number = agent_runs.pull_request_number
+      INNER JOIN projects pull_request_projects
+        ON pull_request_projects.id = pull_requests.project_id
+        AND (
+          pull_requests.github_html_url = agent_runs.pull_request_url
+          OR (
+            pull_requests.github_html_url IS NULL
+            AND agent_runs.pull_request_url = CONCAT(
+              'https://github.com/',
+              pull_request_projects.owner,
+              '/',
+              pull_request_projects.repo,
+              '/pull/',
+              pull_requests.github_number
+            )
+          )
+        )
+    SQL
+      .where(project: project, goal: "create_pr")
       .where.not(issue_id: nil)
       .where.not(pull_request_number: nil)
-      .where(pull_request_number: pull_requests.select(:github_number))
+      .where(pull_requests: { is_pull_request: true, **conditions })
       .select(:issue_id)
   end
   private_class_method :paid_generated_pull_request_source_issue_ids
@@ -656,10 +678,9 @@ class Issue < ApplicationRecord
   # `pull_request_number` alone is not a safe join key: GitHub PR numbers are
   # per-repo, so a fork PR and an upstream-synced PR (Issue rows in the same
   # project, distinguished only by `source`) can share a number. The
-  # persisted `pull_request_url` on the agent_run and the Issue's computed
-  # `github_url` are both built from the real, repo-qualified GitHub URL, so
-  # matching on that instead of the bare number keeps fork and upstream PRs
-  # distinct.
+  # persisted `pull_request_url` on the agent_run and the Issue's stored
+  # `github_html_url` are the real, repo-qualified GitHub URL, so matching on
+  # that instead of the bare number keeps fork and upstream PRs distinct.
   def self.open_paid_generated_prs_by_issue_id(project:, issue_ids:)
     issue_ids = Array(issue_ids).compact
     return {} if issue_ids.empty?

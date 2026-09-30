@@ -24,6 +24,7 @@ module Issues
         is_pull_request: pull_request_payload(github_issue).present?,
         github_created_at: github_issue.created_at,
         github_updated_at: github_issue.updated_at,
+        github_html_url: github_html_url(github_issue),
         source: source
       )
 
@@ -55,6 +56,11 @@ module Issues
       github_issue.respond_to?(:pull_request) ? github_issue.pull_request : nil
     end
     private_class_method :pull_request_payload
+
+    def self.github_html_url(github_issue)
+      github_issue.html_url if github_issue.respond_to?(:html_url)
+    end
+    private_class_method :github_html_url
 
     def self.deliver_completion_notifications(issue, github_issue:, was_open:)
       return unless was_open

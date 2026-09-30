@@ -210,7 +210,13 @@ RSpec.describe Activities::CreatePullRequestActivity do
         create(:issue, :pull_request, project: project, github_number: 99, github_state: "open",
           source: Issue::GITHUB_SOURCE, parent_issue_id: nil)
 
-        upstream_issue_response = OpenStruct.new(issue_response.to_h.merge(id: 9999, number: 99))
+        upstream_issue_response = OpenStruct.new(
+          issue_response.to_h.merge(
+            id: 9999,
+            number: 99,
+            html_url: "https://github.com/upstream/repo/pull/99"
+          )
+        )
         allow(github_client).to receive(:pull_request).with("upstream/repo", 99).and_return(pr_response)
         allow(github_client).to receive(:issue).with("upstream/repo", 99).and_return(upstream_issue_response)
         allow(Issues::UpsertFromGithub).to receive(:call).and_call_original
