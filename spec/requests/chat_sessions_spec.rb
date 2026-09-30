@@ -338,6 +338,30 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("This chat is closed.")
       end
 
+      it "renders read-only guidance instead of the input for a closed workspace-backed inbox chat" do
+        # @spec QUESTION-EXPLORATION-001
+        project = create(:project, account: account, created_by: user)
+        chat_session.update!(project: project, status: "closed", inbox_item_key: "retry_limited:1",
+                             container_capability: "stopped")
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(Nokogiri::HTML(response.body).at_css("textarea[name=content]")).to be_nil
+        expect(response.body).to include("Reopen the workspace")
+      end
+
+      it "renders read-only guidance instead of the input for a closed workspace chat" do
+        # @spec QUESTION-EXPLORATION-001
+        chat_session.update!(status: "closed", container_capability: "stopped")
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(Nokogiri::HTML(response.body).at_css("textarea[name=content]")).to be_nil
+        expect(response.body).to include("Reopen the workspace")
+      end
+
       it "renders the interactive chat page for html requests" do
         create(:chat_message, :assistant, chat_session: chat_session, content: "Rendered markdown")
 
