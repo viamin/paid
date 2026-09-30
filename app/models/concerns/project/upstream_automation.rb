@@ -140,7 +140,10 @@ module Project::UpstreamAutomation
 
     @upstream_skip_logged[feature_key] = true
     Rails.logger.info(
-      { message: "upstream_mode_skipped", project_id: id, feature: feature_key.to_s }.merge(metadata)
+      message: "upstream_mode_skipped",
+      project_id: id,
+      feature: feature_key.to_s,
+      **metadata
     )
   end
 
