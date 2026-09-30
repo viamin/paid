@@ -124,6 +124,15 @@ class ChatSession < ApplicationRecord
     status == "closed"
   end
 
+  # @spec QUESTION-EXPLORATION-001
+  # Closed and container-backed: close tears down the workspace, so messaging
+  # cannot resume it — the transcript stays read-only until the workspace is
+  # explicitly reopened (`ChatSessions::Reopen`), unlike an inline-only
+  # session, which messaging transparently resumes.
+  def closed_workspace_session?
+    closed? && !inline_only?
+  end
+
   def interactive_inbox_chat?
     inbox_item_key.present?
   end

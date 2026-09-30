@@ -22,6 +22,20 @@ RSpec.describe ChatSessions::Resume do
       end
     end
 
+    it "resumes an older inbox transcript without interrupting its active replacement" do
+      # @spec QUESTION-EXPLORATION-001
+      older = create(:chat_session, :closed, account:, created_by: user, inbox_item_key: "retry_limited:1")
+      newer = create(:chat_session, :workspace, account:, created_by: user, inbox_item_key: older.inbox_item_key)
+      message = create(:chat_message, chat_session: newer, role: "user", content: "More context")
+
+      described_class.call(chat_session: older)
+
+      expect(older.reload).to be_active
+      expect(newer.reload).to be_active
+      expect(newer).to have_attributes(container_capability: "ready", container_id: "abc123", workspace_volume: "vol_abc123")
+      expect(newer.messages).to include(message)
+    end
+
     it "increments resume metadata" do
       session = create(:chat_session, :closed, account: account, created_by: user,
         metadata: { "resume_count" => 2, "last_resumed_at" => 1.day.ago.iso8601 })
