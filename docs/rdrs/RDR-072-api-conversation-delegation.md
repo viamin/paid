@@ -124,48 +124,6 @@ reviewable account of reduced maintenance responsibilities and migration cost.
 If those criteria are not met, retain the loop and complete the independently
 useful transport, embedding, schema and usage improvements.
 
-### Loop Evaluation Outcome (2026-09-25)
-
-**Selected outcome: retain Paid's loop.** Agent-harness PR
-[#448](https://github.com/viamin/agent-harness/pull/448), released in
-[`agent-harness` 0.44.0](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.0),
-evaluated RubyLLM 2.0's public loop API. The installed Paid pin is
-[`agent-harness` 0.44.3](https://rubygems.org/gems/agent-harness/versions/0.44.3),
-whose RubyGems checksum is
-`36fd6fe1b22f4b68f39fbeae494da041963fd89662159166e6e79497f8ef9744`.
-`bundle exec ruby -e 'require "agent_harness"; puts AgentHarness::VERSION'`
-reports `0.44.3` on the host. The agent image must be rebuilt and verified
-against that same resolved gem before any separately approved transport or
-accounting activation.
-
-The upstream public-API contract examples verify single-step execution, mixed
-read/write batches, multiple decisions, denial, cancellation, completion, and
-skipping already-resulted tools. They also establish the following gaps:
-
-| Required retained-loop concern | Why delegation does not qualify |
-| --- | --- |
-| Durable tool identity and restart recovery | RubyLLM exposes provider wire IDs only; approval state is in-memory unless Rails persistence is adopted, which cannot be required of plain-Ruby harness users. |
-| Paid authority boundary | RubyLLM executes tools in-process; preserving Pundit, tenant/actor context, atomic claims, and runner-process dispatch adds an adapter rather than removing one. |
-| Limits, retries and accounting | `#complete` has no caller-supplied iteration bound, provider retries sit beneath the caller by default, and usage events lack Paid's stable attempt identity. |
-| Crash recovery and migration | A caller would still need transcript/decision persistence, reconciliation, and completed-effect recovery. No supporting-table or pending-conversation migration reduces that work. |
-
-Delegation would remove only generic step and approval plumbing while adding a
-provider-ID mapper, external dispatch adapter, iteration/retry/fallback driver,
-plain-Ruby persistence/export contract, and attempt-accounting extraction.
-That is a net increase in maintained adapters, persistence, and recovery code
-across both repositories. Paid therefore retains `AgentLoop`,
-`ResolveToolCall`, `ChatSession`/`ChatMessage`, and `FallbackLoop` as the
-authority, transcript, confirmation, budget, and recovery boundary. A runner
-switch preserves completed tool records as context so it cannot make a
-completed effect replayable.
-
-This conclusion creates no future loop-delegation obligation and requires no
-loop API release, runtime flag, data migration, backup rehearsal, or pending
-conversation conversion. Transport and attempt-accounting adoption remain
-separate, release-gated work in Paid #4018; until that work is activated, the
-existing agent-harness transport and Paid accounting remain in place. CLI and
-subscription paths remain explicitly retained.
-
 ### Ownership
 
 | Responsibility | Owner |
@@ -239,11 +197,29 @@ change implemented EARS status or supersede RDR-028.
 
 ## Rollout Guard
 
-**Docs-only for transport/loop adoption:** this accepted RDR does not activate
-new transport, persistence, or loop runtime behavior. The retained-loop
-outcome may preserve completed-tool evidence across the existing runner
-fallback path; that safety repair is not a delegation activation. Open
-implementation issues in agent-harness and Paid after the RDR is merged.
+**API-mode chat transport (Paid #4016):** the verified API-key chat scope is
+authorized as a complete replacement, not a staged rollout. The configuration
+gate is the existing `Runner#enabled_for_chat?` API-key runner selection:
+chat-enabled API-key runners use `AgentHarness::Api::ChatTransport` by default;
+CLI and subscription runners remain outside this scope. The enablement owner is
+the Paid release maintainer. Roll back by deploying the preceding Paid release
+after first confirming that no in-flight API chat request is being interrupted;
+no transport-owned persistence is introduced. This gate is removed when all
+chat runner authentication modes have separately verified public harness
+contracts and a successor RDR closes the remaining unsupported paths.
+
+The authorized host dependency is `agent-harness` 0.44.3, resolved from the
+application bundle and published on RubyGems on 2026-09-27. RubyGems provenance
+identifies source commit `85c4bc3`; the release and RubyGems records are
+<https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3> and
+<https://rubygems.org/gems/agent-harness/versions/0.44.3> respectively. It is an
+installable, non-prerelease release containing the public API chat contract and
+the recovery-compatible Codex support verified for Paid #3995. This migration
+runs in the Rails host process, so no agent-image rebuild is required for the
+API-mode chat path. Before deployment, verify `bundle exec ruby -e
+'puts Gem.loaded_specs.fetch("agent-harness").version'` on the host and verify
+that a rebuilt agent image does not route API-mode chat through a container or
+the secrets proxy; retain that image verification record with the release.
 
 Embedding, schema and transport adoption should ship as complete, tested
 replacements within each migrated operation/provider scope. Other supported
@@ -313,8 +289,9 @@ The mapping retains Paid's `ChatSession`/`ChatMessage` transcript IDs,
 approval claims, actor/tenant authority, and durable accounting; optional
 RubyLLM supporting tables may only supplement that state. It also defines the
 attempt identity and aggregate cross-repository comparison required before a
-later loop decision. This RDR's rollout guard remains docs-only: the mapping
-does not authorize a dependency change, schema migration, or runtime routing.
+later loop decision. Paid #4016 amends this guard for the narrowly verified
+API-key chat transport scope described above. The mapping does not authorize a
+schema migration, supporting persistence, or loop delegation.
 
 ## Sources
 

@@ -3,6 +3,8 @@
 module ChatSessions
   class BuildLlmClient
     ANTHROPIC_SERVICE_TYPE = "anthropic"
+    ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+    ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-20250514"
 
     def self.call(chat_session:)
       new(chat_session: chat_session).call
@@ -11,7 +13,7 @@ module ChatSessions
     # Default outbound model for a provider service type. Shared with
     # ChatSessions::FallbackRunners so a runner switch picks the same default.
     def self.default_model_for_service_type(service_type)
-      return AgentHarness::TextTransport::DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
+      return ANTHROPIC_DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
 
       "gpt-4o"
     end
@@ -61,9 +63,15 @@ module ChatSessions
     end
 
     def anthropic_client(api_key)
-      transport = AgentHarness::TextTransport.new(api_key: api_key)
-      model = chat_session.model || AgentHarness::TextTransport::DEFAULT_MODEL
-      HttpClient.new(transport: transport, model: model, provider_type: :anthropic)
+      model = chat_session.model || ANTHROPIC_DEFAULT_MODEL
+
+      HttpClient.new(
+        provider: :anthropic,
+        protocol: :messages,
+        endpoint: ANTHROPIC_BASE_URL,
+        api_key: api_key,
+        model: model
+      )
     end
 
     def openai_compatible_client(provider, api_key)
@@ -74,16 +82,12 @@ module ChatSessions
       base_url = config&.dig(:chat_base_url) || config&.dig(:base_url) || "https://api.openai.com/v1"
       model = chat_model_for(provider)
 
-      transport = AgentHarness::OpenAICompatibleTransport.new(
-        base_url: base_url,
-        api_key: api_key,
-        model: model
-      )
-
       HttpClient.new(
-        transport: transport,
+        provider: :openai,
+        protocol: :chat_completions,
+        endpoint: base_url,
+        api_key: api_key,
         model: model,
-        provider_type: :openai_compatible,
         max_tokens: config&.dig(:chat_max_tokens),
         model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil
       )
@@ -122,83 +126,110 @@ module ChatSessions
     end
 
     class HttpClient
+      # @spec API-CONVERSATION-DELEGATION-001
+      ERROR_CLASS_BY_CATEGORY = {
+        cancelled: AgentHarness::CancelledError,
+        authentication: AgentHarness::AuthenticationError,
+        authorization: AgentHarness::AuthorizationError,
+        configuration: AgentHarness::ConfigurationError
+      }.freeze
+
       attr_reader :model
 
-      def initialize(transport:, model:, provider_type:, max_tokens: nil, model_resolver: nil)
-        @transport = transport
+      def initialize(provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
+        chat_transport: AgentHarness::Api::ChatTransport.new)
+        @provider = provider
+        @protocol = protocol
+        @endpoint = endpoint
+        @api_key = api_key
         @model = model
-        @provider_type = provider_type
         @max_tokens = max_tokens
         @model_resolver = model_resolver
+        @chat_transport = chat_transport
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
         # @spec CHAT-API-019
         @model = @model_resolver.call if @model_resolver
-        messages = format_messages(conversation)
-        formatted_tools = format_tools(tools)
+        request = build_request(conversation, tools, on_chunk.present?)
 
-        stream_callback = build_stream_callback(on_chunk) if on_chunk
-
-        response = if stream_callback
-          @transport.chat(**chat_kwargs(messages, formatted_tools, true), &stream_callback)
+        result = if on_chunk
+          @chat_transport.call(request, &stream_observer(on_chunk))
         else
-          @transport.chat(**chat_kwargs(messages, formatted_tools, false))
+          @chat_transport.call(request)
         end
 
-        {
-          content: response.output,
-          model: response.model,
-          tokens_input: response.input_tokens,
-          tokens_output: response.output_tokens,
-          tool_calls: response.metadata[:tool_calls]
-        }
+        translate_result(result)
       end
 
       private
 
-      # @spec CHAT-API-007
-      def chat_kwargs(messages, tools, stream)
-        { messages:, model:, tools:, stream: }.tap do |kwargs|
-          kwargs[:max_tokens] = @max_tokens if @max_tokens
-        end
+      def build_request(conversation, tools, stream)
+        {
+          operation: :chat,
+          request_id: SecureRandom.uuid,
+          candidates: [ candidate ],
+          messages: format_messages(conversation),
+          tools: format_tools(tools),
+          max_output_tokens: @max_tokens,
+          stream: stream
+        }.compact
       end
 
-      def build_stream_callback(on_chunk)
-        proc { |event| on_chunk.call(event[:content]) if event[:type] == :text }
+      def candidate
+        {
+          provider: @provider,
+          model: model,
+          protocol: @protocol,
+          authentication_mode: :api_key,
+          credentials: { api_key: @api_key },
+          endpoint: @endpoint
+        }
+      end
+
+      def stream_observer(on_chunk)
+        ->(event) { on_chunk.call(event[:content]) if event[:type] == :text_delta }
+      end
+
+      def translate_result(result)
+        return raise_classified_error(result[:error]) unless %i[succeeded partial].include?(result[:status])
+
+        {
+          content: result[:content].to_s,
+          model: result[:model] || model,
+          tokens_input: result.dig(:usage, :input_tokens),
+          tokens_output: result.dig(:usage, :output_tokens),
+          tool_calls: format_inbound_tool_calls(result[:tool_calls])
+        }
+      end
+
+      def raise_classified_error(error)
+        error ||= { message: "Chat request failed" }
+        raise rate_limit_error(error) if error[:code] == :rate_limited
+        raise AgentHarness::TimeoutError, error[:message] if error[:code] == :timeout
+
+        error_class = ERROR_CLASS_BY_CATEGORY[error[:category]] || AgentHarness::ProviderError
+        raise error_class, error[:message]
+      end
+
+      def rate_limit_error(error)
+        reset_time = error[:retry_after_seconds] ? Time.current + error[:retry_after_seconds] : nil
+        AgentHarness::RateLimitError.new(error[:message], reset_time: reset_time)
       end
 
       def format_messages(conversation)
-        conversation_object = build_conversation_object(conversation)
-        return conversation_object.to_openai_messages if @provider_type == :openai_compatible
-
-        anthropic_messages(conversation_object)
-      end
-
-      def build_conversation_object(conversation)
         system_prompt, remaining_messages = extract_system_prompt(conversation)
-        AgentHarness::Conversation.new(system_prompt: system_prompt).tap do |conversation_object|
-          remaining_messages.each do |message|
-            next if message[:role].to_s == "system" || skip_message?(message)
+        messages = []
+        messages << { role: :system, content: system_prompt } if system_prompt.present?
 
-            normalized = normalize_content(message[:content], role: message[:role])
-            conversation_object.add_message(
-              message[:role],
-              normalized,
-              tool_calls: message[:tool_calls],
-              tool_call_id: message[:tool_call_id],
-              tool_name: message[:tool_name],
-              tool_result: normalized
-            )
-          end
+        remaining_messages.each do |message|
+          role = message[:role].to_s
+          next if role == "system" || skip_message?(message)
+
+          messages << format_message(message, role)
         end
-      end
 
-      def anthropic_messages(conversation_object)
-        formatted = conversation_object.to_anthropic_messages
-        return formatted[:messages] unless formatted[:system].present?
-
-        [ { role: "system", content: formatted[:system] } ] + formatted[:messages]
+        messages
       end
 
       def extract_system_prompt(conversation)
@@ -216,32 +247,61 @@ module ChatSessions
         message[:content].nil? && message[:tool_calls].blank?
       end
 
+      def format_message(message, role)
+        formatted = { role: role.to_sym, content: normalize_content(message[:content], role: role) }
+        formatted[:tool_calls] = format_outbound_tool_calls(message[:tool_calls]) if message[:tool_calls].present?
+        formatted[:tool_call_id] = message[:tool_call_id] if role == "tool"
+        formatted
+      end
+
       def normalize_content(content, role:)
-        return JSON.generate(content) if role.to_s == "tool" && !content.nil? && !content.is_a?(String)
+        return JSON.generate(content) if role == "tool" && !content.nil? && !content.is_a?(String)
 
         content
+      end
+
+      # A tool call's provider-assigned id is Paid's single id of record
+      # (persisted on `ChatMessage` and round-tripped as `tool_call_id`);
+      # setting it as both `id:` and `provider_id:` keeps the harness's
+      # separately-generated attempt-scoped id out of Paid's conversation
+      # history.
+      def format_outbound_tool_calls(tool_calls)
+        tool_calls.map do |tool_call|
+          id = hash_value(tool_call, :id)
+          {
+            id: id,
+            provider_id: id,
+            name: hash_value(tool_call, :name),
+            arguments_json: outbound_arguments_json(tool_call)
+          }
+        end
+      end
+
+      def outbound_arguments_json(tool_call)
+        arguments = hash_value(tool_call, :arguments)
+        arguments.is_a?(String) ? arguments : JSON.generate(arguments || {})
+      end
+
+      def format_inbound_tool_calls(tool_calls)
+        return nil if tool_calls.blank?
+
+        completed = tool_calls.select { |tool_call| tool_call[:status] == :completed }
+        return nil if completed.empty?
+
+        completed.map do |tool_call|
+          { id: tool_call[:provider_id] || tool_call[:id], name: tool_call[:name], arguments: tool_call[:arguments_json] }
+        end
       end
 
       def format_tools(definitions)
         return nil if definitions.blank?
 
         definitions.map do |definition|
-          if @provider_type == :anthropic
-            {
-              name: hash_value(definition, :name),
-              description: hash_value(definition, :description),
-              input_schema: hash_value(definition, :inputSchema)
-            }
-          else
-            {
-              type: "function",
-              function: {
-                name: hash_value(definition, :name),
-                description: hash_value(definition, :description),
-                parameters: hash_value(definition, :inputSchema)
-              }
-            }
-          end
+          {
+            name: hash_value(definition, :name),
+            description: hash_value(definition, :description),
+            input_schema: hash_value(definition, :inputSchema)
+          }
         end
       end
 

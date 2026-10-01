@@ -108,13 +108,14 @@
 
 - [x] **CHAT-API-007** — When a chat client is built for a z.ai direct-provider
   runner (`zai` or `zai_coding`), the system SHALL pass an output-token cap of
-  16,384 to the OpenAI-compatible transport so GLM chat responses are not
-  truncated into empty content by the transport's lower default; chat clients
-  for other OpenAI-compatible providers SHALL keep the transport default.
+  16,384 as `max_output_tokens` on the `AgentHarness::Api::ChatTransport`
+  request so GLM chat responses are not truncated into empty content by the
+  transport's lower default; chat clients for other OpenAI-compatible
+  providers SHALL omit the cap and keep the transport default.
   *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
   *Code:* `ChatSessions::BuildLlmClient#openai_compatible_client`,
   `Runner::DIRECT_OUTBOUND_API_PROVIDERS`,
-  `ChatSessions::BuildLlmClient::HttpClient#chat_kwargs`.
+  `ChatSessions::BuildLlmClient::HttpClient#build_request`.
 
 - [x] **CHAT-API-015** — When a MiniMax runner is used for API-mode chat, the
   system SHALL send OpenAI-compatible chat requests to MiniMax's `/v1` API
