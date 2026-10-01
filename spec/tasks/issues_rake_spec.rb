@@ -26,7 +26,8 @@ RSpec.describe "issues:repair_pull_request_source_links" do
     issue = create(:issue, project: project)
     create(:agent_run, :completed, :automatic, project: project, issue: issue,
       goal: "create_pr", pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047")
-    pull_request = create(:issue, :pull_request, project: project, github_number: 4047, github_state: "open")
+    pull_request = create(:issue, :pull_request, project: project, github_number: 4047,
+      github_state: "open", github_html_url: "https://example.test/pr/4047")
 
     expect { task.invoke }.to output(/PR #4047.*issue ##{issue.github_number}/).to_stdout
 
@@ -40,7 +41,8 @@ RSpec.describe "issues:repair_pull_request_source_links" do
       issue = create(:issue, project: project)
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047")
-      pull_request = create(:issue, :pull_request, project: project, github_number: 4047, github_state: "open")
+      pull_request = create(:issue, :pull_request, project: project, github_number: 4047,
+        github_state: "open", github_html_url: "https://example.test/pr/4047")
 
       task.invoke
 
@@ -54,7 +56,8 @@ RSpec.describe "issues:repair_pull_request_source_links" do
         goal: "create_pr", pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047")
       create(:agent_run, :completed, project: project, issue: second_issue,
         goal: "create_pr", pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047")
-      pull_request = create(:issue, :pull_request, project: project, github_number: 4047, github_state: "open")
+      pull_request = create(:issue, :pull_request, project: project, github_number: 4047,
+        github_state: "open", github_html_url: "https://example.test/pr/4047")
 
       expect { task.invoke }.to output(/AMBIGUOUS PR #4047/).to_stdout
 
@@ -70,7 +73,8 @@ RSpec.describe "issues:repair_pull_request_source_links" do
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
         completed_at: Automation::Strategies::AutoPick::DefaultCandidateSource::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
-      create(:issue, :pull_request, project: project, github_number: 4047, github_state: "open")
+      create(:issue, :pull_request, project: project, github_number: 4047,
+        github_state: "open", github_html_url: "https://example.test/pr/4047")
       duplicate_run = create(:agent_run, :queued, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true)
 
@@ -85,7 +89,8 @@ RSpec.describe "issues:repair_pull_request_source_links" do
       other_issue = create(:issue, project: other_project)
       create(:agent_run, :completed, project: other_project, issue: other_issue,
         goal: "create_pr", pull_request_number: 55, pull_request_url: "https://example.test/pr/55")
-      other_pull_request = create(:issue, :pull_request, project: other_project, github_number: 55, github_state: "open")
+      other_pull_request = create(:issue, :pull_request, project: other_project, github_number: 55,
+        github_state: "open", github_html_url: "https://example.test/pr/55")
 
       task.invoke
 

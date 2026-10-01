@@ -167,6 +167,32 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_label_added(project.enhance_issue_enhanced_label_name)
     end
 
+    context "when the issue belongs to the upstream target" do
+      let(:project) do
+        create(:project, pr_target: "upstream", upstream_full_name: "acme/widgets",
+          allowed_github_usernames: [ "maintainer" ])
+      end
+      let(:issue) do
+        super().tap { |source_issue| source_issue.update!(github_creator_login: "maintainer") }
+      end
+
+      before do
+        allow(client).to receive(:issue_comments).with(project.issue_target_repository, issue.github_number).and_return(comments)
+      end
+
+      it "completes locally without mutating the upstream issue" do # @spec UPSTREAM-ISSUE-004
+        log_agent_stdout(structured_output)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:comment_url]).to be_nil
+        expect(agent_run.reload.status).to eq("completed")
+        expect(client).not_to have_received(:add_comment)
+        expect(client).not_to have_received(:add_labels_to_issue)
+        expect(client).not_to have_received(:remove_label_from_issue)
+      end
+    end
+
     # @spec ISSUE-ENHANCEMENT-017
     context "when the issue body appears truncated or corrupted" do
       let(:issue) do

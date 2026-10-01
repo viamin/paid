@@ -328,8 +328,9 @@ module Activities
     # last automatic run finished without a PR, so it would otherwise re-pick
     # this issue and loop forever since the agent will likely declare
     # no-code-required again. `no_code_required_at` marks this specific
-    # completion as agent-asserted-terminal so auto-pick permanently excludes
-    # it; only a manually triggered run can pick the issue up again.
+    # completion as agent-asserted-terminal so auto-pick excludes it; only a
+    # manually triggered run can pick an ordinary issue up again. Epic
+    # umbrellas may re-enter after newly linked work resolves.
     def handle_no_code_required(client, agent_run, rationale) # @spec NO-OUTPUT-ISSUE-006
       project = agent_run.project
       issue = agent_run.issue
@@ -367,18 +368,24 @@ module Activities
     end
 
     def add_needs_input_label(client, project, issue)
+      return if upstream_issue_write_skipped?(project, "add_needs_input_label", issue: issue)
+
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       add_phase_label(client, project, issue.github_number, label)
     end
 
     def add_recommend_close_label(client, project, issue)
+      return if upstream_issue_write_skipped?(project, "add_recommend_close_label", issue: issue)
+
       label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
       Projects::EnsureStandardLabels.call_best_effort(project: project, logger: logger)
       add_phase_label(client, project, issue.github_number, label)
     end
 
     def remove_needs_input_label(client, project, issue, agent_run_id)
+      return if upstream_issue_write_skipped?(project, "remove_needs_input_label", issue: issue, agent_run_id: agent_run_id)
+
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       return unless issue.has_label?(label)
 
@@ -394,6 +401,8 @@ module Activities
     end
 
     def remove_recommend_close_label(client, project, issue, agent_run_id)
+      return if upstream_issue_write_skipped?(project, "remove_recommend_close_label", issue: issue, agent_run_id: agent_run_id)
+
       label = project.label_for_stage("recommend_close") || PAID_RECOMMEND_CLOSE_LABEL
       return unless issue.has_label?(label)
 
@@ -410,6 +419,7 @@ module Activities
 
     def remove_trigger_labels(client, project, issue, agent_run_id)
       return unless issue
+      return if upstream_issue_write_skipped?(project, "remove_trigger_labels", issue: issue, agent_run_id: agent_run_id)
 
       labels_to_remove = %w[build plan].filter_map { |stage| project.label_for_stage(stage) }
 
@@ -578,6 +588,10 @@ module Activities
     def post_issue_explanation_comment(client, agent_run, issue_state:, marker:, message:, log_message:)
       project = agent_run.project
       issue = agent_run.issue
+      if upstream_issue_write_skipped?(project, "post_issue_explanation_comment", issue: issue, agent_run_id: agent_run.id)
+        clear_issue_explanation_comment_failure!(agent_run)
+        return
+      end
 
       if comment_exists?(client, project, issue, marker)
         clear_issue_explanation_comment_failure!(agent_run)

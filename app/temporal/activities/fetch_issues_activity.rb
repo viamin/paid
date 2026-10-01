@@ -34,7 +34,8 @@ module Activities
       sync_started_at = Time.current
 
       heartbeat("fetch_issues.github_list", project_id: project_id, incremental: incremental)
-      github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
+      fetched_github_issues, truncated = fetch_all_issues(client, project.issue_target_repository, since: project.last_issue_sync_at)
+      github_issues = fetched_github_issues.select { |github_issue| trusted_github_issue?(project, github_issue) }
 
       synced_issues = nil
       sync_changed = false
@@ -94,6 +95,9 @@ module Activities
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
         sync_changed = closed_count.positive? || sync_changed
 
+        retired_untrusted_count = retire_untrusted_upstream_issues(project)
+        sync_changed = retired_untrusted_count.positive? || sync_changed
+
         if incremental && !truncated
           stale_pr_result = reconcile_open_pull_requests(project, client)
           stale_pr_count = stale_pr_result[:closed_count]
@@ -126,7 +130,7 @@ module Activities
       end
 
       if truncated && incremental
-        latest_updated = github_issues.filter_map(&:updated_at).max
+        latest_updated = fetched_github_issues.filter_map(&:updated_at).max
         if latest_updated
           inclusive_cursor = latest_updated - 1.second
           new_watermark = if inclusive_cursor <= project.last_issue_sync_at
@@ -293,19 +297,30 @@ module Activities
 
     def sync_issue(project, github_issue, eager_queue_enabled: false, eligible_issues: nil)
       creator_login = github_issue.user&.login || "unknown"
-      trusted = project.trusted_github_author?(creator_login)
+      trusted = project.upstream_pr_target? ? project.trusted_upstream_issue_author?(creator_login) : project.trusted_github_author?(creator_login)
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
       previous_labels = Array(existing_issue&.labels)
       rounds_before_reset = existing_issue&.enhance_issue_rounds.to_i
       body_before_upsert = existing_issue&.body
 
       unless trusted
-        logger.warn(
-          message: "github_sync.untrusted_issue_skipped",
-          project_id: project.id,
-          github_number: github_issue.number,
-          creator: creator_login
-        )
+        if project.upstream_pr_target?
+          logger.info(
+            message: "github_sync.untrusted_upstream_issue_skipped",
+            project_id: project.id,
+            github_number: github_issue.number,
+            creator: creator_login
+          )
+        else
+          logger.warn(
+            message: "github_sync.untrusted_issue_skipped",
+            project_id: project.id,
+            github_number: github_issue.number,
+            creator: creator_login
+          )
+        end
+        return { github_number: github_issue.number, github_state: github_issue.state, trusted: false, skipped: true, changed: false } if project.upstream_pr_target?
+
       end
 
       issue = Issues::UpsertFromGithub.call(
@@ -331,6 +346,64 @@ module Activities
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
         added_labels: added_labels, changed: upsert_changed || rounds_reset }
+    end
+
+    # The issue author is a hard trust boundary in upstream mode: do not keep
+    # even metadata for arbitrary public issues. Own-repository projects retain
+    # their existing behavior, which stores untrusted issues with no body so
+    # their content cannot reach a prompt.
+    # @spec UPSTREAM-ISSUE-002
+    def trusted_github_issue?(project, github_issue)
+      return true unless project.upstream_pr_target?
+      return true if project.trusted_upstream_issue_author?(github_issue.user&.login)
+
+      logger.info(
+        message: "github_sync.untrusted_upstream_issue_skipped",
+        project_id: project.id,
+        github_number: github_issue.number,
+        creator: github_issue.user&.login || "unknown"
+      )
+      false
+    end
+
+    # Trust revocation must also retire what was previously persisted: the
+    # fetch filter above only stops new writes, incremental syncs skip stale
+    # closure, and the rescan fallback below re-queues every locally open
+    # record — so without this pass a revoked author's records would stay
+    # displayed and keep reaching auto-pick and LLM prompts. Runs on every
+    # sync so a retirement can never be missed by a change-detection gap.
+    # @spec UPSTREAM-ISSUE-007
+    def retire_untrusted_upstream_issues(project)
+      return 0 unless project.upstream_pr_target?
+
+      untrusted_logins = untrusted_open_creator_logins(project)
+      return 0 if untrusted_logins.empty?
+
+      retired_count = project.issues
+        .where(github_state: "open", source: Issue::GITHUB_SOURCE, github_creator_login: untrusted_logins)
+        .update_all(github_state: "closed", updated_at: Time.current)
+      return 0 if retired_count.zero?
+
+      logger.info(
+        message: "github_sync.untrusted_upstream_issues_retired",
+        project_id: project.id,
+        count: retired_count,
+        creators: untrusted_logins.sort
+      )
+      retired_count
+    end
+
+    def untrusted_open_creator_logins(project)
+      project.issues
+        .where(github_state: "open", source: Issue::GITHUB_SOURCE)
+        .distinct
+        .pluck(:github_creator_login)
+        # Rows without a creator login were not persisted by the upstream
+        # poller (legacy or webhook-side fork records), so they are outside
+        # this retirement pass: it only retires records previously persisted
+        # for a now-untrusted author.
+        .compact_blank
+        .reject { |login| project.trusted_upstream_issue_author?(login) }
     end
 
     # @spec ISSUE-ENHANCEMENT-016
@@ -490,6 +563,8 @@ module Activities
 
     # @spec GITHUB-SYNC-014
     def repair_questionless_needs_input(project, synced_issues, client:, ignored_issue_ids: [])
+      return false if upstream_issue_write_skipped?(project, "remove_needs_input_label")
+
       repair_labels = project.needs_input_labels
       synced_issues = Array(synced_issues)
       return false if synced_issues.empty?
@@ -527,6 +602,8 @@ module Activities
 
     # @spec GITHUB-SYNC-012
     def detect_needs_input_label_additions(project, synced_issues, client:)
+      return false if upstream_issue_write_skipped?(project, "remove_needs_input_label")
+
       cleanup_orphaned_needs_input_labels(project, synced_issues, client:) do |issue_data, labels|
         Array(issue_data[:added_labels]) & labels
       end
@@ -538,6 +615,8 @@ module Activities
     # repair instead, which preserves a real clarification gate.
     # @spec GITHUB-SYNC-012
     def repair_orphaned_needs_input_labels(project, client:)
+      return false if upstream_issue_write_skipped?(project, "remove_needs_input_label")
+
       cleanup_orphaned_needs_input_labels(project, orphaned_needs_input_label_candidates(project), client:) do |issue_data, labels|
         Array(issue_data[:labels]) & labels
       end
@@ -735,6 +814,8 @@ module Activities
     # change that does not bump the issue's `updated_at` timestamp on GitHub
     # (e.g. due to clock skew) may be missed until the next full sync.
     def sync_paused_state(project, synced_issues)
+      return false if upstream_issue_write_skipped?(project, "sync_paused_label")
+
       open_issues = synced_issues.reject { |data| data[:github_state] == "closed" }
       return false if open_issues.empty?
 
@@ -928,7 +1009,10 @@ module Activities
         .order(:relationships_parsed_at, :github_updated_at, :id)
     end
 
+    # @spec GITHUB-SYNC-016
     def repair_completed_open_issues(project, client)
+      return false if upstream_issue_write_skipped?(project, "add_recommend_close_label")
+
       completed_issues = project.issues
         .where(github_state: "open", is_pull_request: false, paid_state: "completed")
         .to_a
@@ -962,14 +1046,53 @@ module Activities
       end
       return false if repaired.empty?
 
-      visible_repaired = repaired.select { |issue| add_recommend_close_label(client, project, issue) }
-      return false if visible_repaired.empty?
+      blocked, closeable = repaired.partition { |issue| !issue.ready_to_work? }
 
-      project.issues.where(id: visible_repaired.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
+      park_dependency_blocked_issues(blocked) | recommend_close_issues(client, project, closeable)
+    end
+
+    # A partial implementation still blocked by an unresolved dependency is
+    # never recommended for closure: the agent run's completion does not
+    # establish that this remaining, intentionally deferred work is done.
+    # @spec GITHUB-SYNC-016
+    def park_dependency_blocked_issues(issues)
+      return false if issues.empty?
+
+      issues.each do |issue|
+        issue.update!(paid_state: "manual_review", manual_review_reason: dependency_blocked_reason(issue))
+      end
+      logger.info(
+        message: "github_sync.completed_open_issues_blocked_on_dependency",
+        project_id: issues.first.project_id,
+        issue_numbers: issues.map(&:github_number)
+      )
+      true
+    end
+
+    def dependency_blocked_reason(issue)
+      local_numbers = (issue.blocking_issues.pluck(:github_number) +
+        issue.blocking_deployment_dependencies.map { |dep| dep.depends_on_issue.github_number }).uniq.sort
+      external_refs = issue.blocking_external_dependencies.map do |dep|
+        "#{dep.depends_on_owner}/#{dep.depends_on_repo}##{dep.depends_on_number}"
+      end
+      blockers = local_numbers.map { |number| "##{number}" } + external_refs
+
+      "Paid's agent run completed and opened a pull request, but this issue remains open and is " \
+        "blocked on an unresolved dependency: #{blockers.join(', ')}. This issue stays pending until " \
+        "the dependency resolves or a human intervenes."
+    end
+
+    def recommend_close_issues(client, project, issues)
+      return false if issues.empty?
+
+      visible = issues.select { |issue| add_recommend_close_label(client, project, issue) }
+      return false if visible.empty?
+
+      project.issues.where(id: visible.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
       logger.info(
         message: "github_sync.completed_open_issues_repaired",
         project_id: project.id,
-        issue_numbers: visible_repaired.map(&:github_number)
+        issue_numbers: visible.map(&:github_number)
       )
       true
     end
@@ -1066,7 +1189,7 @@ module Activities
       issue_numbers = issues.map(&:github_number)
       return {} if issue_numbers.empty?
 
-      result = client.issue_comments_batch(project.full_name, issue_numbers)
+      result = client.issue_comments_batch(project.issue_target_repository, issue_numbers)
       issue_numbers.to_h { |n| [ n, result.fetch(n, []) ] }
     rescue GithubClient::RateLimitError
       raise
@@ -1149,12 +1272,42 @@ module Activities
       backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
       dependency_changed = open_pr_numbers.any? && resolve_external_dependencies(project, open_pr_numbers)
       closed_count = close_stale_pull_requests(project, open_pr_numbers, client: client)
+      upstream_result = reconcile_open_upstream_pull_requests(project, client)
 
       {
-        changed: backfilled_count.positive? || dependency_changed || closed_count.positive?,
-        closed_count: closed_count,
+        changed: backfilled_count.positive? || dependency_changed || closed_count.positive? || upstream_result[:changed],
+        closed_count: closed_count + upstream_result[:closed_count],
         open_pull_request_numbers: open_pr_numbers
       }
+    end
+
+    # Upstream PRs are not covered by the fork webhook or scanner paths. Poll
+    # their configured repository so a remotely merged or closed PR no longer
+    # blocks its source issue from another run.
+    # @spec UPSTREAM-PR-005
+    def reconcile_open_upstream_pull_requests(project, client)
+      return { changed: false, closed_count: 0 } unless project.upstream_pr_target?
+
+      upstream_client = project.git_push_fallback_client || client
+      open_numbers, truncated = fetch_open_pull_request_numbers(upstream_client, project.upstream_full_name)
+      return { changed: false, closed_count: 0 } if truncated
+
+      closed_count = close_stale_pull_requests(
+        project,
+        open_numbers,
+        client: upstream_client,
+        repo_full_name: project.upstream_full_name,
+        source: Issue::UPSTREAM_PULL_REQUEST_SOURCE
+      )
+      { changed: closed_count.positive?, closed_count: closed_count }
+    rescue GithubClient::AuthenticationError, GithubClient::NotFoundError, GithubClient::ApiError => e
+      logger.warn(
+        message: "github_sync.upstream_pull_request_reconciliation_failed",
+        project_id: project.id,
+        upstream_full_name: project.upstream_full_name,
+        error: e.message
+      )
+      { changed: false, closed_count: 0 }
     end
 
     def fetch_open_pull_request_numbers(client, repo_full_name)
@@ -1189,6 +1342,13 @@ module Activities
     def backfill_open_pull_requests(project, client, open_pr_numbers)
       return 0 if open_pr_numbers.empty?
 
+      # The fork of an upstream-targeted project is not a work-item source:
+      # its pull requests are never persisted locally. Upstream PRs are
+      # recorded with source: upstream_pull_request when Paid creates them
+      # and reconciled by reconcile_open_upstream_pull_requests.
+      # @spec UPSTREAM-ISSUE-001 UPSTREAM-ISSUE-002
+      return 0 if project.upstream_pr_target?
+
       existing_open_numbers = project.issues
         .pull_requests_only
         .where(github_state: "open", github_number: open_pr_numbers)
@@ -1206,10 +1366,10 @@ module Activities
       missing_numbers.size
     end
 
-    def close_stale_pull_requests(project, open_pr_numbers, client:)
+    def close_stale_pull_requests(project, open_pr_numbers, client:, repo_full_name: project.full_name, source: Issue::GITHUB_SOURCE)
       stale_prs = project.issues
         .pull_requests_only
-        .where(github_state: "open", source: Issue::GITHUB_SOURCE)
+        .where(github_state: "open", source: source)
       stale_prs = stale_prs.where.not(github_number: open_pr_numbers) if open_pr_numbers.any?
 
       count = stale_prs.count
@@ -1222,27 +1382,32 @@ module Activities
       escalated_stale = stale_prs.where(pr_review_phase: "escalated").to_a
 
       merged_numbers, unmerged_numbers, unknown_numbers = partition_by_merge_status(
-        client, project.full_name, stale_prs.pluck(:github_number)
+        client, repo_full_name, stale_prs.pluck(:github_number)
       )
 
       if merged_numbers.any?
         project.issues
           .pull_requests_only
-          .where(project_id: project.id, github_number: merged_numbers)
+          .where(project_id: project.id, source: source, github_number: merged_numbers)
           .update_all(github_state: "closed", pr_review_phase: "merged", updated_at: Time.current)
       end
 
       if unmerged_numbers.any?
         project.issues
           .pull_requests_only
-          .where(project_id: project.id, github_number: unmerged_numbers)
+          .where(project_id: project.id, source: source, github_number: unmerged_numbers)
           .update_all(github_state: "closed", updated_at: Time.current)
       end
 
       closed_numbers = merged_numbers.size + unmerged_numbers.size
 
       closed_set = (merged_numbers + unmerged_numbers).to_set
-      clear_stale_escalation_labels(project, client, escalated_stale.select { |pr| closed_set.include?(pr.github_number) })
+      clear_stale_escalation_labels(
+        project,
+        client,
+        escalated_stale.select { |pr| closed_set.include?(pr.github_number) },
+        repo_full_name: repo_full_name
+      )
 
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
@@ -1288,7 +1453,7 @@ module Activities
     # still escalated. Bounded to the escalated subset so it adds at most a
     # handful of API calls per sweep. Best-effort per PR: a failure on one PR
     # must not abort syncing the rest.
-    def clear_stale_escalation_labels(project, client, escalated_prs)
+    def clear_stale_escalation_labels(project, client, escalated_prs, repo_full_name: project.full_name)
       return if escalated_prs.empty?
 
       escalated_prs.each_with_index do |issue, index|
@@ -1296,7 +1461,9 @@ module Activities
         next unless issue.has_label?(PAID_ESCALATED_LABEL)
 
         begin
-          client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+          unless upstream_issue_write_skipped?(project, "remove_escalated_label", issue: issue)
+            client.remove_label_from_issue(repo_full_name, issue.github_number, PAID_ESCALATED_LABEL)
+          end
         rescue GithubClient::Error => e
           logger.warn(
             message: "github_sync.remove_stale_escalation_label_failed",
@@ -1316,7 +1483,7 @@ module Activities
     def reconcile_open_issues(project, client, eager_queue_enabled: false, eligible_issues: nil, open_pull_request_numbers: [])
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
-      open_numbers, truncated = fetch_open_issue_numbers(client, project.full_name)
+      open_numbers, truncated = fetch_open_issue_numbers(client, project)
       synced_issues = []
 
       project.update_columns(last_issue_reconciliation_at: Time.current)
@@ -1385,7 +1552,7 @@ module Activities
 
       missing_numbers.each_with_index do |number, index|
         heartbeat("fetch_issues.backfill_issue", project_id: project.id, issue_number: number, index: index, total: missing_numbers.size)
-        github_issue = client.issue(project.full_name, number)
+        github_issue = client.issue(project.issue_target_repository, number)
         synced_issues << sync_issue(
           project,
           github_issue,
@@ -1419,7 +1586,7 @@ module Activities
     end
 
     def reconcile_one_open_issue(project, client, number, synced_issues:, eager_queue_enabled: false, eligible_issues: nil)
-      github_issue = client.issue(project.full_name, number)
+      github_issue = client.issue(project.issue_target_repository, number)
       result = sync_issue(
         project, github_issue,
         eager_queue_enabled: eager_queue_enabled,
@@ -1461,17 +1628,23 @@ module Activities
       candidate_ids.uniq.map { |id| { id: id } }
     end
 
-    def fetch_open_issue_numbers(client, repo_full_name)
+    def fetch_open_issue_numbers(client, project)
       numbers = []
       page = 1
       truncated = false
+      repo_full_name = project.issue_target_repository
 
       loop do
         heartbeat("fetch_issues.issue_page", repo: repo_full_name, page: page)
         page_issues = client.issues(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
         break if page_issues.empty?
 
-        numbers.concat(page_issues.reject { |i| i.respond_to?(:pull_request) && i.pull_request }.filter_map(&:number))
+        numbers.concat(
+          page_issues
+            .reject { |issue| issue.respond_to?(:pull_request) && issue.pull_request }
+            .select { |issue| trusted_github_issue?(project, issue) }
+            .filter_map(&:number)
+        )
         break if page_issues.size < DEFAULT_PER_PAGE
 
         page += 1

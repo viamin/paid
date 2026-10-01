@@ -78,7 +78,12 @@ agent will typically reach the same conclusion again. The issue is also
 stamped with `no_code_required_at`, which candidate selection treats as a
 permanent exclusion from that recovery path regardless of `paid_state` — the
 same style of always-on guard already used for merged-PR-linked issues. Only
-a manually triggered run can pick the issue up again.
+a manually triggered run can pick the issue up again. An `epic` umbrella is
+the narrow exception: when the completed audit subsequently creates or links
+required child/dependency work, Auto-Pick keeps it blocked while that work is
+unresolved and permits a later final audit after resolution. This preserves the
+no-loop guarantee for ordinary issues while allowing an honest umbrella audit
+to reopen its acceptance loop when it found a real gap.
 
 The declaration is parsed from the same wide, most-recent output window used
 for error classification — not from the truncated excerpt quoted back in the

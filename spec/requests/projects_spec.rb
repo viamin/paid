@@ -1326,7 +1326,7 @@ RSpec.describe "Projects" do
           github_state: "open", parent_issue: issue)
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         get project_path(project)
 
@@ -1355,7 +1355,7 @@ RSpec.describe "Projects" do
           parent_issue: issue)
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         get project_path(project)
 
@@ -3094,6 +3094,42 @@ RSpec.describe "Projects" do
 
         expect(response).to have_http_status(:not_found)
         expect(issue.reload.paused).to be false
+      end
+
+      context "when the project has pr_target=upstream" do # @spec UPSTREAM-ISSUE-004
+        let(:project) do
+          create(:project,
+            account: account,
+            github_token: github_token,
+            owner: "fork-owner",
+            repo: "my-fork",
+            pr_target: "upstream",
+            upstream_full_name: "upstream/widgets")
+        end
+
+        it "flips the local paused flag without pushing a label to the fork or upstream repo" do
+          github_client = stub_github_client
+          issue = create(:issue, project: project, github_number: 42, paused: false)
+
+          post toggle_pause_project_issue_path(project, issue)
+
+          expect(issue.reload.paused).to be true
+          expect(github_client).not_to have_received(:add_labels_to_issue)
+          expect(github_client).not_to have_received(:add_labels_to_issue)
+            .with("fork-owner/my-fork", 42, anything)
+          expect(github_client).not_to have_received(:add_labels_to_issue)
+            .with("upstream/widgets", 42, anything)
+        end
+
+        it "does not push a label remove when unpausing an upstream-synced issue" do
+          github_client = stub_github_client
+          issue = create(:issue, project: project, github_number: 42, paused: true)
+
+          post toggle_pause_project_issue_path(project, issue)
+
+          expect(issue.reload.paused).to be false
+          expect(github_client).not_to have_received(:remove_label_from_issue)
+        end
       end
     end
 

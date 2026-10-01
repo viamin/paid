@@ -2891,7 +2891,7 @@ module Containers
       # Writable directories inside the container for Kilocode CLI:
       # - ~/.kilocode (plugin data)
       # - ~/.config/kilocode (kilo.json)
-      # - ~/.local/share/kilo (auth.json, kilo.db)
+      # - ~/.local/share/kilo (auth.json, kilo-rc.db)
       # Ownership is fixed by:
       # - fix_kilocode_tmpfs_ownership! (for ~/.kilocode)
       # - fix_kilocode_config_tmpfs_ownership! (for ~/.config/kilocode)
@@ -2900,7 +2900,7 @@ module Containers
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # Kilocode CLI stores config under ~/.config/kilocode (kilo.json) and data
-      # under ~/.local/share/kilo (auth.json, kilo.db). Kilocode is an OpenCode
+      # under ~/.local/share/kilo (auth.json, kilo-rc.db). Kilocode is an OpenCode
       # fork with the same SQLite/WAL + session storage layout, so its data
       # tmpfs gets the same 256MB — the ENOSPC failure mode is identical
       # (see the OpenCode note above).

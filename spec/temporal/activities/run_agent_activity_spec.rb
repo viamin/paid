@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PROMPT-EVOLUTION-003, RUNNER-FALLBACK-001, RUNNER-FALLBACK-002
+# @spec PROMPT-EVOLUTION-003, RUNNER-FALLBACK-001, RUNNER-FALLBACK-002, RUNNER-FALLBACK-010
 RSpec.describe Activities::RunAgentActivity do
   let(:activity) { described_class.new }
   let(:user) { create(:user) }
@@ -4927,6 +4927,24 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("failed")
         expect(agent_run.error_message).to eq("No runner supports tier high")
         expect(agent_run.runners_attempted).to eq([])
+      end
+
+      # @spec RUNNER-FALLBACK-010
+      it "parks an auto-picked issue after the configured consecutive dispatch failure limit" do
+        project.update!(max_issue_runner_failures: 2)
+        agent_run.update!(auto_pick: true)
+        create(:agent_run, :failed, project: project, issue: issue, goal: agent_run.goal,
+          error_message: "No runner supports tier high")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /No runner supports tier high/)
+
+        issue.reload
+        expect(issue).to be_runner_retry_abandoned
+        expect(issue.runner_retry_abandon_reason).to eq(
+          "No runner supports tier high — fix runner tier configuration or project model preferences."
+        )
       end
 
       it "filters a free-policy runner before execution when no free model resolves for the requested tier" do

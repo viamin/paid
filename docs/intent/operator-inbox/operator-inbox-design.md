@@ -225,6 +225,19 @@ title names the repository, issue/PR number, and reason (`retry exhaustion` or
 context section give that investigation access to the abandonment snapshot and
 recent run logs without inserting either into the chat prompt by default.
 
+Clearing the abandonment (either path) also stamps
+`runner_retry_failure_window_reset_at` so the per-provider failure counts that
+tripped the cap stop counting attempts recorded before the clear
+(`OPERATOR-INBOX-002G`, issue #4092). Earlier, `clear_runner_retry_abandonment!` only cleared the flag and
+deliberately left the windowed failure counts alone — correct for the
+automatic path, where a success proves the providers work again, but a poor
+outcome for an operator's explicit "Re-enable": re-dispatch would find every
+provider still over the cap from the same stale failures and re-abandon the
+issue on the next pick, with no new information gathered. Resetting the
+window on every clear fixes the operator path and is a no-op for the
+automatic path, since the successful run that triggers it always post-dates
+the reset.
+
 ### `manual_review`
 
 Backed by `Issue#paid_state == "manual_review"` directly, the same way
