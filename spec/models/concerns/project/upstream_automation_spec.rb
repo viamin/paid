@@ -9,8 +9,10 @@ RSpec.describe Project::UpstreamAutomation do
       expect(create(:project).upstream_pr_target?).to be false
     end
 
-    it "is true whenever pr_target is upstream" do
-      expect(create(:project, :upstream_pr_target).upstream_pr_target?).to be true
+    it "is true whenever pr_target is upstream, before target validation" do
+      project = build(:project, pr_target: "upstream", upstream_full_name: nil)
+
+      expect(project.upstream_pr_target?).to be true
     end
   end
 

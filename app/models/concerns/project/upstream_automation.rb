@@ -96,7 +96,7 @@ module Project::UpstreamAutomation
   # nothing outside this concern reads +pr_target+ directly.
   # @spec UPSTREAM-GATE-002
   def upstream_pr_target?
-    pr_target == "upstream" && upstream_owner.present? && upstream_repo.present?
+    pr_target == "upstream"
   end
 
   # The named capability check every gated feature must consult. Returns

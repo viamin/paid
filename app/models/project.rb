@@ -441,12 +441,6 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
-  # True when PRs for this project should be opened against the configured
-  # upstream repository rather than the project's own repository. @spec PR-TARGET-001
-  def upstream_pr_target?
-    pr_target == "upstream"
-  end
-
   # Repository where new PRs are opened for this project. For "own_repo"
   # projects this is the project's own full_name; for "upstream" projects it
   # is the configured upstream_full_name. Returns nil when upstream mode is
