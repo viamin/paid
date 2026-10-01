@@ -19,7 +19,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 - **Priority**: P1
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/auto-merge-strategy/`, `docs/intent/operator-inbox/`, and new feature-approval/conformance segments
-- **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout), and [#4050](https://github.com/viamin/paid/issues/4050) (review-trigger gap). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
+- **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout), and [#4050](https://github.com/viamin/paid/issues/4050) (shipped review scheduling). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
 - **Related Tests**: `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/services/intent_conformance/review_run_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb`, `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb`, `spec/services/design_amendments/*_spec.rb`
 
 ## Implementation Status
@@ -33,19 +33,19 @@ approved design revision, and verdict identity immediately before merge; the
 scanner persists the conformance blocker and the Inbox displays its cited
 evidence and resolution path.
 
-Two gaps prevent an Implemented status. `IntentConformance::ReviewRun` is a
-tested independent reviewer service, but no production PR-scan caller invokes
-it, so enabled feature PRs can remain correctly fail-closed with
-`verdict_missing` rather than receiving a fresh review. In addition,
-representative false-alarm and missed-drift evaluation results and rollout
-telemetry remain outstanding in open issue #3870. The RDR-066 lifecycle still
-owns population of `feature_intents.design_document_paths`; an empty list
-correctly yields `not_evaluated`. Open issue #4050 owns the reviewer trigger.
-Although the rollout flags are default-off, they are tenant/project opt-ins
-rather than an enforcement boundary. Operators MUST NOT enable
+The production PR scanner now schedules a durable, de-duplicated independent
+review for each eligible `(PR, HEAD, approved-design revision)` identity; a
+new head or design revision schedules a fresh review. Representative
+false-alarm and missed-drift evaluation results and rollout telemetry remain
+outstanding in open issue #3870, preventing an Implemented status. The RDR-066
+lifecycle still owns population of `feature_intents.design_document_paths`; an
+empty list correctly yields `not_evaluated`. Although the rollout flags are
+default-off, they are tenant/project opt-ins rather than an enforcement
+boundary. Operators MUST NOT broadly enable
 `intent_conformance_enforcement` or `approved_intent_amendments` for feature
-PRs until #4050 delivers the production trigger; otherwise enforcement can fail
-closed with `verdict_missing` without scheduling a fresh review.
+PRs until #3870 provides rollout evidence and enrolled features have their
+approved design-document paths populated; otherwise enforcement correctly fails
+closed with `not_evaluated` rather than authorizing an unreviewed merge.
 
 ## Problem Statement
 
@@ -166,8 +166,9 @@ The evidence is recorded in
 - **Current-head/current-design protection and Inbox escalation are shipped
   and covered by passing specs.**
 - **Evaluation evidence is still absent.** Open issue #3870 owns the
-  false-alarm/missed-drift evaluation and rollout telemetry; the missing
-  production trigger for `ReviewRun` is the separate closeout gap in #4050.
+  false-alarm/missed-drift evaluation and rollout telemetry. Production review
+  scheduling is shipped by #4050; design-document-path population remains an
+  RDR-066 lifecycle prerequisite for enrolled features.
 - **Status is Partially Implemented.** The implementation evidence supports
   this status and the matching README row, but not an Implemented closeout.
 - **Epic #3861 remains open.** This PR must use tracking language only and

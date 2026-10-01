@@ -71,11 +71,12 @@ The guard is a no-op unless **both** of the following hold, preserving
    via `feature_intent_issues`).
 2. The project has opted into the `approved_intent_amendments` feature flag —
    the same RDR-067 mode flag `DesignAmendments::Open` already gates. Per the
-   rollout instruction, operators MUST NOT enable this flag for feature PRs
-   until #4050 wires the production reviewer trigger. Default-off does not
-   prevent a tenant opt-in; enabling it before that trigger exists would make
-   the final guard fail closed with `verdict_missing` without scheduling a
-   fresh review. This segment does not introduce a second flag.
+   rollout instruction, operators MUST limit enablement until #3870 supplies
+   representative accuracy and telemetry evidence. The production scanner now
+   schedules a fresh independent review for each eligible PR-head/design-
+   revision identity; features without populated approved design-document paths
+   still fail closed with `not_evaluated`. This segment does not introduce a
+   second flag.
 
 When either condition is false, `VerifyAtMerge.call` returns `nil` and the
 activity proceeds exactly as it did before this change.
