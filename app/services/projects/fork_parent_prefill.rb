@@ -6,9 +6,11 @@ module Projects
   # projects (issue #4076). GitHub exposes this as `parent.full_name` on the
   # repository payload; the field is only present for literal GitHub forks.
   #
-  # The result is deliberately non-raising — settings pages should still
-  # render (with manual entry) when GitHub is unreachable, the credential
-  # lacks `repo` scope, or the repository simply is not a fork.
+  # Expected GitHub errors (network, auth, rate limit, not found) are
+  # caught and logged so settings pages can still render with manual entry.
+  # Anything else propagates to the caller — the controller's logging
+  # boundary needs to see it so operators can distinguish a real bug from
+  # an expected GitHub outage or credential failure.
   class ForkParentPrefill
     PREFILLABLE_REASON = "detected_from_fork_parent".freeze
 
@@ -23,22 +25,20 @@ module Projects
     end
 
     def call
-      client = github_client || @project.client
+      client = github_client || project.client
       return Prefill.unavailable("no_github_credential") if client.nil?
 
-      payload = fetch_repository(client)
-      return Prefill.unavailable("github_request_failed") if payload.nil?
-
+      payload = client.repository(project.full_name)
       parent_full_name = read_parent_full_name(payload)
       return Prefill.unavailable("not_a_fork") if parent_full_name.blank?
-      return Prefill.unavailable("same_as_project") if parent_full_name.casecmp?(@project.full_name)
+      return Prefill.unavailable("same_as_project") if parent_full_name.casecmp?(project.full_name)
 
       Prefill.detected(parent_full_name)
     rescue GithubClient::Error, Octokit::Error => e
       Rails.logger.info(
         message: "projects.fork_parent_prefill.skipped",
         component: "project_settings",
-        project_id: @project.id,
+        project_id: project.id,
         reason: e.class.name
       )
       Prefill.unavailable("github_request_failed")
@@ -46,17 +46,7 @@ module Projects
 
     private
 
-    attr_reader :project
-
-    def github_client
-      @github_client
-    end
-
-    def fetch_repository(client)
-      client.repository(project.full_name)
-    rescue StandardError
-      nil
-    end
+    attr_reader :project, :github_client
 
     def read_parent_full_name(payload)
       parent = if payload.respond_to?(:[])

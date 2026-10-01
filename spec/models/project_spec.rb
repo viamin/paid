@@ -237,6 +237,19 @@ RSpec.describe Project do
         expect(project.errors[:upstream_full_name]).to be_present
       end
 
+      it "rejects an upstream owner longer than GitHub permits" do # @spec PR-TARGET-006
+        project = build(:project, pr_target: "upstream", upstream_full_name: "#{"a" * 40}/widgets")
+
+        expect(project).not_to be_valid
+        expect(project.errors[:upstream_full_name]).to be_present
+      end
+
+      it "accepts an upstream owner at GitHub's character limit" do # @spec PR-TARGET-006
+        project = build(:project, pr_target: "upstream", upstream_full_name: "#{"a" * 39}/widgets")
+
+        expect(project).to be_valid
+      end
+
       it "rejects upstream_full_name matching the project's own repository" do # @spec PR-TARGET-008
         project = build(:project, owner: "octo", repo: "hello", pr_target: "upstream", upstream_full_name: "octo/hello")
 

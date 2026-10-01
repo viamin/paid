@@ -54,6 +54,17 @@ on a populated knowledge base invalidates the Qdrant index and requires a
 re-embed; the embedding pipeline still records the new model id on each chunk
 as it is re-embedded.
 
+Embedding requests use the public `AgentHarness.embed` contract in both the
+control-plane and isolated-container paths. The request-local credentials,
+proxy endpoint, provider-routing header, model, dimensions, timeout, and
+four-attempt bound are passed through unchanged. Agent Harness owns the one
+bounded transport retry loop, including `Retry-After` and transient-error
+classification. It returns batch vectors in input order and provider-reported
+batch usage; Paid may retain its existing aggregate estimate for operational
+accounting, but must not represent an equal per-vector allocation as a
+provider measurement. Transport replacement alone preserves stored vectors and
+requires neither a Qdrant schema change nor a re-embed.
+
 ### OKF bundle indexing
 
 Projects that already maintain an OKF-style bundle — repo-local Markdown
