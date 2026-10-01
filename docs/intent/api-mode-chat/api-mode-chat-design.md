@@ -40,11 +40,12 @@ behavior.
   `docs/intent/chat-session-reopen/` under RDR-037.
 - Per-tool execution guards that require `confirmed: true` for specific
   mutating tools belong to `docs/intent/chat-tool-confirmation/`.
-- The planned normalized transport, optional supporting persistence, request
+- The normalized transport, optional supporting persistence, request
   attempts, and evidence-based loop-delegation boundary belong to
-  `docs/intent/api-conversation-delegation/` under RDR-072. That segment is
-  docs-only; it does not change the shipped RDR-028 loop or confirmation
-  authority described here.
+  `docs/intent/api-conversation-delegation/` under RDR-072. Its shipped
+  transport (viamin/paid#4016) now carries API-key chat requests for this
+  segment, while the RDR-028 loop and confirmation authority described here
+  remain retained and unchanged.
 
 The API-mode chat loop may still accept legacy `mode=workspace` inputs for
 backward compatibility, but that compatibility shim is not evidence that the

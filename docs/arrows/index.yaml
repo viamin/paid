@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-09-29
+last_updated: 2026-10-01
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -231,9 +231,9 @@ arrows:
     parent: PAID
     taxonomy: chat
     status: MAPPED
-    sampled: 2026-09-25
+    sampled: 2026-10-01
     blockedBy: [api-mode-chat]
-    next: "Verify agent-harness #431 transport contract; no runtime activation until RDR-072's rollout guard is amended."
+    next: "Open and reference the follow-up issue for API-CONVERSATION-DELEGATION-003 attempt/recovery wiring, then close RDR-072 via viamin/paid#4020 using the epic audit record in the design doc."
   context-intake:
     title: Knowledge Context Intake
     path: docs/intent/context-intake/context-intake-design.md
