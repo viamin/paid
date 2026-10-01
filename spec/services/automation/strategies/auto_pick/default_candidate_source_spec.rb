@@ -485,7 +485,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
-        parent_issue_id: nil)
+        parent_issue_id: nil, github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -505,7 +505,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
-        parent_issue_id: nil)
+        parent_issue_id: nil, github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -569,7 +569,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged",
-        parent_issue_id: nil)
+        parent_issue_id: nil, github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -591,7 +591,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
-      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "closed")
+      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "closed",
+        github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -629,7 +630,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
           goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
           completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
         create(:issue, project: project, github_number: 4047, is_pull_request: true, github_state: "open",
-          parent_issue_id: nil)
+          parent_issue_id: nil, github_html_url: "https://example.test/pr/4047")
 
         scope = described_class.eligible_scope(project)
 
