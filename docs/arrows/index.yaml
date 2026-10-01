@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  upstream-pull-requests:
+    title: Upstream Pull Requests
+    path: docs/intent/upstream-pull-requests/upstream-pull-requests-design.md
+    specs: docs/intent/upstream-pull-requests/upstream-pull-requests-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: MAPPED
+    next: "Open fork branches as draft pull requests against an upstream repository"
   question-exploration:
     title: Question-Centered Chat Exploration
     path: docs/intent/question-exploration/question-exploration-design.md
@@ -226,6 +234,14 @@ arrows:
     sampled: 2026-09-25
     blockedBy: [api-mode-chat]
     next: "Verify agent-harness #431 transport contract; no runtime activation until RDR-072's rollout guard is amended."
+  context-intake:
+    title: Knowledge Context Intake
+    path: docs/intent/context-intake/context-intake-design.md
+    specs: docs/intent/context-intake/context-intake-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-10-01
   free-model-sync:
     title: Free Model Sync
     path: docs/intent/free-model-sync/free-model-sync-design.md

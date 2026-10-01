@@ -106,6 +106,23 @@ RSpec.describe AgentRuns::IssueRunnerRetryCap do
         expect(capped).to be_empty
       end
     end
+
+    # @spec OPERATOR-INBOX-002G
+    context "when the issue has a runner_retry_failure_window_reset_at" do
+      it "does not count failures recorded before the reset time (#4092)" do
+        record_failures("claude_code", 3)
+        issue.update!(runner_retry_failure_window_reset_at: Time.current)
+
+        expect(capped).to be_empty
+      end
+
+      it "still counts failures recorded after the reset time" do
+        issue.update!(runner_retry_failure_window_reset_at: Time.current)
+        record_failures("claude_code", 3)
+
+        expect(capped).to contain_exactly("claude")
+      end
+    end
   end
 
   describe ".cap_reached?" do

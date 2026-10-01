@@ -87,7 +87,8 @@
 - [x] **EAGER-QUEUE-009** — When a project issue has a `create_pr` run that
   recorded a `pull_request_number`, the system SHALL exclude that issue from
   queue seeding and dequeue eligibility while a synced PR in the same project
-  with that number is open or merged, regardless of elapsed time, a missing
+  with that number and canonical GitHub URL is open or merged, regardless of
+  elapsed time, a missing
   `parent_issue_id`, or the run's terminal status — a run that fails or is
   cancelled after publishing still counts, because the recorded number, not
   the terminal status, is the produced-PR evidence. The exclusion SHALL lift

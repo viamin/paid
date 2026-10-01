@@ -317,6 +317,7 @@ class Project < ApplicationRecord
   has_many :egress_security_events, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :chat_sessions, through: :chat_session_projects
+  has_many :api_usage_attempts, dependent: :destroy
   has_many :context_intake_questions, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
   has_one :tracker_configuration, as: :configurable, dependent: :destroy

@@ -184,6 +184,66 @@ RSpec.describe AgentRuns::IssueRunnerFailureHistory do
     end
   end
 
+  # @spec OPERATOR-INBOX-002G
+  context "when the issue has a runner_retry_failure_window_reset_at" do
+    before do
+      travel_to(2.days.ago) do
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [ { "runner" => "claude_code", "success" => false, "error_type" => "error" } ])
+      end
+    end
+
+    it "excludes runs created before the reset time" do
+      issue.update!(runner_retry_failure_window_reset_at: 1.day.ago)
+
+      expect(call).to eq({})
+    end
+
+    it "includes runs created at or after the reset time" do
+      issue.update!(runner_retry_failure_window_reset_at: 3.days.ago)
+
+      expect(call).to eq("claude" => 1)
+    end
+
+    it "is unaffected when the reset time is nil" do
+      expect(call).to eq("claude" => 1)
+    end
+
+    it "counts only failures recorded after the reset on a run created before it" do
+      queued_run = travel_to(2.days.ago) do
+        create(:agent_run, project: project, issue: issue, goal: "create_pr")
+      end
+
+      travel_to(1.day.ago) do
+        queued_run.record_runner_attempt("codex", success: false, error_type: "error")
+      end
+      travel_to(12.hours.ago) { issue.update!(runner_retry_failure_window_reset_at: Time.current) }
+      queued_run.record_runner_attempt("claude_code", success: false, error_type: "error")
+
+      expect(described_class.for_issue(project: project, issue: issue, goal: "create_pr")).to eq("claude" => 1)
+    end
+  end
+
+  # @spec OPERATOR-INBOX-002G
+  context "when a run recorded a failed fallback before succeeding and triggering the reset (#4092)" do
+    it "still counts the failed attempt recorded earlier in that same run" do
+      # Simulates RunAgentActivity's auto-clear: claude fails, codex falls
+      # back and succeeds, then the run's success clears the retry-cap
+      # abandonment with window_reset_at anchored to this run's created_at
+      # (see Issue#clear_runner_retry_abandonment!). The claude failure
+      # happened before the clear but inside the same AgentRun row, so a
+      # cutoff based on created_at alone must not drop it.
+      triggering_run = create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+        runners_attempted: [
+          { "runner" => "claude_code", "success" => false, "error_type" => "error" },
+          { "runner" => "codex", "success" => true }
+        ])
+      issue.update!(runner_retry_failure_window_reset_at: triggering_run.created_at)
+
+      expect(call).to eq("claude" => 1)
+    end
+  end
+
   context "with all execution failure types" do
     before do
       create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",

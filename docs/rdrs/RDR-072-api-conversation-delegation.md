@@ -197,8 +197,29 @@ change implemented EARS status or supersede RDR-028.
 
 ## Rollout Guard
 
-**Docs-only now:** this accepted RDR ships no runtime behavior. Open implementation
-issues in agent-harness and Paid after the RDR is merged.
+**API-mode chat transport (Paid #4016):** the verified API-key chat scope is
+authorized as a complete replacement, not a staged rollout. The configuration
+gate is the existing `Runner#enabled_for_chat?` API-key runner selection:
+chat-enabled API-key runners use `AgentHarness::Api::ChatTransport` by default;
+CLI and subscription runners remain outside this scope. The enablement owner is
+the Paid release maintainer. Roll back by deploying the preceding Paid release
+after first confirming that no in-flight API chat request is being interrupted;
+no transport-owned persistence is introduced. This gate is removed when all
+chat runner authentication modes have separately verified public harness
+contracts and a successor RDR closes the remaining unsupported paths.
+
+The authorized host dependency is `agent-harness` 0.44.3, resolved from the
+application bundle and published on RubyGems on 2026-09-27. RubyGems provenance
+identifies source commit `85c4bc3`; the release and RubyGems records are
+<https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3> and
+<https://rubygems.org/gems/agent-harness/versions/0.44.3> respectively. It is an
+installable, non-prerelease release containing the public API chat contract and
+the recovery-compatible Codex support verified for Paid #3995. This migration
+runs in the Rails host process, so no agent-image rebuild is required for the
+API-mode chat path. Before deployment, verify `bundle exec ruby -e
+'puts Gem.loaded_specs.fetch("agent-harness").version'` on the host and verify
+that a rebuilt agent image does not route API-mode chat through a container or
+the secrets proxy; retain that image verification record with the release.
 
 Embedding, schema and transport adoption should ship as complete, tested
 replacements within each migrated operation/provider scope. Other supported
@@ -268,8 +289,9 @@ The mapping retains Paid's `ChatSession`/`ChatMessage` transcript IDs,
 approval claims, actor/tenant authority, and durable accounting; optional
 RubyLLM supporting tables may only supplement that state. It also defines the
 attempt identity and aggregate cross-repository comparison required before a
-later loop decision. This RDR's rollout guard remains docs-only: the mapping
-does not authorize a dependency change, schema migration, or runtime routing.
+later loop decision. Paid #4016 amends this guard for the narrowly verified
+API-key chat transport scope described above. The mapping does not authorize a
+schema migration, supporting persistence, or loop delegation.
 
 ## Sources
 
