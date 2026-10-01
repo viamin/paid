@@ -15,17 +15,20 @@ prefix: API-CONVERSATION-DELEGATION
 This segment adopts a public, normalized API-chat transport from
 `agent-harness` after viamin/agent-harness#431 is released and verified. The
 first migration replaces only a verified operation/provider scope; it does not
-delegate the chat loop. `ChatSessions::AgentLoop`, `ChatSessions::ResolveToolCall`,
-`ChatSession`, and `ChatMessage` remain the source of current runtime behavior
-until a later decision meets the loop-delegation evidence below.
+delegate the chat loop. The completed RubyLLM loop evaluation in
+viamin/agent-harness#448 selected the retained-loop outcome: `ChatSessions::AgentLoop`,
+`ChatSessions::ResolveToolCall`, `ChatSession`, and `ChatMessage` remain the
+source of runtime behavior, not a temporary implementation awaiting a loop
+API.
 
 The rollout guard is **docs-only**. No feature flag, initializer change,
 dependency update, supporting table, or routing change is permitted by this
-segment. A dependent implementation must amend RDR-072 with its exact flag or
-configuration gate, default, enablement owner, rollback action, and removal
-criteria before it can send production traffic through the new transport.
-Embedding adoption is a separate operation and neither gates nor is evidence
-for API-chat transport or loop adoption.
+segment. A dependent transport/accounting implementation must amend RDR-072
+with its exact flag or configuration gate, default, enablement owner, rollback
+action, and removal criteria before it can send production traffic through the
+new transport. No loop rollout guard is required: loop delegation was rejected
+on the accepted evidence. Embedding adoption is a separate operation and
+neither gates nor is evidence for API-chat transport or loop adoption.
 
 ## Current mapping and retained authority
 
@@ -117,10 +120,40 @@ durable attempt record and either accepts a matching terminal report or creates
 a new outbound attempt; it never guesses whether an unrecorded provider call
 succeeded.
 
-## Loop-delegation decision method
+## Loop-delegation evaluation and retained responsibilities
 
-Loop delegation is a later, evidence-based decision, not a target assumed by
-this LLD. A proposal must pass all of the following before activation:
+Agent-harness #448 evaluated RubyLLM 2.0's public step, completion, tool,
+approval, cancellation, and usage controls and selected **retain Paid's loop**.
+The evaluation is available in the released `agent-harness` 0.44.0 line; Paid
+uses published `agent-harness` 0.44.3, resolved on the host through Bundler.
+The release is installable from RubyGems and includes the evaluation result;
+the separate #3995 Codex subscription discovery/recovery compatibility remains
+protected by Paid's existing 0.44.3 pin. Rebuild the agent image from that pin
+and verify `AgentHarness::VERSION` in the image before activating any future
+transport/accounting scope.
+
+The upstream contract tests verified mixed read/write batches, independent
+approve/deny, completed-tool skipping, and cancellation. Delegation failed
+because RubyLLM has provider-only tool IDs, in-process execution, no
+caller-bounded completion driver, in-memory plain-Ruby approval restoration,
+default nested provider retries, and no stable attempt identity. Replacing
+Paid's loop would therefore add durable-ID, external-dispatch, retry/budget,
+persistence/recovery, and accounting adapters in both repositories.
+
+Paid retains these responsibilities:
+
+| Surface | Retained responsibility and evidence |
+| --- | --- |
+| `AgentLoop` | Transcript reconstruction with stable Paid message IDs, mixed batches, tool limits, and token soft stops. `agent_loop_spec.rb` covers mixed batches and eligible auto-approval. |
+| `ResolveToolCall` | Tenant/actor execution, Pundit recheck, atomic approval claim, denial, two-phase draft retry, and last-pending-call resumption. `resolve_tool_call_spec.rb` covers these cases. |
+| `FallbackLoop` | Paid-controlled runner selection and recovery. Completed tool call/results remain in the transcript and are supplied to the fallback turn, preventing replay after a runner failure. `send_message_spec.rb` covers the preserved completed-effect path. |
+| `ChatSession` / `ChatMessage` | SSE/Cable/JSON message IDs, reconnectable historical transcript, and pending approvals. No RubyLLM persistence table is adopted. |
+| Paid accounting | Budgets and durable accounting remain Paid-owned. Attempt-ledger transport adoption is still #4018 and has no activated scope in this change. |
+
+No supporting-table migration, historical/pending-conversation conversion, or
+backup/recovery rehearsal is needed for the retained-loop decision itself. If
+a future proposal reopens delegation, it must pass all of the following before
+activation:
 
 1. **Behavior parity:** executable tests preserve tenant/actor checks,
    tool visibility, manual and eligible auto-approval, mixed batches,

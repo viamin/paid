@@ -460,32 +460,27 @@ RSpec.describe ChatSessions::SendMessage do
       )
     end
 
-    it "discards a failed runner's partial turn so the fallback is not replayed it" do
+    # @spec API-CONVERSATION-DELEGATION-006
+    it "keeps completed tool results through a runner switch so they are not replayed" do
       allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
       allow(Tools::Registry).to receive(:dispatch).and_return(successful_tool_dispatch_result)
       fallback_client = inspecting_llm_client(llm_response)
       fallback_runner = configure_chat_fallback
       allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
 
-      # Primary runner streams a tool round (persisted) then rate-limits on the
-      # follow-up call, leaving a half-finished assistant/tool turn behind.
-      result = described_class.call(
-        chat_session: chat_session, content: "Hello",
-        llm_client: tool_then_rate_limited_client
-      )
+      result = described_class.call(chat_session: chat_session, content: "Hello", llm_client: tool_then_rate_limited_client)
 
       messages = chat_session.messages.order(:created_at)
       expect(result.content).to eq("I can help with that.")
       expect(chat_session.reload.runner).to eq(fallback_runner)
-      # Only the user message, the fallback notice, and the fallback answer remain —
-      # the failed attempt's assistant text and tool messages were discarded.
-      expect(messages.pluck(:role)).to eq(%w[user assistant assistant])
-      expect(messages.where(role: "tool")).to be_empty
-      expect(messages.pluck(:content)).not_to include("Let me search for that.")
+      expect(messages.pluck(:role)).to eq(%w[user assistant assistant tool assistant assistant])
+      expect(messages.pluck(:content)).to include("Let me search for that.")
+      expect(messages.find_by(role: "tool").tool_result).to eq(successful_tool_dispatch_result)
+      expect(Tools::Registry).to have_received(:dispatch).once
 
       replayed = fallback_client.seen_conversations.last
-      expect(replayed.map { |m| m[:content] }).not_to include("Let me search for that.")
-      expect(replayed.any? { |m| m[:role] == "tool" }).to be(false)
+      expect(replayed.map { |m| m[:content] }).to include("Let me search for that.")
+      expect(replayed).to include(hash_including(role: "tool", tool_call_id: "call_1", content: successful_tool_dispatch_result))
     end
 
     it "does not discard messages a concurrent turn persisted during the failed attempt" do
@@ -511,9 +506,10 @@ RSpec.describe ChatSessions::SendMessage do
 
       messages = chat_session.messages.order(:created_at).pluck(:role, :content)
       expect(messages).to include([ "user", "concurrent turn" ])
-      # The failed attempt's own rows are still rolled back.
-      expect(messages).not_to include([ "assistant", "Let me search for that." ])
-      expect(messages.none? { |role, _| role == "tool" }).to be(true)
+      # The failed attempt's completed tool records remain available to the
+      # fallback, while the independently persisted turn remains untouched.
+      expect(messages).to include([ "assistant", "Let me search for that." ])
+      expect(messages.any? { |role, _| role == "tool" }).to be(true)
     end
 
     context "with tool calls in response" do
