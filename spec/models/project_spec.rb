@@ -1933,6 +1933,63 @@ RSpec.describe Project do
       end
     end
 
+    describe "#client" do
+      def app_backed_project(account, **attrs)
+        build(:project, :with_github_installation, account: account, **attrs)
+      end
+
+      it "wraps the project client with GithubClient::WithFallback when fallback is configured" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
+
+        client = project.client
+
+        expect(client).to be_a(GithubClient::WithFallback)
+        expect(client.primary).to be_a(GithubClient)
+        expect(client.fallback).to eq(fallback.client)
+        expect(client.instance_variable_get(:@project)).to eq(project)
+      end
+
+      it "returns a plain GithubClient when fallback is not configured" do
+        account = create(:account)
+        create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: false)
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
+
+        expect(project.client).to be_a(GithubClient)
+        expect(project.client).not_to be_a(GithubClient::WithFallback)
+      end
+
+      it "returns a plain GithubClient for token-backed projects even with fallback enabled" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = build(:project, account: account, github_token: create(:github_token, account: account),
+          git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.client).to be_a(GithubClient)
+        expect(project.client).not_to be_a(GithubClient::WithFallback)
+      end
+
+      it "memoizes the wrapped client across calls" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
+
+        expect(project.client).to equal(project.client)
+      end
+
+      it "returns the plain token-backed client when no App installation is present" do
+        account = create(:account)
+        token = create(:github_token, account: account)
+        project = build(:project, account: account, github_token: token)
+
+        expect(project.client).to eq(token.client)
+      end
+    end
+
     describe "#github_auth_source" do
       it "returns pat for token-backed projects" do
         project = build(:project)

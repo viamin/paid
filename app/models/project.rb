@@ -1506,8 +1506,13 @@ class Project < ApplicationRecord
   # rejected for a missing permission (e.g. a change touching
   # .github/workflows/). This is the opt-in gate only — the App remains the
   # default credential for every operation; the PAT is used solely for the
-  # failing retry (see Containers::GitOperations, WorktreeService, and
-  # Activities::MergePullRequestActivity for the push and merge retry sites).
+  # failing retry. The retry happens centrally in +GithubClient::WithFallback+,
+  # which +Project#client+ returns whenever this is configured, so issue
+  # edits, label writes, comment posts, PR updates, and reads all benefit
+  # without each call site needing its own rescue. The explicit push and
+  # merge retries in +Containers::GitOperations+, +WorktreeService+, and
+  # +Activities::MergePullRequestActivity+ predate the wrapper and remain as
+  # defense-in-depth.
   # We trust the configured setting rather than inspecting the PAT's scopes,
   # because fine-grained PATs do not report classic OAuth scopes.
   def git_push_pat_fallback_configured?
@@ -1526,17 +1531,28 @@ class Project < ApplicationRecord
   end
 
   # The fallback PAT's authenticated GithubClient, or nil when fallback is not
-  # configured. Used by REST-API-level retries (e.g. a merge rejected for the
-  # same missing App permission) that need a ready client rather than a raw
-  # token string.
+  # configured. Most call sites should consume +Project#client+ (which already
+  # wraps the fallback when configured); this accessor is kept for code paths
+  # that need to use the fallback explicitly — for example the legacy
+  # +Activities::MergePullRequestActivity+ merge retry and the
+  # +Mcp::Tools::ProposePullRequest+ push-fallback chain.
   def git_push_fallback_client
     git_push_fallback_token.client if git_push_pat_fallback_configured?
   end
 
   # Returns a GithubClient authenticated via the project's GitHub credential
   # (installation token for app-backed projects, PAT for token-backed projects).
+  # When a PAT push fallback is configured on an app-backed project, the
+  # returned client is a +GithubClient::WithFallback+ wrapper that transparently
+  # retries permission-shaped failures (403, 404-disambiguated-by-PAT) with
+  # the fallback PAT. The wrapper mirrors +GithubClient+'s public interface so
+  # every existing call site benefits without per-site rescue blocks.
   def client
-    @client ||= if github_installation_id.present? || github_installation.present?
+    @client ||= build_github_client
+  end
+
+  def build_github_client
+    primary = if github_installation_id.present? || github_installation.present?
       credential = github_credential
       credential.present? ? GithubClient.new(
         token: credential,
@@ -1546,7 +1562,15 @@ class Project < ApplicationRecord
     else
       github_token&.client
     end
+
+    return primary unless primary && git_push_pat_fallback_configured?
+
+    fallback = git_push_fallback_token.client
+    return primary unless fallback
+
+    GithubClient::WithFallback.new(primary:, fallback:, project: self)
   end
+  private :build_github_client
 
   # Returns a proc that clears the cached App installation token and mints
   # a fresh one. Passed to +GithubClient+ so a 401 mid-request triggers a
