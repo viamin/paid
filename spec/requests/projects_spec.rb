@@ -2303,7 +2303,10 @@ RSpec.describe "Projects" do
 
         it "persists pr_target=upstream and upstream_full_name when both are valid" do # @spec PR-TARGET-001, PR-TARGET-006
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_full_name: "stenolabs/stenoai" }
+            project: {
+              pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+              auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+            }
           }
 
           expect(response).to redirect_to(project_path(project))
@@ -2364,7 +2367,8 @@ RSpec.describe "Projects" do
         end
 
         it "switches back to pr_target=own_repo without requiring upstream_full_name" do # @spec PR-TARGET-002
-          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+            auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
 
           patch project_path(project), params: { project: { pr_target: "own_repo" } }
 
@@ -2403,7 +2407,8 @@ RSpec.describe "Projects" do
         end
 
         it "renders the upstream option as selected when pr_target is upstream" do
-          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+            auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
             Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
           )
@@ -2415,7 +2420,8 @@ RSpec.describe "Projects" do
         end
 
         it "applies opacity-50 to gated sections when pr_target=upstream" do # @spec PR-TARGET-003
-          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+            auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
 
           get edit_project_path(project)
 
@@ -3096,13 +3102,12 @@ RSpec.describe "Projects" do
 
       context "when the project has pr_target=upstream" do # @spec UPSTREAM-ISSUE-004
         let(:project) do
-          create(:project,
-            account: account,
-            github_token: github_token,
-            owner: "fork-owner",
-            repo: "my-fork",
-            pr_target: "upstream",
-            upstream_full_name: "upstream/widgets")
+        create(:project, :upstream_pr_target,
+          account: account,
+          github_token: github_token,
+          owner: "fork-owner",
+          repo: "my-fork",
+          upstream_full_name: "upstream/widgets")
         end
 
         it "flips the local paused flag without pushing a label to the fork or upstream repo" do
@@ -3285,6 +3290,31 @@ RSpec.describe "Projects" do
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
         expect(response.body).to include("auto_merge_toggle_project_#{project.id}")
         expect(response.body).to include("Auto-Merge")
+      end
+    end
+
+    # @spec UPSTREAM-GATE-004
+    context "when the project targets PRs at the upstream repository" do
+      before { sign_in user }
+
+      it "redirects with an alert and leaves auto_merge_mode off" do
+        project = create(:project, :upstream_pr_target, account: account, github_token: github_token)
+
+        post toggle_auto_merge_project_path(project)
+
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to include("Auto-merge is not available")
+        expect(project.reload.auto_merge_mode).to eq("off")
+      end
+
+      it "does not cycle auto_merge_mode even when the request asks for turbo_stream" do
+        project = create(:project, :upstream_pr_target, account: account, github_token: github_token)
+
+        post toggle_auto_merge_project_path(project),
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.auto_merge_mode).to eq("off")
       end
     end
 

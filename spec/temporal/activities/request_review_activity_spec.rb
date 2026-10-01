@@ -14,6 +14,31 @@ RSpec.describe Activities::RequestReviewActivity do
   end
 
   describe "#execute" do
+    # @spec UPSTREAM-GATE-002
+    context "when the project targets PRs at the upstream repository" do
+      let(:project) { create(:project, :upstream_pr_target) }
+
+      before do
+        allow(github_client).to receive(:pull_request_review_requests)
+        allow(github_client).to receive(:request_bot_review)
+        allow(github_client).to receive(:request_pull_request_review)
+      end
+
+      it "skips reviewer requests without querying or mutating the upstream PR" do
+        allow(Rails.logger).to receive(:info)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot", "octocat" ])
+
+        expect(result).to eq(requested: [], upstream_mode_skipped: true)
+        expect(github_client).not_to have_received(:pull_request_review_requests)
+        expect(github_client).not_to have_received(:request_bot_review)
+        expect(github_client).not_to have_received(:request_pull_request_review)
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(message: "upstream_mode_skipped", feature: "owner_review_requests")
+        )
+      end
+    end
+
     context "when reviewers list is empty" do
       it "returns without requesting" do
         result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [])

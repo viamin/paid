@@ -44,7 +44,13 @@ RSpec.describe Tools::UpdateProjectSettings do
     end
 
     it "updates the upstream PR target settings" do # @spec PR-TARGET-012
-      result = call(settings: { "pr_target" => "upstream", "upstream_full_name" => "stenolabs/stenoai" })
+      result = call(settings: {
+        "pr_target" => "upstream",
+        "upstream_full_name" => "stenolabs/stenoai",
+        "auto_add_labels_enabled" => false,
+        "inherit_priority_labels" => false,
+        "auto_fix_merge_conflicts" => false
+      })
 
       expect(result).to include(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
       expect(project.reload).to have_attributes(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")

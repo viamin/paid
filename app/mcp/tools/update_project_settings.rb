@@ -11,10 +11,8 @@ module Tools
     #
     # PR target selection (issue #4076): +pr_target+ and +upstream_full_name+
     # are exposed so chat can switch a project to upstream mode. Selecting
-    # upstream does not itself re-enable the automation controls listed in
-    # Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES; server-side enforcement
-    # of those gates is intentionally delivered by the follow-up issue. This
-    # tool only exposes the target selection itself.
+    # upstream is subject to the same server-side automation gates as the
+    # settings form, so chat cannot bypass the disabled controls.
     PERMITTED_ATTRIBUTES = %i[
       active
       paused

@@ -50,12 +50,16 @@ because the blocker/Inbox surface cannot exist without something to read.
    alike, since RDR-067 requires all four to fail closed.
 3. **Rollout gate** — enforcement is behind the `intent_conformance_enforcement`
    feature flag (default off, per project). Default-off does not prohibit an
-   operator from opting in: until #4050 wires the production reviewer trigger,
-   operators MUST NOT enable this flag for feature PRs because enforcement would
-   fail closed with `verdict_missing` without scheduling a fresh review.
-   RDR-067's own rollout guard ties enforcement to the RDR-066 named feature
-   operating mode, which does not exist in this codebase yet; the flag is the
-   interim substitute and is documented to be replaced once RDR-066 ships.
+   operator from opting in. Review scheduling rides the sibling
+   `approved_intent_amendments` flag (`IntentConformance::ScheduleReview`
+   gates on it), so enforcement requires both flags enabled: enabling only
+   this flag leaves every feature-PR merge blocked with no verdict and no
+   review scheduled. Operators MUST still limit rollout until #3870 supplies
+   representative accuracy and telemetry evidence, and must enroll only
+   features with populated approved design-document paths. RDR-067's own
+   rollout guard ties enforcement to the RDR-066 named feature operating
+   mode, which does not exist in this codebase yet; the flag is the interim
+   substitute and is documented to be replaced once RDR-066 ships.
 4. **Review scheduling** — after resolving a live PR HEAD, `ScanPaidPrsActivity`
    asks `IntentConformance::ScheduleReview` to create one durable review
    schedule for a released Feature Intent's exact `(issue, PR HEAD, approved

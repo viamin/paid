@@ -185,6 +185,67 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec AUTO-PICK-QUEUE-011
+    context "when an issue's latest model selection pins a tier" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        allow(Runners::DefaultTierModelIds).to receive(:call).and_return({})
+        owner.runners.find_by!(runner_key: "claude")
+          .update!(tier_models: { "low" => { "model_id" => "claude-haiku", "provider_id" => 1 } })
+      end
+
+      def pin_tier(issue:, tier:, created_at:)
+        model = create(:llm_model, model_id: "model-#{tier}-#{issue.id}", provider: "anthropic", tier: tier)
+        run = create(:agent_run, project: project, issue: issue, status: "failed",
+          completed_at: created_at, created_at: created_at)
+        create(:model_selection, agent_run: run, llm_model: model, tier: tier,
+          created_at: created_at)
+      end
+
+      it "excludes issues whose pinned tier no configured runner can satisfy" do
+        doomed = create(:issue, project: project, github_state: "open")
+        eligible = create(:issue, project: project, github_state: "open")
+        pin_tier(issue: doomed, tier: "high", created_at: 2.hours.ago)
+        pin_tier(issue: eligible, tier: "low", created_at: 2.hours.ago)
+
+        scope = described_class.eligible_scope(project)
+
+        expect(scope.pluck(:id)).to contain_exactly(eligible.id)
+      end
+
+      it "keeps issues without any model selection" do
+        no_selection = create(:issue, project: project, github_state: "open")
+        doomed = create(:issue, project: project, github_state: "open")
+        pin_tier(issue: doomed, tier: "high", created_at: 2.hours.ago)
+
+        scope = described_class.eligible_scope(project)
+
+        expect(scope.pluck(:id)).to contain_exactly(no_selection.id)
+      end
+
+      it "uses the latest selection, so an issue whose newest run dropped the pinned tier is eligible again" do
+        issue = create(:issue, project: project, github_state: "open")
+        pin_tier(issue: issue, tier: "high", created_at: 3.hours.ago)
+        pin_tier(issue: issue, tier: "low", created_at: 1.hour.ago)
+
+        scope = described_class.eligible_scope(project)
+
+        expect(scope.pluck(:id)).to contain_exactly(issue.id)
+      end
+
+      it "clears the exclusion once a runner is configured to satisfy the tier" do
+        issue = create(:issue, project: project, github_state: "open")
+        pin_tier(issue: issue, tier: "high", created_at: 2.hours.ago)
+        expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+
+        owner.runners.find_by!(runner_key: "claude")
+          .update!(tier_models: { "high" => { "model_id" => "claude-opus-4-1", "provider_id" => 1 } })
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
+      end
+    end
+
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
     it "does not treat unrelated user setting changes as resetting the cooldown" do
       create(:issue, project: project, paid_state: "failed",
@@ -578,7 +639,10 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     it "keeps an upstream PR run ineligible when a same-numbered fork PR closed unmerged" do # @spec EAGER-QUEUE-009 UPSTREAM-PR-005
-      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      project.update!(
+        pr_target: "upstream", upstream_full_name: "upstream/repo",
+        auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+      )
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42,

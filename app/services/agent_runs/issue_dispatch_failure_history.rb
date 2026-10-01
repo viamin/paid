@@ -4,7 +4,7 @@ module AgentRuns
   # Counts consecutive no-tier dispatch failures for an issue and goal. Unlike
   # IssueRunnerFailureHistory, these failures occur before a runner attempt and
   # describe infeasible configuration rather than runner execution quality.
-  # @spec RUNNER-FALLBACK-010
+  # @spec RUNNER-FALLBACK-012
   class IssueDispatchFailureHistory
     MAX_PRIOR_RUNS = 50
     NO_TIER_CAPABLE_RUNNER_PREFIX = "No runner supports tier "
