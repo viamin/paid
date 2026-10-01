@@ -118,3 +118,18 @@
   *Code:* `Activities::RunAgentActivity#execute`, `#build_runner_order`,
   `Runners::TierCapability`.
   *Tests:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-012** — When an automatically picked, issue-scoped
+  `create_pr` or `analyze_issue` run has no runner capable of its requested
+  tier, the system SHALL retain the non-retryable `NoTierCapableRunner` failure
+  and count it in a separate, goal-scoped consecutive dispatch-failure history.
+  After the effective per-issue runner-failure limit is reached, it SHALL park
+  the issue in the existing retry-limited lane with a reason naming the tier
+  and directing the operator to repair runner tier configuration or project
+  model preferences. A later run that records a runner attempt SHALL reset the
+  dispatch-failure streak; dispatch failures SHALL NOT be included in
+  per-provider execution failure counts (#4101).
+  *Code:* `Activities::RunAgentActivity`,
+  `AgentRuns::IssueDispatchFailureHistory`, `Issue`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
+  `spec/services/agent_runs/issue_dispatch_failure_history_spec.rb`.

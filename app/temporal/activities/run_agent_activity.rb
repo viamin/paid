@@ -219,6 +219,7 @@ module Activities
             "No runner supports tier #{requested_tier}"
           end
           agent_run.fail!(error: error_message) unless agent_run.finished?
+          abandon_issue_due_to_tier_dispatch_failures(agent_run, requested_tier)
 
           raise Temporalio::Error::ApplicationError.new(
             error_message,
@@ -1417,6 +1418,35 @@ module Activities
       agent_run.auto_pick? &&
         agent_run.issue_id.present? &&
         agent_run.goal.in?(%w[create_pr analyze_issue])
+    end
+
+    # A no-tier failure happens before any runner attempt, so it is deliberately
+    # absent from IssueRunnerFailureHistory. Bound this distinct configuration
+    # failure using the same goal-scoped limit that protects execution retries.
+    # @spec RUNNER-FALLBACK-012
+    def abandon_issue_due_to_tier_dispatch_failures(agent_run, tier)
+      return unless retry_cap_applicable?(agent_run)
+
+      cap = agent_run.project.effective_max_issue_runner_failures
+      return unless cap.present? && cap.positive?
+
+      prior_failures = AgentRuns::IssueDispatchFailureHistory.for_issue(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        goal: agent_run.goal,
+        exclude_run_id: agent_run.id
+      )
+      return unless prior_failures + 1 >= cap
+
+      reason = "No runner supports tier #{tier} — fix runner tier configuration or project model preferences."
+      agent_run.issue.abandon_due_to_runner_retry_cap!(reason: reason, cap: cap, runner_keys: [])
+    rescue => e
+      logger.error(
+        message: "agent_execution.tier_dispatch_abandon_failed",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        error: e.message
+      )
     end
 
     def abandon_issue_due_to_retry_cap(agent_run, capped_keys, cap)
