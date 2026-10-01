@@ -53,12 +53,13 @@ module Tools
       }
     end
 
-    # @spec CHAT-TOOL-CONFIRMATION-001, GITHUB-SYNC-013, ISSUE-REOPEN-REVIEW-004
+    # @spec CHAT-TOOL-CONFIRMATION-001, GITHUB-SYNC-013, GITHUB-SYNC-016, ISSUE-REOPEN-REVIEW-004
     def perform(project_id:, issue_number:, confirmed: false, reopen_review_confirmed: false, reopen_reason: nil, title: nil, body: nil, state: nil, labels: nil, assignees: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to edit an issue" unless confirmed
 
       project = project_for(project_id)
       client = require_github_client!(project)
+      client = trusted_human_mutation_client(client)
       require_trusted_human_credential!(project, client)
       repo = project.full_name
       reopening_issue = validate_state_transition!(
@@ -135,6 +136,12 @@ module Tools
       return if project.trusted_github_user?(client.authenticated_login)
 
       raise ArgumentError, "Issue edits require a trusted human GitHub credential"
+    end
+
+    def trusted_human_mutation_client(client)
+      return client unless client.respond_to?(:trusted_human_mutation_client)
+
+      client.trusted_human_mutation_client
     end
 
     def sync_local_issue!(project, github_issue, parse_dependencies: false)

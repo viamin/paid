@@ -845,6 +845,7 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
+    raise_graphql_errors(data, context: "fetching review threads for #{repo}##{number}")
     threads = data.dig("data", "repository", "pullRequest", "reviewThreads", "nodes") || []
 
     threads.map do |thread|
@@ -1709,9 +1710,20 @@ class GithubClient
   def raise_graphql_errors(data, context: nil)
     return unless data["errors"].present?
 
-    message = data["errors"].map { |e| e["message"] }.join(", ")
+    errors = data["errors"]
+    message = errors.map { |error| error["message"] }.join(", ")
     prefix = context ? "GraphQL error #{context}: " : "GraphQL error: "
-    raise ApiError.new("#{prefix}#{message}")
+    raise ApiError.new("#{prefix}#{message}", status: graphql_error_status(errors))
+  end
+
+  def graphql_error_status(errors)
+    403 if errors.any? { |error| graphql_permission_error?(error) }
+  end
+
+  def graphql_permission_error?(error)
+    error.dig("extensions", "type") == "FORBIDDEN" ||
+      error["type"] == "FORBIDDEN" ||
+      error["message"] == "Resource not accessible by integration"
   end
 
   def graphql_mutation?(query)

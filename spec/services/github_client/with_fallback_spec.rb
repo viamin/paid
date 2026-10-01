@@ -25,11 +25,11 @@ RSpec.describe GithubClient::WithFallback do
       expect(fallback).not_to receive(:authenticated_login)
     end
 
-    it "falls back to the fallback login when the primary is untrusted but the fallback is trusted" do
+    it "returns the primary login when the primary is untrusted and the fallback is trusted" do
       allow(primary).to receive(:authenticated_login).and_return("paid-agents[bot]")
-      allow(fallback).to receive(:authenticated_login).and_return("viamin")
 
-      expect(wrapper.authenticated_login).to eq("viamin")
+      expect(wrapper.authenticated_login).to eq("paid-agents[bot]")
+      expect(fallback).not_to receive(:authenticated_login)
     end
 
     it "returns the primary login when neither credential is trusted" do
@@ -46,11 +46,27 @@ RSpec.describe GithubClient::WithFallback do
       expect(wrapper.authenticated_login).to be_nil
     end
 
-    it "tolerates the primary raising on identity lookup" do
+    it "returns nil when primary identity lookup raises" do
       allow(primary).to receive(:authenticated_login).and_raise(GithubClient::AuthenticationError)
+
+      expect(wrapper.authenticated_login).to be_nil
+      expect(fallback).not_to receive(:authenticated_login)
+    end
+  end
+
+  describe "#trusted_human_mutation_client" do
+    it "selects the trusted fallback directly when the primary is untrusted" do
+      allow(primary).to receive(:authenticated_login).and_return("paid-agents[bot]")
       allow(fallback).to receive(:authenticated_login).and_return("viamin")
 
-      expect(wrapper.authenticated_login).to eq("viamin")
+      expect(wrapper.trusted_human_mutation_client).to eq(fallback)
+    end
+
+    it "preserves primary-first fallback behavior when the primary is trusted" do
+      allow(primary).to receive(:authenticated_login).and_return("viamin")
+
+      expect(wrapper.trusted_human_mutation_client).to eq(wrapper)
+      expect(fallback).not_to receive(:authenticated_login)
     end
   end
 
@@ -97,6 +113,16 @@ RSpec.describe GithubClient::WithFallback do
       expect(fallback).to receive(:update_issue).and_return(:retried_result)
 
       expect(wrapper.update_issue("owner/repo", 42, title: "X")).to eq(:retried_result)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "retries GraphQL reads when the primary raises a permission error" do
+      expect(primary).to receive(:review_threads)
+        .with("owner/repo", 42)
+        .and_raise(GithubClient::ApiError.new("Resource not accessible by integration", status: 403))
+      expect(fallback).to receive(:review_threads).with("owner/repo", 42).and_return([ :thread ])
+
+      expect(wrapper.review_threads("owner/repo", 42)).to eq([ :thread ])
     end
 
     it "does not retry when the primary raises AuthenticationError" do

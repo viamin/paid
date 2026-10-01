@@ -21,11 +21,10 @@
 #   propagate unchanged.
 #
 # Trust attribution:
-# - +authenticated_login+ returns the primary's login when the primary
-#   identity is on the project's trusted-user allowlist; otherwise it
-#   returns the fallback's login so trust gates like
-#   Tools::EditIssue#require_trusted_human_credential! evaluate the
-#   credential that will actually perform the mutation.
+# - +authenticated_login+ always identifies the primary credential because it
+#   executes requests first.
+# - Trust-gated mutations call +trusted_human_mutation_client+, which selects a
+#   trusted fallback PAT only when the primary identity is not trusted.
 class GithubClient::WithFallback
   attr_reader :primary, :fallback
 
@@ -36,20 +35,20 @@ class GithubClient::WithFallback
     @logger = logger
   end
 
-  # Identity used by trust gates. The mutation will be performed by the
-  # primary first; if it fails permission-shaped, the wrapper retries with
-  # the fallback. The gate must therefore pass if EITHER credential is on
-  # the project's allowlist — otherwise an app-backed project whose App
-  # bot is untrusted could never issue a chat edit_issue even when the
-  # fallback PAT owner is allowlisted.
+  # @spec GITHUB-SYNC-016
+  # Identity of the credential that normally executes wrapper requests.
   def authenticated_login
-    primary_login = safe_authenticated_login(@primary)
-    return primary_login if primary_login.present? && @project.trusted_github_user?(primary_login)
+    safe_authenticated_login(@primary)
+  end
 
-    fallback_login = safe_authenticated_login(@fallback)
-    return fallback_login if fallback_login.present? && @project.trusted_github_user?(fallback_login)
+  # @spec GITHUB-SYNC-016
+  # Selects the credential for a mutation that requires human attribution.
+  # The fallback is selected up front so a successful primary App request
+  # cannot be authorized using the fallback PAT's identity.
+  def trusted_human_mutation_client
+    return self if trusted_github_user?(@primary)
 
-    primary_login
+    trusted_github_user?(@fallback) ? @fallback : self
   end
 
   def respond_to_missing?(method_name, include_private = false)
@@ -73,9 +72,16 @@ class GithubClient::WithFallback
   private
 
   def safe_authenticated_login(client)
+    return unless client
+
     client.authenticated_login
   rescue StandardError
     nil
+  end
+
+  def trusted_github_user?(client)
+    login = safe_authenticated_login(client)
+    login.present? && @project.trusted_github_user?(login)
   end
 
   def retryable_permission_error?(error)
