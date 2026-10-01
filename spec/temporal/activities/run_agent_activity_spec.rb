@@ -4906,7 +4906,7 @@ expect(container_service).to receive(:execute).with(
         allow(Runners::DefaultTierModelIds).to receive(:call).and_return({})
       end
 
-      it "fast-fails with NoTierCapableRunner before any attempt executes" do
+      it "fast-fails before any attempt executes, flagging drift when the tier filter emptied the order" do # @spec RUNNER-FALLBACK-011
         # Reuse the default managed runner (claude) for the primary and add a
         # fresh cursor fallback — neither is direct-outbound, and both are
         # restricted to a low-only tier_models entry so the tier filter drops them.
@@ -4921,12 +4921,37 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /No runner supports tier high/)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("TierCapabilityDrifted")
+          expect(error.non_retryable).to be(true)
+        }
 
         agent_run.reload
         expect(agent_run.status).to eq("failed")
-        expect(agent_run.error_message).to eq("No runner supports tier high")
+        expect(agent_run.error_message).to eq(
+          "No runner supports tier high (tier capability changed after the run was queued)"
+        )
         expect(agent_run.runners_attempted).to eq([])
+      end
+
+      it "fast-fails with the plain NoTierCapableRunner error when the order was empty before the tier filter" do # @spec RUNNER-FALLBACK-011
+        # The enqueue-time check in CreateAgentRunActivity rejects runs whose
+        # dispatch order can never satisfy the tier, so an empty order that was
+        # NOT emptied by the tier filter means no runnable runner exists at all.
+        agent_run.update!(agent_type: "api")
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude])
+
+        expect(container_service).not_to receive(:execute)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("NoTierCapableRunner")
+          expect(error.message).to eq("No runner supports tier high")
+        }
+
+        agent_run.reload
+        expect(agent_run.error_message).to eq("No runner supports tier high")
       end
 
       it "filters a free-policy runner before execution when no free model resolves for the requested tier" do

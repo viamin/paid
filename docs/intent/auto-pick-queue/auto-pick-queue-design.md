@@ -52,6 +52,17 @@ A needs-input label is an independent, always-on eligibility exclusion. It
 applies regardless of `paid_state`, so a stale local state cannot schedule work
 while a user clarification remains pending.
 
+## Tier-infeasibility gating
+
+Issues whose most recent model selection pins a tier no enabled runner can
+satisfy stay out of the candidate pool (#4093). The latest selection predicts
+the tier the next run would pin — selection inputs are deterministic per
+issue — so without this gate Auto-Pick keeps creating runs that fail dispatch
+with `NoTierCapableRunner`. Feasibility is re-derived from live runner
+configuration via `Runners::TierCapability` on every pass, so the exclusion
+clears itself once a capable runner is configured; the dispatch-time tier
+filter remains the final gate (AUTO-PICK-QUEUE-009, RUNNER-FALLBACK-010).
+
 ## GitHub-open authority and visibility
 
 An issue that remains open on GitHub is never removed from Auto-Pick merely

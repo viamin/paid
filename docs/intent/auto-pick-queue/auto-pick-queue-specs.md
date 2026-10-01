@@ -79,3 +79,16 @@
   a human clarification is pending (#3992).
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
+- [x] **AUTO-PICK-QUEUE-009** — When an issue's most recent model selection
+  pins a tier that no runner the project's owner has enabled for agent runs
+  can satisfy (per the shared `Runners::TierCapability` contract), Auto-Pick
+  candidate selection SHALL exclude that issue so the scheduler stops
+  creating runs doomed to fail with `NoTierCapableRunner` (#4093).
+  Feasibility SHALL be re-derived from live runner configuration on every
+  pass, so the exclusion clears itself once a capable runner is configured.
+  Issues with no model selection, or whose latest selection pins a
+  satisfiable tier, remain eligible.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `Runners::TierCapability`.

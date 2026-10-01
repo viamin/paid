@@ -102,6 +102,13 @@ module Automation
             held_ids = DesignAmendmentPause.held_issue_ids(project)
             scope = scope.where.not(id: held_ids) if held_ids.present?
 
+            # @spec AUTO-PICK-QUEUE-009 — issues whose latest model
+            # selection pins a tier no configured runner can satisfy stay
+            # out of selection so auto-pick stops creating doomed runs
+            # (#4093).
+            tier_blocked_ids = tier_infeasible_issue_ids(scope, project)
+            scope = scope.where.not(id: tier_blocked_ids) if tier_blocked_ids.present?
+
             scope
           end
 
@@ -198,6 +205,53 @@ module Automation
           end
 
           private
+
+          # @spec AUTO-PICK-QUEUE-009
+          # Issues whose most recent model selection pins a tier that no
+          # runner the project's owner has enabled for agent runs can
+          # satisfy stay out of selection. The latest selection is the
+          # predictor for what the next run would pin — selection inputs
+          # (project model preferences, quality-escalation config, issue
+          # complexity) are deterministic per issue, so a run that failed
+          # for tier infeasibility would be re-selected with the same tier.
+          # Feasibility is re-derived from live runner configuration on
+          # every pass, so the exclusion clears itself as soon as a capable
+          # runner is configured — no persisted flag to reset. The
+          # dispatch-time filter in RunAgentActivity remains the final gate.
+          def tier_infeasible_issue_ids(candidate_scope, project)
+            tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
+            return [] if tiers_by_issue.empty?
+
+            infeasible_tiers = infeasible_tiers(project, tiers_by_issue.values.uniq)
+            return [] if infeasible_tiers.empty?
+
+            tiers_by_issue.select { |_issue_id, tier| infeasible_tiers.include?(tier) }.keys
+          end
+
+          # Latest non-blank model-selection tier per issue id, restricted to
+          # the issues already present in +candidate_scope+ so the join only
+          # touches eligible issues.
+          def latest_requested_tier_by_issue_id(candidate_scope)
+            ModelSelection.joins(:agent_run)
+              .where(agent_runs: { issue_id: candidate_scope.select(:id) })
+              .where.not(tier: [ nil, "" ])
+              .order(model_selections: { created_at: :desc })
+              .pluck("agent_runs.issue_id", "model_selections.tier")
+              .each_with_object({}) do |(issue_id, tier), map|
+                map[issue_id] ||= tier
+              end
+          end
+
+          def infeasible_tiers(project, tiers)
+            user = project.effective_owner
+            return [] if user.nil?
+
+            runners = user.runners.kept_only.for_agent_runs
+              .where(runner_key: RunnerSupport.container_executable_runner_keys)
+              .ordered
+
+            tiers.select { |tier| !Runners::TierCapability.any_supports_tier?(runners, tier, user: user) }
+          end
 
           def apply_issue_analysis_backoff(scope, project) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
             # The reset timestamp only matters for rows with a non-null

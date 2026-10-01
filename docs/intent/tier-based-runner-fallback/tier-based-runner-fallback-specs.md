@@ -91,3 +91,30 @@
   Failed preflights SHALL NOT become durable selections. Expired credentials,
   rate limits, transport errors, and agent prose SHALL NOT trigger model/auth
   recovery or change the configured auth/payment mode.
+
+- [x] **RUNNER-FALLBACK-010** — When an agent run is created or resumed and its
+  model selection pins a tier, the system SHALL resolve tier feasibility at
+  enqueue time through the shared `Runners::TierCapability` query (the same
+  contract dispatch uses) and SHALL fail the run fast with a non-retryable
+  `NoTierCapableRunner` configuration error before any container branch,
+  workspace, or dispatch cycle is burned, except that paused runs,
+  `analyze_issue` runs (which never dispatch through the tier filter), and
+  runs whose dispatch candidate order cannot be resolved are left to the
+  existing dispatch-time handling (#4093).
+  *Code:* `Activities::CreateAgentRunActivity#validate_tier_capability!`,
+  `Runners::TierCapability`.
+  *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/services/runners/tier_capability_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-011** — When the dispatch-time tier filter removes
+  every candidate from a run's runner order, the system SHALL raise a
+  distinct `TierCapabilityDrifted` error whose message states that tier
+  capability changed after the run was queued, so operators can distinguish
+  "was feasible, drifted" from "never feasible"; an order that was already
+  empty before the tier filter keeps the plain `NoTierCapableRunner` error,
+  and an order emptied by the per-issue retry cap keeps the
+  `IssueRunnerRetryCapExhausted` type. The dispatch-time filter remains the
+  final gate regardless of the enqueue-time check (#4093).
+  *Code:* `Activities::RunAgentActivity#execute`, `#build_runner_order`,
+  `Runners::TierCapability`.
+  *Tests:* `spec/temporal/activities/run_agent_activity_spec.rb`.
