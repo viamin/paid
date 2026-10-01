@@ -350,11 +350,12 @@ module Activities
             agent_run.update!(final_runner: attempt_label)
 
             # A successful attempt made progress on the issue. Clear any prior
-            # retry-cap abandonment so the issue is auto-pickable again. NOTE:
-            # clearing does not reset per-provider failure counts (the cap is
-            # a windowed total), so if all providers are still over the cap the
-            # issue will be re-capped and re-abandoned on the next dispatch
-            # until those failures age out of the inspection window.
+            # retry-cap abandonment so the issue is auto-pickable again.
+            # Clearing also resets the per-provider failure window (see
+            # Issue#clear_runner_retry_abandonment!): prior failures that
+            # tripped the cap no longer count toward it, so the next dispatch
+            # starts from a clean slate instead of instantly re-capping and
+            # re-abandoning the issue (#4092).
             clear_issue_runner_retry_abandonment(agent_run)
 
             # Skip git post-processing for runs that have nothing to commit:
