@@ -117,6 +117,8 @@ class Issue < ApplicationRecord
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
   before_validation { self.source ||= GITHUB_SOURCE }
+  before_create :stamp_parent_issue_linked_at, if: :parent_issue_id?
+  before_update :sync_parent_issue_linked_at, if: :will_save_change_to_parent_issue_id?
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
   validates :pr_escalation_reason, inclusion: { in: PR_ESCALATION_REASONS }, allow_nil: true
@@ -801,6 +803,14 @@ class Issue < ApplicationRecord
 
   def stamp_paused_at
     self.paused_at = Time.current
+  end
+
+  def sync_parent_issue_linked_at
+    self.parent_issue_linked_at = parent_issue_id.present? ? Time.current : nil
+  end
+
+  def stamp_parent_issue_linked_at
+    self.parent_issue_linked_at ||= Time.current
   end
 
   # Mirrors the new `paused` value onto GitHub by adding/removing the

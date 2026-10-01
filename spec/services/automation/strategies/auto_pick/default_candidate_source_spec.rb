@@ -849,12 +849,24 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
 
+    it "re-audits an epic after its audit links a pre-existing closed child" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago, body: "## Child Issues\n- #9001")
+        create(:issue, :closed, project: project, github_number: 9001, created_at: 3.hours.ago)
+
+        Issues::ParseParentChild.call(issue: epic)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
     it "does not re-audit an epic when metadata changes on a child that predates its audit" do # @spec AUTO-PICK-QUEUE-010
       travel_to(Time.utc(2026, 10, 3, 12, 0, 0)) do
         epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
           no_code_required_at: 2.days.ago)
         child = create(:issue, :closed, project: project, parent_issue: epic,
-          created_at: 13.days.ago, updated_at: 13.days.ago)
+          created_at: 13.days.ago, updated_at: 13.days.ago, parent_issue_linked_at: 13.days.ago)
 
         child.update!(labels: [ "metadata-updated" ])
 

@@ -428,12 +428,14 @@ module Automation
           end
 
           # A terminal audit may re-arm only once for work it newly linked.
-          # +updated_at+ is deliberately not used: label syncs and other
-          # metadata edits touch it without resolving prerequisite work.
+          # +parent_issue_linked_at+ is deliberately distinct from +updated_at+:
+          # label syncs and other metadata edits touch the latter without
+          # resolving prerequisite work. Legacy links created before this
+          # timestamp existed conservatively fall back to +created_at+.
           def resolved_prerequisite_linked_at(issue_ids)
             child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
               .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-              .group(:parent_issue_id).maximum(:created_at)
+              .group(:parent_issue_id).maximum(Arel.sql("COALESCE(parent_issue_linked_at, created_at)"))
             dependency_times = IssueDependency.joins(:depends_on_issue)
               .where(issue_id: issue_ids)
               .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
