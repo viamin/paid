@@ -1161,7 +1161,7 @@ RSpec.describe "AgentRuns" do
           github_state: "open", parent_issue: issue)
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         get new_project_agent_run_path(project)
 
@@ -1665,7 +1665,7 @@ RSpec.describe "AgentRuns" do
           github_state: "open", parent_issue: pr_issue)
         create(:agent_run, :completed, project: project, issue: pr_issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         expect {
           post project_agent_runs_path(project),
@@ -2159,7 +2159,7 @@ RSpec.describe "AgentRuns" do
           github_state: "open", parent_issue: pr_issue)
         create(:agent_run, :completed, project: project, issue: pr_issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         expect {
           post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
@@ -2186,7 +2186,7 @@ RSpec.describe "AgentRuns" do
           parent_issue: pr_issue)
         create(:agent_run, :completed, project: project, issue: pr_issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         expect {
           post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
@@ -2652,6 +2652,21 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
         expect(flash[:notice]).to include("Cleared the retry-cap flag")
         expect(flash[:notice]).to include("#{project.full_name}#91")
+      end
+
+      # @spec OPERATOR-INBOX-002G
+      it "resets the failure-count window so a lifted cap is not instantly re-tripped (#4092)" do
+        create(:agent_run, :failed, project: project, issue: capped_issue, goal: "create_pr",
+          runners_attempted: [ { "runner" => "claude_code", "success" => false, "error_type" => "error" } ])
+
+        post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: capped_issue.id }
+
+        capped_issue.reload
+        expect(capped_issue.runner_retry_failure_window_reset_at).to be_present
+        capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+          project: project, issue: capped_issue, goal: "create_pr", cap: 1
+        )
+        expect(capped).to be_empty
       end
 
       # @spec OPERATOR-INBOX-002E

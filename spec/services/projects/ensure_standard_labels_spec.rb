@@ -42,7 +42,7 @@ RSpec.describe Projects::EnsureStandardLabels do
 
   # The full canonical set provisioned for the default project stub above:
   # 4 configurable + recommend_close + 9 fixed control/status labels + 10
-  # activation labels + 3 TDD labels + 6 default auto-pick skip labels + 3
+  # activation labels + 3 TDD labels + 5 default auto-pick skip labels + 3
   # priority tiers. (The
   # needs_input stage mapping defaults to the same name as
   # enhance_issue_needs_input_label_name, so it is not a distinct entry here.)
@@ -54,7 +54,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       paid-paused paid-escalated paid-dismiss-escalation paid-skip-auto-merge
       paid-auto-merged paid-auto-merged-dependabot paid-auto-released paid-ready model-health
       paid-tests-ready-for-review paid-tests-approved paid-test-changes-requested
-      planning research waiting tracking epic needs-manual-setup
+      planning research waiting tracking needs-manual-setup
       P1 P2 P3
     ]
   end
@@ -78,7 +78,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       "paid-auto-release" => { color: "0052cc", description: "Activates Paid auto-release for this pull request when the project setting is off." },
       "paid-tdd-strict" => { color: "0052cc", description: "Activates strict TDD for this issue when the project setting is off." },
       "paid-tdd-auto" => { color: "0052cc", description: "Activates non-strict TDD for this issue when the project setting is off." },
-      "paid-recommend-close" => { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
+      "paid-recommend-close" => { color: "fbca04", description: "Paid's run did not confirm this issue is complete — human review needed" },
       "paid-paused" => { color: "5319e7", description: "Pauses Paid automation on this issue; remove to resume." },
       "paid-escalated" => { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume." },
       "paid-dismiss-escalation" => { color: "c2e0c6", description: "Alternate escalation-dismissed marker; cleared automatically by Paid." },
@@ -95,7 +95,6 @@ RSpec.describe Projects::EnsureStandardLabels do
       "research" => { color: "bfd4f2", description: "Excludes this issue from Paid auto-pick while research is in progress." },
       "waiting" => { color: "bfd4f2", description: "Excludes this issue from Paid auto-pick while it waits on something else." },
       "tracking" => { color: "bfd4f2", description: "Excludes this issue from Paid auto-pick; tracking/meta issue, not actionable." },
-      "epic" => { color: "bfd4f2", description: "Excludes this issue from Paid auto-pick; epic/parent issue, not directly actionable." },
       "needs-manual-setup" => { color: "bfd4f2", description: "Excludes this issue from Paid auto-pick until manual setup is completed." },
       "P1" => { color: "d93f0b", description: "High priority" },
       "P2" => { color: "ff9800", description: "Medium priority" },

@@ -124,6 +124,28 @@ RSpec.describe Activities::FetchIssuesActivity do
       relationships_parsed_at: relationships_parsed_at)
   end
 
+  describe "upstream pull request reconciliation" do
+    # @spec UPSTREAM-PR-005
+    it "closes an upstream PR that is no longer open without closing a colliding fork PR" do
+      upstream_project = create(:project, pr_target: "upstream", upstream_full_name: "upstream/repo",
+        last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
+      upstream_pr = create(:issue, :pull_request, project: upstream_project, github_number: 42,
+        source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+        github_html_url: "https://github.com/upstream/repo/pull/42")
+      fork_pr = create(:issue, :pull_request, project: upstream_project, github_number: 42)
+      allow(github_client).to receive(:issues).and_return([])
+      allow(github_client).to receive(:pull_requests) do |repo, **|
+        repo == upstream_project.full_name ? [ OpenStruct.new(number: 42) ] : []
+      end
+
+      activity.execute(project_id: upstream_project.id)
+
+      expect(upstream_pr.reload.github_state).to eq("closed")
+      expect(fork_pr.reload.github_state).to eq("open")
+      expect(github_client).to have_received(:pull_request).with("upstream/repo", 42)
+    end
+  end
+
   def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)
     labels ||= [ project.enhance_issue_needs_input_label_name, "paid-build" ]
     refreshed_labels ||= labels
@@ -328,6 +350,78 @@ RSpec.describe Activities::FetchIssuesActivity do
         project.full_name, issue.github_number, [ "paid-recommend-close" ]
       )
     end
+
+    # @spec GITHUB-SYNC-016
+    it "parks a dependency-blocked completed open issue in manual_review instead of recommending closure" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, project: project, github_number: 4048, body: "Tracks #3871")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("#3870")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "parks a dependency-blocked completed open issue in manual_review when the non-closing PR has already merged" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, :closed, project: project, github_number: 4048,
+        body: "Tracks #3871", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("#3870")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "does not re-park or re-label an already dependency-blocked issue on a repeated sync" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, project: project, github_number: 4048, body: "Tracks #3871")
+      activity.send(:repair_completed_open_issues, project, github_client)
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "still recommends closure for a dependency-free completed open issue alongside a dependency-blocked one" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      blocked_issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      blocked_issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: blocked_issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, project: project, github_number: 4048, body: "Tracks #3871")
+
+      closeable_issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: closeable_issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(blocked_issue.reload.paid_state).to eq("manual_review")
+      expect(closeable_issue.reload.paid_state).to eq("recommend_close")
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, closeable_issue.github_number, [ "paid-recommend-close" ]
+      ).once
+    end
   end
 
   describe "#execute" do
@@ -449,6 +543,169 @@ RSpec.describe Activities::FetchIssuesActivity do
           project.full_name,
           hash_including(labels: nil, state: "open")
         )
+      end
+    end
+
+    context "when the project targets upstream pull requests" do # @spec UPSTREAM-ISSUE-001 UPSTREAM-ISSUE-002 UPSTREAM-ISSUE-003
+      let(:project) do
+        create(:project,
+          pr_target: "upstream",
+          upstream_full_name: "stenolabs/stenoai",
+          allowed_github_usernames: [ "trusted-maintainer" ])
+      end
+      let(:trusted_issue) { github_issue(91, id: 9091, title: "Trusted upstream issue") }
+      let(:untrusted_issue) do
+        github_issue(92, id: 9092, title: "Untrusted upstream issue").tap do |issue|
+          issue.user = OpenStruct.new(login: "outside-contributor")
+          issue.body = "This body must never be persisted or logged."
+        end
+      end
+
+      before do
+        trusted_issue.user = OpenStruct.new(login: "trusted-maintainer")
+        stub_issues_by_label(nil => [ trusted_issue, untrusted_issue ])
+      end
+
+      it "fetches and persists only trusted upstream issues" do
+        result = activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          "stenolabs/stenoai",
+          hash_including(labels: nil, state: "open")
+        )
+        expect(project.issues.pluck(:github_issue_id)).to contain_exactly(9091)
+        expect(result[:issues].map { |issue| issue[:github_number] }).to eq([ 91 ])
+      end
+
+      it "accepts the fork owner without requiring a duplicate allowlist entry" do
+        trusted_issue.user = OpenStruct.new(login: project.owner)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.issues.find_by(github_issue_id: 9091)).to be_present
+      end
+
+      it "logs skipped untrusted upstream issues without their body" do
+        allow(Rails.logger).to receive(:info)
+
+        activity.execute(project_id: project.id)
+
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "github_sync.untrusted_upstream_issue_skipped",
+          creator: "outside-contributor"
+        ))
+        expect(project.issues.find_by(github_issue_id: 9092)).to be_nil
+      end
+
+      it "does not mutate labels on trusted upstream issues" do # @spec UPSTREAM-ISSUE-004
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+      end
+
+      it "skips upstream reconciliation writes but clears stale labels locally" do # @spec UPSTREAM-ISSUE-004
+        project.update_columns(last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
+        stale_pr = create(:issue, :pull_request, project: project, github_number: 50,
+          github_state: "open", github_creator_login: "trusted-maintainer",
+          source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+          pr_review_phase: "escalated", labels: [ "paid-escalated" ])
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.issue_target_repository, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true))
+        allow(github_client).to receive(:remove_label_from_issue)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(stale_pr.reload.labels).not_to include("paid-escalated")
+      end
+
+      it "does not backfill untrusted upstream work items from reconciliation lists" do # @spec UPSTREAM-ISSUE-002
+        project.update_columns(last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: 2.hours.ago)
+        untrusted_pr = OpenStruct.new(number: 51, user: OpenStruct.new(login: "outside-contributor"))
+        untrusted_issue_list_item = OpenStruct.new(number: 52, pull_request: nil,
+          user: OpenStruct.new(login: "outside-contributor"))
+        allow(github_client).to receive(:issues) do |_repo, **options|
+          options[:state] == "open" ? [ untrusted_issue_list_item ] : []
+        end
+        allow(github_client).to receive(:pull_requests).and_return([ untrusted_pr ])
+        allow(github_client).to receive(:issue)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:issue)
+        expect(project.issues).to be_empty
+      end
+
+      it "advances a truncated incremental cursor from untrusted fetched issues" do # @spec UPSTREAM-ISSUE-005
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 1)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_MAX_PAGES", 1)
+        latest_updated = 5.minutes.ago
+        project.update_columns(last_issue_sync_at: 1.hour.ago)
+        untrusted_issue.updated_at = latest_updated
+        allow(github_client).to receive(:issues).and_return([ untrusted_issue ], [ untrusted_issue ])
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload.last_issue_sync_at).to be_within(1.second).of(latest_updated - 1.second)
+        expect(project.issues).to be_empty
+      end
+
+      context "when a previously trusted author is revoked from the allowlist" do # @spec UPSTREAM-ISSUE-007
+        let(:revoked_issue) do
+          create(:issue, project: project, github_issue_id: 9091, github_number: 91,
+                   github_state: "open", paid_state: "new",
+                   github_creator_login: "revoked-maintainer")
+        end
+        let(:revoked_pr) do
+          create(:issue, :pull_request, project: project, github_issue_id: 9092, github_number: 92,
+                   github_state: "open", paid_state: "new",
+                   github_creator_login: "revoked-maintainer")
+        end
+        let(:trusted_record) do
+          create(:issue, project: project, github_issue_id: 9093, github_number: 93,
+                   github_state: "open", paid_state: "new",
+                   github_creator_login: "trusted-maintainer")
+        end
+
+        before do
+          revoked_issue
+          revoked_pr
+          trusted_record
+          project.update_columns(last_issue_sync_at: 10.minutes.ago, last_issue_reconciliation_at: Time.current)
+          stub_issues_by_label(nil => [])
+        end
+
+        it "retires locally open records instead of re-queueing them through the rescan fallback" do
+          result = activity.execute(project_id: project.id)
+
+          expect(revoked_issue.reload.github_state).to eq("closed")
+          expect(revoked_pr.reload.github_state).to eq("closed")
+          returned_ids = result[:issues].map { |issue| issue[:id] }
+          expect(returned_ids).not_to include(revoked_issue.id)
+          expect(returned_ids).not_to include(revoked_pr.id)
+        end
+
+        it "still re-queues trusted records that were not updated on GitHub" do
+          result = activity.execute(project_id: project.id)
+
+          expect(trusted_record.reload.github_state).to eq("open")
+          expect(result[:issues].map { |issue| issue[:id] }).to include(trusted_record.id)
+        end
+
+        it "logs the retirement without issue bodies" do
+          allow(Rails.logger).to receive(:info)
+
+          activity.execute(project_id: project.id)
+
+          expect(Rails.logger).to have_received(:info).with(hash_including(
+            message: "github_sync.untrusted_upstream_issues_retired",
+            count: 2,
+            creators: [ "revoked-maintainer" ]
+          ))
+        end
       end
     end
 
@@ -2539,6 +2796,17 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         returned_ids = result[:issues].map { |i| i[:id] }
         expect(returned_ids).not_to include(waiting_for_answers.id)
+      end
+
+      it "keeps re-scanning records from untrusted authors on own-repository projects" do # @spec UPSTREAM-ISSUE-007
+        untrusted = create(:issue, project: project, github_issue_id: 5003,
+                           github_number: 53, github_state: "open", paid_state: "new",
+                           github_creator_login: "outside-contributor")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(untrusted.reload.github_state).to eq("open")
+        expect(result[:issues].map { |i| i[:id] }).to include(untrusted.id)
       end
 
       it "does not duplicate issues already in the incremental fetch results" do

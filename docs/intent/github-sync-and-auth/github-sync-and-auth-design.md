@@ -126,6 +126,39 @@ Browser redirects in the App install/setup flows are hard-pinned to
 builder ever produces any other destination, the controller fails closed rather
 than emitting the redirect.
 
+## Completed-open issue repair
+
+`repair_completed_open_issues` guards against reading a `create_pr` run's
+terminal `completed` status as proof the source issue's acceptance criteria
+are met. Each sync re-checks open issues still carrying Paid's
+`paid_state: "completed"` whose most recent `create_pr` run recorded a pull
+request: if an open PR produced by that run carries a GitHub closing
+reference to the issue, the completed state stands. Otherwise GitHub's own
+signal says the implementation is partial, and the stale `completed` state is
+repaired.
+
+A partial implementation still blocked by an unresolved dependency — an open
+local blocking issue, a deployment-pending dependency, or an unresolved
+external dependency, the same blocking rule `Issue#ready_to_work?` already
+applies to Auto-Pick eligibility — is never recommended for closure. A
+completed agent run does not establish that remaining, intentionally
+deferred work is done, and labeling the issue `paid-recommend-close` would
+ask a human to park legitimate work based on PR bookkeeping rather than
+evidence of completion. Instead the issue is parked in
+`paid_state: "manual_review"` with a `manual_review_reason` naming the
+unresolved dependency, reusing the same human-visible, non-looping parking
+lane the rest of the system uses for other automation stops (see
+`IssueEnhancements::StopForManualReview`). Dependency resolution already
+unblocks the issue for Auto-Pick through the existing dependency-state
+checks; nothing about this repair path re-polls on a timer.
+
+A partial implementation with no outstanding dependency keeps the existing
+behavior: it is recommended for closure (`paid_state: "recommend_close"`,
+mirrored to GitHub's `paid-recommend-close` label) because there is no
+further deterministic signal to wait on, so a human is asked to confirm. The
+repair reuses the sync's already-resolved `GithubClient` rather than opening
+a second credential for the cycle.
+
 ## Projects V2 abandonment
 
 RDR-012 originally included a GitHub Projects V2 branch. As of the 2026-07-09

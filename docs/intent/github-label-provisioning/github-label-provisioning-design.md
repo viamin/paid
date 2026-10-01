@@ -14,7 +14,7 @@ automation, and the built-in auto-pick skip labels. Before this segment,
 labels, and priority tiers). Everything else — `paid-escalated`,
 `paid-dismiss-escalation`, `paid-skip-auto-merge`, `paid-auto-merged`,
 `paid-auto-merged-dependabot`, `paid-auto-released`, `model-health`, and the
-auto-pick skip labels (`planning`/`research`/`waiting`/`tracking`/`epic`/
+auto-pick skip labels (`planning`/`research`/`waiting`/`tracking`/
 `needs-manual-setup`) — was assumed to already exist by the code paths that
 apply, remove, or query them.
 
@@ -169,7 +169,7 @@ covered (@spec GH-LABELS-007).
 ### Auto-pick skip labels are provisioned, not just matched
 
 `AutoPickSkipLabels::DEFAULTS` (`planning`, `research`, `waiting`,
-`tracking`, `epic`, `needs-manual-setup`) already gate auto-pick by matching
+`tracking`, `needs-manual-setup`) already gate auto-pick by matching
 against an issue's synced `labels` array — that matching is unchanged. What
 was missing is that nothing ever created these labels on GitHub with a
 description explaining the auto-pick consequence, so a human applying
@@ -181,6 +181,11 @@ back to a generic "excludes this issue from Paid auto-pick while applied"
 description for a custom name. Provisioning treats these the same as any
 other canonical label — including reconciling a stale description — because
 the behavioral consequence exists regardless of who created the label or why.
+
+`epic` remains umbrella taxonomy rather than a built-in skip label. It is
+provisioned as a control label only when an operator deliberately places it in
+the project's effective skip-label override; that explicit exclusion remains
+authoritative until the operator removes it.
 
 ### Provisioning trigger points
 

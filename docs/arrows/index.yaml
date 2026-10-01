@@ -175,6 +175,15 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-09-29
+  upstream-issue-pickup:
+    title: Upstream Issue Pickup
+    path: docs/intent/upstream-issue-pickup/upstream-issue-pickup-design.md
+    specs: docs/intent/upstream-issue-pickup/upstream-issue-pickup-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: MAPPED
+    sampled: 2026-09-29
+    blockedBy: [upstream-pr-target]
   toolchain-pin-management:
     title: Toolchain Pin Management
     path: docs/intent/toolchain-pin-management/toolchain-pin-management-design.md
@@ -225,6 +234,14 @@ arrows:
     sampled: 2026-09-25
     blockedBy: [api-mode-chat]
     next: "Verify agent-harness #431 transport contract; no runtime activation until RDR-072's rollout guard is amended."
+  context-intake:
+    title: Knowledge Context Intake
+    path: docs/intent/context-intake/context-intake-design.md
+    specs: docs/intent/context-intake/context-intake-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-10-01
   free-model-sync:
     title: Free Model Sync
     path: docs/intent/free-model-sync/free-model-sync-design.md

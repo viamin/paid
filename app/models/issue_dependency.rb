@@ -18,6 +18,17 @@ class IssueDependency < ApplicationRecord
 
   before_validation :normalize_external_ref
 
+  # A dependency edge pointing at the dependent's own umbrella (parent
+  # issue) is a contextual parent reference, not a prerequisite: the
+  # umbrella's sub-issue machinery already governs that work in the other
+  # direction. Treating the edge as blocking would deadlock the pair — the
+  # umbrella waits for its children while the child waits for the umbrella.
+  # Callers must have the dependent `issues` row joined for the condition
+  # to resolve. @spec AUTO-PICK-QUEUE-009
+  PARENT_REFERENCE_EXCLUSION_CONDITION =
+    "issues.parent_issue_id IS DISTINCT FROM issue_dependencies.depends_on_issue_id"
+  scope :excluding_parent_references, -> { where(PARENT_REFERENCE_EXCLUSION_CONDITION) }
+
   # Builds an adjacency map { issue_id => [depends_on_issue_id, ...] }
   # for all local dependencies within a project. Used by ParseDependencies and
   # DetectCycle to avoid repeated full-table queries during batch syncs.

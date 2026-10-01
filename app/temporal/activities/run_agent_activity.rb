@@ -205,6 +205,7 @@ module Activities
         if requested_tier.present? && runners.empty?
           error_message = "No runner supports tier #{requested_tier}"
           agent_run.fail!(error: error_message) unless agent_run.finished?
+          abandon_issue_due_to_tier_dispatch_failures(agent_run, requested_tier)
 
           raise Temporalio::Error::ApplicationError.new(
             error_message,
@@ -350,11 +351,12 @@ module Activities
             agent_run.update!(final_runner: attempt_label)
 
             # A successful attempt made progress on the issue. Clear any prior
-            # retry-cap abandonment so the issue is auto-pickable again. NOTE:
-            # clearing does not reset per-provider failure counts (the cap is
-            # a windowed total), so if all providers are still over the cap the
-            # issue will be re-capped and re-abandoned on the next dispatch
-            # until those failures age out of the inspection window.
+            # retry-cap abandonment so the issue is auto-pickable again.
+            # Clearing also resets the per-provider failure window (see
+            # Issue#clear_runner_retry_abandonment!): prior failures that
+            # tripped the cap no longer count toward it, so the next dispatch
+            # starts from a clean slate instead of instantly re-capping and
+            # re-abandoning the issue (#4092).
             clear_issue_runner_retry_abandonment(agent_run)
 
             # Skip git post-processing for runs that have nothing to commit:
@@ -1363,8 +1365,11 @@ module Activities
     # user-triggered run is an override and may target a capped provider on
     # purpose. Abandonment is also cleared on success elsewhere, so a manual
     # override that succeeds clears the abandonment flag for subsequent auto-pick.
-    # Note that clearing the flag does not reset per-provider failure counts —
-    # see Issue#clear_runner_retry_abandonment! for the full semantics.
+    # Clearing the flag also resets the failure-count window (see
+    # Issue#clear_runner_retry_abandonment!), so prior failures that tripped the
+    # cap no longer count toward it after the clear — otherwise the very next
+    # dispatch would find every provider still over the (unreset) cap and
+    # immediately re-abandon the issue, defeating the clear (#4092).
     def apply_issue_runner_retry_cap(runners, agent_run, user)
       return runners unless retry_cap_applicable?(agent_run)
       return runners if runners.empty?
@@ -1411,6 +1416,35 @@ module Activities
         agent_run.goal.in?(%w[create_pr analyze_issue])
     end
 
+    # A no-tier failure happens before any runner attempt, so it is deliberately
+    # absent from IssueRunnerFailureHistory. Bound this distinct configuration
+    # failure using the same goal-scoped limit that protects execution retries.
+    # @spec RUNNER-FALLBACK-010
+    def abandon_issue_due_to_tier_dispatch_failures(agent_run, tier)
+      return unless retry_cap_applicable?(agent_run)
+
+      cap = agent_run.project.effective_max_issue_runner_failures
+      return unless cap.present? && cap.positive?
+
+      prior_failures = AgentRuns::IssueDispatchFailureHistory.for_issue(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        goal: agent_run.goal,
+        exclude_run_id: agent_run.id
+      )
+      return unless prior_failures + 1 >= cap
+
+      reason = "No runner supports tier #{tier} — fix runner tier configuration or project model preferences."
+      agent_run.issue.abandon_due_to_runner_retry_cap!(reason: reason, cap: cap, runner_keys: [])
+    rescue => e
+      logger.error(
+        message: "agent_execution.tier_dispatch_abandon_failed",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        error: e.message
+      )
+    end
+
     def abandon_issue_due_to_retry_cap(agent_run, capped_keys, cap)
       issue = agent_run.issue
       return unless issue
@@ -1431,7 +1465,12 @@ module Activities
       issue = agent_run.issue
       return unless issue&.runner_retry_abandoned?
 
-      issue.clear_runner_retry_abandonment!
+      # Anchor the reset window to this run's creation time, not to "now": the
+      # run may have already recorded a failed fallback attempt (e.g. claude
+      # failing before codex succeeded) earlier in its own runners_attempted.
+      # Stamping "now" would post-date that attempt and incorrectly drop it
+      # from future failure-count history (see Issue#clear_runner_retry_abandonment!).
+      issue.clear_runner_retry_abandonment!(window_reset_at: agent_run.created_at)
     rescue => e
       logger.error(
         message: "agent_execution.runner_retry_abandonment_clear_failed",

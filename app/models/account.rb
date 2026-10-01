@@ -55,6 +55,7 @@ class Account < ApplicationRecord
   has_many :service_containers, dependent: :destroy
   has_many :egress_allowlist_entries, dependent: :destroy
   has_many :chat_sessions, dependent: :destroy
+  has_many :api_usage_attempts, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
   has_many :configuration_bundles, dependent: :destroy

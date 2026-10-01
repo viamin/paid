@@ -805,6 +805,12 @@ module Activities
 
       round_id = feature_clarification_round_id(agent_run)
       question_comment = build_feature_clarifying_questions_comment(questions, round_id: round_id)
+      if upstream_issue_write_skipped?(project, "create_feature_clarification", issue: issue, agent_run_id: agent_run.id)
+        issue.update!(paid_state: "needs_input", needs_input_questions: questions)
+        agent_run.log!("stdout", question_comment)
+        return
+      end
+
       post_clarification_comment_unless_present!(client, project, issue, question_comment, round_id)
       persist_needs_input_state!(project, issue, client, question_comment)
     end
