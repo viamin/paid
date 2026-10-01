@@ -133,6 +133,7 @@ class Runner < ApplicationRecord
   belongs_to :integration_credential, optional: true
 
   has_many :chat_sessions, dependent: :nullify
+  has_many :api_usage_attempts, dependent: :nullify
   has_many :runner_credentials,
     ->(runner) { where(account_id: runner.user.account_id) },
     primary_key: :runner_key,

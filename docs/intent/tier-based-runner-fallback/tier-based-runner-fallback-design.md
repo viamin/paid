@@ -28,6 +28,17 @@ concrete model across every runner.
 resolves the concrete model for each attempt via `Runners::ResolveTierModel`,
 and records the resolved attempt metadata on `agent_run.runners_attempted`.
 
+When an automatic issue-scoped run has no tier-capable candidate, dispatch
+fails before an attempt can be recorded. These configuration-infeasible
+failures are tracked separately from runner execution failures: after the
+project's per-issue failure limit is reached consecutively for the same goal,
+the issue enters the existing retry-limited abandonment lane with a reason
+that identifies the unsupported tier and directs the operator to repair runner
+tier configuration or model preferences. A run with a recorded runner attempt
+ends that consecutive dispatch-failure streak. This prevents auto-pick from
+repeatedly dispatching an issue that cannot start while preserving the
+provider-quality retry history for actual execution attempts.
+
 The resolved model is passed explicitly to both preflight and execution through
 agent-harness, including subscription-authenticated runners. Authentication
 isolation remains in place; container defaults must not override the resolved

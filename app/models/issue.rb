@@ -53,11 +53,12 @@ class Issue < ApplicationRecord
   # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
   GITHUB_SOURCE = "github"
+  UPSTREAM_PULL_REQUEST_SOURCE = "upstream_pull_request"
   SYNTHETIC_CODE_SCANNING_SOURCE = "code_scanning_alert"
   # Legacy source kept in VALID_SOURCES so existing Dependabot rows pass
   # validation on update (e.g. from agent-run completion activities).
   DEPENDABOT_ALERT_SOURCE = "dependabot_alert"
-  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
+  VALID_SOURCES = [ GITHUB_SOURCE, UPSTREAM_PULL_REQUEST_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
   SEVERITY_TO_PRIORITY = { "critical" => "P1", "high" => "P1", "medium" => "P2", "low" => "P3" }.freeze
   TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
@@ -175,6 +176,7 @@ class Issue < ApplicationRecord
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
+  scope :local_repository, -> { where(source: GITHUB_SOURCE) }
   # List surfaces (blocked PRs, retry-limited issues, recent activity) never
   # render the issue body; skipping it keeps the largest TEXT column off
   # list queries. Raises MissingAttributeError if a view starts using body —
@@ -250,6 +252,8 @@ class Issue < ApplicationRecord
       alert_number = github_issue_id - SYNTHETIC_CODE_SCANNING_ID_OFFSET
       return "#{project.github_url}/security/code-scanning/#{alert_number}"
     end
+
+    return github_html_url if github_html_url.present?
 
     path = is_pull_request? ? "pull" : "issues"
     "#{project.github_url}/#{path}/#{github_number}"
@@ -613,8 +617,24 @@ class Issue < ApplicationRecord
 
   AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
     SELECT 1 FROM issues closed_prs
+    INNER JOIN projects closed_pr_projects
+      ON closed_pr_projects.id = closed_prs.project_id
     WHERE closed_prs.project_id = agent_runs.project_id
       AND closed_prs.github_number = agent_runs.pull_request_number
+      AND (
+        closed_prs.github_html_url = agent_runs.pull_request_url
+        OR (
+          closed_prs.github_html_url IS NULL
+          AND agent_runs.pull_request_url = CONCAT(
+            'https://github.com/',
+            closed_pr_projects.owner,
+            '/',
+            closed_pr_projects.repo,
+            '/pull/',
+            closed_prs.github_number
+          )
+        )
+      )
       AND closed_prs.is_pull_request = TRUE
       AND closed_prs.github_state = 'closed'
       AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
@@ -649,13 +669,35 @@ class Issue < ApplicationRecord
 
   # A pull_request_number is persisted only once the PR exists on GitHub
   # (reserved at publication or recorded at completion), so it — not the
-  # run's terminal status — is the produced-PR evidence.
+  # run's terminal status — is the produced-PR evidence. The GitHub URL is
+  # the repository-qualified key: PR numbers collide between a fork and its
+  # upstream repository.
   def self.paid_generated_pull_request_source_issue_ids(project:, **conditions)
-    pull_requests = where(project: project, is_pull_request: true, **conditions)
-    AgentRun.where(project: project, goal: "create_pr")
+    AgentRun.joins(<<~SQL.squish)
+      INNER JOIN issues pull_requests
+        ON pull_requests.project_id = agent_runs.project_id
+        AND pull_requests.github_number = agent_runs.pull_request_number
+      INNER JOIN projects pull_request_projects
+        ON pull_request_projects.id = pull_requests.project_id
+        AND (
+          pull_requests.github_html_url = agent_runs.pull_request_url
+          OR (
+            pull_requests.github_html_url IS NULL
+            AND agent_runs.pull_request_url = CONCAT(
+              'https://github.com/',
+              pull_request_projects.owner,
+              '/',
+              pull_request_projects.repo,
+              '/pull/',
+              pull_requests.github_number
+            )
+          )
+        )
+    SQL
+      .where(project: project, goal: "create_pr")
       .where.not(issue_id: nil)
       .where.not(pull_request_number: nil)
-      .where(pull_request_number: pull_requests.select(:github_number))
+      .where(pull_requests: { is_pull_request: true, **conditions })
       .select(:issue_id)
   end
   private_class_method :paid_generated_pull_request_source_issue_ids
@@ -666,6 +708,12 @@ class Issue < ApplicationRecord
   # Views and controllers precompute this hash once per request so per-issue
   # renders can look up the PR without re-querying (fixes the partial N+1
   # that would otherwise fire for each rendered issue with an open paid PR).
+  # `pull_request_number` alone is not a safe join key: GitHub PR numbers are
+  # per-repo, so a fork PR and an upstream-synced PR (Issue rows in the same
+  # project, distinguished only by `source`) can share a number. The
+  # persisted `pull_request_url` on the agent_run and the Issue's stored
+  # `github_html_url` are the real, repo-qualified GitHub URL, so matching on
+  # that instead of the bare number keeps fork and upstream PRs distinct.
   def self.open_paid_generated_prs_by_issue_id(project:, issue_ids:)
     issue_ids = Array(issue_ids).compact
     return {} if issue_ids.empty?
@@ -674,20 +722,20 @@ class Issue < ApplicationRecord
       .where(issue_id: issue_ids)
       .where.not(pull_request_number: nil)
       .distinct
-      .pluck(:issue_id, :pull_request_number)
+      .pluck(:issue_id, :pull_request_number, :pull_request_url)
     return {} if issue_pr_pairs.empty?
 
-    pr_numbers = issue_pr_pairs.map(&:last).uniq
-    open_prs_by_number = project.issues
+    pr_numbers = issue_pr_pairs.map { |(_issue_id, pr_number, _pr_url)| pr_number }.uniq
+    open_prs_by_url = project.issues
       .pull_requests_only
       .where(github_state: "open", github_number: pr_numbers)
-      .index_by(&:github_number)
-    return {} if open_prs_by_number.empty?
+      .index_by(&:github_url)
+    return {} if open_prs_by_url.empty?
 
     recency = ->(pr) { [ pr.github_updated_at || Time.at(0), pr.updated_at || Time.at(0) ] }
 
-    issue_pr_pairs.each_with_object({}) do |(issue_id, pr_number), result|
-      pr = open_prs_by_number[pr_number]
+    issue_pr_pairs.each_with_object({}) do |(issue_id, _pr_number, pr_url), result|
+      pr = open_prs_by_url[pr_url]
       next unless pr
 
       existing = result[issue_id]
