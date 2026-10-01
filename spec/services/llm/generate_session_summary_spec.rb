@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec SESSION-SUMMARY-002
+# @spec SESSION-SUMMARY-006
 RSpec.describe Llm::GenerateSessionSummary do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
@@ -53,6 +54,45 @@ RSpec.describe Llm::GenerateSessionSummary do
       expect(result.follow_ups).to eq([ "Add a dashboard panel for rejections." ])
       expect(result.learnings).to eq([ "Rate limit config lives in config/rate_limits.yml." ])
       expect(result.response).to eq(llm_response)
+    end
+
+    it "uses a parsed schema response without cleaning or parsing its JSON text" do
+      parsed = JSON.parse(llm_json)
+      response = Object.new
+      response.define_singleton_method(:output) { "```not JSON```" }
+      response.define_singleton_method(:success?) { true }
+      response.define_singleton_method(:parsed) { parsed }
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.summary).to eq("Implemented rate limiting and added tests.")
+      expect(AgentHarness).to have_received(:send_message).with(
+        anything,
+        hash_including(response_schema: described_class::RESPONSE_SCHEMA)
+      )
+    end
+
+    it "returns nil when a schema response omits the required summary" do
+      response = Object.new
+      response.define_singleton_method(:output) { "not JSON" }
+      response.define_singleton_method(:success?) { true }
+      response.define_singleton_method(:parsed) { { "decisions" => [ "x" ] } }
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      expect(described_class.call(agent_run: agent_run)).to be_nil
+    end
+
+    [ "refusal", "invalid JSON", "truncated output" ].each do |failure|
+      it "returns nil for a #{failure} schema response" do
+        response = Object.new
+        response.define_singleton_method(:output) { failure }
+        response.define_singleton_method(:success?) { true }
+        response.define_singleton_method(:parsed) { nil }
+        allow(AgentHarness).to receive(:send_message).and_return(response)
+
+        expect(described_class.call(agent_run: agent_run)).to be_nil
+      end
     end
 
     it "returns nil when the provider call is unsuccessful" do

@@ -7,6 +7,7 @@ module Llm
   # distinct from durable project intent (see Knowledge::SessionSummaries::Promote).
   #
   # @spec SESSION-SUMMARY-002
+  # @spec SESSION-SUMMARY-006
   class GenerateSessionSummary
     include OutputNormalizer
 
@@ -16,6 +17,20 @@ module Llm
     MAX_TRANSCRIPT_LENGTH = 12_000
     PROMPT_SLUG = "knowledge.session_summary.draft"
     ARRAY_FIELDS = %i[files_touched decisions assumptions failures follow_ups learnings].freeze
+    RESPONSE_SCHEMA = {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        files_touched: { type: "array", items: { type: "string" } },
+        decisions: { type: "array", items: { type: "string" } },
+        assumptions: { type: "array", items: { type: "string" } },
+        failures: { type: "array", items: { type: "string" } },
+        follow_ups: { type: "array", items: { type: "string" } },
+        learnings: { type: "array", items: { type: "string" } }
+      },
+      required: %w[summary files_touched decisions assumptions failures follow_ups learnings],
+      additionalProperties: false
+    }.freeze
     GITHUB_TOKEN_IN_TEXT = /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/
     SECRET_PATTERNS = (StyleGuides::CollectCodeSamples::SECRET_PATTERNS + [ GITHUB_TOKEN_IN_TEXT ]).freeze
 
@@ -88,6 +103,7 @@ module Llm
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
         tools: :none,
+        response_schema: RESPONSE_SCHEMA,
         **Llm::TextMode.options
       )
     end
@@ -139,6 +155,8 @@ module Llm
     end
 
     def parse_response(response)
+      return parsed_schema_response(response) if schema_response?(response)
+
       output = response.respond_to?(:output) ? response.output : response.to_s
       return nil if output.blank?
 
@@ -154,6 +172,18 @@ module Llm
         error: e.message
       )
       nil
+    end
+
+    def schema_response?(response)
+      response.respond_to?(:parsed)
+    end
+
+    def parsed_schema_response(response)
+      parsed = response.parsed
+      return nil unless parsed.is_a?(Hash)
+
+      parsed = parsed.symbolize_keys
+      parsed[:summary].present? ? parsed : nil
     end
 
     def build_result(parsed, response)

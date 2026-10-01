@@ -42,6 +42,42 @@ RSpec.describe Knowledge::ContextIntake::GenerateQuestions do
     expect(question.parent_question_key).to eq("product_description")
   end
 
+  # @spec CONTEXT-INTAKE-004
+  it "uses a parsed schema response without parsing its JSON text" do
+    response = Object.new
+    response.define_singleton_method(:output) { "not JSON" }
+    response.define_singleton_method(:success?) { true }
+    response.define_singleton_method(:parsed) do
+      {
+        "questions" => [
+          { "text" => "Which deployment approvals are mandatory?", "section_key" => "operations" }
+        ]
+      }
+    end
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+
+    result = described_class.call(project: project, session: session, round: 2)
+
+    expect(result.map(&:question_text)).to eq([ "Which deployment approvals are mandatory?" ])
+    expect(AgentHarness).to have_received(:send_message).with(
+      anything,
+      hash_including(response_schema: described_class::RESPONSE_SCHEMA)
+    )
+  end
+
+  # @spec CONTEXT-INTAKE-004
+  it "returns no questions for missing fields or failed schema responses" do
+    [ {}, nil ].each do |parsed|
+      response = Object.new
+      response.define_singleton_method(:output) { "not JSON" }
+      response.define_singleton_method(:success?) { true }
+      response.define_singleton_method(:parsed) { parsed }
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      expect(described_class.call(project: project, session: session, round: 2)).to be_empty
+    end
+  end
+
   it "can auto-approve generated questions for direct presentation" do
     result = described_class.call(project: project, session: session, round: 2, auto_approve: true)
 

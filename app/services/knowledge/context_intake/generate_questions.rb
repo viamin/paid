@@ -7,11 +7,37 @@ module Knowledge
     class GenerateQuestions
       include Llm::OutputNormalizer
 
+      # @spec CONTEXT-INTAKE-004
       DEFAULT_MODEL = "claude-sonnet-4-6"
       DEFAULT_PROVIDER = :claude
       TIMEOUT = 60
       MAX_GENERATED_QUESTIONS = 3
       MAX_KEY_ATTEMPTS = 10
+      RESPONSE_SCHEMA = {
+        type: "object",
+        properties: {
+          questions: {
+            type: "array",
+            maxItems: MAX_GENERATED_QUESTIONS,
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string" },
+                text: { type: "string" },
+                section_key: { type: "string" },
+                section_title: { type: "string" },
+                category: { type: "string" },
+                required: { type: "boolean" },
+                parent_question_key: { type: "string" }
+              },
+              required: %w[text],
+              additionalProperties: false
+            }
+          }
+        },
+        required: %w[questions],
+        additionalProperties: false
+      }.freeze
 
       attr_reader :project, :session, :round, :auto_approve
 
@@ -34,12 +60,13 @@ module Knowledge
           timeout: TIMEOUT,
           dangerous_mode: false,
           tools: :none,
+          response_schema: RESPONSE_SCHEMA,
           **Llm::TextMode.options
         )
 
         return [] unless response.success?
 
-        create_questions(parse_questions(response.output))
+        create_questions(parse_questions(response))
       rescue AgentHarness::Error, JSON::ParserError => e
         Rails.logger.warn(
           message: "context_intake.generate_questions_failed",
@@ -127,7 +154,25 @@ module Knowledge
         end
       end
 
-      def parse_questions(raw_output)
+      def parse_questions(response)
+        return parsed_questions(response.parsed) if schema_response?(response)
+
+        parsed_questions(JSON.parse(cleaned_text(response.output)))
+      end
+
+      def schema_response?(response)
+        response.respond_to?(:parsed)
+      end
+
+      def parsed_questions(parsed)
+        return [] unless parsed.is_a?(Hash)
+
+        Array(parsed["questions"] || parsed[:questions])
+          .select { |payload| payload.is_a?(Hash) && (payload["text"] || payload[:text]).is_a?(String) }
+          .first(MAX_GENERATED_QUESTIONS)
+      end
+
+      def cleaned_text(raw_output)
         cleaned = raw_output.to_s.strip
         loop do
           previous = cleaned
@@ -136,10 +181,7 @@ module Knowledge
           break if cleaned == previous
         end
 
-        parsed = JSON.parse(cleaned)
-        Array(parsed["questions"])
-          .select { |payload| payload.is_a?(Hash) && payload["text"].is_a?(String) }
-          .first(MAX_GENERATED_QUESTIONS)
+        cleaned
       end
 
       def create_questions(question_payloads)
