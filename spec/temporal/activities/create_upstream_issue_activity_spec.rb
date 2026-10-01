@@ -95,6 +95,32 @@ RSpec.describe Activities::CreateUpstreamIssueActivity do
       activity.execute(input_with_labels)
     end
 
+    context "when the project targets PRs at the upstream repository" do
+      let(:project) { create(:project, :upstream_pr_target) }
+
+      # @spec UPSTREAM-GATE-006
+      it "creates the issue without writing labels and logs the skipped capability" do
+        allow(Rails.logger).to receive(:info)
+
+        expect(github_client).to receive(:create_issue).with(
+          "upstream-owner/upstream-repo",
+          title: "Upstream feature request",
+          body: "Body of upstream issue",
+          labels: []
+        ).and_return(issue_response)
+
+        activity.execute(input.merge(labels: %w[upstream enhancement]))
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "upstream_mode_skipped",
+            project_id: project.id,
+            feature: "upstream_issue_labeling"
+          )
+        )
+      end
+    end
+
     it "syncs the issue record when target project exists in same account" do
       target_project = create(:project, account: project.account, owner: "upstream-owner", repo: "upstream-repo")
 

@@ -115,8 +115,10 @@
   *Code:* `app/temporal/activities/clone_repo_activity.rb`,
   `app/controllers/projects_controller.rb`,
   `app/temporal/activities/create_pull_request_activity.rb`,
+  `app/temporal/activities/create_upstream_issue_activity.rb`,
   `app/temporal/activities/complete_existing_pr_run_activity.rb`,
   `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/temporal/activities/clone_repo_activity_spec.rb`,
   `spec/models/concerns/project/upstream_automation_spec.rb`,
+  `spec/temporal/activities/create_upstream_issue_activity_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
