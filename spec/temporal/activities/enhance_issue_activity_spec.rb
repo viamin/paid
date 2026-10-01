@@ -172,6 +172,9 @@ RSpec.describe Activities::EnhanceIssueActivity do
         create(:project, pr_target: "upstream", upstream_full_name: "acme/widgets",
           allowed_github_usernames: [ "maintainer" ])
       end
+      let(:issue) do
+        super().tap { |source_issue| source_issue.update!(github_creator_login: "maintainer") }
+      end
 
       before do
         allow(client).to receive(:issue_comments).with(project.issue_target_repository, issue.github_number).and_return(comments)
