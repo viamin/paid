@@ -10,7 +10,6 @@ export default class extends Controller {
     this.streaming = false
     this.currentStreamId = null
     this.pendingContent = null
-    this.currentAttemptToolCards = []
     this.scrollAnimationId = null
     this.boundUpdateViewportHeight = () => this.updateViewportHeight()
 
@@ -64,7 +63,6 @@ export default class extends Controller {
     this.removePendingAssistantMessage()
     this.streaming = false
     this.currentStreamId = null
-    this.currentAttemptToolCards = []
     this.toggleTyping(false)
     this.dispatchChatState("chat:idle")
   }
@@ -175,7 +173,6 @@ export default class extends Controller {
   handleMessageStart(data) {
     this.currentStreamId = data.message_id
     this.streaming = true
-    this.currentAttemptToolCards = []
     this.setStatus(`Streaming ${data.model || "assistant"} response…`)
     this.toggleTyping(true)
   }
@@ -347,7 +344,6 @@ export default class extends Controller {
     if (!card) return
 
     this.messagesTarget.append(card)
-    this.trackAttemptToolCard(card)
     this.setStatus(`Running ${data.tool_name || "tool"}…`)
     this.scrollToBottom()
   }
@@ -359,7 +355,6 @@ export default class extends Controller {
     if (!card) return
 
     this.messagesTarget.append(card)
-    this.trackAttemptToolCard(card)
     this.scrollToBottom()
   }
 
@@ -416,7 +411,7 @@ export default class extends Controller {
     if (!data.html) return
 
     if (data.fallback_notice) {
-      this.removeCurrentAttemptArtifacts()
+      this.removeCurrentAssistantMessage()
     }
 
     const messageElement = this.buildMessageElement(data.html)
@@ -469,38 +464,13 @@ export default class extends Controller {
     pendingMessage.closest("div")?.remove()
   }
 
-  // On a runner fallback the partial answer AND any tool_call / tool_result
-  // cards the failed attempt already rendered are stale: the backend discards
-  // the matching rows (FallbackLoop#discard_partial_attempt) and the fallback
-  // runner produces a fresh turn. The in-flight assistant bubble is removed and
-  // the tool cards this attempt appended (tracked in currentAttemptToolCards)
-  // are torn down, so the UI never lingers on tool activity that no longer
-  // exists. currentStreamId is cleared so a late chunk for the old stream
-  // cannot resurrect the removed bubble before the next message_start reassigns
-  // it.
-  removeCurrentAttemptArtifacts() {
-    this.removeCurrentAssistantMessage()
-    this.removeCurrentAttemptToolCards()
-  }
-
-  // Tool cards appended during the in-flight attempt. Reset on each
-  // message_start so a prior turn's cards are never touched, and cleared again
-  // here after a fallback so the fallback attempt's cards (if any) start fresh.
-  trackAttemptToolCard(card) {
-    this.currentAttemptToolCards ||= []
-    this.currentAttemptToolCards.push(card)
-  }
-
-  removeCurrentAttemptToolCards() {
-    (this.currentAttemptToolCards || []).forEach((card) => card.remove())
-    this.currentAttemptToolCards = []
-  }
-
-  // On a runner fallback the partial answer from the failed runner is discarded
-  // unconditionally (unlike removePendingAssistantMessage, which preserves a
-  // bubble that already streamed content): the fallback runner produces a fresh
-  // answer, so any partial text from the failed attempt is stale. currentStreamId
-  // is cleared so a late chunk for the old stream cannot resurrect the removed
+  // On a runner fallback, only the in-flight assistant bubble is torn down:
+  // its text was streamed via message_chunk but never persisted as a row, so
+  // it is genuinely stale once the fallback runner takes over. Completed
+  // tool_call / tool_result cards stay — FallbackLoop keeps their backing
+  // rows as context for the fallback runner (RDR-072), so the live view must
+  // keep matching the persisted/reconnectable transcript. currentStreamId is
+  // cleared so a late chunk for the old stream cannot resurrect the removed
   // bubble before the next message_start assigns a new id.
   removeCurrentAssistantMessage() {
     if (!this.currentStreamId) return

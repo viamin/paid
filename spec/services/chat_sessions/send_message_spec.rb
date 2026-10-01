@@ -483,7 +483,7 @@ RSpec.describe ChatSessions::SendMessage do
       expect(replayed).to include(hash_including(role: "tool", tool_call_id: "call_1", content: successful_tool_dispatch_result))
     end
 
-    it "does not discard messages a concurrent turn persisted during the failed attempt" do
+    it "leaves a concurrently persisted message untouched alongside the failed attempt's completed tool records" do
       allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
       fallback_client = inspecting_llm_client(llm_response)
       configure_chat_fallback
@@ -492,8 +492,8 @@ RSpec.describe ChatSessions::SendMessage do
       # SendMessage holds no lock on the session, so ChatChannel / the HTTP
       # controller can enqueue another turn while the retry loop runs. Simulate
       # that concurrent turn persisting a row mid-attempt (during tool dispatch):
-      # it is not part of the failing attempt and must survive the rollback. A
-      # checkpoint-based ("id > checkpoint") rollback would delete it.
+      # it is not part of the failing attempt, so the runner switch must leave
+      # it exactly as persisted — neither mutated nor removed.
       allow(Tools::Registry).to receive(:dispatch) do
         chat_session.messages.create!(role: "user", content: "concurrent turn")
         successful_tool_dispatch_result
@@ -506,8 +506,8 @@ RSpec.describe ChatSessions::SendMessage do
 
       messages = chat_session.messages.order(:created_at).pluck(:role, :content)
       expect(messages).to include([ "user", "concurrent turn" ])
-      # The failed attempt's completed tool records remain available to the
-      # fallback, while the independently persisted turn remains untouched.
+      # The failed attempt's own completed tool records (the assistant tool
+      # call and its result) persist too, distinct from the concurrent turn.
       expect(messages).to include([ "assistant", "Let me search for that." ])
       expect(messages.any? { |role, _| role == "tool" }).to be(true)
     end
