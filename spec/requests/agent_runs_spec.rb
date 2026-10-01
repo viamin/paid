@@ -2654,6 +2654,21 @@ RSpec.describe "AgentRuns" do
         expect(flash[:notice]).to include("#{project.full_name}#91")
       end
 
+      # @spec OPERATOR-INBOX-002G
+      it "resets the failure-count window so a lifted cap is not instantly re-tripped (#4092)" do
+        create(:agent_run, :failed, project: project, issue: capped_issue, goal: "create_pr",
+          runners_attempted: [ { "runner" => "claude_code", "success" => false, "error_type" => "error" } ])
+
+        post clear_retry_abandonment_project_agent_runs_path(project), params: { issue_id: capped_issue.id }
+
+        capped_issue.reload
+        expect(capped_issue.runner_retry_failure_window_reset_at).to be_present
+        capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+          project: project, issue: capped_issue, goal: "create_pr", cap: 1
+        )
+        expect(capped).to be_empty
+      end
+
       # @spec OPERATOR-INBOX-002E
       it "removes the cleared issue from the retry_limited inbox lane and invalidates the badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
