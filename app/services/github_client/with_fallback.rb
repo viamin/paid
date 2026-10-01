@@ -60,7 +60,7 @@ class GithubClient::WithFallback
   rescue GithubClient::Error => primary_error
     raise unless retryable_permission_error?(primary_error) && @fallback
 
-    log_fallback_use(method_name, primary_error)
+    log_fallback_use(method_name, args, primary_error)
 
     begin
       @fallback.public_send(method_name, *args, **kwargs, &block)
@@ -95,13 +95,19 @@ class GithubClient::WithFallback
     end
   end
 
-  def log_fallback_use(method_name, error)
+  def log_fallback_use(method_name, args, error)
     @logger.warn(
       message: "github_client.pat_fallback_used",
       project_id: @project.id,
       operation: method_name.to_s,
+      repo: fallback_repository(args),
+      fallback_actor: safe_authenticated_login(@fallback),
       primary_error_class: error.class.name,
       primary_error_message: error.message
     )
+  end
+
+  def fallback_repository(args)
+    args.find { |arg| arg.is_a?(String) && arg.match?(%r{\A[^/\s]+/[^/\s]+\z}) } || @project.full_name
   end
 end

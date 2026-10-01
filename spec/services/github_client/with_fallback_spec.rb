@@ -17,6 +17,10 @@ RSpec.describe GithubClient::WithFallback do
   end
   let(:wrapper) { described_class.new(primary:, fallback:, project:, logger:) }
 
+  before do
+    allow(fallback).to receive(:authenticated_login).and_return(nil)
+  end
+
   describe "#authenticated_login" do
     it "returns the primary login when the primary credential is trusted" do
       allow(primary).to receive(:authenticated_login).and_return("viamin")
@@ -202,10 +206,10 @@ RSpec.describe GithubClient::WithFallback do
   end
 
   describe "fallback observability" do
-    it "logs each fallback use at warn level with operation and project context" do
+    it "logs each fallback use at warn level with operation, repository, and fallback actor" do
       allow(primary).to receive(:update_issue)
         .and_raise(GithubClient::NotFoundError, "Not Found")
-      allow(fallback).to receive(:update_issue).and_return(:result)
+      allow(fallback).to receive_messages(authenticated_login: "fallback-user", update_issue: :result)
 
       wrapper.update_issue("owner/repo", 42, title: "X")
 
@@ -214,6 +218,8 @@ RSpec.describe GithubClient::WithFallback do
       expect(log_lines.first).to include("github_client.pat_fallback_used")
       expect(log_lines.first).to include("project_id: #{project.id}")
       expect(log_lines.first).to include('operation: "update_issue"')
+      expect(log_lines.first).to include('repo: "owner/repo"')
+      expect(log_lines.first).to include('fallback_actor: "fallback-user"')
       expect(log_lines.first).to include('primary_error_class: "GithubClient::NotFoundError"')
     end
 
