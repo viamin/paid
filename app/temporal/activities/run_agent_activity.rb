@@ -350,11 +350,12 @@ module Activities
             agent_run.update!(final_runner: attempt_label)
 
             # A successful attempt made progress on the issue. Clear any prior
-            # retry-cap abandonment so the issue is auto-pickable again. NOTE:
-            # clearing does not reset per-provider failure counts (the cap is
-            # a windowed total), so if all providers are still over the cap the
-            # issue will be re-capped and re-abandoned on the next dispatch
-            # until those failures age out of the inspection window.
+            # retry-cap abandonment so the issue is auto-pickable again.
+            # Clearing also resets the per-provider failure window (see
+            # Issue#clear_runner_retry_abandonment!): prior failures that
+            # tripped the cap no longer count toward it, so the next dispatch
+            # starts from a clean slate instead of instantly re-capping and
+            # re-abandoning the issue (#4092).
             clear_issue_runner_retry_abandonment(agent_run)
 
             # Skip git post-processing for runs that have nothing to commit:
@@ -1363,8 +1364,11 @@ module Activities
     # user-triggered run is an override and may target a capped provider on
     # purpose. Abandonment is also cleared on success elsewhere, so a manual
     # override that succeeds clears the abandonment flag for subsequent auto-pick.
-    # Note that clearing the flag does not reset per-provider failure counts —
-    # see Issue#clear_runner_retry_abandonment! for the full semantics.
+    # Clearing the flag also resets the failure-count window (see
+    # Issue#clear_runner_retry_abandonment!), so prior failures that tripped the
+    # cap no longer count toward it after the clear — otherwise the very next
+    # dispatch would find every provider still over the (unreset) cap and
+    # immediately re-abandon the issue, defeating the clear (#4092).
     def apply_issue_runner_retry_cap(runners, agent_run, user)
       return runners unless retry_cap_applicable?(agent_run)
       return runners if runners.empty?
@@ -1431,7 +1435,12 @@ module Activities
       issue = agent_run.issue
       return unless issue&.runner_retry_abandoned?
 
-      issue.clear_runner_retry_abandonment!
+      # Anchor the reset window to this run's creation time, not to "now": the
+      # run may have already recorded a failed fallback attempt (e.g. claude
+      # failing before codex succeeded) earlier in its own runners_attempted.
+      # Stamping "now" would post-date that attempt and incorrectly drop it
+      # from future failure-count history (see Issue#clear_runner_retry_abandonment!).
+      issue.clear_runner_retry_abandonment!(window_reset_at: agent_run.created_at)
     rescue => e
       logger.error(
         message: "agent_execution.runner_retry_abandonment_clear_failed",

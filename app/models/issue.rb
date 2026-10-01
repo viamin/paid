@@ -1099,8 +1099,8 @@ class Issue < ApplicationRecord
   # An issue is abandoned for retry-cap purposes once every available provider
   # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
   # from auto-pick (see DefaultCandidateSource) until the abandonment is cleared.
-  # Clearing the flag does NOT reset per-provider failure counts — see
-  # {#clear_runner_retry_abandonment!} for the full semantics.
+  # See {#clear_runner_retry_abandonment!} for how clearing interacts with the
+  # per-provider failure counts that tripped the cap.
   def runner_retry_abandoned?
     runner_retry_abandoned_at.present?
   end
@@ -1129,15 +1129,31 @@ class Issue < ApplicationRecord
     )
   end
 
-  # Clears the abandonment flag so a successful manual run can re-enter auto-pick.
-  # NOTE: this does NOT reset per-provider failure counts (IssueRunnerFailureHistory
-  # is a windowed total), so if all providers are still over the cap the issue will
-  # be re-capped and re-abandoned on the next dispatch until failures age out of
-  # the 50-run window. A success does not by itself restore capped providers.
-  def clear_runner_retry_abandonment!(reason: "Cleared after a successful run")
+  # Clears the abandonment flag so a successful manual run (or an operator's
+  # explicit "Re-enable" from the inbox) can re-enter auto-pick. Also stamps
+  # runner_retry_failure_window_reset_at, which {AgentRuns::IssueRunnerFailureHistory}
+  # treats as a lower bound on the agent runs it counts — so prior failures that
+  # tripped the cap no longer count toward it after this clear. Without that, an
+  # operator's explicit "try again" would be defeated on the very next dispatch:
+  # every provider would still be over the (unreset) cap and the issue would be
+  # instantly re-abandoned, gathering no new information (#4092).
+  #
+  # +window_reset_at+ defaults to the clear time (operator-triggered clears have
+  # no run to anchor to). The automatic clear on a successful run instead passes
+  # that run's +created_at+: the reset window is a lower bound on AgentRun rows
+  # (see {AgentRuns::IssueRunnerFailureHistory#prior_runs}), so stamping "now"
+  # would exclude the triggering run itself — including any failed fallback
+  # attempts (e.g. claude failing before codex succeeds) it already recorded in
+  # the same run's runners_attempted before this clear ran.
+  # @spec OPERATOR-INBOX-002G
+  def clear_runner_retry_abandonment!(reason: "Cleared after a successful run", window_reset_at: Time.current)
     return unless runner_retry_abandoned_at.present?
 
-    update!(runner_retry_abandoned_at: nil, runner_retry_abandon_reason: nil)
+    update!(
+      runner_retry_abandoned_at: nil,
+      runner_retry_abandon_reason: nil,
+      runner_retry_failure_window_reset_at: window_reset_at
+    )
 
     Rails.logger.info(
       message: "issue.runner_retry_abandonment_cleared",
