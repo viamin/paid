@@ -20,8 +20,7 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_PROMPT = "You've reached the token budget for this chat session. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
-    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
-      :created_message_ids
+    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id
 
     def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
       token_budget: nil)
@@ -31,7 +30,6 @@ module ChatSessions
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @stream_message_id = stream_message_id
-      @created_message_ids = []
       @token_budget_override = token_budget
     end
 
@@ -455,7 +453,6 @@ module ChatSessions
         tokens_output: response[:tokens_output]
       )
 
-      track_created_message(message)
       on_message_persisted&.call(message, stream_message_id: stream_message_id)
       message
     end
@@ -494,7 +491,6 @@ module ChatSessions
         tool_result: tool_result
       )
 
-      track_created_message(tool_call_message)
       on_message_persisted&.call(tool_call_message)
       tool_call_message
     end
@@ -512,7 +508,6 @@ module ChatSessions
         tool_name: tool_call[:name]
       )
 
-      track_created_message(tool_result_message)
       on_message_persisted&.call(tool_result_message)
       tool_result_message
     end
@@ -525,16 +520,6 @@ module ChatSessions
       JSON.parse(arguments)
     rescue JSON::ParserError
       {}
-    end
-
-    # Records the id of every row this attempt persists so FallbackLoop can roll
-    # back exactly the failed attempt's messages (see
-    # FallbackLoop#discard_partial_attempt) instead of every row created after a
-    # checkpoint — the latter would also delete a concurrent turn's messages,
-    # since neither SendMessage nor ResolveToolCall locks the session.
-    def track_created_message(message)
-      @created_message_ids << message.id
-      message
     end
 
     def finalize_token_usage(assistant_message)
