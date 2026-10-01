@@ -195,6 +195,7 @@ class Issue < ApplicationRecord
         issues: { project_id: project.id }
       )
       .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+      .excluding_parent_references
       .select(:issue_id)
 
     # Deployment-blocked deps: target PR has merged/closed, but has not
@@ -459,7 +460,19 @@ class Issue < ApplicationRecord
   end
 
   def blocking_issues
-    dependencies.where(github_state: "open").where.not(paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+    Issue.where(id: blocking_dependency_target_ids)
+  end
+
+  # Open dependencies that still block this issue, mirroring .ready_for_work:
+  # excludes agent-parked/completed blockers and contextual parent
+  # references (@spec AUTO-PICK-QUEUE-009).
+  def blocking_dependency_target_ids
+    issue_dependencies
+      .joins(:issue, :depends_on_issue)
+      .where(depends_on_issue: { github_state: "open" })
+      .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+      .excluding_parent_references
+      .select(:depends_on_issue_id)
   end
 
   # Deployment-blocked dependencies whose target PR has merged/closed but
@@ -511,11 +524,12 @@ class Issue < ApplicationRecord
     issue_ids = issues.map(&:id)
 
     # Match blocking_issues semantics: open dependencies excluding non-blocking
-    # parked/completed blockers.
+    # parked/completed blockers and contextual parent references.
     blocked_by_local = IssueDependency
-      .joins(:depends_on_issue)
+      .joins(:issue, :depends_on_issue)
       .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
       .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+      .excluding_parent_references
       .pluck(:issue_id)
       .to_set
 

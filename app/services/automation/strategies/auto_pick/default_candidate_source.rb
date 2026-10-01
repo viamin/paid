@@ -62,6 +62,7 @@ module Automation
         # PR row that never syncs (deleted branch, stale/wrong recorded PR
         # number, sync backlog) does not strand the issue forever.
         PR_SYNC_GRACE_PERIOD = 1.hour
+        EPIC_LABEL = "epic"
 
         class << self
           def eligible_issue_ids(displayed_issues)
@@ -93,7 +94,13 @@ module Automation
             scope = Issue.auto_pick_eligible_paid_state_scope(base)
 
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
-            scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
+            unless blocked_ids.empty?
+              # An epic umbrella's readiness is governed by its authoritative
+              # child/dependency relationships, so incidental open body
+              # references must not strand it behind tracker heuristics.
+              blocked_ids -= epic_issue_ids(project)
+              scope = scope.where.not(id: blocked_ids) unless blocked_ids.empty?
+            end
 
             scope = apply_issue_analysis_backoff(scope, project)
 
@@ -233,6 +240,8 @@ module Automation
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
             blocking_issue_ids = blocking_runs.select(:issue_id)
 
+            reauditable_epic_ids = reauditable_epic_ids(project)
+
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
@@ -251,7 +260,7 @@ module Automation
               # cannot strand the issue forever (#3432/#3588 review follow-up).
               # For a synthetic code-scanning issue the guard is provisional,
               # not permanent — see +merged_block_issue_ids+ (#4052).
-              .where.not(id: merged_block_issue_ids(project))
+              .where.not(id: merged_block_issue_ids(project) - reauditable_epic_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -266,7 +275,7 @@ module Automation
               # just loop (the agent will likely declare no-code-required again).
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
-              .where(no_code_required_at: nil)
+              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_epic_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -329,6 +338,57 @@ module Automation
             return merged_ids if code_scanning_ids.empty?
 
             merged_ids - verified_recurrent_code_scanning_issue_ids(project, code_scanning_ids)
+          end
+
+          # An epic is a final acceptance audit, not ordinary implementation
+          # work. A prior no-code outcome or merged audit PR remains terminal
+          # until a direct, authoritative child/dependency changes afterward.
+          # That lets a newly discovered gap complete before one further audit
+          # without weakening the terminal guards for ordinary issues.
+          def reauditable_epic_ids(project) # @spec AUTO-PICK-QUEUE-010
+            epic_ids = epic_issue_ids(project)
+            return [] if epic_ids.empty?
+
+            terminal_at = terminal_audit_times(project, epic_ids)
+            return [] if terminal_at.empty?
+
+            resolved_prerequisite_times(epic_ids).filter_map do |issue_id, resolved_at|
+              issue_id if resolved_at > terminal_at.fetch(issue_id, Time.at(0))
+            end
+          end
+
+          def epic_issue_ids(project)
+            Issue.where(project: project, is_pull_request: false)
+              .where(<<~SQL.squish, EPIC_LABEL)
+                EXISTS (
+                  SELECT 1 FROM jsonb_array_elements_text(issues.labels) AS label(value)
+                  WHERE LOWER(label.value) = LOWER(?)
+                )
+              SQL
+              .pluck(:id)
+          end
+
+          def terminal_audit_times(project, issue_ids)
+            no_code_times = Issue.where(id: issue_ids).where.not(no_code_required_at: nil)
+              .pluck(:id, :no_code_required_at).to_h
+            merged_pr_last_observed_at_by_issue_id(project, issue_ids).each do |issue_id, merged_at|
+              no_code_times[issue_id] = [ no_code_times[issue_id], merged_at ].compact.max
+            end
+            no_code_times
+          end
+
+          def resolved_prerequisite_times(issue_ids)
+            child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
+              .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .group(:parent_issue_id).maximum(:updated_at)
+            dependency_times = IssueDependency.joins(:depends_on_issue)
+              .where(issue_id: issue_ids)
+              .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .group(:issue_id).maximum("issues.updated_at")
+
+            (child_times.keys | dependency_times.keys).to_h do |issue_id|
+              [ issue_id, [ child_times[issue_id], dependency_times[issue_id] ].compact.max ]
+            end
           end
 
           def code_scanning_verification_block_issue_ids(project) # @spec EAGER-QUEUE-013

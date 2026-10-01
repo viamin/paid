@@ -66,3 +66,33 @@ The project issue list displays each issue's Paid state beside its lifecycle
 badge. The dashboard's eligibility breakdown continues to report the actual
 guards that exclude open issues, so a workflow-state drift cannot become an
 invisible block.
+
+## Epic umbrella acceptance audits
+
+The `epic` label identifies an umbrella issue; it is not an Auto-Pick hold by
+itself. An open umbrella becomes runnable only when the existing authoritative
+child and dependency relationships are resolved. GitHub sub-issue links and
+explicitly declared child/dependency relationships are authoritative; Markdown
+checkboxes, titles, and incidental issue references are not readiness signals.
+Two mechanical rules keep the lifecycle reachable: an `epic`-labeled umbrella
+is exempt from tracker body-reference blocking (its readiness comes from the
+authoritative relationships, so an open incidental reference cannot strand
+it), and a dependency edge from a child to its own parent is a contextual
+parent reference rather than a prerequisite — the umbrella's sub-issue
+machinery already governs that work in the other direction, so treating the
+edge as blocking would deadlock the pair.
+
+When it becomes runnable, the agent performs a final acceptance audit against
+the approved RDR/HLD/LLD/EARS and the issue's acceptance criteria. Closed
+children are evidence of completed work, not proof of conformance. The audit
+may make bounded corrections and documentation updates, or create focused
+blocking children for gaps and leave the umbrella open. A no-code-required
+outcome remains visible on GitHub and follows the ordinary closure policy.
+
+An umbrella that has already completed an audit is not repeatedly re-picked.
+If that audit creates child or dependency work, however, its terminal
+no-code-required or merged-PR guard is lifted after that newly linked work
+resolves, permitting one subsequent audit. Ordinary implementation issues keep
+their terminal safeguards. Project, effective-owner, and tenant skip-label
+overrides remain authoritative: operators who deliberately configured `epic`
+as a skip label must remove it from that effective override to enable audits.

@@ -79,3 +79,31 @@
   a human clarification is pending (#3992).
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
+## Epic umbrella audits
+
+- [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label
+  and has no unresolved authoritative child or dependency, Auto-Pick SHALL
+  select it for a final acceptance audit under the built-in defaults. An
+  explicit project, effective-owner, or tenant skip-label override containing
+  `epic` SHALL still exclude it. Markdown checkboxes, titles, and incidental
+  issue references SHALL NOT create readiness dependencies, and open
+  incidental body references or tracker heuristics SHALL NOT block an
+  otherwise-resolved umbrella. A dependency edge from a child to its own
+  parent SHALL be treated as a contextual parent reference, not a
+  prerequisite, so umbrella/child pairs cannot deadlock.
+  *Tests:* `spec/services/issues/auto_pick_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/models/issue_spec.rb`.
+  *Code:* `app/models/concerns/auto_pick_skip_labels.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/models/issue_dependency.rb`, `app/models/issue.rb`.
+
+- [x] **AUTO-PICK-QUEUE-010** — When an epic's final audit has a terminal
+  no-code-required or merged-PR outcome and that audit created or linked
+  focused child/dependency work, Auto-Pick SHALL keep the epic blocked while
+  that work is unresolved and SHALL permit a subsequent audit after it
+  resolves. This exception SHALL apply only to epic umbrellas; ordinary issues
+  retain their terminal safeguards.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.

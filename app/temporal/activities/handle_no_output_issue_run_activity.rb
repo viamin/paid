@@ -328,8 +328,9 @@ module Activities
     # last automatic run finished without a PR, so it would otherwise re-pick
     # this issue and loop forever since the agent will likely declare
     # no-code-required again. `no_code_required_at` marks this specific
-    # completion as agent-asserted-terminal so auto-pick permanently excludes
-    # it; only a manually triggered run can pick the issue up again.
+    # completion as agent-asserted-terminal so auto-pick excludes it; only a
+    # manually triggered run can pick an ordinary issue up again. Epic
+    # umbrellas may re-enter after newly linked work resolves.
     def handle_no_code_required(client, agent_run, rationale) # @spec NO-OUTPUT-ISSUE-006
       project = agent_run.project
       issue = agent_run.issue
