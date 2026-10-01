@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 class TokenUsage < ApplicationRecord
-  REQUEST_TYPES = %w[agent planning evaluation run_summary run_delta knowledge chat_message].freeze
+  REQUEST_TYPES = %w[agent planning evaluation run_summary run_delta knowledge chat_message api_attempt].freeze
 
   belongs_to :agent_run, optional: true
   belongs_to :knowledge_run, optional: true
   belongs_to :chat_session, optional: true
+  has_one :api_usage_attempt, dependent: :nullify
 
   validates :request_type, presence: true, inclusion: { in: REQUEST_TYPES }
   validates :input_tokens, numericality: { greater_than_or_equal_to: 0 }

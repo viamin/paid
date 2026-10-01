@@ -395,19 +395,10 @@ class ChatControllerNodeHarness
       }
     }
 
-    function testFallbackNoticeKeepsToolCardsButRemovesPendingBubble() {
-      const appended = [];
-      const removedToolCards = [];
-      let bubbleRemoved = false;
-      const bubbleWrapper = { remove: () => { bubbleRemoved = true; } };
-      const bubbleArticle = { closest: (sel) => (sel === "div" ? bubbleWrapper : null) };
-      const messagesTarget = {
-        append: (el) => appended.push(el),
-        querySelector: (sel) => (sel === 'article[data-stream-message-id="stream-1"]' ? bubbleArticle : null)
-      };
-      const { controller } = makeController({
-        messagesTarget,
-        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removedToolCards.push(html); } } : null
+    function testFallbackNoticeRemovesStaleToolCards() {
+      const removed = [];
+      const { controller, appended } = makeController({
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
       });
 
       controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
@@ -418,23 +409,18 @@ class ChatControllerNodeHarness
         throw new Error(`Expected 2 appended tool cards before fallback, got ${appended.length}`);
       }
 
-      // FallbackLoop keeps the failed attempt's completed tool_call /
-      // tool_result rows as context for the fallback runner (RDR-072), so the
-      // live view must keep their cards too, matching the persisted
-      // transcript. Only the in-flight assistant bubble — streamed via
-      // message_chunk but never persisted — is stale and torn down.
+      // A fallback notice must tear down the failed attempt's tool cards along
+      // with the in-flight assistant bubble — otherwise the UI keeps showing
+      // tool activity whose backing rows FallbackLoop#discard_partial_attempt
+      // deleted.
       controller.handleMessageCreated({ html: "<div>fallback notice</div>", fallback_notice: true });
 
-      if (removedToolCards.length !== 0) {
-        throw new Error(`Expected tool cards to survive a fallback notice, removed ${removedToolCards.length}`);
+      if (removed.length !== 2) {
+        throw new Error(`Expected both stale tool cards removed on fallback notice, got ${removed.length}`);
       }
 
-      if (!bubbleRemoved) {
-        throw new Error("Expected the in-flight assistant bubble to be removed on fallback notice");
-      }
-
-      if (controller.currentStreamId !== null) {
-        throw new Error("Expected currentStreamId to be cleared after fallback notice");
+      if ((controller.currentAttemptToolCards || []).length !== 0) {
+        throw new Error("Expected tracked tool cards to be cleared after fallback notice");
       }
     }
 
@@ -870,7 +856,7 @@ class ChatControllerNodeHarness
       testToolConfirmationClearsPendingContent();
       testToolEventsDoNotResetStreamingBeforeComplete();
       testHandleEventDispatchesToolCall();
-      testFallbackNoticeKeepsToolCardsButRemovesPendingBubble();
+      testFallbackNoticeRemovesStaleToolCards();
       testRegularMessageCreatedKeepsAttemptToolCards();
       testCapabilityChangedUpdatesPanelIconAndActions();
       testSystemNoticeReplacementTargetsTopLevelElement();

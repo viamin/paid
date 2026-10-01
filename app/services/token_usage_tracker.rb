@@ -15,7 +15,7 @@ class TokenUsageTracker
   # @param enforce_guardrails [Boolean] when false, updates aggregates without
   #   applying in-flight token/cost hard-stop behavior. Use for end-of-run
   #   summary reconciliation after the provider process has already exited.
-  def self.track(tracked_run:, usage:, update_aggregates: true, enforce_guardrails: true)
+  def self.track(tracked_run:, usage:, update_aggregates: true, enforce_guardrails: true, cost_cents: nil)
     # @spec CHAT-API-005
     raise ArgumentError, "tracked_run is required" unless tracked_run.present?
 
@@ -24,12 +24,13 @@ class TokenUsageTracker
     llm_model     = usage[:llm_model]
     request_type  = usage.fetch(:request_type, nil).presence || default_request_type_for(tracked_run)
     metadata      = usage.fetch(:metadata, nil).presence || {}
-    cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
+    cost_cents    = cost_cents || calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
     chat_session_run = tracked_run.is_a?(ChatSession)
     resolved_hard_limit = tracked_run.effective_max_tokens_per_run if update_aggregates && !chat_session_run
+    record = nil
 
     ActiveRecord::Base.transaction do
-      record_per_request_usage(
+      record = record_per_request_usage(
         tracked_run: tracked_run,
         input_tokens: tokens_input,
         output_tokens: tokens_output,
@@ -72,6 +73,7 @@ class TokenUsageTracker
     end
 
     Projects::StatsSummary.bust_cache!(tracked_run.project.id) if update_aggregates && tracked_run.project
+    record
   end
 
   # Evaluates the agent run's cumulative token usage against project limits
