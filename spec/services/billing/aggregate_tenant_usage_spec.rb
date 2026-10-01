@@ -85,6 +85,19 @@ RSpec.describe Billing::AggregateTenantUsage do
       expect(result[:cost_by_project]).to include(project.id => 70)
     end
 
+    # @spec API-CONVERSATION-DELEGATION-002
+    it "includes billable API attempts for the account's project" do
+      session = create(:chat_session, :with_project, account: account, project: project)
+      message = create(:chat_message, chat_session: session)
+
+      record_api_attempt(session, message)
+
+      result = described_class.call(account: account, starts_at: starts_at, ends_at: ends_at)
+
+      expect(result.dig(:token_usage, :total_cost_cents)).to eq(33)
+      expect(result[:cost_by_project]).to include(project.id => 33)
+    end
+
     it "respects time boundaries" do
       old_run = create(:agent_run, :completed, project: project, created_at: 2.months.ago)
       create(:token_usage, agent_run: old_run, cost_cents: 999, created_at: 2.months.ago)
@@ -93,5 +106,17 @@ RSpec.describe Billing::AggregateTenantUsage do
 
       expect(result.dig(:token_usage, :total_cost_cents)).to eq(30)
     end
+  end
+
+  def record_api_attempt(session, message)
+    ChatSessions::RecordTransportAttempt.call(chat_session: session, actor: session.created_by, message: message,
+      report: {
+        attempt_id: "billing-attempt", request_id: "billing-request", number: 1,
+        provider: :openai, model: "gpt-4o", status: :succeeded,
+        started_at: 1.minute.ago, finished_at: Time.current,
+        usage: { input_tokens: 100, output_tokens: 50 },
+        cost: { total: "0.03", currency: "USD", source: :provider_reported, priced_at: Time.current },
+        provider_reported: true
+      })
   end
 end

@@ -21,16 +21,16 @@
   `ChatSessions::BuildLlmClient::HttpClient#build_request`,
   `ChatSessions::BuildLlmClient::HttpClient#translate_result`.
 
-- [ ] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
+- [x] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
   request attempts, Paid SHALL persist every report exactly once by stable
   attempt ID and ordinal, attribute it to the initiating actor, chat session,
   originating message, runner, and provider, and aggregate reported usage
   without double counting. Missing usage SHALL remain unknown rather than be
   recorded as zero; a failed attempt with reported usage SHALL remain visible.
   *Tests:* `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
-  `spec/services/chat_sessions/harness_transport_spec.rb`.
-  *Planned code:* `ChatSessions::RecordTransportAttempt`,
-  `TokenUsageTracker` integration.
+  `spec/services/billing/aggregate_tenant_usage_spec.rb`.
+  *Implemented code:* `ApiUsageAttempt`,
+  `ChatSessions::RecordTransportAttempt`, `TokenUsageTracker` integration.
 
 - [ ] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
   is cancelled, or Paid changes runner after a classified terminal result, the
@@ -76,8 +76,10 @@
   `agent-harness` #448 found no durable caller-stable tool identity,
   plain-Ruby restart recovery, external dispatch boundary, bounded completion,
   or stable attempt identity, so Paid SHALL retain `AgentLoop` and
-  `ResolveToolCall`. A runner fallback SHALL preserve completed Paid tool
-  records as context rather than making a completed effect replayable. No loop
+  `ResolveToolCall`. A runner fallback SHALL discard the failed attempt's own
+  partial rows — including its tool call/results — by id-scoped rollback so
+  the fallback turn is not replayed stale partial work; rows persisted by a
+  concurrent turn SHALL remain untouched. No loop
   API release, runtime flag, schema migration, or backup rehearsal is required
   for this retained-loop outcome; separately activated transport/accounting
   work remains subject to its own release gate and image verification.

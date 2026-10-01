@@ -36,9 +36,9 @@ module Billing
       return TokenUsage.none if project_ids.empty?
 
       TokenUsage.billable
-        .left_outer_joins(:agent_run, :knowledge_run)
+        .left_outer_joins(:agent_run, :knowledge_run, :chat_session)
         .where(
-          "agent_runs.project_id IN (:project_ids) OR knowledge_runs.project_id IN (:project_ids)",
+          "agent_runs.project_id IN (:project_ids) OR knowledge_runs.project_id IN (:project_ids) OR chat_sessions.project_id IN (:project_ids)",
           project_ids: project_ids
         )
         .where(token_usages: { created_at: starts_at..ends_at })
@@ -96,7 +96,7 @@ module Billing
 
     def cost_by_project
       token_usages_scope
-        .group("COALESCE(agent_runs.project_id, knowledge_runs.project_id)")
+        .group("COALESCE(agent_runs.project_id, knowledge_runs.project_id, chat_sessions.project_id)")
         .sum(:cost_cents)
     end
 

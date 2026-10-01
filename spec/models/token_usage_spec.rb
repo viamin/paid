@@ -7,6 +7,7 @@ RSpec.describe TokenUsage do
     it { is_expected.to belong_to(:agent_run).optional }
     it { is_expected.to belong_to(:knowledge_run).optional }
     it { is_expected.to belong_to(:chat_session).optional }
+    it { is_expected.to have_one(:api_usage_attempt).dependent(:nullify) }
   end
 
   describe "validations" do

@@ -26,6 +26,7 @@ module ChatSessions
         raise unless fallback_runner
 
         attempted_runners << fallback_runner
+        discard_partial_attempt(agent_loop&.created_message_ids)
         switch_to_fallback_runner(fallback_runner, e)
       end
     end
@@ -45,6 +46,18 @@ module ChatSessions
     # pre-computed token budget). Default: none.
     def extra_agent_loop_kwargs
       {}
+    end
+
+    # Remove only the rows the failed attempt itself persisted, identified by the
+    # IDs AgentLoop recorded for that attempt. Scoping by id (rather than a
+    # blanket "everything after a checkpoint") is safe under concurrency:
+    # SendMessage and ResolveToolCall hold no lock on the session, so ChatChannel
+    # / the HTTP controller can enqueue another turn while this retry runs, and a
+    # concurrent turn's messages have different ids and are left untouched.
+    def discard_partial_attempt(created_ids)
+      return if created_ids.blank?
+
+      chat_session.messages.where(id: created_ids).delete_all
     end
 
     # Switch the session to the fallback runner and record the user-facing
