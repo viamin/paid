@@ -62,7 +62,7 @@ module Projects
       auto_release_activation: { color: "0052cc", description: "Activates Paid auto-release for this pull request when the project setting is off.", kind: :activation },
       tdd_strict_activation: { color: "0052cc", description: "Activates strict TDD for this issue when the project setting is off.", kind: :activation },
       tdd_auto_activation: { color: "0052cc", description: "Activates non-strict TDD for this issue when the project setting is off.", kind: :activation },
-      recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed", kind: :status },
+      recommend_close: { color: "fbca04", description: "Paid's run did not confirm this issue is complete — human review needed", kind: :status },
       paused: { color: "5319e7", description: "Pauses Paid automation on this issue; remove to resume.", kind: :control },
       escalated: { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume.", kind: :control },
       dismiss_escalation: { color: "c2e0c6", description: "Alternate escalation-dismissed marker; cleared automatically by Paid.", kind: :status },
