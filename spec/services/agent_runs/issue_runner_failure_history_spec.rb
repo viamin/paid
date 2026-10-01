@@ -208,6 +208,20 @@ RSpec.describe AgentRuns::IssueRunnerFailureHistory do
     it "is unaffected when the reset time is nil" do
       expect(call).to eq("claude" => 1)
     end
+
+    it "counts only failures recorded after the reset on a run created before it" do
+      queued_run = travel_to(2.days.ago) do
+        create(:agent_run, project: project, issue: issue, goal: "create_pr")
+      end
+
+      travel_to(1.day.ago) do
+        queued_run.record_runner_attempt("codex", success: false, error_type: "error")
+      end
+      travel_to(12.hours.ago) { issue.update!(runner_retry_failure_window_reset_at: Time.current) }
+      queued_run.record_runner_attempt("claude_code", success: false, error_type: "error")
+
+      expect(described_class.for_issue(project: project, issue: issue, goal: "create_pr")).to eq("claude" => 1)
+    end
   end
 
   # @spec OPERATOR-INBOX-002G

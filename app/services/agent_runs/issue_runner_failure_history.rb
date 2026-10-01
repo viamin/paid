@@ -11,10 +11,10 @@ module AgentRuns
   # are counted. Rate limits, skipped runners, and externally-cancelled runs are
   # excluded because they do not reflect provider quality for the specific issue.
   #
-  # Runs created before an issue's +runner_retry_failure_window_reset_at+ (stamped
-  # by Issue#clear_runner_retry_abandonment!) are also excluded, so a cleared
-  # retry-cap abandonment — operator-initiated or automatic — stops counting the
-  # failures that tripped it (#4092).
+  # Attempts recorded before an issue's +runner_retry_failure_window_reset_at+
+  # (stamped by Issue#clear_runner_retry_abandonment!) are also excluded, so a
+  # cleared retry-cap abandonment — operator-initiated or automatic — stops
+  # counting the failures that tripped it (#4092).
   # @spec OPERATOR-INBOX-002G
   class IssueRunnerFailureHistory
     # Error types indicating an actual execution failure (not transient or external).
@@ -78,6 +78,7 @@ module AgentRuns
         run.runners_attempted.each do |attempt|
           next if attempt["success"]
           next unless EXECUTION_FAILURE_TYPES.include?(attempt["error_type"])
+          next unless attempt_in_failure_window?(attempt, run)
 
           label = attempt["runner"] || attempt["provider"]
           key = canonical_runner_key(label, routing_key_map)
@@ -97,8 +98,17 @@ module AgentRuns
         .where(project_id: project_id, issue_id: issue_id, goal: goal)
         .where("runners_attempted != '[]'::jsonb")
       scope = scope.where.not(id: exclude_run_id) if exclude_run_id
-      scope = scope.where(created_at: window_reset_at..) if window_reset_at
       scope.order(created_at: :desc).limit(max_prior_runs)
+    end
+
+    # Attempts written before attempt timestamps were introduced retain the
+    # historical row-creation cutoff. New attempts use their persisted timestamp,
+    # which preserves failures from queued runs created before a later reset.
+    def attempt_in_failure_window?(attempt, run)
+      return true unless window_reset_at
+
+      attempt_time = attempt["attempted_at"].present? ? Time.iso8601(attempt["attempted_at"]) : run.created_at
+      attempt_time >= window_reset_at
     end
 
     # Builds a map from routing key -> canonical runner_key for all routing-key-style

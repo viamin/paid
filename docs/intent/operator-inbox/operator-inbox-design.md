@@ -227,7 +227,7 @@ recent run logs without inserting either into the chat prompt by default.
 
 Clearing the abandonment (either path) also stamps
 `runner_retry_failure_window_reset_at` so the per-provider failure counts that
-tripped the cap stop counting runs older than the clear
+tripped the cap stop counting attempts recorded before the clear
 (`OPERATOR-INBOX-002G`, issue #4092). Earlier, `clear_runner_retry_abandonment!` only cleared the flag and
 deliberately left the windowed failure counts alone — correct for the
 automatic path, where a success proves the providers work again, but a poor

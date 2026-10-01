@@ -202,8 +202,8 @@
   or automatically after a successful manual run
   (`RunAgentActivity#clear_issue_runner_retry_abandonment`) — the system SHALL
   stamp `runner_retry_failure_window_reset_at` with the clear time, and
-  `AgentRuns::IssueRunnerFailureHistory` SHALL exclude agent runs created before
-  that timestamp from the per-provider failure counts it computes (consumed by
+  `AgentRuns::IssueRunnerFailureHistory` SHALL exclude runner attempts recorded
+  before that timestamp from the per-provider failure counts it computes (consumed by
   both `AgentRuns::IssueRunnerRetryCap` for retry-cap enforcement and
   `RunAgentActivity#apply_issue_aware_runner_ordering` for provider ordering).
   Without this, a cleared abandonment carries no new information: every
