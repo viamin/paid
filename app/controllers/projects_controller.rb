@@ -213,6 +213,13 @@ class ProjectsController < ApplicationController
 
   def toggle_auto_merge
     authorize @project, :update?
+    # Upstream mode (#4078): auto-merge is never available for PRs opened in
+    # the upstream repository, so the toggle cannot cycle it on.
+    # @spec UPSTREAM-GATE-004
+    if @project.upstream_pr_target?
+      return redirect_to @project, alert: "Auto-merge is not available while PRs target the upstream repository."
+    end
+
     next_mode = case @project.auto_merge_mode
     when "off" then "dependabot_only"
     when "dependabot_only" then "all"
@@ -620,7 +627,7 @@ class ProjectsController < ApplicationController
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
       :lid_mode, :tdd_mode,
       :generated_label_name, :automation_label_name,
-      :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
+        :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
       :max_enhance_issue_reevaluation_rounds,
       :auto_add_labels_enabled, :automation_on_label_enabled,
       :inherit_priority_labels,

@@ -34,7 +34,13 @@ module Automation
       "off"
     end
 
+    # A per-PR activation label must never re-enable a PR-side feature that
+    # upstream mode disables: acting on the upstream repository or on PRs
+    # opened in it is not something a label added to a PR can authorize.
+    # @spec UPSTREAM-GATE-002
     def pull_request_feature_enabled?(project:, pull_request:, feature:)
+      return false if upstream_mode_disables?(project, feature)
+
       return true if project_setting_enabled?(project, feature)
       return false unless pull_request
 
@@ -46,6 +52,8 @@ module Automation
     end
 
     def any_pull_request_feature_enabled?(project:, feature:)
+      return false if upstream_mode_disables?(project, feature)
+
       return true if project_setting_enabled?(project, feature)
 
       activation_candidate_prs(project, feature).find_each
@@ -88,6 +96,13 @@ module Automation
         .where("labels @> ?", [ catchall_label ].to_json)
         .select(:id)
       labeled.or(base.where(parent_issue_id: catchall_parents)).includes(:parent_issue)
+    end
+
+    private_class_method def upstream_mode_disables?(project, feature)
+      return false unless project.upstream_mode_skips?(feature)
+
+      project.log_upstream_mode_skipped(feature)
+      true
     end
 
     private_class_method def blocked_by_skip_labels?(project, issue)

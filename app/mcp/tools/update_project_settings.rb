@@ -11,10 +11,8 @@ module Tools
     #
     # PR target selection (issue #4076): +pr_target+ and +upstream_full_name+
     # are exposed so chat can switch a project to upstream mode. Selecting
-    # upstream does not itself re-enable the automation controls listed in
-    # Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES; server-side enforcement
-    # of those gates is intentionally delivered by the follow-up issue. This
-    # tool only exposes the target selection itself.
+    # upstream is subject to the same server-side automation gates as the
+    # settings form, so chat cannot bypass the disabled controls.
     PERMITTED_ATTRIBUTES = %i[
       active
       paused
@@ -85,6 +83,17 @@ module Tools
 
       project = project_for(project_id)
       attrs = settings.symbolize_keys.slice(*PERMITTED_ATTRIBUTES)
+      # Upstream mode (#4078): the chat path must not bypass the form's
+      # disabled inputs — gated settings cannot be turned on while the
+      # project targets PRs at the upstream repository. The model
+      # validation remains the authority; this guard gives the chat a
+      # precise, actionable error. @spec UPSTREAM-GATE-005
+      violations = project.upstream_gated_setting_violations(attrs)
+      if violations.any?
+        raise ArgumentError,
+          "Cannot enable #{violations.join(', ')} while the project targets PRs at the upstream repository"
+      end
+
       project.update!(attrs)
       record_activity!(project) if project.saved_changes.except("updated_at").any?
       serialize(project)

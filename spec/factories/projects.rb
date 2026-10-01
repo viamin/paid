@@ -47,6 +47,17 @@ FactoryBot.define do
       end
     end
 
+    # A project whose pull requests target the configured upstream repository
+    # (#4078). The PR-automation settings that upstream mode hard-gates at
+    # save time are pre-disabled so the record is valid.
+    trait :upstream_pr_target do
+      pr_target { "upstream" }
+      upstream_full_name { "upstream-owner/upstream-repo" }
+      auto_add_labels_enabled { false }
+      inherit_priority_labels { false }
+      auto_fix_merge_conflicts { false }
+    end
+
     trait :with_interop_settings do
       interop_settings do
         {
