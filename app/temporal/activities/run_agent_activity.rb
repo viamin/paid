@@ -1001,7 +1001,8 @@ module Activities
     # resolved runner key so bare agent-type candidates (e.g. "opencode")
     # are still recognized.
     def direct_outbound_runner?(runner_candidate, user)
-      tier_capability(user).direct_outbound_runner?(runner_candidate)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      tier_capability(user).direct_outbound_runner?(runner_entry || runner_candidate)
     end
 
     # Both predicates delegate to the shared stateless tier-capability query
