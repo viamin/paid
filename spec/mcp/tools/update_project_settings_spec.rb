@@ -43,6 +43,13 @@ RSpec.describe Tools::UpdateProjectSettings do
       expect(project.reload).to have_attributes(paused: true, auto_pick_enabled: true)
     end
 
+    it "updates the upstream PR target settings" do # @spec PR-TARGET-012
+      result = call(settings: { "pr_target" => "upstream", "upstream_full_name" => "stenolabs/stenoai" })
+
+      expect(result).to include(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+      expect(project.reload).to have_attributes(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+    end
+
     it "raises when not confirmed" do
       expect {
         call(settings: { "paused" => true }, confirmed: false)

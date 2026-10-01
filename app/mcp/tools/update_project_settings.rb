@@ -8,6 +8,13 @@ module Tools
     # repo identity (name/owner/repo/github_id), credentials (github_token_id,
     # github_installation_id, webhook_secret, git_push_fallback_token_id), and
     # counter/timestamp bookkeeping columns.
+    #
+    # PR target selection (issue #4076): +pr_target+ and +upstream_full_name+
+    # are exposed so chat can switch a project to upstream mode. Selecting
+    # upstream does not itself re-enable the automation controls listed in
+    # Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES; server-side enforcement
+    # of those gates is intentionally delivered by the follow-up issue. This
+    # tool only exposes the target selection itself.
     PERMITTED_ATTRIBUTES = %i[
       active
       paused
@@ -39,6 +46,8 @@ module Tools
       max_pr_auto_continue_tokens
       token_limit_warning_threshold
       poll_interval_seconds
+      pr_target
+      upstream_full_name
     ].freeze
 
     def self.tool_name = "update_project_settings"
