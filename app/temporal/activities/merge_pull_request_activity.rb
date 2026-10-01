@@ -171,7 +171,12 @@ module Activities
     # @spec AUTO-MERGE-008 — a trusted PR activation label (paid-auto-merge)
     # enables auto-merge for that pull request even when the project-level
     # setting is off; paid-in-full alone does not.
+    #
+    # Upstream mode (#4078) overrides both paths: an upstream PR is never
+    # merged, not even via activation label. @spec UPSTREAM-GATE-002
     def auto_merge_enabled_for?(project, issue)
+      return false unless project.upstream_feature_enabled?(:auto_merge)
+
       project.auto_merge_enabled? ||
         Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
     end

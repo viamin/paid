@@ -116,6 +116,44 @@ RSpec.describe Automation::FeatureActivation do
     end
   end
 
+  # @spec UPSTREAM-GATE-002
+  describe "upstream mode" do
+    let(:project) { create(:project, :upstream_pr_target) }
+    let(:pull_request) { create(:issue, :pull_request, project: project, github_state: "open", labels: []) }
+
+    it "disables pull-request features even when a trusted activation label is present" do
+      pull_request.update!(labels: [ project.feature_activation_label_for("auto_merge") ])
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
+
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_merge")).to be(false)
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_fix_merge_conflicts")).to be(false)
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_scan_prs")).to be(false)
+    end
+
+    it "disables any_pull_request_feature_enabled? without consulting labels" do
+      create(:issue, :pull_request, project: project, github_state: "open",
+        labels: [ project.feature_activation_label_for("auto_scan_prs") ])
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+
+      expect(described_class.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")).to be(false)
+      expect(Automation::LabelPolicy).not_to have_received(:trusted_user_added_label?)
+    end
+
+    it "logs upstream_mode_skipped once per feature" do
+      allow(Rails.logger).to receive(:info)
+
+      described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_merge")
+      described_class.any_pull_request_feature_enabled?(project:, feature: "auto_merge")
+
+      expect(Rails.logger).to have_received(:info)
+        .with(hash_including(message: "upstream_mode_skipped", feature: "auto_merge")).once
+    end
+
+    it "still allows issue-side features like auto-pick" do
+      expect(project.upstream_automation_allowed?(:auto_pick)).to be true
+    end
+  end
+
   describe "Automation::LabelPolicy event caching" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project, labels: [ "paid-automation" ]) }

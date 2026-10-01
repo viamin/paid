@@ -1238,7 +1238,7 @@ RSpec.describe Issue do
 
       # @spec UPSTREAM-PR-005
       it "does not treat an open fork PR as an open upstream PR with the same number" do
-        upstream_project = create(:project, pr_target: "upstream", upstream_full_name: "upstream/repo")
+        upstream_project = create(:project, :upstream_pr_target, upstream_full_name: "upstream/repo")
         issue = create(:issue, project: upstream_project)
         upstream_url = "https://github.com/upstream/repo/pull/99"
         create(:issue, :pull_request, :closed, project: upstream_project, github_number: 99,
@@ -1484,9 +1484,8 @@ RSpec.describe Issue do
     end
 
     it "trusts the fork owner for an upstream project without an allowlist entry" do # @spec UPSTREAM-ISSUE-002
-      upstream_project = create(:project,
+      upstream_project = create(:project, :upstream_pr_target,
         owner: "fork-owner",
-        pr_target: "upstream",
         upstream_full_name: "upstream/widgets",
         allowed_github_usernames: [ "trusted-maintainer" ])
       issue = build(:issue, project: upstream_project, github_creator_login: "fork-owner")
@@ -2467,10 +2466,9 @@ RSpec.describe Issue do
 
     context "when the project has pr_target=upstream" do # @spec UPSTREAM-ISSUE-004
       let(:project) do
-        create(:project,
+        create(:project, :upstream_pr_target,
           owner: "fork-owner",
           repo: "my-fork",
-          pr_target: "upstream",
           upstream_full_name: "upstream/widgets")
       end
 

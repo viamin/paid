@@ -180,7 +180,10 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       end
 
       it "records the upstream outcome locally without mutating its issue" do # @spec UPSTREAM-ISSUE-004
-        project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+        project.update!(
+          pr_target: "upstream", upstream_full_name: "acme/widgets",
+          auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+        )
         issue = create(:issue, :in_progress, project: project, labels: [ "paid-build" ])
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 3, cost_cents: 100)

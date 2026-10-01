@@ -148,7 +148,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     it "opens the PR against the upstream issue repository and closes the synced upstream issue" do # @spec UPSTREAM-ISSUE-003
-      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+        auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
       allow(github_client).to receive(:repository)
         .with("stenolabs/stenoai")
         .and_return(OpenStruct.new(default_branch: "main"))
@@ -168,7 +169,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
     it "does not create a pull request for a source issue archived by a target change" do # @spec UPSTREAM-ISSUE-006
       agent_run.update!(goal: "create_pr", status: "running")
-      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+        auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
 
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -189,7 +191,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
     context "when the project targets an upstream repository" do
       before do
-        project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+        project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo",
+          auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
         allow(github_client).to receive(:repository).with("upstream/repo")
           .and_return(OpenStruct.new(default_branch: "trunk"))
       end

@@ -32,6 +32,13 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     synced_prs = prefetch_synced_prs(runs)
 
     runs.each do |agent_run|
+      # Upstream mode (#4078): never re-add labels to PRs opened in the
+      # upstream repository. @spec UPSTREAM-GATE-002
+      unless agent_run.project.upstream_feature_enabled?(:pr_labeling)
+        skipped += 1
+        next
+      end
+
       synced_pr = synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]]
 
       unless synced_pr

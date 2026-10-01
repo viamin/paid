@@ -214,7 +214,10 @@ RSpec.describe Issues::UpsertFromGithub do
       end
 
       it "resets upstream recommend_close dependents without removing their remote label" do # @spec AUTO-PICK-QUEUE-003 UPSTREAM-ISSUE-004
-        project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+        project.update!(
+          pr_target: "upstream", upstream_full_name: "upstream/repo",
+          auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+        )
         blocker = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
         dependent = create(:issue, project: project, github_number: 77,
           paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])

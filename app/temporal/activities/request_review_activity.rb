@@ -75,6 +75,16 @@ module Activities
       reviewers = resolve_reviewers(input, project)
       return { requested: [] } if reviewers.empty?
 
+      # Upstream mode (#4078): never request reviewers on a PR opened in the
+      # upstream repository — not bots, not the owner reviewer, and no
+      # re-requests. Paid doesn't hold trusted access to the upstream repo,
+      # and upstream review content is an untrusted input channel.
+      # @spec UPSTREAM-GATE-002
+      feature = reviewers.any? { |login| !bot_reviewer?(login) } ? :owner_review_requests : :pr_reviews
+      unless project.upstream_feature_enabled?(feature)
+        return { requested: [], upstream_mode_skipped: true }
+      end
+
       client = project.client
 
       already_pending = fetch_pending_reviewers(client, project, pr_number)

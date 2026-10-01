@@ -218,6 +218,13 @@ module Activities
     private
 
     def pr_scanning_enabled?(project)
+      # Upstream mode (#4078): no PR follow-up scanning at all — CI signals,
+      # bot/human review signals, label triggers, owner-approval auto-merge,
+      # escalation, and draft-review budgets all ride on this scan, and none
+      # of them may act on the upstream repository or on PRs opened in it.
+      # @spec UPSTREAM-GATE-002
+      return false unless project.upstream_feature_enabled?(:auto_scan_prs)
+
       return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")
       return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_merge")
       return true if Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_fix_merge_conflicts")

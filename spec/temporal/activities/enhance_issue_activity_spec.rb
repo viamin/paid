@@ -169,7 +169,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
 
     context "when the issue belongs to the upstream target" do
       let(:project) do
-        create(:project, pr_target: "upstream", upstream_full_name: "acme/widgets",
+        create(:project, :upstream_pr_target, upstream_full_name: "acme/widgets",
           allowed_github_usernames: [ "maintainer" ])
       end
       let(:issue) do

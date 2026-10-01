@@ -78,10 +78,9 @@ class Project < ApplicationRecord
   PR_TARGETS = %w[own_repo upstream].freeze
   DEFAULT_PR_TARGET = "own_repo".freeze
   # Field set disabled in the settings UI whenever pr_target=upstream because
-  # Paid no longer owns or trusts the host repository. Server-side enforcement
-  # lives in a follow-up issue. This list
-  # is the canonical source of truth — both the view and the controller consult
-  # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
+  # Paid no longer owns or trusts the host repository. This list drives the
+  # settings UI gray-out state; Project::UpstreamAutomation is the server-side
+  # authority for enforcement. @spec PR-TARGET-002, PR-TARGET-003
   PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[
     review_settings
     auto_merge_mode
@@ -258,6 +257,9 @@ class Project < ApplicationRecord
   include TenantScoped
   include AutoPickSkipLabels
   include FeatureActivationLabels
+  # Central upstream-mode capability checks and save-time gating (#4078).
+  # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002
+  include Project::UpstreamAutomation
 
   belongs_to :github_token, counter_cache: true, optional: true
   belongs_to :github_installation, optional: true
@@ -440,12 +442,6 @@ class Project < ApplicationRecord
 
   def full_name
     "#{owner}/#{repo}"
-  end
-
-  # True when PRs for this project should be opened against the configured
-  # upstream repository rather than the project's own repository. @spec PR-TARGET-001
-  def upstream_pr_target?
-    pr_target == "upstream"
   end
 
   # Repository where new PRs are opened for this project. For "own_repo"
@@ -649,6 +645,29 @@ class Project < ApplicationRecord
   # All configured priority label names, used by queue ordering and PR inheritance.
   def priority_label_names
     effective_priority_labels.values_at(*PRIORITY_TIERS).compact
+  end
+
+  # Whether Paid may add labels to pull requests it opens. Deliberately NOT
+  # an override of the raw #auto_add_labels_enabled? column predicate: that
+  # column also governs labeling of issues Paid creates (issue creation
+  # stays fully supported in upstream mode — issues live in the fork), while
+  # PR labeling must no-op when PRs target the upstream repository.
+  # @spec UPSTREAM-GATE-002
+  def pr_auto_labels_enabled?
+    upstream_feature_enabled?(:pr_labeling) && auto_add_labels_enabled?
+  end
+
+  # Whether priority labels may propagate from issues onto PRs Paid opens.
+  # All callers are PR-side, so the upstream-mode gate applies to every use.
+  # @spec UPSTREAM-GATE-002
+  def inherit_priority_labels?
+    upstream_feature_enabled?(:pr_labeling) && super
+  end
+
+  # No conflict-fix follow-up runs against upstream PRs.
+  # @spec UPSTREAM-GATE-002
+  def auto_fix_merge_conflicts?
+    upstream_feature_enabled?(:auto_fix_merge_conflicts) && super
   end
 
   def worktree_service
@@ -1116,7 +1135,11 @@ class Project < ApplicationRecord
     broadcast_project_show_refresh
   end
 
+  # No release-please interaction against the upstream repository.
+  # @spec UPSTREAM-GATE-002
   def auto_release_enabled?
+    return false unless upstream_feature_enabled?(:auto_release)
+
     auto_release_granularity != "off"
   end
 
@@ -1135,11 +1158,18 @@ class Project < ApplicationRecord
     end
   end
 
+  # Never merge a PR opened in the upstream repository: Paid does not have
+  # (and must not assume) trusted merge authority there.
+  # @spec UPSTREAM-GATE-002
   def auto_merge_enabled?
+    return false unless upstream_feature_enabled?(:auto_merge)
+
     auto_merge_mode != "off"
   end
 
   def auto_merge_dependabot?
+    return false unless upstream_feature_enabled?(:auto_merge)
+
     auto_merge_mode.in?(%w[dependabot_only all])
   end
 
@@ -1151,6 +1181,8 @@ class Project < ApplicationRecord
   end
 
   def auto_merge_bot_authored?
+    return false unless upstream_feature_enabled?(:auto_merge)
+
     allow_bot_authored_pr_auto_merge?
   end
 
@@ -1183,6 +1215,7 @@ class Project < ApplicationRecord
     @effective_screenshot_settings = nil
     @effective_review_settings = nil
     @automation_configuration = nil
+    @upstream_skip_logged = nil
     super
   end
 
@@ -1205,6 +1238,8 @@ class Project < ApplicationRecord
   end
 
   def screenshots_enabled?
+    return false unless upstream_feature_enabled?(:screenshots)
+
     screenshot_enabled
   end
 
@@ -1306,7 +1341,13 @@ class Project < ApplicationRecord
     automation_configuration
   end
 
+  # No reviews, review re-requests, or review-goal runs on upstream PRs:
+  # upstream review content is untrusted third-party input, and requesting
+  # reviews would act with borrowed authority in a repo Paid doesn't control.
+  # @spec UPSTREAM-GATE-002
   def review_enabled?
+    return false unless upstream_feature_enabled?(:pr_reviews)
+
     automation_configuration.auto_review.enabled?
   end
 
@@ -1401,6 +1442,8 @@ class Project < ApplicationRecord
   # fallback (driven by AgentExecutionWorkflow after every agent run)
   # would request bot reviews on projects that have opted out of review.
   def review_bot_request_login
+    return nil unless upstream_feature_enabled?(:pr_reviews)
+
     automation_configuration.auto_review.bot_request_login
   end
 
@@ -1410,6 +1453,8 @@ class Project < ApplicationRecord
   # primary is unavailable (e.g. Copilot rate-limited). Returns +[]+ when
   # reviews are globally disabled or no bot-backed method is enabled.
   def review_bot_request_chain
+    return [] unless upstream_feature_enabled?(:pr_reviews)
+
     automation_configuration.auto_review.bot_request_chain
   end
 

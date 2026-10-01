@@ -81,7 +81,10 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
     end
 
     it "keeps upstream issues read-only while completing their local state" do # @spec UPSTREAM-ISSUE-004
-      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      project.update!(
+        pr_target: "upstream", upstream_full_name: "upstream/repo",
+        auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+      )
       issue.update!(labels: [ "paid-build", "paid-needs-input", "paid-recommend-close" ])
 
       activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)

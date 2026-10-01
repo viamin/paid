@@ -7,6 +7,22 @@ module Activities
     def execute(input)
       agent_run = AgentRun.find(input[:agent_run_id])
 
+      # Upstream mode (#4078): no screenshot capture or PR comment on PRs
+      # opened in the upstream repository. Screenshots::ContainerCapture
+      # independently refuses (project.screenshots_enabled? is gated on the
+      # model), so this early return is the explainable first gate.
+      # @spec UPSTREAM-GATE-002
+      unless agent_run.project.upstream_feature_enabled?(:screenshots)
+        return {
+          agent_run_id: agent_run.id,
+          status: "upstream_mode_skipped",
+          screenshot_count: 0,
+          artifacts: [],
+          screenshots_url: nil,
+          error: nil
+        }
+      end
+
       track_phase(
         agent_run_id: agent_run.id,
         phase_key: "capture_screenshots",
