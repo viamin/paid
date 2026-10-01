@@ -1161,7 +1161,7 @@ RSpec.describe "AgentRuns" do
           github_state: "open", parent_issue: issue)
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         get new_project_agent_run_path(project)
 
@@ -1665,7 +1665,7 @@ RSpec.describe "AgentRuns" do
           github_state: "open", parent_issue: pr_issue)
         create(:agent_run, :completed, project: project, issue: pr_issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         expect {
           post project_agent_runs_path(project),
@@ -2159,7 +2159,7 @@ RSpec.describe "AgentRuns" do
           github_state: "open", parent_issue: pr_issue)
         create(:agent_run, :completed, project: project, issue: pr_issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         expect {
           post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
@@ -2186,7 +2186,7 @@ RSpec.describe "AgentRuns" do
           parent_issue: pr_issue)
         create(:agent_run, :completed, project: project, issue: pr_issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         expect {
           post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }

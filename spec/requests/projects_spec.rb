@@ -1326,7 +1326,7 @@ RSpec.describe "Projects" do
           github_state: "open", parent_issue: issue)
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         get project_path(project)
 
@@ -1355,7 +1355,7 @@ RSpec.describe "Projects" do
           parent_issue: issue)
         create(:agent_run, :completed, project: project, issue: issue,
           pull_request_number: pr.github_number,
-          pull_request_url: "https://github.com/example/repo/pull/#{pr.github_number}")
+          pull_request_url: pr.github_url)
 
         get project_path(project)
 

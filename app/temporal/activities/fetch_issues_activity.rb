@@ -1149,12 +1149,42 @@ module Activities
       backfilled_count = backfill_open_pull_requests(project, client, open_pr_numbers)
       dependency_changed = open_pr_numbers.any? && resolve_external_dependencies(project, open_pr_numbers)
       closed_count = close_stale_pull_requests(project, open_pr_numbers, client: client)
+      upstream_result = reconcile_open_upstream_pull_requests(project, client)
 
       {
-        changed: backfilled_count.positive? || dependency_changed || closed_count.positive?,
-        closed_count: closed_count,
+        changed: backfilled_count.positive? || dependency_changed || closed_count.positive? || upstream_result[:changed],
+        closed_count: closed_count + upstream_result[:closed_count],
         open_pull_request_numbers: open_pr_numbers
       }
+    end
+
+    # Upstream PRs are not covered by the fork webhook or scanner paths. Poll
+    # their configured repository so a remotely merged or closed PR no longer
+    # blocks its source issue from another run.
+    # @spec UPSTREAM-PR-005
+    def reconcile_open_upstream_pull_requests(project, client)
+      return { changed: false, closed_count: 0 } unless project.upstream_pr_target?
+
+      upstream_client = project.git_push_fallback_client || client
+      open_numbers, truncated = fetch_open_pull_request_numbers(upstream_client, project.upstream_full_name)
+      return { changed: false, closed_count: 0 } if truncated
+
+      closed_count = close_stale_pull_requests(
+        project,
+        open_numbers,
+        client: upstream_client,
+        repo_full_name: project.upstream_full_name,
+        source: Issue::UPSTREAM_PULL_REQUEST_SOURCE
+      )
+      { changed: closed_count.positive?, closed_count: closed_count }
+    rescue GithubClient::AuthenticationError, GithubClient::NotFoundError, GithubClient::ApiError => e
+      logger.warn(
+        message: "github_sync.upstream_pull_request_reconciliation_failed",
+        project_id: project.id,
+        upstream_full_name: project.upstream_full_name,
+        error: e.message
+      )
+      { changed: false, closed_count: 0 }
     end
 
     def fetch_open_pull_request_numbers(client, repo_full_name)
@@ -1206,10 +1236,10 @@ module Activities
       missing_numbers.size
     end
 
-    def close_stale_pull_requests(project, open_pr_numbers, client:)
+    def close_stale_pull_requests(project, open_pr_numbers, client:, repo_full_name: project.full_name, source: Issue::GITHUB_SOURCE)
       stale_prs = project.issues
         .pull_requests_only
-        .where(github_state: "open", source: Issue::GITHUB_SOURCE)
+        .where(github_state: "open", source: source)
       stale_prs = stale_prs.where.not(github_number: open_pr_numbers) if open_pr_numbers.any?
 
       count = stale_prs.count
@@ -1222,27 +1252,32 @@ module Activities
       escalated_stale = stale_prs.where(pr_review_phase: "escalated").to_a
 
       merged_numbers, unmerged_numbers, unknown_numbers = partition_by_merge_status(
-        client, project.full_name, stale_prs.pluck(:github_number)
+        client, repo_full_name, stale_prs.pluck(:github_number)
       )
 
       if merged_numbers.any?
         project.issues
           .pull_requests_only
-          .where(project_id: project.id, github_number: merged_numbers)
+          .where(project_id: project.id, source: source, github_number: merged_numbers)
           .update_all(github_state: "closed", pr_review_phase: "merged", updated_at: Time.current)
       end
 
       if unmerged_numbers.any?
         project.issues
           .pull_requests_only
-          .where(project_id: project.id, github_number: unmerged_numbers)
+          .where(project_id: project.id, source: source, github_number: unmerged_numbers)
           .update_all(github_state: "closed", updated_at: Time.current)
       end
 
       closed_numbers = merged_numbers.size + unmerged_numbers.size
 
       closed_set = (merged_numbers + unmerged_numbers).to_set
-      clear_stale_escalation_labels(project, client, escalated_stale.select { |pr| closed_set.include?(pr.github_number) })
+      clear_stale_escalation_labels(
+        project,
+        client,
+        escalated_stale.select { |pr| closed_set.include?(pr.github_number) },
+        repo_full_name: repo_full_name
+      )
 
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
@@ -1288,7 +1323,7 @@ module Activities
     # still escalated. Bounded to the escalated subset so it adds at most a
     # handful of API calls per sweep. Best-effort per PR: a failure on one PR
     # must not abort syncing the rest.
-    def clear_stale_escalation_labels(project, client, escalated_prs)
+    def clear_stale_escalation_labels(project, client, escalated_prs, repo_full_name: project.full_name)
       return if escalated_prs.empty?
 
       escalated_prs.each_with_index do |issue, index|
@@ -1296,7 +1331,7 @@ module Activities
         next unless issue.has_label?(PAID_ESCALATED_LABEL)
 
         begin
-          client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+          client.remove_label_from_issue(repo_full_name, issue.github_number, PAID_ESCALATED_LABEL)
         rescue GithubClient::Error => e
           logger.warn(
             message: "github_sync.remove_stale_escalation_label_failed",

@@ -320,6 +320,7 @@ module Activities
     def find_paid_prs(project)
       candidate_prs = project.issues
         .pull_requests_only
+        .local_repository
         .auto_continue_active
         .where(github_state: "open")
 
