@@ -55,7 +55,6 @@ FactoryBot.define do
       upstream_full_name { "upstream-owner/upstream-repo" }
       auto_add_labels_enabled { false }
       inherit_priority_labels { false }
-      auto_fix_merge_conflicts { false }
     end
 
     trait :with_interop_settings do
