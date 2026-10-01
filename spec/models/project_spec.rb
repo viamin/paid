@@ -211,7 +211,12 @@ RSpec.describe Project do
 
       it "accepts each value in Project::PR_TARGETS" do
         described_class::PR_TARGETS.each do |target|
-          project = build(:project, pr_target: target, upstream_full_name: target == "upstream" ? "acme/widgets" : nil)
+          project = if target == "upstream"
+            build(:project, :upstream_pr_target, upstream_full_name: "acme/widgets")
+          else
+            build(:project, pr_target: target, upstream_full_name: nil)
+          end
+
           expect(project).to be_valid, "expected pr_target=#{target.inspect} to be valid"
         end
       end
