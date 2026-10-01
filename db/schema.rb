@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_162018) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -402,6 +402,51 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
+  create_table "api_usage_attempts", comment: "Idempotent accounting reports for individual API provider requests.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "project_id", null: false
+    t.bigint "agent_run_id"
+    t.bigint "chat_session_id"
+    t.bigint "chat_message_id"
+    t.bigint "actor_id"
+    t.bigint "runner_id"
+    t.bigint "token_usage_id"
+    t.string "attempt_id", limit: 255, null: false, comment: "Harness-generated stable physical request identity."
+    t.integer "ordinal", null: false, comment: "Harness retry ordinal within the logical request."
+    t.string "provider", limit: 100, null: false
+    t.string "llm_model", limit: 100
+    t.string "status", limit: 20, null: false
+    t.integer "input_tokens", comment: "Nil means the provider did not report input usage."
+    t.integer "output_tokens", comment: "Nil means the provider did not report output usage."
+    t.integer "cache_read_tokens", comment: "Provider-reported cached input tokens, when available."
+    t.integer "cache_write_tokens", comment: "Provider-reported cache creation tokens, when available."
+    t.decimal "provider_cost_amount", precision: 20, scale: 8, comment: "Raw provider charge in provider_currency."
+    t.string "provider_currency", limit: 3, comment: "ISO 4217 currency for the raw provider charge."
+    t.string "pricing_source", limit: 30, default: "unknown", null: false
+    t.datetime "provider_priced_at", comment: "Provider or historical-pricing timestamp."
+    t.datetime "started_at", null: false
+    t.datetime "finished_at", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_api_usage_attempts_account_created"
+    t.index ["account_id"], name: "index_api_usage_attempts_on_account_id"
+    t.index ["actor_id"], name: "index_api_usage_attempts_on_actor_id"
+    t.index ["agent_run_id"], name: "index_api_usage_attempts_on_agent_run_id"
+    t.index ["attempt_id"], name: "idx_api_usage_attempts_idempotency", unique: true
+    t.index ["chat_message_id"], name: "index_api_usage_attempts_on_chat_message_id"
+    t.index ["chat_session_id"], name: "index_api_usage_attempts_on_chat_session_id"
+    t.index ["project_id", "created_at"], name: "idx_api_usage_attempts_project_created"
+    t.index ["project_id"], name: "index_api_usage_attempts_on_project_id"
+    t.index ["runner_id"], name: "index_api_usage_attempts_on_runner_id"
+    t.index ["token_usage_id"], name: "index_api_usage_attempts_on_token_usage_id"
+    t.check_constraint "((agent_run_id IS NOT NULL)::integer + (chat_session_id IS NOT NULL)::integer) = 1", name: "api_usage_attempts_exactly_one_owner"
+    t.check_constraint "cache_read_tokens IS NULL OR cache_read_tokens >= 0", name: "api_usage_attempts_cache_read_tokens_nonnegative"
+    t.check_constraint "cache_write_tokens IS NULL OR cache_write_tokens >= 0", name: "api_usage_attempts_cache_write_tokens_nonnegative"
+    t.check_constraint "input_tokens IS NULL OR input_tokens >= 0", name: "api_usage_attempts_input_tokens_nonnegative"
+    t.check_constraint "output_tokens IS NULL OR output_tokens >= 0", name: "api_usage_attempts_output_tokens_nonnegative"
+  end
+
   create_table "apple_verification_artifacts", comment: "Protected Apple verification result artifacts.", force: :cascade do |t|
     t.bigint "apple_verification_attempt_id", null: false
     t.string "content_type"
@@ -509,7 +554,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.datetime "updated_at", null: false
     t.index ["apple_worker_profile_id"], name: "idx_on_apple_worker_profile_id_35bb856a13", unique: true
     t.check_constraint "consecutive_failures >= 0", name: "chk_apple_worker_health_failures"
-    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying, 'quarantined'::character varying]::text[])", name: "chk_apple_worker_health_status"
+    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying::text, 'quarantined'::character varying::text])", name: "chk_apple_worker_health_status"
   end
 
   create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
@@ -2006,7 +2051,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
+    t.string "github_html_url", comment: "Canonical GitHub HTML URL captured from the sync payload; stable across repository retargeting"
     t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
+    t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
+    t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -3829,6 +3877,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "accounts"
+  add_foreign_key "api_usage_attempts", "agent_runs", on_delete: :cascade
+  add_foreign_key "api_usage_attempts", "chat_messages", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "chat_sessions", on_delete: :cascade
+  add_foreign_key "api_usage_attempts", "projects"
+  add_foreign_key "api_usage_attempts", "runners", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "token_usages", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "apple_verification_artifacts", "apple_verification_attempts"
   add_foreign_key "apple_verification_attempts", "accounts"
   add_foreign_key "apple_verification_attempts", "agent_runs", on_delete: :nullify

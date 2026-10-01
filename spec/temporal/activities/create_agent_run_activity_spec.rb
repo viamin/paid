@@ -1409,6 +1409,27 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(feature_issue.reload.needs_input_questions).to eq([ question ])
     end
 
+    it "keeps upstream clarification state local without mutating the issue" do # @spec UPSTREAM-ISSUE-004
+      project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+      question = "Which rollout policy should the implementation use?"
+      feature_brief = { "title" => "Add dark mode", "problem" => "Need dark mode" }
+      agent_run = create(:agent_run, :queued, :create_feature_goal, project: project, issue: feature_issue,
+        external_metadata: { "feature_brief" => feature_brief })
+      allow(Features::ClarifyingQuestions::Analyze).to receive(:call).and_return(
+        Features::ClarifyingQuestions::Analyze::Result.new(
+          ready: false,
+          questions: [ question ],
+          feature_brief: feature_brief
+        )
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(feature_issue.reload.needs_input_questions).to eq([ question ])
+      expect(a_request(:post, %r{api\.github\.com/repos/.*/issues/.*/comments})).not_to have_been_made
+      expect(a_request(:post, %r{api\.github\.com/repos/.*/issues/.*/labels})).not_to have_been_made
+    end
+
     # @spec TEMPORAL-ORCHESTRATION-007
     it "reconciles a posted clarification round instead of posting it again" do
       round_id = "clarification-round"

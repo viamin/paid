@@ -80,6 +80,33 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(eligible.id)
     end
 
+    it "allows an epic under the built-in defaults" do # @spec AUTO-PICK-QUEUE-009
+      epic = create(:issue, project: project, labels: [ "epic" ])
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(epic)
+    end
+
+    it "honors an explicit epic skip-label override" do # @spec AUTO-PICK-QUEUE-009
+      project.update!(auto_pick_skip_labels: [ "epic" ])
+      create(:issue, project: project, labels: [ "epic" ])
+
+      expect(described_class.eligible_scope(project)).to be_empty
+    end
+
+    it "honors an effective-owner epic skip-label override" do # @spec AUTO-PICK-QUEUE-009
+      project.created_by.settings.update!(auto_pick_skip_labels: [ "epic" ])
+      create(:issue, project: project, labels: [ "epic" ])
+
+      expect(described_class.eligible_scope(project)).to be_empty
+    end
+
+    it "honors a tenant epic skip-label override" do # @spec AUTO-PICK-QUEUE-009
+      project.account.tenant_setting!.update!(auto_pick_skip_labels: [ "epic" ])
+      create(:issue, project: project, labels: [ "epic" ])
+
+      expect(described_class.eligible_scope(project)).to be_empty
+    end
+
     it "includes analyzed issues without requiring a follow-up backfill sweep" do
       issue = create(:issue, project: project, paid_state: "analyzed")
 
@@ -158,7 +185,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    # @spec AUTO-PICK-QUEUE-009
+    # @spec AUTO-PICK-QUEUE-011
     context "when an issue's latest model selection pins a tier" do
       let(:owner) { project.effective_owner }
 
@@ -546,7 +573,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
-        parent_issue_id: nil)
+        parent_issue_id: nil, github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -566,7 +593,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "open",
-        parent_issue_id: nil)
+        parent_issue_id: nil, github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -611,13 +638,26 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    it "keeps an upstream PR run ineligible when a same-numbered fork PR closed unmerged" do # @spec EAGER-QUEUE-009 UPSTREAM-PR-005
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      issue = create(:issue, project: project, paid_state: "new")
+      create(:agent_run, :completed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true, pull_request_number: 42,
+        pull_request_url: "https://github.com/upstream/repo/pull/42",
+        completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago + 1.minute)
+      create(:issue, :pull_request, :closed, project: project, github_number: 42,
+        github_html_url: "https://github.com/#{project.full_name}/pull/42", pr_review_phase: "draft")
+
+      expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+    end
+
     it "keeps an issue ineligible after the grace window when its completed run's PR is merged but unlinked" do # @spec EAGER-QUEUE-009
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42",
         completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
       create(:issue, :pull_request, :closed, project: project, github_number: 42, pr_review_phase: "merged",
-        parent_issue_id: nil)
+        parent_issue_id: nil, github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -639,7 +679,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42, pull_request_url: "https://example.test/pr/42")
-      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "closed")
+      create(:issue, project: project, github_number: 42, is_pull_request: true, github_state: "closed",
+        github_html_url: "https://example.test/pr/42")
 
       scope = described_class.eligible_scope(project)
 
@@ -677,7 +718,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
           goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
           completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
         create(:issue, project: project, github_number: 4047, is_pull_request: true, github_state: "open",
-          parent_issue_id: nil)
+          parent_issue_id: nil, github_html_url: "https://example.test/pr/4047")
 
         scope = described_class.eligible_scope(project)
 
@@ -824,6 +865,23 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(parent.id)
     end
 
+    it "keeps an epic blocked by an unresolved declared dependency" do # @spec AUTO-PICK-QUEUE-009
+      epic = create(:issue, project: project, github_number: 1, labels: [ "epic" ])
+      dependency = create(:issue, project: project, github_number: 2)
+      create(:issue_dependency, issue: epic, depends_on_issue: dependency)
+
+      expect(described_class.eligible_scope(project)).not_to include(epic)
+    end
+
+    it "does not strand an epic on incidental open body references" do # @spec AUTO-PICK-QUEUE-009
+      unrelated_open = create(:issue, project: project, github_number: 2)
+      epic = create(:issue, project: project, github_number: 1, labels: [ "epic" ],
+        title: "Meta issue: ship the segment",
+        body: "## Completion criteria\n\nEverything done. Related: ##{unrelated_open.github_number}")
+
+      expect(described_class.eligible_scope(project)).to include(epic)
+    end
+
     it "excludes a parent issue while it still has open non-PR sub-issues" do
       parent = create(:issue, project: project, github_number: 1)
       child = create(:issue, project: project, github_number: 2, parent_issue: parent)
@@ -850,6 +908,117 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       scope = described_class.eligible_scope(project)
 
       expect(scope.pluck(:id)).to include(parent.id)
+    end
+
+    it "re-audits an epic after a child created by its prior audit resolves" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        child = create(:issue, project: project, parent_issue: epic, github_updated_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
+
+        child.update!(github_state: "closed", github_updated_at: Time.current)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
+    it "re-audits an epic after its audit links a pre-existing closed child" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago, body: "## Child Issues\n- #9001")
+        create(:issue, :closed, project: project, github_number: 9001, created_at: 3.hours.ago)
+
+        Issues::ParseParentChild.call(issue: epic)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
+    it "does not re-audit an epic when metadata changes on a child that predates its audit" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 3, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.days.ago)
+        child = create(:issue, :closed, project: project, parent_issue: epic,
+          created_at: 13.days.ago, updated_at: 13.days.ago,
+          parent_issue_linked_at: 13.days.ago, closed_at: 13.days.ago)
+
+        child.update!(labels: [ "metadata-updated" ])
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
+      end
+    end
+
+    it "does not re-audit an ordinary issue after a child resolves" do # @spec AUTO-PICK-QUEUE-010
+      issue = create(:issue, project: project, paid_state: "completed", no_code_required_at: 2.hours.ago)
+      create(:issue, :closed, project: project, parent_issue: issue, github_updated_at: Time.current)
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+    end
+
+    it "re-audits an epic after dependency work resolves beyond a merged audit PR" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ])
+        create(:agent_run, :completed, :automatic, project: project, issue: epic,
+          goal: "create_pr", auto_pick: true, pull_request_number: 42, completed_at: 2.hours.ago)
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: epic, updated_at: 2.hours.ago)
+        dependency = create(:issue, project: project, github_updated_at: 1.hour.ago)
+        create(:issue_dependency, issue: epic, depends_on_issue: dependency)
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
+
+        dependency.update!(github_state: "closed", github_updated_at: Time.current)
+
+        # Resolving the declared dependency eagerly enqueues the epic
+        # (EAGER-QUEUE-004), so it re-enters the pipeline as a queued run
+        # whose dequeue-time recheck must accept it rather than as a still
+        # pickable scope member.
+        queued_audit = AgentRun.where(project: project, issue: epic, status: "queued").last
+        expect(queued_audit).to be_present
+        expect(queued_audit.auto_pick).to be(true)
+        expect(described_class.eligible_for_dequeue?(project, epic.id, excluding_run_id: queued_audit.id)).to be(true)
+      end
+    end
+
+    # Mid-run link: an epic audit creates or links a gap child via the GitHub
+    # proxy while the run is still executing. The periodic issue sync stamps
+    # `parent_issue_linked_at` at sync time (before the run's terminal stamp),
+    # and the child resolves only after the audit concludes. A strict link-time
+    # comparison (linked_at > terminal_at) would strand the epic here; the
+    # resolution timestamp closes the gap and lets a subsequent audit run.
+    it "re-audits an epic after a child linked during its prior audit resolves" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        # Child was filed mid-run and the sync linked it before the audit
+        # concluded — parent_issue_linked_at is *strictly earlier* than the
+        # audit's terminal stamp, mirroring the production race in #4089.
+        create(:issue, :closed, project: project, parent_issue: epic,
+          parent_issue_linked_at: 3.hours.ago, closed_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
+    # Mid-run dependency edge: the audit declares a dependency on work that
+    # resolves only after the audit concludes. A strict link-time comparison
+    # would strand the epic here; the dependency's resolution timestamp
+    # (closed_at) closes the gap.
+    it "re-audits an epic after a dependency linked during its prior audit resolves" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        dependency = create(:issue, :closed, project: project, closed_at: 1.hour.ago)
+        # IssueDependency edge is created mid-run — created_at is *strictly
+        # earlier* than the audit's terminal stamp, mirroring the production
+        # race in #4089.
+        dependency_edge = create(:issue_dependency, issue: epic, depends_on_issue: dependency)
+        dependency_edge.update_columns(created_at: 3.hours.ago, updated_at: 3.hours.ago)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
     end
 
     # @spec AUTO-PICK-QUEUE-003

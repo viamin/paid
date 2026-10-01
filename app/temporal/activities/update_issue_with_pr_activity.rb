@@ -40,6 +40,7 @@ module Activities
 
     def post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
       return if pull_request_url.blank?
+      return if upstream_issue_write_skipped?(project, "post_pr_comment", issue: issue, agent_run_id: agent_run_id)
 
       client.add_comment(
         project.full_name,
@@ -56,6 +57,8 @@ module Activities
     end
 
     def remove_trigger_labels(client, project, issue, agent_run_id)
+      return if upstream_issue_write_skipped?(project, "remove_trigger_labels", issue: issue, agent_run_id: agent_run_id)
+
       %w[build plan].each do |stage|
         label = project.label_for_stage(stage)
         next unless label && issue.has_label?(label)
@@ -76,6 +79,8 @@ module Activities
     # the issue's state. Leaving them on a now-completed issue
     # pollutes the human-review queues those labels exist to serve.
     def remove_stale_attention_labels(client, project, issue, agent_run_id)
+      return if upstream_issue_write_skipped?(project, "remove_stale_attention_labels", issue: issue, agent_run_id: agent_run_id)
+
       needs_input_label = project.label_for_stage("needs_input") ||
         Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
       recommend_close_label = project.label_for_stage("recommend_close") ||

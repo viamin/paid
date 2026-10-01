@@ -17,6 +17,12 @@ class PromptAssembly::Sections::IssueTask
 
     {{body}}
 
+    If this is an epic umbrella final audit, verify shipped behavior, tests,
+    and documentation against its approved RDR/HLD/LLD/EARS and acceptance
+    criteria. Do not treat closed child issues as sufficient evidence. Make
+    bounded corrections where needed; otherwise record an evidence-backed,
+    GitHub-visible outcome and close only when no required gaps remain.
+
     # Instructions
 
     1. Install dependencies (`bundle install`, `yarn install`, etc.)

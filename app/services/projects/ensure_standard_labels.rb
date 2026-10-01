@@ -35,7 +35,7 @@ module Projects
   #   * test_changes_requested             (paid-test-changes-requested)
   # - Priority labels          (P1, P2, P3 by default)
   # - The project's effective auto-pick skip labels (planning/research/waiting/
-  #   tracking/epic/needs-manual-setup by default; project/tenant/user overridable)
+  #   tracking/needs-manual-setup by default; project/tenant/user overridable)
   #
   # Only labels in this canonical set are ever created or modified — any other
   # repository label (user-owned taxonomy, third-party bot labels, etc.) is
@@ -62,7 +62,7 @@ module Projects
       auto_release_activation: { color: "0052cc", description: "Activates Paid auto-release for this pull request when the project setting is off.", kind: :activation },
       tdd_strict_activation: { color: "0052cc", description: "Activates strict TDD for this issue when the project setting is off.", kind: :activation },
       tdd_auto_activation: { color: "0052cc", description: "Activates non-strict TDD for this issue when the project setting is off.", kind: :activation },
-      recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed", kind: :status },
+      recommend_close: { color: "fbca04", description: "Paid's run did not confirm this issue is complete — human review needed", kind: :status },
       paused: { color: "5319e7", description: "Pauses Paid automation on this issue; remove to resume.", kind: :control },
       escalated: { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume.", kind: :control },
       dismiss_escalation: { color: "c2e0c6", description: "Alternate escalation-dismissed marker; cleared automatically by Paid.", kind: :status },
@@ -108,7 +108,6 @@ module Projects
       "research" => "Excludes this issue from Paid auto-pick while research is in progress.",
       "waiting" => "Excludes this issue from Paid auto-pick while it waits on something else.",
       "tracking" => "Excludes this issue from Paid auto-pick; tracking/meta issue, not actionable.",
-      "epic" => "Excludes this issue from Paid auto-pick; epic/parent issue, not directly actionable.",
       "needs-manual-setup" => "Excludes this issue from Paid auto-pick until manual setup is completed."
     }.freeze
     AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION = "Excludes this issue from Paid auto-pick while applied."
@@ -319,7 +318,7 @@ module Projects
       end
     end
 
-    # Built-in auto-pick skip labels (planning/research/waiting/tracking/epic/
+    # Built-in auto-pick skip labels (planning/research/waiting/tracking/
     # needs-manual-setup by default). These are recognized regardless of who
     # applies them, so they are provisioned with a description that states
     # the auto-pick consequence rather than left as undocumented taxonomy.

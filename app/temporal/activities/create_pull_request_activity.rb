@@ -13,7 +13,7 @@ module Activities
         project = agent_run.project
         issue = agent_run.issue
 
-        client = project.client
+        client = pull_request_client(project)
         # Pre-run guard: verify the branch exists on GitHub and check for
         # an existing open PR. This eliminates orphan branches (#1125) by
         # ensuring a PR is always created when the branch is present.
@@ -180,25 +180,35 @@ module Activities
       true
     end
 
+    # @spec UPSTREAM-PR-002 UPSTREAM-PR-004
     def find_existing_pr(client, project, branch_name, agent_run_id:)
       existing = client.pull_requests(
-        project.full_name,
-        head: "#{project.owner}:#{branch_name}",
+        pull_request_repository(project),
+        head: existing_pr_head(project, branch_name),
         state: "open"
       )
       existing.first
+    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e) if project.upstream_pr_target?
+
+      log_pull_request_lookup_failure(agent_run_id, branch_name, e)
+      nil
     rescue StandardError => e
       # Lookup is best-effort: a transient failure (including network-level
       # errors like Faraday::TimeoutError) must not become a new failure
       # mode introduced by the idempotency fix. Fall through to
       # create_pull_request and let GitHub be the source of truth.
+      log_pull_request_lookup_failure(agent_run_id, branch_name, e)
+      nil
+    end
+
+    def log_pull_request_lookup_failure(agent_run_id, branch_name, error)
       logger.warn(
         message: "agent_execution.pull_request_lookup_failed",
         agent_run_id: agent_run_id,
         branch: branch_name,
-        error: e.message
+        error: error.message
       )
-      nil
     end
 
     # Creates the PR, but treats a GitHub 422 "pull request already exists"
@@ -210,6 +220,7 @@ module Activities
       pr = create_pull_request_for_source_issue(client, project, agent_run, issue, pr_body)
       [ pr, "created" ]
     rescue GithubClient::ApiError => e
+      raise_upstream_permission_error!(project, e) if upstream_permission_error?(e)
       raise e unless pr_already_exists_error?(e)
 
       logger.info(
@@ -223,6 +234,31 @@ module Activities
 
       reserve_pull_request!(agent_run, reused)
       [ reused, "reused" ]
+    rescue GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e)
+    end
+
+    # Converts only permission-class failures (401/403/404) into the fatal,
+    # non-retryable UpstreamPullRequestPermissionDenied error. A transient
+    # failure (e.g. a 5xx ApiError) must not become fatal here — the local
+    # project path deliberately treats these as retryable/best-effort, and
+    # upstream runs must not be held to a stricter standard than that for
+    # infrastructure hiccups (see the comment on #find_existing_pr).
+    def raise_upstream_permission_error!(project, error)
+      raise error unless project.upstream_pr_target?
+      raise error unless permission_denied_error?(error)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Unable to create upstream pull request: configure an active PAT fallback with access to #{project.upstream_full_name}",
+        type: "UpstreamPullRequestPermissionDenied",
+        non_retryable: true
+      )
+    end
+
+    def permission_denied_error?(error)
+      error.is_a?(GithubClient::AuthenticationError) ||
+        error.is_a?(GithubClient::NotFoundError) ||
+        (error.is_a?(GithubClient::ApiError) && error.status == 403)
     end
 
     # @spec EAGER-QUEUE-010
@@ -247,20 +283,53 @@ module Activities
     # a transient lookup failure raises and is retried rather than becoming
     # permission to duplicate work.
     def reconcile_missing_source_pull_requests!(client, project, source_issue)
+      repo = pull_request_repository(project)
       missing_pull_request_numbers(project, source_issue).each do |number|
-        client.pull_request(project.full_name, number)
-        github_issue = client.issue(project.full_name, number)
-        Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+        client.pull_request(repo, number)
+        github_issue = client.issue(repo, number)
+        Issues::UpsertFromGithub.call(
+          project: project,
+          github_issue: github_issue,
+          source: project.upstream_pr_target? ? Issue::UPSTREAM_PULL_REQUEST_SOURCE : Issue::GITHUB_SOURCE
+        )
       rescue GithubClient::NotFoundError
         next
       end
     end
 
+    # `agent_runs.pull_request_number` holds upstream PR numbers for upstream
+    # projects, so the local rows that can satisfy them must be restricted to
+    # rows synced from the upstream repo (source: upstream_pull_request).
+    # Without this restriction, a fork-side Issue row with a colliding number
+    # (issue/PR numbers are per-repo, so collisions are ordinary) would be
+    # treated as already-synced and the real upstream PR would never be
+    # reconciled.
     def missing_pull_request_numbers(project, source_issue)
-      produced_numbers = source_issue.agent_runs.where(goal: "create_pr")
-        .where.not(pull_request_number: nil).pluck(:pull_request_number)
-      synced_numbers = project.issues.pull_requests_only.where(github_number: produced_numbers).pluck(:github_number)
-      produced_numbers - synced_numbers
+      produced_numbers = produced_pull_request_numbers(project, source_issue)
+      synced_pull_requests = project.issues.pull_requests_only.where(github_number: produced_numbers)
+      return produced_numbers - synced_pull_requests.pluck(:github_number) unless project.upstream_pr_target?
+
+      synced_upstream = synced_pull_requests.where(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+      (produced_numbers - synced_upstream.pluck(:github_number)) |
+        synced_upstream.where(github_state: "open").pluck(:github_number)
+    end
+
+    # A project can switch from fork to upstream PRs. Fork-era runs retain
+    # their fork URL, so treating their numbers as upstream PRs would fetch and
+    # persist unrelated upstream records when repository numbering diverges.
+    # @spec UPSTREAM-PR-005 EAGER-QUEUE-010
+    def produced_pull_request_numbers(project, source_issue)
+      runs = source_issue.agent_runs.where(goal: "create_pr").where.not(pull_request_number: nil)
+      runs = runs.where("pull_request_url LIKE ?", upstream_pull_request_url_pattern(project)) if project.upstream_pr_target?
+      runs.pluck(:pull_request_number).uniq
+    end
+
+    def upstream_pull_request_url_prefix(project)
+      "https://github.com/#{project.upstream_full_name}/pull/"
+    end
+
+    def upstream_pull_request_url_pattern(project)
+      "#{ActiveRecord::Base.sanitize_sql_like(upstream_pull_request_url_prefix(project))}%"
     end
 
     def source_issue(issue)
@@ -269,12 +338,17 @@ module Activities
       issue.parent_issue || source_issue_from_producing_run(issue) || issue
     end
 
+    # `pull_request_number` alone can collide across repos (see the comment
+    # on #missing_pull_request_numbers), so require the persisted
+    # `pull_request_url` to match this PR's actual, repo-qualified GitHub URL
+    # before treating the run as its producer.
     def source_issue_from_producing_run(pull_request)
       AgentRun.joins(:issue)
         .where(
           project: pull_request.project,
           goal: "create_pr",
           pull_request_number: pull_request.github_number,
+          pull_request_url: pull_request.github_url,
           issues: { is_pull_request: false }
         )
         .order(created_at: :asc)
@@ -282,15 +356,56 @@ module Activities
         &.issue
     end
 
+    # @spec UPSTREAM-PR-002 UPSTREAM-PR-004
     def create_pull_request(client, project, agent_run, issue, pr_body)
       client.create_pull_request(
-        project.full_name,
-        base: project.default_branch,
-        head: agent_run.branch_name,
+        pull_request_repository(project),
+        base: pull_request_base(client, project),
+        head: pull_request_head(project, agent_run.branch_name),
         title: pr_title(agent_run, issue),
         body: pr_body.fetch(:body),
         draft: true
       )
+    end
+
+    # Delegates to the project's configured PR target repository: the fork
+    # itself for own-repository runs, or the upstream repository for
+    # upstream runs. @spec UPSTREAM-ISSUE-003
+    def pull_request_repository(project)
+      project.pr_target_repository
+    end
+
+    def pull_request_head(project, branch_name)
+      return branch_name unless project.upstream_pr_target?
+
+      "#{project.owner}:#{branch_name}"
+    end
+
+    # The existing-PR lookup filter is always owner-qualified: for local runs
+    # the qualified form matches same-repo heads, and for upstream runs it is
+    # required to match the cross-repo fork head. A bare branch filter can
+    # fail to match an already-open PR, so a retry would attempt a second
+    # create, hit the 422 already-exists conflict, and repeat the same
+    # failed bare-head lookup instead of reusing the PR.
+    def existing_pr_head(project, branch_name)
+      "#{project.owner}:#{branch_name}"
+    end
+
+    # @spec UPSTREAM-PR-002 UPSTREAM-PR-004
+    def pull_request_base(client, project)
+      return project.default_branch unless project.upstream_pr_target?
+
+      Rails.cache.fetch([ "upstream-default-branch", project.cache_key_with_version, project.upstream_full_name ], expires_in: 1.hour) do
+        client.repository(project.upstream_full_name).default_branch
+      end
+    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e)
+    end
+
+    def pull_request_client(project)
+      return project.client unless project.upstream_pr_target?
+
+      project.git_push_fallback_client || project.client
     end
 
     # Persist the remote PR identity while holding the source lock. Completion
@@ -314,6 +429,10 @@ module Activities
       return false unless error.respond_to?(:status) && error.status == 422
 
       error.message.to_s.match?(/a pull request already exists|pull request.*already exist/i)
+    end
+
+    def upstream_permission_error?(error)
+      error.status == 403
     end
 
     def best_effort(agent_run_id, context: nil)
@@ -343,8 +462,12 @@ module Activities
           )
         end
       end
-      best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
-      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) }
+      if project.upstream_pr_target?
+        sync_upstream_pull_request_record(agent_run_id, client, project, pr.number)
+      else
+        best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
+      end
+      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) unless project.upstream_pr_target? }
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
       best_effort(agent_run_id, context: "structured_log") do
@@ -418,10 +541,22 @@ module Activities
       if issue
         parts << "---"
         parts << ""
-        parts << "Closes ##{issue.github_number}"
+        parts << "Closes #{issue_reference(issue, agent_run.project)}"
       end
 
       parts.join("\n")
+    end
+
+    # A bare `#N` reference resolves against the repository the PR is opened
+    # in. For upstream runs both the PR and its synced source issue live in
+    # the upstream repository, so the reference is qualified with the issue
+    # target repository to make the resolution explicit and unambiguous —
+    # issue/PR numbers are per-repo, and the fork may hold an unrelated issue
+    # with the same number.
+    def issue_reference(issue, project)
+      return "##{issue.github_number}" unless project.upstream_pr_target?
+
+      "#{project.issue_target_repository}##{issue.github_number}"
     end
 
     # Builds a goal-specific PR body for lid_planning runs.
@@ -509,7 +644,7 @@ module Activities
         "branch_name" => agent_run.branch_name.to_s,
         "issue_number" => issue&.github_number.to_s,
         "issue_title" => issue&.title.to_s,
-        "issue_url" => issue ? "##{issue.github_number}" : "",
+        "issue_url" => issue ? issue_reference(issue, agent_run.project) : "",
         "quality_warnings" => quality_warnings.to_s
       }
       template.render(variables)
@@ -579,7 +714,8 @@ module Activities
 
     def fallback_description(issue, agent_run)
       if issue
-        [ issue.title, "", "See ##{issue.github_number} for context." ].join("\n")
+        reference = agent_run ? issue_reference(issue, agent_run.project) : "##{issue.github_number}"
+        [ issue.title, "", "See #{reference} for context." ].join("\n")
       elsif agent_run&.custom_prompt.present?
         custom_prompt_excerpt(agent_run.custom_prompt)
       else
@@ -1001,6 +1137,16 @@ module Activities
 
     # @spec TDD-PR-001
     def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+      if project.upstream_pr_target?
+        logger.info(
+          message: "agent_execution.upstream_issue_write_skipped",
+          project_id: project.id,
+          pull_request_number: pr_number,
+          operation: "add_pr_labels"
+        )
+        return
+      end
+
       labels = []
       labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?
@@ -1017,18 +1163,40 @@ module Activities
 
     # @spec TDD-PR-001
     def refresh_pull_request_body(client, project, pr_number, body)
-      client.update_pull_request(project.full_name, pr_number, body: body)
+      client.update_pull_request(pull_request_repository(project), pr_number, body: body)
       sync_pull_request_record(client, project, pr_number)
     end
 
+    # @spec UPSTREAM-PR-004
     def sync_pull_request_record(client, project, pr_number)
-      github_issue = client.issue(project.full_name, pr_number)
-      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
-    rescue => e
+      github_issue = client.issue(pull_request_repository(project), pr_number)
+      Issues::UpsertFromGithub.call(
+        project: project,
+        github_issue: github_issue,
+        source: project.upstream_pr_target? ? Issue::UPSTREAM_PULL_REQUEST_SOURCE : Issue::GITHUB_SOURCE
+      )
+    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => e
+      raise_upstream_permission_error!(project, e)
+    end
+
+    # Upstream sync is fail-explicit only for permission-class failures
+    # (surfaced as a non-retryable Temporalio::Error::ApplicationError by
+    # sync_pull_request_record above). A transient, non-GithubClient failure
+    # here (e.g. Faraday::TimeoutError, an ActiveRecord blip) must not raise
+    # out of the activity after agent_run.complete! has already persisted —
+    # retries short-circuit on agent_run.finished?, so there would be no way
+    # to retry the sync. Treat it as best-effort instead: the local Issue row
+    # is healed on a later run via reconcile_missing_source_pull_requests!.
+    def sync_upstream_pull_request_record(agent_run_id, client, project, pr_number)
+      sync_pull_request_record(client, project, pr_number)
+    rescue Temporalio::Error::ApplicationError
+      raise
+    rescue StandardError => e
       logger.warn(
-        message: "agent_execution.sync_created_pull_request_failed",
-        project_id: project.id,
-        pr_number: pr_number,
+        message: "agent_execution.post_processing_failed",
+        agent_run_id: agent_run_id,
+        context: "sync_created_pull_request",
+        error_class: e.class.name,
         error: e.message
       )
     end

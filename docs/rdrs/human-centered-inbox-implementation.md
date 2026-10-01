@@ -13,8 +13,9 @@ When filing, create the epic and task records, replace every local dependency
 with its actual `Depends on #<number>` reference, add parent/child links, and
 read back the bodies. Keep implementation issues under `planning` until the
 design is finalized and merged; then remove that hold while preserving real
-dependencies. Label the epic `epic`; do not leave runnable closeout issues
-permanently excluded by `epic`, `tracking` or `planning` labels.
+dependencies. Label the epic `epic` — it identifies the umbrella, which
+receives a final acceptance audit once its children resolve — and do not
+leave runnable closeout issues excluded by `tracking` or `planning` labels.
 
 Each implementation task must update its linked LLD/EARS as needed, write
 failing-first behavior tests, implement, and run relevant lint/coherence
@@ -75,7 +76,10 @@ flowchart TD
 question-specific diagrams, then use explicit per-facet confidence to release
 issues and complete features through forward work.
 
-**Children:** P01–P12, C69, C70, C71. The epic is a coordination record.
+**Children:** P01–P12, C69, C70, C71. The epic is a coordination record that
+runs a final acceptance audit after its children and dependencies resolve;
+closeout children use `Tracks` language and leave the umbrella open for that
+audit.
 
 **Acceptance:** All three RDRs have evidence-backed closeouts. A user can open
 an Inbox question, explore/comment on a diagram, correct an assessment and see
@@ -343,7 +347,7 @@ feature completion and release/flag reporting.
 - [ ] Introduce a contradictory answer during execution; prove work continues and the follow-up blocks completion, both with and without flags.
 - [ ] Test external label edits, queued-run races, GitHub failure/retry, concurrent closeout findings and both feature policies.
 - [ ] Reconcile the reused RDR-066/067 tasks without falsely claiming their separate policy work complete.
-- [ ] Follow the [RDR closeout checklist](closeout-checklist.md); store `audit-report-<date>-rdr-071.md`, add dependencies for remaining gaps and close E01 only when the full acceptance criteria have shipped evidence.
+- [ ] Follow the [RDR closeout checklist](closeout-checklist.md); store `audit-report-<date>-rdr-071.md`, add dependencies for remaining gaps, and reference E01 with non-closing language so its own final acceptance audit decides closure on shipped evidence.
 
 ## Review notes
 
