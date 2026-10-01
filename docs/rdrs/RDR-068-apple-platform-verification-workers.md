@@ -10,7 +10,7 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation Strategy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) (Live Web App Preview and Interactive Agent Verification), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) (Polyglot Language Detection and Test Execution), [RDR-048](RDR-048-multi-host-docker-backend-support.md) (Multi-Host Docker Backend Support), [RDR-057](RDR-057-remote-execution-data-contract.md) (Remote Execution Data Contract), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation), [RDR-059](RDR-059-immutable-agent-runtime-images.md) (Immutable Agent Runtime Images), [RDR-060](RDR-060-external-execution-resource-ledger.md) (External Execution Resource Ledger), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (Infrastructure Safety Rails and Execution Audit Events), [RDR-062](RDR-062-execution-network-policy-intent.md) (Provider-Neutral Execution Network Policy Intent)
 - **Related Intent**: `docs/intent/apple-verification-workers/` (profiles, workflow revisions, attempts, waivers, host lifecycle), `docs/intent/apple-guest-execution/` (image catalog, guest protocol, guest dispatch), `docs/intent/apple-verification-network-policy/` (guest network contract), `docs/intent/apple-verification/` (project UI presentation), `docs/intent/apple-verification-live-validation/` (live-validation harness for #3978)
-- **Related Issues**: #3930 (umbrella implementation chain, open), #3929 (RDR acceptance PR), #3938 (Apple verification configuration and approval lifecycle — closed by PR #3975), #3936 (scheduling, admission, lockdown, timeout, quarantine — open; also owns the per-attempt protocol dispatch wiring inside `Provision#guest_manifest`), #3937 (source/result/artifact transport — open), #3940 (agent MCP tools and lifecycle gates — open), #3941 (operator setup guide and guided preflight — open), #3942 (2026-09-22 closeout — open; tracks rather than closes), #3978 (live-host acceptance validation — open; filed from the 2026-09-22 audit)
+- **Related Issues**: #3930 (umbrella implementation chain, open), #3929 (RDR acceptance PR), #3938 (Apple verification configuration and approval lifecycle — closed by PR #3975), #3936 (scheduling, admission, lockdown, timeout, quarantine — closed), #3937 (source/result/artifact transport — closed), #3940 (agent MCP tools and lifecycle gates — closed), #3941 (operator setup guide and guided preflight — closed), #3942 (2026-09-22 closeout — closed), #3978 (live-host acceptance validation — closed). The unresolved dispatch, transport-wiring, and live-evidence gaps require new focused child issues under open umbrella #3930; see the [2026-10-01 audit report](audit-report-2026-10-01-rdr-068.md) §Tracker state and required tracker filing.
 - **Related Tests**: `spec/models/apple_verification_workers_spec.rb`, `spec/models/apple_verification_image_spec.rb`, `spec/services/apple_verification_workers_spec.rb`, `spec/services/apple_verification_workers/version_requirement_spec.rb`, `spec/services/apple_verification/`, `spec/services/apple_verification/live_validation/`, `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`, `spec/services/agent_runs/apple_verification/`, `spec/lib/apple_verification/`, `spec/requests/projects/apple_verifications_spec.rb`
 
 ## Implementation Status
@@ -58,10 +58,11 @@ builds the source/result lanes nor derives the approved configuration's
 build/test/launch/capture operations. The isolated source-lane, result
 manifest, and artifact-ingestion components therefore have unit coverage but
 are not on the production dispatch path. Live macOS-host acceptance evidence
-also remains absent. These are the required gaps; their reconciliation to
-the existing open children of #3930 (#3936, #3937, #3978) is recorded in the
-[2026-10-01 audit report](audit-report-2026-10-01-rdr-068.md) §Gap
-reconciliation. The feature remains default-off and #3930 stays open.
+also remains absent. These are the required gaps. Their historical scopes are
+recorded in the [2026-10-01 audit report](audit-report-2026-10-01-rdr-068.md)
+§Tracker state and required tracker filing, which also records that new
+focused child issues must be filed because #3936, #3937, and #3978 are closed.
+The feature remains default-off and #3930 stays open.
 
 ## 2026-10-01 Re-audit
 
@@ -72,7 +73,10 @@ component-level transfer/result code. The re-audit found a different
 end-to-end gap: the provisioner cannot derive and dispatch an approved
 workflow, and it does not connect the source or result/artifact lanes.
 Consequently no configured workflow can yet prove the build, test, launch, or
-capture acceptance criteria. No live macOS-host pilot evidence exists.
+capture acceptance criteria. No live macOS-host pilot evidence exists. The
+historical trackers #3936, #3937, and #3978 are closed, so they do not own
+these remaining gaps; focused child issues must be filed under #3930 before
+the gaps can be auto-picked.
 
 Decision: **Partially Implemented**. The design baseline is unchanged and
 `apple_verification_workers` remains default-off. Umbrella #3930 stays open;

@@ -95,32 +95,22 @@ describes.
    three-container capacity criteria. The rollout guard correctly remains
    default-off.
 
-## Gap reconciliation to existing trackers
+## Tracker state and required tracker filing
 
-Per checklist step 3, each unmet criterion must either have its own focused
-tracker or be reconciled to an existing one so Paid's auto-pick cannot
-double-assign the same scope. Two of the three gaps below map cleanly to
-children of umbrella `#3930` already documented in the 2026-09-22 audit
-([`audit-report-2026-09-22-rdr-068.md`](audit-report-2026-09-22-rdr-068.md) §
-Gaps and reconciliation to existing trackers). Gap 1 — the per-attempt
-protocol dispatch wiring — is not owned by title by any existing child of
-`#3930` (`#3936` scheduling, `#3940` MCP/gates, `#3938` closed config/approval,
-`#3937` transport), but the 2026-09-22 audit's recorded scope for `#3936`
-explicitly includes "the sequential multi-profile execution scheduler that
-consumes a parsed config and runs the profiles one after the other"
-([`audit-report-2026-09-22-rdr-068.md`](audit-report-2026-09-22-rdr-068.md)
-F4 row); the per-attempt dispatch wiring inside `Provision#guest_manifest` is
-the per-profile piece of that same scope. So Gap 1 is reconciled to `#3936`
-rather than filed as a parallel new tracker — the alternative would create a
-second auto-pickable issue for the same component, exactly the failure mode
-checklist step 3 warns against. Each row below records the mapping and the
-reason the existing tracker already covers it.
+Checklist step 3 requires an open focused tracker for every unmet criterion.
+As of this audit date, #3930 is open, but the historical child issues #3936,
+#3937, and #3978 are closed as completed. Their historical scopes, recorded
+in the [2026-09-22 audit](audit-report-2026-09-22-rdr-068.md), clarify the
+work that remains, but closed issues cannot serve as auto-pickable owners.
+New focused child issues must be filed under #3930 before implementation
+continues. This creates one actionable owner per gap without reopening or
+duplicating the completed historical work.
 
-| # | Gap | Tracker | Status | Why the existing tracker covers it |
+| # | Gap | Historical tracker | Current state | Required action |
 |---|---|---|---|---|
-| 1 | Approved workflow dispatch wiring inside `Provision#guest_manifest` (derives the approved configuration's `build` / `test` / `launch_app` / UI-flow / `capture` operations from the approved revision's project/scheme/test-plan declarations and dispatches them through the guest protocol) | #3936 | open | #3936's scope (per the 2026-09-22 audit) explicitly covers "the sequential multi-profile execution scheduler that consumes a parsed config and runs the profiles one after the other" and the F8 follow-on "a parsed build/test-only config drives a real run end-to-end." The per-attempt protocol payload inside `Provision` is the per-profile piece of that same scope; without it, #3936's scheduler has only `materialize_source` and `export_artifacts` to emit. Filing a parallel child issue for the dispatch wiring would create a second auto-pickable tracker against the same component. |
-| 2 | Source / result / artifact components not invoked from the dispatch path (`SourceLane::Build`, `ResultManifest::Build`, `ArtifactIngestion::Ingest`) | #3937 | open | #3937's scope (per the 2026-09-22 audit) explicitly covers output manifests with failure class, lineage, provenance, and summaries; `.xcresult`/log/screenshot/diagnostics under Paid artifact retention; and the RDR's revocation/deletion rules for retained failed VMs and expired bundles. The transfer components that gap 2 names are the transport primitives #3937 owns; connecting them to `Provision` is part of #3937's scope. |
-| 3 | Live macOS-host acceptance evidence (clean-clone iOS / `viamin/ColorMatching-iOS` / native macOS GUI build, test, launch, capture; host isolation; network enforcement; one Apple worker alongside three paid-agent containers) | #3978 | open | #3978 was filed from the 2026-09-22 audit as the child of #3930 that owns the live-host run, and its acceptance criteria explicitly cover F1/F2/F3 and R5 plus the live S1/S3 evidence. No new evidence has been recorded against it since the 2026-09-22 audit, so gap 3 is the same scope as gap 1 of the prior reconciliation and the existing tracker already owns it. |
+| 1 | Approved workflow dispatch wiring inside `Provision#guest_manifest` (derives the approved configuration's `build` / `test` / `launch_app` / UI-flow / `capture` operations from the approved revision's project/scheme/test-plan declarations and dispatches them through the guest protocol) | #3936 | Closed 2026-09-26 | File a focused #3930 child issue for the production dispatch path. #3936 documented related scheduler work, but it cannot own this remaining gap. |
+| 2 | Source / result / artifact components not invoked from the dispatch path (`SourceLane::Build`, `ResultManifest::Build`, `ArtifactIngestion::Ingest`) | #3937 | Closed 2026-09-22 | File a focused #3930 child issue for connecting the existing transport components to `Provision`. #3937 documented the transport primitives, but it cannot own this remaining gap. |
+| 3 | Live macOS-host acceptance evidence (clean-clone iOS / `viamin/ColorMatching-iOS` / native macOS GUI build, test, launch, capture; host isolation; network enforcement; one Apple worker alongside three paid-agent containers) | #3978 | Closed 2026-09-22 | File a focused #3930 child issue for live-host acceptance evidence. #3978 documented the prior validation scope, but it cannot own this remaining gap. |
 
 ## Conclusion
 
@@ -128,7 +118,6 @@ No broad rollout, feature-flag cleanup, or epic closure is justified. The
 existing design invariants remain valid; the next implementation work must
 wire approved configuration, source transport, guest execution, output
 ingestion, and cleanup into one attempt path, then collect the required live
-macOS evidence before a final closeout. The three required gaps are
-reconciled to existing open children of #3930 (#3936, #3937, #3978) above,
-following the checklist step 3 anti-pattern warning against catch-all or
-duplicate-scope gap issues.
+macOS evidence before a final closeout. Before that work can be auto-picked,
+new focused child issues must be filed under #3930 for each of the three gaps;
+#3936, #3937, and #3978 are closed historical references, not open owners.
