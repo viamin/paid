@@ -185,7 +185,7 @@
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/models/agent_run_prompt_assembly_spec.rb`.
 
-- [x] **GITHUB-SYNC-016** — When an App-backed project has an active PAT
+- [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including
   GraphQL permission failures. A mutation that requires a trusted human GitHub

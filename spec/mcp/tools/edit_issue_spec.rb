@@ -276,7 +276,7 @@ RSpec.describe Tools::EditIssue do
             .and_return(github_client)
         end
 
-        # @spec GITHUB-SYNC-016
+        # @spec GITHUB-SYNC-017
         it "wraps the project client with WithFallback so the trusted fallback PAT can perform the edit" do
           fallback_client = instance_double(GithubClient, authenticated_login: "viamin")
           allow(github_client).to receive(:authenticated_login).and_return(nil)
@@ -295,7 +295,7 @@ RSpec.describe Tools::EditIssue do
           expect(result[:title]).to eq("Updated title")
         end
 
-        # @spec GITHUB-SYNC-016
+        # @spec GITHUB-SYNC-017
         it "still rejects the edit when neither the App nor the fallback PAT is on the trusted-user allowlist" do
           untrusted_fallback = instance_double(GithubClient, authenticated_login: "someone-else", update_issue: nil)
           allow(github_client).to receive(:authenticated_login).and_return("paid-agents[bot]")

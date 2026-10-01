@@ -53,7 +53,7 @@ module Tools
       }
     end
 
-    # @spec CHAT-TOOL-CONFIRMATION-001, GITHUB-SYNC-013, GITHUB-SYNC-016, ISSUE-REOPEN-REVIEW-004
+    # @spec CHAT-TOOL-CONFIRMATION-001, GITHUB-SYNC-013, GITHUB-SYNC-017, ISSUE-REOPEN-REVIEW-004
     def perform(project_id:, issue_number:, confirmed: false, reopen_review_confirmed: false, reopen_reason: nil, title: nil, body: nil, state: nil, labels: nil, assignees: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to edit an issue" unless confirmed
 

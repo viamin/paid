@@ -119,7 +119,7 @@ RSpec.describe GithubClient::WithFallback do
       expect(wrapper.update_issue("owner/repo", 42, title: "X")).to eq(:retried_result)
     end
 
-    # @spec GITHUB-SYNC-016
+    # @spec GITHUB-SYNC-017
     it "retries GraphQL reads when the primary raises a permission error" do
       expect(primary).to receive(:review_threads)
         .with("owner/repo", 42)

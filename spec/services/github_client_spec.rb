@@ -1481,7 +1481,7 @@ RSpec.describe GithubClient do
       end
     end
 
-    # @spec GITHUB-SYNC-016
+    # @spec GITHUB-SYNC-017
     context "when the App cannot access review threads" do
       before do
         stub_request(:post, "#{api_base}/graphql")
@@ -2025,7 +2025,7 @@ RSpec.describe GithubClient do
       end
     end
 
-    # @spec GITHUB-SYNC-016
+    # @spec GITHUB-SYNC-017
     context "when the App cannot request a bot review" do
       before do
         stub_request(:post, "#{api_base}/graphql")

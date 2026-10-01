@@ -35,13 +35,13 @@ class GithubClient::WithFallback
     @logger = logger
   end
 
-  # @spec GITHUB-SYNC-016
+  # @spec GITHUB-SYNC-017
   # Identity of the credential that normally executes wrapper requests.
   def authenticated_login
     safe_authenticated_login(@primary)
   end
 
-  # @spec GITHUB-SYNC-016
+  # @spec GITHUB-SYNC-017
   # Selects the credential for a mutation that requires human attribution.
   # The fallback is selected up front so a successful primary App request
   # cannot be authorized using the fallback PAT's identity.
