@@ -246,6 +246,27 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
+    it "does not recover labels for PRs created against an upstream repository" do # @spec UPSTREAM-PR-005
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      create(:agent_run, :completed,
+        project: project,
+        issue: nil,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/upstream/repo/pull/416")
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 416,
+        github_html_url: "https://github.com/upstream/repo/pull/416",
+        source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+        labels: [])
+
+      described_class.perform_now
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
     it "backfills a missing local PR row before recovering labels" do
       create(:agent_run, :completed,
         project: project,

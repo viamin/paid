@@ -12,6 +12,7 @@ RSpec.describe Issues::UpsertFromGithub do
         number: 42,
         title: "Sync me",
         body: "GitHub body",
+        html_url: "https://github.com/test/repo/pull/42",
         state: "open",
         labels: [ OpenStruct.new(name: "paid-generated"), "P1" ],
         pull_request: OpenStruct.new(html_url: "https://github.com/test/repo/pull/42"),
@@ -34,6 +35,7 @@ RSpec.describe Issues::UpsertFromGithub do
         github_state: "open",
         github_creator_login: "viamin",
         is_pull_request: true,
+        github_html_url: "https://github.com/test/repo/pull/42",
         labels: [ "paid-generated", "P1" ]
       )
     end

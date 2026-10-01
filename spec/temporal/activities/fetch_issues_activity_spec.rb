@@ -124,6 +124,28 @@ RSpec.describe Activities::FetchIssuesActivity do
       relationships_parsed_at: relationships_parsed_at)
   end
 
+  describe "upstream pull request reconciliation" do
+    # @spec UPSTREAM-PR-005
+    it "closes an upstream PR that is no longer open without closing a colliding fork PR" do
+      upstream_project = create(:project, pr_target: "upstream", upstream_full_name: "upstream/repo",
+        last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
+      upstream_pr = create(:issue, :pull_request, project: upstream_project, github_number: 42,
+        source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
+        github_html_url: "https://github.com/upstream/repo/pull/42")
+      fork_pr = create(:issue, :pull_request, project: upstream_project, github_number: 42)
+      allow(github_client).to receive(:issues).and_return([])
+      allow(github_client).to receive(:pull_requests) do |repo, **|
+        repo == upstream_project.full_name ? [ OpenStruct.new(number: 42) ] : []
+      end
+
+      activity.execute(project_id: upstream_project.id)
+
+      expect(upstream_pr.reload.github_state).to eq("closed")
+      expect(fork_pr.reload.github_state).to eq("open")
+      expect(github_client).to have_received(:pull_request).with("upstream/repo", 42)
+    end
+  end
+
   def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)
     labels ||= [ project.enhance_issue_needs_input_label_name, "paid-build" ]
     refreshed_labels ||= labels

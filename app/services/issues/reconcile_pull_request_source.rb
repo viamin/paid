@@ -40,9 +40,15 @@ module Issues
       pull_request
     end
 
+    # `pull_request_number` alone can't distinguish a fork PR from an
+    # upstream-synced PR that happens to land on the same number (GitHub PR
+    # numbers are per-repo, so collisions are ordinary — see the comment on
+    # CreatePullRequestActivity#missing_pull_request_numbers). The agent_run's
+    # persisted `pull_request_url` is repo-qualified, so require it to match
+    # this PR's actual GitHub URL before treating the run as evidence.
     def sources
       pull_request.project.agent_runs
-        .where(goal: "create_pr", pull_request_number: pull_request.github_number)
+        .where(goal: "create_pr", pull_request_number: pull_request.github_number, pull_request_url: pull_request.github_url)
         .includes(issue: :parent_issue)
         .filter_map { |run| source_issue(run.issue) }
         .uniq

@@ -86,11 +86,12 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
   # Uses the (status, completed_at) index.
   # @spec PR-LABEL-RECOVERY-001
-  def candidate_runs
-    AgentRun.completed
+  def candidate_runs # @spec PR-LABEL-RECOVERY-001 UPSTREAM-PR-005
+    AgentRun.completed.joins(:project)
       .where(goal: "create_pr")
       .where.not(pull_request_number: nil)
       .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)
+      .where.not(projects: { pr_target: "upstream" })
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
       .preload(:issue, project: :github_token)
