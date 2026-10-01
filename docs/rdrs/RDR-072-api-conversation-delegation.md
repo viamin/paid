@@ -97,8 +97,9 @@ transient failures and do not enter transient retry handling.
 Paid owns runner changes and workflow recovery. When request retries are
 exhausted, return a classified outcome to Paid so its existing eligibility,
 credential, fallback and recovery policies determine what happens next.
-Request retries and runner changes must preserve completed tool results;
-neither authorizes replay of completed application side effects.
+Request retries must preserve completed tool results, and a runner change must
+discard only the failed attempt's own partial rows; neither authorizes replay
+of completed application side effects.
 
 The harness reports individual attempts and any available usage, including
 failed attempts, so Paid can attribute consumption without duplication. A new
@@ -123,6 +124,48 @@ confirmation policy, budgets, resumption and side-effect recovery, plus a
 reviewable account of reduced maintenance responsibilities and migration cost.
 If those criteria are not met, retain the loop and complete the independently
 useful transport, embedding, schema and usage improvements.
+
+### Loop Evaluation Outcome (2026-09-25)
+
+**Selected outcome: retain Paid's loop.** Agent-harness PR
+[#448](https://github.com/viamin/agent-harness/pull/448), released in
+[`agent-harness` 0.44.0](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.0),
+evaluated RubyLLM 2.0's public loop API. The installed Paid pin is
+[`agent-harness` 0.44.3](https://rubygems.org/gems/agent-harness/versions/0.44.3),
+whose RubyGems checksum is
+`36fd6fe1b22f4b68f39fbeae494da041963fd89662159166e6e79497f8ef9744`.
+`bundle exec ruby -e 'require "agent_harness"; puts AgentHarness::VERSION'`
+reports `0.44.3` on the host. The agent image must be rebuilt and verified
+against that same resolved gem before any separately approved transport or
+accounting activation.
+
+The upstream public-API contract examples verify single-step execution, mixed
+read/write batches, multiple decisions, denial, cancellation, completion, and
+skipping already-resulted tools. They also establish the following gaps:
+
+| Required retained-loop concern | Why delegation does not qualify |
+| --- | --- |
+| Durable tool identity and restart recovery | RubyLLM exposes provider wire IDs only; approval state is in-memory unless Rails persistence is adopted, which cannot be required of plain-Ruby harness users. |
+| Paid authority boundary | RubyLLM executes tools in-process; preserving Pundit, tenant/actor context, atomic claims, and runner-process dispatch adds an adapter rather than removing one. |
+| Limits, retries and accounting | `#complete` has no caller-supplied iteration bound, provider retries sit beneath the caller by default, and usage events lack Paid's stable attempt identity. |
+| Crash recovery and migration | A caller would still need transcript/decision persistence, reconciliation, and completed-effect recovery. No supporting-table or pending-conversation migration reduces that work. |
+
+Delegation would remove only generic step and approval plumbing while adding a
+provider-ID mapper, external dispatch adapter, iteration/retry/fallback driver,
+plain-Ruby persistence/export contract, and attempt-accounting extraction.
+That is a net increase in maintained adapters, persistence, and recovery code
+across both repositories. Paid therefore retains `AgentLoop`,
+`ResolveToolCall`, `ChatSession`/`ChatMessage`, and `FallbackLoop` as the
+authority, transcript, confirmation, budget, and recovery boundary. A runner
+switch discards the failed attempt's own partial rows by id-scoped rollback so
+stale partial work cannot be replayed into the fallback turn.
+
+This conclusion creates no future loop-delegation obligation and requires no
+loop API release, runtime flag, data migration, backup rehearsal, or pending
+conversation conversion. Transport and attempt-accounting adoption remain
+separate, release-gated work in Paid #4018; until that work is activated, the
+existing agent-harness transport and Paid accounting remain in place. CLI and
+subscription paths remain explicitly retained.
 
 ### Ownership
 
@@ -282,8 +325,9 @@ The mapping retains Paid's `ChatSession`/`ChatMessage` transcript IDs,
 approval claims, actor/tenant authority, and durable accounting; optional
 RubyLLM supporting tables may only supplement that state. It also defines the
 attempt identity and aggregate cross-repository comparison required before a
-later loop decision. This RDR's rollout guard remains docs-only: the mapping
-does not authorize a dependency change, schema migration, or runtime routing.
+later loop decision. This RDR's rollout guard is accounting-only: the mapping
+authorizes the `ApiUsageAttempt` accounting persistence, not a transport
+routing or loop runtime change.
 
 ## Sources
 
