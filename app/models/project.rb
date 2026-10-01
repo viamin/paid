@@ -69,6 +69,35 @@ class Project < ApplicationRecord
   }.freeze
   DEFAULT_REVIEW_DEPTH = "balanced".freeze
   DATA_CLASSIFICATIONS = %w[open internal confidential restricted].freeze
+  # PR target setting for open-source fork projects (issue #4076). "own_repo"
+  # is the default Paid behavior (PRs open in the project's own repository).
+  # "upstream" switches to opening PRs in the configured upstream repository;
+  # features that operate against the PR's host repository (auto-merge,
+  # review automation, etc.) are gated while upstream is selected.
+  # @spec PR-TARGET-001
+  PR_TARGETS = %w[own_repo upstream].freeze
+  DEFAULT_PR_TARGET = "own_repo".freeze
+  # Field set disabled in the settings UI whenever pr_target=upstream because
+  # Paid no longer owns or trusts the host repository. Server-side enforcement
+  # lives in a follow-up issue. This list
+  # is the canonical source of truth — both the view and the controller consult
+  # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
+  PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[
+    review_settings
+    auto_merge_mode
+    allow_bot_authored_pr_auto_merge
+    auto_release_granularity
+    owner_reviewer_login
+    pr_approval_escalation_hours
+    max_draft_review_rounds
+    max_pr_auto_continue_tokens
+    auto_fix_merge_conflicts
+    auto_add_labels_enabled
+    generated_label_name
+    automation_label_name
+    automation_on_label_enabled
+    screenshot_settings
+  ].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
     "driver" => "playwright",
@@ -304,6 +333,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
+  before_validation :normalize_upstream_full_name
   before_validation :normalize_interop_settings
   before_validation :normalize_llm_provider_routing
   before_validation :ensure_paid_reviewer_bot_allowlisted
@@ -360,6 +390,10 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
+  # @spec PR-TARGET-001
+  validates :pr_target, inclusion: { in: PR_TARGETS }
+  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
+  validate :upstream_pr_target_valid
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :exactly_one_github_credential, if: :validate_github_credential_presence?
@@ -402,6 +436,28 @@ class Project < ApplicationRecord
 
   def full_name
     "#{owner}/#{repo}"
+  end
+
+  # True when PRs for this project should be opened against the configured
+  # upstream repository rather than the project's own repository. @spec PR-TARGET-001
+  def upstream_pr_target?
+    pr_target == "upstream"
+  end
+
+  # Repository where new PRs are opened for this project. For "own_repo"
+  # projects this is the project's own full_name; for "upstream" projects it
+  # is the configured upstream_full_name. Returns nil when upstream mode is
+  # selected but upstream_full_name is missing — the model validation will
+  # have rejected that combination before save. @spec PR-TARGET-001, PR-TARGET-004
+  def pr_target_repository
+    return full_name unless upstream_pr_target?
+
+    upstream_full_name.presence
+  end
+
+  # @spec PR-TARGET-002, PR-TARGET-003
+  def upstream_disabled?(attribute)
+    upstream_pr_target? && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)
   end
 
   # Normalized primary language key (downcased) used by the prompt-building
@@ -1895,6 +1951,33 @@ class Project < ApplicationRecord
 
     self.priority_labels = priority_labels.each_with_object({}) do |(k, v), h|
       h[k] = v.is_a?(String) ? v.strip : v
+    end
+  end
+
+  def normalize_upstream_full_name
+    return unless upstream_full_name.is_a?(String)
+
+    self.upstream_full_name = upstream_full_name.strip
+  end
+
+  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
+  def upstream_pr_target_valid
+    if upstream_full_name.present? && upstream_full_name.casecmp?(full_name)
+      errors.add(:upstream_full_name, "must differ from this project's repository (#{full_name})")
+    end
+
+    return unless pr_target == "upstream"
+
+    if upstream_full_name.blank?
+      errors.add(:upstream_full_name, "is required when PR target is upstream")
+      return
+    end
+
+    owner_part, repo_part = upstream_full_name.split("/", 2)
+    if owner_part.blank? || repo_part.blank? || upstream_full_name.count("/") != 1 ||
+        owner_part !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\z/ ||
+        repo_part !~ /\A[A-Za-z0-9._-]{1,100}\z/
+      errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")
     end
   end
 
