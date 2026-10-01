@@ -104,6 +104,17 @@ module Issues
       label = recommend_close_label(issue.project)
       return true unless issue.labels.include?(label)
 
+      if issue.project.upstream_pr_target?
+        Rails.logger.info(
+          message: "github_sync.upstream_issue_write_skipped",
+          project_id: issue.project_id,
+          issue_id: issue.id,
+          github_number: issue.github_number,
+          operation: "remove_recommend_close_label"
+        )
+        return true
+      end
+
       client = issue.project.client
       if client.nil?
         Rails.logger.warn(

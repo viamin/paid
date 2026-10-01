@@ -624,6 +624,15 @@ RSpec.describe Issue do
         expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
       end
 
+      it "returns normal issue and pull request URLs for the upstream work-item repository" do # @spec UPSTREAM-ISSUE-001
+        project = build(:project, owner: "viamin", repo: "paid", pr_target: "upstream", upstream_full_name: "acme/widgets")
+        issue = build(:issue, project: project, github_number: 42)
+        pull_request = build(:issue, :pull_request, project: project, github_number: 43)
+
+        expect(issue.github_url).to eq("https://github.com/acme/widgets/issues/42")
+        expect(pull_request.github_url).to eq("https://github.com/acme/widgets/pull/43")
+      end
+
       # @spec UPSTREAM-PR-005
       it "returns the persisted upstream pull request URL after the project is retargeted" do
         project = build(:project, owner: "viamin", repo: "paid", pr_target: "upstream", upstream_full_name: "upstream/repo")
@@ -1470,6 +1479,17 @@ RSpec.describe Issue do
 
     it "is case-insensitive" do
       issue = build(:issue, project: project, github_creator_login: "VIAMIN")
+
+      expect(issue.trusted?).to be true
+    end
+
+    it "trusts the fork owner for an upstream project without an allowlist entry" do # @spec UPSTREAM-ISSUE-002
+      upstream_project = create(:project,
+        owner: "fork-owner",
+        pr_target: "upstream",
+        upstream_full_name: "upstream/widgets",
+        allowed_github_usernames: [ "trusted-maintainer" ])
+      issue = build(:issue, project: upstream_project, github_creator_login: "fork-owner")
 
       expect(issue.trusted?).to be true
     end
@@ -2443,6 +2463,55 @@ RSpec.describe Issue do
 
       expect(github_client).not_to have_received(:add_labels_to_issue)
       expect(issue.reload.paused).to be(true)
+    end
+
+    context "when the project has pr_target=upstream" do # @spec UPSTREAM-ISSUE-004
+      let(:project) do
+        create(:project,
+          owner: "fork-owner",
+          repo: "my-fork",
+          pr_target: "upstream",
+          upstream_full_name: "upstream/widgets")
+      end
+
+      it "does not push the paid-paused label when pausing" do
+        issue = create(:issue, project: project, github_number: 42, paused: false)
+
+        issue.update!(paused: true)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(issue.reload.paused).to be(true)
+      end
+
+      it "does not push a label remove when unpausing" do
+        issue = create(:issue, project: project, github_number: 42, paused: true)
+
+        issue.update!(paused: false)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(issue.reload.paused).to be(false)
+      end
+
+      it "does not address the fork repo at the upstream issue number" do
+        issue = create(:issue, project: project, github_number: 42, paused: false)
+
+        issue.update!(paused: true)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+          .with("fork-owner/my-fork", 42, anything)
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+          .with("upstream/widgets", 42, anything)
+      end
+
+      it "still stamps paused_at so the local flag is observable" do
+        issue = create(:issue, project: project, paused: false)
+
+        freeze_time do
+          issue.update!(paused: true)
+
+          expect(issue.reload.paused_at).to eq(Time.current)
+        end
+      end
     end
   end
 

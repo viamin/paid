@@ -179,6 +179,21 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(issue.reload.paid_state).to eq("recommend_close")
       end
 
+      it "records the upstream outcome locally without mutating its issue" do # @spec UPSTREAM-ISSUE-004
+        project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-build" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(issue.reload.paid_state).to eq("recommend_close")
+        expect(client).not_to have_received(:add_comment)
+        expect(client).not_to have_received(:add_labels_to_issue)
+        expect(client).not_to have_received(:remove_label_from_issue)
+        expect(client).not_to have_received(:remove_labels_from_issue)
+      end
+
       it "posts a recommend-close comment on the issue" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,

@@ -147,6 +147,46 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(project.issues.find_by(github_number: 42, is_pull_request: true).parent_issue).to eq(issue)
     end
 
+    it "opens the PR against the upstream issue repository and closes the synced upstream issue" do # @spec UPSTREAM-ISSUE-003
+      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+      allow(github_client).to receive(:repository)
+        .with("stenolabs/stenoai")
+        .and_return(OpenStruct.new(default_branch: "main"))
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:create_pull_request).with(
+        "stenolabs/stenoai",
+        base: "main",
+        head: "#{project.owner}:#{agent_run.branch_name}",
+        title: anything,
+        body: a_string_including("Closes stenolabs/stenoai##{issue.github_number}"),
+        draft: true
+      )
+      expect(github_client).to have_received(:issue).with("stenolabs/stenoai", 42)
+    end
+
+    it "does not create a pull request for a source issue archived by a target change" do # @spec UPSTREAM-ISSUE-006
+      agent_run.update!(goal: "create_pr", status: "running")
+      project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).not_to have_received(:create_pull_request)
+      expect(result).to include(cancelled: true)
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
+    it "still creates a pull request when an own-repository source issue closes" do
+      agent_run.update!(status: "running")
+      issue.update!(github_state: "closed")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:pull_request_number]).to eq(pr_response.number)
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
     context "when the project targets an upstream repository" do
       before do
         project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
@@ -160,7 +200,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
           base: "trunk",
           head: "#{project.owner}:#{agent_run.branch_name}",
           title: anything,
-          body: a_string_including("Closes #{project.full_name}##{issue.github_number}"),
+          body: a_string_including("Closes upstream/repo##{issue.github_number}"),
           draft: true
         ).and_return(pr_response)
 
@@ -181,7 +221,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         activity.execute(agent_run_id: agent_run.id)
 
         expect(captured_body).not_to include("Closes ##{issue.github_number}")
-        expect(captured_body).to include("Closes #{project.full_name}##{issue.github_number}")
+        expect(captured_body).to include("Closes upstream/repo##{issue.github_number}")
       end
 
       it "does not convert a transient server error during the existing-PR lookup into a fatal permission failure" do # @spec UPSTREAM-PR-004

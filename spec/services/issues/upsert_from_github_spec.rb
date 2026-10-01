@@ -213,6 +213,22 @@ RSpec.describe Issues::UpsertFromGithub do
         expect_recommend_close_reset_log(blocker:, dependent:)
       end
 
+      it "resets upstream recommend_close dependents without removing their remote label" do # @spec AUTO-PICK-QUEUE-003 UPSTREAM-ISSUE-004
+        project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+        blocker = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
+        dependent = create(:issue, project: project, github_number: 77,
+          paid_state: "recommend_close", labels: [ "P1", "paid-recommend-close" ])
+        create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+        mark_github_issue_closed(number: 42, issue_id: 1234)
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob)
+
+        expect(dependent.reload).to have_attributes(paid_state: "new", labels: [ "P1" ])
+        expect(WebMock).not_to have_requested(:delete, recommend_close_label_url)
+      end
+
       # @spec AUTO-PICK-QUEUE-003
       it "keeps a recommend_close dependent parked when another dependency remains open" do
         blocker = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")
