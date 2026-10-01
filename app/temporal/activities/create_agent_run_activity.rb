@@ -138,6 +138,7 @@ module Activities
         # tracking and audit). Non-fatal — runs proceed with default pricing
         # if no LlmModel records exist yet.
         select_model(agent_run)
+        validate_tier_capability!(agent_run, user_settings)
         policy_evaluation = apply_policy_controls(agent_run)
         assign_configuration_bundle(agent_run)
         select_and_log_orchestration_strategy(agent_run)
@@ -386,6 +387,7 @@ module Activities
       select_model(agent_run) unless agent_run.model_selection
       ensure_lid_planning_prompt!(agent_run)
       user_settings = resolve_user_settings(agent_run.project)
+      validate_tier_capability!(agent_run, user_settings)
       attach_marketplace_entries_for_resume(
         agent_run: agent_run,
         user_settings: user_settings,
@@ -527,6 +529,37 @@ module Activities
         error_class: e.class.name,
         error: e.message,
         backtrace: e.backtrace&.first(5)
+      )
+    end
+
+    # @spec RUNNER-FALLBACK-010
+    # Fails fast at enqueue/resume time when the run's requested tier cannot
+    # be satisfied by any runner in the dispatch order (#4093): the
+    # misconfiguration surfaces here, before container provisioning burns a
+    # dispatch cycle, instead of as a NoTierCapableRunner failure inside
+    # RunAgentActivity. The dispatch-time tier filter remains the final gate
+    # for config drift that flips feasibility after this check passes.
+    # analyze_issue runs never dispatch through RunAgentActivity's tier
+    # filter, so they are out of scope.
+    def validate_tier_capability!(agent_run, user_settings)
+      return if agent_run.paused? || agent_run.finished?
+      return if agent_run.goal == "analyze_issue"
+
+      tier = agent_run.model_selection&.tier.presence || agent_run.model_selection&.llm_model&.tier
+      return if tier.blank?
+
+      candidates = Runners::TierCapability.dispatch_candidates(agent_run: agent_run, user_settings: user_settings)
+      return if candidates.empty?
+      return if Runners::TierCapability.any_supports_tier?(candidates, tier, user: user_settings&.user)
+
+      error_message = "No runner supports tier #{tier}. Configure a #{tier}-tier model on a runner " \
+                      "in the dispatch order (or clear the model preference pinning #{tier}) before queueing runs."
+      agent_run.fail!(error: error_message) unless agent_run.finished?
+
+      raise Temporalio::Error::ApplicationError.new(
+        error_message,
+        type: "NoTierCapableRunner",
+        non_retryable: true
       )
     end
 

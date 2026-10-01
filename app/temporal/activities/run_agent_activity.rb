@@ -202,14 +202,28 @@ module Activities
         @issue_runner_retry_capped_keys = nil
         runners = build_runner_order(agent_run, user_settings)
         requested_tier = requested_tier_for(agent_run)
-        if requested_tier.present? && runners.empty?
-          error_message = "No runner supports tier #{requested_tier}"
+        # The retry-cap exhaustion path fails through the shared all-runners-
+        # exhausted handling below with its own error type; only tier
+        # capability empties the order here.
+        # @spec RUNNER-FALLBACK-011
+        if requested_tier.present? && runners.empty? && !@issue_runner_retry_cap_exhausted
+          # A tier filter that dropped every candidate means feasibility
+          # drifted after the enqueue-time check in CreateAgentRunActivity
+          # passed (runner deleted, model deactivated) — surfaced as a
+          # distinct error type so operators can tell "was feasible,
+          # drifted" from "never feasible" (#4093).
+          drifted = @tier_filter_emptied_order || false
+          error_message = if drifted
+            "No runner supports tier #{requested_tier} (tier capability changed after the run was queued)"
+          else
+            "No runner supports tier #{requested_tier}"
+          end
           agent_run.fail!(error: error_message) unless agent_run.finished?
           abandon_issue_due_to_tier_dispatch_failures(agent_run, requested_tier)
 
           raise Temporalio::Error::ApplicationError.new(
             error_message,
-            type: "NoTierCapableRunner",
+            type: drifted ? "TierCapabilityDrifted" : "NoTierCapableRunner",
             non_retryable: true
           )
         end
@@ -988,35 +1002,20 @@ module Activities
     # are still recognized.
     def direct_outbound_runner?(runner_candidate, user)
       runner_entry = runner_entry_for(runner_candidate, user)
-      return false if runner_entry&.free_model_policy?
-
-      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
-
-      runner_entry&.requires_direct_outbound? ||
-        Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
+      tier_capability(user).direct_outbound_runner?(runner_entry || runner_candidate)
     end
 
+    # Both predicates delegate to the shared stateless tier-capability query
+    # so dispatch and the pre-dispatch gates (enqueue-time validation,
+    # auto-pick filtering) evaluate the same contract (#4093).
     def runner_supports_tier?(runner_candidate, tier, user)
       # @spec RUNNER-FALLBACK-001
-      return true if tier.blank?
+      tier_capability(user).supports_tier?(runner_candidate, tier)
+    end
 
-      # Direct-outbound runners bring their own model from config and bypass the
-      # tier catalog entirely, so they are always compatible with any requested tier.
-      return true if direct_outbound_runner?(runner_candidate, user)
-
-      runner_entry = runner_entry_for(runner_candidate, user)
-      return true if runner_entry&.supports_tier?(tier)
-
-      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
-      resolution_runner = runner_entry || Runner.new(runner_key: runner_key)
-      provider = user&.provider_for(resolution_runner)
-      return true if provider&.supports_tier?(tier)
-
-      effective_auth_type = provider&.auth_type.presence || resolution_runner.auth_type.to_s.presence ||
-        Runners::DefaultTierModelIds::DEFAULT_AUTH_TYPE
-      return true if Runners::DefaultTierModelIds.call(runner_key: runner_key, auth_type: effective_auth_type)[tier].present?
-
-      false
+    def tier_capability(user)
+      @tier_capabilities ||= {}.compare_by_identity
+      @tier_capabilities[user] ||= Runners::TierCapability.new(user: user)
     end
 
     def resolved_model_info_for(resolved_model)
@@ -1197,20 +1196,26 @@ module Activities
       end
 
       tier = requested_tier_for(agent_run)
+      @tier_filter_emptied_order = false
       if tier.present?
-        runners = runners.select do |runner_candidate|
-          if runner_supports_tier?(runner_candidate, tier, user_settings.user)
-            true
-          else
-            logger.warn(
-              message: "agent_execution.runner_filtered_by_tier",
-              agent_run_id: agent_run.id,
-              runner: canonical_runner_candidate(runner_candidate, user_settings.user),
-              tier: tier
-            )
-            false
-          end
+        tier_capable, tier_incapable = runners.partition do |runner_candidate|
+          runner_supports_tier?(runner_candidate, tier, user_settings.user)
         end
+        tier_incapable.each do |runner_candidate|
+          logger.warn(
+            message: "agent_execution.runner_filtered_by_tier",
+            agent_run_id: agent_run.id,
+            runner: canonical_runner_candidate(runner_candidate, user_settings.user),
+            tier: tier
+          )
+        end
+        # Distinguishes "the tier filter dropped every candidate" (capability
+        # drifted since the enqueue-time check passed) from an order that was
+        # already empty before the filter, so #execute can surface the right
+        # error type (#4093).
+        # @spec RUNNER-FALLBACK-011
+        @tier_filter_emptied_order = tier_capable.empty? && runners.any?
+        runners = tier_capable
       end
 
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
@@ -1419,7 +1424,7 @@ module Activities
     # A no-tier failure happens before any runner attempt, so it is deliberately
     # absent from IssueRunnerFailureHistory. Bound this distinct configuration
     # failure using the same goal-scoped limit that protects execution retries.
-    # @spec RUNNER-FALLBACK-010
+    # @spec RUNNER-FALLBACK-012
     def abandon_issue_due_to_tier_dispatch_failures(agent_run, tier)
       return unless retry_cap_applicable?(agent_run)
 

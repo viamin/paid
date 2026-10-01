@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec RUNNER-FALLBACK-010
+# @spec RUNNER-FALLBACK-012
 RSpec.describe AgentRuns::IssueDispatchFailureHistory do
   subject(:count) { described_class.for_issue(project: project, issue: issue, goal: "create_pr") }
 
