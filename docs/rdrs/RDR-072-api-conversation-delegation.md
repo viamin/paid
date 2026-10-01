@@ -197,8 +197,11 @@ change implemented EARS status or supersede RDR-028.
 
 ## Rollout Guard
 
-**Docs-only now:** this accepted RDR ships no runtime behavior. Open implementation
-issues in agent-harness and Paid after the RDR is merged.
+**Accounting-only migration now:** `ApiUsageAttempt` may persist normalized,
+already-reported harness attempt facts under Paid's tenant/RLS boundary. It
+does not select a transport, make provider requests, change credentials or
+authentication modes, execute tools, or alter approvals/fallbacks. Production
+API-chat transport traffic remains disabled.
 
 Embedding, schema and transport adoption should ship as complete, tested
 replacements within each migrated operation/provider scope. Other supported
@@ -213,6 +216,17 @@ surface, owner, rollback action and removal criteria. Do not migrate pending
 conversations until recovery tests prove decisions and completed tool effects
 survive. Data changes require backup, rehearsal and rollback under Paid's
 database safety rules. Reverting a gem is not a persistence rollback.
+
+The accounting support release gate is `agent-harness` 0.44.3, installed from
+the host bundle and published at
+https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3
+with RubyGems verification at
+https://rubygems.org/gems/agent-harness/versions/0.44.3. Its signed RubyGems
+record identifies commit `85c4bc34b18324b2c2bd6f3c0cda38014647f4de`; its
+changelog retains attempt-level accounting (0.42.0) and the Codex subscription
+discovery/recovery releases required by Paid #3995 (0.37.0/0.38.0). Keep
+`paid-paused` and `waiting` until a maintainer additionally records the rebuilt
+agent-image digest and a successful in-container secrets-proxy verification.
 
 ## Implementation and Validation
 

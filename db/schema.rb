@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_124609) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -402,6 +402,51 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
+  create_table "api_usage_attempts", comment: "Idempotent accounting reports for individual API provider requests.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "project_id", null: false
+    t.bigint "agent_run_id"
+    t.bigint "chat_session_id"
+    t.bigint "chat_message_id"
+    t.bigint "actor_id"
+    t.bigint "runner_id"
+    t.bigint "token_usage_id"
+    t.string "attempt_id", limit: 255, null: false, comment: "Harness-generated stable physical request identity."
+    t.integer "ordinal", null: false, comment: "Harness retry ordinal within the logical request."
+    t.string "provider", limit: 100, null: false
+    t.string "llm_model", limit: 100
+    t.string "status", limit: 20, null: false
+    t.integer "input_tokens", comment: "Nil means the provider did not report input usage."
+    t.integer "output_tokens", comment: "Nil means the provider did not report output usage."
+    t.integer "cache_read_tokens", comment: "Provider-reported cached input tokens, when available."
+    t.integer "cache_write_tokens", comment: "Provider-reported cache creation tokens, when available."
+    t.decimal "provider_cost_amount", precision: 20, scale: 8, comment: "Raw provider charge in provider_currency."
+    t.string "provider_currency", limit: 3, comment: "ISO 4217 currency for the raw provider charge."
+    t.string "pricing_source", limit: 30, default: "unknown", null: false
+    t.datetime "provider_priced_at", comment: "Provider or historical-pricing timestamp."
+    t.datetime "started_at", null: false
+    t.datetime "finished_at", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_api_usage_attempts_account_created"
+    t.index ["account_id"], name: "index_api_usage_attempts_on_account_id"
+    t.index ["actor_id"], name: "index_api_usage_attempts_on_actor_id"
+    t.index ["agent_run_id"], name: "index_api_usage_attempts_on_agent_run_id"
+    t.index ["attempt_id"], name: "idx_api_usage_attempts_idempotency", unique: true
+    t.index ["chat_message_id"], name: "index_api_usage_attempts_on_chat_message_id"
+    t.index ["chat_session_id"], name: "index_api_usage_attempts_on_chat_session_id"
+    t.index ["project_id", "created_at"], name: "idx_api_usage_attempts_project_created"
+    t.index ["project_id"], name: "index_api_usage_attempts_on_project_id"
+    t.index ["runner_id"], name: "index_api_usage_attempts_on_runner_id"
+    t.index ["token_usage_id"], name: "index_api_usage_attempts_on_token_usage_id"
+    t.check_constraint "((agent_run_id IS NOT NULL)::integer + (chat_session_id IS NOT NULL)::integer) = 1", name: "api_usage_attempts_exactly_one_owner"
+    t.check_constraint "cache_read_tokens IS NULL OR cache_read_tokens >= 0", name: "api_usage_attempts_cache_read_tokens_nonnegative"
+    t.check_constraint "cache_write_tokens IS NULL OR cache_write_tokens >= 0", name: "api_usage_attempts_cache_write_tokens_nonnegative"
+    t.check_constraint "input_tokens IS NULL OR input_tokens >= 0", name: "api_usage_attempts_input_tokens_nonnegative"
+    t.check_constraint "output_tokens IS NULL OR output_tokens >= 0", name: "api_usage_attempts_output_tokens_nonnegative"
+  end
+
   create_table "apple_verification_artifacts", comment: "Protected Apple verification result artifacts.", force: :cascade do |t|
     t.bigint "apple_verification_attempt_id", null: false
     t.string "content_type"
@@ -561,15 +606,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
   end
 
   create_table "auto_merge_attempts", comment: "Sanitized history of auto-merge decisions and blockers for pull requests.", force: :cascade do |t|
-    t.string "actor_path", null: false, comment: "Automation path that evaluated the PR, such as review_auto_merge or dependabot_auto_merge."
-    t.datetime "attempted_at", null: false, comment: "When the merge, skip, or blocker decision was recorded."
-    t.datetime "created_at", null: false
-    t.string "credential_mode", comment: "Credential path used for the decisive attempt, such as github_app, pat, or pat_fallback."
-    t.bigint "issue_id", null: false, comment: "Local pull-request issue row the auto-merge evaluation targeted."
     t.bigint "project_id", null: false, comment: "Project that owned the auto-merge evaluation."
+    t.bigint "issue_id", null: false, comment: "Local pull-request issue row the auto-merge evaluation targeted."
+    t.datetime "attempted_at", null: false, comment: "When the merge, skip, or blocker decision was recorded."
+    t.string "actor_path", null: false, comment: "Automation path that evaluated the PR, such as review_auto_merge or dependabot_auto_merge."
+    t.string "status", null: false, comment: "Outcome category for the attempt, such as merged, skipped, blocked, or failed."
     t.string "reason_code", comment: "Sanitized machine-readable explanation for the outcome."
     t.text "sanitized_message"
-    t.string "status", null: false, comment: "Outcome category for the attempt, such as merged, skipped, blocked, or failed."
+    t.string "credential_mode", comment: "Credential path used for the decisive attempt, such as github_app, pat, or pat_fallback."
+    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["issue_id", "attempted_at"], name: "index_auto_merge_attempts_on_issue_id_and_attempted_at"
     t.index ["project_id", "attempted_at"], name: "index_auto_merge_attempts_on_project_id_and_attempted_at"
@@ -1048,17 +1093,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
 
   create_table "coordination_policies", comment: "Versioned coordination policy catalogs that drive decomposition, recovery, escalation, and lifecycle decisions.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Tenant that owns this policy family."
-    t.jsonb "context_selector", default: {}, null: false, comment: "Structured selector used to decide when this policy applies."
-    t.datetime "created_at", null: false
-    t.bigint "current_version_id"
-    t.text "description", comment: "Long-form summary of what this policy is intended to optimize or protect."
-    t.jsonb "metadata", default: {}, null: false, comment: "Additional structured provenance, rollout, and audit details."
-    t.string "name", null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
-    t.string "policy_key", limit: 100, null: false, comment: "Stable identifier used by runtime policy selection."
-    t.string "policy_type", limit: 50, null: false, comment: "Decision domain controlled by this policy: decomposition, recovery, escalation, or lifecycle_state."
     t.bigint "project_id", comment: "Optional project-specific override; nil means account-wide default."
+    t.string "policy_type", limit: 50, null: false, comment: "Decision domain controlled by this policy: decomposition, recovery, escalation, or lifecycle_state."
+    t.string "policy_key", limit: 100, null: false, comment: "Stable identifier used by runtime policy selection."
+    t.string "name", null: false, comment: "Human-readable policy name shown in admin and experiment tooling."
+    t.text "description", comment: "Long-form summary of what this policy is intended to optimize or protect."
     t.string "status", limit: 30, default: "draft", null: false, comment: "Catalog lifecycle state: draft, active, or archived."
+    t.jsonb "context_selector", default: {}, null: false, comment: "Structured selector used to decide when this policy applies."
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional structured provenance, rollout, and audit details."
+    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "current_version_id"
     t.index ["account_id", "policy_type", "policy_key"], name: "idx_coordination_policies_account_scope_key", unique: true, where: "(project_id IS NULL)"
     t.index ["account_id", "policy_type", "status"], name: "idx_coordination_policies_account_type_status"
     t.index ["account_id", "project_id", "policy_type", "policy_key"], name: "idx_coordination_policies_project_scope_key", unique: true, where: "(project_id IS NOT NULL)"
@@ -1069,19 +1114,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
   end
 
   create_table "coordination_policy_versions", comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy.", force: :cascade do |t|
-    t.datetime "activated_at", comment: "When this version became the policy's active revision."
     t.bigint "coordination_policy_id", null: false, comment: "Owning policy catalog entry."
-    t.datetime "created_at", null: false
-    t.string "idempotency_key"
-    t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
-    t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
-    t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
-    t.text "reasoning", comment: "Why this policy version exists and what changed from the prior version."
-    t.datetime "retired_at", comment: "When this version stopped being eligible for runtime selection."
-    t.jsonb "rules", default: {}, null: false, comment: "Structured decision rules executed by coordination services."
-    t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
-    t.datetime "updated_at", null: false
     t.integer "version", null: false, comment: "Monotonic version number within the owning coordination policy."
+    t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
+    t.jsonb "rules", default: {}, null: false, comment: "Structured decision rules executed by coordination services."
+    t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
+    t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
+    t.text "reasoning", comment: "Why this policy version exists and what changed from the prior version."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
+    t.datetime "activated_at", comment: "When this version became the policy's active revision."
+    t.datetime "retired_at", comment: "When this version stopped being eligible for runtime selection."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
     t.index ["coordination_policy_id", "idempotency_key"], name: "index_coordination_policy_versions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["coordination_policy_id", "status", "created_at"], name: "idx_coordination_policy_versions_policy_status_created"
     t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_unique_version", unique: true
@@ -1567,19 +1611,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
   end
 
   create_table "failure_classifications", comment: "Persisted failure classification and chosen recovery action for coordination learning", force: :cascade do |t|
+    t.bigint "project_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.string "failure_category", limit: 50, null: false, comment: "Classified failure type (e.g. provider_error, timeout, auth_failure)"
+    t.string "failure_subcategory", limit: 100, comment: "Optional finer-grained classification"
+    t.string "chosen_action", limit: 50, null: false, comment: "Recovery action selected from coordination policy"
+    t.string "action_status", limit: 30, default: "pending", null: false, comment: "Lifecycle: pending, executing, completed, skipped"
+    t.jsonb "failure_context", default: {}, null: false, comment: "Structured details about the failure (error message, provider, etc.)"
     t.jsonb "action_params", default: {}, null: false, comment: "Parameters passed to the chosen recovery action"
     t.jsonb "action_result", default: {}, null: false, comment: "Outcome of executing the recovery action"
-    t.string "action_status", limit: 30, default: "pending", null: false, comment: "Lifecycle: pending, executing, completed, skipped"
-    t.bigint "agent_run_id", null: false
-    t.string "chosen_action", limit: 50, null: false, comment: "Recovery action selected from coordination policy"
+    t.string "parent_workflow_id", limit: 255, comment: "Workflow context for coordinated recovery"
+    t.datetime "executed_at"
     t.datetime "completed_at"
     t.datetime "created_at", null: false
-    t.datetime "executed_at"
-    t.string "failure_category", limit: 50, null: false, comment: "Classified failure type (e.g. provider_error, timeout, auth_failure)"
-    t.jsonb "failure_context", default: {}, null: false, comment: "Structured details about the failure (error message, provider, etc.)"
-    t.string "failure_subcategory", limit: 100, comment: "Optional finer-grained classification"
-    t.string "parent_workflow_id", limit: 255, comment: "Workflow context for coordinated recovery"
-    t.bigint "project_id", null: false
     t.datetime "updated_at", null: false
     t.index ["action_status"], name: "index_failure_classifications_on_action_status"
     t.index ["agent_run_id"], name: "index_failure_classifications_on_agent_run_id"
@@ -1977,7 +2021,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
-    t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "no_code_required_at", comment: "When non-null, an agent explicitly declared this issue's work complete without a code change (no_code_required outcome). Permanently excludes the issue from auto-pick's completed-issue recovery path even though paid_state is 'completed', so it does not loop back into the queue on its own; only a manually triggered run can pick it up again."
     t.datetime "operational_failure_reset_at"
     t.datetime "orphaned_needs_input_label_evaluated_at", comment: "When the historical questionless needs-input label reconciliation last evaluated this issue. Cleared labels do not need a later backfill scan; labels added after the evaluation are handled directly by the GitHub sync delta."
@@ -2007,6 +2050,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.datetime "updated_at", null: false
     t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
     t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
+    t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -2448,6 +2492,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|
+    t.bigint "strategy_version_id"
     t.string "actor", limit: 100, null: false, comment: "Component or role that made the decision, such as workflow, planner, scheduler, or human."
     t.bigint "agent_run_id", comment: "Agent run whose workflow emitted the decision when a specific run exists."
     t.jsonb "context", default: {}, null: false, comment: "Context snapshot used to make the decision, typically issue, project, and workflow features."
@@ -2457,7 +2502,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.jsonb "outcome_references", default: [], null: false, comment: "References to later runs, metrics, or artifacts used to attribute outcomes back to this decision."
     t.jsonb "outputs", default: {}, null: false, comment: "Structured payload describing what the workflow decided."
     t.bigint "project_id", null: false, comment: "Owning project for tenant isolation and project-level analysis."
-    t.bigint "strategy_version_id"
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "created_at", "id"], name: "idx_orchestration_decisions_run_recent"
     t.index ["agent_run_id", "decision_type", "created_at"], name: "idx_orchestration_decisions_run_type_created"
@@ -3829,6 +3873,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "accounts"
+  add_foreign_key "api_usage_attempts", "agent_runs", on_delete: :cascade
+  add_foreign_key "api_usage_attempts", "chat_messages", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "chat_sessions", on_delete: :cascade
+  add_foreign_key "api_usage_attempts", "projects"
+  add_foreign_key "api_usage_attempts", "runners", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "token_usages", on_delete: :nullify
+  add_foreign_key "api_usage_attempts", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "apple_verification_artifacts", "apple_verification_attempts"
   add_foreign_key "apple_verification_attempts", "accounts"
   add_foreign_key "apple_verification_attempts", "agent_runs", on_delete: :nullify

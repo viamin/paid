@@ -16,16 +16,16 @@
   *Planned code:* `ChatSessions::BuildHarnessTransport`,
   `ChatSessions::AgentLoop` transport boundary.
 
-- [ ] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
+- [x] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
   request attempts, Paid SHALL persist every report exactly once by stable
   attempt ID and ordinal, attribute it to the initiating actor, chat session,
   originating message, runner, and provider, and aggregate reported usage
   without double counting. Missing usage SHALL remain unknown rather than be
   recorded as zero; a failed attempt with reported usage SHALL remain visible.
   *Tests:* `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
-  `spec/services/chat_sessions/harness_transport_spec.rb`.
-  *Planned code:* `ChatSessions::RecordTransportAttempt`,
-  `TokenUsageTracker` integration.
+  `spec/services/billing/aggregate_tenant_usage_spec.rb`.
+  *Implemented code:* `ApiUsageAttempt`,
+  `ChatSessions::RecordTransportAttempt`, `TokenUsageTracker` integration.
 
 - [ ] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
   is cancelled, or Paid changes runner after a classified terminal result, the

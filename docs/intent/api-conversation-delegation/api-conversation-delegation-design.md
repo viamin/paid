@@ -19,13 +19,15 @@ delegate the chat loop. `ChatSessions::AgentLoop`, `ChatSessions::ResolveToolCal
 `ChatSession`, and `ChatMessage` remain the source of current runtime behavior
 until a later decision meets the loop-delegation evidence below.
 
-The rollout guard is **docs-only**. No feature flag, initializer change,
-dependency update, supporting table, or routing change is permitted by this
-segment. A dependent implementation must amend RDR-072 with its exact flag or
-configuration gate, default, enablement owner, rollback action, and removal
-criteria before it can send production traffic through the new transport.
-Embedding adoption is a separate operation and neither gates nor is evidence
-for API-chat transport or loop adoption.
+The transport rollout guard remains **no production traffic**: the harness
+adapter is not selected by `ChatSessions::AgentLoop` yet. The accounting-only
+support below may persist already-reported attempt facts, but it neither makes
+a provider request nor changes credentials, routing, tool execution, approval,
+or fallback behavior. A transport-routing implementation must amend RDR-072
+with its exact flag or configuration gate, default, enablement owner, rollback
+action, and removal criteria before it can send production traffic through the
+new transport. Embedding adoption is a separate operation and neither gates nor
+is evidence for API-chat transport or loop adoption.
 
 ## Current mapping and retained authority
 
@@ -38,6 +40,26 @@ for API-chat transport or loop adoption.
 | `ChatSessions::BuildLlmClient::HttpClient` | Migration candidate: provider protocol encoding, streaming normalization, tool schema encoding, normalized response/error shape, and request-level usage. Paid does not call RubyLLM directly. |
 | `ChatSessions::FallbackLoop` and jobs | Paid retains candidate selection, credentials, runner switches, notices, durable workflow/job recovery, and the existing no-replay rules for persisted work. |
 | `TokenUsageTracker` and Paid budget records | Paid retains durable, idempotent accounting, budgets, estimates, CLI/proxy reconciliation, and infrastructure cost. Harness reports individual request attempts and provider-reported usage where available. |
+
+### Implemented accounting support
+
+`ApiUsageAttempt` is Paid's immutable attempt ledger for this scope. It is
+tenant-scoped directly by `account_id`, has RLS for reads and writes, and is
+idempotent on the harness `attempt_id`. Each row retains session,
+message, actor, runner, project, account, provider/model, status, timestamps,
+cache-token quantities, raw provider amount/currency, and pricing provenance.
+The ledger stores a nil token quantity as unknown; it never converts it to zero.
+
+`ChatSessions::RecordTransportAttempt` creates the attempt before it creates a
+billable `TokenUsage` row. A locked attempt can link only one billing row, so
+redelivery after a retry/restart cannot increment project totals, budgets, or
+dashboard totals twice. Known USD provider charges convert dollars to Paid's
+integer cents once; non-USD provider charges remain as their original amount
+and currency while the linked Paid row uses the historical model-price estimate.
+Missing usage creates no zero-valued billing row. Failed attempts with reported
+usage are therefore visible and billable. `api_attempt` is an API-ledger request
+type; CLI/proxy records, run summaries/deltas, and infrastructure `ExecutionUsage`
+remain separate accounting lanes.
 
 The harness contract receives a Paid-supplied execution context containing the
 account-scoped conversation ID, current actor ID, originating chat-message ID,
@@ -110,7 +132,7 @@ runner policy.
 The harness reports each internal provider attempt with its stable parent
 attempt ID, ordinal, runner/provider/model identity, outcome, timestamps, and
 reported usage/cost when available. Paid persists these reports idempotently
-on `(attempt_id, ordinal)` before aggregation. Duplicate reports do not add
+on `attempt_id` before aggregation. Duplicate reports do not add
 tokens or cost. Failed attempts are recorded when usage is reported. Missing
 usage remains `unknown`, never zero. After process restart, Paid reloads the
 durable attempt record and either accepts a matching terminal report or creates
@@ -159,3 +181,16 @@ fixes protected by Paid #3995. Verify the resolved host bundle and rebuild the
 agent image; then run an in-container check against the rebuilt image and
 secrets-proxy route. The deployment evidence records the immutable gem ref,
 image digest, capability matrix, and rollback route.
+
+The dependency gate is satisfied for accounting support by `agent-harness`
+**0.44.3**: it is installed from the resolved host bundle, was published on
+2026-09-27, and its signed RubyGems record identifies source commit
+`85c4bc34b18324b2c2bd6f3c0cda38014647f4de`. The release lineage includes
+attempt-level API usage/cost in 0.42.0 and Codex subscription discovery and
+bounded recovery in 0.37.0/0.38.0, which is retained by 0.44.3. Evidence:
+[release](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3),
+[RubyGems](https://rubygems.org/gems/agent-harness/versions/0.44.3), and the
+installed gem's `CHANGELOG.md`. This does not release the transport rollout:
+the maintainer must still verify a rebuilt agent image and its in-container
+secrets-proxy route, record the image digest and capability matrix, and then
+decide whether the issue's `paid-paused`/`waiting` labels can be removed.
