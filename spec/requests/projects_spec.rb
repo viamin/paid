@@ -12,8 +12,40 @@ RSpec.describe "Projects" do
     Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil)
   end
 
+  def empty_upstream_prefill
+    Projects::ForkParentPrefill::Prefill.unavailable("not_stubbed")
+  end
+
   def screenshot_repo_config_result(config: {}, content: nil, error: nil)
     Projects::Screenshots::RepoConfig::Result.new(config: config, content: content, error: error)
+  end
+
+  # Asserts every pr_target-gated wrapper carries opacity-50 when upstream is
+  # selected. The matchers tolerate either order for class= and data-attribute=.
+  def assert_gated_sections_greyed_out(body)
+    pr_target_gated_attributes.each do |attr|
+      expect(body).to include(%(data-attribute="#{attr}"))
+      matcher = /<[^>]+data-attribute="#{attr}"[^>]*opacity-50|<[^>]+class="[^"]*opacity-50[^"]*"[^>]*data-attribute="#{attr}"/m
+      expect(body).to match(matcher),
+        "expected attribute=#{attr} wrapper to apply opacity-50 when pr_target=upstream"
+    end
+  end
+
+  def pr_target_gated_attributes
+    %w[
+      owner_reviewer_login
+      auto_merge_mode
+      max_draft_review_rounds
+      max_pr_auto_continue_tokens
+      pr_approval_escalation_hours
+      review_settings
+      auto_fix_merge_conflicts
+      generated_label_name
+      automation_label_name
+      auto_add_labels_enabled
+      automation_on_label_enabled
+      screenshot_settings
+    ]
   end
 
   # Stubs the Docker backend (an external dependency) so preview teardown in the
@@ -1894,6 +1926,7 @@ RSpec.describe "Projects" do
       before do
         sign_in user
         allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(empty_screenshot_repo_config_result)
+        allow(Projects::ForkParentPrefill).to receive(:call).and_return(empty_upstream_prefill)
       end
 
       it "shows the edit form" do
@@ -2128,6 +2161,7 @@ RSpec.describe "Projects" do
       before do
         sign_in user
         allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(empty_screenshot_repo_config_result)
+        allow(Projects::ForkParentPrefill).to receive(:call).and_return(empty_upstream_prefill)
       end
 
   let(:screenshot_update_params) do
@@ -2261,6 +2295,152 @@ RSpec.describe "Projects" do
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include("Could not load repository screenshot config: GitHub is down")
+      end
+
+      describe "PR target / upstream contributions (#4076)" do # @spec PR-TARGET-001
+        let(:project) do
+          create(:project, account: account, github_token: github_token,
+            owner: "stenoai", repo: "stenoai", name: "stenoai fork")
+        end
+
+        it "persists pr_target=upstream and upstream_full_name when both are valid" do # @spec PR-TARGET-001, PR-TARGET-006
+          patch project_path(project), params: {
+            project: { pr_target: "upstream", upstream_full_name: "stenolabs/stenoai" }
+          }
+
+          expect(response).to redirect_to(project_path(project))
+          expect(project.reload).to have_attributes(
+            pr_target: "upstream",
+            upstream_full_name: "stenolabs/stenoai"
+          )
+        end
+
+        it "rejects pr_target=upstream when upstream_full_name is missing" do # @spec PR-TARGET-005
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+          )
+
+          patch project_path(project), params: {
+            project: { pr_target: "upstream", upstream_full_name: "" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include("required when PR target is upstream")
+          expect(response.body).to match(
+            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="")[^>]*>/
+          )
+          expect(project.reload.pr_target).to eq("own_repo")
+        end
+
+        it "rejects upstream_full_name matching the project's own repository" do # @spec PR-TARGET-008
+          patch project_path(project), params: {
+            project: { pr_target: "upstream", upstream_full_name: "stenoai/stenoai" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include("must differ")
+          expect(project.reload.pr_target).to eq("own_repo")
+        end
+
+        it "shows the self-match error when own_repo is selected" do # @spec PR-TARGET-008
+          patch project_path(project), params: {
+            project: { pr_target: "own_repo", upstream_full_name: "stenoai/stenoai" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          document = Nokogiri::HTML5(response.body)
+          expect(document.text).to include("must differ from this project's repository (stenoai/stenoai)")
+          upstream_panel = document.at_css('[data-project-settings-form-target="prTargetUpstreamPanel"]')
+          expect(upstream_panel["class"]).to include("hidden")
+          expect(upstream_panel.at_xpath('.//p[contains(., "must differ")]')).to be_nil
+          expect(project.reload.pr_target).to eq("own_repo")
+        end
+
+        it "rejects a malformed upstream_full_name slug" do # @spec PR-TARGET-006
+          patch project_path(project), params: {
+            project: { pr_target: "upstream", upstream_full_name: "not a slug" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include("must be a valid owner/repo")
+        end
+
+        it "switches back to pr_target=own_repo without requiring upstream_full_name" do # @spec PR-TARGET-002
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+
+          patch project_path(project), params: { project: { pr_target: "own_repo" } }
+
+          expect(response).to redirect_to(project_path(project))
+          expect(project.reload).to have_attributes(pr_target: "own_repo")
+        end
+      end
+
+      describe "PR target settings form rendering (#4076)" do # @spec PR-TARGET-002, PR-TARGET-003, PR-TARGET-009
+        let(:project) do
+          create(:project, account: account, github_token: github_token,
+            owner: "stenoai", repo: "stenoai", name: "stenoai fork")
+        end
+
+        it "renders the upstream fieldset with own_repo selected by default" do
+          get edit_project_path(project)
+
+          expect(response).to have_http_status(:ok)
+          expect(response.body).to include("Open Source / Upstream Contributions")
+          expect(response.body).to include("Open PRs in this repository")
+          expect(response.body).to include("Open PRs in the upstream repository")
+          expect(response.body).to include('value="own_repo"')
+        end
+
+        it "prefills the upstream field from the detected fork parent while allowing edits" do # @spec PR-TARGET-009
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to match(
+            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="stenolabs\/stenoai")[^>]*>/
+          )
+          expect(response.body).to include("Detected from fork parent:")
+        end
+
+        it "renders the upstream option as selected when pr_target is upstream" do
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Detected from fork parent:")
+          expect(response.body).to include("stenolabs/stenoai")
+        end
+
+        it "applies opacity-50 to gated sections when pr_target=upstream" do # @spec PR-TARGET-003
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
+
+          get edit_project_path(project)
+
+          assert_gated_sections_greyed_out(response.body)
+        end
+
+        it "does not apply opacity-50 when pr_target=own_repo" do
+          get edit_project_path(project)
+
+          matcher = /<[^>]+data-attribute="owner_reviewer_login"[^>]*opacity-50|<[^>]+class="[^"]*opacity-50[^"]*"[^>]*data-attribute="owner_reviewer_login"/m
+          expect(response.body).not_to match(matcher)
+        end
+
+        it "renders the manual upstream entry hint when no fork parent is detected" do # @spec PR-TARGET-009
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable("not_a_fork")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Enter the")
+          expect(response.body).not_to include("Detected from fork parent")
+        end
       end
 
       it "links to project pre-commit requirements from settings" do

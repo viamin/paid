@@ -754,7 +754,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_031657) do
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
-    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
+    t.index ["created_by_id", "inbox_item_key", "status"], name: "index_chat_sessions_inbox_history", where: "(inbox_item_key IS NOT NULL)"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
@@ -2877,8 +2877,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_031657) do
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
     t.text "webhook_secret"
-    t.string "upstream_full_name", comment: "Repository that receives cross-repository pull requests when pr_target is upstream"
-    t.string "pr_target", default: "fork", null: false, comment: "Pull request destination: fork or upstream"
+    t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
+    t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
