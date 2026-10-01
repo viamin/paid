@@ -45,6 +45,7 @@ neither gates nor is evidence for API-chat transport or loop adoption.
 | `TokenUsageTracker` and Paid budget records | Paid retains durable, idempotent accounting, budgets, estimates, CLI/proxy reconciliation, and infrastructure cost. Harness reports individual request attempts and provider-reported usage where available. |
 
 ### Implemented accounting support
+
 `ApiUsageAttempt` is Paid's immutable attempt ledger for this scope. It is
 tenant-scoped directly by `account_id`, has RLS for reads and writes, and is
 idempotent on the harness `attempt_id`. Each row retains session,

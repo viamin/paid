@@ -262,9 +262,9 @@ database safety rules. Reverting a gem is not a persistence rollback.
 
 The accounting support release gate is `agent-harness` 0.44.3, installed from
 the host bundle and published at
-https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3
+<https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3>
 with RubyGems verification at
-https://rubygems.org/gems/agent-harness/versions/0.44.3. Its signed RubyGems
+<https://rubygems.org/gems/agent-harness/versions/0.44.3>. Its signed RubyGems
 record identifies commit `85c4bc34b18324b2c2bd6f3c0cda38014647f4de`; its
 changelog retains attempt-level accounting (0.42.0) and the Codex subscription
 discovery/recovery releases required by Paid #3995 (0.37.0/0.38.0). Keep
