@@ -157,6 +157,7 @@ class ProjectsController < ApplicationController
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
     @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
     @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
+    @upstream_prefill = load_upstream_prefill
     load_screenshot_settings_context
   end
 
@@ -201,6 +202,7 @@ class ProjectsController < ApplicationController
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
     @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
     @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
+    @upstream_prefill = load_upstream_prefill
     load_screenshot_settings_context
     render :edit, status: :unprocessable_content
   end
@@ -635,6 +637,7 @@ class ProjectsController < ApplicationController
       :auto_release_granularity,
       :plan_review_timeout_hours,
       :max_issue_runner_failures,
+      :pr_target, :upstream_full_name,
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)
@@ -907,6 +910,23 @@ class ProjectsController < ApplicationController
       content: nil,
       error: "Could not load repository screenshot config: #{e.message}"
     )
+  end
+
+  # Resolves the fork-parent prefill for the upstream PR target field. Always
+  # returns a Projects::ForkParentPrefill::Prefill result so the form has a
+  # stable contract — failures are logged but never bubble up to the user.
+  # @spec PR-TARGET-009
+  def load_upstream_prefill
+    Projects::ForkParentPrefill.call(@project)
+  rescue StandardError => e
+    Rails.logger.info(
+      message: "projects.upstream_prefill.failed",
+      component: "project_settings",
+      project_id: @project.id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    Projects::ForkParentPrefill::Prefill.unavailable("controller_failure")
   end
 
   def save_project_with_cached_data

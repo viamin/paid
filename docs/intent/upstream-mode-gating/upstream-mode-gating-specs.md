@@ -23,9 +23,9 @@
   *Code:* `app/models/concerns/project/upstream_automation.rb`.
   *Test:* `spec/models/concerns/project/upstream_automation_spec.rb`.
 
-- [x] **UPSTREAM-GATE-002** — `#upstream_pr_target?` SHALL be true only
-  when `pr_target == "upstream"` AND `upstream_owner` AND `upstream_repo`
-  are present; otherwise false. Every PR-side feature predicate on `Project`
+- [x] **UPSTREAM-GATE-002** — `#upstream_pr_target?` SHALL be true exactly
+  when `pr_target == "upstream"`. `Project` separately rejects an upstream
+  target without a valid `upstream_full_name`. Every PR-side feature predicate on `Project`
   (`review_enabled?`, `review_bot_request_login`, `review_bot_request_chain`,
   `auto_merge_enabled?`, `auto_merge_dependabot?`, `auto_merge_bot_authored?`,
   `auto_release_enabled?`, `pr_auto_labels_enabled?`, `inherit_priority_labels?`,
@@ -70,8 +70,8 @@
   true, `inherit_priority_labels` true, `owner_reviewer_login` present,
   `auto_fix_merge_conflicts` true, and `screenshot_settings` whose top-level
   toggle is true. A `pr_target` of `"upstream"` without a configured
-  `upstream_owner` and `upstream_repo` SHALL also be rejected
-  (`upstream_target_requires_upstream_repo`). Switching `pr_target` back
+  `upstream_full_name` SHALL also be rejected by the project PR-target
+  validation. Switching `pr_target` back
   to `"own_repo"` SHALL clear the gate and restore normal validation
   behavior so the previously-stored gated values can be saved.
   `ProjectsController#toggle_auto_merge` SHALL redirect with an alert

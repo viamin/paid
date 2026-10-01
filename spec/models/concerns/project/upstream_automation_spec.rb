@@ -9,12 +9,7 @@ RSpec.describe Project::UpstreamAutomation do
       expect(create(:project).upstream_pr_target?).to be false
     end
 
-    it "is false when pr_target is upstream but no upstream repository is configured" do
-      project = build(:project, pr_target: "upstream", upstream_owner: nil, upstream_repo: nil)
-      expect(project.upstream_pr_target?).to be false
-    end
-
-    it "is true when pr_target is upstream and the upstream repository is configured" do
+    it "is true whenever pr_target is upstream" do
       expect(create(:project, :upstream_pr_target).upstream_pr_target?).to be true
     end
   end
@@ -80,17 +75,16 @@ RSpec.describe Project::UpstreamAutomation do
       expect(project.errors[:pr_target]).to be_present
     end
 
-    it "requires the upstream repository when pr_target is upstream" do
+    it "requires the upstream full name when pr_target is upstream" do
       project = build(:project, pr_target: "upstream")
       expect(project).not_to be_valid
-      expect(project.errors[:upstream_repo]).to be_present
+      expect(project.errors[:upstream_full_name]).to be_present
     end
 
     it "rejects enabling upstream mode on a project with gated features on (no partial application)" do
       project = create(:project)
       project.pr_target = "upstream"
-      project.upstream_owner = "upstream-owner"
-      project.upstream_repo = "upstream-repo"
+      project.upstream_full_name = "upstream-owner/upstream-repo"
 
       expect(project).not_to be_valid
       expect(project.errors.attribute_names).to include(

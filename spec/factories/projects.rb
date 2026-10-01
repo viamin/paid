@@ -52,8 +52,7 @@ FactoryBot.define do
     # save time are pre-disabled so the record is valid.
     trait :upstream_pr_target do
       pr_target { "upstream" }
-      upstream_owner { "upstream-owner" }
-      upstream_repo { "upstream-repo" }
+      upstream_full_name { "upstream-owner/upstream-repo" }
       auto_add_labels_enabled { false }
       inherit_priority_labels { false }
       auto_fix_merge_conflicts { false }

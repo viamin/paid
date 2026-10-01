@@ -27,8 +27,8 @@ directly, and the chat path cannot bypass the form's disabled inputs.
 `Project::UpstreamAutomation` is the ONE place that decides what upstream
 mode disables. It exposes:
 
-- `upstream_pr_target?` — the mode predicate (`pr_target == "upstream"`
-  with `upstream_owner` and `upstream_repo` configured).
+- `upstream_pr_target?` — the mode predicate (`pr_target == "upstream"`).
+  `Project` separately validates the configured `upstream_full_name` target.
 - `DISABLED_FEATURES` — the canonical disable set:
   - `pr_reviews`
   - `auto_merge`
@@ -99,7 +99,7 @@ affected.
 `app/temporal/activities/merge_pull_request_activity.rb`,
 `app/temporal/activities/request_review_activity.rb`,
 `app/temporal/activities/scan_paid_prs_activity.rb`,
-`db/migrate/20260929183232_add_pr_target_to_projects.rb`.
+`db/migrate/20260929171254_add_pr_target_and_upstream_full_name_to_projects.rb`.
 Tests: `spec/models/concerns/project/upstream_automation_spec.rb`,
 `spec/services/automation/feature_activation_spec.rb`,
 `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,

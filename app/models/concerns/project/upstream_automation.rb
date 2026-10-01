@@ -8,8 +8,7 @@
 #
 # This concern is the ONE place that decides what upstream mode disables:
 #
-# - {#upstream_pr_target?} — the mode predicate (pr_target "upstream" with
-#   the upstream repository configured).
+# - {#upstream_pr_target?} — the mode predicate (pr_target "upstream").
 # - {DISABLED_FEATURES} — the canonical disable list. Every gated feature
 #   consults {#upstream_automation_allowed?} / {#upstream_feature_enabled?}
 #   instead of reading +pr_target+ itself.
@@ -89,7 +88,6 @@ module Project::UpstreamAutomation
 
   included do
     validates :pr_target, inclusion: { in: PR_TARGETS }
-    validate :upstream_target_requires_upstream_repo
     validate :upstream_mode_automation_settings_valid
   end
 
@@ -161,16 +159,6 @@ module Project::UpstreamAutomation
   end
 
   private
-
-  # Upstream PR targeting is meaningless without the upstream repository to
-  # target; catching it at save time keeps "pr_target upstream" and "upstream
-  # mode active" from drifting apart.
-  def upstream_target_requires_upstream_repo
-    return if pr_target != "upstream"
-    return if upstream_owner.present? && upstream_repo.present?
-
-    errors.add(:upstream_repo, "and upstream_owner must be configured when PRs target the upstream repository")
-  end
 
   # Save-time hard gating (#4078 requirement 3): while the project targets
   # PRs upstream, rejects any save that would leave a gated feature enabled,

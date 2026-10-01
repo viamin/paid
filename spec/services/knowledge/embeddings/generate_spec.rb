@@ -64,43 +64,22 @@ RSpec.describe Knowledge::Embeddings::Generate do
         endpoint: base_url,
         credentials: { api_key: "paid-knowledge-run:99:token" },
         headers: { "X-Paid-Knowledge-Provider" => "openrouter" },
-        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT
+        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT,
+        max_attempts: 4
       )
     end
   end
 
   describe "error handling" do
-    it "retries on retryable HTTP statuses and raises after max retries" do
+    # @spec KNOWLEDGE-EMBED-002
+    it "delegates the single retry loop, including Retry-After handling, to Agent Harness" do
       allow(AgentHarness).to receive(:embed).and_raise(
-        AgentHarness::ProviderError.new("Server error (500): Internal Server Error", context: { status: 500 })
+        AgentHarness::RateLimitError.new("rate limited", reset_time: 2.seconds.from_now)
       )
 
-      generator = described_class.new(base_url: base_url, headers: headers)
-      allow(generator).to receive(:sleep)
-
-      expect { generator.call(texts: texts) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
-      expect(AgentHarness).to have_received(:embed).exactly(4).times
-    end
-
-    it "respects Retry-After header on 429 responses" do
-      calls = 0
-      allow(AgentHarness).to receive(:embed) do
-        calls += 1
-        raise AgentHarness::RateLimitError.new(
-          "API rate limit exceeded: Rate limited",
-          context: { headers: { "retry-after" => "2.5" } }
-        ) if calls == 1
-
-        success_response
-      end
-
-      generator = described_class.new(base_url: base_url, headers: headers)
-      allow(generator).to receive(:sleep)
-
-      generator.call(texts: texts)
-
-      expect(generator).to have_received(:sleep).with(2.5)
+      expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /rate limited/)
+      expect(AgentHarness).to have_received(:embed).once.with(hash_including(max_attempts: 4))
     end
 
     it "raises EmbeddingError on non-retryable HTTP failures" do
@@ -112,31 +91,19 @@ RSpec.describe Knowledge::Embeddings::Generate do
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /Bad request/)
     end
 
-    it "retries on transport errors and raises after max retries" do
+    it "preserves a classified transport error as the embedding error cause" do
+      provider_error = AgentHarness::ProviderError.new(
+        "HTTP connection error: tls handshake failed",
+        original_error: OpenSSL::SSL::SSLError.new("tls handshake failed")
+      )
       allow(AgentHarness).to receive(:embed).and_raise(
-        AgentHarness::ProviderError.new("HTTP connection error: connection failed", original_error: IOError.new("connection failed"))
+        provider_error
       )
 
-      generator = described_class.new(base_url: base_url, headers: headers)
-      allow(generator).to receive(:sleep)
-
-      expect { generator.call(texts: texts) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
-    end
-
-    it "retries when the shim wraps TLS transport failures as provider errors" do
-      allow(AgentHarness).to receive(:embed).and_raise(
-        AgentHarness::ProviderError.new(
-          "HTTP connection error: tls handshake failed",
-          original_error: OpenSSL::SSL::SSLError.new("tls handshake failed")
-        )
-      )
-
-      generator = described_class.new(base_url: base_url, headers: headers)
-      allow(generator).to receive(:sleep)
-
-      expect { generator.call(texts: texts) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
+      expect { described_class.call(texts: texts, base_url: base_url, headers: headers) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError) { |error|
+          expect(error.cause).to be(provider_error)
+        }
     end
 
     it "raises EmbeddingError on invalid embedding response JSON" do
@@ -174,7 +141,8 @@ RSpec.describe Knowledge::Embeddings::Generate do
         endpoint: "https://proxy.openai.test/custom/v1",
         credentials: { api_key: "paid-knowledge-run:99:token" },
         headers: { "X-Paid-Knowledge-Provider" => "openrouter" },
-        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT
+        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT,
+        max_attempts: 4
       )
     end
   end
@@ -190,6 +158,7 @@ RSpec.describe Knowledge::Embeddings::Generate do
       results = described_class.results_from_response(response)
 
       expect(results.map(&:token_count)).to eq([ 4, 4 ])
+      expect(response.per_vector_usage).to be_nil
     end
   end
 
