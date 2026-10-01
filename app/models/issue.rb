@@ -1083,23 +1083,28 @@ class Issue < ApplicationRecord
 
   # Clears the abandonment flag so a successful manual run (or an operator's
   # explicit "Re-enable" from the inbox) can re-enter auto-pick. Also stamps
-  # runner_retry_failure_window_reset_at to the clear time, which
-  # {AgentRuns::IssueRunnerFailureHistory} treats as a lower bound on the
-  # agent runs it counts — so prior failures that tripped the cap no longer
-  # count toward it after this clear. Without that, an operator's explicit
-  # "try again" would be defeated on the very next dispatch: every provider
-  # would still be over the (unreset) cap and the issue would be instantly
-  # re-abandoned, gathering no new information (#4092). A successful run that
-  # triggers the automatic clear necessarily post-dates this timestamp, so
-  # its own failure-free attempt is never itself excluded.
+  # runner_retry_failure_window_reset_at, which {AgentRuns::IssueRunnerFailureHistory}
+  # treats as a lower bound on the agent runs it counts — so prior failures that
+  # tripped the cap no longer count toward it after this clear. Without that, an
+  # operator's explicit "try again" would be defeated on the very next dispatch:
+  # every provider would still be over the (unreset) cap and the issue would be
+  # instantly re-abandoned, gathering no new information (#4092).
+  #
+  # +window_reset_at+ defaults to the clear time (operator-triggered clears have
+  # no run to anchor to). The automatic clear on a successful run instead passes
+  # that run's +created_at+: the reset window is a lower bound on AgentRun rows
+  # (see {AgentRuns::IssueRunnerFailureHistory#prior_runs}), so stamping "now"
+  # would exclude the triggering run itself — including any failed fallback
+  # attempts (e.g. claude failing before codex succeeds) it already recorded in
+  # the same run's runners_attempted before this clear ran.
   # @spec OPERATOR-INBOX-002G
-  def clear_runner_retry_abandonment!(reason: "Cleared after a successful run")
+  def clear_runner_retry_abandonment!(reason: "Cleared after a successful run", window_reset_at: Time.current)
     return unless runner_retry_abandoned_at.present?
 
     update!(
       runner_retry_abandoned_at: nil,
       runner_retry_abandon_reason: nil,
-      runner_retry_failure_window_reset_at: Time.current
+      runner_retry_failure_window_reset_at: window_reset_at
     )
 
     Rails.logger.info(

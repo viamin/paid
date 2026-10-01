@@ -2523,6 +2523,35 @@ RSpec.describe Issue do
       )
       expect(capped_after_new_failure).to contain_exactly("claude")
     end
+
+    # @spec OPERATOR-INBOX-002G
+    it "accepts a window_reset_at override instead of stamping the clear time" do
+      anchor = 1.hour.ago
+
+      issue.clear_runner_retry_abandonment!(window_reset_at: anchor)
+
+      expect(issue.reload.runner_retry_failure_window_reset_at).to be_within(1).of(anchor)
+    end
+
+    # @spec OPERATOR-INBOX-002G
+    it "preserves a failed fallback attempt recorded earlier in the triggering run (#4092)" do
+      # RunAgentActivity anchors window_reset_at to the triggering run's
+      # created_at rather than Time.current, so a run that failed over to
+      # another runner before succeeding doesn't lose that fresh failure
+      # from future retry-cap counting.
+      triggering_run = create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+        runners_attempted: [
+          { "runner" => "claude_code", "success" => false, "error_type" => "error" },
+          { "runner" => "codex", "success" => true }
+        ])
+
+      issue.clear_runner_retry_abandonment!(window_reset_at: triggering_run.created_at)
+
+      capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+        project: project, issue: issue, goal: "create_pr", cap: 1
+      )
+      expect(capped).to contain_exactly("claude")
+    end
   end
 
   describe "#clear_issue_analysis_backoff!" do

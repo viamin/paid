@@ -210,6 +210,26 @@ RSpec.describe AgentRuns::IssueRunnerFailureHistory do
     end
   end
 
+  # @spec OPERATOR-INBOX-002G
+  context "when a run recorded a failed fallback before succeeding and triggering the reset (#4092)" do
+    it "still counts the failed attempt recorded earlier in that same run" do
+      # Simulates RunAgentActivity's auto-clear: claude fails, codex falls
+      # back and succeeds, then the run's success clears the retry-cap
+      # abandonment with window_reset_at anchored to this run's created_at
+      # (see Issue#clear_runner_retry_abandonment!). The claude failure
+      # happened before the clear but inside the same AgentRun row, so a
+      # cutoff based on created_at alone must not drop it.
+      triggering_run = create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+        runners_attempted: [
+          { "runner" => "claude_code", "success" => false, "error_type" => "error" },
+          { "runner" => "codex", "success" => true }
+        ])
+      issue.update!(runner_retry_failure_window_reset_at: triggering_run.created_at)
+
+      expect(call).to eq("claude" => 1)
+    end
+  end
+
   context "with all execution failure types" do
     before do
       create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",

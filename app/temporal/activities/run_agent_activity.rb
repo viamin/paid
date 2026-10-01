@@ -1435,7 +1435,12 @@ module Activities
       issue = agent_run.issue
       return unless issue&.runner_retry_abandoned?
 
-      issue.clear_runner_retry_abandonment!
+      # Anchor the reset window to this run's creation time, not to "now": the
+      # run may have already recorded a failed fallback attempt (e.g. claude
+      # failing before codex succeeded) earlier in its own runners_attempted.
+      # Stamping "now" would post-date that attempt and incorrectly drop it
+      # from future failure-count history (see Issue#clear_runner_retry_abandonment!).
+      issue.clear_runner_retry_abandonment!(window_reset_at: agent_run.created_at)
     rescue => e
       logger.error(
         message: "agent_execution.runner_retry_abandonment_clear_failed",
