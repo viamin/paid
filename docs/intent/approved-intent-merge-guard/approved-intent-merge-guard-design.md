@@ -133,11 +133,12 @@ intent_conformance_blocked`) and returns without calling
 ### Non-goals
 
 - This segment does not run the AI reviewer or write `within_scope` /
-  `material_drift` verdicts from PR content — that is #3866. Until #3866
-  ships, any project with the rollout flag enabled and a linked feature
-  intent will see every merge blocked with `verdict_missing`, which is the
-  correct fail-closed behavior for an unwired reviewer, not a defect in this
-  guard.
+  `material_drift` verdicts from PR content — that is #3866, now shipped, and
+  the production scanner schedules a fresh review per eligible PR-head/design-
+  revision identity (#4050). The residual fail-closed case is `not_evaluated`
+  for features whose approved design-document paths are not yet populated
+  (the RDR-066 lifecycle owns that population) — correct fail-closed
+  behavior, not a defect in this guard.
 - This segment does not add a PR-scanner blocker or Inbox item — that is
   #3867. The final-merge guard is deliberately independent of the scanner's
   cached blocker snapshot so it cannot inherit scan-time staleness.
