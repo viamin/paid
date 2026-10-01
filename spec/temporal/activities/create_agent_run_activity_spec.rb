@@ -262,6 +262,101 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:focus]).to eq("ci_fix")
     end
 
+    describe "enqueue-time tier capability validation" do # @spec RUNNER-FALLBACK-010
+      before do
+        allow(Runners::DefaultTierModelIds).to receive(:call).and_return({})
+      end
+
+      it "fails the run fast when no runner in the dispatch order supports the selected tier" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue,
+          runner: claude_runner, agent_type: "claude_code")
+        llm_model = create(:llm_model, provider: "anthropic", model_id: "claude-opus-4-1", tier: "high")
+        stub_model_selection(llm_model: llm_model)
+        claude_runner.update!(tier_models: { "low" => { "model_id" => "claude-haiku", "provider_id" => claude_runner.id } })
+
+        expect {
+          activity.execute(agent_run_id: queued_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("NoTierCapableRunner")
+          expect(error.non_retryable).to be(true)
+          expect(error.message).to start_with("No runner supports tier high")
+        }
+
+        queued_run.reload
+        expect(queued_run.status).to eq("failed")
+        expect(queued_run.error_message).to start_with("No runner supports tier high")
+      end
+
+      it "does not fail the run when a dispatch candidate supports the selected tier" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue,
+          runner: claude_runner, agent_type: "claude_code")
+        llm_model = create(:llm_model, provider: "anthropic", model_id: "claude-opus-4-1", tier: "high")
+        stub_model_selection(llm_model: llm_model)
+        claude_runner.update!(tier_models: { "high" => { "model_id" => "claude-opus-4-1", "provider_id" => claude_runner.id } })
+
+        result = activity.execute(agent_run_id: queued_run.id)
+
+        expect(result[:agent_run_id]).to eq(queued_run.id)
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "skips the check for analyze_issue runs, which never dispatch through the tier filter" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue,
+          runner: claude_runner, agent_type: "claude_code", goal: "analyze_issue")
+        llm_model = create(:llm_model, provider: "anthropic", model_id: "claude-opus-4-1", tier: "high")
+        stub_model_selection(llm_model: llm_model)
+        claude_runner.update!(tier_models: { "low" => { "model_id" => "claude-haiku", "provider_id" => claude_runner.id } })
+
+        expect {
+          activity.execute(agent_run_id: queued_run.id)
+        }.not_to raise_error
+      end
+
+      it "skips the check when no dispatch candidate can be resolved" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue,
+          runner: claude_runner, agent_type: "claude_code")
+        llm_model = create(:llm_model, provider: "anthropic", model_id: "claude-opus-4-1", tier: "high")
+        stub_model_selection(llm_model: llm_model)
+        claude_runner.update!(tier_models: { "low" => { "model_id" => "claude-haiku", "provider_id" => claude_runner.id } })
+        allow(Runners::TierCapability).to receive(:dispatch_candidates).and_return([])
+
+        expect {
+          activity.execute(agent_run_id: queued_run.id)
+        }.not_to raise_error
+      end
+
+      it "fails the run fast at create time, before a dispatch cycle is burned" do
+        llm_model = create(:llm_model, provider: "anthropic", model_id: "claude-opus-4-1", tier: "high")
+        stub_model_selection(llm_model: llm_model)
+        claude_runner.update!(tier_models: { "low" => { "model_id" => "claude-haiku", "provider_id" => claude_runner.id } })
+
+        expect {
+          activity.execute(project_id: project.id, issue_id: issue.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("NoTierCapableRunner")
+          expect(error.non_retryable).to be(true)
+        }
+
+        agent_run = AgentRun.find_by!(project: project, issue: issue)
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).to start_with("No runner supports tier high")
+        expect(agent_run.iterations).to eq(0)
+      end
+
+      it "skips the check for paused runs" do
+        paused_run = create(:agent_run, project: project, issue: issue, status: "paused",
+          paused_at: Time.current, runner: claude_runner, agent_type: "claude_code")
+        llm_model = create(:llm_model, provider: "anthropic", model_id: "claude-opus-4-1", tier: "high")
+        stub_model_selection(llm_model: llm_model)
+        claude_runner.update!(tier_models: { "low" => { "model_id" => "claude-haiku", "provider_id" => claude_runner.id } })
+
+        result = activity.execute(agent_run_id: paused_run.id)
+
+        expect(result[:agent_run_id]).to eq(paused_run.id)
+        expect(paused_run.reload.status).to eq("paused")
+      end
+    end
+
     describe "review_depth_snapshot" do # @spec REVIEW-DEPTH-006
       it "snapshots the project's review_depth preset onto a review run" do
         project.update!(review_settings: {
@@ -488,6 +583,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
         agent_type: "claude_code",
         configuration_bundle: existing_bundle)
       llm_model = create(:llm_model, provider: "openai", model_id: "gpt-5.4")
+      # The pinned selection tier must be satisfiable so the enqueue-time
+      # tier capability check does not fail the run before the bundle is
+      # recomputed.
+      claude_runner.update!(tier_models: { "high" => { "model_id" => "claude-opus-4-1", "provider_id" => claude_runner.id } })
 
       stub_model_selection(llm_model: llm_model)
 

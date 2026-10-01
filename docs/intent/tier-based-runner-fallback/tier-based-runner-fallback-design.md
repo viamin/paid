@@ -28,6 +28,36 @@ concrete model across every runner.
 resolves the concrete model for each attempt via `Runners::ResolveTierModel`,
 and records the resolved attempt metadata on `agent_run.runners_attempted`.
 
+The tier-capability predicate itself lives in the stateless
+`Runners::TierCapability` query so dispatch and the pre-dispatch gates
+evaluate one contract (#4093):
+
+- **Dispatch** (`RunAgentActivity#build_runner_order`) keeps the filter as
+  the final gate, because feasibility can drift during a run's lifetime
+  (runner deleted, model deactivated). When the filter empties an order that
+  had candidates, the run fails with `TierCapabilityDrifted` so operators
+  can tell "was feasible, drifted" apart from "never feasible".
+- **Enqueue/resume** (`CreateAgentRunActivity#validate_tier_capability!`)
+  resolves feasibility immediately after model selection, before container
+  provisioning burns a dispatch cycle, failing the run fast with a
+  non-retryable `NoTierCapableRunner` configuration error. Paused runs,
+  `analyze_issue` runs (they never dispatch through the tier filter), and
+  runs with no resolvable dispatch candidates are deferred to dispatch.
+- **Auto-pick** (`Automation::Strategies::AutoPick::DefaultCandidateSource`)
+  excludes issues whose latest model selection pins a tier that no runner
+  the project's owner has enabled for agent runs can satisfy, breaking the
+  doomed-run re-pick loop. The exclusion is derived from live runner
+  configuration on every pass, so it clears itself once a capable runner is
+  configured.
+
+`Runners::TierCapability#dispatch_candidates` mirrors the candidate
+construction `build_runner_order` feeds its tier filter (bound runner or
+intended agent type, configured fallbacks, container-executable keys,
+default-runner fallback), minus attempt-time-only state (retry caps, quota
+headroom, time windows). Its result may be a superset of the final dispatch
+order, so callers use it to detect "no runner could ever satisfy this
+tier" — never to assert an exact order.
+
 When an automatic issue-scoped run has no tier-capable candidate, dispatch
 fails before an attempt can be recorded. These configuration-infeasible
 failures are tracked separately from runner execution failures: after the
@@ -108,5 +138,7 @@ metadata where available.
 ## References
 
 - `app/temporal/activities/run_agent_activity.rb`
+- `app/temporal/activities/create_agent_run_activity.rb`
+- `app/services/runners/tier_capability.rb`
 - `app/models/model_selection.rb`
 - `app/services/runners/resolve_tier_model.rb`
