@@ -358,7 +358,7 @@ USER agent
 RUN mkdir -p /home/agent/.local/share/kilo \
     && timeout -k 10s 120s kilo run "OK" > /dev/null 2>&1 || true
 USER root
-RUN test -f /home/agent/.local/share/kilo/kilo.db \
+RUN test -f /home/agent/.local/share/kilo/kilo-rc.db \
     && mkdir -p /opt/kilo-seed \
     && cp -a /home/agent/.local/share/kilo/. /opt/kilo-seed/ \
     && chown -R agent:agent /opt/kilo-seed
