@@ -23,7 +23,6 @@ class Project < ApplicationRecord
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
   PAID_AGENT_REVIEW_BOT_ALLOWLIST_LOGINS = %w[paid-code-reviewer[bot]].freeze
   GITHUB_AUTH_SOURCES = %w[app pat].freeze
-  PR_TARGETS = %w[own_repo upstream].freeze
   SCREENSHOT_DRIVERS = {
     "playwright" => "Best for modern browser flows and JavaScript-heavy apps.",
     "cuprite" => "Best for Rails and other server-rendered apps using Capybara."
@@ -76,10 +75,12 @@ class Project < ApplicationRecord
   # features that operate against the PR's host repository (auto-merge,
   # review automation, etc.) are gated while upstream is selected.
   # @spec PR-TARGET-001
+  PR_TARGETS = %w[own_repo upstream].freeze
   DEFAULT_PR_TARGET = "own_repo".freeze
-  # Field set whose values are forced off whenever pr_target=upstream because
-  # Paid no longer owns or trusts the host repository. Grayed out in the
-  # settings UI; server-side enforcement lives in a follow-up issue. This list
+  # Field set disabled in the settings UI whenever pr_target=upstream because
+  # Paid no longer owns or trusts the host repository. Server-side enforcement
+  # lives in a follow-up issue. This list intentionally excludes
+  # auto_fix_merge_conflicts because it pushes only to the fork-owned PR head.
   # is the canonical source of truth — both the view and the controller consult
   # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
   PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[
@@ -334,7 +335,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
-  before_validation :normalize_upstream_target
+  before_validation :normalize_upstream_full_name
   before_validation :normalize_interop_settings
   before_validation :normalize_llm_provider_routing
   before_validation :ensure_paid_reviewer_bot_allowlisted
@@ -391,7 +392,9 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
+  # @spec PR-TARGET-001
   validates :pr_target, inclusion: { in: PR_TARGETS }
+  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
   validate :upstream_pr_target_valid
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
@@ -437,16 +440,21 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
+  # True when PRs for this project should be opened against the configured
+  # upstream repository rather than the project's own repository. @spec PR-TARGET-001
+  def upstream_pr_target?
+    pr_target == "upstream" && upstream_full_name.present?
+  end
+
   # Repository where new PRs are opened for this project. For "own_repo"
   # projects this is the project's own full_name; for "upstream" projects it
-  # is the configured upstream repository's full_name. Returns nil when
-  # upstream mode is selected but the upstream repository is missing — the
-  # model validation will have rejected that combination before save.
-  # @spec PR-TARGET-001, PR-TARGET-004
+  # is the configured upstream_full_name. Returns nil when upstream mode is
+  # selected but upstream_full_name is missing — the model validation will
+  # have rejected that combination before save. @spec PR-TARGET-001, PR-TARGET-004
   def pr_target_repository
     return full_name unless upstream_pr_target?
 
-    upstream_full_name
+    upstream_full_name.presence
   end
 
   # @spec PR-TARGET-002, PR-TARGET-003
@@ -625,28 +633,18 @@ class Project < ApplicationRecord
     effective_priority_labels.values_at(*PRIORITY_TIERS).compact
   end
 
-  # Whether Paid may add labels to pull requests it opens. Deliberately NOT
-  # an override of the raw #auto_add_labels_enabled? column predicate: that
-  # column also governs labeling of issues Paid creates (issue creation
-  # stays fully supported in upstream mode — issues live in the fork), while
-  # PR labeling must no-op when PRs target the upstream repository.
+  # Whether Paid may add labels to pull requests it opens. The raw column also
+  # governs issues on the fork, which remain supported in upstream mode.
   # @spec UPSTREAM-GATE-002
   def pr_auto_labels_enabled?
     upstream_feature_enabled?(:pr_labeling) && auto_add_labels_enabled?
   end
 
-  # Whether priority labels may propagate from issues onto PRs Paid opens.
-  # All callers are PR-side, so the upstream-mode gate applies to every use.
+  # Priority labels propagate only to PRs, so this follows PR-label gating.
   # @spec UPSTREAM-GATE-002
   def inherit_priority_labels?
     upstream_feature_enabled?(:pr_labeling) && super
   end
-
-  # +auto_fix_merge_conflicts?+ is NOT gated upstream-mode. Conflict-fix
-  # runs only ever push to the fork-owned head branch (#4082), so the
-  # upstream repository is never written. The default column predicate
-  # applies.
-  # @spec UPSTREAM-GATE-006
 
   def worktree_service
     @worktree_service ||= WorktreeService.new(self)
@@ -1113,8 +1111,6 @@ class Project < ApplicationRecord
     broadcast_project_show_refresh
   end
 
-  # No release-please interaction against the upstream repository.
-  # @spec UPSTREAM-GATE-002
   def auto_release_enabled?
     return false unless upstream_feature_enabled?(:auto_release)
 
@@ -1136,9 +1132,6 @@ class Project < ApplicationRecord
     end
   end
 
-  # Never merge a PR opened in the upstream repository: Paid does not have
-  # (and must not assume) trusted merge authority there.
-  # @spec UPSTREAM-GATE-002
   def auto_merge_enabled?
     return false unless upstream_feature_enabled?(:auto_merge)
 
@@ -1319,10 +1312,6 @@ class Project < ApplicationRecord
     automation_configuration
   end
 
-  # No reviews, review re-requests, or review-goal runs on upstream PRs:
-  # upstream review content is untrusted third-party input, and requesting
-  # reviews would act with borrowed authority in a repo Paid doesn't control.
-  # @spec UPSTREAM-GATE-002
   def review_enabled?
     return false unless upstream_feature_enabled?(:pr_reviews)
 
@@ -1997,45 +1986,29 @@ class Project < ApplicationRecord
     end
   end
 
-  def normalize_upstream_target
-    self.upstream_owner = upstream_owner.strip if upstream_owner.is_a?(String)
-    self.upstream_repo = upstream_repo.strip if upstream_repo.is_a?(String)
+  def normalize_upstream_full_name
+    return unless upstream_full_name.is_a?(String)
+
+    self.upstream_full_name = upstream_full_name.strip
   end
 
-  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-007, PR-TARGET-008
+  # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
   def upstream_pr_target_valid
-    normalized_owner = upstream_owner.is_a?(String) ? upstream_owner.strip : nil
-    normalized_repo = upstream_repo.is_a?(String) ? upstream_repo.strip : nil
-
-    if normalized_owner.present? && normalized_repo.present?
-      combined = "#{normalized_owner}/#{normalized_repo}"
-      if combined.casecmp?(full_name)
-        errors.add(:upstream_repo, "must differ from this project's repository (#{full_name})")
-        errors.add(:upstream_full_name, "must differ from this project's repository (#{full_name})")
-      end
+    if upstream_full_name.present? && upstream_full_name.casecmp?(full_name)
+      errors.add(:upstream_full_name, "must differ from this project's repository (#{full_name})")
     end
 
     return unless pr_target == "upstream"
 
-    if normalized_owner.blank?
-      errors.add(:upstream_owner, "is required when PR target is upstream")
+    if upstream_full_name.blank?
       errors.add(:upstream_full_name, "is required when PR target is upstream")
+      return
     end
 
-    if normalized_repo.blank?
-      errors.add(:upstream_repo, "is required when PR target is upstream")
-      errors.add(:upstream_full_name, "is required when PR target is upstream")
-    end
-
-    return if normalized_owner.blank? || normalized_repo.blank?
-
-    if normalized_owner !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?\z/
-      errors.add(:upstream_owner, "must be a valid GitHub owner (letters, digits, hyphens)")
-      errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")
-    end
-
-    if normalized_repo !~ /\A[A-Za-z0-9._-]{1,100}\z/
-      errors.add(:upstream_repo, "must be a valid GitHub repository name")
+    owner_part, repo_part = upstream_full_name.split("/", 2)
+    if owner_part.blank? || repo_part.blank? || upstream_full_name.count("/") != 1 ||
+        owner_part !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\z/ ||
+        repo_part !~ /\A[A-Za-z0-9._-]{1,100}\z/
       errors.add(:upstream_full_name, "must be a valid owner/repo (e.g. acme/widgets)")
     end
   end

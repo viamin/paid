@@ -68,5 +68,34 @@ RSpec.describe Projects::ForkParentPrefill do
       expect(result.detected?).to be(false)
       expect(result.reason).to eq("github_request_failed")
     end
+
+    it "returns :unavailable and logs when the credential is unauthorized" do # @spec PR-TARGET-009
+      stub_request(:get, "https://api.github.com/repos/stenoai/stenoai").to_return(status: 401, body: "unauthorized")
+
+      result = nil
+      expect { result = described_class.call(project) }.not_to raise_error
+      expect(result.detected?).to be(false)
+      expect(result.reason).to eq("github_request_failed")
+    end
+
+    it "returns :unavailable and logs when the repository cannot be found" do # @spec PR-TARGET-009
+      stub_request(:get, "https://api.github.com/repos/stenoai/stenoai").to_return(status: 404, body: "not found")
+
+      result = nil
+      expect { result = described_class.call(project) }.not_to raise_error
+      expect(result.detected?).to be(false)
+      expect(result.reason).to eq("github_request_failed")
+    end
+
+    it "lets unexpected, non-GitHub errors propagate so callers can log them" do # @spec PR-TARGET-009
+      stub_request(:get, "https://api.github.com/repos/stenoai/stenoai").to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: "{}"
+      )
+      allow(project.client).to receive(:repository).and_raise(RuntimeError, "boom")
+
+      expect { described_class.call(project) }.to raise_error(RuntimeError, "boom")
+    end
   end
 end

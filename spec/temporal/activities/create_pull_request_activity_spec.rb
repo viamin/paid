@@ -140,7 +140,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
     context "when the project targets an upstream repository" do
       before do
-        project.update!(pr_target: "upstream", upstream_owner: "upstream", upstream_repo: "repo")
+        project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
         allow(github_client).to receive(:repository).with("upstream/repo")
           .and_return(OpenStruct.new(default_branch: "trunk"))
       end

@@ -10,10 +10,11 @@ module Tools
     # counter/timestamp bookkeeping columns.
     #
     # PR target selection (issue #4076): +pr_target+ and +upstream_full_name+
-    # are exposed so chat can switch a project to upstream mode, but enabling
-    # upstream mode. Server-side enforcement for settings gated in upstream
-    # mode is intentionally delivered by the follow-up issue; this tool only
-    # exposes the target selection itself.
+    # are exposed so chat can switch a project to upstream mode. Selecting
+    # upstream does not itself re-enable the automation controls listed in
+    # Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES; server-side enforcement
+    # of those gates is intentionally delivered by the follow-up issue. This
+    # tool only exposes the target selection itself.
     PERMITTED_ATTRIBUTES = %i[
       active
       paused

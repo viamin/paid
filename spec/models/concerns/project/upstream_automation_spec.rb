@@ -10,7 +10,7 @@ RSpec.describe Project::UpstreamAutomation do
     end
 
     it "is false when pr_target is upstream but no upstream repository is configured" do
-      project = build(:project, pr_target: "upstream", upstream_owner: nil, upstream_repo: nil)
+      project = build(:project, pr_target: "upstream", upstream_full_name: nil)
       expect(project.upstream_pr_target?).to be false
     end
 
@@ -83,14 +83,13 @@ RSpec.describe Project::UpstreamAutomation do
     it "requires the upstream repository when pr_target is upstream" do
       project = build(:project, pr_target: "upstream")
       expect(project).not_to be_valid
-      expect(project.errors[:upstream_repo]).to be_present
+      expect(project.errors[:upstream_full_name]).to be_present
     end
 
     it "atomically clears default-true gated features when transitioning to upstream mode" do
       project = create(:project)
       project.pr_target = "upstream"
-      project.upstream_owner = "upstream-owner"
-      project.upstream_repo = "upstream-repo"
+      project.upstream_full_name = "upstream-owner/upstream-repo"
 
       expect(project).to be_valid
       expect(project.auto_add_labels_enabled).to be false
@@ -106,8 +105,7 @@ RSpec.describe Project::UpstreamAutomation do
     it "leaves already-disabled settings alone during the upstream-mode transition" do
       project = create(:project, auto_merge_mode: "off", allow_bot_authored_pr_auto_merge: false)
       project.pr_target = "upstream"
-      project.upstream_owner = "upstream-owner"
-      project.upstream_repo = "upstream-repo"
+      project.upstream_full_name = "upstream-owner/upstream-repo"
 
       expect(project).to be_valid
       expect(project.auto_merge_mode).to eq("off")

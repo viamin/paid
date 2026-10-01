@@ -28,7 +28,7 @@
 # mode disables. It exposes:
 #
 # - `upstream_pr_target?` — the mode predicate (`pr_target == "upstream"`
-#   with `upstream_owner` and `upstream_repo` configured).
+#   with `upstream_full_name` configured).
 # - `DISABLED_FEATURES` — the canonical disable set:
 #   - `pr_reviews`
 #   - `auto_merge`

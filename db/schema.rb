@@ -2876,9 +2876,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_233952) do
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
     t.text "webhook_secret"
-    t.string "pr_target", default: "own_repo", null: false, comment: "Where Paid opens pull requests: \"own_repo\" (default) targets the project's own fork; \"upstream\" targets the configured upstream repository (#4076)."
-    t.string "upstream_owner", comment: "GitHub owner (login or org) of the upstream repository PRs target when pr_target is \"upstream\". Required for upstream mode."
-    t.string "upstream_repo", comment: "GitHub repository name of the upstream repository PRs target when pr_target is \"upstream\". Required for upstream mode."
+    t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
+    t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true

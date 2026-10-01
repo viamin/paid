@@ -27,11 +27,13 @@ class ProjectSettingsFormControllerNodeHarness
 
     function field(attribute) {
       const input = { type: "text", disabled: false };
+      const hidden = { type: "hidden", disabled: false };
       return {
         dataset: { attribute },
         classList: classList(),
-        querySelectorAll() { return [input]; },
-        input
+        querySelectorAll() { return [hidden, input]; },
+        input,
+        hidden
       };
     }
 
@@ -60,7 +62,8 @@ class ProjectSettingsFormControllerNodeHarness
       const harness = buildController();
       harness.controller.applyPrTargetGating();
 
-      if (harness.reviewSettings.input.disabled || harness.reviewSettings.classList.contains("opacity-50")) {
+      if (harness.reviewSettings.input.disabled || harness.reviewSettings.hidden.disabled ||
+        harness.reviewSettings.classList.contains("opacity-50")) {
         throw new Error("Expected own-repo mode to leave gated settings enabled");
       }
       if (!harness.panel.classList.contains("hidden") || !harness.note.classList.contains("hidden")) {
@@ -71,7 +74,8 @@ class ProjectSettingsFormControllerNodeHarness
       harness.upstream.checked = true;
       harness.controller.prTargetChanged();
 
-      if (!harness.reviewSettings.input.disabled || !harness.reviewSettings.classList.contains("opacity-50")) {
+      if (!harness.reviewSettings.input.disabled || harness.reviewSettings.hidden.disabled ||
+        !harness.reviewSettings.classList.contains("opacity-50")) {
         throw new Error("Expected upstream mode to disable and gray gated settings");
       }
       if (harness.mergeConflictFixes.input.disabled || harness.mergeConflictFixes.classList.contains("opacity-50")) {
@@ -88,7 +92,8 @@ class ProjectSettingsFormControllerNodeHarness
       harness.upstream.checked = false;
       harness.controller.prTargetChanged();
 
-      if (harness.reviewSettings.input.disabled || harness.reviewSettings.classList.contains("opacity-50")) {
+      if (harness.reviewSettings.input.disabled || harness.reviewSettings.hidden.disabled ||
+        harness.reviewSettings.classList.contains("opacity-50")) {
         throw new Error("Expected switching back to own-repo mode to restore gated settings");
       }
     }

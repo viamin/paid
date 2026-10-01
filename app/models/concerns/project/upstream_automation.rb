@@ -113,7 +113,7 @@ module Project::UpstreamAutomation
     # When pr_target transitions into upstream mode, atomically clear any
     # currently-enabled gated setting so the save can proceed. The UI grays
     # those inputs out (#4076) so the request only submits the new
-    # pr_target / upstream_repo and the persisted defaults (e.g.
+    # pr_target / upstream_full_name and the persisted defaults (e.g.
     # auto_add_labels_enabled=true, inherit_priority_labels=true) would
     # otherwise fail the {#upstream_mode_automation_settings_valid} check
     # (#4082). Defense-in-depth: the chat path still checks submitted attrs
@@ -129,7 +129,7 @@ module Project::UpstreamAutomation
   # nothing outside this concern reads +pr_target+ directly.
   # @spec UPSTREAM-GATE-002
   def upstream_pr_target?
-    pr_target == "upstream" && upstream_owner.present? && upstream_repo.present?
+    pr_target == "upstream" && upstream_full_name.present?
   end
 
   # The named capability check every gated feature must consult. Returns
@@ -188,21 +188,6 @@ module Project::UpstreamAutomation
       .keys
   end
 
-  # Combined +owner/repo+ form of the upstream repository. Returns nil when
-  # upstream mode is not active or either half is blank so callers can
-  # branch on +upstream_pr_target?+ separately from "configured upstream".
-  def upstream_full_name
-    return nil unless upstream_owner.present? && upstream_repo.present?
-
-    "#{upstream_owner}/#{upstream_repo}"
-  end
-
-  def upstream_full_name=(value)
-    owner, repo = value.to_s.strip.split("/", 2)
-    self.upstream_owner = owner
-    self.upstream_repo = repo
-  end
-
   private
 
   # Upstream PR targeting is meaningless without the upstream repository to
@@ -210,9 +195,9 @@ module Project::UpstreamAutomation
   # mode active" from drifting apart.
   def upstream_target_requires_upstream_repo
     return if pr_target != "upstream"
-    return if upstream_owner.present? && upstream_repo.present?
+    return if upstream_full_name.present?
 
-    errors.add(:upstream_repo, "and upstream_owner must be configured when PRs target the upstream repository")
+    errors.add(:upstream_full_name, "is required when PR target is upstream")
   end
 
   # Save-time hard gating (#4078 requirement 3): while the project targets

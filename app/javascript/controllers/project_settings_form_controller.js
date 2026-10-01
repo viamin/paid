@@ -23,7 +23,7 @@ const SUBMITTABLE_INPUT_TYPES = new Set([
 // auto_fix_merge_conflicts is deliberately NOT in this set: conflict-fix
 // runs only ever push to the fork-owned head branch (Paid's working copy),
 // so they are safe in upstream mode (#4082).
-// @spec PR-TARGET-002, PR-TARGET-003, PR-TARGET-014
+// @spec PR-TARGET-002, PR-TARGET-003
 const UPSTREAM_DISABLED_ATTRIBUTES = new Set([
   "review_settings",
   "auto_merge_mode",

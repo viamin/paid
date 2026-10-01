@@ -285,9 +285,8 @@
             </div>
           </fieldset>
 
-          <% pr_target_upstream = @project.pr_target == "upstream" %>
-          <% prefill_owner = @project.upstream_owner.presence || @upstream_prefill&.upstream_owner %>
-          <% prefill_repo = @project.upstream_repo.presence || @upstream_prefill&.upstream_repo %>
+          <% pr_target_upstream = @project.upstream_pr_target? %>
+          <% upstream_full_name = @project.upstream_full_name.nil? ? @upstream_prefill&.upstream_full_name : @project.upstream_full_name %>
           <fieldset id="pr-target" class="rounded-md border border-gray-200 p-4">
             <legend class="px-1 text-sm font-semibold text-gray-900">Open Source / Upstream Contributions</legend>
             <p class="mt-1 text-sm text-gray-600">
@@ -324,53 +323,34 @@
                     <p class="mt-1 text-sm text-gray-600">
                       Use this for forks contributing to an open-source project. Paid only opens the PR upstream; review, merge, label, and screenshot automation is limited to your own repository.
                     </p>
-                    <p class="mt-1 text-xs text-gray-500">
-                      Work items (issues) come from the upstream repository; Paid only acts on issues created by trusted users (#4079).
-                    </p>
                   </div>
                 </div>
               </label>
             </div>
 
-            <div class="<%= [ "mt-4 grid grid-cols-2 gap-3", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamPanel">
-              <div>
-                <%= form.label :upstream_owner, "Upstream owner", class: "block text-sm font-medium leading-6 text-gray-900" %>
-                <div class="mt-2">
-                  <%= form.text_field :upstream_owner,
-                    value: prefill_owner,
-                    placeholder: @upstream_prefill&.detected? ? @upstream_prefill.upstream_owner : "acme",
-                    autocomplete: "off",
-                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
-                </div>
-                <% if @project.errors[:upstream_owner].any? %>
-                  <% @project.errors[:upstream_owner].each do |msg| %>
-                    <p class="mt-1 text-xs text-red-600"><%= msg %></p>
-                  <% end %>
-                <% end %>
+            <div class="<%= [ "mt-4", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamPanel">
+              <%= form.label :upstream_full_name, "Upstream repository (owner/repo)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :upstream_full_name,
+                  value: upstream_full_name,
+                  placeholder: @upstream_prefill&.detected? ? @upstream_prefill.upstream_full_name : "acme/widgets",
+                  autocomplete: "off",
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
               </div>
-              <div>
-                <%= form.label :upstream_repo, "Upstream repository", class: "block text-sm font-medium leading-6 text-gray-900" %>
-                <div class="mt-2">
-                  <%= form.text_field :upstream_repo,
-                    value: prefill_repo,
-                    placeholder: @upstream_prefill&.detected? ? @upstream_prefill.upstream_repo : "widgets",
-                    autocomplete: "off",
-                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
-                </div>
-                <% if @project.errors[:upstream_repo].any? %>
-                  <% @project.errors[:upstream_repo].each do |msg| %>
-                    <p class="mt-1 text-xs text-red-600"><%= msg %></p>
-                  <% end %>
+              <p class="mt-1 text-xs text-gray-500">
+                <% if @upstream_prefill&.detected? %>
+                  Detected from fork parent: <strong><%= @upstream_prefill.upstream_full_name %></strong>. Edit if your fork targets a different upstream.
+                <% else %>
+                  Enter the <code>owner/repo</code> slug of the upstream repository. This can be a repository that is not GitHub's literal fork parent.
                 <% end %>
-              </div>
+              </p>
             </div>
-            <p class="<%= [ "mt-1 text-xs text-gray-500", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamPanelHelp">
-              <% if @upstream_prefill&.detected? %>
-                Detected from fork parent: <strong><%= @upstream_prefill.upstream_full_name %></strong>. Edit if your fork targets a different upstream.
-              <% else %>
-                Enter the <code>owner</code> and <code>repository</code> of the upstream repository. This can be a repository that is not GitHub's literal fork parent.
+
+            <% if @project.errors[:upstream_full_name].any? %>
+              <% @project.errors[:upstream_full_name].each do |msg| %>
+                <p class="mt-1 text-xs text-red-600"><%= msg %></p>
               <% end %>
-            </p>
+            <% end %>
 
             <p class="<%= [ "mt-4 rounded-md bg-amber-50 p-3 text-xs text-amber-800", ("hidden" unless pr_target_upstream) ].compact.join(" ") %>" data-project-settings-form-target="prTargetUpstreamNote">
               Paid only opens the PR upstream; review, merge, label, and screenshot automation is limited to your own repository. Sync Labels to GitHub and issue-label writes against the upstream repository are disabled.
@@ -912,7 +892,8 @@
 
             <% Project::AUTOMATION_SETTINGS.each do |setting| %>
               <% gated = Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(setting[:attribute]) %>
-              <div<%= raw " data-project-settings-form-target=\"prTargetGatedField\" data-attribute=\"#{setting[:attribute]}\" class=\"#{"opacity-50 pointer-events-none" if gated && @project.upstream_disabled?(setting[:attribute])}\"" if gated %>>
+              <% disabled_now = gated && @project.upstream_disabled?(setting[:attribute]) %>
+              <div<% if gated %> data-project-settings-form-target="prTargetGatedField" data-attribute="<%= setting[:attribute] %>"<% end %><% if disabled_now %> class="opacity-50 pointer-events-none"<% end %>>
                 <div class="flex items-center">
                   <%= form.check_box setting[:attribute], class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
                   <%= form.label setting[:attribute], setting[:label], class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>

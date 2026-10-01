@@ -27,6 +27,8 @@ RSpec.describe "Project screenshot settings", system_driver: :rack_test, type: :
     login_as(user, scope: :user)
     allow(Projects::Screenshots::RepoConfig).to receive(:call)
       .and_return(Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil))
+    allow(Projects::ForkParentPrefill).to receive(:call)
+      .and_return(Projects::ForkParentPrefill::Prefill.unavailable("not_stubbed"))
   end
 
   after do

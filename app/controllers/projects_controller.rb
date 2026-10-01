@@ -630,7 +630,6 @@ class ProjectsController < ApplicationController
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
       :lid_mode, :tdd_mode,
       :generated_label_name, :automation_label_name,
-      :pr_target, :upstream_owner, :upstream_repo,
       :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
       :max_enhance_issue_reevaluation_rounds,
       :auto_add_labels_enabled, :automation_on_label_enabled,
@@ -640,6 +639,7 @@ class ProjectsController < ApplicationController
       :auto_release_granularity,
       :plan_review_timeout_hours,
       :max_issue_runner_failures,
+      :pr_target, :upstream_full_name,
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)

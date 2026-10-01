@@ -2303,7 +2303,7 @@ RSpec.describe "Projects" do
 
         it "persists pr_target=upstream and upstream_full_name when both are valid" do # @spec PR-TARGET-001, PR-TARGET-006
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_owner: "stenolabs", upstream_repo: "stenoai" }
+            project: { pr_target: "upstream", upstream_full_name: "stenolabs/stenoai" }
           }
 
           expect(response).to redirect_to(project_path(project))
@@ -2315,36 +2315,24 @@ RSpec.describe "Projects" do
 
         it "rejects pr_target=upstream when upstream_full_name is missing" do # @spec PR-TARGET-005
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.detected("stenolabs", "stenoai")
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
           )
 
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_owner: "", upstream_repo: "" }
+            project: { pr_target: "upstream", upstream_full_name: "" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("required when PR target is upstream")
+          expect(response.body).to match(
+            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="")[^>]*>/
+          )
           expect(project.reload.pr_target).to eq("own_repo")
-        end
-
-        it "keeps the upstream fields visible after an incomplete upstream target is rejected" do # @spec UPSTREAM-GATE-004
-          [ { upstream_owner: "", upstream_repo: "widgets" }, { upstream_owner: "acme", upstream_repo: "" } ].each do |target|
-            patch project_path(project), params: { project: { pr_target: "upstream", **target } }
-
-            expect(response).to have_http_status(:unprocessable_content)
-            expect(response.body).to match(/value="upstream"[^>]*checked="checked"/)
-            expect(response.body).to include(
-              '<div class="mt-4 grid grid-cols-2 gap-3" data-project-settings-form-target="prTargetUpstreamPanel">'
-            )
-            expect(response.body).to include("Upstream owner")
-            expect(response.body).to include("Upstream repository")
-            expect(response.body).to include("is required when PR target is upstream")
-          end
         end
 
         it "rejects upstream_full_name matching the project's own repository" do # @spec PR-TARGET-008
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_owner: "stenoai", upstream_repo: "stenoai" }
+            project: { pr_target: "upstream", upstream_full_name: "stenoai/stenoai" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
@@ -2352,9 +2340,23 @@ RSpec.describe "Projects" do
           expect(project.reload.pr_target).to eq("own_repo")
         end
 
+        it "shows the self-match error when own_repo is selected" do # @spec PR-TARGET-008
+          patch project_path(project), params: {
+            project: { pr_target: "own_repo", upstream_full_name: "stenoai/stenoai" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          document = Nokogiri::HTML5(response.body)
+          expect(document.text).to include("must differ from this project's repository (stenoai/stenoai)")
+          upstream_panel = document.at_css('[data-project-settings-form-target="prTargetUpstreamPanel"]')
+          expect(upstream_panel["class"]).to include("hidden")
+          expect(upstream_panel.at_xpath('.//p[contains(., "must differ")]')).to be_nil
+          expect(project.reload.pr_target).to eq("own_repo")
+        end
+
         it "rejects a malformed upstream_full_name slug" do # @spec PR-TARGET-006
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_owner: "not a slug", upstream_repo: "widgets" }
+            project: { pr_target: "upstream", upstream_full_name: "not a slug" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
@@ -2389,20 +2391,21 @@ RSpec.describe "Projects" do
 
         it "prefills the upstream field from the detected fork parent while allowing edits" do # @spec PR-TARGET-009
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.detected("stenolabs", "stenoai")
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
           )
 
           get edit_project_path(project)
 
-          expect(response.body).to match(/<input(?=[^>]*id="project_upstream_owner")(?=[^>]*value="stenolabs")[^>]*>/)
-          expect(response.body).to match(/<input(?=[^>]*id="project_upstream_repo")(?=[^>]*value="stenoai")[^>]*>/)
+          expect(response.body).to match(
+            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="stenolabs\/stenoai")[^>]*>/
+          )
           expect(response.body).to include("Detected from fork parent:")
         end
 
         it "renders the upstream option as selected when pr_target is upstream" do
           project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.detected("stenolabs", "stenoai")
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
           )
 
           get edit_project_path(project)
@@ -3246,31 +3249,6 @@ RSpec.describe "Projects" do
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
         expect(response.body).to include("auto_merge_toggle_project_#{project.id}")
         expect(response.body).to include("Auto-Merge")
-      end
-    end
-
-    # @spec UPSTREAM-GATE-004
-    context "when the project targets PRs at the upstream repository" do
-      before { sign_in user }
-
-      it "redirects with an alert and leaves auto_merge_mode off" do
-        project = create(:project, :upstream_pr_target, account: account, github_token: github_token)
-
-        post toggle_auto_merge_project_path(project)
-
-        expect(response).to redirect_to(project_path(project))
-        expect(flash[:alert]).to include("Auto-merge is not available")
-        expect(project.reload.auto_merge_mode).to eq("off")
-      end
-
-      it "does not cycle auto_merge_mode even when the request asks for turbo_stream" do
-        project = create(:project, :upstream_pr_target, account: account, github_token: github_token)
-
-        post toggle_auto_merge_project_path(project),
-          headers: { "Accept" => "text/vnd.turbo-stream.html" }
-
-        expect(response).to redirect_to(project_path(project))
-        expect(project.reload.auto_merge_mode).to eq("off")
       end
     end
 
