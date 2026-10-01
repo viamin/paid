@@ -368,8 +368,11 @@ module Activities
       )
     end
 
+    # Delegates to the project's configured PR target repository: the fork
+    # itself for own-repository runs, or the upstream repository for
+    # upstream runs. @spec UPSTREAM-ISSUE-003
     def pull_request_repository(project)
-      project.upstream_pr_target? ? project.upstream_full_name : project.full_name
+      project.pr_target_repository
     end
 
     def pull_request_head(project, branch_name)
@@ -545,15 +548,15 @@ module Activities
     end
 
     # A bare `#N` reference resolves against the repository the PR is opened
-    # in. For upstream runs that repository is the upstream repo, not the
-    # fork the issue lives in — issue/PR numbers are per-repo, so a collision
-    # with an unrelated upstream issue is the common case, not an edge case.
-    # Qualify the reference so it links to the correct (fork) issue instead
-    # of silently closing/resolving against an unrelated upstream one.
+    # in. For upstream runs both the PR and its synced source issue live in
+    # the upstream repository, so the reference is qualified with the issue
+    # target repository to make the resolution explicit and unambiguous —
+    # issue/PR numbers are per-repo, and the fork may hold an unrelated issue
+    # with the same number.
     def issue_reference(issue, project)
       return "##{issue.github_number}" unless project.upstream_pr_target?
 
-      "#{project.full_name}##{issue.github_number}"
+      "#{project.issue_target_repository}##{issue.github_number}"
     end
 
     # Builds a goal-specific PR body for lid_planning runs.
@@ -1134,6 +1137,16 @@ module Activities
 
     # @spec TDD-PR-001
     def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+      if project.upstream_pr_target?
+        logger.info(
+          message: "agent_execution.upstream_issue_write_skipped",
+          project_id: project.id,
+          pull_request_number: pr_number,
+          operation: "add_pr_labels"
+        )
+        return
+      end
+
       labels = []
       labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?

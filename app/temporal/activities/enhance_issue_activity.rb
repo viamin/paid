@@ -71,7 +71,7 @@ module Activities
       ensure_trusted_issue!(issue)
 
       client = github_client(project)
-      raw_comments = client.issue_comments(project.full_name, issue.github_number)
+      raw_comments = client.issue_comments(project.issue_target_repository, issue.github_number)
       comments = trusted_comments(project, raw_comments)
       existing_comment = enhancement_comment(comments)
       return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
@@ -92,7 +92,9 @@ module Activities
       questions = needs_input_questions(parsed, comment_body)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
-      gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
+      gh_comment = unless upstream_issue_write_skipped?(project, "enhance_issue_comment", issue: issue, agent_run_id: agent_run.id)
+        client.add_comment(project.full_name, issue.github_number, comment_body)
+      end
       label_result = apply_label_state(client, project, issue, parsed, agent_run)
       sync_needs_input_questions(issue, questions)
 
@@ -118,13 +120,13 @@ module Activities
         label_applied: label_result[:applied],
         max_rounds_reached: label_result[:max_rounds_reached],
         enhance_issue_rounds: issue.enhance_issue_rounds,
-        comment_url: gh_comment.html_url
+        comment_url: gh_comment&.html_url
       )
 
       {
         agent_run_id: agent_run.id,
         issue_number: issue.github_number,
-        comment_url: gh_comment.html_url,
+        comment_url: gh_comment&.html_url,
         sufficient_context: parsed[:sufficient_context],
         label_applied: label_result[:applied],
         max_rounds_reached: label_result[:max_rounds_reached]
@@ -564,6 +566,10 @@ module Activities
     end
 
     def apply_label_state(client, project, issue, parsed, agent_run)
+      if upstream_issue_write_skipped?(project, "enhance_issue_labels", issue: issue, agent_run_id: agent_run.id)
+        return { applied: nil, max_rounds_reached: false }
+      end
+
       if parsed[:sufficient_context]
         added = labels_added(client, project, issue, [ project.enhance_issue_enhanced_label_name ])
         require_label_added!(project.enhance_issue_enhanced_label_name, added)

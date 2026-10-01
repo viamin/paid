@@ -432,6 +432,9 @@ class Project < ApplicationRecord
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
+  before_update :reset_issue_sync_state, if: :will_change_issue_target_repository?
+  before_update :archive_previous_target_issues, if: :will_change_issue_target_repository?
+  after_update_commit :cancel_previous_target_issue_runs, if: :saved_change_to_issue_target_repository?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
@@ -454,6 +457,22 @@ class Project < ApplicationRecord
     return full_name unless upstream_pr_target?
 
     upstream_full_name.presence
+  end
+
+  # Repository from which this project reads work items. Forks configured to
+  # contribute upstream do not have an independent issue tracker; their
+  # trusted work items live beside the target pull requests. @spec UPSTREAM-ISSUE-001
+  def issue_target_repository
+    pr_target_repository
+  end
+
+  # Upstream issues are public input. Only an explicitly allowlisted human or
+  # the owner of the configured fork may introduce that input into Paid.
+  # @spec UPSTREAM-ISSUE-002
+  def trusted_upstream_issue_author?(login)
+    return false if login.blank?
+
+    trusted_github_user?(login) || owner.casecmp?(login)
   end
 
   # @spec PR-TARGET-002, PR-TARGET-003
@@ -1630,6 +1649,66 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def reset_issue_sync_state # @spec UPSTREAM-ISSUE-006
+    self.last_issue_sync_at = Time.at(0).utc
+    self.last_issue_reconciliation_at = nil
+  end
+
+  def archive_previous_target_issues # @spec UPSTREAM-ISSUE-006
+    previous_target_issue_ids = issues.where(source: Issue::GITHUB_SOURCE, github_state: "open").pluck(:id)
+    @previous_target_create_pr_run_ids = agent_runs.active.where(
+      goal: "create_pr", issue_id: previous_target_issue_ids
+    ).pluck(:id)
+    issues.where(id: previous_target_issue_ids).update_all(github_state: "closed", updated_at: Time.current)
+  end
+
+  def cancel_previous_target_issue_runs # @spec UPSTREAM-ISSUE-006
+    previous_target_create_pr_run_ids.each do |agent_run_id|
+      cancel_previous_target_issue_run(agent_run_id)
+    end
+  ensure
+    @previous_target_create_pr_run_ids = nil
+  end
+
+  def previous_target_create_pr_run_ids
+    @previous_target_create_pr_run_ids || []
+  end
+
+  def cancel_previous_target_issue_run(agent_run_id)
+    agent_run = AgentRun.find_by(id: agent_run_id)
+    return unless agent_run&.cancel!(error: "Issue target repository changed")
+
+    AgentRunCancellationJob.perform_later(agent_run.id)
+  end
+
+  def will_change_issue_target_repository?
+    repository_for_issue_target(
+      pr_target: attribute_in_database("pr_target"),
+      upstream_full_name: attribute_in_database("upstream_full_name"),
+      owner: attribute_in_database("owner"),
+      repo: attribute_in_database("repo")
+    ) != issue_target_repository
+  end
+
+  def saved_change_to_issue_target_repository?
+    repository_for_issue_target(
+      pr_target: previous_value_for_issue_target(:pr_target),
+      upstream_full_name: previous_value_for_issue_target(:upstream_full_name),
+      owner: previous_value_for_issue_target(:owner),
+      repo: previous_value_for_issue_target(:repo)
+    ) != issue_target_repository
+  end
+
+  def previous_value_for_issue_target(attribute)
+    saved_change_to_attribute?(attribute) ? attribute_before_last_save(attribute) : public_send(attribute)
+  end
+
+  def repository_for_issue_target(pr_target:, upstream_full_name:, owner:, repo:)
+    return upstream_full_name.presence if pr_target == "upstream"
+
+    "#{owner}/#{repo}"
+  end
 
   def agent_run_marketplace_entries_table_exists?
     ActiveRecord::Base.connection.data_source_exists?("agent_run_marketplace_entries")

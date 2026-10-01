@@ -80,6 +80,17 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
       activity.execute(agent_run_id: agent_run.id, pull_request_url: "")
     end
 
+    it "keeps upstream issues read-only while completing their local state" do # @spec UPSTREAM-ISSUE-004
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      issue.update!(labels: [ "paid-build", "paid-needs-input", "paid-recommend-close" ])
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+
+      expect(github_client).not_to have_received(:add_comment)
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
     it "returns agent_run_id" do
       result = activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
 
