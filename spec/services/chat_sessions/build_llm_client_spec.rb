@@ -76,25 +76,32 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     )
   end
 
+  def stub_chat_transport(client, result: succeeded_result)
+    chat_transport = instance_double(AgentHarness::Api::ChatTransport)
+    client.instance_variable_set(:@chat_transport, chat_transport)
+    allow(chat_transport).to receive(:call).and_return(result)
+    chat_transport
+  end
+
+  def succeeded_result(content: "Done", model: "gpt-4o")
+    { status: :succeeded, content: content, model: model, usage: { input_tokens: 1, output_tokens: 1 }, tool_calls: [] }
+  end
+
   def expect_chat_max_tokens(client, model:, max_tokens:)
-    transport = client.instance_variable_get(:@transport)
-    response = instance_double(AgentHarness::Response, output: "Done", model: model, input_tokens: 1, output_tokens: 1, metadata: {})
-    allow(transport).to receive(:chat).and_return(response)
+    chat_transport = stub_chat_transport(client, result: succeeded_result(model: model))
 
     client.call([ { role: "user", content: "What did you find?" } ])
 
-    expect(transport).to have_received(:chat).with(hash_including(max_tokens: max_tokens))
+    expect(chat_transport).to have_received(:call).with(hash_including(max_output_tokens: max_tokens))
   end
 
   def expect_chat_without_max_tokens(client, model:)
-    transport = client.instance_variable_get(:@transport)
-    response = instance_double(AgentHarness::Response, output: "Done", model: model, input_tokens: 1, output_tokens: 1, metadata: {})
-    allow(transport).to receive(:chat).and_return(response)
+    chat_transport = stub_chat_transport(client, result: succeeded_result(model: model))
 
     client.call([ { role: "user", content: "What did you find?" } ])
 
-    expect(transport).to have_received(:chat) do |**kwargs|
-      expect(kwargs).not_to have_key(:max_tokens)
+    expect(chat_transport).to have_received(:call) do |request|
+      expect(request).not_to have_key(:max_output_tokens)
     end
   end
 
@@ -161,9 +168,13 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "minimax-m3")
 
         client = described_class.call(chat_session: chat_session)
-        transport = client.instance_variable_get(:@transport)
+        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "minimax-m3"))
 
-        expect(transport.instance_variable_get(:@base_url)).to eq("https://api.minimax.io/v1")
+        client.call([ { role: "user", content: "What did you find?" } ])
+
+        expect(chat_transport).to have_received(:call) do |request|
+          expect(request[:candidates].first[:endpoint]).to eq("https://api.minimax.io/v1")
+        end
       end
 
       %w[zai zai_coding].each do |service_type|
@@ -315,6 +326,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
   end
 
+  # @spec API-CONVERSATION-DELEGATION-001
   describe described_class::HttpClient do
     let(:tool_definitions) do
       [
@@ -332,246 +344,224 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       ]
     end
 
-    let(:response) do
-      instance_double(AgentHarness::Response,
-        output: "I'm doing well!",
+    let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport) }
+    let(:model) { "claude-sonnet-4-20250514" }
+    let(:client) do
+      described_class.new(provider: :anthropic, protocol: :messages, endpoint: ChatSessions::BuildLlmClient::ANTHROPIC_BASE_URL,
+        api_key: "sk-ant-test", model: model, chat_transport: chat_transport)
+    end
+    let(:conversation) do
+      [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "Find the issue" },
+        {
+          role: "assistant",
+          content: "Let me search.",
+          tool_calls: [ { id: "toolu_1", name: "search", arguments: { query: "issue" } } ]
+        },
+        { role: "tool", content: '{"results":[]}', tool_call_id: "toolu_1", tool_name: "search" },
+        { role: "user", content: "What did you find?" }
+      ]
+    end
+    let(:expected_messages) do
+      [
+        { role: :system, content: "You are helpful." },
+        { role: :user, content: "Find the issue" },
+        {
+          role: :assistant,
+          content: "Let me search.",
+          tool_calls: [ { id: "toolu_1", provider_id: "toolu_1", name: "search", arguments_json: '{"query":"issue"}' } ]
+        },
+        { role: :tool, content: '{"results":[]}', tool_call_id: "toolu_1" },
+        { role: :user, content: "What did you find?" }
+      ]
+    end
+    let(:expected_tools) do
+      [
+        {
+          name: "search",
+          description: "Search the project",
+          input_schema: tool_definitions.first[:inputSchema]
+        }
+      ]
+    end
+    let(:succeeded_result) do
+      {
+        status: :succeeded,
+        content: "I'm doing well!",
         model: "claude-sonnet-4-20250514",
-        input_tokens: 20,
-        output_tokens: 10,
-        metadata: {}
+        usage: { input_tokens: 20, output_tokens: 10 },
+        tool_calls: []
+      }
+    end
+
+    it "passes a single-candidate normalized request and translates the result" do
+      allow(chat_transport).to receive(:call).and_return(succeeded_result)
+
+      result = client.call(conversation, tools: tool_definitions)
+
+      expect(chat_transport).to have_received(:call) do |request|
+        expect(request[:operation]).to eq(:chat)
+        expect(request[:messages]).to eq(expected_messages)
+        expect(request[:tools]).to eq(expected_tools)
+        expect(request[:stream]).to be(false)
+        expect(request[:candidates]).to eq([
+          {
+            provider: :anthropic, model: model, protocol: :messages, authentication_mode: :api_key,
+            credentials: { api_key: "sk-ant-test" }, endpoint: ChatSessions::BuildLlmClient::ANTHROPIC_BASE_URL
+          }
+        ])
+      end
+
+      expect(result[:content]).to eq("I'm doing well!")
+      expect(result[:model]).to eq("claude-sonnet-4-20250514")
+      expect(result[:tokens_input]).to eq(20)
+      expect(result[:tokens_output]).to eq(10)
+    end
+
+    it "folds later system messages into a single leading system message" do
+      allow(chat_transport).to receive(:call).and_return(succeeded_result)
+
+      client.call([
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "Find the issue" },
+        { role: "system", content: "## Added Project Context: Paid" },
+        { role: "user", content: "What did you find?" }
+      ])
+
+      expect(chat_transport).to have_received(:call).with(
+        hash_including(
+          messages: [
+            { role: :system, content: "You are helpful.\n\n## Added Project Context: Paid" },
+            { role: :user, content: "Find the issue" },
+            { role: :user, content: "What did you find?" }
+          ]
+        )
       )
     end
 
-    context "with an Anthropic transport" do
-      let(:transport) { instance_double(AgentHarness::TextTransport) }
-      let(:model) { "claude-sonnet-4-20250514" }
-      let(:client) { described_class.new(transport: transport, model: model, provider_type: :anthropic) }
-      let(:conversation) do
-        [
-          { role: "system", content: "You are helpful." },
-          { role: "user", content: "Find the issue" },
-          {
-            role: "assistant",
-            content: "Let me search.",
-            tool_calls: [ { id: "toolu_1", name: "search", arguments: { query: "issue" } } ]
-          },
-          { role: "tool", content: '{"results":[]}', tool_call_id: "toolu_1", tool_name: "search" },
-          { role: "user", content: "What did you find?" }
-        ]
-      end
-      let(:expected_messages) do
-        [
-          { role: "system", content: "You are helpful." },
-          { role: "user", content: [ { type: "text", text: "Find the issue" } ] },
-          {
-            role: "assistant",
-            content: [
-              { type: "text", text: "Let me search." },
-              { type: "tool_use", id: "toolu_1", name: "search", input: { query: "issue" } }
-            ]
-          },
-          {
-            role: "user",
-            content: [ { type: "tool_result", tool_use_id: "toolu_1", content: '{"results":[]}' } ]
-          },
-          { role: "user", content: [ { type: "text", text: "What did you find?" } ] }
-        ]
-      end
-      let(:expected_tools) do
-        [
-          {
-            name: "search",
-            description: "Search the project",
-            input_schema: tool_definitions.first[:inputSchema]
-          }
-        ]
+    it "streams text_delta events through the on_chunk callback" do
+      chunks_received = []
+      allow(chat_transport).to receive(:call) do |_request, &observer|
+        observer.call(type: :response_started)
+        observer.call(type: :text_delta, content: "Hello")
+        observer.call(type: :text_delta, content: " world")
+        observer.call(type: :response_completed, result: succeeded_result)
+        succeeded_result
       end
 
-      it "passes anthropic-formatted messages and tools to the transport" do
-        allow(transport).to receive(:chat).and_return(response)
+      client.call(conversation, on_chunk: ->(chunk) { chunks_received << chunk })
 
-        result = client.call(conversation, tools: tool_definitions)
+      expect(chunks_received).to eq([ "Hello", " world" ])
+    end
 
-        expect(transport).to have_received(:chat) do |**kwargs|
-          expect(kwargs[:messages]).to eq(expected_messages)
-          expect(kwargs[:tools]).to eq(expected_tools)
-          expect(kwargs[:model]).to eq(model)
-          expect(kwargs[:stream]).to be(false)
-        end
-
-        expect(result[:content]).to eq("I'm doing well!")
-        expect(result[:model]).to eq("claude-sonnet-4-20250514")
-        expect(result[:tokens_input]).to eq(20)
-        expect(result[:tokens_output]).to eq(10)
+    it "returns already-streamed content as a successful turn when the provider connection drops mid-stream" do
+      chunks_received = []
+      partial_result = {
+        status: :partial,
+        content: "Partial ans",
+        model: "claude-sonnet-4-20250514",
+        usage: { input_tokens: 12, output_tokens: 3 },
+        tool_calls: [],
+        error: { category: :transient, code: :service_unavailable, retryable: false, message: "unavailable" }
+      }
+      allow(chat_transport).to receive(:call) do |_request, &observer|
+        observer.call(type: :text_delta, content: "Partial ")
+        observer.call(type: :text_delta, content: "ans")
+        observer.call(type: :response_failed, result: partial_result)
+        partial_result
       end
 
-      it "folds later system messages into the system prompt" do
-        allow(transport).to receive(:chat).and_return(response)
+      result = client.call(conversation, on_chunk: ->(chunk) { chunks_received << chunk })
 
-        client.call([
-          { role: "system", content: "You are helpful." },
-          { role: "user", content: "Find the issue" },
-          { role: "system", content: "## Added Project Context: Paid" },
-          { role: "user", content: "What did you find?" }
-        ])
+      expect(chunks_received).to eq([ "Partial ", "ans" ])
+      expect(result[:content]).to eq("Partial ans")
+      expect(result[:tool_calls]).to be_nil
+    end
 
-        expect(transport).to have_received(:chat).with(
-          hash_including(
-            messages: [
-              { role: "system", content: "You are helpful.\n\n## Added Project Context: Paid" },
-              { role: "user", content: [ { type: "text", text: "Find the issue" } ] },
-              { role: "user", content: [ { type: "text", text: "What did you find?" } ] }
-            ]
-          )
-        )
-      end
+    it "omits tools when none are defined" do
+      allow(chat_transport).to receive(:call).and_return(succeeded_result)
 
-      it "streams text chunks through on_chunk callback" do
-        chunks_received = []
+      client.call(conversation, tools: [])
 
-        allow(transport).to receive(:chat) do |**_opts, &block|
-          block.call({ type: :text, content: "Hello" })
-          block.call({ type: :text, content: " world" })
-          block.call({ type: :usage, input_tokens: 10, output_tokens: 5 })
-          block.call({ type: :done })
-          response
-        end
-
-        client.call(conversation, on_chunk: ->(chunk) { chunks_received << chunk })
-
-        expect(chunks_received).to eq([ "Hello", " world" ])
-      end
-
-      it "returns nil tools when none are defined" do
-        allow(transport).to receive(:chat).and_return(response)
-
-        client.call(conversation, tools: [])
-
-        expect(transport).to have_received(:chat).with(hash_including(tools: nil))
-      end
-
-      it "passes tool_calls from response metadata" do
-        tool_response = instance_double(AgentHarness::Response,
-          output: "Let me search.",
-          model: "claude-sonnet-4-20250514",
-          input_tokens: 15,
-          output_tokens: 5,
-          metadata: { tool_calls: [ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ] }
-        )
-        allow(transport).to receive(:chat).and_return(tool_response)
-
-        result = client.call(conversation)
-
-        expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
+      expect(chat_transport).to have_received(:call) do |request|
+        expect(request).not_to have_key(:tools)
       end
     end
 
-    context "with an OpenAI-compatible transport" do
-      let(:transport) { instance_double(AgentHarness::OpenAICompatibleTransport) }
-      let(:model) { "gpt-4o" }
-      let(:client) { described_class.new(transport: transport, model: model, provider_type: :openai_compatible) }
-      let(:conversation) do
-        [
-          { role: "system", content: "You are helpful." },
-          { role: "user", content: "Find the issue" },
-          {
-            role: "assistant",
-            content: "Let me search.",
-            tool_calls: [ { id: "call_1", name: "search", arguments: { query: "issue" } } ]
-          },
-          { role: "tool", content: '{"results":[]}', tool_call_id: "call_1", tool_name: "search" },
-          { role: "assistant", content: nil },
-          { role: "user", content: "What did you find?" }
+    it "translates completed tool calls back to the provider id used in Paid's history" do
+      tool_result = succeeded_result.merge(
+        content: "Let me search.",
+        tool_calls: [
+          { id: "harness-generated-id", provider_id: "tc_1", name: "search", arguments_json: '{"q":"test"}', status: :completed },
+          { id: "harness-generated-id-2", provider_id: "tc_2", name: "search", arguments_json: "{}", status: :incomplete }
         ]
+      )
+      allow(chat_transport).to receive(:call).and_return(tool_result)
+
+      result = client.call(conversation)
+
+      expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
+    end
+
+    it "raises AgentHarness::RateLimitError with a computed reset_time for a rate-limited failure" do
+      allow(Time).to receive(:current).and_return(Time.utc(2026, 1, 1, 12, 0, 0))
+      failed_result = {
+        status: :failed,
+        error: { category: :transient, code: :rate_limited, retryable: true, message: "rate limited", retry_after_seconds: 30 }
+      }
+      allow(chat_transport).to receive(:call).and_return(failed_result)
+
+      expect { client.call(conversation) }.to raise_error(AgentHarness::RateLimitError) do |error|
+        expect(error.reset_time).to eq(Time.utc(2026, 1, 1, 12, 0, 30))
       end
-      let(:expected_messages) do
-        [
-          { role: "system", content: "You are helpful." },
-          { role: "user", content: "Find the issue" },
-          {
-            role: "assistant",
-            content: "Let me search.",
-            tool_calls: [
-              {
-                id: "call_1",
-                type: "function",
-                function: { name: "search", arguments: '{"query":"issue"}' }
-              }
-            ]
-          },
-          { role: "tool", content: '{"results":[]}', tool_call_id: "call_1" },
-          { role: "user", content: "What did you find?" }
-        ]
-      end
-      let(:expected_tools) do
-        [
-          {
-            type: "function",
-            function: {
-              name: "search",
-              description: "Search the project",
-              parameters: tool_definitions.first[:inputSchema]
-            }
-          }
-        ]
-      end
+    end
 
-      it "passes openai-formatted messages and tools to the transport" do
-        # @spec CHAT-API-007
-        allow(transport).to receive(:chat).and_return(response)
+    it "raises AgentHarness::AuthenticationError for an authentication failure without entering rate-limit retry" do
+      failed_result = {
+        status: :failed,
+        error: { category: :authentication, code: :invalid_credential, retryable: false, message: "invalid key" }
+      }
+      allow(chat_transport).to receive(:call).and_return(failed_result)
 
-        client.call(conversation, tools: tool_definitions)
+      expect { client.call(conversation) }.to raise_error(AgentHarness::AuthenticationError, "invalid key")
+    end
 
-        expect(transport).to have_received(:chat) do |**kwargs|
-          expect(kwargs[:messages]).to eq(expected_messages)
-          expect(kwargs[:tools]).to eq(expected_tools)
-          expect(kwargs[:model]).to eq(model)
-          expect(kwargs[:stream]).to be(false)
-          expect(kwargs).not_to have_key(:max_tokens)
-        end
-      end
+    it "raises AgentHarness::ProviderError for an unmapped category" do
+      failed_result = {
+        status: :failed,
+        error: { category: :unknown, code: :unclassified_provider_error, retryable: false, message: "boom" }
+      }
+      allow(chat_transport).to receive(:call).and_return(failed_result)
 
-      it "folds later system messages into the system prompt" do
-        allow(transport).to receive(:chat).and_return(response)
+      expect { client.call(conversation) }.to raise_error(AgentHarness::ProviderError, "boom")
+    end
 
-        client.call([
-          { role: "system", content: "You are helpful." },
-          { role: "user", content: "Find the issue" },
-          { role: "system", content: "## Added Project Context: Paid" },
-          { role: "user", content: "What did you find?" }
-        ])
-
-        expect(transport).to have_received(:chat).with(
-          hash_including(
-            messages: [
-              { role: "system", content: "You are helpful.\n\n## Added Project Context: Paid" },
-              { role: "user", content: "Find the issue" },
-              { role: "user", content: "What did you find?" }
-            ]
-          )
-        )
+    context "with an OpenAI-compatible candidate" do
+      let(:client) do
+        described_class.new(provider: :openai, protocol: :chat_completions, endpoint: "https://api.openai.com/v1",
+          api_key: "sk-openai-test", model: "gpt-4o", chat_transport: chat_transport)
       end
 
-      it "returns nil tools when no definitions are provided" do
-        allow(transport).to receive(:chat).and_return(response)
-
-        client.call(conversation, tools: nil)
-
-        expect(transport).to have_received(:chat).with(hash_including(tools: nil))
-      end
-
-      it "passes configured max_tokens to the transport" do
-        client = described_class.new(
-          transport: transport,
-          model: model,
-          provider_type: :openai_compatible,
-          max_tokens: 16_384
-        )
-        allow(transport).to receive(:chat).and_return(response)
+      it "passes configured max_tokens as max_output_tokens" do
+        client = described_class.new(provider: :openai, protocol: :chat_completions, endpoint: "https://api.z.ai/api/paas/v4",
+          api_key: "sk-zai-test", model: "glm-5.3", max_tokens: 16_384, chat_transport: chat_transport)
+        allow(chat_transport).to receive(:call).and_return(succeeded_result)
 
         client.call(conversation)
 
-        expect(transport).to have_received(:chat).with(hash_including(max_tokens: 16_384))
+        expect(chat_transport).to have_received(:call).with(hash_including(max_output_tokens: 16_384))
+      end
+
+      it "builds an openai-provider candidate with chat_completions protocol" do
+        allow(chat_transport).to receive(:call).and_return(succeeded_result)
+
+        client.call(conversation)
+
+        expect(chat_transport).to have_received(:call) do |request|
+          expect(request[:candidates].first).to include(provider: :openai, protocol: :chat_completions,
+            endpoint: "https://api.openai.com/v1")
+        end
       end
     end
   end
