@@ -197,6 +197,29 @@
   `spec/services/inbox/open_interactive_chat_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002G** — When `Issue#clear_runner_retry_abandonment!`
+  runs — whether from the inbox's "Re-enable" action (`clear_retry_abandonment`)
+  or automatically after a successful manual run
+  (`RunAgentActivity#clear_issue_runner_retry_abandonment`) — the system SHALL
+  stamp `runner_retry_failure_window_reset_at` with the clear time, and
+  `AgentRuns::IssueRunnerFailureHistory` SHALL exclude agent runs created before
+  that timestamp from the per-provider failure counts it computes (consumed by
+  both `AgentRuns::IssueRunnerRetryCap` for retry-cap enforcement and
+  `RunAgentActivity#apply_issue_aware_runner_ordering` for provider ordering).
+  Without this, a cleared abandonment carries no new information: every
+  provider is still over the (unreset) cap, so the very next auto-pick dispatch
+  re-trips the cap on all of them and immediately re-abandons the issue,
+  incrementing `runner_retry_abandonment_count` again — defeating an operator's
+  explicit "try again" without ever gathering a new result (#4092). The
+  automatic-clear path is unaffected in practice: it only runs after a
+  successful run, which necessarily post-dates the stamped reset time, so that
+  run's own (successful) attempt is never excluded by the new lower bound.
+  *Code:* `app/models/issue.rb`, `app/services/agent_runs/issue_runner_failure_history.rb`.
+  *Test:* `spec/models/issue_spec.rb`,
+  `spec/services/agent_runs/issue_runner_failure_history_spec.rb`,
+  `spec/services/agent_runs/issue_runner_retry_cap_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

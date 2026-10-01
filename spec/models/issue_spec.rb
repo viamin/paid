@@ -2464,6 +2464,15 @@ RSpec.describe Issue do
       expect(issue.runner_retry_abandoned?).to be(false)
     end
 
+    # @spec OPERATOR-INBOX-002G
+    it "stamps the failure-count window reset time" do
+      freeze_time do
+        issue.clear_runner_retry_abandonment!
+
+        expect(issue.reload.runner_retry_failure_window_reset_at).to eq(Time.current)
+      end
+    end
+
     it "is a no-op when the issue is not abandoned" do
       active = create(:issue, project: project)
 
@@ -2486,11 +2495,14 @@ RSpec.describe Issue do
       )
     end
 
-    it "does not reset per-provider failure counts (windowed basis is preserved)" do
-      # The cap is enforced via IssueRunnerFailureHistory (a 50-run windowed
-      # total); clearing the abandonment flag is a UI/auto-pick signal, not
-      # a reset of failure counts. A subsequent auto-pick will re-trip the
-      # cap and re-abandon the issue if all providers are still over it.
+    # @spec OPERATOR-INBOX-002G
+    it "resets per-provider failure counts so a lifted cap is not instantly re-tripped (#4092)" do
+      # Prior to #4092, clearing the abandonment flag left the windowed failure
+      # history untouched, so the very next dispatch would re-trip the cap on
+      # every still-over-cap provider and re-abandon the issue immediately —
+      # defeating an operator's explicit "try again". Clearing now stamps
+      # runner_retry_failure_window_reset_at, so those stale failures no
+      # longer count.
       record_run = ->(runner_key, error_type: "error") {
         create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
           runners_attempted: [ { "runner" => runner_key, "success" => false, "error_type" => error_type } ])
@@ -2499,11 +2511,17 @@ RSpec.describe Issue do
 
       issue.clear_runner_retry_abandonment!
 
-      # The cap is still enforced against the same windowed failure history.
       capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
         project: project, issue: issue, goal: "create_pr", cap: 10
       )
-      expect(capped).to contain_exactly("claude")
+      expect(capped).to be_empty
+
+      # A new failure recorded after the clear counts again.
+      record_run.call("claude_code")
+      capped_after_new_failure = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+        project: project, issue: issue, goal: "create_pr", cap: 1
+      )
+      expect(capped_after_new_failure).to contain_exactly("claude")
     end
   end
 

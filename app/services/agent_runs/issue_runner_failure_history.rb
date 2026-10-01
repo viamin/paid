@@ -10,6 +10,12 @@ module AgentRuns
   # Only actual execution failures (error, timeout, infinite_loop, preflight_timeout)
   # are counted. Rate limits, skipped runners, and externally-cancelled runs are
   # excluded because they do not reflect provider quality for the specific issue.
+  #
+  # Runs created before an issue's +runner_retry_failure_window_reset_at+ (stamped
+  # by Issue#clear_runner_retry_abandonment!) are also excluded, so a cleared
+  # retry-cap abandonment — operator-initiated or automatic — stops counting the
+  # failures that tripped it (#4092).
+  # @spec OPERATOR-INBOX-002G
   class IssueRunnerFailureHistory
     # Error types indicating an actual execution failure (not transient or external).
     EXECUTION_FAILURE_TYPES = %w[error timeout infinite_loop preflight_timeout].freeze
@@ -27,7 +33,8 @@ module AgentRuns
           issue_id: agent_run.issue_id,
           goal: agent_run.goal,
           exclude_run_id: agent_run.id,
-          max_prior_runs: max_prior_runs
+          max_prior_runs: max_prior_runs,
+          window_reset_at: agent_run.issue&.runner_retry_failure_window_reset_at
         ).call
       end
 
@@ -41,17 +48,19 @@ module AgentRuns
           issue_id: issue.is_a?(ApplicationRecord) ? issue.id : issue,
           goal: goal,
           exclude_run_id: exclude_run_id,
-          max_prior_runs: max_prior_runs
+          max_prior_runs: max_prior_runs,
+          window_reset_at: issue.is_a?(ApplicationRecord) ? issue.runner_retry_failure_window_reset_at : nil
         ).call
       end
     end
 
-    def initialize(project_id:, issue_id:, goal:, exclude_run_id: nil, max_prior_runs: MAX_PRIOR_RUNS)
+    def initialize(project_id:, issue_id:, goal:, exclude_run_id: nil, max_prior_runs: MAX_PRIOR_RUNS, window_reset_at: nil)
       @project_id = project_id
       @issue_id = issue_id
       @goal = goal
       @exclude_run_id = exclude_run_id
       @max_prior_runs = max_prior_runs
+      @window_reset_at = window_reset_at
     end
 
     # Returns a hash of { canonical_runner_key => failure_count } from all prior
@@ -81,13 +90,14 @@ module AgentRuns
 
     private
 
-    attr_reader :project_id, :issue_id, :goal, :exclude_run_id, :max_prior_runs
+    attr_reader :project_id, :issue_id, :goal, :exclude_run_id, :max_prior_runs, :window_reset_at
 
     def prior_runs
       scope = AgentRun
         .where(project_id: project_id, issue_id: issue_id, goal: goal)
         .where("runners_attempted != '[]'::jsonb")
       scope = scope.where.not(id: exclude_run_id) if exclude_run_id
+      scope = scope.where(created_at: window_reset_at..) if window_reset_at
       scope.order(created_at: :desc).limit(max_prior_runs)
     end
 

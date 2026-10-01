@@ -1363,8 +1363,11 @@ module Activities
     # user-triggered run is an override and may target a capped provider on
     # purpose. Abandonment is also cleared on success elsewhere, so a manual
     # override that succeeds clears the abandonment flag for subsequent auto-pick.
-    # Note that clearing the flag does not reset per-provider failure counts —
-    # see Issue#clear_runner_retry_abandonment! for the full semantics.
+    # Clearing the flag also resets the failure-count window (see
+    # Issue#clear_runner_retry_abandonment!), so prior failures that tripped the
+    # cap no longer count toward it after the clear — otherwise the very next
+    # dispatch would find every provider still over the (unreset) cap and
+    # immediately re-abandon the issue, defeating the clear (#4092).
     def apply_issue_runner_retry_cap(runners, agent_run, user)
       return runners unless retry_cap_applicable?(agent_run)
       return runners if runners.empty?

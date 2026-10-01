@@ -184,6 +184,32 @@ RSpec.describe AgentRuns::IssueRunnerFailureHistory do
     end
   end
 
+  # @spec OPERATOR-INBOX-002G
+  context "when the issue has a runner_retry_failure_window_reset_at" do
+    before do
+      travel_to(2.days.ago) do
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [ { "runner" => "claude_code", "success" => false, "error_type" => "error" } ])
+      end
+    end
+
+    it "excludes runs created before the reset time" do
+      issue.update!(runner_retry_failure_window_reset_at: 1.day.ago)
+
+      expect(call).to eq({})
+    end
+
+    it "includes runs created at or after the reset time" do
+      issue.update!(runner_retry_failure_window_reset_at: 3.days.ago)
+
+      expect(call).to eq("claude" => 1)
+    end
+
+    it "is unaffected when the reset time is nil" do
+      expect(call).to eq("claude" => 1)
+    end
+  end
+
   context "with all execution failure types" do
     before do
       create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
