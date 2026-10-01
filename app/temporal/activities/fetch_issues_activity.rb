@@ -928,6 +928,7 @@ module Activities
         .order(:relationships_parsed_at, :github_updated_at, :id)
     end
 
+    # @spec GITHUB-SYNC-016
     def repair_completed_open_issues(project, client)
       completed_issues = project.issues
         .where(github_state: "open", is_pull_request: false, paid_state: "completed")
@@ -962,14 +963,53 @@ module Activities
       end
       return false if repaired.empty?
 
-      visible_repaired = repaired.select { |issue| add_recommend_close_label(client, project, issue) }
-      return false if visible_repaired.empty?
+      blocked, closeable = repaired.partition { |issue| !issue.ready_to_work? }
 
-      project.issues.where(id: visible_repaired.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
+      park_dependency_blocked_issues(blocked) | recommend_close_issues(client, project, closeable)
+    end
+
+    # A partial implementation still blocked by an unresolved dependency is
+    # never recommended for closure: the agent run's completion does not
+    # establish that this remaining, intentionally deferred work is done.
+    # @spec GITHUB-SYNC-016
+    def park_dependency_blocked_issues(issues)
+      return false if issues.empty?
+
+      issues.each do |issue|
+        issue.update!(paid_state: "manual_review", manual_review_reason: dependency_blocked_reason(issue))
+      end
+      logger.info(
+        message: "github_sync.completed_open_issues_blocked_on_dependency",
+        project_id: issues.first.project_id,
+        issue_numbers: issues.map(&:github_number)
+      )
+      true
+    end
+
+    def dependency_blocked_reason(issue)
+      local_numbers = (issue.blocking_issues.pluck(:github_number) +
+        issue.blocking_deployment_dependencies.map { |dep| dep.depends_on_issue.github_number }).uniq.sort
+      external_refs = issue.blocking_external_dependencies.map do |dep|
+        "#{dep.depends_on_owner}/#{dep.depends_on_repo}##{dep.depends_on_number}"
+      end
+      blockers = local_numbers.map { |number| "##{number}" } + external_refs
+
+      "Paid's agent run completed and opened a pull request, but this issue remains open and is " \
+        "blocked on an unresolved dependency: #{blockers.join(', ')}. This issue stays pending until " \
+        "the dependency resolves or a human intervenes."
+    end
+
+    def recommend_close_issues(client, project, issues)
+      return false if issues.empty?
+
+      visible = issues.select { |issue| add_recommend_close_label(client, project, issue) }
+      return false if visible.empty?
+
+      project.issues.where(id: visible.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
       logger.info(
         message: "github_sync.completed_open_issues_repaired",
         project_id: project.id,
-        issue_numbers: visible_repaired.map(&:github_number)
+        issue_numbers: visible.map(&:github_number)
       )
       true
     end

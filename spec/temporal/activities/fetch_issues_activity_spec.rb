@@ -350,6 +350,78 @@ RSpec.describe Activities::FetchIssuesActivity do
         project.full_name, issue.github_number, [ "paid-recommend-close" ]
       )
     end
+
+    # @spec GITHUB-SYNC-016
+    it "parks a dependency-blocked completed open issue in manual_review instead of recommending closure" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, project: project, github_number: 4048, body: "Tracks #3871")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("#3870")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "parks a dependency-blocked completed open issue in manual_review when the non-closing PR has already merged" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, :closed, project: project, github_number: 4048,
+        body: "Tracks #3871", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("#3870")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "does not re-park or re-label an already dependency-blocked issue on a repeated sync" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, project: project, github_number: 4048, body: "Tracks #3871")
+      activity.send(:repair_completed_open_issues, project, github_client)
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "still recommends closure for a dependency-free completed open issue alongside a dependency-blocked one" do
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      blocked_issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      blocked_issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: blocked_issue, goal: "create_pr", pull_request_number: 4048)
+      create(:issue, :pull_request, project: project, github_number: 4048, body: "Tracks #3871")
+
+      closeable_issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: closeable_issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(blocked_issue.reload.paid_state).to eq("manual_review")
+      expect(closeable_issue.reload.paid_state).to eq("recommend_close")
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        project.full_name, closeable_issue.github_number, [ "paid-recommend-close" ]
+      ).once
+    end
   end
 
   describe "#execute" do
