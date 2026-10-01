@@ -78,10 +78,9 @@ class Project < ApplicationRecord
   PR_TARGETS = %w[own_repo upstream].freeze
   DEFAULT_PR_TARGET = "own_repo".freeze
   # Field set disabled in the settings UI whenever pr_target=upstream because
-  # Paid no longer owns or trusts the host repository. Server-side enforcement
-  # lives in a follow-up issue. This list
-  # is the canonical source of truth — both the view and the controller consult
-  # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
+  # Paid no longer owns or trusts the host repository. This list drives the
+  # settings UI gray-out state; Project::UpstreamAutomation is the server-side
+  # authority for enforcement. @spec PR-TARGET-002, PR-TARGET-003
   PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[
     review_settings
     auto_merge_mode

@@ -127,7 +127,7 @@ RSpec.describe Activities::FetchIssuesActivity do
   describe "upstream pull request reconciliation" do
     # @spec UPSTREAM-PR-005
     it "closes an upstream PR that is no longer open without closing a colliding fork PR" do
-      upstream_project = create(:project, pr_target: "upstream", upstream_full_name: "upstream/repo",
+      upstream_project = create(:project, :upstream_pr_target, upstream_full_name: "upstream/repo",
         last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
       upstream_pr = create(:issue, :pull_request, project: upstream_project, github_number: 42,
         source: Issue::UPSTREAM_PULL_REQUEST_SOURCE,
@@ -548,8 +548,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
     context "when the project targets upstream pull requests" do # @spec UPSTREAM-ISSUE-001 UPSTREAM-ISSUE-002 UPSTREAM-ISSUE-003
       let(:project) do
-        create(:project,
-          pr_target: "upstream",
+        create(:project, :upstream_pr_target,
           upstream_full_name: "stenolabs/stenoai",
           allowed_github_usernames: [ "trusted-maintainer" ])
       end

@@ -245,7 +245,7 @@ RSpec.describe Project do
       end
 
       it "accepts an upstream owner at GitHub's character limit" do # @spec PR-TARGET-006
-        project = build(:project, pr_target: "upstream", upstream_full_name: "#{"a" * 39}/widgets")
+        project = build(:project, :upstream_pr_target, upstream_full_name: "#{"a" * 39}/widgets")
 
         expect(project).to be_valid
       end
@@ -258,13 +258,13 @@ RSpec.describe Project do
       end
 
       it "accepts an upstream_full_name that differs from the project's own repository" do # @spec PR-TARGET-006
-        project = build(:project, owner: "octo", repo: "hello", pr_target: "upstream", upstream_full_name: "acme/hello")
+        project = build(:project, :upstream_pr_target, owner: "octo", repo: "hello", upstream_full_name: "acme/hello")
 
         expect(project).to be_valid
       end
 
       it "persists a whitespace-padded upstream_full_name as a normalized slug" do # @spec PR-TARGET-006
-        project = create(:project, pr_target: "upstream", upstream_full_name: " acme/widgets ")
+        project = create(:project, :upstream_pr_target, upstream_full_name: " acme/widgets ")
 
         expect(project.reload).to have_attributes(
           upstream_full_name: "acme/widgets",
@@ -286,7 +286,8 @@ RSpec.describe Project do
         agent_run = create(:agent_run, project: project, issue: issue, goal: "create_pr", status: "running")
 
         expect {
-          project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets")
+          project.update!(pr_target: "upstream", upstream_full_name: "acme/widgets",
+            auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
         }.to have_enqueued_job(AgentRunCancellationJob).with(agent_run.id)
 
         expect(project.reload.last_issue_sync_at).to eq(Time.at(0).utc)

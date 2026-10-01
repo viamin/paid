@@ -247,7 +247,10 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
     end
 
     it "does not recover labels for PRs created against an upstream repository" do # @spec UPSTREAM-PR-005
-      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      project.update!(
+        pr_target: "upstream", upstream_full_name: "upstream/repo",
+        auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+      )
       create(:agent_run, :completed,
         project: project,
         issue: nil,

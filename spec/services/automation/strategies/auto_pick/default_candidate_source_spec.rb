@@ -578,7 +578,10 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     it "keeps an upstream PR run ineligible when a same-numbered fork PR closed unmerged" do # @spec EAGER-QUEUE-009 UPSTREAM-PR-005
-      project.update!(pr_target: "upstream", upstream_full_name: "upstream/repo")
+      project.update!(
+        pr_target: "upstream", upstream_full_name: "upstream/repo",
+        auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false
+      )
       issue = create(:issue, project: project, paid_state: "new")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
         goal: "create_pr", auto_pick: true, pull_request_number: 42,
