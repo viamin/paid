@@ -16,6 +16,7 @@ FactoryBot.define do
 
     trait :closed do
       github_state { "closed" }
+      closed_at { Time.current }
     end
 
     trait :pull_request do

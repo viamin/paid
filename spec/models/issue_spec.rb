@@ -131,6 +131,14 @@ RSpec.describe Issue do
         expect(described_class.ready_for_work(project)).not_to include(issue)
       end
 
+      it "treats a dependency on the issue's own parent as a contextual reference" do # @spec AUTO-PICK-QUEUE-009
+        umbrella = create(:issue, project: project, github_state: "open")
+        child = create(:issue, project: project, parent_issue: umbrella)
+        create(:issue_dependency, issue: child, depends_on_issue: umbrella)
+
+        expect(described_class.ready_for_work(project)).to include(child)
+      end
+
       it "includes issues whose dependencies are all closed" do
         dep = create(:issue, project: project, github_state: "closed")
         issue = create(:issue, project: project)
@@ -1419,6 +1427,16 @@ RSpec.describe Issue do
 
       expect(issue.blocking_issues).to contain_exactly(open_dep)
     end
+
+    it "excludes a dependency on the issue's own parent" do # @spec AUTO-PICK-QUEUE-009
+      umbrella = create(:issue, project: project, github_state: "open")
+      open_dep = create(:issue, project: project, github_state: "open")
+      child = create(:issue, project: project, parent_issue: umbrella)
+      create(:issue_dependency, issue: child, depends_on_issue: umbrella)
+      create(:issue_dependency, issue: child, depends_on_issue: open_dep)
+
+      expect(child.blocking_issues).to contain_exactly(open_dep)
+    end
   end
 
   describe "#dependent_issues" do
@@ -2106,6 +2124,16 @@ RSpec.describe Issue do
       result = described_class.lifecycle_statuses([ issue ])
 
       expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "does not block a child on a dependency pointing at its own parent" do # @spec AUTO-PICK-QUEUE-009
+      umbrella = create(:issue, project: project, github_state: "open")
+      child = create(:issue, project: project, github_state: "open", parent_issue: umbrella)
+      create(:issue_dependency, issue: child, depends_on_issue: umbrella)
+
+      result = described_class.lifecycle_statuses([ child ])
+
+      expect(result[child.id]).to eq(:eligible)
     end
 
     it "returns :blocked for an issue with an external dependency" do
