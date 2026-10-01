@@ -96,3 +96,5 @@ resolves, permitting one subsequent audit. Ordinary implementation issues keep
 their terminal safeguards. Project, effective-owner, and tenant skip-label
 overrides remain authoritative: operators who deliberately configured `epic`
 as a skip label must remove it from that effective override to enable audits.
+Later metadata updates to work that predated the terminal audit do not count as
+newly linked work and cannot re-arm the umbrella.

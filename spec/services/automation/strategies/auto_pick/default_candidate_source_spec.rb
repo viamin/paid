@@ -849,6 +849,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
 
+    it "does not re-audit an epic when metadata changes on a child that predates its audit" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 3, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.days.ago)
+        child = create(:issue, :closed, project: project, parent_issue: epic,
+          created_at: 13.days.ago, updated_at: 13.days.ago)
+
+        child.update!(labels: [ "metadata-updated" ])
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
+      end
+    end
+
     it "does not re-audit an ordinary issue after a child resolves" do # @spec AUTO-PICK-QUEUE-010
       issue = create(:issue, project: project, paid_state: "completed", no_code_required_at: 2.hours.ago)
       create(:issue, :closed, project: project, parent_issue: issue, github_updated_at: Time.current)

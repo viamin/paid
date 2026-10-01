@@ -103,7 +103,8 @@
   no-code-required or merged-PR outcome and that audit created or linked
   focused child/dependency work, Auto-Pick SHALL keep the epic blocked while
   that work is unresolved and SHALL permit a subsequent audit after it
-  resolves. This exception SHALL apply only to epic umbrellas; ordinary issues
-  retain their terminal safeguards.
+  resolves. Later metadata changes to child/dependency work linked before the
+  terminal audit SHALL NOT permit another audit. This exception SHALL apply
+  only to epic umbrellas; ordinary issues retain their terminal safeguards.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.

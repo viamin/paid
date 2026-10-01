@@ -90,7 +90,8 @@ module Automation
           end
 
           def eligible_scope(project, excluding_run_id: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007
-            base = without_open_non_pr_subissues(base_scope(project, excluding_run_id: excluding_run_id))
+            epic_ids = epic_issue_ids(project)
+            base = without_open_non_pr_subissues(base_scope(project, epic_ids:, excluding_run_id: excluding_run_id))
             scope = Issue.auto_pick_eligible_paid_state_scope(base)
 
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
@@ -98,7 +99,7 @@ module Automation
               # An epic umbrella's readiness is governed by its authoritative
               # child/dependency relationships, so incidental open body
               # references must not strand it behind tracker heuristics.
-              blocked_ids -= epic_issue_ids(project)
+              blocked_ids -= epic_ids
               scope = scope.where.not(id: blocked_ids) unless blocked_ids.empty?
             end
 
@@ -230,7 +231,7 @@ module Automation
             end
           end
 
-          def base_scope(project, excluding_run_id: nil) # @spec EAGER-QUEUE-009
+          def base_scope(project, epic_ids:, excluding_run_id: nil) # @spec EAGER-QUEUE-009
             blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil)
@@ -240,7 +241,7 @@ module Automation
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
             blocking_issue_ids = blocking_runs.select(:issue_id)
 
-            reauditable_epic_ids = reauditable_epic_ids(project)
+            reauditable_epic_ids = reauditable_epic_ids(project, epic_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
@@ -342,29 +343,23 @@ module Automation
 
           # An epic is a final acceptance audit, not ordinary implementation
           # work. A prior no-code outcome or merged audit PR remains terminal
-          # until a direct, authoritative child/dependency changes afterward.
+          # until child/dependency work linked after that audit resolves.
           # That lets a newly discovered gap complete before one further audit
           # without weakening the terminal guards for ordinary issues.
-          def reauditable_epic_ids(project) # @spec AUTO-PICK-QUEUE-010
-            epic_ids = epic_issue_ids(project)
+          def reauditable_epic_ids(project, epic_ids) # @spec AUTO-PICK-QUEUE-010
             return [] if epic_ids.empty?
 
             terminal_at = terminal_audit_times(project, epic_ids)
             return [] if terminal_at.empty?
 
-            resolved_prerequisite_times(epic_ids).filter_map do |issue_id, resolved_at|
-              issue_id if resolved_at > terminal_at.fetch(issue_id, Time.at(0))
+            resolved_prerequisite_linked_at(epic_ids).filter_map do |issue_id, linked_at|
+              issue_id if linked_at > terminal_at.fetch(issue_id, Time.at(0))
             end
           end
 
           def epic_issue_ids(project)
-            Issue.where(project: project, is_pull_request: false)
-              .where(<<~SQL.squish, EPIC_LABEL)
-                EXISTS (
-                  SELECT 1 FROM jsonb_array_elements_text(issues.labels) AS label(value)
-                  WHERE LOWER(label.value) = LOWER(?)
-                )
-              SQL
+            Issue.where(project: project, is_pull_request: false, github_state: "open")
+              .where("labels @> ?::jsonb", [ EPIC_LABEL ].to_json)
               .pluck(:id)
           end
 
@@ -377,14 +372,17 @@ module Automation
             no_code_times
           end
 
-          def resolved_prerequisite_times(issue_ids)
+          # A terminal audit may re-arm only once for work it newly linked.
+          # +updated_at+ is deliberately not used: label syncs and other
+          # metadata edits touch it without resolving prerequisite work.
+          def resolved_prerequisite_linked_at(issue_ids)
             child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
               .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-              .group(:parent_issue_id).maximum(:updated_at)
+              .group(:parent_issue_id).maximum(:created_at)
             dependency_times = IssueDependency.joins(:depends_on_issue)
               .where(issue_id: issue_ids)
               .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-              .group(:issue_id).maximum("issues.updated_at")
+              .group(:issue_id).maximum("issue_dependencies.created_at")
 
             (child_times.keys | dependency_times.keys).to_h do |issue_id|
               [ issue_id, [ child_times[issue_id], dependency_times[issue_id] ].compact.max ]
