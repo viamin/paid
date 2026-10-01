@@ -106,5 +106,12 @@
   resolves. Later metadata changes to child/dependency work linked before the
   terminal audit SHALL NOT permit another audit. This exception SHALL apply
   only to epic umbrellas; ordinary issues retain their terminal safeguards.
+  The re-arm comparison uses the *resolution* timestamp of the prerequisite
+  (`closed_at`, stamped on the open -> closed transition; falls back to
+  `parent_issue_linked_at` for children or `issue_dependencies.created_at`
+  for legacy data) rather than the link timestamp, so an audit run that
+  files work mid-run still re-arms once that work resolves after the audit
+  terminates.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
-  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/models/issue.rb`.

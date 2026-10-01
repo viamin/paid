@@ -98,3 +98,16 @@ overrides remain authoritative: operators who deliberately configured `epic`
 as a skip label must remove it from that effective override to enable audits.
 Later metadata updates to work that predated the terminal audit do not count as
 newly linked work and cannot re-arm the umbrella.
+
+The re-arm comparison uses the *resolution* timestamp of the prerequisite —
+the time the open -> closed transition actually happened — rather than the
+link timestamp. Mid-run link races can stamp `parent_issue_linked_at` before
+the audit's terminal stamp even when the audit itself filed the work; without
+the resolution-timestamp comparison the umbrella stays stranded forever.
+`issues.closed_at` is stamped on the open -> closed transition and stays
+untouched by later label/comment syncs (unlike `updated_at` and
+`github_updated_at`, both of which move on unrelated writes), so label edits
+on long-closed prerequisites do not move the resolution timestamp either.
+For legacy rows the comparison falls back to `parent_issue_linked_at` (for
+children) or `issue_dependencies.created_at` (for dependencies), so the
+audit-filed-mid-run case still re-arms after the linked work resolves.

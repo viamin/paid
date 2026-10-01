@@ -119,6 +119,7 @@ class Issue < ApplicationRecord
   before_validation { self.source ||= GITHUB_SOURCE }
   before_create :stamp_parent_issue_linked_at, if: :parent_issue_id?
   before_update :sync_parent_issue_linked_at, if: :will_save_change_to_parent_issue_id?
+  before_save :sync_closed_at, if: :will_save_change_to_github_state?
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
   validates :pr_escalation_reason, inclusion: { in: PR_ESCALATION_REASONS }, allow_nil: true
@@ -811,6 +812,24 @@ class Issue < ApplicationRecord
 
   def stamp_parent_issue_linked_at
     self.parent_issue_linked_at ||= Time.current
+  end
+
+  # Stamps `closed_at` when `github_state` transitions to "closed" so the epic
+  # re-audit eligibility check can compare the *resolution* time against the
+  # audit's terminal timestamp instead of the (potentially mid-run) link
+  # timestamp. `parent_issue_linked_at` is deliberately distinct: it captures
+  # when the relationship was first observed, which can fall mid-run for work
+  # an epic audit filed itself; `closed_at` is only stamped on the actual
+  # open -> closed transition. Cleared on a reopen so a subsequent re-closure
+  # re-arms correctly. Distinct from `github_updated_at`/`updated_at`, both of
+  # which are bumped by unrelated label/comment syncs and would re-arm the
+  # umbrella on any metadata change.
+  def sync_closed_at
+    if github_state == "closed"
+      self.closed_at ||= Time.current
+    elsif github_state_was == "closed"
+      self.closed_at = nil
+    end
   end
 
   # Mirrors the new `paused` value onto GitHub by adding/removing the

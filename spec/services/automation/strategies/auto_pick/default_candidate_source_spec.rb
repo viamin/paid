@@ -866,7 +866,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
           no_code_required_at: 2.days.ago)
         child = create(:issue, :closed, project: project, parent_issue: epic,
-          created_at: 13.days.ago, updated_at: 13.days.ago, parent_issue_linked_at: 13.days.ago)
+          created_at: 13.days.ago, updated_at: 13.days.ago,
+          parent_issue_linked_at: 13.days.ago, closed_at: 13.days.ago)
 
         child.update!(labels: [ "metadata-updated" ])
 
@@ -903,6 +904,45 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(queued_audit).to be_present
         expect(queued_audit.auto_pick).to be(true)
         expect(described_class.eligible_for_dequeue?(project, epic.id, excluding_run_id: queued_audit.id)).to be(true)
+      end
+    end
+
+    # Mid-run link: an epic audit creates or links a gap child via the GitHub
+    # proxy while the run is still executing. The periodic issue sync stamps
+    # `parent_issue_linked_at` at sync time (before the run's terminal stamp),
+    # and the child resolves only after the audit concludes. A strict link-time
+    # comparison (linked_at > terminal_at) would strand the epic here; the
+    # resolution timestamp closes the gap and lets a subsequent audit run.
+    it "re-audits an epic after a child linked during its prior audit resolves" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        # Child was filed mid-run and the sync linked it before the audit
+        # concluded — parent_issue_linked_at is *strictly earlier* than the
+        # audit's terminal stamp, mirroring the production race in #4089.
+        create(:issue, :closed, project: project, parent_issue: epic,
+          parent_issue_linked_at: 3.hours.ago, closed_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
+    # Mid-run dependency edge: the audit declares a dependency on work that
+    # resolves only after the audit concludes. A strict link-time comparison
+    # would strand the epic here; the dependency's resolution timestamp
+    # (closed_at) closes the gap.
+    it "re-audits an epic after a dependency linked during its prior audit resolves" do # @spec AUTO-PICK-QUEUE-010
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        dependency = create(:issue, :closed, project: project, closed_at: 1.hour.ago)
+        # IssueDependency edge is created mid-run — created_at is *strictly
+        # earlier* than the audit's terminal stamp, mirroring the production
+        # race in #4089.
+        dependency_edge = create(:issue_dependency, issue: epic, depends_on_issue: dependency)
+        dependency_edge.update_columns(created_at: 3.hours.ago, updated_at: 3.hours.ago)
+
+        expect(described_class.eligible_scope(project)).to include(epic)
       end
     end
 

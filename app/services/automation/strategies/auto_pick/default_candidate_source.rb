@@ -427,19 +427,30 @@ module Automation
             result
           end
 
-          # A terminal audit may re-arm only once for work it newly linked.
-          # +parent_issue_linked_at+ is deliberately distinct from +updated_at+:
-          # label syncs and other metadata edits touch the latter without
-          # resolving prerequisite work. Legacy links created before this
-          # timestamp existed conservatively fall back to +created_at+.
+          # A terminal audit may re-arm once for work that resolves *after*
+          # the audit terminates. Compare the *resolution* timestamp — not
+          # the link timestamp — against the audit's terminal time:
+          #
+          # - +closed_at+ is stamped on the open -> closed transition and is
+          #   untouched by later label/comment syncs (unlike +updated_at+ and
+          #   +github_updated_at+), so it stays stable for already-resolved
+          #   prerequisites.
+          # - For children linked via +parent_issue_id+, fall back to
+          #   +parent_issue_linked_at+ (which can fall mid-run when the audit
+          #   filed the work itself) and finally to +created_at+ for legacy
+          #   rows that predate +parent_issue_linked_at+.
+          # - For dependencies, fall back to +issue_dependencies.created_at+
+          #   (the edge creation time) when +closed_at+ isn't stamped.
           def resolved_prerequisite_linked_at(issue_ids)
             child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
               .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-              .group(:parent_issue_id).maximum(Arel.sql("COALESCE(parent_issue_linked_at, created_at)"))
+              .group(:parent_issue_id)
+              .maximum(Arel.sql("COALESCE(closed_at, parent_issue_linked_at, created_at)"))
             dependency_times = IssueDependency.joins(:depends_on_issue)
               .where(issue_id: issue_ids)
               .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-              .group(:issue_id).maximum("issue_dependencies.created_at")
+              .group(:issue_id)
+              .maximum(Arel.sql("COALESCE(issues.closed_at, issue_dependencies.created_at)"))
 
             (child_times.keys | dependency_times.keys).to_h do |issue_id|
               [ issue_id, [ child_times[issue_id], dependency_times[issue_id] ].compact.max ]
