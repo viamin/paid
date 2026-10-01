@@ -123,6 +123,14 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    it "selects an epic once its authoritative work is complete" do # @spec AUTO-PICK-QUEUE-009
+      epic = create(:issue, project: project, labels: [ "epic" ])
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(epic)
+    end
+
     it "skips issues labeled waiting" do
       create(:issue, project: project, labels: [ "waiting" ])
 
@@ -279,7 +287,8 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
-    it "skips issues labeled epic" do
+    it "honors an explicit epic skip-label override" do
+      project.update!(auto_pick_skip_labels: [ "epic" ])
       create(:issue, project: project, labels: [ "epic" ])
 
       result = described_class.new(project).call

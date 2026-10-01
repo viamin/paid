@@ -49,11 +49,12 @@ final issue validates the shipped code, tests, and docs against the RDR plan,
 updates the RDR status, records any remaining gaps, and follows
 [`closeout-checklist.md`](closeout-checklist.md).
 
-When the closeout concludes that the RDR is fully implemented, its PR should
-visibly close the umbrella issue with GitHub closing language such as
-`Closes #1234`. Use non-closing language such as `Tracks #1234` only for
-intermediate or partial closeout work where the umbrella must remain open for
-remaining gap issues.
+Closeout issues are prerequisites to, not substitutes for, the umbrella's final
+acceptance audit. Their PRs must use non-closing language such as
+`Tracks #1234`; the umbrella's own final audit closes it with GitHub closing
+language only when its evidence shows no required gaps remain. This avoids a
+closeout PR bypassing the final audit or creating parent/child dependency
+cycles.
 
 ## Index
 

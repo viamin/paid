@@ -62,6 +62,8 @@
   an issue to `paid_state: "completed"`, the system SHALL also stamp
   `no_code_required_at` on the issue, permanently excluding it from Auto-Pick's
   completed-issue recovery path (see AUTO-PICK-QUEUE-004) so the agent's
-  terminal declaration does not loop the issue back into the queue.
+  terminal declaration does not loop the issue back into the queue. An epic
+  umbrella may re-enter only through AUTO-PICK-QUEUE-010 after newly linked
+  required work resolves.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.

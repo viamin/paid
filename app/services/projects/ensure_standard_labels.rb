@@ -35,7 +35,7 @@ module Projects
   #   * test_changes_requested             (paid-test-changes-requested)
   # - Priority labels          (P1, P2, P3 by default)
   # - The project's effective auto-pick skip labels (planning/research/waiting/
-  #   tracking/epic/needs-manual-setup by default; project/tenant/user overridable)
+  #   tracking/needs-manual-setup by default; project/tenant/user overridable)
   #
   # Only labels in this canonical set are ever created or modified — any other
   # repository label (user-owned taxonomy, third-party bot labels, etc.) is
@@ -108,7 +108,6 @@ module Projects
       "research" => "Excludes this issue from Paid auto-pick while research is in progress.",
       "waiting" => "Excludes this issue from Paid auto-pick while it waits on something else.",
       "tracking" => "Excludes this issue from Paid auto-pick; tracking/meta issue, not actionable.",
-      "epic" => "Excludes this issue from Paid auto-pick; epic/parent issue, not directly actionable.",
       "needs-manual-setup" => "Excludes this issue from Paid auto-pick until manual setup is completed."
     }.freeze
     AUTO_PICK_SKIP_LABEL_DEFAULT_DESCRIPTION = "Excludes this issue from Paid auto-pick while applied."
@@ -319,7 +318,7 @@ module Projects
       end
     end
 
-    # Built-in auto-pick skip labels (planning/research/waiting/tracking/epic/
+    # Built-in auto-pick skip labels (planning/research/waiting/tracking/
     # needs-manual-setup by default). These are recognized regardless of who
     # applies them, so they are provisioned with a description that states
     # the auto-pick consequence rather than left as undocumented taxonomy.

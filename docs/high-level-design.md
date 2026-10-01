@@ -134,6 +134,12 @@ readiness. Normal CI, security, quality and release controls remain applicable.
 Feature policy snapshots keep existing approval-gated work unchanged until
 deliberately migrated. These are planned capabilities, not claims of shipping.
 
+An epic umbrella remains open until its authoritative child work and explicit
+dependencies resolve, then receives a final acceptance audit against its
+approved intent and evidence. The audit may correct bounded gaps or file
+focused blocking follow-ups; only evidence-backed completion closes the
+umbrella.
+
 ## Approach: All LLM Calls Through One Interface
 
 Every LLM interaction in the application goes through the `agent_harness` gem —

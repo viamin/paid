@@ -196,17 +196,18 @@ module Issues
 
       new_child_ids = child_issues.pluck(:id).to_set
       changed = 0
+      linked_at = Time.current
 
       # Set parent only on children that don't already have the correct value.
       # where.not excludes NULLs in Rails 8, so explicitly include them.
       changed += child_issues
         .where(parent_issue_id: [ nil ]).or(child_issues.where.not(parent_issue_id: issue.id))
-        .update_all(parent_issue_id: issue.id, updated_at: Time.current)
+        .update_all(parent_issue_id: issue.id, parent_issue_linked_at: linked_at, updated_at: linked_at)
 
       # Clear parent on issues removed from the list
       changed += existing_children
         .where.not(id: new_child_ids)
-        .update_all(parent_issue_id: nil, updated_at: Time.current)
+        .update_all(parent_issue_id: nil, parent_issue_linked_at: nil, updated_at: Time.current)
 
       changed > 0
     end

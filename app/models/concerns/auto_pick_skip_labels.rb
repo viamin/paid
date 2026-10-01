@@ -3,7 +3,7 @@
 module AutoPickSkipLabels
   extend ActiveSupport::Concern
 
-  DEFAULTS = %w[planning research waiting tracking epic needs-manual-setup].freeze
+  DEFAULTS = %w[planning research waiting tracking needs-manual-setup].freeze
 
   included do
     before_validation :normalize_auto_pick_skip_labels

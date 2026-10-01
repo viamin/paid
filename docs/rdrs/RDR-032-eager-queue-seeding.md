@@ -62,7 +62,7 @@ The `DefaultCandidateSource` eligibility criteria remain unchanged:
 - `paid_state` in `%w[new planning failed]` or recoverable completed
 - Source is `github` or `synthetic_code_scanning`
 - Creator in `allowed_github_usernames` if configured
-- Labels exclude `planning`, `research`, `waiting`, `tracking`, `epic`, `needs-manual-setup`
+- Labels exclude `planning`, `research`, `waiting`, `tracking`, `needs-manual-setup`; `epic` identifies an umbrella and remains eligible after authoritative prerequisites resolve
 - No open non-PR sub-issues blocking the parent
 - Tracker/meta issues blocked while body references are open
 

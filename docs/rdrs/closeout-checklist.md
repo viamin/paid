@@ -91,8 +91,14 @@ The built-in fallback defaults in
 `app/models/concerns/auto_pick_skip_labels.rb` are:
 
 ```
-planning, research, waiting, tracking, epic, needs-manual-setup
+planning, research, waiting, tracking, needs-manual-setup
 ```
+
+`epic` identifies an umbrella and is auto-pickable after its authoritative
+children and dependencies resolve. An operator may still deliberately exclude
+it by adding `epic` to a project, effective-owner, or tenant override; remove
+that explicit override to adopt final-audit automation. Do not silently erase
+an override during reconciliation.
 
 - [ ] Confirm the closeout issue (and each child-gap issue) carries **none** of
       the effective skip labels configured for that project if it should be
@@ -114,9 +120,13 @@ planning, research, waiting, tracking, epic, needs-manual-setup
 
 ### 8. Close or keep the umbrella issue intentionally
 
-- [ ] If the closeout status is **Implemented** and no gap issues remain, make
-      the closeout PR visibly close the umbrella/closeout issue with GitHub
-      closing language such as `Closes #1234`.
+- [ ] Keep the umbrella open after a separate closeout issue, including when
+      that closeout finds no gaps. Use non-closing language such as `Tracks
+      #1234` in the closeout PR so the umbrella's own final audit remains
+      reachable.
+- [ ] Only the final umbrella audit may visibly close the umbrella with GitHub
+      closing language such as `Closes #1234`, and only when its evidence
+      confirms no required gaps remain.
 - [ ] If the closeout status is **Partially Implemented**, **Superseded**, or
       **Abandoned** and the umbrella should remain open for follow-up work, use
       non-closing language such as `Tracks #1234` and explain in the RDR why no
@@ -133,6 +143,25 @@ New and existing closeout issues should simply reference this checklist:
 > Follows the [RDR Closeout Checklist](https://github.com/viamin/paid/blob/main/docs/rdrs/closeout-checklist.md).
 
 so the process lives in one place rather than being reinvented per issue.
+
+## Reconciling existing umbrellas
+
+For existing open umbrellas, including `#4013`, `#3930`, `#3860`, and `#3861`,
+replace wording that calls the epic a non-runnable coordination record or held
+record. Keep the `epic` label — updating any stale repo label description that
+claims it excludes the issue from auto-pick — express required work through
+GitHub sub-issues or a `## Child Issues` section plus explicit `## Dependencies`
+entries, and state that the umbrella runs a final evidence audit after those
+prerequisites resolve. Update each separate closeout issue to use `Tracks #umbrella`;
+do not make a child's parent link, an incidental related-issue mention, or the
+closeout itself a reverse dependency that could create a cycle.
+
+`epic` was removed from `AutoPickSkipLabels::DEFAULTS`, so
+`Projects::EnsureStandardLabels` no longer reconciles its GitHub label
+description — any repo (including `viamin/paid`) that already has the `epic`
+label keeps whatever description it had before. When reconciling an umbrella
+under this label, also check the repo's `epic` label description on GitHub
+and update it by hand if it still claims to exclude the issue from auto-pick.
 
 ## Anti-patterns to avoid
 

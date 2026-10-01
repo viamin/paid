@@ -427,4 +427,32 @@ RSpec.describe Prompt, type: :model do
       expect(names).to include("already_addressed_instruction")
     end
   end
+
+  describe "coding.issue_implementation epic-umbrella audit guidance" do
+    # The epic-umbrella final-audit paragraph must appear in BOTH the
+    # seeded template (the common path) AND the in-code fallback
+    # (`PromptAssembly::Sections::IssueTask::FALLBACK_PROMPT`, the path
+    # used when the seed is missing or deactivated) — otherwise a freshly
+    # provisioned env or a deployment with `coding.issue_implementation`
+    # deactivated will fall back to a template without the guidance,
+    # defeating the intent of the prompt change (#4089).
+    let(:seed_template) do
+      described_class.global.find_by(slug: "coding.issue_implementation").current_version.template
+    end
+    let(:fallback_template) { PromptAssembly::Sections::IssueTask::FALLBACK_PROMPT }
+
+    it "seeds the epic umbrella final audit guidance" do
+      expect(seed_template).to include("If this is an epic umbrella final audit")
+      expect(seed_template).to include("verify shipped behavior, tests")
+      expect(seed_template).to include("RDR/HLD/LLD/EARS")
+      expect(seed_template).to include("Do not treat closed child issues as sufficient evidence")
+    end
+
+    it "FALLBACK_PROMPT includes the epic umbrella final audit guidance" do
+      expect(fallback_template).to include("If this is an epic umbrella final audit")
+      expect(fallback_template).to include("verify shipped behavior, tests")
+      expect(fallback_template).to include("RDR/HLD/LLD/EARS")
+      expect(fallback_template).to include("Do not treat closed child issues as sufficient evidence")
+    end
+  end
 end
