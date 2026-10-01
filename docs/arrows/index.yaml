@@ -233,7 +233,7 @@ arrows:
     status: MAPPED
     sampled: 2026-10-01
     blockedBy: [api-mode-chat]
-    next: "Open and reference the follow-up issue for API-CONVERSATION-DELEGATION-003 attempt/recovery wiring, then close RDR-072 via viamin/paid#4020 using the epic audit record in the design doc."
+    next: "Open and reference the follow-up issue for API-CONVERSATION-DELEGATION-002/003 attempt-report persistence and recovery wiring, then close RDR-072 via viamin/paid#4020 using the epic audit record in the design doc."
   context-intake:
     title: Knowledge Context Intake
     path: docs/intent/context-intake/context-intake-design.md

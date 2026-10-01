@@ -208,7 +208,7 @@ arrow. Evidence per child:
 | #4015 embedding patches | Verified | Host path `Knowledge::Embeddings::Generate#request_embeddings` and the containerized script in `Knowledge::EmbeddingRunner` both call `AgentHarness.embed`; no RubyLLM transport patch remains in `config/initializers/` (RubyLLM stays model-catalog-only per `config/application.rb`). |
 | #4016 chat translation | Verified | `ChatSessions::BuildLlmClient::HttpClient` builds `AgentHarness::Api::ChatTransport` requests and translates normalized results/classified errors; `agent-harness` 0.44.3 pinned in `Gemfile`/`Gemfile.lock` per the rollout guard; matrix above. |
 | #4017 structured results | Verified | `Llm::GenerateSessionSummary` and `Knowledge::ContextIntake::GenerateQuestions` use `operation: :schema` with `Llm::TextMode.enabled?` capability routing; CLI/subscription callers keep the text path (no silent auth-mode switch). |
-| #4018 attempt accounting | Verified | `ApiUsageAttempt` (forced RLS, unique `attempt_id`, unknown-usage validations) + idempotent `ChatSessions::RecordTransportAttempt` + `Billing::AggregateTenantUsage` integration; `record_transport_attempt_spec.rb` and `aggregate_tenant_usage_spec.rb` cover exactly-once, redelivery, unknown-vs-zero, and non-USD provenance. |
+| #4018 attempt accounting | **Active gap** | Mechanics verified in isolation only: `ApiUsageAttempt` (forced RLS, unique `attempt_id`, unknown-usage validations) + idempotent `ChatSessions::RecordTransportAttempt` + `Billing::AggregateTenantUsage` integration, with `record_transport_attempt_spec.rb` and `aggregate_tenant_usage_spec.rb` covering exactly-once, redelivery, unknown-vs-zero, and non-USD provenance. The migrated request path is not wired to them: `HttpClient#call` discards the harness's `result[:attempts]` reports and `RecordTransportAttempt` has no production caller, so real API-key chat attempt reports cannot yet receive that handling. API-CONVERSATION-DELEGATION-002 stays `[ ]` until the transport reports are wired through (gap 1 below). |
 | #4019 loop outcome | Verified | Loop retained per the agent-harness #448 evaluation (EARS 006); `FallbackLoop#discard_partial_attempt` rolls back only the failed attempt's rows by id so a runner fallback cannot replay stale partial work. |
 | #4020 close RDR-072 | **Blocked** | See remaining gaps below. |
 
@@ -222,24 +222,32 @@ environment artifact, not a regression: it appears only when the test database
 is seeded with global style guides (the two rejected lines are verbatim from
 `db/seeds/style_guides.rb`), while CI prepares the test database with
 `db:create db:schema:load` and no seeds. `bin/coherence-check.mjs` reports
-this segment's only uncovered `[ ]` spec as API-CONVERSATION-DELEGATION-003.
+this segment's only uncovered `[ ]` spec (a gap marker with no `@spec`
+reference) as API-CONVERSATION-DELEGATION-003; API-CONVERSATION-DELEGATION-002
+is annotated but reconciled back to an open gap, since its mechanics have no
+production caller yet.
 
 **Remaining gaps that block closing RDR-072 (via #4020):**
 
-1. API-CONVERSATION-DELEGATION-003 is an active gap: the live API-key chat
-   path issues ephemeral request UUIDs with `retry.max_attempts: 1`, supplies
-   no Paid-owned attempt identity, deadline, or cancellation, and discards the
-   harness's `result[:attempts]` reports (no production caller of
-   `ChatSessions::RecordTransportAttempt` yet). The matrix above tracks this
-   as "left for a follow-up issue", but no follow-up issue number is recorded
-   anywhere in this repository. RDR-072's provider-coverage decision requires
-   each remaining migration to be tracked explicitly in an implementation
-   issue; that issue must exist and be referenced here before #4020 closes
-   the RDR.
+1. API-CONVERSATION-DELEGATION-002 and -003 are active gaps: the live API-key
+   chat path issues ephemeral request UUIDs with `retry.max_attempts: 1`,
+   supplies no Paid-owned attempt identity, deadline, or cancellation, and
+   discards the harness's `result[:attempts]` reports (no production caller of
+   `ChatSessions::RecordTransportAttempt` yet), so neither attempt-report
+   persistence (002) nor bounded recovery (003) is wired into the migrated
+   path. The matrix above tracks this as "left for a follow-up issue", but no
+   follow-up issue number is recorded anywhere in this repository. RDR-072's
+   provider-coverage decision requires each remaining migration to be tracked
+   explicitly in an implementation issue; that issue must exist and be
+   referenced here before #4020 closes the RDR.
 2. The RDR-072 closeout itself (status flip to Implemented in the RDR and
    `docs/rdrs/README.md`, plus the delegated/retained-responsibility record)
    has not been written; it should consume this audit table.
 
 No runtime code changes are required by this audit; EARS 004 was reconciled
 to implemented (retained loop, tests annotated) and EARS 005 to deferred
-(retained-loop outcome), matching the evaluated outcome in EARS 006.
+(retained-loop outcome), matching the evaluated outcome in EARS 006. EARS 002
+was reconciled back to an active gap: its persistence mechanics are verified
+only in isolation because the migrated request path discards
+`result[:attempts]` and never calls `ChatSessions::RecordTransportAttempt`
+(#4018 above, gap 1 below).

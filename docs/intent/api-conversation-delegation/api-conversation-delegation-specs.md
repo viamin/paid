@@ -21,16 +21,28 @@
   `ChatSessions::BuildLlmClient::HttpClient#build_request`,
   `ChatSessions::BuildLlmClient::HttpClient#translate_result`.
 
-- [x] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
+- [ ] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
   request attempts, Paid SHALL persist every report exactly once by stable
   attempt ID and ordinal, attribute it to the initiating actor, chat session,
   originating message, runner, and provider, and aggregate reported usage
   without double counting. Missing usage SHALL remain unknown rather than be
   recorded as zero; a failed attempt with reported usage SHALL remain visible.
-  *Tests:* `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
+  Active gap: the persistence mechanics are implemented and tested in
+  isolation, but the migrated request path is not wired to them —
+  `ChatSessions::BuildLlmClient::HttpClient#call` discards the harness's
+  `result[:attempts]` reports and `ChatSessions::RecordTransportAttempt` has
+  no production caller — so live API-key chat attempt reports cannot yet
+  receive this exactly-once/unknown-usage handling. This stays an active gap
+  until the transport reports are wired through (same follow-up as
+  API-CONVERSATION-DELEGATION-003 below).
+  *Tests (mechanics only):*
+  `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
   `spec/services/billing/aggregate_tenant_usage_spec.rb`.
-  *Implemented code:* `ApiUsageAttempt`,
+  *Implemented code (mechanics only):* `ApiUsageAttempt`,
   `ChatSessions::RecordTransportAttempt`, `TokenUsageTracker` integration.
+  *Wiring still required:* `ChatSessions::BuildLlmClient::HttpClient#call`
+  consuming `result[:attempts]` and a production caller of
+  `ChatSessions::RecordTransportAttempt`.
 
 - [ ] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
   is cancelled, or Paid changes runner after a classified terminal result, the
