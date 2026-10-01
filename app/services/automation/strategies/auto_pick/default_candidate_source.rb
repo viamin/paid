@@ -366,10 +366,65 @@ module Automation
           def terminal_audit_times(project, issue_ids)
             no_code_times = Issue.where(id: issue_ids).where.not(no_code_required_at: nil)
               .pluck(:id, :no_code_required_at).to_h
-            merged_pr_last_observed_at_by_issue_id(project, issue_ids).each do |issue_id, merged_at|
-              no_code_times[issue_id] = [ no_code_times[issue_id], merged_at ].compact.max
+            merged_pr_terminal_audit_at_by_issue_id(project, issue_ids).each do |issue_id, terminal_at|
+              no_code_times[issue_id] = [ no_code_times[issue_id], terminal_at ].compact.max
             end
             no_code_times
+          end
+
+          # Latest terminal time at which a create_pr audit concluded for each
+          # issue id, combining both evidence sources (authoritative
+          # +parent_issue_id+ link and the originating run's recorded
+          # +pull_request_number+) the same way +merged_block_issue_ids+ does.
+          # Reads +agent_runs.completed_at+ (set once on terminal transition)
+          # when an originating run exists for the merged PR; otherwise falls
+          # back to the PR row's +created_at+ (when Paid first observed the
+          # row). Deliberately avoids the merged PR row's +updated_at+ — the
+          # latter is bumped on every Issue#save (label sync, comment fetch,
+          # and Issues::UpsertFromGithub.call re-saving the merged PR row all
+          # do). With +reauditable_epic_ids+ enforcing a strict +linked_at >
+          # terminal_at+ comparison, a later sync bumping the PR's
+          # +updated_at+ would otherwise move +terminal_at+ forward and wrongly
+          # block a re-audit even after the newly linked work resolves — the
+          # same immutability rationale +resolved_prerequisite_linked_at+
+          # applies to its own +updated_at+ sources.
+          def merged_pr_terminal_audit_at_by_issue_id(project, issue_ids)
+            linked = Issue.where(project: project, is_pull_request: true, pr_review_phase: "merged", parent_issue_id: issue_ids)
+              .pluck(:parent_issue_id, :github_number, :created_at)
+
+            run_linked = AgentRun.where(project: project, goal: "create_pr", issue_id: issue_ids)
+              .where.not(pull_request_number: nil).where.not(completed_at: nil)
+              .joins(<<~SQL.squish)
+                INNER JOIN issues merged_prs
+                  ON merged_prs.project_id = agent_runs.project_id
+                 AND merged_prs.github_number = agent_runs.pull_request_number
+                 AND merged_prs.is_pull_request = TRUE
+                 AND merged_prs.pr_review_phase = 'merged'
+              SQL
+              .pluck("agent_runs.issue_id", "agent_runs.pull_request_number", "agent_runs.completed_at")
+
+            run_completed_at_by_pr = run_linked.each_with_object({}) do |(run_issue_id, pr_number, completed_at), result|
+              next unless pr_number
+
+              existing = result[pr_number]
+              result[pr_number] = completed_at if existing.nil? || completed_at > existing
+            end
+
+            result = {}
+            linked.each do |epic_id, pr_number, pr_created_at|
+              terminal_at = run_completed_at_by_pr[pr_number] || pr_created_at
+              next if terminal_at.nil?
+
+              existing = result[epic_id]
+              result[epic_id] = terminal_at if existing.nil? || terminal_at > existing
+            end
+            run_linked.each do |run_issue_id, _pr_number, completed_at|
+              next if completed_at.nil?
+
+              existing = result[run_issue_id]
+              result[run_issue_id] = completed_at if existing.nil? || completed_at > existing
+            end
+            result
           end
 
           # A terminal audit may re-arm only once for work it newly linked.

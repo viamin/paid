@@ -509,7 +509,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_070658) do
     t.datetime "updated_at", null: false
     t.index ["apple_worker_profile_id"], name: "idx_on_apple_worker_profile_id_35bb856a13", unique: true
     t.check_constraint "consecutive_failures >= 0", name: "chk_apple_worker_health_failures"
-    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying, 'quarantined'::character varying]::text[])", name: "chk_apple_worker_health_status"
+    t.check_constraint "status::text = ANY (ARRAY['healthy'::character varying::text, 'quarantined'::character varying::text])", name: "chk_apple_worker_health_status"
   end
 
   create_table "apple_verification_workflow_revisions", comment: "Digest-bound Apple verification workflow revisions and approval state.", force: :cascade do |t|
