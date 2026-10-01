@@ -148,12 +148,20 @@ so the process lives in one place rather than being reinvented per issue.
 
 For existing open umbrellas, including `#4013`, `#3930`, `#3860`, and `#3861`,
 replace wording that calls the epic a non-runnable coordination record or held
-record. Keep the `epic` label, express required work through GitHub sub-issues
-or a `## Child Issues` section plus explicit `## Dependencies` entries, and
-state that the umbrella runs a final evidence audit after those prerequisites
-resolve. Update each separate closeout issue to use `Tracks #umbrella`; do not
-make a child's parent link, an incidental related-issue mention, or the
+record. Keep the `epic` label — updating any stale repo label description that
+claims it excludes the issue from auto-pick — express required work through
+GitHub sub-issues or a `## Child Issues` section plus explicit `## Dependencies`
+entries, and state that the umbrella runs a final evidence audit after those
+prerequisites resolve. Update each separate closeout issue to use `Tracks #umbrella`;
+do not make a child's parent link, an incidental related-issue mention, or the
 closeout itself a reverse dependency that could create a cycle.
+
+`epic` was removed from `AutoPickSkipLabels::DEFAULTS`, so
+`Projects::EnsureStandardLabels` no longer reconciles its GitHub label
+description — any repo (including `viamin/paid`) that already has the `epic`
+label keeps whatever description it had before. When reconciling an umbrella
+under this label, also check the repo's `epic` label description on GitHub
+and update it by hand if it still claims to exclude the issue from auto-pick.
 
 ## Anti-patterns to avoid
 
