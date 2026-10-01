@@ -8,29 +8,26 @@ prefix: API-CONVERSATION-DELEGATION
 > Implementation design for [RDR-072](../../rdrs/RDR-072-api-conversation-delegation.md).
 > It refines the existing [API-mode chat](../api-mode-chat/api-mode-chat-design.md)
 > and [tool-confirmation](../chat-tool-confirmation/chat-tool-confirmation-design.md)
-> contracts without activating a runtime migration.
+> contracts. Paid #4016 activates only the verified API-key transport scope;
+> it does not delegate the chat loop.
 
 ## Scope and rollout boundary
 
 This segment adopts a public, normalized API-chat transport from
 `agent-harness` after viamin/agent-harness#431 is released and verified. The
 first migration replaces only a verified operation/provider scope; it does not
-delegate the chat loop. The completed RubyLLM loop evaluation in
-viamin/agent-harness#448 selected the retained-loop outcome: `ChatSessions::AgentLoop`,
-`ChatSessions::ResolveToolCall`, `ChatSession`, and `ChatMessage` remain the
-source of runtime behavior, not a temporary implementation awaiting a loop
-API.
+delegate the chat loop. `ChatSessions::AgentLoop`, `ChatSessions::ResolveToolCall`,
+`ChatSession`, and `ChatMessage` remain the source of current runtime behavior
+until a later decision meets the loop-delegation evidence below.
 
-The transport rollout guard remains **no production traffic**: the harness
-adapter is not selected by `ChatSessions::AgentLoop` yet. The accounting-only
-support below may persist already-reported attempt facts, but it neither makes
-a provider request nor changes credentials, routing, tool execution, approval,
-or fallback behavior. A transport-routing implementation must amend RDR-072
-with its exact flag or configuration gate, default, enablement owner, rollback
-action, and removal criteria before it can send production traffic through the
-new transport. No loop rollout guard is required: loop delegation was rejected
-on the accepted evidence. Embedding adoption is a separate operation and
-neither gates nor is evidence for API-chat transport or loop adoption.
+RDR-072 now authorizes this non-staged scope through the existing
+`Runner#enabled_for_chat?` API-key selection gate. A chat-enabled API-key
+runner uses the normalized transport by default; CLI and subscription runners
+remain outside the scope. The release maintainer owns enablement and rolls back
+by deploying the preceding Paid release after draining in-flight API requests.
+No feature flag, initializer change, supporting table, or schema migration is
+introduced. Embedding adoption is separate and neither gates nor is evidence
+for API-chat transport or loop adoption.
 
 ## Current mapping and retained authority
 
@@ -43,26 +40,6 @@ neither gates nor is evidence for API-chat transport or loop adoption.
 | `ChatSessions::BuildLlmClient::HttpClient` | Migration candidate: provider protocol encoding, streaming normalization, tool schema encoding, normalized response/error shape, and request-level usage. Paid does not call RubyLLM directly. |
 | `ChatSessions::FallbackLoop` and jobs | Paid retains candidate selection, credentials, runner switches, notices, durable workflow/job recovery, and the existing no-replay rules for persisted work. |
 | `TokenUsageTracker` and Paid budget records | Paid retains durable, idempotent accounting, budgets, estimates, CLI/proxy reconciliation, and infrastructure cost. Harness reports individual request attempts and provider-reported usage where available. |
-
-### Implemented accounting support
-
-`ApiUsageAttempt` is Paid's immutable attempt ledger for this scope. It is
-tenant-scoped directly by `account_id`, has RLS for reads and writes, and is
-idempotent on the harness `attempt_id`. Each row retains session,
-message, actor, runner, project, account, provider/model, status, timestamps,
-cache-token quantities, raw provider amount/currency, and pricing provenance.
-The ledger stores a nil token quantity as unknown; it never converts it to zero.
-
-`ChatSessions::RecordTransportAttempt` creates the attempt before it creates a
-billable `TokenUsage` row. A locked attempt can link only one billing row, so
-redelivery after a retry/restart cannot increment project totals, budgets, or
-dashboard totals twice. Known USD provider charges convert dollars to Paid's
-integer cents once; non-USD provider charges remain as their original amount
-and currency while the linked Paid row uses the historical model-price estimate.
-Missing usage creates no zero-valued billing row. Failed attempts with reported
-usage are therefore visible and billable. `api_attempt` is an API-ledger request
-type; CLI/proxy records, run summaries/deltas, and infrastructure `ExecutionUsage`
-remain separate accounting lanes.
 
 The harness contract receives a Paid-supplied execution context containing the
 account-scoped conversation ID, current actor ID, originating chat-message ID,
@@ -135,47 +112,17 @@ runner policy.
 The harness reports each internal provider attempt with its stable parent
 attempt ID, ordinal, runner/provider/model identity, outcome, timestamps, and
 reported usage/cost when available. Paid persists these reports idempotently
-on `attempt_id` before aggregation. Duplicate reports do not add
+on `(attempt_id, ordinal)` before aggregation. Duplicate reports do not add
 tokens or cost. Failed attempts are recorded when usage is reported. Missing
 usage remains `unknown`, never zero. After process restart, Paid reloads the
 durable attempt record and either accepts a matching terminal report or creates
 a new outbound attempt; it never guesses whether an unrecorded provider call
 succeeded.
 
-## Loop-delegation evaluation and retained responsibilities
+## Loop-delegation decision method
 
-Agent-harness #448 evaluated RubyLLM 2.0's public step, completion, tool,
-approval, cancellation, and usage controls and selected **retain Paid's loop**.
-The evaluation is available in the released `agent-harness` 0.44.0 line; Paid
-uses published `agent-harness` 0.44.3, resolved on the host through Bundler.
-The release is installable from RubyGems and includes the evaluation result;
-the separate #3995 Codex subscription discovery/recovery compatibility remains
-protected by Paid's existing 0.44.3 pin. Rebuild the agent image from that pin
-and verify `AgentHarness::VERSION` in the image before activating any future
-transport/accounting scope.
-
-The upstream contract tests verified mixed read/write batches, independent
-approve/deny, completed-tool skipping, and cancellation. Delegation failed
-because RubyLLM has provider-only tool IDs, in-process execution, no
-caller-bounded completion driver, in-memory plain-Ruby approval restoration,
-default nested provider retries, and no stable attempt identity. Replacing
-Paid's loop would therefore add durable-ID, external-dispatch, retry/budget,
-persistence/recovery, and accounting adapters in both repositories.
-
-Paid retains these responsibilities:
-
-| Surface | Retained responsibility and evidence |
-| --- | --- |
-| `AgentLoop` | Transcript reconstruction with stable Paid message IDs, mixed batches, tool limits, and token soft stops. `agent_loop_spec.rb` covers mixed batches and eligible auto-approval. |
-| `ResolveToolCall` | Tenant/actor execution, Pundit recheck, atomic approval claim, denial, two-phase draft retry, and last-pending-call resumption. `resolve_tool_call_spec.rb` covers these cases. |
-| `FallbackLoop` | Paid-controlled runner selection and recovery. The failed attempt's own rows — including its partial tool call/results — are discarded by id-scoped rollback, so the fallback turn starts from the settled transcript and stale partial work is not replayed; rows a concurrent turn persisted are left untouched. `send_message_spec.rb` covers the discarded-partial-attempt path. |
-| `ChatSession` / `ChatMessage` | SSE/Cable/JSON message IDs, reconnectable historical transcript, and pending approvals. No RubyLLM persistence table is adopted. |
-| Paid accounting | Budgets and durable accounting remain Paid-owned. The attempt ledger (`ApiUsageAttempt` and `ChatSessions::RecordTransportAttempt`) implements accounting-only persistence for this scope; transport routing itself is still #4018 follow-up work and is not activated. |
-
-No supporting-table migration, historical/pending-conversation conversion, or
-backup/recovery rehearsal is needed for the retained-loop decision itself. If
-a future proposal reopens delegation, it must pass all of the following before
-activation:
+Loop delegation is a later, evidence-based decision, not a target assumed by
+this LLD. A proposal must pass all of the following before activation:
 
 1. **Behavior parity:** executable tests preserve tenant/actor checks,
    tool visibility, manual and eligible auto-approval, mixed batches,
@@ -215,15 +162,37 @@ agent image; then run an in-container check against the rebuilt image and
 secrets-proxy route. The deployment evidence records the immutable gem ref,
 image digest, capability matrix, and rollback route.
 
-The dependency gate is satisfied for accounting support by `agent-harness`
-**0.44.3**: it is installed from the resolved host bundle, was published on
-2026-09-27, and its signed RubyGems record identifies source commit
-`85c4bc34b18324b2c2bd6f3c0cda38014647f4de`. The release lineage includes
-attempt-level API usage/cost in 0.42.0 and Codex subscription discovery and
-bounded recovery in 0.37.0/0.38.0, which is retained by 0.44.3. Evidence:
-[release](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3),
-[RubyGems](https://rubygems.org/gems/agent-harness/versions/0.44.3), and the
-installed gem's `CHANGELOG.md`. This does not release the transport rollout:
-the maintainer must still verify a rebuilt agent image and its in-container
-secrets-proxy route, record the image digest and capability matrix, and then
-decide whether the issue's `paid-paused`/`waiting` labels can be removed.
+## Implementation record (viamin/paid#4016)
+
+**Release evidence:** `agent-harness` 0.44.3, pinned in `Gemfile`/`Gemfile.lock`
+(exact, non-yanked, non-prerelease; [RubyGems](https://rubygems.org/gems/agent-harness/versions/0.44.3),
+[release](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3)).
+It supersedes 0.41.0, the release that delivered the `AgentHarness::Api::ChatTransport`
+contract (viamin/agent-harness#433 / PR viamin/agent-harness#441, "Normalize
+API Chat Transport, Tools and Streaming"), and 0.44.0, which Paid #3995
+verified as the first release retaining the Codex subscription
+discovery/recovery fixes after reconciling the durable-pin removal. No agent
+image rebuild was required for this change: the chat path runs in the Rails
+host process, not inside agent containers.
+
+**Scope shipped — operation/provider matrix:**
+
+| Scope | Result | Notes |
+| --- | --- | --- |
+| API-mode chat, Anthropic API-key runners | `migrated` | `ChatSessions::BuildLlmClient::HttpClient` now builds a single-candidate `AgentHarness::Api::ChatTransport` request (`provider: :anthropic, protocol: :messages`) instead of calling `AgentHarness::TextTransport` directly. |
+| API-mode chat, OpenAI-compatible runners (OpenAI, OpenRouter, MiniMax, z.ai, z.ai-coding, DeepSeek, Mistral, xAI, Inception) | `migrated` | Single candidate with `provider: :openai, protocol: :chat_completions`; MiniMax's `chat_base_url` and z.ai/z.ai-coding's `chat_max_tokens` (16,384) pass through unchanged as `candidate[:endpoint]` / `request[:max_output_tokens]`. |
+| Runner selection, credential resolution, free-model-policy re-resolution | `retained` | Unchanged in `ChatSessions::BuildLlmClient` outside `HttpClient`. |
+| Runner fallback eligibility, notices, rate-limit resumption (`ChatSessions::FallbackLoop`/`FallbackRunners`/`MarkRateLimited`) | `retained` | `HttpClient` raises the same `AgentHarness::*Error` subclasses as the old transports (translated from the harness's classified `result[:error]`), so this policy layer needed no changes. Multi-candidate/`fallback:` support in `ChatTransport` is intentionally unused — one call is one provider attempt, matching "transient model fallback alone cannot replace this policy." |
+| CLI/subscription chat runners | `retained` (unsupported path, unchanged) | Chat still requires an API-key runner (`BuildLlmClient.usable_runner?`); this was true before this migration and is not a new restriction. |
+| Chat loop sequencing, tool dispatch, approval resumption (`ChatSessions::AgentLoop`, `ResolveToolCall`, `Tools::Registry`) | `retained` | Out of scope per the Loop Delegation Decision; `HttpClient`'s public `#call(conversation, tools:, on_chunk:)` contract is unchanged so `AgentLoop`'s reflection-based kwarg detection and streaming replay keep working unmodified. |
+| Request attempt identity, retry-limit/deadline/cancellation plumbing, durable attempt-report persistence (API-CONVERSATION-DELEGATION-002/003) | `unsupported` (tracked gap) | Each `HttpClient#call` issues an ephemeral request UUID and defaults to one harness attempt (`retry.max_attempts: 1`); Paid does not yet supply a stable recovery identity, deadline, or cancellation token, and does not persist per-attempt harness reports. Left for a follow-up issue. |
+
+**Tests:** `spec/services/chat_sessions/build_llm_client_spec.rb` (black-box
+against `AgentHarness::Api::ChatTransport`, including normalized request,
+tool-transcript, interrupted-stream, classified-error, MiniMax endpoint, and
+z.ai output-limit coverage) plus the full existing `spec/services/chat_sessions/`,
+`spec/jobs/chat_sessions/`, `spec/requests/chat_messages_spec.rb`,
+`spec/requests/chat_sessions_spec.rb`, and `spec/channels/chat_channel_spec.rb`
+suites (575 examples), run unmodified against the new transport to confirm
+SSE/Cable/JSON contracts, message IDs, fallback notices, and rate-limit
+resumption are unchanged.

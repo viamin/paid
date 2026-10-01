@@ -1,20 +1,25 @@
 # EARS Specs: API Conversation Transport Delegation
 
 > Testable claims for RDR-072 transport adoption. Status markers: `[x]`
-> implemented · `[ ]` active gap · `[D]` deferred. These claims are planned;
-> no runtime path is activated by this documentation change.
+> implemented · `[ ]` active gap · `[D]` deferred.
 
-- [ ] **API-CONVERSATION-DELEGATION-001** — When Paid invokes a migrated
-  API-chat operation/provider scope, it SHALL call the public `agent-harness`
-  transport contract with Paid-supplied account, actor, conversation/message,
-  runner, retry-limit, deadline, and cancellation context; it SHALL NOT call
-  RubyLLM or a provider API directly. The harness response SHALL be normalized
-  without granting the harness authority to execute or approve an application
-  tool.
-  *Tests:* `spec/services/chat_sessions/harness_transport_spec.rb`, upstream
-  `agent-harness` contract tests.
-  *Planned code:* `ChatSessions::BuildHarnessTransport`,
-  `ChatSessions::AgentLoop` transport boundary.
+- [x] **API-CONVERSATION-DELEGATION-001** — When Paid builds an API-mode chat
+  turn for a migrated operation/provider scope, `ChatSessions::BuildLlmClient`
+  SHALL build a single-candidate `AgentHarness::Api::ChatTransport` request
+  (provider, protocol, runner credentials, normalized messages/tools) and
+  translate its normalized result/classified error back to Paid's existing
+  return and raise contract; it SHALL NOT call RubyLLM or a provider API
+  directly, and a harness result SHALL NOT be granted authority to execute or
+  approve an application tool. Paid-supplied attempt identity, retry-limit,
+  deadline, and cancellation context are **not yet wired through** this call
+  (tracked by API-CONVERSATION-DELEGATION-002/003 below); each turn currently
+  issues an ephemeral request UUID and a single-attempt (`retry.max_attempts: 1`)
+  request, with runner switching and retries still owned entirely by
+  `ChatSessions::FallbackLoop` at the Paid layer.
+  *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
+  *Code:* `ChatSessions::BuildLlmClient::HttpClient#call`,
+  `ChatSessions::BuildLlmClient::HttpClient#build_request`,
+  `ChatSessions::BuildLlmClient::HttpClient#translate_result`.
 
 - [x] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
   request attempts, Paid SHALL persist every report exactly once by stable
