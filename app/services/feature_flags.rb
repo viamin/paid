@@ -54,14 +54,14 @@ class FeatureFlags
       name: :intent_conformance_enforcement,
       owner: "intent-conformance",
       intent: "Gate the RDR-067 intent-conformance auto-merge signal and Inbox decision lane behind a per-project rollout, standing in for the RDR-066 named feature operating mode until that mode exists.",
-      rollout_plan: "Default-off; do not opt in for feature PRs until #4050 wires the production reviewer trigger, then expand per tenant or project via tenant_settings.features as verdict accuracy is measured against representative accepted and intentionally drifted PRs.",
+      rollout_plan: "Default-off; review scheduling rides the approved_intent_amendments flag, so enforcement requires both flags enabled. Expand per tenant or project via tenant_settings.features only after #3870 records verdict accuracy against representative accepted and intentionally drifted PRs, and only for features with populated approved design-document paths.",
       cleanup_criteria: "Remove once RDR-066's named feature operating mode ships and conformance enforcement is wired to a project's operating mode instead of this standalone flag."
     ),
     approved_intent_amendments: Definition.new(
       name: :approved_intent_amendments,
       owner: "approved-intent-conformance",
       intent: "Gate the RDR-067 design-amendment flow (#3869): product-level drift routes through amended RDR/LID PRs, human approval, and merge, with revision-impact pause of affected feature work.",
-      rollout_plan: "Default-off; do not opt in for feature PRs until #4050 wires the production reviewer trigger, then expand per tenant via tenant_settings.features. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
+      rollout_plan: "Default-off; this flag owns review scheduling and the final merge guard, so full enforcement additionally requires intent_conformance_enforcement. Expand per tenant via tenant_settings.features only after #3870 records verdict accuracy and only for features with populated approved design-document paths. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
       cleanup_criteria: "Remove once the RDR-066 operating mode setting owns the gate and every amendment-capable project is enrolled through that mode."
     ),
     apple_verification_workers: Definition.new(

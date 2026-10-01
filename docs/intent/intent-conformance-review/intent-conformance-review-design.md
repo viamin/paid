@@ -23,9 +23,12 @@ outcome. The implementing agent's own self-report is never sufficient to
 authorize merge (RDR-067 §Alternatives Considered #1); this reviewer is the
 independent check the RDR requires.
 
-No production PR-scan caller currently invokes `ReviewRun`; the RDR-067
-closeout audit records that integration gap separately. Until it is wired,
-the final guard correctly fails closed with `verdict_missing`.
+`Activities::ScanPaidPrsActivity` invokes `IntentConformance::ScheduleReview`
+for each live PR head. The scheduler persists one durable schedule per `(PR,
+HEAD, approved-design revision)` identity, enqueues `ReviewJob` with bounded
+per-project concurrency, and re-schedules only a completed or stale schedule.
+The job invokes `ReviewRun`; a new head or approved-design revision receives a
+fresh independent review.
 
 ## Scope
 
@@ -173,12 +176,10 @@ correlation), and asserting a model that never ran would be misleading.
 
 ### Non-goals
 
-- This segment does not decide *when* to run the reviewer (on PR push, on
-  scan, on demand) — that trigger was planned for the PR-scanner integration
-  (#3867), but the shipped scanner computes the signal without invoking
-  `IntentConformance::ReviewRun.call`; wiring that trigger is the gap the
-  [2026-09-26 closeout audit](../../rdrs/audit-report-2026-09-26-rdr-067.md)
-  records and [#4050](https://github.com/viamin/paid/issues/4050) owns.
+- This segment does not own scheduling policy beyond the durable scanner
+  integration delivered by [#4050](https://github.com/viamin/paid/issues/4050).
+  `IntentConformance::ScheduleReview` and `ReviewJob` own that production
+  trigger; this service remains responsible only for one review invocation.
 - This segment does not populate `feature_intents.design_document_paths` —
   that is the RDR-066 approval-lifecycle's job (#3862/#3863) once a
   feature's design PRs are known. Until then, `design_document_paths` is

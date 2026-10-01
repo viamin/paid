@@ -71,11 +71,12 @@ The guard is a no-op unless **both** of the following hold, preserving
    via `feature_intent_issues`).
 2. The project has opted into the `approved_intent_amendments` feature flag —
    the same RDR-067 mode flag `DesignAmendments::Open` already gates. Per the
-   rollout instruction, operators MUST NOT enable this flag for feature PRs
-   until #4050 wires the production reviewer trigger. Default-off does not
-   prevent a tenant opt-in; enabling it before that trigger exists would make
-   the final guard fail closed with `verdict_missing` without scheduling a
-   fresh review. This segment does not introduce a second flag.
+   rollout instruction, operators MUST limit enablement until #3870 supplies
+   representative accuracy and telemetry evidence. The production scanner now
+   schedules a fresh independent review for each eligible PR-head/design-
+   revision identity; features without populated approved design-document paths
+   still fail closed with `not_evaluated`. This segment does not introduce a
+   second flag.
 
 When either condition is false, `VerifyAtMerge.call` returns `nil` and the
 activity proceeds exactly as it did before this change.
@@ -132,11 +133,12 @@ intent_conformance_blocked`) and returns without calling
 ### Non-goals
 
 - This segment does not run the AI reviewer or write `within_scope` /
-  `material_drift` verdicts from PR content — that is #3866. Until #3866
-  ships, any project with the rollout flag enabled and a linked feature
-  intent will see every merge blocked with `verdict_missing`, which is the
-  correct fail-closed behavior for an unwired reviewer, not a defect in this
-  guard.
+  `material_drift` verdicts from PR content — that is #3866, now shipped, and
+  the production scanner schedules a fresh review per eligible PR-head/design-
+  revision identity (#4050). The residual fail-closed case is `not_evaluated`
+  for features whose approved design-document paths are not yet populated
+  (the RDR-066 lifecycle owns that population) — correct fail-closed
+  behavior, not a defect in this guard.
 - This segment does not add a PR-scanner blocker or Inbox item — that is
   #3867. The final-merge guard is deliberately independent of the scanner's
   cached blocker snapshot so it cannot inherit scan-time staleness.
