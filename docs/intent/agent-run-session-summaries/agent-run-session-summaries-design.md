@@ -37,6 +37,11 @@ agent run:
    `follow_ups`, `learnings`) from the run's transcript via agent-harness,
    using the seeded `knowledge.session_summary.draft` prompt with an in-code
    fallback.
+   When agent-harness supplies a schema-constrained parsed result, the
+   generator consumes that result directly and keeps secret redaction and
+   required-summary validation. The current Claude CLI/subscription route is
+   retained with its JSON/fence parsing because agent-harness schema transport
+   is API-key-only; this avoids an implicit credential or billing change.
 2. The parsed result is persisted as an `AgentRunSessionSummary` —
    `status: "observation"` by default, one row per agent run (unique on
    `agent_run_id`).

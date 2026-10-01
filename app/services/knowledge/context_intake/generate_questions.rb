@@ -7,11 +7,37 @@ module Knowledge
     class GenerateQuestions
       include Llm::OutputNormalizer
 
+      # @spec CONTEXT-INTAKE-004
       DEFAULT_MODEL = "claude-sonnet-4-6"
       DEFAULT_PROVIDER = :claude
       TIMEOUT = 60
       MAX_GENERATED_QUESTIONS = 3
       MAX_KEY_ATTEMPTS = 10
+      RESPONSE_SCHEMA = {
+        type: "object",
+        properties: {
+          questions: {
+            type: "array",
+            maxItems: MAX_GENERATED_QUESTIONS,
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string" },
+                text: { type: "string" },
+                section_key: { type: "string" },
+                section_title: { type: "string" },
+                category: { type: "string" },
+                required: { type: "boolean" },
+                parent_question_key: { type: "string" }
+              },
+              required: %w[text],
+              additionalProperties: false
+            }
+          }
+        },
+        required: %w[questions],
+        additionalProperties: false
+      }.freeze
 
       attr_reader :project, :session, :round, :auto_approve
 
@@ -27,19 +53,10 @@ module Knowledge
       end
 
       def call
-        response = AgentHarness.send_message(
-          build_prompt,
-          provider: DEFAULT_PROVIDER,
-          model: DEFAULT_MODEL,
-          timeout: TIMEOUT,
-          dangerous_mode: false,
-          tools: :none,
-          **Llm::TextMode.options
-        )
+        parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
+        return [] if parsed.nil?
 
-        return [] unless response.success?
-
-        create_questions(parse_questions(response.output))
+        create_questions(parsed)
       rescue AgentHarness::Error, JSON::ParserError => e
         Rails.logger.warn(
           message: "context_intake.generate_questions_failed",
@@ -53,6 +70,68 @@ module Knowledge
       end
 
       private
+
+      # Schema-constrained responses require API-key authentication because
+      # the verified agent-harness schema transport
+      # (AgentHarness::Api::ChatTransport#call(operation: :schema)) is
+      # API-only. CLI/subscription callers retain the legacy text path so
+      # the request does not silently switch credentials or billing.
+      def schema_capable_request?
+        Llm::TextMode.enabled?
+      end
+
+      def schema_constrained_parse
+        result = schema_constrained_request
+        return nil if result.nil?
+
+        parsed_questions(result[:parsed])
+      end
+
+      def legacy_text_parse
+        response = AgentHarness.send_message(
+          build_prompt,
+          provider: DEFAULT_PROVIDER,
+          model: DEFAULT_MODEL,
+          timeout: TIMEOUT,
+          dangerous_mode: false,
+          tools: :none,
+          **Llm::TextMode.options
+        )
+        return nil unless response.success?
+
+        parsed_questions(JSON.parse(cleaned_text(response.output)))
+      end
+
+      def schema_constrained_request
+        api_key = ENV["ANTHROPIC_API_KEY"].to_s.strip
+        return nil if api_key.empty?
+
+        request = {
+          request_id: SecureRandom.uuid,
+          operation: :schema,
+          schema_name: "context_intake_follow_up_questions",
+          schema: RESPONSE_SCHEMA,
+          schema_mode: :json_schema,
+          timeout: { read_seconds: TIMEOUT },
+          candidates: [
+            {
+              provider: :anthropic,
+              model: DEFAULT_MODEL,
+              protocol: :messages,
+              authentication_mode: :api_key,
+              credentials: { api_key: api_key }
+            }
+          ],
+          messages: [ { role: :user, content: build_prompt } ]
+        }
+
+        result = AgentHarness::Api::ChatTransport.new.call(request)
+        return nil if result.nil?
+        return nil unless result[:status] == :succeeded
+        return nil if result[:parsed].nil?
+
+        result
+      end
 
       def build_prompt
         <<~PROMPT
@@ -127,7 +206,15 @@ module Knowledge
         end
       end
 
-      def parse_questions(raw_output)
+      def parsed_questions(parsed)
+        return [] unless parsed.is_a?(Hash)
+
+        Array(parsed["questions"] || parsed[:questions])
+          .select { |payload| payload.is_a?(Hash) && (payload["text"] || payload[:text]).is_a?(String) }
+          .first(MAX_GENERATED_QUESTIONS)
+      end
+
+      def cleaned_text(raw_output)
         cleaned = raw_output.to_s.strip
         loop do
           previous = cleaned
@@ -136,10 +223,7 @@ module Knowledge
           break if cleaned == previous
         end
 
-        parsed = JSON.parse(cleaned)
-        Array(parsed["questions"])
-          .select { |payload| payload.is_a?(Hash) && payload["text"].is_a?(String) }
-          .first(MAX_GENERATED_QUESTIONS)
+        cleaned
       end
 
       def create_questions(question_payloads)

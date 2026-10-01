@@ -7,6 +7,7 @@ module Llm
   # distinct from durable project intent (see Knowledge::SessionSummaries::Promote).
   #
   # @spec SESSION-SUMMARY-002
+  # @spec SESSION-SUMMARY-006
   class GenerateSessionSummary
     include OutputNormalizer
 
@@ -16,6 +17,20 @@ module Llm
     MAX_TRANSCRIPT_LENGTH = 12_000
     PROMPT_SLUG = "knowledge.session_summary.draft"
     ARRAY_FIELDS = %i[files_touched decisions assumptions failures follow_ups learnings].freeze
+    RESPONSE_SCHEMA = {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        files_touched: { type: "array", items: { type: "string" } },
+        decisions: { type: "array", items: { type: "string" } },
+        assumptions: { type: "array", items: { type: "string" } },
+        failures: { type: "array", items: { type: "string" } },
+        follow_ups: { type: "array", items: { type: "string" } },
+        learnings: { type: "array", items: { type: "string" } }
+      },
+      required: %w[summary files_touched decisions assumptions failures follow_ups learnings],
+      additionalProperties: false
+    }.freeze
     GITHUB_TOKEN_IN_TEXT = /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/
     SECRET_PATTERNS = (StyleGuides::CollectCodeSamples::SECRET_PATTERNS + [ GITHUB_TOKEN_IN_TEXT ]).freeze
 
@@ -70,19 +85,36 @@ module Llm
       transcript = agent_run.agent_summary_with_stderr_fallback(limit: 400)
       return nil if transcript.blank?
 
-      response = request_summary(transcript)
-      return nil if response.respond_to?(:success?) && !response.success?
+      if schema_capable_request?
+        parsed, raw_response = schema_constrained_parse(transcript)
+      else
+        parsed, raw_response = legacy_text_parse(transcript)
+      end
+      return nil if parsed.nil?
 
-      parsed = parse_response(response)
-      return nil unless parsed
-
-      build_result(parsed, response)
+      build_result(parsed, raw_response)
     end
 
     private
 
-    def request_summary(transcript)
-      AgentHarness.send_message(
+    # Schema-constrained responses require API-key authentication because
+    # the verified agent-harness schema transport
+    # (AgentHarness::Api::ChatTransport#call(operation: :schema)) is
+    # API-only. CLI/subscription callers retain the legacy text path so
+    # the request does not silently switch credentials or billing.
+    def schema_capable_request?
+      Llm::TextMode.enabled?
+    end
+
+    def schema_constrained_parse(transcript)
+      result = schema_constrained_request(transcript)
+      return [ nil, nil ] if result.nil?
+
+      [ parsed_schema_payload(result[:parsed]), result ]
+    end
+
+    def legacy_text_parse(transcript)
+      response = AgentHarness.send_message(
         prompt(transcript),
         provider: DEFAULT_PROVIDER,
         model: DEFAULT_MODEL,
@@ -90,6 +122,65 @@ module Llm
         tools: :none,
         **Llm::TextMode.options
       )
+      return [ nil, nil ] if response.respond_to?(:success?) && !response.success?
+
+      [ parse_legacy_response(response), response ]
+    end
+
+    def schema_constrained_request(transcript)
+      api_key = ENV["ANTHROPIC_API_KEY"].to_s.strip
+      return nil if api_key.empty?
+
+      request = {
+        request_id: SecureRandom.uuid,
+        operation: :schema,
+        schema_name: "agent_run_session_summary",
+        schema: RESPONSE_SCHEMA,
+        schema_mode: :json_schema,
+        timeout: { read_seconds: TIMEOUT },
+        candidates: [
+          {
+            provider: :anthropic,
+            model: DEFAULT_MODEL,
+            protocol: :messages,
+            authentication_mode: :api_key,
+            credentials: { api_key: api_key }
+          }
+        ],
+        messages: [ { role: :user, content: prompt(transcript) } ]
+      }
+
+      result = AgentHarness::Api::ChatTransport.new.call(request)
+      return nil if result.nil?
+      return nil unless result[:status] == :succeeded
+      return nil if result[:parsed].nil?
+
+      result
+    end
+
+    def parsed_schema_payload(parsed)
+      return nil unless parsed.is_a?(Hash)
+
+      payload = parsed.symbolize_keys
+      payload[:summary].present? ? payload : nil
+    end
+
+    def parse_legacy_response(response)
+      output = response.respond_to?(:output) ? response.output : response.to_s
+      return nil if output.blank?
+
+      cleaned = strip_markdown_fence(output.to_s.strip)
+      parsed = JSON.parse(cleaned, symbolize_names: true)
+      return nil if parsed[:summary].blank?
+
+      parsed
+    rescue JSON::ParserError => e
+      Rails.logger.warn(
+        message: "llm.generate_session_summary_parse_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
     end
 
     def prompt(transcript)
@@ -136,24 +227,6 @@ module Llm
           end
         end
       end
-    end
-
-    def parse_response(response)
-      output = response.respond_to?(:output) ? response.output : response.to_s
-      return nil if output.blank?
-
-      cleaned = strip_markdown_fence(output.to_s.strip)
-      parsed = JSON.parse(cleaned, symbolize_names: true)
-      return nil if parsed[:summary].blank?
-
-      parsed
-    rescue JSON::ParserError => e
-      Rails.logger.warn(
-        message: "llm.generate_session_summary_parse_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      nil
     end
 
     def build_result(parsed, response)

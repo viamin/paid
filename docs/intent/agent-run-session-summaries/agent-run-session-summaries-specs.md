@@ -64,3 +64,14 @@
   `include_session_summaries: true`.
   *Code:* `app/services/knowledge/context_bundle/build.rb`.
   *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
+
+- [x] **SESSION-SUMMARY-006** — When the configured agent-harness caller
+  returns a schema-constrained parsed session-summary response, the system
+  SHALL consume that parsed value directly, preserve output secret redaction
+  and domain validation, and produce nothing for missing required fields,
+  refusal, invalid JSON, or truncation. CLI/subscription callers SHALL retain
+  the existing JSON parsing path until an independently verified schema
+  capability supports their authentication mode; they SHALL NOT be switched
+  to API credentials.
+  *Code:* `app/services/llm/generate_session_summary.rb`.
+  *Test:* `spec/services/llm/generate_session_summary_spec.rb`.
