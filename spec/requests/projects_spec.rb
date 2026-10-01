@@ -2303,7 +2303,7 @@ RSpec.describe "Projects" do
 
         it "persists pr_target=upstream and upstream_full_name when both are valid" do # @spec PR-TARGET-001, PR-TARGET-006
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_full_name: "stenolabs/stenoai" }
+            project: { pr_target: "upstream", upstream_owner: "stenolabs", upstream_repo: "stenoai" }
           }
 
           expect(response).to redirect_to(project_path(project))
@@ -2315,18 +2315,15 @@ RSpec.describe "Projects" do
 
         it "rejects pr_target=upstream when upstream_full_name is missing" do # @spec PR-TARGET-005
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs", "stenoai")
           )
 
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_full_name: "" }
+            project: { pr_target: "upstream", upstream_owner: "", upstream_repo: "" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("required when PR target is upstream")
-          expect(response.body).to match(
-            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="")[^>]*>/
-          )
           expect(project.reload.pr_target).to eq("own_repo")
         end
 
@@ -2347,7 +2344,7 @@ RSpec.describe "Projects" do
 
         it "rejects upstream_full_name matching the project's own repository" do # @spec PR-TARGET-008
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_full_name: "stenoai/stenoai" }
+            project: { pr_target: "upstream", upstream_owner: "stenoai", upstream_repo: "stenoai" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
@@ -2357,7 +2354,7 @@ RSpec.describe "Projects" do
 
         it "rejects a malformed upstream_full_name slug" do # @spec PR-TARGET-006
           patch project_path(project), params: {
-            project: { pr_target: "upstream", upstream_full_name: "not a slug" }
+            project: { pr_target: "upstream", upstream_owner: "not a slug", upstream_repo: "widgets" }
           }
 
           expect(response).to have_http_status(:unprocessable_content)
@@ -2392,21 +2389,20 @@ RSpec.describe "Projects" do
 
         it "prefills the upstream field from the detected fork parent while allowing edits" do # @spec PR-TARGET-009
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs", "stenoai")
           )
 
           get edit_project_path(project)
 
-          expect(response.body).to match(
-            /<input(?=[^>]*id="project_upstream_full_name")(?=[^>]*value="stenolabs\/stenoai")[^>]*>/
-          )
+          expect(response.body).to match(/<input(?=[^>]*id="project_upstream_owner")(?=[^>]*value="stenolabs")[^>]*>/)
+          expect(response.body).to match(/<input(?=[^>]*id="project_upstream_repo")(?=[^>]*value="stenoai")[^>]*>/)
           expect(response.body).to include("Detected from fork parent:")
         end
 
         it "renders the upstream option as selected when pr_target is upstream" do
           project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai")
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs", "stenoai")
           )
 
           get edit_project_path(project)

@@ -468,31 +468,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       # @spec UPSTREAM-GATE-006 — conflict detection is the sole scanner path
       # that remains available for an upstream PR, and it must include the
       # persisted upstream record rather than only local-repository records.
-      it "triggers a conflict-fix follow-up for a saved upstream PR" do
-        upstream_project.update!(auto_fix_merge_conflicts: true)
-        upstream_pr = upstream_project.issues.first
-        upstream_pr.update!(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
-        allow(upstream_project).to receive(:client).and_return(github_client)
-        allow(github_client).to receive(:pull_request)
-          .with(upstream_project.upstream_full_name, upstream_pr.github_number)
-          .and_return(
-            OpenStruct.new(
-              mergeable: false,
-              draft: false,
-              number: upstream_pr.github_number,
-              head: OpenStruct.new(sha: "abc123")
+      context "when the saved upstream PR has merge conflicts" do
+        before do
+          upstream_project.update!(auto_fix_merge_conflicts: true)
+          upstream_pr = upstream_project.issues.first
+          upstream_pr.update!(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+          allow(upstream_project).to receive(:client).and_return(github_client)
+          allow(github_client).to receive(:pull_request)
+            .with(upstream_project.upstream_full_name, upstream_pr.github_number)
+            .and_return(OpenStruct.new(mergeable: false, draft: false, number: upstream_pr.github_number,
+              head: OpenStruct.new(sha: "abc123")))
+        end
+
+        it "triggers a conflict-fix follow-up" do
+          result = activity.execute(project_id: upstream_project.id)
+
+          expect(automation_scan_results(result)).to contain_exactly(
+            hash_including(
+              pr_number: upstream_project.issues.first.github_number,
+              triggers: [ hash_including(type: "merge_conflicts") ]
             )
           )
-
-        result = activity.execute(project_id: upstream_project.id)
-
-        expect(automation_scan_results(result)).to contain_exactly(
-          hash_including(
-            pr_number: upstream_pr.github_number,
-            triggers: [ hash_including(type: "merge_conflicts") ]
-          )
-        )
-        expect(decision_types(result)).to include("queue_create_pr_run")
+          expect(decision_types(result)).to include("queue_create_pr_run")
+        end
       end
 
       # @spec UPSTREAM-GATE-006 — for the app-backed fork configuration, the

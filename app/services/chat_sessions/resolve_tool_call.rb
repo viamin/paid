@@ -42,9 +42,8 @@ module ChatSessions
     def call
       # @spec CHAT-API-004
       validate_decision!
-      validate_session_state!
-      claim_resolution!
-      update_session_activity
+      prepare_resolution!
+      on_tool_call_resolved&.call(tool_call_message)
 
       if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
@@ -56,6 +55,16 @@ module ChatSessions
 
     private
 
+    # @spec QUESTION-EXPLORATION-001
+    def prepare_resolution!
+      chat_session.with_lock do
+        validate_session_state!
+        claim_resolution!
+        ChatSessions::Resume.call(chat_session: chat_session) if chat_session.closed? && chat_session.inline_only?
+        update_session_activity
+      end
+    end
+
     def validate_decision!
       raise ArgumentError, "decision must be approve or deny" unless DECISIONS.include?(decision)
     end
@@ -63,11 +72,10 @@ module ChatSessions
     def validate_session_state!
       raise ArgumentError, "Chat session is archived." if chat_session.archived?
       # @spec QUESTION-EXPLORATION-001
-      raise ArgumentError, "interactive inbox chat sessions cannot be resumed" if closed_interactive_inbox_chat?
-    end
-
-    def closed_interactive_inbox_chat?
-      chat_session.status == "closed" && chat_session.interactive_inbox_chat?
+      # Closed workspace transcripts stay read-only until ChatSessions::Reopen
+      # restores the workspace: close already tore down the container an
+      # approved tool would dispatch against.
+      raise ArgumentError, "workspace chat sessions cannot be resumed" if chat_session.closed_workspace_session?
     end
 
     # Atomically transition this tool call from +pending+ to its decision status
@@ -85,7 +93,6 @@ module ChatSessions
       raise ArgumentError, "Tool call is not awaiting confirmation" if rows.zero?
 
       tool_call_message.reload
-      on_tool_call_resolved&.call(tool_call_message)
     end
 
     def resolve_pending_tool_call!

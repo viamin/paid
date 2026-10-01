@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_183232) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_233952) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -754,7 +754,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_183232) do
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
-    t.index ["created_by_id", "inbox_item_key"], name: "index_chat_sessions_active_inbox_item_per_creator", unique: true, where: "(((status)::text = 'active'::text) AND (inbox_item_key IS NOT NULL))"
+    t.index ["created_by_id", "inbox_item_key", "status"], name: "index_chat_sessions_inbox_history", where: "(inbox_item_key IS NOT NULL)"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
