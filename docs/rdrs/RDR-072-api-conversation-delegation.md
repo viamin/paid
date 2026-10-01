@@ -211,8 +211,8 @@ contracts and a successor RDR closes the remaining unsupported paths.
 The authorized host dependency is `agent-harness` 0.44.3, resolved from the
 application bundle and published on RubyGems on 2026-09-27. RubyGems provenance
 identifies source commit `85c4bc3`; the release and RubyGems records are
-https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3 and
-https://rubygems.org/gems/agent-harness/versions/0.44.3 respectively. It is an
+<https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3> and
+<https://rubygems.org/gems/agent-harness/versions/0.44.3> respectively. It is an
 installable, non-prerelease release containing the public API chat contract and
 the recovery-compatible Codex support verified for Paid #3995. This migration
 runs in the Rails host process, so no agent-image rebuild is required for the
