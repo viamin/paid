@@ -1933,7 +1933,7 @@ RSpec.describe Project do
       end
     end
 
-    describe "#client" do
+    describe "#client with PAT fallback" do
       def app_backed_project(account, **attrs)
         build(:project, :with_github_installation, account: account, **attrs)
       end
