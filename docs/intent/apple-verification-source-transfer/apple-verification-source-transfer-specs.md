@@ -3,7 +3,7 @@
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code.
 
-- [x] **APPLE-TRANSFER-001** — When a verification attempt runs against
+- [ ] **APPLE-TRANSFER-001** — When a verification attempt runs against
   committed source, the input manifest's git lane SHALL carry the exact
   attempt's commit identity and the credentials lane SHALL carry only a
   short-lived read-only GitHub App installation reference scoped to the
@@ -14,7 +14,7 @@
   *Code:* `AppleVerification::SourceLane::CredentialLane`,
   `AppleVerification::SourceLane::Build`
 
-- [x] **APPLE-TRANSFER-002** — When a verification attempt runs against
+- [ ] **APPLE-TRANSFER-002** — When a verification attempt runs against
   uncommitted source, the input manifest's object-storage lane SHALL carry a
   content-addressed workspace bundle reference (digest, size, manifest) and
   the builder SHALL exclude credentials, package and dependency caches,
@@ -27,7 +27,7 @@
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`
   *Code:* `AppleVerification::SourceLane::BundleBuilder`
 
-- [x] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
+- [ ] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
   reference a host path, a bind mount, or a writable cross-project cache, and
   the source lane builder SHALL refuse to build any lane when the originating
   paid-agent container has a write-host mount bound into its workspace (the
@@ -40,7 +40,7 @@
   *Code:* `AppleVerification::SourceLane::Build`,
   `AppleVerification::SourceLane::BundleBuilder`
 
-- [x] **APPLE-TRANSFER-004** — The output manifest produced for an attempt
+- [ ] **APPLE-TRANSFER-004** — The output manifest produced for an attempt
   SHALL include the attempt identity, source/lineage, workflow revision and
   lifecycle gate, profile digest, terminal status, queued/provisioning/running/
   total timings, retry lineage, failure classification, required and advisory
@@ -51,7 +51,7 @@
   *Tests:* `spec/services/apple_verification/result_manifest/build_spec.rb`
   *Code:* `AppleVerification::ResultManifest::Build`
 
-- [x] **APPLE-TRANSFER-005** — `.xcresult`, build logs, screenshots, and
+- [ ] **APPLE-TRANSFER-005** — `.xcresult`, build logs, screenshots, and
   diagnostics produced by an attempt SHALL be uploaded through the shared
   `ArtifactStorage` under a per-account/per-project/per-attempt namespace and
   SHALL be addressed in the output manifest as object-storage references

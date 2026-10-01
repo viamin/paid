@@ -15,9 +15,9 @@
 
 ## Implementation Status
 
-Partially implemented as of Tuesday, September 22, 2026 (see the
-[2026-09-22 Closeout](#2026-09-22-closeout) and the
-[audit report](audit-report-2026-09-22-rdr-068.md)).
+Partially implemented as of Thursday, October 1, 2026 (see the
+[2026-10-01 re-audit](#2026-10-01-re-audit) and the
+[audit report](audit-report-2026-10-01-rdr-068.md)).
 
 What shipped under #3930 through the #3938–#3941 chain, all behind the
 default-off `apple_verification_workers` flag with passing adversarial specs:
@@ -42,63 +42,39 @@ default-off `apple_verification_workers` flag with passing adversarial specs:
   egress snapshot into a credential-free declarative guest contract, with
   request-time enforcement and audited denials for direct IP, alternate DNS,
   proxy overrides, and unsupported protocols.
-- Repository configuration (under #3938 / PR #3975):
+- Repository configuration:
   `.paid/apple-verification.yml` parsing, typed validation, version
   requirement constraints, digest-bound sync from committed configuration,
   and user-confirmed inference from shared schemes and test plans.
+- Scheduling, lifecycle gates, agent-facing MCP tools, setup preflight, and
+  a live-validation harness are present with focused specs.
 - Project UI: mode settings, revision review/comparison/approval, attempt
   status with protected artifact links, rerun/cancel/waive/early-destroy
   controls under `manage_apple_verifications?` policy.
 
-What remains open (each bullet maps to an existing open tracker under
-umbrella #3930 — see the [2026-09-22 audit report](audit-report-2026-09-22-rdr-068.md)
-§Gaps for the reconciliation):
+The implementation is not yet an end-to-end worker: `Provision#guest_manifest`
+currently sends only source materialization and artifact export. It neither
+builds the source/result lanes nor derives the approved configuration's
+build/test/launch/capture operations. The isolated source-lane, result
+manifest, and artifact-ingestion components therefore have unit coverage but
+are not on the production dispatch path. Live macOS-host acceptance evidence
+also remains absent. These are the required gaps; the feature remains
+default-off and #3930 stays open.
 
-- Sequential multi-profile execution (parsing shipped under #3938 / PR #3975)
-  — **#3936**.
-- Scheduling and resource admission: fair queueing, the one-VM/disk/memory
-  thresholds, attempt timeout, and cancellation that converges the VM ledger
-  — **#3936**.
-- Agent-facing semantic MCP tools and the uncommitted-bundle draft-iteration
-  lane; lifecycle-gate enforcement against agent completion and PR
-  verification — **#3940**.
-- Retained-failure lockdown with credential revocation and timed destruction;
-  worker quarantine and smoke-test-gated return to service — **#3936**
-  (mechanism; #3941 covers the operator runbook).
-- Result ingestion populating the failure taxonomy — **#3937**.
-- The operator setup guide and guided preflight command — **#3941**.
-- All live-VM acceptance evidence: repeated clean-clone builds, tests,
-  launches, and captures of the smoke iOS app, `viamin/ColorMatching-iOS`,
-  and a native macOS GUI app; live isolation and capacity measurements
-  alongside three paid-agent containers — **#3978** (filed from this audit;
-  the `bin/apple-verify-live` harness and the
-  [live-validation runbook](live-validation-runbook-rdr-068.md) drive and
-  archive that evidence).
+## 2026-10-01 Re-audit
 
-## 2026-09-22 Closeout
+The earlier closeout evidence is superseded by the
+[2026-10-01 audit report](audit-report-2026-10-01-rdr-068.md). Later code
+added the scheduler, lifecycle gates, MCP surfaces, setup tooling, and
+component-level transfer/result code. The re-audit found a different
+end-to-end gap: the provisioner cannot derive and dispatch an approved
+workflow, and it does not connect the source or result/artifact lanes.
+Consequently no configured workflow can yet prove the build, test, launch, or
+capture acceptance criteria. No live macOS-host pilot evidence exists.
 
-Closeout issue #3942 ran the [RDR Closeout Checklist](closeout-checklist.md)
-against `main`; the full criterion-by-criterion evidence tables live in
-[audit-report-2026-09-22-rdr-068.md](audit-report-2026-09-22-rdr-068.md).
-Test evidence was re-run (299 Apple-related examples, 0 failures) and
-`bin/coherence-check.mjs` reports no Apple-related findings.
-
-Decision: **Partially Implemented** — the control-plane contracts, trusted
-host boundary, guest protocol/admission, network-policy contract, user UI,
-and (under #3938 / PR #3975) the `.paid/apple-verification.yml` parser ship
-with strong adversarial coverage, but the agent-interface, scheduling/
-admission/lockdown/quarantine/timeout, gate-enforcement, operator-guide,
-and live-host acceptance criteria are unmet. The remaining gaps are
-tracked by the existing open issues under umbrella #3930 — issue #3936
-(scheduling, admission, lockdown, quarantine, timeout, and sequential
-multi-profile execution), #3937 (result ingestion and failure taxonomy),
-`#3940` (agent MCP tools and lifecycle-gate enforcement), #3941 (operator
-setup guide and guided preflight) — plus the live-host acceptance issue
-`#3978` (filed from this audit; see the audit report's §Gaps reconciliation
-for the mapping). The design baseline is preserved unchanged: no design
-deltas were found, and `apple_verification_workers` remains default-off —
-broad enablement and flag cleanup wait on the live validation evidence.
-Umbrella #3930 stays open (this closeout tracks it rather than closing it).
+Decision: **Partially Implemented**. The design baseline is unchanged and
+`apple_verification_workers` remains default-off. Umbrella #3930 stays open;
+this re-audit does not close it.
 
 ## Problem Statement
 
