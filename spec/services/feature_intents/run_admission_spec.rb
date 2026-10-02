@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+# @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
 RSpec.describe FeatureIntents::RunAdmission do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }

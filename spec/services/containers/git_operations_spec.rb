@@ -205,7 +205,7 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.reload.base_commit_sha).to eq(head_sha)
     end
 
-    # @spec FEATURE-APPROVAL-015
+    # @spec FEATURE-APPROVAL-024
     it "checks out the released feature revision before creating the branch" do
       revision = "b" * 40
       feature = create(:feature_intent, project: project, approved_design_revision: revision)

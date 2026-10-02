@@ -86,7 +86,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
 
-    # @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+    # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
     it "rejects implementation runs for a held linked feature" do
       project = create(:project)
       issue = create(:issue, project: project)
@@ -99,7 +99,7 @@ RSpec.describe AgentRun do
       expect(agent_run.errors[:issue]).to include("Feature intent is not released.")
     end
 
-    # @spec FEATURE-APPROVAL-015
+    # @spec FEATURE-APPROVAL-024
     it "snapshots a released feature's approved revision onto an implementation run" do
       project = create(:project)
       issue = create(:issue, project: project)
@@ -112,7 +112,7 @@ RSpec.describe AgentRun do
       expect(agent_run.base_commit_sha).to eq(revision)
     end
 
-    # @spec FEATURE-APPROVAL-015
+    # @spec FEATURE-APPROVAL-024
     it "preserves an ordinary implementation run's requested checkout revision" do
       revision = "c" * 40
 

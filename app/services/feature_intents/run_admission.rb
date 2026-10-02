@@ -4,7 +4,7 @@ module FeatureIntents
   # The one deterministic admission gate for implementation work linked to an
   # approval-gated feature. It intentionally reads the current feature state
   # every time: a run can be queued before a design becomes held again.
-  # @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
   class RunAdmission
     Result = Data.define(:allowed, :revision, :reason) do
       def allowed? = allowed

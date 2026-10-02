@@ -129,6 +129,24 @@ Until #3863 lands, no code path creates `FeatureIntentDecision` or
 present but dormant for existing projects — no rollout flag is needed for
 that reason alone (see Rollout guard below).
 
+## Approval revisions and release
+
+Every Mark approved decision creates an immutable `FeatureIntentApprovalRevision`.
+The revision records the approving Inbox-authorized user, its timestamp, source,
+and the exact PR-number-to-head-SHA snapshot. `feature_intents` retains the
+current approval fields as a denormalized read model for Inbox and existing
+consumers; it never replaces the historical revision. An `AccountActivityEvent`
+records each approval and release transition, including the revision number and
+the transition's source and target states.
+
+`FeatureIntents::Release` is the sole initial-release transition. It locks the
+feature, requires `approved_waiting_for_merge`, a current approval snapshot,
+and every `required` design PR to be merged. It then records the supplied merged
+repository revision and moves the feature to `released`. A new PR head after
+approval means the snapshot is no longer current, so release fails closed until
+a fresh authorized human approval is recorded. The later #3865 admission wiring
+uses this release state; it does not bypass this transition contract.
+
 ## Inbox decision flow and Mark approved
 
 ### Readiness is a single answer, computed once
@@ -250,18 +268,131 @@ Actor and transition audit live on the records themselves (`approved_by`,
 `approved_at`, `resolved_by`, `resolved_at`); no logidze on these
 operational, high-churn-during-discovery tables.
 
+## Create-feature and LID-planning attachment (#3863)
+
+The Inbox + Mark-approved slice above is structurally inert for any project
+until a `create_feature` (or chained `lid_planning`) run actually creates the
+`FeatureIntent` it later renders. This section owns that wiring: the agent
+run that opens the RDR PR is also the agent run that registers the design
+PR, links the issue tree, and records the discovery evidence and unresolved
+decisions on the FeatureIntent — so the Inbox decision entry the human sees
+is populated with the real design PR (not a placeholder), the real issue
+tree (not a label guess), and evidence that traces to the repository.
+
+### What "attach" means
+
+`create_feature` and `lid_planning` runs call a single choke point,
+`FeatureIntents::AttachFromAgentRun`, that runs after the run's docs-only
+PR opens. The service is the single place that decides what is recorded,
+under what keys, and from which run-supplied facts:
+
+- The `FeatureIntent` itself is created when the feature run is queued
+  (`create_feature_run_and_redirect` in the agent-runs controller), status
+  `discovering`. The brief issue that the run files is linked to the
+  feature intent via a `FeatureIntentIssue` so the Inbox detail view can
+  show the brief surface alongside the design PR record.
+- When the docs-only PR is opened, `AttachFromAgentRun` records a
+  `FeatureIntentDesignPr` with `design_pr_kind: "rdr"` for `create_feature`
+  and `design_pr_kind: "lid_planning"` for `lid_planning`. The PR number,
+  head SHA, and `required` flag come from the GitHub API response, not
+  from the agent's output.
+- Implementation issues filed by the run are recorded via
+  `FeatureIntentIssue` at creation time (or shortly after via
+  `AttachFromAgentRun` syncing `cross_repo_issues`) so the Inbox detail
+  view can list the proposed tree alongside the design PR.
+- If the docs-only PR is closed unmerged (a human reviewer rejected the
+  RDR/LID Planning PR), the run transitions the feature to `cancelled` and
+  closes the `FeatureIntentIssue` rows it created so no runnable orphan
+  issue remains — the acceptance criterion "Closing the design PR
+  unmerged leaves no runnable orphan issue" (#3860 acceptance #3).
+
+### Evidence grounding
+
+The service records evidence that traces to the repository or the run's
+own output, never invented human answers. Two grounded sources:
+
+- The `created_issue_url` / `pull_request_url` / `cross_repo_issues`
+  recorded on the `AgentRun` are the source of truth for what was actually
+  filed and opened. The FeatureIntent mirrors those facts. This is what
+  FEATURE-APPROVAL-018 ships today (design PR rows + linked issues).
+- Any clarifying questions or AI-inferred decisions the run produced will
+  eventually be recorded on the FeatureIntent's `FeatureIntentDecision`
+  rows only when the run's output explicitly contains them — the run's
+  summary is parsed, not assumed. Inferred decisions will be flagged with
+  `[inferred]` in their prompt text so a human can confirm or reject them
+  through the Inbox (FEATURE-APPROVAL-007). The service never fabricates
+  a question that the run did not raise. This behavior is tracked by the
+  open spec FEATURE-APPROVAL-019 and is not yet implemented: today
+  `AttachFromAgentRun` does not parse the run summary, and the Inbox
+  decision-listing sections render empty for every project.
+
+### Branching by run goal
+
+`AttachFromAgentRun` branches on the agent run's `goal`:
+
+- `create_feature` → `design_pr_kind: "rdr"`, `required: true`. A LID-mode
+  project also gets a `lid_planning` design PR recorded by the chained
+  `lid_planning` run when it opens its docs-only PR.
+- `lid_planning` → `design_pr_kind: "lid_planning"`, `required: true` for
+  LID-mode projects (LID planning is required to merge before
+  implementation), `required: false` for projects that opt into the
+  feature workflow without LID.
+- Any other goal: no-op (the FeatureIntent is not created by this run).
+
+### Closed-unmerged reconciliation
+
+The `pull_request` webhook handler (`api/github_webhooks_controller.rb`)
+calls `AttachFromAgentRun#detach_on_close!` when the design PR's GitHub
+state transitions to `closed` without a merge — the webhook is the
+reconciliation surface because GitHub emits it whether or not a Paid run
+is in flight. The service transitions the FeatureIntent to `cancelled`
+(a hard cancel — not a soft hold — because the human reviewer rejected
+the design) and closes every linked issue both on GitHub (via the
+project's GitHub client, best-effort per issue) and locally, so a later
+issue sync cannot flip a locally closed row back to runnable. The
+acceptance criterion "Closing the design PR unmerged leaves no runnable
+orphan issue" is enforced here; the cancellation lands in its own write
+so one failing issue close cannot roll it back. PR reopening is not a
+path: a rejected design PR requires a new RDR/LID Planning PR and a new
+FeatureIntent.
+
+### Status transitions during attachment
+
+The service does not invent transitions the lifecycle guard rejects:
+
+- Creating a `FeatureIntent` from a queued run moves the feature to
+  `discovering` (the initial state). `discovering` features appear in the
+  Inbox decision lane so the team can see discovery is in flight, but are
+  not approvable (`APPROVABLE_STATUSES` excludes `discovering`).
+- The first `AttachFromAgentRun` after the docs-only PR opens moves the
+  feature to `design_open` (the PR exists, design review is now possible).
+  Subsequent calls on the same run are no-ops on the design PR record (the
+  PR already exists) but may still record additional linked issues.
+- A successful criteria-clarity evaluation moves the feature to
+  `needs_decision` (open decisions block approval) or `ready_for_approval`
+  (clarity is `clear`, decisions resolved).
+- `AttachFromAgentRun` never moves the feature past `needs_decision`; only
+  the criteria-clarity job and human approvals drive transitions into
+  `ready_for_approval` and beyond.
+
+### Why a service, not controller/inline code
+
+The same service is called from the `create_feature` run, the chained
+`lid_planning` run, and (for closed-unmerged reconciliation) from the
+`pull_request` webhook handler. Putting the wiring in one place means the
+two paths cannot disagree about what a FeatureIntent records, and any
+follow-up issue (#3865 reconciliation) inherits the same attachment logic
+by calling the same service.
+
 ## Rollout guard
 
 The `operating_mode` column is the RDR-066 config gate (see above): it ships
-default `standard`, so no existing project is silently enrolled. Nothing in
-the application creates a `FeatureIntent`, `FeatureIntentDecision`, or
-`FeatureIntentDesignPr` row outside tests until `#3863` wires
-`create_feature`/`lid_planning` to this substrate, so this segment's Inbox
-entries and Mark approved action are structurally inert for every existing
-project today. When `#3863` lands, the
-`human_led_feature_factory` operating mode is the actual rollout gate for
-*creating* feature intents in the first place; the Inbox slice does not
-duplicate that gate. Per the RDR-066 rollout guard, do not release held
+default `standard`, so no existing project is silently enrolled. The
+`FeatureIntents::AttachFromAgentRun` service attaches runs to a
+`FeatureIntent` for every project that runs `create_feature` (the
+`operating_mode` setting governs whether a project's issues are *held*
+until approval — #3865 — not whether a feature-intent record exists for a
+discovered feature). Per the RDR-066 rollout guard, do not release held
 issues or bypass readiness/authorization on any rollback — those checks live
 in code (`ApprovalReadiness`, `FeatureIntentPolicy`), not behind a flag that
 could be flipped off.

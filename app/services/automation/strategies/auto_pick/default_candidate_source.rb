@@ -110,7 +110,7 @@ module Automation
             held_ids = DesignAmendmentPause.held_issue_ids(project)
             scope = scope.where.not(id: held_ids) if held_ids.present?
 
-            # @spec FEATURE-APPROVAL-014 — a linked feature tree stays out
+            # @spec FEATURE-APPROVAL-023 — a linked feature tree stays out
             # of every automatic selection path until its release transaction
             # has recorded a repository revision.
             held_feature_issue_ids = FeatureIntentIssue.joins(:feature_intent)

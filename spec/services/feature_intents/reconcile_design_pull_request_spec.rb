@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-016
+# @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-025
 RSpec.describe FeatureIntents::ReconcileDesignPullRequest do
   let(:project) { create(:project) }
   let(:feature) { create(:feature_intent, :approved_waiting_for_merge, project: project) }

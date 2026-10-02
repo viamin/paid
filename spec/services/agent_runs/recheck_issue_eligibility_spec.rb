@@ -43,7 +43,7 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.error_message).to include("no longer eligible")
   end
 
-  # @spec FEATURE-APPROVAL-014
+  # @spec FEATURE-APPROVAL-023
   it "cancels a previously queued manual implementation run when its feature is held" do
     issue = create(:issue, project: project, github_state: "open")
     feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")

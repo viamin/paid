@@ -4,7 +4,7 @@ module FeatureIntents
   # Projects provider PR facts onto the linked design artifact. A completed,
   # verified human direct merge records approval through MarkApproved; bot or
   # unverifiable merges still require an existing human approval.
-  # @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-016
+  # @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-025
   class ReconcileDesignPullRequest
     def self.call(...)
       new(...).call
@@ -26,7 +26,7 @@ module FeatureIntents
 
       design_pr.update!(merged_at: merged_at || Time.current)
       approve_direct_merge
-      Release.call(feature_intent: design_pr.feature_intent, revision: merge_revision)
+      release
     end
 
     private
@@ -77,6 +77,17 @@ module FeatureIntents
 
     def feature_intent = design_pr.feature_intent
 
+    def release
+      Release.call(
+        feature_intent:,
+        merged_revision: merge_revision,
+        source: "github_reconciliation",
+        actor: feature_intent.approved_by
+      )
+    rescue Release::NotReadyError => e
+      log_release_rejection(e)
+    end
+
     def required_design_prs
       feature_intent.feature_intent_design_prs.select(&:required?)
     end
@@ -116,6 +127,15 @@ module FeatureIntents
     def log_direct_merge_rejection(error)
       Rails.logger.info(
         message: "feature_intents.direct_merge_approval_rejected",
+        feature_intent_id: feature_intent.id,
+        project_id: project.id,
+        error_class: error.class.name
+      )
+    end
+
+    def log_release_rejection(error)
+      Rails.logger.info(
+        message: "feature_intents.release_rejected",
         feature_intent_id: feature_intent.id,
         project_id: project.id,
         error_class: error.class.name

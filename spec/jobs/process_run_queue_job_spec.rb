@@ -1141,7 +1141,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.started_at).to be_nil
     end
 
-    # @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+    # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
     it "admits a resumed non-feature create PR run with its prior checkout revision" do
       issue = create(:issue)
       agent_run = create(:agent_run, :running, project: issue.project, issue: issue, goal: "create_pr",

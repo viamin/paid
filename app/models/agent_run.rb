@@ -4269,7 +4269,7 @@ class AgentRun < ApplicationRecord
     )
   end
 
-  # @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
   def snapshot_feature_intent_revision
     return unless create_pr_goal? && issue
 

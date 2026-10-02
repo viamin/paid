@@ -1,50 +1,80 @@
 # frozen_string_literal: true
 
 module FeatureIntents
-  # Releases only a still-current human approval after every required design
-  # artifact is merged. GitHub reconciliation supplies the resulting default
-  # branch revision; this service never infers approval from a bot merge.
-  # @spec FEATURE-APPROVAL-016
+  # @spec FEATURE-APPROVAL-021 @spec FEATURE-APPROVAL-022
+  # The only initial-release transition. Admission wiring supplies the merged
+  # repository revision after provider reconciliation; this service makes the
+  # persisted approval and artifact checks atomic with the state change.
   class Release
-    Result = Data.define(:released, :reason) do
-      def released? = released
-    end
+    GIT_SHA = /\A\h{40}(?:\h{24})?\z/
 
     def self.call(...)
       new(...).call
     end
 
-    def initialize(feature_intent:, revision:)
+    def initialize(feature_intent:, merged_revision:, source:, actor: nil)
       @feature_intent = feature_intent
-      @revision = revision
+      @merged_revision = merged_revision
+      @source = source
+      @actor = actor
     end
 
     def call
-      return denied("Feature has no current human approval.") unless feature_intent.approved_waiting_for_merge?
-      return denied("Feature has no required design pull requests.") if required_design_prs.empty?
-      return denied("Required design pull requests have not all merged.") unless required_design_prs.all?(&:merged?)
-      return denied("The human approval does not match current design PR heads.") unless approval_current?
-      return denied("Merged repository revision is required.") if revision.blank?
-
-      feature_intent.transaction do
-        feature_intent.update!(approved_design_revision: revision, approved_revision_recorded_at: Time.current)
-        feature_intent.release!
+      feature_intent.with_lock do
+        feature_intent.reload
+        validate_release!
+        feature_intent.update!(
+          status: "released",
+          approved_design_revision: merged_revision,
+          approved_revision_recorded_at: Time.current
+        )
+        record_audit_event
       end
-      Result.new(released: true, reason: nil)
+      feature_intent
     end
+
+    class NotReadyError < StandardError; end
 
     private
 
-    attr_reader :feature_intent, :revision
+    attr_reader :feature_intent, :merged_revision, :source, :actor
+
+    def validate_release!
+      raise NotReadyError, "feature is not awaiting design merge" unless feature_intent.approved_waiting_for_merge?
+      raise NotReadyError, "feature approval is stale" unless approval_current?
+      raise NotReadyError, "required design PRs have not all merged" unless required_design_prs.all?(&:merged?)
+      raise NotReadyError, "merged repository revision must be a Git SHA" unless valid_merged_revision?
+    end
+
+    def approval_current?
+      feature_intent.approved_at.present? && current_pr_heads == feature_intent.approved_pr_heads
+    end
+
+    def valid_merged_revision?
+      merged_revision.is_a?(String) && merged_revision.match?(GIT_SHA)
+    end
+
+    def current_pr_heads
+      feature_intent.feature_intent_design_prs.to_h { |design_pr| [ design_pr.pull_request_number.to_s, design_pr.head_sha ] }
+    end
 
     def required_design_prs
       feature_intent.feature_intent_design_prs.select(&:required?)
     end
 
-    def approval_current?
-      required_design_prs.all? { |design_pr| feature_intent.approved_pr_heads[design_pr.pull_request_number.to_s] == design_pr.head_sha }
+    def record_audit_event
+      Audit::RecordEvent.call(
+        action: "feature_intent.released",
+        actor: actor,
+        subject: feature_intent,
+        metadata: {
+          from_status: "approved_waiting_for_merge",
+          to_status: "released",
+          source: source,
+          merged_revision: merged_revision,
+          approval_revision: feature_intent.feature_intent_approval_revisions.maximum(:revision_number)
+        }
+      )
     end
-
-    def denied(reason) = Result.new(released: false, reason: reason)
   end
 end

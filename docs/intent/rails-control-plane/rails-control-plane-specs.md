@@ -6,6 +6,13 @@
 
 ## Request and Realtime Lifecycle
 
+- [x] **RAILS-CONTROL-PLANE-009** — When Action Cable shuts down during a
+  development code reload with a broadcast pending, the control plane SHALL
+  complete shutdown without deadlocking, preserve the broadcast, and support
+  broadcasts after restart.
+  *Tests:* `spec/integration/action_cable/subscription_adapter/solid_cable_reload_spec.rb`.
+  *Code:* `Gemfile`, `Gemfile.lock`.
+
 - [x] **RAILS-CONTROL-PLANE-001** — When an authenticated Rails request runs,
   the control plane SHALL apply tenant context for the current user's account
   before application code executes and SHALL clear tenant context again after

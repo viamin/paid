@@ -147,7 +147,7 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "design pull request reconciliation" do
-    # @spec FEATURE-APPROVAL-016
+    # @spec FEATURE-APPROVAL-025
     it "releases an approved feature when issue sync observes its merged design PR" do
       feature = create(:feature_intent, :approved_waiting_for_merge, project: project)
       design_pr = create(:feature_intent_design_pr, feature_intent: feature)
