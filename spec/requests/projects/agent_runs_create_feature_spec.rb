@@ -10,7 +10,18 @@ RSpec.describe "POST /projects/:project_id/agent_runs (create_feature)" do
   let(:project) { create(:project, account: account, github_token: github_token, created_by: owner) }
   let(:github_client) { instance_double(GithubClient) }
   let(:gh_issue) do
-    Struct.new(:number, :html_url, :id).new(1234, "https://github.com/example/repo/issues/1234", 1)
+    Struct.new(:number, :html_url, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at).new(
+      1234,
+      "https://github.com/example/repo/issues/1234",
+      1,
+      "[Feature] Add dark mode",
+      "Add dark mode toggle in user settings",
+      "open",
+      Struct.new(:login).new("paid-agents"),
+      [],
+      Time.current,
+      Time.current
+    )
   end
 
   before do
@@ -37,12 +48,26 @@ RSpec.describe "POST /projects/:project_id/agent_runs (create_feature)" do
     expect(feature_intent.issues).not_to be_empty
   end
 
-  it "is idempotent when the same run is re-submitted (matching brief issue reuses the FeatureIntent)" do
+  it "reuses the FeatureIntent when the same run is attached again" do
+    # A fresh HTTP POST files a fresh brief issue and therefore a fresh
+    # FeatureIntent; reuse is keyed on the brief-issue link, so it is
+    # exercised here by re-running the attachment for the same run.
+    post project_agent_runs_path(project), params: {
+      goal: "create_feature",
+      feature_description: "Add dark mode"
+    }
+    feature_intent = FeatureIntent.last
+    agent_run = AgentRun.where(goal: "create_feature").last
+
+    result = nil
     expect {
-      post project_agent_runs_path(project), params: {
+      result = FeatureIntents::AttachFromAgentRun.call(
+        agent_run: agent_run,
         goal: "create_feature",
-        feature_description: "Add dark mode"
-      }
-    }.to change(FeatureIntent, :count).by(1)
+        brief: { "title" => "Add dark mode" }
+      )
+    }.not_to change(FeatureIntent, :count)
+
+    expect(result.feature_intent).to eq(feature_intent)
   end
 end

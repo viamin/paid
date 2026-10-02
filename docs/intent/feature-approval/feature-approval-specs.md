@@ -218,18 +218,24 @@
 - [x] **FEATURE-APPROVAL-017** — For approval-gated features, when a
   design PR (RDR or LID Planning) linked to a `FeatureIntent` is closed
   unmerged on GitHub, the system SHALL transition the feature to
-  `cancelled` and SHALL close every linked `FeatureIntentIssue` row so no
-  runnable orphan issue remains (RDR-066 acceptance criterion #3:
-  "Closing the design PR unmerged leaves no runnable orphan issue"). The
-  close SHALL be applied through `AttachFromAgentRun#detach_on_close!`,
-  called from the same docs-only PR activity that recorded the design PR,
-  so the rejection path and the attachment path cannot disagree about what
-  was held. A subsequent GitHub-side reopen of the same PR SHALL NOT
-  resurrect the feature — a rejected design PR requires a new RDR and a
-  new `FeatureIntent`.
-  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
+  `cancelled` and SHALL close every linked issue — on GitHub and in
+  Paid's database — so no runnable orphan issue remains (RDR-066
+  acceptance criterion #3: "Closing the design PR unmerged leaves no
+  runnable orphan issue"; closing upstream prevents the next issue sync
+  from flipping a locally closed row back to runnable). The close SHALL
+  be applied through `AttachFromAgentRun#detach_on_close!`, called from
+  the `pull_request` webhook handler on the closed-unmerged event
+  (`api/github_webhooks_controller.rb`) — the webhook is the
+  reconciliation surface because GitHub emits it whether or not a Paid
+  run is in flight. The cancellation lands in its own write and each
+  per-issue close is best-effort, so one failing issue row cannot roll
+  back the cancellation or block the remaining closes. A subsequent
+  GitHub-side reopen of the same PR SHALL NOT resurrect the feature — a
+  rejected design PR requires a new RDR and a new `FeatureIntent`.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`,
+  `spec/requests/api/github_webhooks_spec.rb`.
   *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
-  `app/temporal/activities/create_pull_request_activity.rb`.
+  `app/controllers/api/github_webhooks_controller.rb`.
 
 - [x] **FEATURE-APPROVAL-018** — For approval-gated features, evidence
   recorded on the `FeatureIntent` (design PR rows, linked issues,

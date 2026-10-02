@@ -323,15 +323,20 @@ section is the truthful "the run filed no questions" state, not a fallback.
 
 ### Closed-unmerged reconciliation
 
-`create_pull_request_activity` (and the `lid_planning` equivalent) call
-`AttachFromAgentRun#detach_on_close` when the design PR's GitHub state
-transitions to `closed` without a merge. The service transitions the
-FeatureIntent to `cancelled` (a hard cancel — not a soft hold — because the
-human reviewer rejected the design) and closes the linked
-`FeatureIntentIssue` rows. The acceptance criterion "Closing the design PR
-unmerged leaves no runnable orphan issue" is enforced here. PR reopening
-is not a path: a rejected design PR requires a new RDR/LID Planning PR and
-a new FeatureIntent.
+The `pull_request` webhook handler (`api/github_webhooks_controller.rb`)
+calls `AttachFromAgentRun#detach_on_close!` when the design PR's GitHub
+state transitions to `closed` without a merge — the webhook is the
+reconciliation surface because GitHub emits it whether or not a Paid run
+is in flight. The service transitions the FeatureIntent to `cancelled`
+(a hard cancel — not a soft hold — because the human reviewer rejected
+the design) and closes every linked issue both on GitHub (via the
+project's GitHub client, best-effort per issue) and locally, so a later
+issue sync cannot flip a locally closed row back to runnable. The
+acceptance criterion "Closing the design PR unmerged leaves no runnable
+orphan issue" is enforced here; the cancellation lands in its own write
+so one failing issue close cannot roll it back. PR reopening is not a
+path: a rejected design PR requires a new RDR/LID Planning PR and a new
+FeatureIntent.
 
 ### Status transitions during attachment
 
@@ -356,7 +361,7 @@ The service does not invent transitions the lifecycle guard rejects:
 
 The same service is called from the `create_feature` run, the chained
 `lid_planning` run, and (for closed-unmerged reconciliation) from the
-`create_pull_request_activity`. Putting the wiring in one place means the
+`pull_request` webhook handler. Putting the wiring in one place means the
 two paths cannot disagree about what a FeatureIntent records, and any
 follow-up issue (#3865 reconciliation) inherits the same attachment logic
 by calling the same service.

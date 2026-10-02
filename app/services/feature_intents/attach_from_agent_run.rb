@@ -12,15 +12,18 @@ module FeatureIntents
   #   `lid_planning` run is queued (status `discovering`), links the brief
   #   issue the run files, and stores the brief text.
   # - `attach_design_pr` — records a `FeatureIntentDesignPr` when the
-  #   docs-only PR opens, reading the PR number and head SHA from GitHub
+  #   docs-only PR opens (moving the feature from `discovering` to
+  #   `design_open`), reading the PR number and head SHA from GitHub
   #   (never from the agent's output, per FEATURE-APPROVAL-018).
   # - `attach_issue` — links an implementation issue the run filed to the
   #   `FeatureIntent` via a `FeatureIntentIssue` row, so the Inbox detail
   #   view can list the proposed tree alongside the design PR.
   # - `detach_on_close!` — reconciles the design PR being closed unmerged:
   #   transitions the feature to `cancelled` and closes every linked
-  #   `FeatureIntentIssue` so no runnable orphan issue remains
-  #   (RDR-066 acceptance criterion #3).
+  #   issue on GitHub and locally so no runnable orphan issue remains
+  #   (RDR-066 acceptance criterion #3). Called from the `pull_request`
+  #   webhook handler, which fires whether or not a Paid run is in
+  #   flight.
   #
   # Putting all four operations in one service means the
   # `create_feature` path and the chained `lid_planning` path cannot
@@ -108,25 +111,13 @@ module FeatureIntents
     def attach_design_pr
       return DesignPrResult.new(design_pr: nil) if feature_intent.nil? || pull_request_number.nil? || head_sha.blank?
 
-      design_pr = feature_intent.feature_intent_design_prs.find_by(pull_request_number: pull_request_number)
-      if design_pr
-        # @spec FEATURE-APPROVAL-018 — head SHA comes from GitHub. When a new
-        # commit lands after the first attachment, advance head_sha and leave
-        # reviewed_head_sha where it was so ApprovalReadiness can flag the
-        # staleness; re-evaluation moves reviewed_head_sha forward.
-        prior_reviewed_head_sha = design_pr.reviewed_head_sha.presence || design_pr.head_sha
-        design_pr.update!(head_sha: head_sha, reviewed_head_sha: prior_reviewed_head_sha)
-        DesignPrResult.new(design_pr: design_pr)
-      else
-        created = feature_intent.feature_intent_design_prs.create!(
-          pull_request_number: pull_request_number,
-          head_sha: head_sha,
-          reviewed_head_sha: head_sha,
-          design_pr_kind: design_pr_kind || "rdr",
-          required: required.nil? ? required_for_kind : required
-        )
-        DesignPrResult.new(design_pr: created)
-      end
+      design_pr = find_or_create_design_pr
+      # The first attachment after the docs-only PR opens moves the feature
+      # from `discovering` to `design_open` (the PR exists, design review is
+      # now possible). Guarded so later statuses are never clobbered and
+      # repeated calls are no-ops.
+      feature_intent.update!(status: "design_open") if feature_intent.status == "discovering"
+      DesignPrResult.new(design_pr: design_pr)
     end
 
     # @spec FEATURE-APPROVAL-016
@@ -156,18 +147,16 @@ module FeatureIntents
       end
 
       # Closed-unmerged: cancel the feature and close every linked issue so
-      # no runnable orphan remains. Defense in depth — the per-issue close
-      # is best-effort (Issue#close! may fail on a stale state), but the
-      # feature cancellation must land even if a single close fails.
+      # no runnable orphan remains. The cancellation lands in its own write;
+      # each per-issue close (GitHub first, then the local row) is
+      # best-effort so one failing issue cannot roll back the cancellation
+      # or block the remaining closes.
       closed_issue_count = 0
-      ActiveRecord::Base.transaction do
-        feature_intent.update!(status: "cancelled")
-        feature_intent.feature_intent_issues.includes(:issue).each do |link|
-          next unless link.issue.github_state == "open"
+      feature_intent.update!(status: "cancelled")
+      feature_intent.feature_intent_issues.includes(:issue).each do |link|
+        next unless link.issue.github_state == "open"
 
-          link.issue.update!(github_state: "closed", closed_at: Time.current)
-          closed_issue_count += 1
-        end
+        closed_issue_count += 1 if close_linked_issue(link.issue)
       end
       DetachResult.new(feature_intent: feature_intent, cancelled: true, closed_issue_count: closed_issue_count)
     end
@@ -177,6 +166,87 @@ module FeatureIntents
     attr_reader :agent_run, :goal, :brief, :feature_intent, :pull_request_number, :head_sha,
       :design_pr_kind, :required, :issue, :merged
 
+    def find_or_create_design_pr
+      design_pr = feature_intent.feature_intent_design_prs.find_by(pull_request_number: pull_request_number)
+      return advance_head_sha(design_pr) if design_pr
+
+      feature_intent.feature_intent_design_prs.create!(
+        pull_request_number: pull_request_number,
+        head_sha: head_sha,
+        reviewed_head_sha: head_sha,
+        design_pr_kind: design_pr_kind || "rdr",
+        required: required.nil? ? required_for_kind : required
+      )
+    end
+
+    # @spec FEATURE-APPROVAL-018 — head SHA comes from GitHub. When a new
+    # commit lands after the first attachment, advance head_sha and leave
+    # reviewed_head_sha where it was so ApprovalReadiness can flag the
+    # staleness; re-evaluation moves reviewed_head_sha forward.
+    def advance_head_sha(design_pr)
+      prior_reviewed_head_sha = design_pr.reviewed_head_sha.presence || design_pr.head_sha
+      design_pr.update!(head_sha: head_sha, reviewed_head_sha: prior_reviewed_head_sha)
+      design_pr
+    end
+
+    # Close one linked issue: on GitHub first, then locally. The GitHub
+    # close must precede the local one so a later issue sync (which copies
+    # `state` from the GitHub response via Issues::UpsertFromGithub) cannot
+    # resurrect the row as a runnable orphan. A failed GitHub write is
+    # logged and the local close still proceeds — the next sync may reopen
+    # that row, surfacing the orphan again instead of hiding it.
+    def close_linked_issue(issue)
+      close_issue_upstream(issue)
+      issue.update!(github_state: "closed")
+      true
+    rescue ActiveRecord::RecordInvalid => e
+      Rails.logger.warn(
+        message: "feature_intent.orphan_issue_close_failed",
+        feature_intent_id: feature_intent.id,
+        issue_id: issue.id,
+        github_number: issue.github_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def close_issue_upstream(issue)
+      project = feature_intent.project
+      if project.upstream_pr_target?
+        Rails.logger.info(
+          message: "github_sync.upstream_issue_write_skipped",
+          project_id: project.id,
+          issue_id: issue.id,
+          github_number: issue.github_number,
+          operation: "feature_intent_orphan_issue_close"
+        )
+        return
+      end
+
+      client = project.client
+      if client.nil?
+        Rails.logger.warn(
+          message: "feature_intent.orphan_issue_upstream_close_skipped",
+          project_id: project.id,
+          issue_id: issue.id,
+          github_number: issue.github_number
+        )
+        return
+      end
+
+      client.update_issue(project.full_name, issue.github_number, state: "closed")
+    rescue GithubClient::Error => e
+      Rails.logger.warn(
+        message: "feature_intent.orphan_issue_upstream_close_failed",
+        project_id: feature_intent.project_id,
+        issue_id: issue.id,
+        github_number: issue.github_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
     # `create_feature` and `lid_planning` are the only goals this attachment
     # flow owns. Any other goal (create_pr, enhance_issue, …) is a no-op so
     # the service can be safely called from a generic dispatch point
@@ -185,16 +255,20 @@ module FeatureIntents
       %w[create_feature lid_planning].include?(goal.to_s)
     end
 
+    # Reuse is matched only through the brief-issue link — the unique index
+    # on `feature_intent_issues.issue_id` makes that match deterministic. A
+    # run without a brief issue creates a fresh FeatureIntent rather than
+    # adopting an arbitrary unrelated one.
     def existing_feature_intent
-      @existing_feature_intent ||= begin
-        project = agent_run&.project
-        brief_issue = agent_run&.issue
-        return nil unless project
+      project = agent_run&.project
+      brief_issue = agent_run&.issue
+      return nil unless project && brief_issue
 
-        candidates = FeatureIntent.where(project_id: project.id)
-        candidates = candidates.joins(:feature_intent_issues).where(feature_intent_issues: { issue_id: brief_issue.id }) if brief_issue
-        candidates.first
-      end
+      FeatureIntent
+        .where(project_id: project.id)
+        .joins(:feature_intent_issues)
+        .where(feature_intent_issues: { issue_id: brief_issue.id })
+        .first
     end
 
     def feature_title
@@ -224,11 +298,14 @@ module FeatureIntents
       end
     end
 
-    # LID-mode projects require the chained `lid_planning` design PR to
-    # merge before implementation; non-LID projects treat it as optional
-    # because RDR-066 deliberately keeps LID outside the whole-feature
-    # approval contract when the project has not enabled LID.
+    # RDR design PRs are always required — the design review IS the
+    # approval gate, so a stale head must hold approval. The chained
+    # `lid_planning` PR is required only for LID-mode projects; non-LID
+    # projects treat it as optional because RDR-066 deliberately keeps LID
+    # outside the whole-feature approval contract when the project has not
+    # enabled LID.
     def required_for_kind
+      return true if design_pr_kind.to_s == "rdr"
       return false unless design_pr_kind.to_s == "lid_planning"
 
       feature_intent.project.lid_mode.present?

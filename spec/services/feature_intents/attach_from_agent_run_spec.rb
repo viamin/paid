@@ -47,6 +47,18 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
       expect(result.feature_intent).to be_nil
     end
 
+    it "creates a fresh FeatureIntent for an issue-less run instead of adopting an unrelated one" do
+      existing = create(:feature_intent, project: project)
+      run = create(:agent_run, project: project, issue: nil, goal: "create_feature")
+
+      result = nil
+      expect { result = described_class.call(agent_run: run, goal: "create_feature", brief: { "title" => "Fresh feature" }) }
+        .to change(FeatureIntent, :count).by(1)
+
+      expect(result.feature_intent).not_to eq(existing)
+      expect(result.feature_intent.status).to eq("discovering")
+    end
+
     it "stores the brief as text on the FeatureIntent so the Inbox detail view shows it" do
       brief = { "title" => "Dark mode", "problem" => "Eye strain at night", "done_criteria" => "Toggle persists" }
 
@@ -77,8 +89,7 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
         feature_intent: feature_intent,
         pull_request_number: 42,
         head_sha: "a" * 40,
-        design_pr_kind: "rdr",
-        required: true
+        design_pr_kind: "rdr"
       )
 
       expect(result.design_pr).to be_persisted
@@ -88,6 +99,43 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
       expect(result.design_pr.reviewed_head_sha).to eq("a" * 40)
       expect(result.design_pr.design_pr_kind).to eq("rdr")
       expect(result.design_pr.required).to be(true)
+    end
+
+    it "defaults an RDR design PR to required: true when the caller does not pass required" do
+      result = described_class.attach_design_pr(
+        feature_intent: feature_intent,
+        pull_request_number: 43,
+        head_sha: "b" * 40
+      )
+
+      expect(result.design_pr.design_pr_kind).to eq("rdr")
+      expect(result.design_pr.required).to be(true)
+    end
+
+    it "moves a discovering feature to design_open when the design PR is attached" do
+      feature_intent.update!(status: "discovering")
+
+      described_class.attach_design_pr(
+        feature_intent: feature_intent,
+        pull_request_number: 42,
+        head_sha: "a" * 40,
+        design_pr_kind: "rdr"
+      )
+
+      expect(feature_intent.reload.status).to eq("design_open")
+    end
+
+    it "does not clobber a later status when the design PR is re-attached" do
+      feature_intent.update!(status: "needs_decision")
+
+      described_class.attach_design_pr(
+        feature_intent: feature_intent,
+        pull_request_number: 42,
+        head_sha: "a" * 40,
+        design_pr_kind: "rdr"
+      )
+
+      expect(feature_intent.reload.status).to eq("needs_decision")
     end
 
     it "records a lid_planning design PR with required: true for LID-mode projects" do
@@ -123,8 +171,7 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
         feature_intent: feature_intent,
         pull_request_number: 42,
         head_sha: "a" * 40,
-        design_pr_kind: "rdr",
-        required: true
+        design_pr_kind: "rdr"
       )
 
       expect {
@@ -132,8 +179,7 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
           feature_intent: feature_intent,
           pull_request_number: 42,
           head_sha: "b" * 40,
-          design_pr_kind: "rdr",
-          required: true
+          design_pr_kind: "rdr"
         )
       }.not_to change(feature_intent.feature_intent_design_prs, :count)
     end
@@ -143,16 +189,14 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
         feature_intent: feature_intent,
         pull_request_number: 42,
         head_sha: "a" * 40,
-        design_pr_kind: "rdr",
-        required: true
+        design_pr_kind: "rdr"
       )
 
       result = described_class.attach_design_pr(
         feature_intent: feature_intent,
         pull_request_number: 42,
         head_sha: "b" * 40,
-        design_pr_kind: "rdr",
-        required: true
+        design_pr_kind: "rdr"
       )
 
       expect(result.design_pr.head_sha).to eq("b" * 40)
@@ -195,8 +239,13 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
     end
     let!(:implementation_issue) { create(:issue, project: project, github_state: "open") }
     let(:link) { create(:feature_intent_issue, feature_intent: feature_intent, issue: implementation_issue) }
+    let(:github_client) { instance_double(GithubClient) }
 
-    before { link }
+    before do
+      link
+      allow(project).to receive(:client).and_return(github_client)
+      allow(github_client).to receive(:update_issue)
+    end
 
     it "transitions the feature to cancelled and closes linked issues when the design PR is closed unmerged" do
       result = described_class.detach_on_close!(
@@ -207,6 +256,71 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
 
       expect(result.feature_intent.reload.status).to eq("cancelled")
       expect(implementation_issue.reload.github_state).to eq("closed")
+    end
+
+    it "closes the linked issue on GitHub as well as locally so a later sync cannot resurrect it" do
+      described_class.detach_on_close!(
+        feature_intent: feature_intent,
+        pull_request_number: 99,
+        merged: false
+      )
+
+      expect(github_client).to have_received(:update_issue)
+        .with(project.full_name, implementation_issue.github_number, state: "closed")
+      expect(implementation_issue.reload.github_state).to eq("closed")
+    end
+
+    it "still closes the issue locally when the GitHub write fails" do
+      allow(github_client).to receive(:update_issue).and_raise(GithubClient::Error, "boom")
+
+      described_class.detach_on_close!(
+        feature_intent: feature_intent,
+        pull_request_number: 99,
+        merged: false
+      )
+
+      expect(feature_intent.reload.status).to eq("cancelled")
+      expect(implementation_issue.reload.github_state).to eq("closed")
+    end
+
+    it "skips the GitHub write for upstream-PR-target projects but still closes locally" do
+      upstream_project = create(:project, :upstream_pr_target, account: account)
+      allow(upstream_project).to receive(:client).and_return(github_client)
+      upstream_feature = create(:feature_intent, :ready_for_approval, project: upstream_project)
+      create(:feature_intent_design_pr, feature_intent: upstream_feature, pull_request_number: 99,
+        head_sha: "d" * 40, reviewed_head_sha: "d" * 40)
+      upstream_issue = create(:issue, project: upstream_project, github_state: "open")
+      create(:feature_intent_issue, feature_intent: upstream_feature, issue: upstream_issue)
+
+      described_class.detach_on_close!(
+        feature_intent: upstream_feature,
+        pull_request_number: 99,
+        merged: false
+      )
+
+      expect(github_client).not_to have_received(:update_issue)
+      expect(upstream_issue.reload.github_state).to eq("closed")
+    end
+
+    it "keeps the cancellation and the remaining closes when one issue close fails" do
+      bad_issue = create(:issue, project: project, github_state: "open")
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: bad_issue)
+      # Plant an invalid row (update_column skips validations) so this
+      # issue's close raises RecordInvalid — the reconciliation must not
+      # let one bad row roll back the cancellation or the other close.
+      bad_issue.update_column(:enhance_issue_rounds, -1)
+
+      result = described_class.detach_on_close!(
+        feature_intent: feature_intent,
+        pull_request_number: 99,
+        merged: false
+      )
+
+      expect(result.cancelled?).to be(true)
+      expect(result.closed_issue_count).to eq(1)
+      expect(feature_intent.reload.status).to eq("cancelled")
+      expect(implementation_issue.reload.github_state).to eq("closed")
+      expect(bad_issue.reload.github_state).to eq("open")
     end
 
     it "does not transition when the design PR merged successfully" do

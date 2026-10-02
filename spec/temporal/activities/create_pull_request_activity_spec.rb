@@ -88,22 +88,24 @@ RSpec.describe Activities::CreatePullRequestActivity do
     allow_any_instance_of(Llm::GeneratePrDescription).to receive(:sleep) # rubocop:disable RSpec/AnyInstance
   end
 
-  describe "#execute" do
-    # @spec FEATURE-APPROVAL-015
-    it "records the GitHub API head SHA when attaching a create-feature design PR" do
-      agent_run.update!(goal: "create_feature")
-      feature_intent = create(:feature_intent, project: project)
-      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
-      pull_request = OpenStruct.new(number: 42, head: OpenStruct.new(sha: "a" * 40))
+    describe "#execute" do
+      # @spec FEATURE-APPROVAL-015
+      it "records the GitHub API head SHA when attaching a create-feature design PR" do
+        agent_run.update!(goal: "create_feature")
+        feature_intent = create(:feature_intent, project: project, status: "discovering")
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+        pull_request = OpenStruct.new(number: 42, head: OpenStruct.new(sha: "a" * 40))
 
-      activity.send(:attach_to_feature_intent!, agent_run, pull_request)
+        activity.send(:attach_to_feature_intent!, agent_run, pull_request)
 
-      expect(feature_intent.feature_intent_design_prs.find_by!(pull_request_number: 42)).to have_attributes(
-        head_sha: "a" * 40,
-        reviewed_head_sha: "a" * 40,
-        design_pr_kind: "rdr"
-      )
-    end
+        expect(feature_intent.feature_intent_design_prs.find_by!(pull_request_number: 42)).to have_attributes(
+          head_sha: "a" * 40,
+          reviewed_head_sha: "a" * 40,
+          design_pr_kind: "rdr",
+          required: true
+        )
+        expect(feature_intent.reload.status).to eq("design_open")
+      end
 
     it "rejects a source-linked branch after reconciling a reserved PR" do # @spec EAGER-QUEUE-010
       create(:agent_run, :cancelled, project: project, issue: issue, goal: "create_pr",

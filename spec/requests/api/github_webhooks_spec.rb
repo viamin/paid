@@ -408,6 +408,7 @@ RSpec.describe "Api::GithubWebhooks" do
       let(:feature_intent_issue) do
         create(:feature_intent_issue, feature_intent: feature_intent, issue: implementation_issue)
       end
+      let(:github_client) { instance_double(GithubClient) }
       let(:payload) do
         {
           action: "closed",
@@ -416,7 +417,11 @@ RSpec.describe "Api::GithubWebhooks" do
         }
       end
 
-      before { feature_intent_issue }
+      before do
+        feature_intent_issue
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:update_issue)
+      end
 
       # @spec FEATURE-APPROVAL-017
       it "cancels the feature and closes its linked implementation issues" do
@@ -431,6 +436,8 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(response).to have_http_status(:ok)
         expect(feature_intent.reload.status).to eq("cancelled")
         expect(implementation_issue.reload.github_state).to eq("closed")
+        expect(github_client).to have_received(:update_issue)
+          .with(project.full_name, implementation_issue.github_number, state: "closed")
       end
 
       # @spec FEATURE-APPROVAL-017
