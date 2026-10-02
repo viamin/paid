@@ -6,6 +6,8 @@ module FeatureIntents
   # repository revision after provider reconciliation; this service makes the
   # persisted approval and artifact checks atomic with the state change.
   class Release
+    GIT_SHA = /\A\h{40}(?:\h{24})?\z/
+
     def self.call(...)
       new(...).call
     end
@@ -40,10 +42,15 @@ module FeatureIntents
       raise NotReadyError, "feature is not awaiting design merge" unless feature_intent.approved_waiting_for_merge?
       raise NotReadyError, "feature approval is stale" unless approval_current?
       raise NotReadyError, "required design PRs have not all merged" unless required_design_prs.all?(&:merged?)
+      raise NotReadyError, "merged repository revision must be a Git SHA" unless valid_merged_revision?
     end
 
     def approval_current?
       feature_intent.approved_at.present? && current_pr_heads == feature_intent.approved_pr_heads
+    end
+
+    def valid_merged_revision?
+      merged_revision.is_a?(String) && merged_revision.match?(GIT_SHA)
     end
 
     def current_pr_heads

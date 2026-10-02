@@ -7,7 +7,7 @@ RSpec.describe FeatureIntents::Release do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let(:approver) { create(:user, account: account) }
-  let(:feature_intent) { create(:feature_intent, :approved_waiting_for_merge, project: project) }
+  let(:feature_intent) { create(:feature_intent, :approved_waiting_for_merge, project: project, approved_design_revision: nil) }
 
   before do
     create(:feature_intent_design_pr, feature_intent:, pull_request_number: 42,
@@ -37,5 +37,15 @@ RSpec.describe FeatureIntents::Release do
 
     expect { described_class.call(feature_intent:, merged_revision: "b" * 40, actor: approver) }
       .to raise_error(described_class::NotReadyError, /approval is stale/)
+  end
+
+  it "rejects release without a merged repository revision" do
+    expect { described_class.call(feature_intent:, merged_revision: "", actor: approver) }
+      .to raise_error(described_class::NotReadyError, /merged repository revision/)
+
+    expect(feature_intent.reload).to have_attributes(
+      status: "approved_waiting_for_merge",
+      approved_design_revision: nil
+    )
   end
 end
