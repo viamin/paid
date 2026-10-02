@@ -1730,7 +1730,7 @@ class GithubClient
   def graphql_permission_error?(error)
     error.dig("extensions", "type") == "FORBIDDEN" ||
       error["type"] == "FORBIDDEN" ||
-      error["message"] == "Resource not accessible by integration"
+      error["message"].to_s.include?("Resource not accessible by integration")
   end
 
   def graphql_unprocessable_error?(error)

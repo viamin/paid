@@ -1489,7 +1489,7 @@ RSpec.describe GithubClient do
             status: 200,
             body: {
               errors: [
-                { message: "Resource not accessible by integration", type: "FORBIDDEN" }
+                { message: "Resource not accessible by integration for this repository" }
               ]
             }.to_json,
             headers: { "Content-Type" => "application/json" }
@@ -1499,7 +1499,7 @@ RSpec.describe GithubClient do
       it "raises a permission-shaped error so the PAT wrapper retries the read" do
         expect { client.review_threads(repo, 42) }.to raise_error(GithubClient::ApiError) { |error|
           expect(error.status).to eq(403)
-          expect(error.message).to include("Resource not accessible by integration")
+          expect(error.message).to include("Resource not accessible by integration for this repository")
         }
       end
     end
