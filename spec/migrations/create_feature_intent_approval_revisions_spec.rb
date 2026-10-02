@@ -3,7 +3,7 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20261002034147_create_feature_intent_approval_revisions")
 
-# @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-016
+# @spec FEATURE-APPROVAL-020 @spec FEATURE-APPROVAL-022
 RSpec.describe CreateFeatureIntentApprovalRevisions, :aggregate_failures do
   self.use_transactional_tests = false
 

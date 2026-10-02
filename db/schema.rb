@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_02_034147) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1678,6 +1678,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_034147) do
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "pull_request_number"], name: "index_feature_intent_design_prs_unique_pr", unique: true
     t.index ["feature_intent_id"], name: "index_feature_intent_design_prs_on_feature_intent_id"
+    t.index ["pull_request_number"], name: "index_feature_intent_design_prs_on_pull_request_number"
   end
 
   create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
@@ -5024,7 +5025,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_034147) do
        LANGUAGE plpgsql
       AS $function$
       BEGIN
-        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-014)';
+        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
       END;
       $function$
   SQL

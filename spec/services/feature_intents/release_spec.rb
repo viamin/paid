@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-015 @spec FEATURE-APPROVAL-016
+# @spec FEATURE-APPROVAL-021 @spec FEATURE-APPROVAL-022
 RSpec.describe FeatureIntents::Release do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }

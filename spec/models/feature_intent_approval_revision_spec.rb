@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-014
+# @spec FEATURE-APPROVAL-020
 RSpec.describe FeatureIntentApprovalRevision do
   describe "validations" do
     it "requires an approved_at" do

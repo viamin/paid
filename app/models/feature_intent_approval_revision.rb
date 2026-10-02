@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-014
+# @spec FEATURE-APPROVAL-020
 # An append-only snapshot of a human approval. The current approval columns on
 # FeatureIntent are a read model; this relation preserves every revision.
 # Mutation (UPDATE/DELETE) is rejected by both this model's instance-level

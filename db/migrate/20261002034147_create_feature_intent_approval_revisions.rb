@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-016
+# @spec FEATURE-APPROVAL-020 @spec FEATURE-APPROVAL-022
 class CreateFeatureIntentApprovalRevisions < ActiveRecord::Migration[8.1]
   def up
     unless table_exists?(:feature_intent_approval_revisions)

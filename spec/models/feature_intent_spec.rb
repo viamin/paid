@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-014
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-020
 RSpec.describe FeatureIntent do
   describe "#record_approval!" do
     it "transitions design_open to approved_waiting_for_merge and stamps the approval" do

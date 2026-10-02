@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module FeatureIntents
-  # @spec FEATURE-APPROVAL-015 @spec FEATURE-APPROVAL-016
+  # @spec FEATURE-APPROVAL-021 @spec FEATURE-APPROVAL-022
   # The only initial-release transition. Admission wiring supplies the merged
   # repository revision after provider reconciliation; this service makes the
   # persisted approval and artifact checks atomic with the state change.
