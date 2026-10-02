@@ -188,14 +188,18 @@
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including
-  GraphQL permission failures. A mutation that requires a trusted human GitHub
-  identity SHALL execute with the credential selected by its trust gate; it
-  SHALL select the allowlisted fallback PAT directly when the primary App is
-  untrusted, and SHALL otherwise preserve primary-first fallback behavior.
+  GraphQL permission failures and repository configuration writes. No
+  application-mediated GitHub operation SHALL unwrap the project client to
+  bypass the fallback. A mutation that requires a trusted human GitHub identity
+  SHALL execute with the credential selected by its trust gate; it SHALL select
+  the allowlisted fallback PAT directly when the primary App is untrusted, and
+  SHALL otherwise preserve primary-first fallback behavior.
   *Code:* `app/services/github_client/with_fallback.rb`,
-  `app/services/github_client.rb`, `app/mcp/tools/edit_issue.rb`.
+  `app/services/github_client.rb`, `app/mcp/tools/edit_issue.rb`,
+  `app/services/projects/screenshots/commit_config.rb`.
   *Test:* `spec/services/github_client/with_fallback_spec.rb`,
-  `spec/services/github_client_spec.rb`, `spec/mcp/tools/edit_issue_spec.rb`.
+  `spec/services/github_client_spec.rb`, `spec/mcp/tools/edit_issue_spec.rb`,
+  `spec/services/projects/screenshots/commit_config_spec.rb`.
 
 - [x] **GITHUB-SYNC-014** — When GitHub sync changes a non-PR issue from
   closed to open, the system SHALL park it in `manual_review` with an explicit

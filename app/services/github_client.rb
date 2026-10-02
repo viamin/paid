@@ -79,6 +79,8 @@ class GithubClient
     commit
     create_ref
     delete_ref
+    create_contents
+    update_contents
     pull_requests
     request_pull_request_review
   ].freeze
