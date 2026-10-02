@@ -10,9 +10,10 @@ module FeatureIntents
       new(...).call
     end
 
-    def initialize(project:, github_issue:)
+    def initialize(project:, github_issue:, github_pull_request: nil)
       @project = project
       @github_issue = github_issue
+      @github_pull_request = github_pull_request
     end
 
     def call
@@ -28,7 +29,7 @@ module FeatureIntents
 
     private
 
-    attr_reader :project, :github_issue
+    attr_reader :project, :github_issue, :github_pull_request
 
     def design_pr
       @design_pr ||= FeatureIntentDesignPr.joins(:feature_intent).find_by(
@@ -67,7 +68,7 @@ module FeatureIntents
     end
 
     def pull_request_value(key)
-      pull_request = github_issue.respond_to?(:pull_request) ? github_issue.pull_request : nil
+      pull_request = github_pull_request || (github_issue.pull_request if github_issue.respond_to?(:pull_request))
       pull_request.respond_to?(key) ? pull_request.public_send(key) : pull_request&.fetch(key, nil)
     end
   end

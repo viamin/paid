@@ -146,6 +146,31 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
   end
 
+  describe "design pull request reconciliation" do
+    # @spec FEATURE-APPROVAL-016
+    it "releases an approved feature when issue sync observes its merged design PR" do
+      feature = create(:feature_intent, :approved_waiting_for_merge, project: project)
+      design_pr = create(:feature_intent_design_pr, feature_intent: feature)
+      feature.update!(approved_pr_heads: { design_pr.pull_request_number.to_s => design_pr.head_sha })
+      github_issue = github_pr_issue(design_pr.pull_request_number)
+      github_issue.state = "closed"
+      github_pull_request = OpenStruct.new(
+        head: OpenStruct.new(sha: design_pr.head_sha),
+        merged_at: Time.current,
+        merge_commit_sha: "c" * 40
+      )
+      allow(github_client).to receive(:pull_request)
+        .with(project.issue_target_repository, design_pr.pull_request_number)
+        .and_return(github_pull_request)
+      stub_issues_by_label(nil => [ github_issue ])
+
+      activity.execute(project_id: project.id)
+
+      expect(feature.reload).to be_released
+      expect(feature.approved_design_revision).to eq("c" * 40)
+    end
+  end
+
   def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)
     labels ||= [ project.enhance_issue_needs_input_label_name, "paid-build" ]
     refreshed_labels ||= labels

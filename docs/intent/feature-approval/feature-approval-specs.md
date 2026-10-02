@@ -200,7 +200,9 @@
   reconciler supplies the resulting repository revision. An incomplete merge,
   stale approval, or bot merge without prior human approval SHALL remain held.
   *Tests:* `spec/services/feature_intents/release_spec.rb`,
-  `spec/services/feature_intents/reconcile_design_pull_request_spec.rb`.
+  `spec/services/feature_intents/reconcile_design_pull_request_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/services/feature_intents/reconcile_design_pull_request.rb`,
   `app/services/feature_intents/release.rb`, `app/services/issues/upsert_from_github.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`,
   `app/models/feature_intent.rb`.
