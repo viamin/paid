@@ -43,8 +43,9 @@ before an Implemented status. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
-boundary. Review scheduling rides `approved_intent_amendments`, so
-enforcement requires both flags enabled; enabling only
+boundary. Shadow evaluation scheduling rides the separate
+`intent_conformance_shadow_review` flag, while enforcement requires both
+`approved_intent_amendments` and `intent_conformance_enforcement`; enabling only
 `intent_conformance_enforcement` blocks every feature-PR merge with no
 verdict and no review scheduled. Operators MUST NOT broadly enable either
 flag for feature PRs until #3870 provides rollout evidence and enrolled
