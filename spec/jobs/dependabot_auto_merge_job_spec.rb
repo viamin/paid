@@ -416,9 +416,8 @@ RSpec.describe DependabotAutoMergeJob do
       before do
         project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
         allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_app_token")
-        allow(GithubClient).to receive(:new) do |token:, **|
-          token == fallback_token.token ? fallback_client : client
-        end
+        allow(GithubClient).to receive(:new).and_return(client)
+        allow(fallback_token).to receive(:client).and_return(fallback_client)
         allow(fallback_client).to receive(:merge_pull_request)
         allow(fallback_client).to receive(:add_labels_to_issue)
         allow(fallback_client).to receive(:add_comment)
