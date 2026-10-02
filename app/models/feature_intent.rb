@@ -20,6 +20,8 @@ class FeatureIntent < ApplicationRecord
     cancelled
   ].freeze
 
+  TERMINAL_STATUSES = %w[released revising cancelled].freeze
+
   # Statuses a Mark approved action may originate from: the design is still
   # open, a decision resolved it back into review, it was explicitly marked
   # ready, or a prior approval is being refreshed against a new PR head.

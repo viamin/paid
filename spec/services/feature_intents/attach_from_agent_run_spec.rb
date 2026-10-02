@@ -30,21 +30,21 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
     it "returns the existing FeatureIntent when called twice on the same run/brief" do
       first = described_class.call(agent_run: agent_run, goal: "create_feature", brief: { "title" => "X" })
 
-      expect {
-        @second = described_class.call(agent_run: agent_run, goal: "create_feature", brief: { "title" => "X" })
-      }.not_to change(FeatureIntent, :count)
+      second = nil
+      expect { second = described_class.call(agent_run: agent_run, goal: "create_feature", brief: { "title" => "X" }) }
+        .not_to change(FeatureIntent, :count)
 
-      expect(@second.feature_intent).to eq(first.feature_intent)
+      expect(second.feature_intent).to eq(first.feature_intent)
     end
 
     it "is a no-op for agent runs that are not create_feature or lid_planning" do
       run = create(:agent_run, project: project, goal: "create_pr")
 
-      expect {
-        @result = described_class.call(agent_run: run, goal: "create_pr", brief: { "title" => "noop" })
-      }.not_to change(FeatureIntent, :count)
+      result = nil
+      expect { result = described_class.call(agent_run: run, goal: "create_pr", brief: { "title" => "noop" }) }
+        .not_to change(FeatureIntent, :count)
 
-      expect(@result.feature_intent).to be_nil
+      expect(result.feature_intent).to be_nil
     end
 
     it "stores the brief as text on the FeatureIntent so the Inbox detail view shows it" do
@@ -55,6 +55,17 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
       expect(result.feature_intent.brief).to include("Dark mode")
       expect(result.feature_intent.brief).to include("Eye strain at night")
       expect(result.feature_intent.brief).to include("Toggle persists")
+    end
+
+    it "stores scalar problem-framing details from the feature brief" do
+      brief = {
+        "title" => "Dark mode",
+        "problem_framing" => { "desired_outcome" => "Comfortable night-time reading" }
+      }
+
+      result = described_class.call(agent_run: agent_run, goal: "create_feature", brief: brief)
+
+      expect(result.feature_intent.brief).to include("Desired outcome: Comfortable night-time reading")
     end
   end
 
@@ -183,7 +194,9 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
         head_sha: "d" * 40, reviewed_head_sha: "d" * 40)
     end
     let!(:implementation_issue) { create(:issue, project: project, github_state: "open") }
-    let!(:link) { create(:feature_intent_issue, feature_intent: feature_intent, issue: implementation_issue) }
+    let(:link) { create(:feature_intent_issue, feature_intent: feature_intent, issue: implementation_issue) }
+
+    before { link }
 
     it "transitions the feature to cancelled and closes linked issues when the design PR is closed unmerged" do
       result = described_class.detach_on_close!(
@@ -219,7 +232,7 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
     end
 
     it "records the merged_at timestamp on the design PR when the design PR merged" do
-      result = described_class.detach_on_close!(
+      described_class.detach_on_close!(
         feature_intent: feature_intent,
         pull_request_number: 99,
         merged: true

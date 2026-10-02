@@ -211,7 +211,7 @@ module FeatureIntents
 
           lines << "#{key.to_s.tr('_', ' ').capitalize}: #{value}" unless value.is_a?(Hash) || value.is_a?(Array)
         end
-        problem_framing_section(brief["problem_framing"]) if brief["problem_framing"].is_a?(Hash)
+        lines.concat(problem_framing_section(brief["problem_framing"])) if brief["problem_framing"].is_a?(Hash)
       end
       return agent_run&.external_metadata&.dig("feature_brief", "problem") if lines.empty?
 
@@ -219,10 +219,8 @@ module FeatureIntents
     end
 
     def problem_framing_section(framing)
-      framing.each do |key, value|
-        next if value.blank?
-
-        yield "#{key.to_s.tr('_', ' ').capitalize}: #{value}" unless value.is_a?(Hash) || value.is_a?(Array)
+      framing.filter_map do |key, value|
+        "#{key.to_s.tr('_', ' ').capitalize}: #{value}" unless value.blank? || value.is_a?(Hash) || value.is_a?(Array)
       end
     end
 

@@ -79,8 +79,8 @@ module Api
       # is closed unmerged, transition the FeatureIntent to cancelled and
       # close every linked implementation issue so no runnable orphan
       # remains. The webhook is the natural reconciliation surface because
-        # GitHub emits the action: a closed-webhook event whether or not Paid
-        # is currently running.
+      # GitHub emits the action: a closed-webhook event whether or not Paid
+      # is currently running.
       if action == "closed" && pr["merged"] == false
         reconcile_closed_unmerged_feature_intent(pr)
         head :ok
@@ -302,7 +302,7 @@ module Api
         .where(project_id: @project.id)
         .joins(:feature_intent_design_prs)
         .where(feature_intent_design_prs: { pull_request_number: pr_number })
-        .where.not(status: FeatureIntent::STATUSES.last(3))
+        .where.not(status: FeatureIntent::TERMINAL_STATUSES)
         .distinct
         .find_each do |feature_intent|
           FeatureIntents::AttachFromAgentRun.detach_on_close!(

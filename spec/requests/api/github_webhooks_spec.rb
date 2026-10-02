@@ -398,6 +398,77 @@ RSpec.describe "Api::GithubWebhooks" do
       end
     end
 
+    context "with a closed, unmerged FeatureIntent design PR" do
+      let(:feature_intent) { create(:feature_intent, :ready_for_approval, project: project) }
+      let!(:design_pr) do
+        create(:feature_intent_design_pr, feature_intent: feature_intent, pull_request_number: 123,
+          head_sha: "a" * 40, reviewed_head_sha: "a" * 40)
+      end
+      let!(:implementation_issue) { create(:issue, project: project, github_state: "open") }
+      let(:feature_intent_issue) do
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: implementation_issue)
+      end
+      let(:payload) do
+        {
+          action: "closed",
+          pull_request: { number: design_pr.pull_request_number, merged: false },
+          repository: { id: project.github_id, full_name: project.full_name }
+        }
+      end
+
+      before { feature_intent_issue }
+
+      # @spec FEATURE-APPROVAL-017
+      it "cancels the feature and closes its linked implementation issues" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        post webhook_url, params: body, headers: {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "pull_request",
+          "X-Hub-Signature-256" => signature
+        }
+
+        expect(response).to have_http_status(:ok)
+        expect(feature_intent.reload.status).to eq("cancelled")
+        expect(implementation_issue.reload.github_state).to eq("closed")
+      end
+
+      # @spec FEATURE-APPROVAL-017
+      it "is idempotent when GitHub redelivers the webhook" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+        headers = {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "pull_request",
+          "X-Hub-Signature-256" => signature
+        }
+
+        post webhook_url, params: body, headers: headers
+        closed_at = implementation_issue.reload.closed_at
+        post webhook_url, params: body, headers: headers
+
+        expect(response).to have_http_status(:ok)
+        expect(feature_intent.reload.status).to eq("cancelled")
+        expect(implementation_issue.reload.closed_at).to eq(closed_at)
+      end
+
+      %w[released revising cancelled].each do |status|
+        it "leaves a #{status} feature unchanged" do
+          feature_intent.update!(status: status)
+          body, signature = sign_payload(payload, project.webhook_secret)
+
+          post webhook_url, params: body, headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "pull_request",
+            "X-Hub-Signature-256" => signature
+          }
+
+          expect(response).to have_http_status(:ok)
+          expect(feature_intent.reload.status).to eq(status)
+          expect(implementation_issue.reload.github_state).to eq("open")
+        end
+      end
+    end
+
     context "with issue_comment event on a PR" do
       let(:payload) do
         {

@@ -152,7 +152,7 @@ module Activities
       FeatureIntents::AttachFromAgentRun.attach_design_pr(
         feature_intent: feature_intent,
         pull_request_number: pr.number,
-        head_sha: pr.head_sha.to_s,
+        head_sha: pr.head&.sha.to_s,
         design_pr_kind: design_pr_kind
       )
     rescue => e
