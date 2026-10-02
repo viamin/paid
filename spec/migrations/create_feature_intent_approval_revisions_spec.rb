@@ -31,11 +31,20 @@ RSpec.describe CreateFeatureIntentApprovalRevisions, :aggregate_failures do
     expect(rls_enabled?).to be(true)
   end
 
+  it "installs BEFORE UPDATE and BEFORE DELETE triggers that reject mutations" do
+    migration.migrate(:up)
+
+    expect(trigger_exists?("prevent_feature_intent_approval_revision_update")).to be(true)
+    expect(trigger_exists?("prevent_feature_intent_approval_revision_delete")).to be(true)
+  end
+
   it "rolls back cleanly" do
     migration.migrate(:up)
 
     expect { migration.migrate(:down) }.not_to raise_error
     expect(connection.data_source_exists?("feature_intent_approval_revisions")).to be(false)
+    expect(trigger_exists?("prevent_feature_intent_approval_revision_update")).to be(false)
+    expect(trigger_exists?("prevent_feature_intent_approval_revision_delete")).to be(false)
   end
 
   it "can be rerun after a partial migration" do
@@ -47,8 +56,22 @@ RSpec.describe CreateFeatureIntentApprovalRevisions, :aggregate_failures do
   private
 
   def rls_enabled?
+    return false unless connection.data_source_exists?("feature_intent_approval_revisions")
+
     connection.select_value(
       "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.feature_intent_approval_revisions'::regclass"
     ).then { |value| value == true || value == "t" }
+  end
+
+  def trigger_exists?(name)
+    return false unless connection.data_source_exists?("feature_intent_approval_revisions")
+
+    connection.select_value(<<~SQL.squish) == true
+      SELECT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = '#{name}'
+            AND tgrelid = 'public.feature_intent_approval_revisions'::regclass
+      )
+    SQL
   end
 end

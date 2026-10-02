@@ -58,12 +58,24 @@ class CreateFeatureIntentApprovalRevisions < ActiveRecord::Migration[8.1]
         $$;
       SQL
     end
+
+    safety_assured do
+      execute "DROP TRIGGER IF EXISTS prevent_feature_intent_approval_revision_update ON feature_intent_approval_revisions"
+      execute "DROP TRIGGER IF EXISTS prevent_feature_intent_approval_revision_delete ON feature_intent_approval_revisions"
+    end
+
+    create_function :prevent_feature_intent_approval_revision_mutation, version: 1
+    create_trigger :prevent_feature_intent_approval_revision_update, on: :feature_intent_approval_revisions
+    create_trigger :prevent_feature_intent_approval_revision_delete, on: :feature_intent_approval_revisions
   end
 
   def down
     return unless table_exists?(:feature_intent_approval_revisions)
 
     safety_assured do
+      execute "DROP TRIGGER IF EXISTS prevent_feature_intent_approval_revision_update ON feature_intent_approval_revisions"
+      execute "DROP TRIGGER IF EXISTS prevent_feature_intent_approval_revision_delete ON feature_intent_approval_revisions"
+      execute "DROP FUNCTION IF EXISTS prevent_feature_intent_approval_revision_mutation()"
       execute "DROP POLICY IF EXISTS tenant_isolation ON feature_intent_approval_revisions"
       execute "ALTER TABLE feature_intent_approval_revisions NO FORCE ROW LEVEL SECURITY"
       execute "ALTER TABLE feature_intent_approval_revisions DISABLE ROW LEVEL SECURITY"

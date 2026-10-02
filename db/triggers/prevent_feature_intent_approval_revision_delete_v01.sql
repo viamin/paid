@@ -1,0 +1,4 @@
+CREATE TRIGGER prevent_feature_intent_approval_revision_delete
+BEFORE DELETE ON public.feature_intent_approval_revisions
+FOR EACH ROW
+EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation();
