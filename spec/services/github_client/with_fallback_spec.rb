@@ -208,7 +208,7 @@ RSpec.describe GithubClient::WithFallback do
   describe "fallback observability" do
     it "logs each fallback use at warn level with operation, repository, and fallback actor" do
       allow(primary).to receive(:update_issue)
-        .and_raise(GithubClient::NotFoundError, "Not Found")
+        .and_raise(GithubClient::NotFoundError, "Not Found ghs_sensitive_token")
       allow(fallback).to receive_messages(authenticated_login: "fallback-user", update_issue: :result)
 
       wrapper.update_issue("owner/repo", 42, title: "X")
@@ -221,6 +221,7 @@ RSpec.describe GithubClient::WithFallback do
       expect(log_lines.first).to include('repo: "owner/repo"')
       expect(log_lines.first).to include('fallback_actor: "fallback-user"')
       expect(log_lines.first).to include('primary_error_class: "GithubClient::NotFoundError"')
+      expect(log_lines.first).not_to include("ghs_sensitive_token")
     end
 
     it "does not log when the primary succeeds without a fallback retry" do

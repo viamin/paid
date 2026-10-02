@@ -102,8 +102,7 @@ class GithubClient::WithFallback
       operation: method_name.to_s,
       repo: fallback_repository(args),
       fallback_actor: safe_authenticated_login(@fallback),
-      primary_error_class: error.class.name,
-      primary_error_message: error.message
+      primary_error_class: error.class.name
     )
   end
 
