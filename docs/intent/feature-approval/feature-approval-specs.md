@@ -170,3 +170,99 @@
   `app/services/inbox/count.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_detail_feature_decision.html.erb`.
+
+## Create-feature and LID-planning attachment (#3863)
+
+- [x] **FEATURE-APPROVAL-014** — For approval-gated features, when a
+  `create_feature` agent run is queued, the system SHALL create a
+  `FeatureIntent` linked to that run's brief issue (`status: "discovering"`,
+  `criteria_clarity_state: "pending"`), and the brief issue SHALL be linked
+  back to the feature via a `FeatureIntentIssue` so the Inbox detail view
+  can show the brief alongside the design PR record. The system SHALL use
+  one choke point (`FeatureIntents::AttachFromAgentRun`) for both
+  `create_feature` and `lid_planning` runs, so neither path can disagree
+  about what a FeatureIntent records.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`,
+  `spec/requests/projects/agent_runs_create_feature_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+
+- [x] **FEATURE-APPROVAL-015** — For approval-gated features, when a
+  `create_feature` agent run opens its docs-only RDR PR, the system SHALL
+  record a `FeatureIntentDesignPr` with `design_pr_kind: "rdr"`,
+  `required: true`, the PR number and head SHA read from the GitHub API
+  response (not from the agent's output), and `reviewed_head_sha` set to
+  the same head SHA so the staleness signal starts consistent. A chained
+  `lid_planning` run SHALL record a second design PR with
+  `design_pr_kind: "lid_planning"`, `required: true` for LID-mode projects
+  and `required: false` otherwise. A second `AttachFromAgentRun` call on
+  the same PR SHALL NOT duplicate the design PR record (uniqueness by
+  `(feature_intent_id, pull_request_number)`).
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`.
+
+- [x] **FEATURE-APPROVAL-016** — For approval-gated features, every
+  implementation issue filed by a `create_feature` (or chained
+  `lid_planning`) run SHALL be linked to its `FeatureIntent` via a
+  `FeatureIntentIssue` row at creation time (when the run records it in
+  `cross_repo_issues`) so the Inbox detail view's "Proposed issue tree"
+  section lists the real filed issues alongside the design PR. The link
+  SHALL NOT depend on a label or auto-pick status — the
+  `FeatureIntentIssue` row is the source of truth.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`.
+
+- [x] **FEATURE-APPROVAL-017** — For approval-gated features, when a
+  design PR (RDR or LID Planning) linked to a `FeatureIntent` is closed
+  unmerged on GitHub, the system SHALL transition the feature to
+  `cancelled` and SHALL close every linked issue — on GitHub and in
+  Paid's database — so no runnable orphan issue remains (RDR-066
+  acceptance criterion #3: "Closing the design PR unmerged leaves no
+  runnable orphan issue"; closing upstream prevents the next issue sync
+  from flipping a locally closed row back to runnable). The close SHALL
+  be applied through `AttachFromAgentRun#detach_on_close!`, called from
+  the `pull_request` webhook handler on the closed-unmerged event
+  (`api/github_webhooks_controller.rb`) — the webhook is the
+  reconciliation surface because GitHub emits it whether or not a Paid
+  run is in flight. The cancellation lands in its own write and each
+  per-issue close is best-effort, so one failing issue row cannot roll
+  back the cancellation or block the remaining closes. A subsequent
+  GitHub-side reopen of the same PR SHALL NOT resurrect the feature — a
+  rejected design PR requires a new RDR and a new `FeatureIntent`.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`,
+  `spec/requests/api/github_webhooks_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/controllers/api/github_webhooks_controller.rb`.
+
+- [x] **FEATURE-APPROVAL-018** — For approval-gated features, evidence
+  recorded on the `FeatureIntent` for design PRs and linked issues SHALL
+  be grounded in the repository or the run's own output, not in human
+  answers Paid invented. The `FeatureIntentDesignPr` row's
+  `pull_request_number` and `head_sha` come from the GitHub API response
+  on the docs-only PR opening, not from the agent summary.
+  `FeatureIntentIssue` rows come from the `cross_repo_issues` the run
+  recorded against the issue it actually filed on GitHub. (Decision
+  recording — the `FeatureIntentDecision` grounding claim — is tracked
+  separately in FEATURE-APPROVAL-019; this spec is scoped to the
+  design-PR/issue-link evidence the attach service ships.)
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`.
+
+- [ ] **FEATURE-APPROVAL-019** — For approval-gated features, the run
+  path SHALL record `FeatureIntentDecision` rows on the `FeatureIntent`
+  only when the run's own summary explicitly contains the question or
+  the `[inferred]` decision; absent decisions SHALL surface as the
+  truthful "no questions" state in the Inbox detail view, not a
+  fabricated default. Currently the design-doc section "Evidence grounding"
+  describes this behavior but the recording code path does not ship
+  (`FeatureIntents::AttachFromAgentRun` does not parse the run summary
+  for questions/inferred decisions); the Inbox decision-listing section
+  is therefore still empty for every project. This spec is the gap
+  marker — code/tests land in the follow-up that implements the
+  decision-recording path.
+  *Tests:* (none — pending implementation).
+  *Code:* (none — pending implementation; tracks alongside
+  `app/services/feature_intents/attach_from_agent_run.rb`).
