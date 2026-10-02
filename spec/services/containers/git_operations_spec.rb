@@ -205,6 +205,20 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.reload.base_commit_sha).to eq(head_sha)
     end
 
+    # @spec FEATURE-APPROVAL-024
+    it "checks out the released feature revision before creating the branch" do
+      revision = "b" * 40
+      feature = create(:feature_intent, project: project, approved_design_revision: revision)
+      create(:feature_intent_issue, feature_intent: feature, issue: agent_run.issue)
+      agent_run.update_column(:base_commit_sha, revision)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", revision ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.clone_and_setup_branch
+    end
+
     it "sets worktree_path to /workspace" do
       git_ops.clone_and_setup_branch
 

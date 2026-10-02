@@ -7,7 +7,7 @@ module Issues
   RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
 
   class UpsertFromGithub
-    def self.call(project:, github_issue:, body: github_issue.body, source: Issue::GITHUB_SOURCE)
+    def self.call(project:, github_issue:, github_pull_request: nil, body: github_issue.body, source: Issue::GITHUB_SOURCE)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
       was_open = issue.github_state == "open"
       was_closed = issue.persisted? && issue.github_state == "closed"
@@ -29,6 +29,7 @@ module Issues
       )
 
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
+      reconcile_design_pull_request(project, github_issue, github_pull_request) if issue.is_pull_request? && github_pull_request
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       require_reopen_review(issue, was_closed: was_closed)
@@ -36,6 +37,15 @@ module Issues
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
     end
+
+    def self.reconcile_design_pull_request(project, github_issue, github_pull_request)
+      FeatureIntents::ReconcileDesignPullRequest.call(
+        project: project,
+        github_issue: github_issue,
+        github_pull_request: github_pull_request
+      )
+    end
+    private_class_method :reconcile_design_pull_request
 
     # @spec ISSUE-REOPEN-REVIEW-001
     def self.require_reopen_review(issue, was_closed:)

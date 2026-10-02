@@ -48,7 +48,7 @@ module Activities
       Project.suppress_broadcasts do
         synced_issues = github_issues.each_with_index.map do |gi, index|
           heartbeat("fetch_issues.sync_issue", project_id: project.id, github_issue_id: gi.id, index: index, total: github_issues.size)
-          sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
+          sync_issue(project, gi, client:, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
         end
         sync_changed = synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
@@ -295,7 +295,7 @@ module Activities
       [ issues, truncated ]
     end
 
-    def sync_issue(project, github_issue, eager_queue_enabled: false, eligible_issues: nil)
+    def sync_issue(project, github_issue, client: nil, eager_queue_enabled: false, eligible_issues: nil)
       creator_login = github_issue.user&.login || "unknown"
       trusted = project.upstream_pr_target? ? project.trusted_upstream_issue_author?(creator_login) : project.trusted_github_author?(creator_login)
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
@@ -326,6 +326,7 @@ module Activities
       issue = Issues::UpsertFromGithub.call(
         project: project,
         github_issue: github_issue,
+        github_pull_request: fetch_design_pull_request(client, project, github_issue),
         body: trusted ? github_issue.body : nil
       )
       upsert_changed = issue.previous_changes.present?
@@ -346,6 +347,20 @@ module Activities
       { id: issue.id, github_number: issue.github_number, labels: issue.labels,
         github_state: issue.github_state, trusted: trusted, removed_labels: previous_labels - issue.labels,
         added_labels: added_labels, changed: upsert_changed || rounds_reset }
+    end
+
+    def fetch_design_pull_request(client, project, github_issue)
+      return unless client && design_pull_request?(project, github_issue)
+
+      client.pull_request(project.issue_target_repository, github_issue.number)
+    end
+
+    def design_pull_request?(project, github_issue)
+      return unless github_issue.respond_to?(:pull_request) && github_issue.pull_request
+
+      FeatureIntentDesignPr.joins(:feature_intent).exists?(
+        feature_intents: { project_id: project.id }, pull_request_number: github_issue.number
+      )
     end
 
     # The issue author is a hard trust boundary in upstream mode: do not keep
@@ -1360,7 +1375,7 @@ module Activities
       missing_numbers.each_with_index do |number, index|
         heartbeat("fetch_issues.backfill_pull_request", project_id: project.id, pr_number: number, index: index, total: missing_numbers.size)
         github_issue = client.issue(project.full_name, number)
-        sync_issue(project, github_issue)
+        sync_issue(project, github_issue, client: client)
       end
 
       missing_numbers.size
@@ -1556,6 +1571,7 @@ module Activities
         synced_issues << sync_issue(
           project,
           github_issue,
+          client: client,
           eager_queue_enabled: eager_queue_enabled,
           eligible_issues: eligible_issues
         )
@@ -1589,6 +1605,7 @@ module Activities
       github_issue = client.issue(project.issue_target_repository, number)
       result = sync_issue(
         project, github_issue,
+        client: client,
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )

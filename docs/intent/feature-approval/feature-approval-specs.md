@@ -285,3 +285,43 @@
   recorded, the system SHALL append an account activity audit event naming the
   actor when known, feature intent, transition source and target, and approval
   revision when applicable.
+
+## Release admission (#3865)
+
+- [x] **FEATURE-APPROVAL-023** — When an issue is linked to a feature intent
+  that is not released, the system SHALL fail closed at automatic selection,
+  eager seeding, dequeue, manual creation, and immediately before workflow
+  dispatch. A queued run that becomes held SHALL be cancelled before it starts.
+  *Tests:* `spec/services/feature_intents/run_admission_spec.rb`,
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
+  *Code:* `app/services/feature_intents/run_admission.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/agent_runs/recheck_issue_eligibility.rb`,
+  `app/jobs/process_run_queue_job.rb`, `app/models/agent_run.rb`.
+
+- [x] **FEATURE-APPROVAL-024** — When a feature intent is released, every
+  newly admitted implementation run SHALL snapshot its `approved_design_revision`,
+  and the repository checkout SHALL create its branch at that exact revision.
+  Dispatch SHALL cancel a queued run if its revision no longer matches the
+  feature's current released revision.
+  *Tests:* `spec/services/feature_intents/run_admission_spec.rb`,
+  `spec/models/agent_run_spec.rb`, `spec/services/containers/git_operations_spec.rb`.
+  *Code:* `app/services/feature_intents/run_admission.rb`, `app/models/agent_run.rb`,
+  `app/services/containers/git_operations.rb`, `app/jobs/process_run_queue_job.rb`.
+
+- [x] **FEATURE-APPROVAL-025** — When GitHub reconciliation observes a design
+  merge, a complete direct human merge with a provider-verified identity SHALL
+  call `FeatureIntents::MarkApproved` before release, so the same Paid
+  membership and readiness checks apply as for Inbox approval. The feature
+  SHALL release only if its current human approval matches every required
+  design PR head, every required design PR has merged, and the reconciler
+  supplies the resulting repository revision. An incomplete merge, stale
+  approval, unverifiable merger, or bot merge without prior human approval
+  SHALL remain held.
+  *Tests:* `spec/services/feature_intents/release_spec.rb`,
+  `spec/services/feature_intents/reconcile_design_pull_request_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+  *Code:* `app/services/feature_intents/reconcile_design_pull_request.rb`,
+  `app/services/feature_intents/release.rb`, `app/services/issues/upsert_from_github.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`,
+  `app/models/feature_intent.rb`.
