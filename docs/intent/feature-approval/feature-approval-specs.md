@@ -195,10 +195,14 @@
   `app/services/containers/git_operations.rb`, `app/jobs/process_run_queue_job.rb`.
 
 - [x] **FEATURE-APPROVAL-016** — When GitHub reconciliation observes a design
-  merge, the feature SHALL release only if its current human approval matches
-  every required design PR head, every required design PR has merged, and the
-  reconciler supplies the resulting repository revision. An incomplete merge,
-  stale approval, or bot merge without prior human approval SHALL remain held.
+  merge, a complete direct human merge with a provider-verified identity SHALL
+  call `FeatureIntents::MarkApproved` before release, so the same Paid
+  membership and readiness checks apply as for Inbox approval. The feature
+  SHALL release only if its current human approval matches every required
+  design PR head, every required design PR has merged, and the reconciler
+  supplies the resulting repository revision. An incomplete merge, stale
+  approval, unverifiable merger, or bot merge without prior human approval
+  SHALL remain held.
   *Tests:* `spec/services/feature_intents/release_spec.rb`,
   `spec/services/feature_intents/reconcile_design_pull_request_spec.rb`,
   `spec/temporal/activities/fetch_issues_activity_spec.rb`.
