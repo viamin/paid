@@ -1157,7 +1157,7 @@ class ProcessRunQueueJob < ApplicationJob
 
   def start_claimed_run(agent_run, planned_container_host: nil, host_placement_decision: nil)
     admission = FeatureIntents::RunAdmission.call(issue: agent_run.issue) if agent_run.create_pr_goal? && agent_run.issue
-    if admission && (!admission.allowed? || agent_run.base_commit_sha != admission.revision)
+    if admission && (!admission.allowed? || (admission.revision && agent_run.base_commit_sha != admission.revision))
       agent_run.cancel!(error: admission.reason || "Feature intent revision changed before dispatch.")
       return :feature_intent_held
     end

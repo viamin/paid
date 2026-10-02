@@ -1141,6 +1141,19 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.started_at).to be_nil
     end
 
+    # @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+    it "admits a resumed non-feature create PR run with its prior checkout revision" do
+      issue = create(:issue)
+      agent_run = create(:agent_run, :running, project: issue.project, issue: issue, goal: "create_pr",
+        base_commit_sha: "a" * 40)
+      agent_run.pause!(violation_type: "loop_detected")
+      agent_run.resume!
+
+      described_class.new.perform
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
     it "fails run when project owner cannot be resolved" do
       job = described_class.new
       project = create(:project)
