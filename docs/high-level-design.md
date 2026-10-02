@@ -101,6 +101,12 @@ account onboarding proposes the mode as the default project posture with a
 reviewable settings plan. The mode composes with — never replaces — the
 project's independent auto-merge and TDD test-review choices.
 
+Each approval is retained as an immutable revision binding its authorized
+human actor to exact design PR heads. Feature release is a distinct transition:
+it fails closed until that latest snapshot remains current and every required
+design artifact has merged, then records the merged repository baseline and an
+audit event. See `docs/intent/feature-approval/`.
+
 For approval-gated features (RDR-066/RDR-067), the same authority applies at
 the design level: an agent PR that drifts
 from the human-approved design stops and asks a human. A one-PR exception can

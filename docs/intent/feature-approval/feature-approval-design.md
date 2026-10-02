@@ -129,6 +129,24 @@ Until #3863 lands, no code path creates `FeatureIntentDecision` or
 present but dormant for existing projects — no rollout flag is needed for
 that reason alone (see Rollout guard below).
 
+## Approval revisions and release
+
+Every Mark approved decision creates an immutable `FeatureIntentApprovalRevision`.
+The revision records the approving Inbox-authorized user, its timestamp, source,
+and the exact PR-number-to-head-SHA snapshot. `feature_intents` retains the
+current approval fields as a denormalized read model for Inbox and existing
+consumers; it never replaces the historical revision. An `AccountActivityEvent`
+records each approval and release transition, including the revision number and
+the transition's source and target states.
+
+`FeatureIntents::Release` is the sole initial-release transition. It locks the
+feature, requires `approved_waiting_for_merge`, a current approval snapshot,
+and every `required` design PR to be merged. It then records the supplied merged
+repository revision and moves the feature to `released`. A new PR head after
+approval means the snapshot is no longer current, so release fails closed until
+a fresh authorized human approval is recorded. The later #3865 admission wiring
+uses this release state; it does not bypass this transition contract.
+
 ## Inbox decision flow and Mark approved
 
 ### Readiness is a single answer, computed once
