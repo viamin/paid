@@ -112,6 +112,15 @@ RSpec.describe AgentRun do
       expect(agent_run.base_commit_sha).to eq(revision)
     end
 
+    # @spec FEATURE-APPROVAL-015
+    it "preserves an ordinary implementation run's requested checkout revision" do
+      revision = "c" * 40
+
+      agent_run = create(:agent_run, goal: "create_pr", base_commit_sha: revision)
+
+      expect(agent_run.base_commit_sha).to eq(revision)
+    end
+
     it { is_expected.to validate_length_of(:temporal_run_id).is_at_most(255) }
     it { is_expected.to validate_length_of(:container_id).is_at_most(128) }
     it { is_expected.to validate_numericality_of(:iterations).is_greater_than_or_equal_to(0).allow_nil }

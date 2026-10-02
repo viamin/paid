@@ -280,7 +280,7 @@ class AgentRun < ApplicationRecord
   validates :execution_origin, presence: true, inclusion: { in: EXECUTION_ORIGINS }
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
-  validate :feature_intent_admission
+  validate :feature_intent_admission, on: :create
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :plan_doc_source, length: { maximum: 1000 }
   validates :created_issue_url, length: { maximum: 500 }
@@ -4274,7 +4274,7 @@ class AgentRun < ApplicationRecord
     return unless create_pr_goal? && issue
 
     admission = FeatureIntents::RunAdmission.call(issue: issue)
-    self.base_commit_sha = admission.revision if admission.allowed?
+    self.base_commit_sha = admission.revision if admission.revision
   end
 
   def feature_intent_admission
