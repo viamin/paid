@@ -188,7 +188,8 @@
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including
-  GraphQL permission failures and repository configuration writes. No
+  GraphQL permission failures, statusless workflow-permission rejections, and
+  repository configuration writes. No
   application-mediated GitHub operation SHALL unwrap the project client to
   bypass the fallback. A mutation that requires a trusted human GitHub identity
   SHALL execute with the credential selected by its trust gate; it SHALL select

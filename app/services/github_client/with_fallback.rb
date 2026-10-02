@@ -12,6 +12,8 @@
 #     credential cannot see; the PAT may see them.
 #   * GithubClient::ApiError with status: 403 — excluding rate-limit 403s,
 #     which raise GithubClient::RateLimitError instead (never retried).
+#   * GitHub's statusless workflow-permission rejection, retained for
+#     compatibility with callers that construct the canonical API error.
 # - One retry only. If the fallback also fails, the wrapper surfaces the
 #   primary's original error so the caller sees the same failure shape it
 #   would see without a fallback configured.
@@ -89,10 +91,14 @@ class GithubClient::WithFallback
     when GithubClient::NotFoundError
       true
     when GithubClient::ApiError
-      error.status == 403
+      error.status == 403 || statusless_workflow_permission_error?(error)
     else
       false
     end
+  end
+
+  def statusless_workflow_permission_error?(error)
+    error.status.nil? && error.message.include?("without `workflows` permission")
   end
 
   def log_fallback_use(method_name, args, error)
