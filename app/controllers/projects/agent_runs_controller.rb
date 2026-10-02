@@ -1432,6 +1432,15 @@ module Projects
         )
         # Store the feature brief in external_metadata.
         agent_run.update!(external_metadata: agent_run.external_metadata.merge("feature_brief" => feature_brief))
+        # @spec FEATURE-APPROVAL-014 — wire the run to a FeatureIntent so the
+        # Inbox decision flow (#3864) has a real record to show during design
+        # review. The brief issue is linked to the feature in the same
+        # transaction so a failure rolls back both writes.
+        FeatureIntents::AttachFromAgentRun.call(
+          agent_run: agent_run,
+          goal: "create_feature",
+          brief: feature_brief
+        )
         github_sync_args = apply_priority_label(issue, priority_tier) if priority_tier
       end
 

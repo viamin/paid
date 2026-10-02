@@ -75,6 +75,22 @@ module Api
         enqueue_dependabot_auto_merge(pr)
       end
 
+      # @spec FEATURE-APPROVAL-017 — when a design PR (RDR or LID Planning)
+      # is closed unmerged, transition the FeatureIntent to cancelled and
+      # close every linked implementation issue so no runnable orphan
+      # remains. The webhook is the natural reconciliation surface because
+      # GitHub emits the action: a closed-webhook event whether or not Paid
+      # is currently running. The handler enqueues a job rather than doing
+      # the per-issue GitHub PATCHes inline so the webhook returns within
+      # GitHub's ~10s delivery timeout — a feature tree commonly has 5-15
+      # linked issues and `GithubClient#update_issue` retries up to 3
+      # times with exponential backoff (`RETRY_MAX = 3`).
+      if action == "closed" && pr["merged"] == false
+        enqueue_closed_unmerged_feature_intent_reconciliation(pr["number"])
+        head :ok
+        return
+      end
+
       # Only act on merge events — other PR actions (opened, synchronize, etc.)
       # are not relevant to human feedback quality signals.
       unless action == "closed" && pr["merged"] == true
@@ -274,6 +290,27 @@ module Api
       return unless issue
 
       IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
+    end
+
+    # @spec FEATURE-APPROVAL-017 — enqueue the reconciliation that
+    # transitions the FeatureIntent to `cancelled` and closes every
+    # linked implementation issue when the design PR was closed unmerged
+    # on GitHub. The job is idempotent (the cancellation write is
+    # terminal-in-design-PR-closed-sense, and per-issue closes are
+    # guarded by `github_state`), so GitHub webhook redeliveries
+    # converge to the same final state without duplicating work.
+    def enqueue_closed_unmerged_feature_intent_reconciliation(pr_number)
+      return unless @project && pr_number
+
+      FeatureIntents::CancelOnClosedDesignPrJob.perform_later(@project.id, pr_number: pr_number)
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "feature_intent.close_reconcile_enqueue_failed",
+        project_id: @project&.id,
+        pr_number: pr_number,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def invalidate_cache(event)
