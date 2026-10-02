@@ -119,6 +119,7 @@ RSpec.describe GithubClient::WithFallback do
       expect(wrapper.update_issue("owner/repo", 42, title: "X")).to eq(:retried_result)
     end
 
+    # @spec GITHUB-SYNC-017
     it "retries a statusless GitHub workflow-permission rejection", :no_db do
       error = GithubClient::ApiError.new(
         "refusing to allow a GitHub App to create or update workflow without `workflows` permission"
