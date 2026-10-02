@@ -12,9 +12,10 @@ module FeatureIntents
       new(...).call
     end
 
-    def initialize(feature_intent:, merged_revision:, actor: nil)
+    def initialize(feature_intent:, merged_revision:, source:, actor: nil)
       @feature_intent = feature_intent
       @merged_revision = merged_revision
+      @source = source
       @actor = actor
     end
 
@@ -36,7 +37,7 @@ module FeatureIntents
 
     private
 
-    attr_reader :feature_intent, :merged_revision, :actor
+    attr_reader :feature_intent, :merged_revision, :source, :actor
 
     def validate_release!
       raise NotReadyError, "feature is not awaiting design merge" unless feature_intent.approved_waiting_for_merge?
@@ -69,6 +70,7 @@ module FeatureIntents
         metadata: {
           from_status: "approved_waiting_for_merge",
           to_status: "released",
+          source: source,
           merged_revision: merged_revision,
           approval_revision: feature_intent.feature_intent_approval_revisions.maximum(:revision_number)
         }

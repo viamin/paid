@@ -38,6 +38,12 @@ RSpec.describe CreateFeatureIntentApprovalRevisions, :aggregate_failures do
     expect(connection.data_source_exists?("feature_intent_approval_revisions")).to be(false)
   end
 
+  it "can be rerun after a partial migration" do
+    migration.migrate(:up)
+
+    expect { migration.migrate(:up) }.not_to raise_error
+  end
+
   private
 
   def rls_enabled?
