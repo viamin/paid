@@ -41,6 +41,11 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+Development code reload must complete even when an Action Cable broadcast is
+pending. Solid Cable shutdown must not wait on a writer that needs the Rails
+unload lock. Use Solid Cable 4.0.2's synchronous writes until a replacement passes
+the reload regression test; broadcasts must survive shutdown and work afterward.
+
 ## Deferred Work
 
 The RDR's earlier Phlex preference remains deferred. Any future view-layer
