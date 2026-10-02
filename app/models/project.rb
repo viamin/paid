@@ -78,9 +78,11 @@ class Project < ApplicationRecord
   PR_TARGETS = %w[own_repo upstream].freeze
   DEFAULT_PR_TARGET = "own_repo".freeze
   # Field set disabled in the settings UI whenever pr_target=upstream because
-  # Paid no longer owns or trusts the host repository. This list drives the
-  # settings UI gray-out state; Project::UpstreamAutomation is the server-side
-  # authority for enforcement. @spec PR-TARGET-002, PR-TARGET-003
+  # Paid no longer owns or trusts the host repository. Server-side enforcement
+  # lives in a follow-up issue. This list intentionally excludes
+  # auto_fix_merge_conflicts because it pushes only to the fork-owned PR head.
+  # is the canonical source of truth — both the view and the controller consult
+  # it when toggling gray-out state. @spec PR-TARGET-002, PR-TARGET-003
   PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES = %i[
     review_settings
     auto_merge_mode
@@ -90,11 +92,9 @@ class Project < ApplicationRecord
     pr_approval_escalation_hours
     max_draft_review_rounds
     max_pr_auto_continue_tokens
-    auto_fix_merge_conflicts
     auto_add_labels_enabled
-    generated_label_name
-    automation_label_name
     automation_on_label_enabled
+    sync_labels_to_github
     screenshot_settings
   ].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
@@ -215,7 +215,7 @@ class Project < ApplicationRecord
     { label: "Auto-Pick Issues", attribute: :auto_pick_enabled,
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
     { label: "Auto-Fix Merge Conflicts", attribute: :auto_fix_merge_conflicts,
-     description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts against the base branch." }.freeze,
+     description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts; upstream-mode fixes push only to the fork head branch." }.freeze,
     { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
      description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze,
     { label: "Auto-enhance before PR", attribute: :auto_enhance_enabled,
@@ -473,7 +473,7 @@ class Project < ApplicationRecord
 
   # @spec PR-TARGET-002, PR-TARGET-003
   def upstream_disabled?(attribute)
-    upstream_pr_target? && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)
+    pr_target == "upstream" && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)
   end
 
   # Normalized primary language key (downcased) used by the prompt-building
@@ -647,27 +647,17 @@ class Project < ApplicationRecord
     effective_priority_labels.values_at(*PRIORITY_TIERS).compact
   end
 
-  # Whether Paid may add labels to pull requests it opens. Deliberately NOT
-  # an override of the raw #auto_add_labels_enabled? column predicate: that
-  # column also governs labeling of issues Paid creates (issue creation
-  # stays fully supported in upstream mode — issues live in the fork), while
-  # PR labeling must no-op when PRs target the upstream repository.
+  # Whether Paid may add labels to pull requests it opens. The raw column also
+  # governs issues on the fork, which remain supported in upstream mode.
   # @spec UPSTREAM-GATE-002
   def pr_auto_labels_enabled?
     upstream_feature_enabled?(:pr_labeling) && auto_add_labels_enabled?
   end
 
-  # Whether priority labels may propagate from issues onto PRs Paid opens.
-  # All callers are PR-side, so the upstream-mode gate applies to every use.
+  # Priority labels propagate only to PRs, so this follows PR-label gating.
   # @spec UPSTREAM-GATE-002
   def inherit_priority_labels?
     upstream_feature_enabled?(:pr_labeling) && super
-  end
-
-  # No conflict-fix follow-up runs against upstream PRs.
-  # @spec UPSTREAM-GATE-002
-  def auto_fix_merge_conflicts?
-    upstream_feature_enabled?(:auto_fix_merge_conflicts) && super
   end
 
   def worktree_service
@@ -1135,8 +1125,6 @@ class Project < ApplicationRecord
     broadcast_project_show_refresh
   end
 
-  # No release-please interaction against the upstream repository.
-  # @spec UPSTREAM-GATE-002
   def auto_release_enabled?
     return false unless upstream_feature_enabled?(:auto_release)
 
@@ -1158,9 +1146,6 @@ class Project < ApplicationRecord
     end
   end
 
-  # Never merge a PR opened in the upstream repository: Paid does not have
-  # (and must not assume) trusted merge authority there.
-  # @spec UPSTREAM-GATE-002
   def auto_merge_enabled?
     return false unless upstream_feature_enabled?(:auto_merge)
 
@@ -1341,10 +1326,6 @@ class Project < ApplicationRecord
     automation_configuration
   end
 
-  # No reviews, review re-requests, or review-goal runs on upstream PRs:
-  # upstream review content is untrusted third-party input, and requesting
-  # reviews would act with borrowed authority in a repo Paid doesn't control.
-  # @spec UPSTREAM-GATE-002
   def review_enabled?
     return false unless upstream_feature_enabled?(:pr_reviews)
 

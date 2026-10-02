@@ -39,4 +39,4 @@
   `spec/services/issues/upsert_from_github_spec.rb`,
   `spec/temporal/activities/fetch_issues_activity_spec.rb`,
   `spec/temporal/activities/create_pull_request_activity_spec.rb`,
-  `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.
+   `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.

@@ -39,10 +39,8 @@ RSpec.describe "Projects" do
       max_pr_auto_continue_tokens
       pr_approval_escalation_hours
       review_settings
-      auto_fix_merge_conflicts
-      generated_label_name
-      automation_label_name
       auto_add_labels_enabled
+      sync_labels_to_github
       automation_on_label_enabled
       screenshot_settings
     ]

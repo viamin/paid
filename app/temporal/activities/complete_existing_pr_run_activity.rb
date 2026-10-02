@@ -111,6 +111,8 @@ module Activities
     end
 
     def post_update_comment(client, project, pr_number, agent_run)
+      return unless project.upstream_feature_enabled?(:upstream_issue_comments)
+
       body = build_comment_body(client, project, pr_number, agent_run)
       return if body.blank?
 

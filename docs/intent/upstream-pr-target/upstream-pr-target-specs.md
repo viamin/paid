@@ -28,10 +28,10 @@
 - [x] **PR-TARGET-003** - The fieldset gray-out list SHALL at minimum include
   review_settings, auto_merge_mode, allow_bot_authored_pr_auto_merge,
   auto_release_granularity, owner_reviewer_login, pr_approval_escalation_hours,
-  max_draft_review_rounds, max_pr_auto_continue_tokens, auto_fix_merge_conflicts,
-  auto_add_labels_enabled, generated_label_name, automation_label_name,
-  automation_on_label_enabled, and screenshot_settings — every feature in the
-  issue's "gated when upstream" set.
+  max_draft_review_rounds, max_pr_auto_continue_tokens, auto_add_labels_enabled,
+  automation_on_label_enabled, screenshot_settings, and the "Sync Labels to
+  GitHub" action. `auto_fix_merge_conflicts` and label-name fields SHALL remain
+  enabled.
   *Tests:* `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`
   ("applies opacity-50 to gated sections when pr_target=upstream").
   *Code:* `Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES`,

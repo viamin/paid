@@ -53,8 +53,9 @@ module Activities
 
     def fetch_pr_branch(agent_run)
       project = agent_run.project
-      client = project.client
-      pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+      client = project.upstream_pr_target? ? project.git_push_fallback_client || project.client : project.client
+      repository = project.upstream_pr_target? ? project.upstream_full_name : project.full_name
+      pr = client.pull_request(repository, agent_run.source_pull_request_number)
 
       unless pr.state == "open"
         raise Temporalio::Error::ApplicationError.new(
@@ -64,7 +65,23 @@ module Activities
         )
       end
 
+      verify_upstream_conflict_fix_head!(agent_run, project, pr)
       pr.head.ref
+    end
+
+    # Conflict fixes may update only the branch owned by the project's fork.
+    # The upstream base is read-only even though the pull request itself is
+    # hosted upstream. Reject before checkout, so PushBranch can only ever
+    # push to the fork origin cloned for this run. @spec UPSTREAM-GATE-006
+    def verify_upstream_conflict_fix_head!(agent_run, project, pr)
+      return unless agent_run.focus == "merge_conflict" && project.upstream_pr_target?
+      return if pr.head&.repo&.full_name&.casecmp?(project.full_name)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Merge-conflict fixes in upstream mode must target the fork-owned PR head branch",
+        type: "UpstreamConflictFixTargetRejected",
+        non_retryable: true
+      )
     end
 
     def reconnect_container(agent_run)

@@ -13,8 +13,9 @@
 - [x] **UPSTREAM-GATE-001** — `Project::UpstreamAutomation::DISABLED_FEATURES`
   SHALL be the canonical disable set for upstream mode and SHALL contain
   exactly `:pr_reviews`, `:auto_merge`, `:auto_release`, `:auto_scan_prs`,
-  `:auto_fix_merge_conflicts`, `:pr_labeling`, `:owner_review_requests`,
-  `:draft_review_rounds`, and `:screenshots`. `#upstream_automation_allowed?`
+  `:pr_labeling`, `:owner_review_requests`, `:draft_review_rounds`,
+  `:screenshots`, `:upstream_issue_labeling`, and
+  `:upstream_issue_comments`. `#upstream_automation_allowed?`
   SHALL return false for each of those features when the project targets
   PRs upstream, true for any feature outside that set, and SHALL be true
   for every feature on `own_repo` projects. The set lives in exactly one
@@ -23,14 +24,15 @@
   *Code:* `app/models/concerns/project/upstream_automation.rb`.
   *Test:* `spec/models/concerns/project/upstream_automation_spec.rb`.
 
-- [x] **UPSTREAM-GATE-002** — `#upstream_pr_target?` SHALL be true exactly
-  when `pr_target == "upstream"`. `Project` separately rejects an upstream
-  target without a valid `upstream_full_name`. Every PR-side feature predicate on `Project`
+- [x] **UPSTREAM-GATE-002** — `#upstream_pr_target?` SHALL be true only
+  when `pr_target == "upstream"` AND `upstream_full_name`
+  are present; otherwise false. Every PR-side feature predicate on `Project`
   (`review_enabled?`, `review_bot_request_login`, `review_bot_request_chain`,
   `auto_merge_enabled?`, `auto_merge_dependabot?`, `auto_merge_bot_authored?`,
   `auto_release_enabled?`, `pr_auto_labels_enabled?`, `inherit_priority_labels?`,
-  `auto_fix_merge_conflicts?`, `screenshots_enabled?`, the Dependabot auto-merge
-  path, the scan-PRs activity, the request-review activity, the
+  `screenshots_enabled?`, the Dependabot auto-merge
+  path, the scan-PRs activity (except its conflict-only path under
+  `UPSTREAM-GATE-006`), the request-review activity, the
   create-pull-request / create-aggregated-pull-request label handling,
   and the merge-pull-request path) SHALL short-circuit to its gated
   disabled result via `upstream_feature_enabled?` while upstream mode is
@@ -67,13 +69,16 @@
   than `"off"`), `allow_bot_authored_pr_auto_merge` true, `auto_release_granularity`
   (anything other than `"off"`), `review_settings` whose top-level toggle
   is true OR whose `methods.*.enabled` sub-flag is true, `auto_add_labels_enabled`
-  true, `inherit_priority_labels` true, `owner_reviewer_login` present,
-  `auto_fix_merge_conflicts` true, and `screenshot_settings` whose top-level
+  true, `inherit_priority_labels` true, `owner_reviewer_login` present, and
+  `screenshot_settings` whose top-level
   toggle is true. A `pr_target` of `"upstream"` without a configured
-  `upstream_full_name` SHALL also be rejected by the project PR-target
-  validation. Switching `pr_target` back
+  `upstream_full_name` SHALL also be rejected
+  (`upstream_target_requires_upstream_repo`). Switching `pr_target` back
   to `"own_repo"` SHALL clear the gate and restore normal validation
-  behavior so the previously-stored gated values can be saved.
+  behavior so the previously-stored gated values can be saved. When the
+  upstream target is incomplete, the edit form SHALL preserve the selected
+  upstream state and display the upstream fields and their validation errors
+  so the user can correct the configuration.
   `ProjectsController#toggle_auto_merge` SHALL redirect with an alert
   and SHALL NOT cycle `auto_merge_mode` when the project targets PRs
   upstream, so the toggle cannot turn auto-merge on in upstream mode
@@ -97,3 +102,23 @@
   `app/mcp/tools/update_project_settings.rb`.
   *Test:* `spec/models/concerns/project/upstream_automation_spec.rb`,
   `spec/mcp/tools/update_project_settings_spec.rb`.
+
+- [x] **UPSTREAM-GATE-006** — In upstream mode,
+  `auto_fix_merge_conflicts` SHALL remain enabled. A merge-conflict fix SHALL
+  fetch and push only the fork-owned pull-request head branch; before checkout,
+  the system SHALL reject a PR whose head repository is not the project's
+  fork. `ScanPaidPrsActivity` SHALL scan saved `upstream_pull_request` records
+  only for merge conflicts while all other PR scan signals remain suppressed.
+  Label writes, Sync Labels, and comment posts against upstream issues
+  SHALL be skipped through the central capability predicate and emit the
+  standard `upstream_mode_skipped` info log.
+  *Code:* `app/temporal/activities/clone_repo_activity.rb`,
+  `app/controllers/projects_controller.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`,
+  `app/temporal/activities/create_upstream_issue_activity.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/temporal/activities/clone_repo_activity_spec.rb`,
+  `spec/models/concerns/project/upstream_automation_spec.rb`,
+  `spec/temporal/activities/create_upstream_issue_activity_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

@@ -18,7 +18,12 @@ const SUBMITTABLE_INPUT_TYPES = new Set([
 // Mirrors Project::PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES — the set of
 // project settings that cannot operate against a repository Paid does not
 // own or trust. Keep in sync with the model when fields are added or
-// removed. @spec PR-TARGET-002, PR-TARGET-003
+// removed.
+//
+// auto_fix_merge_conflicts is deliberately NOT in this set: conflict-fix
+// runs only ever push to the fork-owned head branch (Paid's working copy),
+// so they are safe in upstream mode (#4082).
+// @spec PR-TARGET-002, PR-TARGET-003
 const UPSTREAM_DISABLED_ATTRIBUTES = new Set([
   "review_settings",
   "auto_merge_mode",
@@ -28,11 +33,9 @@ const UPSTREAM_DISABLED_ATTRIBUTES = new Set([
   "pr_approval_escalation_hours",
   "max_draft_review_rounds",
   "max_pr_auto_continue_tokens",
-  "auto_fix_merge_conflicts",
   "auto_add_labels_enabled",
-  "generated_label_name",
-  "automation_label_name",
   "automation_on_label_enabled",
+  "sync_labels_to_github",
   "screenshot_settings"
 ])
 
@@ -127,6 +130,7 @@ export default class extends Controller {
   setFieldDisabledState(container, disabled) {
     const inputs = container.querySelectorAll("input, select, textarea, button")
     inputs.forEach((input) => {
+      if (input.type === "hidden") return
       input.disabled = disabled
     })
     container.classList.toggle("opacity-50", disabled)

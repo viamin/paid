@@ -732,6 +732,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         max_draft_review_rounds: 3,
         max_pr_auto_continue_tokens: 50_000,
         owner_reviewer_login: "viamin",
+        upstream_pr_target?: false,
         upstream_feature_enabled?: true,
         upstream_mode_skips?: false,
         review_enabled?: false

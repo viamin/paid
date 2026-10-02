@@ -30,7 +30,7 @@ module Activities
           target_repo,
           title: title,
           body: body,
-          labels: labels
+          labels: labels_for(project, labels)
         )
 
         sync_upstream_issue(project, target_repo, gh_issue)
@@ -82,6 +82,13 @@ module Activities
         )
       end
       client
+    end
+
+    # Creating the dependency issue remains available in upstream mode, but
+    # applying labels would mutate taxonomy in a repository Paid does not own.
+    # @spec UPSTREAM-GATE-006
+    def labels_for(project, labels)
+      project.upstream_feature_enabled?(:upstream_issue_labeling) ? labels : []
     end
 
     def sync_upstream_issue(source_project, target_repo, gh_issue)

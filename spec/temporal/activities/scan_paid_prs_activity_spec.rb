@@ -442,9 +442,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    # @spec UPSTREAM-GATE-002 — upstream-targeted PRs are never scanned: no
+    # @spec UPSTREAM-GATE-002 — upstream-targeted PRs are never scanned for
     # CI signals, bot/human review signals, owner-approval auto-merge,
-    # escalation, label triggers, or draft-review budgets ride the scan.
+    # escalation, label triggers, or draft-review budgets.
     context "when the project targets PRs at the upstream repository" do
       let(:upstream_project) { create(:project, :upstream_pr_target) }
 
@@ -463,6 +463,63 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result).not_to have_key(:project_missing)
         expect(Rails.logger).to have_received(:info)
           .with(hash_including(message: "upstream_mode_skipped", project_id: upstream_project.id, feature: "auto_scan_prs"))
+      end
+
+      # @spec UPSTREAM-GATE-006 — conflict detection is the sole scanner path
+      # that remains available for an upstream PR, and it must include the
+      # persisted upstream record rather than only local-repository records.
+      context "when the saved upstream PR has merge conflicts" do
+        before do
+          upstream_project.update!(auto_fix_merge_conflicts: true)
+          upstream_pr = upstream_project.issues.first
+          upstream_pr.update!(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+          allow(upstream_project).to receive(:client).and_return(github_client)
+          allow(github_client).to receive(:pull_request)
+            .with(upstream_project.upstream_full_name, upstream_pr.github_number)
+            .and_return(OpenStruct.new(mergeable: false, draft: false, number: upstream_pr.github_number,
+              head: OpenStruct.new(sha: "abc123")))
+        end
+
+        it "triggers a conflict-fix follow-up" do
+          result = activity.execute(project_id: upstream_project.id)
+
+          expect(automation_scan_results(result)).to contain_exactly(
+            hash_including(
+              pr_number: upstream_project.issues.first.github_number,
+              triggers: [ hash_including(type: "merge_conflicts") ]
+            )
+          )
+          expect(decision_types(result)).to include("queue_create_pr_run")
+        end
+      end
+
+      # @spec UPSTREAM-GATE-006 — for the app-backed fork configuration, the
+      # GitHub App installation token can read only the fork; the configured
+      # PAT fallback is what can read the upstream. Select it for this scan
+      # so a missing-permission 403 doesn't silently drop the conflict-fix
+      # follow-up.
+      it "reads upstream PR mergeability through the PAT fallback client when one is configured" do
+        upstream_project.update!(auto_fix_merge_conflicts: true)
+        upstream_pr = upstream_project.issues.first
+        upstream_pr.update!(source: Issue::UPSTREAM_PULL_REQUEST_SOURCE)
+
+        fallback_client = instance_double(GithubClient)
+        installation_client = instance_double(GithubClient, "installation")
+        allow(upstream_project).to receive_messages(git_push_fallback_client: fallback_client, client: installation_client)
+        allow(Project).to receive(:find_by).with(id: upstream_project.id).and_return(upstream_project)
+        allow(installation_client).to receive(:rate_limit_remaining!).and_return(5000)
+        expect(installation_client).not_to receive(:pull_request)
+        allow(fallback_client).to receive(:pull_request)
+          .with(upstream_project.upstream_full_name, upstream_pr.github_number)
+          .and_return(OpenStruct.new(mergeable: false, draft: false,
+            number: upstream_pr.github_number, head: OpenStruct.new(sha: "abc123")))
+
+        result = activity.execute(project_id: upstream_project.id)
+
+        expect(automation_scan_results(result)).to contain_exactly(
+          hash_including(pr_number: upstream_pr.github_number,
+            triggers: [ hash_including(type: "merge_conflicts") ]))
+        expect(decision_types(result)).to include("queue_create_pr_run")
       end
     end
 

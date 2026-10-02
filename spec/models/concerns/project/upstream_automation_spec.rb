@@ -3,16 +3,19 @@
 require "rails_helper"
 
 RSpec.describe Project::UpstreamAutomation do
-  # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002 UPSTREAM-GATE-003 UPSTREAM-GATE-004
+  # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002 UPSTREAM-GATE-003 UPSTREAM-GATE-004 UPSTREAM-GATE-006
   describe "#upstream_pr_target?" do
     it "is false for the default own_repo target" do
       expect(create(:project).upstream_pr_target?).to be false
     end
 
-    it "is true whenever pr_target is upstream, before target validation" do
+    it "is false when pr_target is upstream but no upstream repository is configured" do
       project = build(:project, pr_target: "upstream", upstream_full_name: nil)
+      expect(project.upstream_pr_target?).to be false
+    end
 
-      expect(project.upstream_pr_target?).to be true
+    it "is true when pr_target is upstream and the upstream repository is configured" do
+      expect(create(:project, :upstream_pr_target).upstream_pr_target?).to be true
     end
   end
 
@@ -77,22 +80,46 @@ RSpec.describe Project::UpstreamAutomation do
       expect(project.errors[:pr_target]).to be_present
     end
 
-    it "requires the upstream full name when pr_target is upstream" do
+    it "requires the upstream repository when pr_target is upstream" do
       project = build(:project, pr_target: "upstream")
       expect(project).not_to be_valid
       expect(project.errors[:upstream_full_name]).to be_present
     end
 
-    it "rejects enabling upstream mode on a project with gated features on (no partial application)" do
+    it "atomically clears default-true gated features when transitioning to upstream mode" do
       project = create(:project)
       project.pr_target = "upstream"
       project.upstream_full_name = "upstream-owner/upstream-repo"
 
-      expect(project).not_to be_valid
-      expect(project.errors.attribute_names).to include(
-        :auto_add_labels_enabled, :inherit_priority_labels, :auto_fix_merge_conflicts
-      )
-      expect(project.reload.pr_target).to eq("own_repo")
+      expect(project).to be_valid
+      expect(project.auto_add_labels_enabled).to be false
+      expect(project.inherit_priority_labels).to be false
+
+      project.save!
+      project.reload
+      expect(project.pr_target).to eq("upstream")
+      expect(project.auto_add_labels_enabled).to be false
+      expect(project.inherit_priority_labels).to be false
+    end
+
+    it "leaves already-disabled settings alone during the upstream-mode transition" do
+      project = create(:project, auto_merge_mode: "off", allow_bot_authored_pr_auto_merge: false)
+      project.pr_target = "upstream"
+      project.upstream_full_name = "upstream-owner/upstream-repo"
+
+      expect(project).to be_valid
+      expect(project.auto_merge_mode).to eq("off")
+      expect(project.allow_bot_authored_pr_auto_merge).to be false
+    end
+
+    it "does not touch gated settings when updating an already-upstream project" do
+      project = create(:project, :upstream_pr_target)
+      project.update!(name: "Renamed")
+
+      project.name = "Renamed again"
+      expect(project).to be_valid
+      expect(project.auto_add_labels_enabled).to be false
+      expect(project.inherit_priority_labels).to be false
     end
 
     it "rejects each gated feature individually while upstream mode is active" do
@@ -102,8 +129,7 @@ RSpec.describe Project::UpstreamAutomation do
         [ :auto_release_granularity, "patch_only", :auto_release_granularity ],
         [ :auto_add_labels_enabled, true, :auto_add_labels_enabled ],
         [ :inherit_priority_labels, true, :inherit_priority_labels ],
-        [ :owner_reviewer_login, "viamin", :owner_reviewer_login ],
-        [ :auto_fix_merge_conflicts, true, :auto_fix_merge_conflicts ]
+        [ :owner_reviewer_login, "viamin", :owner_reviewer_login ]
       ].each do |(attribute, value, error_attribute)|
         project = create(:project, :upstream_pr_target)
         project.public_send("#{attribute}=", value)
@@ -111,6 +137,21 @@ RSpec.describe Project::UpstreamAutomation do
           "expected #{attribute} = #{value.inspect} to be rejected in upstream mode"
         expect(project.errors[error_attribute]).to be_present
       end
+    end
+
+    it "rejects a real change of a default-true gated attribute to true in upstream mode" do
+      # The factory pre-disables auto_add_labels_enabled/inherit_priority_labels
+      # for upstream projects. The earlier "rejects each gated feature
+      # individually" case already exercises the false→true transition. This
+      # case documents the true→false→true round-trip so an explicit setter
+      # cycle cannot smuggle an enabled value past the validation.
+      project = create(:project, :upstream_pr_target)
+      project.auto_add_labels_enabled = true
+      project.auto_add_labels_enabled = false
+      project.auto_add_labels_enabled = true
+
+      expect(project).not_to be_valid
+      expect(project.errors[:auto_add_labels_enabled]).to be_present
     end
 
     it "rejects enabling review settings while upstream mode is active" do
@@ -205,8 +246,10 @@ RSpec.describe Project::UpstreamAutomation do
       expect(upstream_project.pr_auto_labels_enabled?).to be false
     end
 
-    it "disables merge-conflict fixing" do
-      expect(upstream_project.auto_fix_merge_conflicts?).to be false
+    it "keeps merge-conflict fixing enabled" do
+      upstream_project.update!(auto_fix_merge_conflicts: true)
+
+      expect(upstream_project.auto_fix_merge_conflicts?).to be true
     end
 
     it "disables screenshots" do

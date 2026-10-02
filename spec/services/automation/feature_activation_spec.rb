@@ -116,7 +116,7 @@ RSpec.describe Automation::FeatureActivation do
     end
   end
 
-  # @spec UPSTREAM-GATE-002
+  # @spec UPSTREAM-GATE-002 UPSTREAM-GATE-006
   describe "upstream mode" do
     let(:project) { create(:project, :upstream_pr_target) }
     let(:pull_request) { create(:issue, :pull_request, project: project, github_state: "open", labels: []) }
@@ -126,7 +126,7 @@ RSpec.describe Automation::FeatureActivation do
       allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(true)
 
       expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_merge")).to be(false)
-      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_fix_merge_conflicts")).to be(false)
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_fix_merge_conflicts")).to be(true)
       expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_scan_prs")).to be(false)
     end
 
