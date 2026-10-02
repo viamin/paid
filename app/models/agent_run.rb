@@ -248,6 +248,7 @@ class AgentRun < ApplicationRecord
   before_validation :set_initiating_user_from_current_user, on: :create
   before_validation :refresh_queue_entered_at, if: :should_refresh_queue_entered_at?
   before_validation :assign_default_tdd_phase, on: :create
+  before_validation :snapshot_feature_intent_revision, on: :create
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
@@ -279,6 +280,7 @@ class AgentRun < ApplicationRecord
   validates :execution_origin, presence: true, inclusion: { in: EXECUTION_ORIGINS }
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
+  validate :feature_intent_admission, on: :create
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :plan_doc_source, length: { maximum: 1000 }
   validates :created_issue_url, length: { maximum: 500 }
@@ -4265,5 +4267,20 @@ class AgentRun < ApplicationRecord
       account_id: project.account_id,
       project_id: project_id
     )
+  end
+
+  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
+  def snapshot_feature_intent_revision
+    return unless create_pr_goal? && issue
+
+    admission = FeatureIntents::RunAdmission.call(issue: issue)
+    self.base_commit_sha = admission.revision if admission.revision
+  end
+
+  def feature_intent_admission
+    return unless create_pr_goal? && issue
+
+    admission = FeatureIntents::RunAdmission.call(issue: issue)
+    errors.add(:issue, admission.reason) unless admission.allowed?
   end
 end

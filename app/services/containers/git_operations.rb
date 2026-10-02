@@ -269,6 +269,7 @@ module Containers
     def clone_and_setup_branch
       clone_repo
       configure_git_identity!
+      checkout_approved_revision
       branch_name = create_branch
       base_sha = record_base_commit
 
@@ -1006,6 +1007,13 @@ module Containers
       raise Error, "Branch creation failed: #{error_with_stderr(result)}" if result.failure?
 
       branch_name
+    end
+
+    def checkout_approved_revision
+      return unless agent_run.issue&.feature_intent && agent_run.base_commit_sha.present?
+
+      result = execute_git("checkout", agent_run.base_commit_sha)
+      raise Error, "Approved revision checkout failed: #{error_with_stderr(result)}" if result.failure?
     end
 
     def generate_branch_slug

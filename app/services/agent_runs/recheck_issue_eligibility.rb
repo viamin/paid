@@ -29,6 +29,7 @@ module AgentRuns
     # Returns true when the run was cancelled because its issue is no
     # longer eligible; false when the run should proceed normally.
     def call # @spec EAGER-QUEUE-005
+      return cancel_feature_held_run if feature_held?
       return false unless recheck_applicable?
       return false if issue_still_eligible?
 
@@ -45,6 +46,15 @@ module AgentRuns
         !agent_run.review_goal?
     end
 
+    def feature_held?
+      agent_run.create_pr_goal? && agent_run.issue_id.present? &&
+        !FeatureIntents::RunAdmission.call(issue: agent_run.issue).allowed?
+    end
+
+    def cancel_feature_held_run
+      cancel_run(reason: "Feature intent is held at dequeue (RDR-066 release gate).")
+    end
+
     def issue_still_eligible?
       Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_for_dequeue?(
@@ -59,9 +69,9 @@ module AgentRuns
     # lock (mirrors Issue#cancel_orphaned_queued_runs) so a run claimed by
     # ProcessRunQueueJob between the eligibility check and here is not
     # marked cancelled while its workflow starts.
-    def cancel_run
-      reason = "Issue no longer eligible at dequeue (RDR-032 recheck); " \
-               "it will be re-seeded when eligible again"
+    def cancel_run(reason: nil)
+      reason ||= "Issue no longer eligible at dequeue (RDR-032 recheck); " \
+                 "it will be re-seeded when eligible again"
 
       cancelled = agent_run.with_lock do
         next false unless agent_run.status == "queued" && agent_run.temporal_workflow_id.nil?
