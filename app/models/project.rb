@@ -473,7 +473,7 @@ class Project < ApplicationRecord
 
   # @spec PR-TARGET-002, PR-TARGET-003
   def upstream_disabled?(attribute)
-    upstream_pr_target? && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)
+    pr_target == "upstream" && PR_TARGET_UPSTREAM_DISABLED_ATTRIBUTES.include?(attribute.to_sym)
   end
 
   # Normalized primary language key (downcased) used by the prompt-building

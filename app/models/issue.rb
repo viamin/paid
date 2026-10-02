@@ -235,6 +235,7 @@ class Issue < ApplicationRecord
   }
 
   def github_url
+    return github_html_url if source == UPSTREAM_PULL_REQUEST_SOURCE && github_html_url.present?
     return "https://github.com/#{project.upstream_full_name}/pull/#{github_number}" if source == UPSTREAM_PULL_REQUEST_SOURCE
 
     # Legacy Dependabot synthetic issues link to the Dependabot alert page.
