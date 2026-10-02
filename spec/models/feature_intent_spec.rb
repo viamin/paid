@@ -54,6 +54,17 @@ RSpec.describe FeatureIntent do
         .to raise_error(FeatureIntent::InvalidTransitionError)
     end
 
+    it "rejects approval when the feature is released after it was loaded" do
+      feature_intent = create(:feature_intent, :approved_waiting_for_merge)
+      approver = create(:user)
+
+      described_class.where(id: feature_intent.id).update_all(status: "released")
+
+      expect { feature_intent.record_approval!(by: approver, pr_heads: {}) }
+        .to raise_error(FeatureIntent::InvalidTransitionError)
+      expect(feature_intent.feature_intent_approval_revisions).to be_empty
+    end
+
     it "raises for a cancelled feature intent" do
       feature_intent = create(:feature_intent, status: "cancelled")
       approver = create(:user)

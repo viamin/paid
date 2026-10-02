@@ -66,9 +66,9 @@ class FeatureIntent < ApplicationRecord
   # authorization themselves — this method only enforces the lifecycle
   # transition (RDR-066 "Approval sources and revision binding").
   def record_approval!(by:, pr_heads:, source: "inbox")
-    raise InvalidTransitionError, "cannot approve a #{status} feature intent" unless status.in?(APPROVABLE_STATUSES)
-
     with_lock do
+      raise InvalidTransitionError, "cannot approve a #{status} feature intent" unless status.in?(APPROVABLE_STATUSES)
+
       approved_at = Time.current
       revision = feature_intent_approval_revisions.create!(
         approved_by: by,
