@@ -467,7 +467,9 @@ module Activities
       else
         best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
       end
-      best_effort(agent_run_id, context: "add_pr_labels") { add_pr_labels(client, project, pr.number, agent_run, issue: issue) unless project.upstream_pr_target? }
+      best_effort(agent_run_id, context: "add_pr_labels") do
+        add_pr_labels(client, project, pr.number, agent_run, issue: issue) if project.upstream_feature_enabled?(:upstream_issue_labeling)
+      end
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
       best_effort(agent_run_id, context: "structured_log") do
@@ -1137,10 +1139,8 @@ module Activities
 
     # @spec TDD-PR-001
     def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
-      # Upstream mode (#4078): no label writes on PRs opened in the upstream
-      # repository — not generated/automation labels, not priority labels,
-      # not the TDD round-trip label. @spec UPSTREAM-GATE-002
-      return unless project.upstream_feature_enabled?(:pr_labeling)
+      # @spec UPSTREAM-GATE-006
+      return unless project.upstream_feature_enabled?(:upstream_issue_labeling)
 
       labels = []
       labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?

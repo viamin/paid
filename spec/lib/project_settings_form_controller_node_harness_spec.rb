@@ -44,6 +44,8 @@ class ProjectSettingsFormControllerNodeHarness
       const panel = { classList: classList() };
       const note = { classList: classList() };
       const reviewSettings = field("review_settings");
+      const mergeConflictFixes = field("auto_fix_merge_conflicts");
+      const syncLabels = field("sync_labels_to_github");
 
       controller.hasPrTargetTarget = true;
       controller.prTargetTargets = [ownRepo, upstream];
@@ -51,9 +53,9 @@ class ProjectSettingsFormControllerNodeHarness
       controller.prTargetUpstreamPanelTarget = panel;
       controller.hasPrTargetUpstreamNoteTarget = true;
       controller.prTargetUpstreamNoteTarget = note;
-      controller.prTargetGatedFieldTargets = [reviewSettings];
+      controller.prTargetGatedFieldTargets = [reviewSettings, mergeConflictFixes, syncLabels];
 
-      return { controller, ownRepo, upstream, panel, note, reviewSettings };
+      return { controller, ownRepo, upstream, panel, note, reviewSettings, mergeConflictFixes, syncLabels };
     }
 
     function runHarness() {
@@ -72,9 +74,15 @@ class ProjectSettingsFormControllerNodeHarness
       harness.upstream.checked = true;
       harness.controller.prTargetChanged();
 
-      if (!harness.reviewSettings.input.disabled || !harness.reviewSettings.hidden.disabled ||
+      if (!harness.reviewSettings.input.disabled || harness.reviewSettings.hidden.disabled ||
         !harness.reviewSettings.classList.contains("opacity-50")) {
         throw new Error("Expected upstream mode to disable and gray gated settings");
+      }
+      if (harness.mergeConflictFixes.input.disabled || harness.mergeConflictFixes.classList.contains("opacity-50")) {
+        throw new Error("Expected upstream mode to keep merge-conflict fixes enabled");
+      }
+      if (!harness.syncLabels.input.disabled || !harness.syncLabels.classList.contains("opacity-50")) {
+        throw new Error("Expected upstream mode to disable and gray label sync");
       }
       if (harness.panel.classList.contains("hidden") || harness.note.classList.contains("hidden")) {
         throw new Error("Expected upstream mode to show the upstream field and explanation");

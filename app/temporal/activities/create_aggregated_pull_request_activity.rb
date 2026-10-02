@@ -160,9 +160,8 @@ module Activities
     end
 
     def add_pr_labels(client, project, pr_number, parent_issue: nil)
-      # Upstream mode (#4078): no label writes on PRs opened in the upstream
-      # repository. @spec UPSTREAM-GATE-002
-      return unless project.upstream_feature_enabled?(:pr_labeling)
+      # @spec UPSTREAM-GATE-006
+      return unless project.upstream_feature_enabled?(:upstream_issue_labeling)
 
       labels = []
       if project.auto_add_labels_enabled?

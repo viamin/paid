@@ -37,14 +37,19 @@ user may replace it because a contribution target need not be GitHub's literal
 fork parent.
 
 When upstream is selected, the existing Stimulus settings controller disables
-and grays the repository-hosted automation controls. Switching back restores
-their in-browser values. This is an affordance and scope signal, not a security
-boundary: server-side enforcement is owned by the follow-up issue.
+and grays the repository-hosted automation controls, including the "Sync Labels
+to GitHub" action. Label-name fields remain editable for read-side use.
+`auto_fix_merge_conflicts` remains enabled: conflict fixes push only to the
+fork-owned PR head branch. Switching back restores the other fields' in-browser
+values. This is an affordance and scope signal, not a security boundary:
+server-side enforcement is owned by the follow-up issue.
 
 ## Trust and scope
 
 The configured upstream is not assumed to be owned by, or trusted by, the
 Paid account. The UI therefore gates PR review, auto-merge/release, reviewer
-escalation, draft/continue/conflict automation, PR labels, and screenshots.
+escalation, draft/continue automation, PR labels, upstream issue-label writes,
+and screenshots. Work items come from the upstream repository and are limited
+to trusted users.
 This change does not implement upstream PR creation, fork-network preflight,
 or server-side automation enforcement; each remains explicit follow-up work.
