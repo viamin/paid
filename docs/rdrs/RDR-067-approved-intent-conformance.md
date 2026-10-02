@@ -35,9 +35,11 @@ evidence and resolution path.
 
 The production PR scanner now schedules a durable, de-duplicated independent
 review for each eligible `(PR, HEAD, approved-design revision)` identity; a
-new head or design revision schedules a fresh review. Representative
-false-alarm and missed-drift evaluation results and rollout telemetry remain
-outstanding in open issue #3870, preventing an Implemented status. The RDR-066
+new head or design revision schedules a fresh review. Issue #3870 now defines
+the read-only shadow-review flag, representative corpus, telemetry baseline,
+promotion criteria, and operator rollback protocol in
+`docs/intent/intent-conformance-rollout/`; measured results remain required
+before an Implemented status. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
