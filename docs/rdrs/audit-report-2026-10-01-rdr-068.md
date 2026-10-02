@@ -98,13 +98,12 @@ describes.
 ## Tracker state and required tracker filing
 
 Checklist step 3 requires an open focused tracker for every unmet criterion.
-As of this audit date, #3930 is open, but the historical child issues #3936,
-#3937, and #3978 are closed as completed. Their historical scopes, recorded
+As of this audit date, #3930 is open, but the historical child issues #3936, #3937, and #3978 are closed as completed. Their historical scopes, recorded
 in the [2026-09-22 audit](audit-report-2026-09-22-rdr-068.md), clarify the
 work that remains, but closed issues cannot serve as auto-pickable owners.
 New focused child issues must be filed under #3930 before implementation
-continues. This creates one actionable owner per gap without reopening or
-duplicating the completed historical work.
+continues. This creates one actionable owner per gap without reopening or duplicating
+the completed historical work.
 
 | # | Gap | Historical tracker | Current state | Required action |
 |---|---|---|---|---|
@@ -119,5 +118,4 @@ existing design invariants remain valid; the next implementation work must
 wire approved configuration, source transport, guest execution, output
 ingestion, and cleanup into one attempt path, then collect the required live
 macOS evidence before a final closeout. Before that work can be auto-picked,
-new focused child issues must be filed under #3930 for each of the three gaps;
-#3936, #3937, and #3978 are closed historical references, not open owners.
+new focused child issues must be filed under #3930 for each of the three gaps; issues #3936, #3937, and #3978 are closed historical references, not open owners.
