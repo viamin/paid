@@ -34,6 +34,7 @@ class FeatureIntent < ApplicationRecord
   has_many :issues, through: :feature_intent_issues
   has_many :feature_intent_decisions, dependent: :destroy
   has_many :feature_intent_design_prs, dependent: :destroy
+  has_many :feature_intent_approval_revisions, dependent: :restrict_with_error
   has_many :design_amendments, dependent: :restrict_with_error
 
   validates :title, presence: true
@@ -64,15 +65,21 @@ class FeatureIntent < ApplicationRecord
   # reconciliation) must gate this on FeatureIntents::ApprovalReadiness and
   # authorization themselves — this method only enforces the lifecycle
   # transition (RDR-066 "Approval sources and revision binding").
-  def record_approval!(by:, pr_heads:)
+  def record_approval!(by:, pr_heads:, source: "inbox")
     raise InvalidTransitionError, "cannot approve a #{status} feature intent" unless status.in?(APPROVABLE_STATUSES)
 
-    update!(
-      status: "approved_waiting_for_merge",
-      approved_by: by,
-      approved_at: Time.current,
-      approved_pr_heads: pr_heads
-    )
+    with_lock do
+      approved_at = Time.current
+      revision = feature_intent_approval_revisions.create!(
+        approved_by: by,
+        approved_at: approved_at,
+        source: source,
+        pr_heads: pr_heads,
+        revision_number: next_approval_revision_number
+      )
+      update!(status: "approved_waiting_for_merge", approved_by: by, approved_at: approved_at, approved_pr_heads: pr_heads)
+      record_approval_audit_event(revision)
+    end
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
     self
   end
@@ -95,6 +102,25 @@ class FeatureIntent < ApplicationRecord
     raise InvalidTransitionError, "cannot move feature intent from #{status} to #{next_status}" unless status.in?(from)
 
     update!(status: next_status)
+  end
+
+  def next_approval_revision_number
+    feature_intent_approval_revisions.maximum(:revision_number).to_i + 1
+  end
+
+  def record_approval_audit_event(revision)
+    Audit::RecordEvent.call(
+      action: "feature_intent.approved",
+      actor: revision.approved_by,
+      subject: self,
+      metadata: {
+        from_status: status_before_last_save,
+        to_status: "approved_waiting_for_merge",
+        approval_revision: revision.revision_number,
+        source: revision.source,
+        pr_heads: revision.pr_heads
+      }
+    )
   end
 
   # Raised when an amendment flow requests a lifecycle move the feature's

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_162018) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_02_034147) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1633,6 +1633,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_162018) do
     t.index ["parent_workflow_id"], name: "index_failure_classifications_on_parent_workflow_id"
     t.index ["project_id", "created_at"], name: "idx_failure_classifications_project_created"
     t.index ["project_id"], name: "index_failure_classifications_on_project_id"
+  end
+
+  create_table "feature_intent_approval_revisions", comment: "Immutable RDR-066 approval snapshots for feature intent design revisions.", force: :cascade do |t|
+    t.bigint "feature_intent_id", null: false
+    t.bigint "approved_by_id", null: false
+    t.datetime "approved_at", null: false, comment: "When the authorized human approved this design revision."
+    t.string "source", null: false, comment: "Approval source, such as inbox or direct_github_merge."
+    t.jsonb "pr_heads", default: {}, null: false, comment: "Exact design PR number => head SHA snapshot approved by the human."
+    t.integer "revision_number", null: false, comment: "Feature-local immutable approval revision sequence."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_feature_intent_approval_revisions_on_approved_by_id"
+    t.index ["feature_intent_id", "revision_number"], name: "index_feature_intent_approval_revisions_unique_revision", unique: true
+    t.index ["feature_intent_id"], name: "index_feature_intent_approval_revisions_on_feature_intent_id"
   end
 
   create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
@@ -4012,6 +4026,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_162018) do
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
+  add_foreign_key "feature_intent_approval_revisions", "feature_intents"
+  add_foreign_key "feature_intent_approval_revisions", "users", column: "approved_by_id"
   add_foreign_key "feature_intent_decisions", "feature_intents"
   add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
   add_foreign_key "feature_intent_design_prs", "feature_intents"

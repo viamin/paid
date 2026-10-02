@@ -170,3 +170,22 @@
   `app/services/inbox/count.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_detail_feature_decision.html.erb`.
+
+## Immutable approval and release
+
+- [x] **FEATURE-APPROVAL-014** — When an Inbox-authorized human approves a
+  ready feature intent, the system SHALL append an immutable approval revision
+  containing the actor, timestamp, source, and exact linked design-PR head
+  snapshot. Re-approval after a changed head SHALL append, rather than mutate,
+  the earlier revision.
+
+- [x] **FEATURE-APPROVAL-015** — When releasing an approval-gated feature,
+  the system SHALL reject the transition unless the feature is awaiting merge,
+  its latest approval snapshot still equals every linked design PR head, and
+  every required design PR is merged. On success it SHALL record the merged
+  repository revision and transition the feature to `released`.
+
+- [x] **FEATURE-APPROVAL-016** — When an approval or release transition is
+  recorded, the system SHALL append an account activity audit event naming the
+  actor when known, feature intent, transition source and target, and approval
+  revision when applicable.

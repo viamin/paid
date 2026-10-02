@@ -47,6 +47,8 @@ class AccountActivityEvent < ApplicationRecord
     "search_issues.executed" => "run",
     "prompt_version.approved" => "approval",
     "prompt_version.rejected" => "approval",
+    "feature_intent.approved" => "approval",
+    "feature_intent.released" => "approval",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
     "egress_allowlist.account_entry_created" => "egress_allowlist",

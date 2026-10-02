@@ -25,7 +25,7 @@ module FeatureIntents
       readiness = ApprovalReadiness.call(feature_intent: feature_intent)
       raise NotReadyError.new("feature intent #{feature_intent.id} is not ready for approval", blockers: readiness.blockers) unless readiness.ready?
 
-      feature_intent.record_approval!(by: actor, pr_heads: current_pr_heads).tap { log_approval }
+      feature_intent.record_approval!(by: actor, pr_heads: current_pr_heads, source: source).tap { log_approval }
     end
 
     private
