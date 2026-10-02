@@ -86,7 +86,7 @@ class FeatureIntent < ApplicationRecord
   # Returns to `released` when the amendment merges (new revision recorded)
   # or is abandoned (prior revision stands).
   def release!
-    transition_to!("released", from: %w[revising released])
+    transition_to!("released", from: %w[approved_waiting_for_merge revising released])
   end
 
   private

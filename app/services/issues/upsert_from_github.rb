@@ -29,6 +29,7 @@ module Issues
       )
 
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
+      FeatureIntents::ReconcileDesignPullRequest.call(project: project, github_issue: github_issue) if issue.is_pull_request?
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       require_reopen_review(issue, was_closed: was_closed)

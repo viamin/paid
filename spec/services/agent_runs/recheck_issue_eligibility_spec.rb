@@ -43,6 +43,21 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.error_message).to include("no longer eligible")
   end
 
+  # @spec FEATURE-APPROVAL-014
+  it "cancels a previously queued manual implementation run when its feature is held" do
+    issue = create(:issue, project: project, github_state: "open")
+    feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    run = build(:agent_run, :queued, project: project, issue: issue,
+      goal: "create_pr", trigger_type: "manual", auto_pick: false,
+      base_commit_sha: nil)
+    run.save!(validate: false)
+
+    expect(described_class.call(run)).to be true
+    expect(run.reload.status).to eq("cancelled")
+    expect(run.error_message).to include("Feature intent is held")
+  end
+
   it "keeps the run queued when only its internal Paid state changed" do # @spec AUTO-PICK-QUEUE-008
     issue = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
     run = queued_auto_pick_run(issue: issue)

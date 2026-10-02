@@ -85,6 +85,33 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:result_commit_sha).is_at_most(40) }
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
+
+    # @spec FEATURE-APPROVAL-014 @spec FEATURE-APPROVAL-015
+    it "rejects implementation runs for a held linked feature" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+      agent_run = build(:agent_run, project: project, issue: issue, goal: "create_pr")
+
+      expect(agent_run).not_to be_valid
+      expect(agent_run.errors[:issue]).to include("Feature intent is not released.")
+    end
+
+    # @spec FEATURE-APPROVAL-015
+    it "snapshots a released feature's approved revision onto an implementation run" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      revision = "b" * 40
+      feature = create(:feature_intent, project: project, approved_design_revision: revision)
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+      agent_run = create(:agent_run, project: project, issue: issue, goal: "create_pr")
+
+      expect(agent_run.base_commit_sha).to eq(revision)
+    end
+
     it { is_expected.to validate_length_of(:temporal_run_id).is_at_most(255) }
     it { is_expected.to validate_length_of(:container_id).is_at_most(128) }
     it { is_expected.to validate_numericality_of(:iterations).is_greater_than_or_equal_to(0).allow_nil }

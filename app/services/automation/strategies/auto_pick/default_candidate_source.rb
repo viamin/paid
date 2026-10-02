@@ -110,6 +110,20 @@ module Automation
             held_ids = DesignAmendmentPause.held_issue_ids(project)
             scope = scope.where.not(id: held_ids) if held_ids.present?
 
+            # @spec FEATURE-APPROVAL-014 — a linked feature tree stays out
+            # of every automatic selection path until its release transaction
+            # has recorded a repository revision.
+            held_feature_issue_ids = FeatureIntentIssue.joins(:feature_intent)
+              .where(feature_intents: { project_id: project.id })
+              .where.not(feature_intents: { status: "released" })
+              .select(:issue_id)
+            scope = scope.where.not(id: held_feature_issue_ids)
+
+            missing_revision_issue_ids = FeatureIntentIssue.joins(:feature_intent)
+              .where(feature_intents: { project_id: project.id, status: "released", approved_design_revision: nil })
+              .select(:issue_id)
+            scope = scope.where.not(id: missing_revision_issue_ids)
+
             # @spec AUTO-PICK-QUEUE-011 — issues whose latest model
             # selection pins a tier no configured runner can satisfy stay
             # out of selection so auto-pick stops creating doomed runs
