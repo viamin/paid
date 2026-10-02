@@ -1635,6 +1635,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
     t.index ["project_id"], name: "index_failure_classifications_on_project_id"
   end
 
+  create_table "feature_intent_approval_revisions", comment: "Immutable RDR-066 approval snapshots for feature intent design revisions.", force: :cascade do |t|
+    t.bigint "feature_intent_id", null: false
+    t.bigint "approved_by_id", null: false
+    t.datetime "approved_at", null: false, comment: "When the authorized human approved this design revision."
+    t.string "source", null: false, comment: "Approval source, such as inbox or direct_github_merge."
+    t.jsonb "pr_heads", default: {}, null: false, comment: "Exact design PR number => head SHA snapshot approved by the human."
+    t.integer "revision_number", null: false, comment: "Feature-local immutable approval revision sequence."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_feature_intent_approval_revisions_on_approved_by_id"
+    t.index ["feature_intent_id", "revision_number"], name: "index_feature_intent_approval_revisions_unique_revision", unique: true
+    t.index ["feature_intent_id"], name: "index_feature_intent_approval_revisions_on_feature_intent_id"
+  end
+
   create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
     t.text "answer", comment: "Human's answer or confirmation note."
     t.datetime "created_at", null: false
@@ -4013,6 +4027,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
+  add_foreign_key "feature_intent_approval_revisions", "feature_intents"
+  add_foreign_key "feature_intent_approval_revisions", "users", column: "approved_by_id"
   add_foreign_key "feature_intent_decisions", "feature_intents"
   add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
   add_foreign_key "feature_intent_design_prs", "feature_intents"
@@ -5003,6 +5019,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
       $function$
   SQL
 
+  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
+      END;
+      $function$
+  SQL
+
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_account_memberships BEFORE INSERT OR UPDATE ON public.account_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -5133,5 +5160,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 end

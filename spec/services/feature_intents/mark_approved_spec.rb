@@ -21,6 +21,7 @@ RSpec.describe FeatureIntents::MarkApproved do
     expect(result.approved_by).to eq(owner)
     expect(result.approved_at).to be_present
     expect(result.approved_pr_heads).to eq({ design_pr.pull_request_number.to_s => "c" * 40 })
+    expect(account.account_activity_events.last).to have_attributes(action: "feature_intent.approved", actor: owner)
   end
 
   it "raises and does not approve when the actor lacks Inbox access" do

@@ -266,3 +266,22 @@
   *Tests:* (none — pending implementation).
   *Code:* (none — pending implementation; tracks alongside
   `app/services/feature_intents/attach_from_agent_run.rb`).
+
+## Immutable approval and release
+
+- [x] **FEATURE-APPROVAL-020** — When an Inbox-authorized human approves a
+  ready feature intent, the system SHALL append an immutable approval revision
+  containing the actor, timestamp, source, and exact linked design-PR head
+  snapshot. Re-approval after a changed head SHALL append, rather than mutate,
+  the earlier revision.
+
+- [x] **FEATURE-APPROVAL-021** — When releasing an approval-gated feature,
+  the system SHALL reject the transition unless the feature is awaiting merge,
+  its latest approval snapshot still equals every linked design PR head, and
+  every required design PR is merged. On success it SHALL record the merged
+  repository revision and transition the feature to `released`.
+
+- [x] **FEATURE-APPROVAL-022** — When an approval or release transition is
+  recorded, the system SHALL append an account activity audit event naming the
+  actor when known, feature intent, transition source and target, and approval
+  revision when applicable.
