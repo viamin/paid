@@ -70,16 +70,18 @@ and consumes the field.
 
 ### Applicability (rollout guard)
 
-`ReviewRun` is a no-op (returns `nil`, persists nothing) under the same
-conditions `VerifyAtMerge` already treats as "not this rollout mode":
+`ReviewRun` is a no-op (returns `nil`, persists nothing) unless the PR is
+linked to a Feature Intent and either full amendment mode or the separate
+read-only shadow-review flag is enabled:
 
 1. The PR issue is not linked to a `FeatureIntent`.
-2. The project has not opted into the `approved_intent_amendments` feature
-   flag.
+2. The project has opted into neither `approved_intent_amendments` nor
+   `intent_conformance_shadow_review`.
 
-This mirrors `VerifyAtMerge#applicable?` exactly (`issue.feature_intent`,
-`FeatureFlags.enabled?(:approved_intent_amendments, project:)`) so the two
-services agree on which PRs the named mode covers.
+`approved_intent_amendments` remains the exact gate for `VerifyAtMerge`.
+`intent_conformance_shadow_review` intentionally runs only this reviewer and
+its scheduler, allowing #3870 to collect verdicts before any merge decision
+can be affected.
 
 ### Admission: untrusted content never reaches the prompt
 

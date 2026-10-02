@@ -85,6 +85,16 @@ RSpec.describe IntentConformance::ScheduleReview do
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-001
+  it "schedules a shadow review without enabling the amendment or merge guard" do
+    project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
+
+    expect {
+      schedule
+    }.to change(IntentConformanceReviewSchedule, :count).by(1)
+      .and have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
   it "does not schedule when a verdict already exists for the exact identity" do
     create(:intent_conformance_verdict, project: project, issue: issue,
       pr_head_sha: head_sha, approved_design_revision: "design-v1")

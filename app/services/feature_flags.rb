@@ -57,6 +57,13 @@ class FeatureFlags
       rollout_plan: "Default-off; review scheduling rides the approved_intent_amendments flag, so enforcement requires both flags enabled. Expand per tenant or project via tenant_settings.features only after #3870 records verdict accuracy against representative accepted and intentionally drifted PRs, and only for features with populated approved design-document paths.",
       cleanup_criteria: "Remove once RDR-066's named feature operating mode ships and conformance enforcement is wired to a project's operating mode instead of this standalone flag."
     ),
+    intent_conformance_shadow_review: Definition.new(
+      name: :intent_conformance_shadow_review,
+      owner: "intent-conformance",
+      intent: "Run RDR-067's independent reviewer and retain its verdicts for evaluation without enabling the auto-merge signal, final merge guard, or design-amendment flow.",
+      rollout_plan: "Default-off; enable only for a named project after the representative corpus is adjudicated. Keep intent_conformance_enforcement and approved_intent_amendments disabled throughout shadow evaluation.",
+      cleanup_criteria: "Remove after RDR-067 promotion criteria are met, enforcement is enabled with its merge guard, and temporary shadow-only scheduling is no longer needed."
+    ),
     approved_intent_amendments: Definition.new(
       name: :approved_intent_amendments,
       owner: "approved-intent-conformance",

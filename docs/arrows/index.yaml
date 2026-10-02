@@ -456,6 +456,15 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-09-17
+  intent-conformance-rollout:
+    title: Intent-Conformance Measured Rollout
+    path: docs/intent/intent-conformance-rollout/intent-conformance-rollout-design.md
+    specs: docs/intent/intent-conformance-rollout/intent-conformance-rollout-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-10-02
+    blockedBy: [intent-conformance-review, approved-intent-merge-guard]
   review-depth-presets:
     title: Project-Level Review Depth Presets
     path: docs/intent/review-depth-presets/review-depth-presets-design.md

@@ -43,6 +43,18 @@ RSpec.describe IntentConformance::VerifyAtMerge do
     end
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-001
+  context "when only shadow review is enabled" do
+    before do
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
+    end
+
+    it "does not apply the final merge guard" do
+      expect(call).to be_nil
+    end
+  end
+
   context "when the issue is linked to a feature intent under the rollout flag" do
     before { create(:feature_intent_issue, feature_intent: feature_intent, issue: issue) }
 
