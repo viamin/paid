@@ -46,6 +46,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   describe ".call approve" do
     before { allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result) }
 
+    # @spec API-CONVERSATION-DELEGATION-004
     it "dispatches the tool with confirmed injected as true" do
       described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,
@@ -63,6 +64,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
     end
 
     # @spec QUESTION-EXPLORATION-007
+    # @spec API-CONVERSATION-DELEGATION-004
     it "dispatches an approved tool as the collaborator who confirmed it" do
       collaborator = create(:user, account: account)
       allow(Tools::Registry).to receive(:chat_definitions_for)
@@ -171,6 +173,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   describe ".call deny" do
     before { allow(Tools::Registry).to receive(:dispatch) }
 
+    # @spec API-CONVERSATION-DELEGATION-004
     it "does not dispatch the tool and feeds a denied result" do
       result = described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,
@@ -216,6 +219,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   end
 
   describe "Pundit re-check at execution" do
+    # @spec API-CONVERSATION-DELEGATION-004
     it "captures an authorization failure as a structured tool result without crashing" do
       allow(Tools::Registry).to receive(:dispatch).and_raise(Pundit::NotAuthorizedError, "not allowed")
 
@@ -337,6 +341,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   describe "concurrent resolution safety" do
     before { allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result) }
 
+    # @spec API-CONVERSATION-DELEGATION-004
     it "rejects a second resolution of the same tool call so the tool cannot run twice" do
       described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,
@@ -409,6 +414,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
       allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result)
     end
 
+    # @spec API-CONVERSATION-DELEGATION-004
     it "does not resume the loop until the last pending tool call is resolved" do
       result = described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,

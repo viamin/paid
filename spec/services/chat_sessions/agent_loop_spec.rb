@@ -149,6 +149,7 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(pending.tool_result).to eq({ "id" => 44, "status" => "draft" })
       end
 
+      # @spec API-CONVERSATION-DELEGATION-004
       it "runs read-only tools immediately when mixed with a write tool in one batch" do
         allow(Tools::Registry).to receive_messages(
           dispatch: { "status" => "ok" },
@@ -260,6 +261,7 @@ RSpec.describe ChatSessions::AgentLoop do
         allow(Tools::Registry).to receive(:dispatch).and_return({ "id" => 99, "status" => "queued" })
       end
 
+      # @spec API-CONVERSATION-DELEGATION-004
       it "dispatches the write tool with confirmed injected and never pauses" do
         result = described_class.new(chat_session: chat_session, llm_client: llm_client).run
 
