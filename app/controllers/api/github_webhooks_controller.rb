@@ -75,6 +75,18 @@ module Api
         enqueue_dependabot_auto_merge(pr)
       end
 
+      # @spec FEATURE-APPROVAL-017 — when a design PR (RDR or LID Planning)
+      # is closed unmerged, transition the FeatureIntent to cancelled and
+      # close every linked implementation issue so no runnable orphan
+      # remains. The webhook is the natural reconciliation surface because
+        # GitHub emits the action: a closed-webhook event whether or not Paid
+        # is currently running.
+      if action == "closed" && pr["merged"] == false
+        reconcile_closed_unmerged_feature_intent(pr)
+        head :ok
+        return
+      end
+
       # Only act on merge events — other PR actions (opened, synchronize, etc.)
       # are not relevant to human feedback quality signals.
       unless action == "closed" && pr["merged"] == true
@@ -274,6 +286,39 @@ module Api
       return unless issue
 
       IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
+    end
+
+    # @spec FEATURE-APPROVAL-017 — reconcile the FeatureIntent whose design
+    # PR was closed unmerged on GitHub. Defensive: the webhook may fire
+    # before the local Issue row is synced, so a missing feature intent
+    # is logged but does not raise.
+    def reconcile_closed_unmerged_feature_intent(pr)
+      return unless @project
+
+      pr_number = pr["number"]
+      return unless pr_number
+
+      FeatureIntent
+        .where(project_id: @project.id)
+        .joins(:feature_intent_design_prs)
+        .where(feature_intent_design_prs: { pull_request_number: pr_number })
+        .where.not(status: FeatureIntent::STATUSES.last(3))
+        .distinct
+        .find_each do |feature_intent|
+          FeatureIntents::AttachFromAgentRun.detach_on_close!(
+            feature_intent: feature_intent,
+            pull_request_number: pr_number,
+            merged: false
+          )
+        end
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "feature_intent.close_reconcile_failed",
+        project_id: @project&.id,
+        pr_number: pr["number"],
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def invalidate_cache(event)

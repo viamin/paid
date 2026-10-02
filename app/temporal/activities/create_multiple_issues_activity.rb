@@ -52,6 +52,12 @@ module Activities
         )
       end
 
+      # @spec FEATURE-APPROVAL-016 — link each issue the run filed to the
+      # FeatureIntent the run was attached to, so the Inbox detail view's
+      # "Proposed issue tree" lists real filed issues. Defensive: a failed
+      # attach must not block run completion.
+      attach_issues_to_feature_intent!(agent_run, created_issues)
+
       ProcessRunQueueJob.perform_later if completed
 
       {
@@ -284,6 +290,43 @@ module Activities
         error: e.message
       )
       nil
+    end
+
+    # @spec FEATURE-APPROVAL-016 — wire the just-filed issues into the
+    # FeatureIntent the run is attached to. Best-effort: a failed attach
+    # is logged but does not raise, because the issues have already been
+    # filed on GitHub and the run is complete — the attachment is a
+    # bookkeeping record, not a correctness gate.
+    def attach_issues_to_feature_intent!(agent_run, created_issues)
+      brief_issue = agent_run.issue
+      return unless brief_issue
+
+      feature_intent = FeatureIntent
+        .where(project_id: agent_run.project_id)
+        .joins(:feature_intent_issues)
+        .where(feature_intent_issues: { issue_id: brief_issue.id })
+        .first
+      return unless feature_intent
+
+      created_issues.each do |created|
+        issue_id = created[:issue_id]
+        next unless issue_id
+
+        issue = Issue.find_by(id: issue_id)
+        next unless issue
+
+        FeatureIntents::AttachFromAgentRun.attach_issue(
+          feature_intent: feature_intent,
+          issue: issue
+        )
+      end
+    rescue => e
+      logger.warn(
+        message: "agent_execution.feature_intent_issue_attach_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
   end
 end

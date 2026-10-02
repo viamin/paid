@@ -170,3 +170,78 @@
   `app/services/inbox/count.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_detail_feature_decision.html.erb`.
+
+## Create-feature and LID-planning attachment (#3863)
+
+- [x] **FEATURE-APPROVAL-014** — For approval-gated features, when a
+  `create_feature` agent run is queued, the system SHALL create a
+  `FeatureIntent` linked to that run's brief issue (`status: "discovering"`,
+  `criteria_clarity_state: "pending"`), and the brief issue SHALL be linked
+  back to the feature via a `FeatureIntentIssue` so the Inbox detail view
+  can show the brief alongside the design PR record. The system SHALL use
+  one choke point (`FeatureIntents::AttachFromAgentRun`) for both
+  `create_feature` and `lid_planning` runs, so neither path can disagree
+  about what a FeatureIntent records.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`,
+  `spec/requests/projects/agent_runs_create_feature_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+
+- [x] **FEATURE-APPROVAL-015** — For approval-gated features, when a
+  `create_feature` agent run opens its docs-only RDR PR, the system SHALL
+  record a `FeatureIntentDesignPr` with `design_pr_kind: "rdr"`,
+  `required: true`, the PR number and head SHA read from the GitHub API
+  response (not from the agent's output), and `reviewed_head_sha` set to
+  the same head SHA so the staleness signal starts consistent. A chained
+  `lid_planning` run SHALL record a second design PR with
+  `design_pr_kind: "lid_planning"`, `required: true` for LID-mode projects
+  and `required: false` otherwise. A second `AttachFromAgentRun` call on
+  the same PR SHALL NOT duplicate the design PR record (uniqueness by
+  `(feature_intent_id, pull_request_number)`).
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`.
+
+- [x] **FEATURE-APPROVAL-016** — For approval-gated features, every
+  implementation issue filed by a `create_feature` (or chained
+  `lid_planning`) run SHALL be linked to its `FeatureIntent` via a
+  `FeatureIntentIssue` row at creation time (when the run records it in
+  `cross_repo_issues`) so the Inbox detail view's "Proposed issue tree"
+  section lists the real filed issues alongside the design PR. The link
+  SHALL NOT depend on a label or auto-pick status — the
+  `FeatureIntentIssue` row is the source of truth.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`.
+
+- [x] **FEATURE-APPROVAL-017** — For approval-gated features, when a
+  design PR (RDR or LID Planning) linked to a `FeatureIntent` is closed
+  unmerged on GitHub, the system SHALL transition the feature to
+  `cancelled` and SHALL close every linked `FeatureIntentIssue` row so no
+  runnable orphan issue remains (RDR-066 acceptance criterion #3:
+  "Closing the design PR unmerged leaves no runnable orphan issue"). The
+  close SHALL be applied through `AttachFromAgentRun#detach_on_close!`,
+  called from the same docs-only PR activity that recorded the design PR,
+  so the rejection path and the attachment path cannot disagree about what
+  was held. A subsequent GitHub-side reopen of the same PR SHALL NOT
+  resurrect the feature — a rejected design PR requires a new RDR and a
+  new `FeatureIntent`.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`.
+
+- [x] **FEATURE-APPROVAL-018** — For approval-gated features, evidence
+  recorded on the `FeatureIntent` (design PR rows, linked issues,
+  decisions) SHALL be grounded in the repository or the run's own output,
+  not in human answers Paid invented. The `FeatureIntentDesignPr` row's
+  `pull_request_number` and `head_sha` come from the GitHub API response
+  on the docs-only PR opening, not from the agent summary.
+  `FeatureIntentIssue` rows come from the `cross_repo_issues` the run
+  recorded against the issue it actually filed on GitHub.
+  `FeatureIntentDecision` rows come from the run's own summary (only when
+  the summary explicitly mentions the question or the `[inferred]`
+  decision), and an absent decision is the truthful "no questions" state,
+  not a fabricated default.
+  *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
+  *Code:* `app/services/feature_intents/attach_from_agent_run.rb`.

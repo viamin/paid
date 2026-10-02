@@ -115,6 +115,12 @@ module Activities
 
         if completed
           capture_session_summary_if_needed(agent_run)
+          # @spec FEATURE-APPROVAL-015 — record the design PR on the
+          # FeatureIntent the agent run is attached to (create_feature
+          # produces an RDR PR, lid_planning produces a LID Planning PR;
+          # head SHA comes from the GitHub API response, never from the
+          # agent's output).
+          attach_to_feature_intent!(agent_run, pr)
         else
           logger.info(
             message: "agent_execution.pull_request_completion_skipped",
@@ -129,6 +135,51 @@ module Activities
     end
 
     private
+
+    # @spec FEATURE-APPROVAL-015 — wire the PR opened by this run to the
+    # FeatureIntent the agent run is attached to. The kind is `rdr` for
+    # create_feature runs and `lid_planning` for chained lid_planning
+    # runs; everything else is a no-op so the same activity code can run
+    # without goal-specific gates.
+    def attach_to_feature_intent!(agent_run, pr)
+      design_pr_kind = design_pr_kind_for(agent_run)
+      return unless design_pr_kind
+
+      brief_issue = agent_run.issue
+      feature_intent = feature_intent_for(agent_run.project, brief_issue)
+      return unless feature_intent
+
+      FeatureIntents::AttachFromAgentRun.attach_design_pr(
+        feature_intent: feature_intent,
+        pull_request_number: pr.number,
+        head_sha: pr.head_sha.to_s,
+        design_pr_kind: design_pr_kind
+      )
+    rescue => e
+      logger.warn(
+        message: "agent_execution.feature_intent_attach_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def design_pr_kind_for(agent_run)
+      return "lid_planning" if agent_run.lid_planning_goal?
+      return "rdr" if agent_run.create_feature_goal?
+
+      nil
+    end
+
+    def feature_intent_for(project, brief_issue)
+      return nil unless project && brief_issue
+
+      FeatureIntent
+        .where(project_id: project.id)
+        .joins(:feature_intent_issues)
+        .where(feature_intent_issues: { issue_id: brief_issue.id })
+        .first
+    end
 
     # Re-evaluates the PR gate after PushBranchActivity has persisted the
     # shipped SHA. The earlier post-run recording precedes that push and can
