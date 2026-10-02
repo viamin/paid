@@ -41,6 +41,7 @@ module ChatSessions
 
     def call
       # @spec CHAT-API-004
+      # @spec API-CONVERSATION-DELEGATION-004
       validate_decision!
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)

@@ -328,6 +328,7 @@ RSpec.describe "ChatMessages" do
 
       it "emits message_tool_confirmation for a pending write tool call" do
         # @spec CHAT-API-002
+        # @spec API-CONVERSATION-DELEGATION-004
         pending_msg = create(:chat_message, :tool_call, chat_session: chat_session,
           tool_call_id: "call_xyz", tool_name: "trigger_agent_run",
           tool_arguments: { "project_id" => 1 }, tool_status: "pending")
@@ -408,6 +409,7 @@ RSpec.describe "ChatMessages" do
 
       it "resolves an approved tool call and returns the resumed assistant message" do
         # @spec CHAT-API-004
+        # @spec API-CONVERSATION-DELEGATION-004
         assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, content: "Done.")
         allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
         allow(ChatSessions::ResolveToolCall).to receive(:call).and_return(assistant_msg)
@@ -424,6 +426,7 @@ RSpec.describe "ChatMessages" do
 
       it "returns a paused status when the resumed loop awaits another confirmation" do
         # @spec CHAT-API-004
+        # @spec API-CONVERSATION-DELEGATION-004
         allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
         allow(ChatSessions::ResolveToolCall).to receive(:call).and_return(nil)
 
@@ -447,6 +450,7 @@ RSpec.describe "ChatMessages" do
 
       it "emits a message_tool_resolved event and the resumed stream" do
         # @spec CHAT-API-004
+        # @spec API-CONVERSATION-DELEGATION-004
         assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 10, tokens_output: 5)
         allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
         allow(ChatSessions::ResolveToolCall).to receive(:call) do |**args|

@@ -39,6 +39,7 @@ module ChatSessions
     #   loop paused to await confirmation for a write tool.
     def run
       # @spec CHAT-API-003
+      # @spec API-CONVERSATION-DELEGATION-004
       conversation = build_conversation
       final_assistant_message = run_loop(conversation)
       finalize_token_usage(final_assistant_message) if final_assistant_message
