@@ -110,6 +110,9 @@ a human approves and merges before affected work resumes. See
 `docs/intent/approved-intent-amendment/`,
 `docs/intent/approved-intent-merge-guard/`, and, for the Inbox decision flow and
 Mark approved action that records the initial approval, `docs/intent/feature-approval/`.
+Before that merge boundary is enabled, `docs/intent/intent-conformance-rollout/`
+defines a read-only shadow review, independently adjudicated representative PR
+corpus, predeclared promotion thresholds, and operator rollback path.
 
 The planned confidence-driven policy in
 [RDR-069](rdrs/RDR-069-question-centered-chat-exploration.md),

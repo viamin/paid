@@ -9,6 +9,7 @@ require "rails_helper"
 # @spec INTENT-CONFORMANCE-REVIEW-005
 # @spec INTENT-CONFORMANCE-REVIEW-006
 # @spec INTENT-CONFORMANCE-REVIEW-007
+# @spec INTENT-CONFORMANCE-ROLLOUT-002
 RSpec.describe IntentConformance::ReviewRun do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, :pull_request, project: project, github_number: 42, github_creator_login: "viamin") }
@@ -70,6 +71,19 @@ RSpec.describe IntentConformance::ReviewRun do
     it "is a no-op and persists nothing" do
       expect(call).to be_nil
       expect(IntentConformanceVerdict.count).to eq(0)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-001
+  context "when shadow review is enabled without amendment enforcement" do
+    before { project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true }) }
+
+    it "persists a verdict for measurement without changing merge eligibility" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
+      }.to_json))
+
+      expect(call).to be_within_scope
     end
   end
 
@@ -149,6 +163,17 @@ RSpec.describe IntentConformance::ReviewRun do
 
       expect(verdict).to be_material_drift
       expect(verdict.cited_claims).to eq([ { "claim_text" => "The widget SHALL always be blue." } ])
+    end
+
+    it "persists an uncertain verdict with cited missing evidence" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "uncertain",
+        cited_design_claims: [ "The widget SHALL always be blue." ],
+        cited_diff_locations: [ { file: "app/models/widget.rb", note: "The patch omits the default path." } ],
+        reasoning_summary: "The available patch does not establish the widget's default color."
+      }.to_json))
+
+      expect(call).to be_uncertain
     end
 
     it "strips a markdown fence around the JSON output" do

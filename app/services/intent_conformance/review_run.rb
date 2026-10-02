@@ -125,6 +125,14 @@ module IntentConformance
     def applicable?
       feature_intent.present? &&
         feature_intent.approved_design_revision.present? &&
+        rollout_enabled?
+    end
+
+    # Shadow review deliberately does not share the amendment flag: that flag
+    # also activates VerifyAtMerge. RDR-067 requires accuracy evidence before
+    # any merge guard can be enabled.
+    def rollout_enabled?
+      FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
         FeatureFlags.enabled?(:approved_intent_amendments, project: project)
     end
 

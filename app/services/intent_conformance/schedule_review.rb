@@ -25,7 +25,14 @@ module IntentConformance
 
     def applicable?
       issue.is_pull_request? && feature_intent&.released? && feature_intent.approved_design_revision.present? &&
-        pr_head_sha.present? && FeatureFlags.enabled?(:approved_intent_amendments, project: project)
+        pr_head_sha.present? && rollout_enabled?
+    end
+
+    # Keep the read-only evaluation path separate from approved_intent_amendments,
+    # which is also the final-merge guard's gate.
+    def rollout_enabled?
+      FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
+        FeatureFlags.enabled?(:approved_intent_amendments, project: project)
     end
 
     def feature_intent = @feature_intent ||= issue.feature_intent
