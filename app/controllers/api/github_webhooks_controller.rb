@@ -80,9 +80,13 @@ module Api
       # close every linked implementation issue so no runnable orphan
       # remains. The webhook is the natural reconciliation surface because
       # GitHub emits the action: a closed-webhook event whether or not Paid
-      # is currently running.
+      # is currently running. The handler enqueues a job rather than doing
+      # the per-issue GitHub PATCHes inline so the webhook returns within
+      # GitHub's ~10s delivery timeout — a feature tree commonly has 5-15
+      # linked issues and `GithubClient#update_issue` retries up to 3
+      # times with exponential backoff (`RETRY_MAX = 3`).
       if action == "closed" && pr["merged"] == false
-        reconcile_closed_unmerged_feature_intent(pr)
+        enqueue_closed_unmerged_feature_intent_reconciliation(pr["number"])
         head :ok
         return
       end
@@ -288,34 +292,22 @@ module Api
       IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
     end
 
-    # @spec FEATURE-APPROVAL-017 — reconcile the FeatureIntent whose design
-    # PR was closed unmerged on GitHub. Defensive: the webhook may fire
-    # before the local Issue row is synced, so a missing feature intent
-    # is logged but does not raise.
-    def reconcile_closed_unmerged_feature_intent(pr)
-      return unless @project
+    # @spec FEATURE-APPROVAL-017 — enqueue the reconciliation that
+    # transitions the FeatureIntent to `cancelled` and closes every
+    # linked implementation issue when the design PR was closed unmerged
+    # on GitHub. The job is idempotent (the cancellation write is
+    # terminal-in-design-PR-closed-sense, and per-issue closes are
+    # guarded by `github_state`), so GitHub webhook redeliveries
+    # converge to the same final state without duplicating work.
+    def enqueue_closed_unmerged_feature_intent_reconciliation(pr_number)
+      return unless @project && pr_number
 
-      pr_number = pr["number"]
-      return unless pr_number
-
-      FeatureIntent
-        .where(project_id: @project.id)
-        .joins(:feature_intent_design_prs)
-        .where(feature_intent_design_prs: { pull_request_number: pr_number })
-        .where.not(status: FeatureIntent::TERMINAL_STATUSES)
-        .distinct
-        .find_each do |feature_intent|
-          FeatureIntents::AttachFromAgentRun.detach_on_close!(
-            feature_intent: feature_intent,
-            pull_request_number: pr_number,
-            merged: false
-          )
-        end
+      FeatureIntents::CancelOnClosedDesignPrJob.perform_later(@project.id, pr_number: pr_number)
     rescue StandardError => e
       Rails.logger.warn(
-        message: "feature_intent.close_reconcile_failed",
+        message: "feature_intent.close_reconcile_enqueue_failed",
         project_id: @project&.id,
-        pr_number: pr["number"],
+        pr_number: pr_number,
         error_class: e.class.name,
         error: e.message
       )

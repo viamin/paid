@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Api::GithubWebhooks" do
+  include ActiveJob::TestHelper
+
   let(:project) { create(:project, webhook_secret: "test-secret-123") }
   let(:agent_run) { create(:agent_run, :completed, project: project) }
   let(:webhook_url) { "/api/github_webhooks" }
@@ -424,14 +426,32 @@ RSpec.describe "Api::GithubWebhooks" do
       end
 
       # @spec FEATURE-APPROVAL-017
-      it "cancels the feature and closes its linked implementation issues" do
+      it "enqueues a reconciliation job rather than blocking the webhook thread" do
         body, signature = sign_payload(payload, project.webhook_secret)
 
-        post webhook_url, params: body, headers: {
-          "Content-Type" => "application/json",
-          "X-GitHub-Event" => "pull_request",
-          "X-Hub-Signature-256" => signature
-        }
+        expect {
+          post webhook_url, params: body, headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "pull_request",
+            "X-Hub-Signature-256" => signature
+          }
+        }.to have_enqueued_job(FeatureIntents::CancelOnClosedDesignPrJob)
+          .with(project.id, pr_number: design_pr.pull_request_number)
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      # @spec FEATURE-APPROVAL-017
+      it "cancels the feature and closes its linked implementation issues when the job runs" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        perform_enqueued_jobs(only: FeatureIntents::CancelOnClosedDesignPrJob) do
+          post webhook_url, params: body, headers: {
+            "Content-Type" => "application/json",
+            "X-GitHub-Event" => "pull_request",
+            "X-Hub-Signature-256" => signature
+          }
+        end
 
         expect(response).to have_http_status(:ok)
         expect(feature_intent.reload.status).to eq("cancelled")
@@ -449,25 +469,28 @@ RSpec.describe "Api::GithubWebhooks" do
           "X-Hub-Signature-256" => signature
         }
 
-        post webhook_url, params: body, headers: headers
-        closed_at = implementation_issue.reload.closed_at
-        post webhook_url, params: body, headers: headers
+        perform_enqueued_jobs(only: FeatureIntents::CancelOnClosedDesignPrJob) do
+          post webhook_url, params: body, headers: headers
+          post webhook_url, params: body, headers: headers
+        end
 
         expect(response).to have_http_status(:ok)
         expect(feature_intent.reload.status).to eq("cancelled")
-        expect(implementation_issue.reload.closed_at).to eq(closed_at)
+        expect(implementation_issue.reload.github_state).to eq("closed")
       end
 
       %w[released revising cancelled].each do |status|
-        it "leaves a #{status} feature unchanged" do
+        it "leaves a #{status} feature unchanged when the job runs" do
           feature_intent.update!(status: status)
           body, signature = sign_payload(payload, project.webhook_secret)
 
-          post webhook_url, params: body, headers: {
-            "Content-Type" => "application/json",
-            "X-GitHub-Event" => "pull_request",
-            "X-Hub-Signature-256" => signature
-          }
+          perform_enqueued_jobs(only: FeatureIntents::CancelOnClosedDesignPrJob) do
+            post webhook_url, params: body, headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+          end
 
           expect(response).to have_http_status(:ok)
           expect(feature_intent.reload.status).to eq(status)

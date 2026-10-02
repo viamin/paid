@@ -174,11 +174,7 @@ module Activities
     def feature_intent_for(project, brief_issue)
       return nil unless project && brief_issue
 
-      FeatureIntent
-        .where(project_id: project.id)
-        .joins(:feature_intent_issues)
-        .where(feature_intent_issues: { issue_id: brief_issue.id })
-        .first
+      FeatureIntent.linked_to_issue(brief_issue).first
     end
 
     # Re-evaluates the PR gate after PushBranchActivity has persisted the

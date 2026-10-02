@@ -295,18 +295,18 @@ own output, never invented human answers. Two grounded sources:
 
 - The `created_issue_url` / `pull_request_url` / `cross_repo_issues`
   recorded on the `AgentRun` are the source of truth for what was actually
-  filed and opened. The FeatureIntent mirrors those facts.
-- Any clarifying questions or AI-inferred decisions the run produced are
-  recorded on the FeatureIntent's `FeatureIntentDecision` rows only when the
-  run's output explicitly contains them — the run's summary is parsed, not
-  assumed. Inferred decisions are flagged with `[inferred]` in their prompt
-  text so a human can confirm or reject them through the Inbox (FEATURE-
-  APPROVAL-007). The service never fabricates a question that the run did
-  not raise.
-
-The Inbox detail view's "Open questions" and "Inferred decisions awaiting
-confirmation" sections are populated from these recorded rows; an empty
-section is the truthful "the run filed no questions" state, not a fallback.
+  filed and opened. The FeatureIntent mirrors those facts. This is what
+  FEATURE-APPROVAL-018 ships today (design PR rows + linked issues).
+- Any clarifying questions or AI-inferred decisions the run produced will
+  eventually be recorded on the FeatureIntent's `FeatureIntentDecision`
+  rows only when the run's output explicitly contains them — the run's
+  summary is parsed, not assumed. Inferred decisions will be flagged with
+  `[inferred]` in their prompt text so a human can confirm or reject them
+  through the Inbox (FEATURE-APPROVAL-007). The service never fabricates
+  a question that the run did not raise. This behavior is tracked by the
+  open spec FEATURE-APPROVAL-019 and is not yet implemented: today
+  `AttachFromAgentRun` does not parse the run summary, and the Inbox
+  decision-listing sections render empty for every project.
 
 ### Branching by run goal
 

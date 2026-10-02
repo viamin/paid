@@ -301,11 +301,7 @@ module Activities
       brief_issue = agent_run.issue
       return unless brief_issue
 
-      feature_intent = FeatureIntent
-        .where(project_id: agent_run.project_id)
-        .joins(:feature_intent_issues)
-        .where(feature_intent_issues: { issue_id: brief_issue.id })
-        .first
+      feature_intent = FeatureIntent.linked_to_issue(brief_issue).first
       return unless feature_intent
 
       created_issues.each do |created|

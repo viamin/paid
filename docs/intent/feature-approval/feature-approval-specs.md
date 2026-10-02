@@ -238,16 +238,31 @@
   `app/controllers/api/github_webhooks_controller.rb`.
 
 - [x] **FEATURE-APPROVAL-018** — For approval-gated features, evidence
-  recorded on the `FeatureIntent` (design PR rows, linked issues,
-  decisions) SHALL be grounded in the repository or the run's own output,
-  not in human answers Paid invented. The `FeatureIntentDesignPr` row's
+  recorded on the `FeatureIntent` for design PRs and linked issues SHALL
+  be grounded in the repository or the run's own output, not in human
+  answers Paid invented. The `FeatureIntentDesignPr` row's
   `pull_request_number` and `head_sha` come from the GitHub API response
   on the docs-only PR opening, not from the agent summary.
   `FeatureIntentIssue` rows come from the `cross_repo_issues` the run
-  recorded against the issue it actually filed on GitHub.
-  `FeatureIntentDecision` rows come from the run's own summary (only when
-  the summary explicitly mentions the question or the `[inferred]`
-  decision), and an absent decision is the truthful "no questions" state,
-  not a fabricated default.
+  recorded against the issue it actually filed on GitHub. (Decision
+  recording — the `FeatureIntentDecision` grounding claim — is tracked
+  separately in FEATURE-APPROVAL-019; this spec is scoped to the
+  design-PR/issue-link evidence the attach service ships.)
   *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
   *Code:* `app/services/feature_intents/attach_from_agent_run.rb`.
+
+- [ ] **FEATURE-APPROVAL-019** — For approval-gated features, the run
+  path SHALL record `FeatureIntentDecision` rows on the `FeatureIntent`
+  only when the run's own summary explicitly contains the question or
+  the `[inferred]` decision; absent decisions SHALL surface as the
+  truthful "no questions" state in the Inbox detail view, not a
+  fabricated default. Currently the design-doc section "Evidence grounding"
+  describes this behavior but the recording code path does not ship
+  (`FeatureIntents::AttachFromAgentRun` does not parse the run summary
+  for questions/inferred decisions); the Inbox decision-listing section
+  is therefore still empty for every project. This spec is the gap
+  marker — code/tests land in the follow-up that implements the
+  decision-recording path.
+  *Tests:* (none — pending implementation).
+  *Code:* (none — pending implementation; tracks alongside
+  `app/services/feature_intents/attach_from_agent_run.rb`).

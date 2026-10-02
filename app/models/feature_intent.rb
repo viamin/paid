@@ -45,6 +45,18 @@ class FeatureIntent < ApplicationRecord
   scope :released, -> { where(status: "released") }
   scope :awaiting_approval, -> { where(status: APPROVABLE_STATUSES) }
 
+  # Single choke point for matching a FeatureIntent to the issue that
+  # introduced it. Both the `create_feature`/`lid_planning` run paths
+  # (attach and reconcile) and the closed-unmerged webhook reconciliation
+  # must agree on this predicate — silently diverging matching logic
+  # between the create path and the reconcile path is the exact failure
+  # mode the choke-point design in the service docs is meant to prevent.
+  scope :linked_to_issue, ->(issue) {
+    where(project_id: issue.project_id)
+      .joins(:feature_intent_issues)
+      .where(feature_intent_issues: { issue_id: issue.id })
+  }
+
   def released? = status == "released"
   def revising? = status == "revising"
   def approved_waiting_for_merge? = status == "approved_waiting_for_merge"

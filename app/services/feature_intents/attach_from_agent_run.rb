@@ -260,15 +260,10 @@ module FeatureIntents
     # run without a brief issue creates a fresh FeatureIntent rather than
     # adopting an arbitrary unrelated one.
     def existing_feature_intent
-      project = agent_run&.project
       brief_issue = agent_run&.issue
-      return nil unless project && brief_issue
+      return nil unless agent_run&.project && brief_issue
 
-      FeatureIntent
-        .where(project_id: project.id)
-        .joins(:feature_intent_issues)
-        .where(feature_intent_issues: { issue_id: brief_issue.id })
-        .first
+      FeatureIntent.linked_to_issue(brief_issue).first
     end
 
     def feature_title
