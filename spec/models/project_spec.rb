@@ -1981,6 +1981,21 @@ RSpec.describe Project do
         expect(project.client).to equal(project.client)
       end
 
+      # @spec GITHUB-SYNC-017
+      it "rebuilds a cached App client after enabling PAT fallback" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = create(:project, :with_github_installation, account: account)
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
+
+        original_client = project.client
+        project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.client).to be_a(GithubClient::WithFallback)
+        expect(project.client.primary).not_to equal(original_client)
+        expect(project.client.fallback).to eq(fallback.client)
+      end
+
       it "returns the plain token-backed client when no App installation is present" do
         account = create(:account)
         token = create(:github_token, account: account)

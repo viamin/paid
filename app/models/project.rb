@@ -428,6 +428,7 @@ class Project < ApplicationRecord
 
   after_create_commit :start_github_polling
   after_create_commit :enqueue_knowledge_collection
+  after_update :clear_github_client_cache, if: :saved_change_to_git_push_pat_fallback_configuration?
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
   after_update_commit :clear_scheduler_pause_on_installation_change, if: :saved_change_to_github_installation_id?
@@ -1571,6 +1572,16 @@ class Project < ApplicationRecord
     GithubClient::WithFallback.new(primary:, fallback:, project: self)
   end
   private :build_github_client
+
+  # @spec GITHUB-SYNC-017
+  def saved_change_to_git_push_pat_fallback_configuration?
+    saved_change_to_git_push_pat_fallback_enabled? || saved_change_to_git_push_fallback_token_id?
+  end
+
+  def clear_github_client_cache
+    remove_instance_variable(:@client) if defined?(@client)
+  end
+  private :clear_github_client_cache, :saved_change_to_git_push_pat_fallback_configuration?
 
   # Returns a proc that clears the cached App installation token and mints
   # a fresh one. Passed to +GithubClient+ so a 401 mid-request triggers a
