@@ -34,6 +34,7 @@ class DependabotAutoMergeJob < ApplicationJob
     return unless project
 
     client = project.client
+    client = client.primary if client.is_a?(GithubClient::WithFallback)
 
     if pr_number
       evaluate_single_pr(client, project, pr_number)

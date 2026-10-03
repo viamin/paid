@@ -51,7 +51,7 @@ module Projects
       private
 
       def github
-        project.client.client
+        project.client
       end
 
       def existing_file_on_default_branch(repo)
