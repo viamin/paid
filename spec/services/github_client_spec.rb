@@ -1480,6 +1480,29 @@ RSpec.describe GithubClient do
         expect(result.last[:is_resolved]).to be true
       end
     end
+
+    # @spec GITHUB-SYNC-017
+    context "when the App cannot access review threads" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              errors: [
+                { message: "Resource not accessible by integration for this repository" }
+              ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises a permission-shaped error so the PAT wrapper retries the read" do
+        expect { client.review_threads(repo, 42) }.to raise_error(GithubClient::ApiError) { |error|
+          expect(error.status).to eq(403)
+          expect(error.message).to include("Resource not accessible by integration for this repository")
+        }
+      end
+    end
   end
 
   describe "#pull_request_reviews", :no_db do
@@ -1998,6 +2021,38 @@ RSpec.describe GithubClient do
           client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
         }.to raise_error(GithubClient::ApiError) { |e|
           expect(e.status).to be_nil
+        }
+      end
+    end
+
+    # @spec GITHUB-SYNC-017
+    context "when the App cannot request a bot review" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: { pullRequest: { id: pr_node_id } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          ).then
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "Resource not accessible by integration", type: "FORBIDDEN" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises a permission-shaped error so the PAT wrapper retries the mutation" do
+        expect {
+          client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
+        }.to raise_error(GithubClient::ApiError) { |error|
+          expect(error.status).to eq(403)
+          expect(error.message).to include("Resource not accessible by integration")
         }
       end
     end

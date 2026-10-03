@@ -79,6 +79,8 @@ class GithubClient
     commit
     create_ref
     delete_ref
+    create_contents
+    update_contents
     pull_requests
     request_pull_request_review
   ].freeze
@@ -845,6 +847,7 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
+    raise_graphql_errors(data, context: "fetching review threads for #{repo}##{number}")
     threads = data.dig("data", "repository", "pullRequest", "reviewThreads", "nodes") || []
 
     threads.map do |thread|
@@ -1050,15 +1053,9 @@ class GithubClient
       }
     GRAPHQL
 
-    response = graphql_request(query, pullRequestId: pr_node_id, botIds: bot_node_ids)
-
-    if response["errors"].present?
-      message = response["errors"].map { |e| e["message"] }.join(", ")
-      status = message.match?(/unprocessable|cannot request|not available/i) ? 422 : nil
-      raise ApiError.new(message, status: status)
+    graphql_request(query, pullRequestId: pr_node_id, botIds: bot_node_ids).tap do |response|
+      raise_graphql_errors(response, context: "requesting bot review for #{repo}##{number}")
     end
-
-    response
   end
 
   # Checks pending review requests on a pull request.
@@ -1093,10 +1090,7 @@ class GithubClient
     GRAPHQL
 
     response = graphql_request(query, pullRequestId: node_id)
-
-    if response["errors"].present?
-      raise ApiError.new(response["errors"].map { |e| e["message"] }.join(", "))
-    end
+    raise_graphql_errors(response, context: "marking #{repo}##{number} ready for review")
 
     pr_result = response.dig("data", "markPullRequestReadyForReview", "pullRequest")
     raise ApiError.new("Unexpected response from markPullRequestReadyForReview") unless pr_result
@@ -1693,7 +1687,7 @@ class GithubClient
         req.headers["Authorization"] = "token #{client.access_token}"
         req.body = { query: query, variables: variables }
       end
-      response.body
+      response.body.tap { |data| raise_graphql_permission_errors(data) }
     rescue Faraday::UnauthorizedError
       if !token_refreshed && refresh_token!
         token_refreshed = true
@@ -1709,9 +1703,38 @@ class GithubClient
   def raise_graphql_errors(data, context: nil)
     return unless data["errors"].present?
 
-    message = data["errors"].map { |e| e["message"] }.join(", ")
+    errors = data["errors"]
+    message = graphql_error_message(errors)
     prefix = context ? "GraphQL error #{context}: " : "GraphQL error: "
-    raise ApiError.new("#{prefix}#{message}")
+    raise ApiError.new("#{prefix}#{message}", status: graphql_error_status(errors))
+  end
+
+  def raise_graphql_permission_errors(data)
+    errors = data["errors"] || []
+    return unless errors.any? { |error| graphql_permission_error?(error) }
+
+    raise ApiError.new(graphql_error_message(errors), status: 403)
+  end
+
+  def graphql_error_message(errors)
+    errors.map { |error| error["message"] }.join(", ")
+  end
+
+  def graphql_error_status(errors)
+    return 403 if errors.any? { |error| graphql_permission_error?(error) }
+    return 422 if errors.any? { |error| graphql_unprocessable_error?(error) }
+
+    nil
+  end
+
+  def graphql_permission_error?(error)
+    error.dig("extensions", "type") == "FORBIDDEN" ||
+      error["type"] == "FORBIDDEN" ||
+      error["message"].to_s.include?("Resource not accessible by integration")
+  end
+
+  def graphql_unprocessable_error?(error)
+    error["message"].match?(/unprocessable|cannot request|not available/i)
   end
 
   def graphql_mutation?(query)

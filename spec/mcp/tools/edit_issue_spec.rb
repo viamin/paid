@@ -264,6 +264,53 @@ RSpec.describe Tools::EditIssue do
 
         expect(github_client).not_to have_received(:update_issue)
       end
+
+      context "with a PAT push fallback configured (#4081)" do
+        let(:fallback_token) { create(:github_token, account: project.account) }
+
+        before do
+          project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+          allow(GithubClient).to receive(:new).and_call_original
+          allow(GithubClient).to receive(:new)
+            .with(token: "ghs_installation_token", health_endpoint: anything, token_refresher: anything)
+            .and_return(github_client)
+        end
+
+        # @spec GITHUB-SYNC-017
+        it "wraps the project client with WithFallback so the trusted fallback PAT can perform the edit" do
+          fallback_client = instance_double(GithubClient, authenticated_login: "viamin")
+          allow(github_client).to receive(:authenticated_login).and_return(nil)
+          allow(fallback_client).to receive_messages(issue: github_issue, update_issue: updated_issue, labels: [
+            Struct.new(:name).new("bug"),
+            Struct.new(:name).new("enhancement")
+          ])
+          allow(GithubClient).to receive(:new)
+            .with(token: fallback_token.token, health_endpoint: fallback_token.github_health_endpoint)
+            .and_return(fallback_client)
+
+          result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
+
+          expect(fallback_client).to have_received(:update_issue).with(project.full_name, 42, title: "Updated title")
+          expect(github_client).not_to have_received(:update_issue)
+          expect(result[:title]).to eq("Updated title")
+        end
+
+        # @spec GITHUB-SYNC-017
+        it "still rejects the edit when neither the App nor the fallback PAT is on the trusted-user allowlist" do
+          untrusted_fallback = instance_double(GithubClient, authenticated_login: "someone-else", update_issue: nil)
+          allow(github_client).to receive(:authenticated_login).and_return("paid-agents[bot]")
+          allow(GithubClient).to receive(:new)
+            .with(token: fallback_token.token, health_endpoint: fallback_token.github_health_endpoint)
+            .and_return(untrusted_fallback)
+
+          expect do
+            tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
+          end.to raise_error(ArgumentError, /trusted human GitHub credential/)
+
+          expect(github_client).not_to have_received(:update_issue)
+          expect(untrusted_fallback).not_to have_received(:update_issue)
+        end
+      end
     end
   end
 end
