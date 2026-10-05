@@ -309,7 +309,7 @@ module Automation
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
             blocking_issue_ids = blocking_runs.select(:issue_id)
 
-            reauditable_epic_ids = reauditable_epic_ids(project, epic_ids)
+            reauditable_issue_ids = reauditable_issue_ids(project, epic_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
@@ -329,7 +329,7 @@ module Automation
               # cannot strand the issue forever (#3432/#3588 review follow-up).
               # For a synthetic code-scanning issue the guard is provisional,
               # not permanent — see +merged_block_issue_ids+ (#4052).
-              .where.not(id: merged_block_issue_ids(project) - reauditable_epic_ids)
+              .where.not(id: merged_block_issue_ids(project) - reauditable_issue_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -344,7 +344,7 @@ module Automation
               # just loop (the agent will likely declare no-code-required again).
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
-              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_epic_ids)
+              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_issue_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -420,8 +420,30 @@ module Automation
             terminal_at = terminal_audit_times(project, epic_ids)
             return [] if terminal_at.empty?
 
-            resolved_prerequisite_linked_at(epic_ids).filter_map do |issue_id, linked_at|
+            resolved_prerequisite_linked_at(project, epic_ids).filter_map do |issue_id, linked_at|
               issue_id if linked_at > terminal_at.fetch(issue_id, Time.at(0))
+            end
+          end
+
+          # A merged PR remains terminal for ordinary implementation work unless
+          # Paid has durably assessed that it was partial. That assessment carries
+          # the same authoritative child/dependency graph used for epic audits;
+          # a prerequisite resolving after the assessment permits one fresh run.
+          # The strict resolution-time comparison makes polling and metadata sync
+          # idempotent, rather than treating a merge or an incidental update as a
+          # reason to run again. @spec AUTO-PICK-QUEUE-012 EAGER-QUEUE-009
+          def reauditable_issue_ids(project, epic_ids)
+            reauditable_epic_ids(project, epic_ids) + continuable_partial_issue_ids(project)
+          end
+
+          def continuable_partial_issue_ids(project)
+            partial_times = Issue.where(project: project, is_pull_request: false, github_state: "open")
+              .where.not(partial_completion_at: nil)
+              .pluck(:id, :partial_completion_at).to_h
+            return [] if partial_times.empty?
+
+            resolved_prerequisite_linked_at(project, partial_times.keys).filter_map do |issue_id, resolved_at|
+              issue_id if resolved_at > partial_times.fetch(issue_id)
             end
           end
 
@@ -509,7 +531,16 @@ module Automation
           #   rows that predate +parent_issue_linked_at+.
           # - For dependencies, fall back to +issue_dependencies.created_at+
           #   (the edge creation time) when +closed_at+ isn't stamped.
-          def resolved_prerequisite_linked_at(issue_ids)
+          # - For external owner/repo#N dependencies, mirror
+          #   {Issue.ready_for_work}'s `blocked_by_external` rule via
+          #   {IssueDependency.external_resolved_for_account} and use the
+          #   matching target issue's +closed_at+ as the stable
+          #   resolution timestamp (AUTO-PICK-QUEUE-012). External deps
+          #   whose target project is not in the same account or whose
+          #   target issue is not synced contribute NULL rows that the
+          #   strict comparison drops, mirroring the conservative local
+          #   fallback.
+          def resolved_prerequisite_linked_at(project, issue_ids)
             child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
               .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
               .group(:parent_issue_id)
@@ -519,9 +550,16 @@ module Automation
               .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
               .group(:issue_id)
               .maximum(Arel.sql("COALESCE(issues.closed_at, issue_dependencies.created_at)"))
+            external_dependency_times = IssueDependency
+              .external_resolved_for_account(project.account_id)
+              .where(issue_id: issue_ids)
+              .where("ext_issue.github_state = 'closed' OR ext_issue.paid_state IN (?)",
+                Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .group(:issue_id)
+              .maximum(Arel.sql("COALESCE(ext_issue.closed_at, issue_dependencies.created_at)"))
 
-            (child_times.keys | dependency_times.keys).to_h do |issue_id|
-              [ issue_id, [ child_times[issue_id], dependency_times[issue_id] ].compact.max ]
+            (child_times.keys | dependency_times.keys | external_dependency_times.keys).to_h do |issue_id|
+              [ issue_id, [ child_times[issue_id], dependency_times[issue_id], external_dependency_times[issue_id] ].compact.max ]
             end
           end
 
