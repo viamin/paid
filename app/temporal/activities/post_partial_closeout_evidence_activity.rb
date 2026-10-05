@@ -43,13 +43,17 @@ module Activities
       agent_run.log!("system", "Partial pull request evidence posted on issue ##{issue.github_number}")
       true
     rescue GithubClient::Error => e
+      # NO-OUTPUT-ISSUE-007 requires the PR-evidence comment on the parent.
+      # Swallowing a transient GitHub failure would complete the activity with
+      # no Temporal retry and could permanently miss it, so re-raise: the
+      # marker-deduplicated retry above keeps re-execution idempotent.
       logger.warn(
         message: "agent_execution.partial_closeout_evidence_comment_failed",
         agent_run_id: agent_run.id,
         issue_number: issue.github_number,
         error: e.message
       )
-      false
+      raise
     end
 
     # Restrict marker matching to Paid-authored comments when the author
@@ -57,18 +61,13 @@ module Activities
     # forged marker from another author must not suppress the evidence. When
     # neither identity is knowable, fall back to marker-only matching so
     # retries stay idempotent rather than duplicating comments forever.
+    # A failed lookup must raise rather than report "absent": blind-posting
+    # past an unreadable comment list could duplicate the evidence comment.
     def evidence_comment_present?(client, project, issue, marker)
       paid_login = paid_comment_author_login(client, project)
       client.recent_issue_comments(project.full_name, issue.github_number).any? do |comment|
         comment.body.to_s.include?(marker) && (paid_login.nil? || comment.user&.login&.downcase == paid_login)
       end
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "agent_execution.partial_closeout_evidence_dedup_check_failed",
-        issue_number: issue.github_number,
-        error: e.message
-      )
-      false
     end
 
     def paid_comment_author_login(client, project)

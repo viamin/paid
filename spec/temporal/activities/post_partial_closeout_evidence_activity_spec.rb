@@ -111,23 +111,25 @@ RSpec.describe Activities::PostPartialCloseoutEvidenceActivity do
       expect(github_client).not_to have_received(:add_comment)
     end
 
-    it "does not fail when GitHub rejects the comment" do
+    # @spec NO-OUTPUT-ISSUE-007
+    it "raises so Temporal retries when GitHub rejects the comment" do
       allow(github_client).to receive(:add_comment)
         .and_raise(GithubClient::ApiError.new("Comment failed"))
 
       expect {
         activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
-      }.not_to raise_error
+      }.to raise_error(GithubClient::ApiError)
     end
 
-    it "does not fail when the dedup check cannot read comments" do
+    # @spec NO-OUTPUT-ISSUE-007
+    it "raises instead of blind-posting when the dedup check cannot read comments" do
       allow(github_client).to receive(:recent_issue_comments)
         .and_raise(GithubClient::ApiError.new("List comments failed"))
 
       expect {
         activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
-      }.not_to raise_error
-      expect(github_client).to have_received(:add_comment)
+      }.to raise_error(GithubClient::ApiError)
+      expect(github_client).not_to have_received(:add_comment)
     end
 
     it "logs the evidence post to the agent run" do
