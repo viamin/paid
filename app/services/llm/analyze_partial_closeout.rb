@@ -146,10 +146,14 @@ module Llm
 
     # Grounds owner_issue_number reuse in the real, current open-issue set
     # (bounded) instead of numbers guessed from evidence prose. The parent
-    # issue is excluded because it cannot own its own residual gap.
+    # issue is excluded because it cannot own its own residual gap. When the
+    # project configures trusted authors, exclude untrusted issue titles from
+    # this LLM prompt as well.
     def open_issue_lines
-      issues = agent_run.project.issues.where(github_state: "open").where.not(id: agent_run.issue_id)
-        .order(:github_number).limit(MAX_OPEN_ISSUES).pluck(:github_number, :title)
+      scope = agent_run.project.issues.where(github_state: "open").where.not(id: agent_run.issue_id)
+      trusted = agent_run.project.trusted_github_author_logins.presence
+      scope = scope.where("LOWER(github_creator_login) IN (?)", trusted) if trusted
+      issues = scope.order(:github_number).limit(MAX_OPEN_ISSUES).pluck(:github_number, :title)
       return "None." if issues.empty?
 
       issues.map { |number, title| "##{number} #{title.to_s.truncate(120)}" }.join("\n")

@@ -27,6 +27,9 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       expect(result).to include(agent_run_id: issueless_run.id, status: "skipped_no_issue", gaps_remain: false)
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
       expect(issueless_run.reload.reconciliation).to eq({})
+      expect(AgentRunPhase.find_by(agent_run: issueless_run)).to have_attributes(
+        phase_key: "reconcile_partial_closeout", phase_group: "post", status: "completed"
+      )
     end
 
     it "persists the assessment on the run and reuses it across retries" do
@@ -76,6 +79,9 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       expect { activity.execute(agent_run_id: run.id) }.to raise_error(GithubClient::Error)
       expect(run.reload.reconciliation.fetch("status")).to eq("retryable_failure")
       expect(run.reload.reconciliation.fetch("error")).to eq("github unavailable")
+      expect(AgentRunPhase.find_by(agent_run: run)).to have_attributes(
+        phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
+      )
     end
   end
 end

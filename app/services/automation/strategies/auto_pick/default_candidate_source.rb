@@ -63,14 +63,16 @@ module Automation
         # number, sync backlog) does not strand the issue forever.
         PR_SYNC_GRACE_PERIOD = 1.hour
         EPIC_LABEL = "epic"
-        # A reconciliation that persisted assessment gaps is the durable
-        # partial-closeout signal (NO-OUTPUT-ISSUE-007): the run's PR is
-        # progress evidence, not a terminal outcome for the parent. The
-        # jsonb_typeof guard keeps a corrupted non-array gaps value from
-        # failing the whole eligible-scope query.
+        # A reconciliation that persisted assessment gaps, or exhausted its
+        # retries after publishing a PR, is the durable partial-closeout
+        # signal (NO-OUTPUT-ISSUE-007): the run's PR is progress evidence,
+        # not a terminal outcome for the parent. The jsonb_typeof guard keeps
+        # a corrupted non-array gaps value from failing the whole
+        # eligible-scope query.
         PARTIAL_CLOSEOUT_GAPS_CONDITION =
-          "jsonb_typeof(reconciliation->'assessment'->'gaps') = 'array' " \
-          "AND jsonb_array_length(reconciliation->'assessment'->'gaps') > 0"
+          "((jsonb_typeof(reconciliation->'assessment'->'gaps') = 'array' " \
+          "AND jsonb_array_length(reconciliation->'assessment'->'gaps') > 0) " \
+          "OR reconciliation->>'status' = 'retryable_failure')"
 
         class << self
           def eligible_issue_ids(displayed_issues)

@@ -1107,6 +1107,21 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
       end
 
+      it "keeps the re-audit exception when reconciliation fails after publishing a later PR" do # @spec NO-OUTPUT-ISSUE-007
+        create(:agent_run, :failed, :automatic, project: project, issue: parent,
+          goal: "create_pr", auto_pick: true, pull_request_number: 43,
+          pull_request_url: "https://example.test/pr/43",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute,
+          reconciliation: { "status" => "retryable_failure", "error" => "LLM unavailable" })
+        create(:issue, :pull_request, :closed, project: project, github_number: 43,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/43")
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        queued = AgentRun.where(project: project, issue: parent, status: "queued").last
+        expect(queued).to be_present
+        expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
+      end
+
       describe "human prerequisite notification (#4119 review)" do
         let(:continuation_run) { AgentRun.where(project: project, issue: parent, status: "queued").last }
 
