@@ -103,7 +103,8 @@ export default class extends Controller {
 
   renderRepoSelect() {
     const selectedRepository = this.repoSelectTarget.value || this.selectedRepositoryValue
-    this.clearRepoSelect()
+    this.repoSelectTarget.innerHTML = ""
+    this.clearHiddenFields()
 
     const prompt = document.createElement("option")
     prompt.value = ""
