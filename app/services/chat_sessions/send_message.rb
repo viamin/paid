@@ -108,14 +108,28 @@ module ChatSessions
     end
 
     def persist_user_message
-      message = chat_session.messages.create!(
-        role: "user",
-        content: content
-      )
+      message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(message)
       message
+    end
+
+    # A restarted job retains its stream id. Reusing the original user row
+    # lets its already-persisted tool results remain in the reconstructed
+    # transcript instead of turning recovery into another tool dispatch.
+    def existing_user_message
+      return unless stream_message_id
+
+      chat_session.messages.find_by(role: "user", metadata: { "stream_message_id" => stream_message_id })
+    end
+
+    def create_user_message
+      chat_session.messages.create!(
+        role: "user",
+        content: content,
+        metadata: { "stream_message_id" => stream_message_id }.compact
+      )
     end
 
     def update_session_activity

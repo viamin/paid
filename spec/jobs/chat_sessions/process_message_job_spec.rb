@@ -280,6 +280,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     expect(chat_session.messages.where(role: "system").last).to be_rate_limit_paused
   end
 
+  # @spec API-CONVERSATION-DELEGATION-003
   it "broadcasts a fallback notice and continues when a fallback runner is configured" do
     fallback_runner = configure_chat_fallback
     allow(ChatSessions::BuildLlmClient).to receive(:call)

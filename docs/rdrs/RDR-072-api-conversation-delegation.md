@@ -7,7 +7,7 @@
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
-- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) and #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) are the remaining completion dependencies before this RDR can close.
+- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) is the remaining completion dependency before this RDR can close; #4126 implemented API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery.
 
 ## Problem Statement
 
@@ -267,14 +267,14 @@ the upstream persistence and recovery adapters that failed the delegation
 evaluation.
 
 The RDR cannot be marked Implemented or close viamin/paid#4013 yet. The
-migrated API-key transport still generates an ephemeral request ID, supplies
-no Paid-owned retry bound or cancellation signal, and drops harness attempt
-reports. viamin/paid#4125 owns attempt-report persistence
-(API-CONVERSATION-DELEGATION-002) and viamin/paid#4126 owns stable request
+migrated API-key transport now receives a Paid-owned request identity, retry
+bound, deadline, and cancellation signal through `HarnessTransport`, but it
+still drops harness attempt reports. viamin/paid#4125 owns attempt-report persistence
+(API-CONVERSATION-DELEGATION-002); viamin/paid#4126 implemented stable request
 identity, cancellation/deadline propagation, and restart recovery
-(API-CONVERSATION-DELEGATION-003); both are sub-issues of #4013. They are
-completion dependencies for closing #4013, so this closeout uses
-`Tracks #4013` rather than closing language.
+(API-CONVERSATION-DELEGATION-003); both are sub-issues of #4013, but only
+issue #4125 remains a completion dependency for closing #4013, so this
+closeout uses `Tracks #4013` rather than closing language.
 
 ## 2026-10-05 Closeout
 
