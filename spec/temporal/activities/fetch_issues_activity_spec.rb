@@ -393,19 +393,45 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     # @spec GITHUB-SYNC-016
-    it "parks a dependency-blocked completed open issue in manual_review when the non-closing PR has already merged" do
+    it "parks a dependency-blocked completed open issue and enqueues an async partial-completion assessment" do # @spec AUTO-PICK-QUEUE-012
       blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
       issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
       issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
       create(:issue, :pull_request, :closed, project: project, github_number: 4048,
         body: "Tracks #3871", pr_review_phase: "merged")
+      allow(Issues::AssessPartialCompletionJob).to receive(:perform_later)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
       expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.manual_review_reason).to include("#3870")
+      # The semantic partial/complete verdict runs out-of-band so the
+      # 60-second poll budget is not consumed by a synchronous LLM call;
+      # the activity only persists the parking state and queues the job.
+      expect(issue.partial_completion_at).to be_nil
+      expect(Issues::AssessPartialCompletionJob).to have_received(:perform_later)
+        .with(issue.id, 4048, kind_of(ActiveSupport::TimeWithZone))
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "does not enqueue an assessment when the dependency-blocked issue has no merged PR" do # @spec AUTO-PICK-QUEUE-012
+      blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
+      issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
+      # PR exists but is not merged — no semantic assessment is warranted.
+      create(:issue, :pull_request, project: project, github_number: 4048,
+        body: "Tracks #3871", pr_review_phase: "draft")
+      allow(Issues::AssessPartialCompletionJob).to receive(:perform_later)
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(Issues::AssessPartialCompletionJob).not_to have_received(:perform_later)
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 

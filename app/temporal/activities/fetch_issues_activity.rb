@@ -1069,12 +1069,26 @@ module Activities
     # A partial implementation still blocked by an unresolved dependency is
     # never recommended for closure: the agent run's completion does not
     # establish that this remaining, intentionally deferred work is done.
+    #
+    # The poll activity persists only the generic parking state here so its
+    # 60s +sync budget is not consumed by a per-issue LLM round trip. The
+    # semantic partial/complete verdict is produced out-of-band by
+    # Issues::AssessPartialCompletionJob, which records the outcome
+    # asynchronously and is the only writer of the partial_completion_*
+    # columns (AUTO-PICK-QUEUE-012).
     # @spec GITHUB-SYNC-016
     def park_dependency_blocked_issues(issues)
       return false if issues.empty?
 
       issues.each do |issue|
-        issue.update!(paid_state: "manual_review", manual_review_reason: dependency_blocked_reason(issue))
+        reason = dependency_blocked_reason(issue)
+        parked_at = Time.current
+        issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+
+        merged_pr_number = merged_source_pull_request_number(issue)
+        next unless merged_pr_number
+
+        Issues::AssessPartialCompletionJob.perform_later(issue.id, merged_pr_number, parked_at)
       end
       logger.info(
         message: "github_sync.completed_open_issues_blocked_on_dependency",
@@ -1082,6 +1096,21 @@ module Activities
         issue_numbers: issues.map(&:github_number)
       )
       true
+    end
+
+    def merged_source_pull_request_number(issue)
+      project = issue.project
+      AgentRun.where(project: project, issue: issue, goal: "create_pr")
+        .where.not(pull_request_number: nil)
+        .joins(<<~SQL.squish)
+          INNER JOIN issues merged_prs
+            ON merged_prs.project_id = agent_runs.project_id
+           AND merged_prs.github_number = agent_runs.pull_request_number
+           AND merged_prs.is_pull_request = TRUE
+           AND merged_prs.pr_review_phase = 'merged'
+        SQL
+        .order(completed_at: :desc)
+        .pick(:pull_request_number)
     end
 
     def dependency_blocked_reason(issue)

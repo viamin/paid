@@ -111,10 +111,58 @@
   `parent_issue_linked_at` for children or `issue_dependencies.created_at`
   for legacy data) rather than the link timestamp, so an audit run that
   files work mid-run still re-arms once that work resolves after the audit
-  terminates.
+  terminates. Cross-project external owner/repo#N prerequisites whose
+  target issue is observable in another project of the same account SHALL
+  participate in the resolution comparison (joined via
+  `IssueDependency.external_resolved_for_account`, mirroring
+  `Issue.ready_for_work`'s `blocked_by_external` rule); targets whose project
+  is not synced into the account or whose issue is not yet synced contribute
+  no resolution timestamp and SHALL NOT re-arm the epic.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/models/issue.rb`.
+
+- [x] **AUTO-PICK-QUEUE-012** — When a completion assessment records that a
+  merged implementation PR left an ordinary source issue incomplete, Paid SHALL
+  persist the partial outcome, the source PR correlation, and its authoritative
+  prerequisite evidence. It SHALL keep the issue blocked until a prerequisite
+  resolves after that assessment, then allow exactly one normal auto-pick
+  continuation. Authoritative prerequisites SHALL include local
+  `IssueDependency` targets, `parent_issue_id` children, and external
+  owner/repo#N dependencies whose target issue is observable in another
+  project of the same account (joined via
+  `IssueDependency.external_resolved_for_account`, the same join
+  `Issue.ready_for_work` uses for cross-project blocking). The external
+  target's `closed_at` SHALL be the resolution timestamp; targets whose
+  project is not synced into the account, whose issue is not yet synced, or
+  whose target remains in an open blocking paid_state SHALL contribute no
+  resolution timestamp and SHALL NOT re-arm the source. Repeated polling,
+  unrelated sync writes, and an unchanged prerequisite SHALL NOT re-arm it.
+  This exception does not apply without the explicit partial outcome and
+  therefore preserves merged-PR duplicate-work protection. Semantic
+  assessment runs asynchronously in
+  `Issues::AssessPartialCompletionJob` so the GitHub poll path persists
+  only the generic parking state and is not consumed by a synchronous LLM
+  round trip per blocked row; queue admission consumes only that job's
+  persisted outcome. The re-arm timestamp SHALL be captured when the issue
+  is parked and passed to the asynchronous assessment, so a prerequisite
+  resolving while the assessment runs can re-arm the issue. A transient nil
+  assessment (harness error, timeout,
+  malformed JSON) SHALL leave any existing partial-completion evidence in
+  place so a stranded issue cannot lose its re-arm data to noise; only an
+  explicit `partial: false` verdict SHALL clear the columns. The partial
+  re-arm's eager path mirrors `child_times`'s PR exclusion by skipping the
+  `partial_completion_parents` branch when the closing child is a pull
+  request, so a closing tracking PR alone does not re-arm the parent.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/jobs/issues/assess_partial_completion_job_spec.rb`,
+  `spec/models/issue_spec.rb`.
+  *Code:* `Issue#mark_partial_completion!`,
+  `Issue#clear_partial_completion!`,
+  `Issues::AssessPartialCompletionJob`,
+  `Activities::FetchIssuesActivity#park_dependency_blocked_issues`,
+  `Automation::Strategies::AutoPick::DefaultCandidateSource`.
 
 ## Tier-infeasibility gating
 
