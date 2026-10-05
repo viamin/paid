@@ -114,6 +114,33 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "owner_issue_number")).to eq(77)
     end
 
+    # @spec NO-OUTPUT-ISSUE-007
+    it "raises when a human gap omits its exact next step" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ { criterion: "macOS acceptance", kind: "human" } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "raises when a human gap carries a blank next step" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ { criterion: "macOS acceptance", kind: "human", next_step: "   " } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "accepts a human gap that carries its exact next step" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output)
+        .and_return({ gaps: [ { criterion: "macOS acceptance", kind: "human", next_step: "Run the approved macOS pilot." } ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
+    end
+
     context "when API-key authentication is configured" do
       let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport, call: schema_result) }
 

@@ -66,9 +66,15 @@ module Llm
     end
 
     # An agent gap needs a title (for focused issue creation) or an existing
-    # owner issue number; human gaps carry their next step in the reconciler.
+    # owner issue number; a human gap must carry its exact operator next step
+    # so the Inbox prerequisite is actionable — a generic fallback would hide
+    # the required action from the operator (#4119).
     def owner_resolvable?(gap)
-      gap["kind"] != "agent" || gap["title"].to_s.strip.present? || gap["owner_issue_number"].to_i.positive?
+      if gap["kind"] == "human"
+        gap["next_step"].to_s.strip.present?
+      else
+        gap["title"].to_s.strip.present? || gap["owner_issue_number"].to_i.positive?
+      end
     end
 
     # Schema-constrained responses require API-key authentication because

@@ -34,7 +34,17 @@ module PartialCloseouts
       raise ArgumentError, "partial closeout requires an issue" unless agent_run.issue
       raise ArgumentError, "gaps must be an array of at most #{MAX_GAPS}" unless gaps.is_a?(Array) && gaps.size <= MAX_GAPS
 
-      gaps.each { |gap| raise ArgumentError, "gap criterion is required" if gap["criterion"].blank? }
+      gaps.each do |gap|
+        raise ArgumentError, "gap criterion is required" if gap["criterion"].blank?
+        # Mirrors Llm::AnalyzePartialCloseout#owner_resolvable? so the exact
+        # operator next step reaches the Inbox notification; a generic
+        # fallback would leave the prerequisite unactionable (#4119).
+        raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
+      end
+    end
+
+    def human_gap?(gap)
+      gap["kind"] == "human"
     end
 
     # Returns the human gaps so every prerequisite is visible in one Inbox
@@ -43,7 +53,7 @@ module PartialCloseouts
     def reconcile_gaps
       human_gaps = []
       gaps.each_with_index do |gap, index|
-        if gap["kind"] == "human"
+        if human_gap?(gap)
           record_gap!(index, gap, status: "awaiting_operator")
           human_gaps << gap
         else
@@ -180,8 +190,11 @@ module PartialCloseouts
       end
     end
 
+    # validate! guarantees a nonblank exact step for every human gap, so the
+    # Inbox item always tells the operator what to do — never a generic
+    # "review the prerequisite" placeholder (#4119).
     def operator_prerequisite_step(gap)
-      "#{gap["criterion"]}: #{gap["next_step"].to_s.presence || "Review the recorded partial-closeout prerequisite."}"
+      "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
     end
 
     def publish_parent_dependencies!

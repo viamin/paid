@@ -63,6 +63,14 @@ module Automation
         # number, sync backlog) does not strand the issue forever.
         PR_SYNC_GRACE_PERIOD = 1.hour
         EPIC_LABEL = "epic"
+        # A reconciliation that persisted assessment gaps is the durable
+        # partial-closeout signal (NO-OUTPUT-ISSUE-007): the run's PR is
+        # progress evidence, not a terminal outcome for the parent. The
+        # jsonb_typeof guard keeps a corrupted non-array gaps value from
+        # failing the whole eligible-scope query.
+        PARTIAL_CLOSEOUT_GAPS_CONDITION =
+          "jsonb_typeof(reconciliation->'assessment'->'gaps') = 'array' " \
+          "AND jsonb_array_length(reconciliation->'assessment'->'gaps') > 0"
 
         class << self
           def eligible_issue_ids(displayed_issues)
@@ -310,6 +318,7 @@ module Automation
             blocking_issue_ids = blocking_runs.select(:issue_id)
 
             reauditable_epic_ids = reauditable_epic_ids(project, epic_ids)
+            reauditable_closeout_ids = partial_closeout_reaudit_issue_ids(project)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
@@ -328,8 +337,11 @@ module Automation
               # PR_SYNC_GRACE_PERIOD, so a stale or wrong recorded PR number
               # cannot strand the issue forever (#3432/#3588 review follow-up).
               # For a synthetic code-scanning issue the guard is provisional,
-              # not permanent — see +merged_block_issue_ids+ (#4052).
-              .where.not(id: merged_block_issue_ids(project) - reauditable_epic_ids)
+              # not permanent — see +merged_block_issue_ids+ (#4052). A
+              # recorded partial closeout is the other exception: its merged
+              # PR is partial progress, and the parent must re-enter
+              # selection once the gap owners resolve (#4119).
+              .where.not(id: merged_block_issue_ids(project) - reauditable_epic_ids - reauditable_closeout_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -423,6 +435,29 @@ module Automation
             resolved_prerequisite_linked_at(epic_ids).filter_map do |issue_id, linked_at|
               issue_id if linked_at > terminal_at.fetch(issue_id, Time.at(0))
             end
+          end
+
+          # A partial closeout's merged PR is progress evidence, not a
+          # terminal outcome for the parent (#4119): the parent re-enters
+          # selection for a continuation run once the shared gates that
+          # govern every other issue clear — the gap-owner dependencies
+          # (+ready_for_work+) and the open paid-generated PR guards (the
+          # partial PR must merge or close first). Keyed on the issue's
+          # latest PR-producing run so a later gap-free closeout, which
+          # completes the parent, restores the permanent merged-PR guard —
+          # while a re-audit attempt that fails before publishing another PR
+          # supersedes nothing and keeps the exception armed.
+          def partial_closeout_reaudit_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
+            latest_run_ids = AgentRun.where(project: project, goal: "create_pr")
+              .where.not(issue_id: nil).where.not(pull_request_number: nil)
+              .group(:issue_id)
+              .pluck(:issue_id, Arel.sql("MAX(id)"))
+              .to_h
+            return [] if latest_run_ids.empty?
+
+            AgentRun.where(id: latest_run_ids.values)
+              .where(PARTIAL_CLOSEOUT_GAPS_CONDITION)
+              .pluck(:issue_id)
           end
 
           def epic_issue_ids(project)

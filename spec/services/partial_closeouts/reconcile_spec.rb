@@ -71,11 +71,20 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(client).not_to have_received(:create_issue)
   end
 
-  it "falls back to a generic next step when a human gap omits next_step" do
-    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "sign-off", "kind" => "human" } ]))
+  # @spec NO-OUTPUT-ISSUE-007
+  it "raises the intended validation when a human gap omits next_step" do
+    expect {
+      described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "sign-off", "kind" => "human" } ]))
+    }.to raise_error(ArgumentError, "human gap next_step is required")
+    expect(Notification.where(subject: parent, blocking: true)).not_to exist
+  end
 
-    notification = Notification.find_by(subject: parent, blocking: true)
-    expect(notification.description).to include("Review the recorded partial-closeout prerequisite.")
+  # @spec NO-OUTPUT-ISSUE-007
+  it "raises the intended validation when a human gap carries a blank next_step" do
+    expect {
+      described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "sign-off", "kind" => "human", "next_step" => "  " } ]))
+    }.to raise_error(ArgumentError, "human gap next_step is required")
+    expect(Notification.where(subject: parent, blocking: true)).not_to exist
   end
 
   it "publishes one aggregated notification covering every human prerequisite" do

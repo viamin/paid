@@ -432,7 +432,9 @@ module Workflows
               # dependency-blocked (#4119), so the workflow skips
               # UpdateIssueWithPrActivity — whose completion path also gates
               # trigger-label removal — and leaves the parent re-pickable by
-              # auto-pick once the gap owners resolve. The activity retains
+              # auto-pick once the gap owners resolve, through the
+              # partial-closeout re-audit exception to the merged-PR guard in
+              # AutoPick::DefaultCandidateSource. The activity retains
               # retry state if GitHub is down. # @spec NO-OUTPUT-ISSUE-007
               reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
                 { agent_run_id: agent_run_id }, timeout: 120)
