@@ -1,12 +1,17 @@
 import { Controller } from "@hotwired/stimulus"
 
+// @spec PROJECT-CREATION-013 PROJECT-CREATION-014
 export default class extends Controller {
-  static targets = ["tokenSelect", "installationSelect", "repoSelect", "sortSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
+  static targets = ["tokenSelect", "installationSelect", "repoSelect", "repoList", "repoClear", "repoStatus", "sortSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
   static values = { selectedRepository: String }
 
   connect() {
     this.repositories = []
+    this.filteredRepositories = []
+    this.activeIndex = -1
+    this.loading = false
     this.updateRepoDisabledState()
+    this.updateRepoClearState()
     this.updateSortDisabledState()
     this.loadRepositoriesFromSelection()
   }
@@ -21,34 +26,57 @@ export default class extends Controller {
     await this.loadRepositoriesFromSelection()
   }
 
+  inputChanged() {
+    this.clearHiddenFields()
+    this.filteredRepositories = this.matchingRepositories()
+    this.activeIndex = this.filteredRepositories.length ? 0 : -1
+    this.renderRepoList()
+    this.openRepoList()
+    this.updateRepoClearState()
+  }
+
+  repoKeydown(event) {
+    if (event.key === "ArrowDown") this.moveActiveOption(event, 1)
+    if (event.key === "ArrowUp") this.moveActiveOption(event, -1)
+    if (event.key === "Enter") this.selectActiveOption(event)
+    if (event.key === "Escape") this.clearWithEscape(event)
+  }
+
   repoSelected() {
-    const selectedOption = this.repoSelectTarget.selectedOptions[0]
+    const repository = this.repositories.find((repo) => repo.full_name === this.repoSelectTarget.value)
+    if (repository) this.syncRepositoryFields(repository)
+    else this.clearHiddenFields()
+  }
 
-    if (!selectedOption || !selectedOption.value) {
-      this.clearHiddenFields()
-      return
-    }
+  repoOptionSelected(event) {
+    this.selectRepository(this.filteredRepositories[event.currentTarget.dataset.repositoryIndex])
+  }
 
-    this.ownerTarget.value = selectedOption.dataset.owner
-    this.repoTarget.value = selectedOption.dataset.repo
-    this.githubIdTarget.value = selectedOption.dataset.githubId
-    this.defaultBranchTarget.value = selectedOption.dataset.defaultBranch
+  clearRepository() {
+    this.repoSelectTarget.value = ""
+    this.clearHiddenFields()
+    this.filteredRepositories = this.sortedRepositories()
+    this.activeIndex = -1
+    this.renderRepoList()
+    this.closeRepoList()
+    this.updateRepoClearState()
+    this.repoSelectTarget.focus()
   }
 
   // @spec PROJECT-CREATION-013
   sortChanged() {
-    this.renderRepoSelect()
+    this.filteredRepositories = this.matchingRepositories()
+    this.activeIndex = this.filteredRepositories.length ? 0 : -1
+    this.renderRepoList()
   }
 
   // Private
 
   async loadRepositoriesFromSelection() {
     const selection = this.selectedCredential()
-    this.repositories = []
     this.clearRepoSelect()
     this.updateRepoDisabledState()
     this.updateSortDisabledState()
-
     if (!selection) return
 
     this.showLoading()
@@ -63,17 +91,11 @@ export default class extends Controller {
 
       if (!response.ok) {
         console.error("Failed to load repositories:", { status: response.status, statusText: response.statusText })
-
-        if (response.status === 401 || response.status === 403) {
-          this.showError(`Unable to load repositories: ${selection.type} is invalid or lacks permissions.`)
-        } else {
-          this.showError(`Failed to load repositories (HTTP ${response.status}). Please try again.`)
-        }
+        this.showError(this.repositoryLoadError(selection.type, response.status))
         return
       }
 
-      const repos = await response.json()
-      this.populateRepoSelect(repos)
+      this.populateRepoSelect(await response.json())
     } catch (error) {
       console.error("Unexpected error loading repositories:", error)
       this.showError("Failed to load repositories. Please check your connection and try again.")
@@ -98,35 +120,22 @@ export default class extends Controller {
 
   populateRepoSelect(repos) {
     this.repositories = repos
-    this.renderRepoSelect()
+    this.filteredRepositories = this.sortedRepositories()
+    this.activeIndex = -1
+    this.repoSelectTarget.placeholder = `Search ${repos.length} repositories...`
+    this.setRepoStatus(`${repos.length} repositories available.`)
+
+    const selectedRepository = this.repositories.find((repo) => repo.full_name === this.selectedRepositoryValue)
+    if (this.hasSelectedRepositoryValue && selectedRepository) this.selectRepository(selectedRepository)
+    else this.renderRepoList()
   }
 
-  renderRepoSelect() {
-    const selectedRepository = this.repoSelectTarget.value || this.selectedRepositoryValue
-    this.repoSelectTarget.innerHTML = ""
-    this.clearHiddenFields()
+  matchingRepositories() {
+    const query = this.repoSelectTarget.value.trim().toLocaleLowerCase()
+    if (!query) return this.sortedRepositories()
 
-    const prompt = document.createElement("option")
-    prompt.value = ""
-    prompt.textContent = `Select a repository... (${this.repositories.length} available)`
-    this.repoSelectTarget.appendChild(prompt)
-
-    this.sortedRepositories()
-      .forEach((repo) => {
-        const option = document.createElement("option")
-        option.value = repo.full_name
-        option.textContent = repo.full_name + (repo.private ? " (private)" : "")
-        option.dataset.owner = repo.owner
-        option.dataset.repo = repo.name
-        option.dataset.githubId = repo.id
-        option.dataset.defaultBranch = repo.default_branch
-        this.repoSelectTarget.appendChild(option)
-      })
-
-    if (selectedRepository) {
-      this.repoSelectTarget.value = selectedRepository
-      this.repoSelected()
-    }
+    return this.sortedRepositories().filter((repo) => [repo.full_name, repo.owner, repo.name]
+      .some((value) => value.toLocaleLowerCase().includes(query)))
   }
 
   sortedRepositories() {
@@ -153,11 +162,58 @@ export default class extends Controller {
     return Number.isNaN(timestamp) ? null : timestamp
   }
 
+  moveActiveOption(event, direction) {
+    event.preventDefault()
+    if (!this.filteredRepositories.length) return
+
+    this.openRepoList()
+    this.activeIndex = (this.activeIndex + direction + this.filteredRepositories.length) % this.filteredRepositories.length
+    this.renderRepoList()
+  }
+
+  selectActiveOption(event) {
+    if (this.activeIndex < 0) return
+
+    event.preventDefault()
+    this.selectRepository(this.filteredRepositories[this.activeIndex])
+  }
+
+  clearWithEscape(event) {
+    event.preventDefault()
+    this.clearRepository()
+  }
+
+  selectRepository(repository) {
+    if (!repository) return
+
+    this.repoSelectTarget.value = repository.full_name
+    this.syncRepositoryFields(repository)
+    this.filteredRepositories = this.sortedRepositories()
+    this.activeIndex = -1
+    this.renderRepoList()
+    this.closeRepoList()
+    this.updateRepoClearState()
+  }
+
+  syncRepositoryFields(repository) {
+    this.ownerTarget.value = repository.owner
+    this.repoTarget.value = repository.name
+    this.githubIdTarget.value = repository.id
+    this.defaultBranchTarget.value = repository.default_branch
+  }
+
   clearRepoSelect() {
     const selection = this.selectedCredential()
-    const placeholder = selection ? "Select a repository..." : "Select a token or installation first..."
-    this.repoSelectTarget.innerHTML = `<option value="">${placeholder}</option>`
+    this.repositories = []
+    this.filteredRepositories = []
+    this.activeIndex = -1
+    this.repoSelectTarget.value = ""
+    this.repoSelectTarget.placeholder = selection ? "Search repositories..." : "Select a token or installation first..."
     this.clearHiddenFields()
+    this.clearRepoStatus()
+    this.renderRepoList()
+    this.closeRepoList()
+    this.updateRepoClearState()
   }
 
   clearHiddenFields() {
@@ -168,27 +224,100 @@ export default class extends Controller {
   }
 
   showLoading() {
-    this.repoSelectTarget.innerHTML = '<option value="">Loading repositories...</option>'
+    this.loading = true
+    this.setRepoStatus("Loading repositories...")
     if (this.hasLoadingTarget) this.loadingTarget.classList.remove("hidden")
+    this.updateRepoDisabledState()
   }
 
   hideLoading() {
+    this.loading = false
     if (this.hasLoadingTarget) this.loadingTarget.classList.add("hidden")
   }
 
   showError(message) {
-    this.repoSelectTarget.innerHTML = ""
-    const errorOption = document.createElement("option")
-    errorOption.value = ""
-    errorOption.textContent = message
-    this.repoSelectTarget.appendChild(errorOption)
+    this.repositories = []
+    this.filteredRepositories = []
+    this.setRepoStatus(message)
+    this.renderRepoList()
+  }
+
+  repositoryLoadError(type, status) {
+    if (status === 401 || status === 403) return `Unable to load repositories: ${type} is invalid or lacks permissions.`
+
+    return `Failed to load repositories (HTTP ${status}). Please try again.`
+  }
+
+  setRepoStatus(message) {
+    if (!this.hasRepoStatusTarget) return
+
+    this.repoStatusTarget.textContent = message
+    this.repoStatusTarget.classList.remove("hidden")
+  }
+
+  clearRepoStatus() {
+    if (!this.hasRepoStatusTarget) return
+
+    this.repoStatusTarget.textContent = ""
+    this.repoStatusTarget.classList.add("hidden")
+  }
+
+  renderRepoList() {
+    this.repoListTarget.replaceChildren()
+    if (!this.filteredRepositories.length && this.repositories.length) this.renderEmptyResults()
+    else this.filteredRepositories.forEach((repository, index) => this.renderRepositoryOption(repository, index))
+
+    this.repoSelectTarget.setAttribute("aria-activedescendant", this.activeIndex >= 0 ? this.optionId(this.activeIndex) : "")
+  }
+
+  renderEmptyResults() {
+    const message = document.createElement("li")
+    message.className = "px-3 py-2 text-sm text-gray-500"
+    message.textContent = "No repositories match your search."
+    this.repoListTarget.appendChild(message)
+  }
+
+  renderRepositoryOption(repository, index) {
+    const option = document.createElement("button")
+    option.type = "button"
+    option.id = this.optionId(index)
+    option.role = "option"
+    option.dataset.repositoryIndex = index
+    option.dataset.action = "mousedown->repository-selector#repoOptionSelected"
+    option.className = this.optionClass(index)
+    option.setAttribute("aria-selected", String(index === this.activeIndex))
+    option.textContent = repository.full_name + (repository.private ? " (private)" : "")
+    this.repoListTarget.appendChild(option)
+  }
+
+  optionId(index) {
+    return `repository-selector-option-${index}`
+  }
+
+  optionClass(index) {
+    const activeClass = index === this.activeIndex ? "bg-indigo-50 text-indigo-900" : "text-gray-900"
+    return `block w-full px-3 py-2 text-left text-sm hover:bg-indigo-50 ${activeClass}`
+  }
+
+  openRepoList() {
+    if (this.repositories.length) {
+      this.repoListTarget.classList.remove("hidden")
+      this.repoSelectTarget.setAttribute("aria-expanded", "true")
+    }
+  }
+
+  closeRepoList() {
+    this.repoListTarget.classList.add("hidden")
+    this.repoSelectTarget.setAttribute("aria-expanded", "false")
   }
 
   updateRepoDisabledState() {
-    const hasCredential = this.selectedCredential() !== null
-    if (this.hasRepoSelectTarget) {
-      this.repoSelectTarget.disabled = !hasCredential
-    }
+    this.repoSelectTarget.disabled = this.selectedCredential() === null || this.loading
+    this.repoClearTarget.disabled = this.repoSelectTarget.disabled || !this.repoSelectTarget.value
+  }
+
+  updateRepoClearState() {
+    this.repoClearTarget.disabled = this.repoSelectTarget.disabled || !this.repoSelectTarget.value
   }
 
   updateSortDisabledState() {
@@ -196,12 +325,7 @@ export default class extends Controller {
   }
 
   clearOtherCredential(type) {
-    if (type === "token" && this.hasInstallationSelectTarget) {
-      this.installationSelectTarget.value = ""
-    }
-
-    if (type === "installation" && this.hasTokenSelectTarget) {
-      this.tokenSelectTarget.value = ""
-    }
+    if (type === "token" && this.hasInstallationSelectTarget) this.installationSelectTarget.value = ""
+    if (type === "installation" && this.hasTokenSelectTarget) this.tokenSelectTarget.value = ""
   }
 }

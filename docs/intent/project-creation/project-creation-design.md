@@ -73,15 +73,27 @@ GitHub API failures (`NotFoundError`, `AuthenticationError`, `RateLimitError`,
 `ApiError`, `Error`) and GitHub App installation-token provisioning failures
 are surfaced as form errors on the add-project page.
 
-## Connecting an existing repository
+## Existing repository picker
 
-The existing-repository selector receives normalized repository metadata from
-the selected PAT or GitHub App installation. It defaults to an alphabetical
-name ordering and lets the user reorder the already-loaded options by newest
-GitHub `created_at` first. Repository rows without a usable creation timestamp
-(including rows cached before that field was added) sort after dated rows. A
-sort change is client-side only and does not issue another repository request;
-repositories already linked to the account remain excluded by each endpoint.
+The connect-existing path loads the complete accessible repository set for the
+selected credential in the browser. Its repository picker is a typable,
+accessible combobox rather than a native select: users can filter by a
+case-insensitive substring of the repository's full name, owner, or short
+name, then choose with the keyboard or pointer. The list remains client-side
+because the credential repository endpoints already return the accessible set.
+
+The picker retains the connect path's credential gating, loading and error
+feedback, and its synchronization of the selected repository's owner, name,
+GitHub id, and default branch into the submitted hidden fields. Clearing the
+picker clears that metadata. When validation re-renders the form, the picker
+restores the project owner/repository once its repository list has loaded.
+
+It defaults to an alphabetical name ordering and lets the user reorder the
+already-loaded options by newest GitHub `created_at` first. A sort change is
+client-side only and does not issue another repository request. Repository rows
+without a usable creation timestamp (including rows cached before that field was
+added) sort after dated rows. Repositories already linked to the account remain
+excluded by each endpoint.
 
 ## Setup guidance
 

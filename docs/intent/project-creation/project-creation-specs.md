@@ -61,21 +61,33 @@
   *Tests:* `spec/services/projects/create_blank_spec.rb`.
   *Code:* `Projects::CreateBlank`.
 
-- [x] **PROJECT-CREATION-013** - When the user connects an existing
-  repository, the repository endpoints SHALL include each repository's GitHub
-  creation timestamp. The selector SHALL default to Name (A–Z) and allow
-  Recently created ordering without another request; repositories without a
-  usable timestamp SHALL sort after dated repositories, and repositories
-  already linked to the account SHALL remain excluded.
-  *Tests:* `spec/requests/github_tokens_spec.rb`,
-  `spec/requests/github_installations_spec.rb`,
-  `spec/models/github_token_spec.rb`,
+- [x] **PROJECT-CREATION-013** - When a user selects a GitHub credential on
+  the connect-existing-repository path, the system SHALL present its fetched
+  accessible repositories in a typable combobox that filters case-insensitively
+  by full name, owner, or short name. The selector SHALL default to Name (A–Z)
+  and allow Recently created ordering without another request; repositories
+  without a usable timestamp SHALL sort after dated repositories. The user SHALL
+  be able to select a filtered repository with arrow keys and Enter or with a
+  pointer, and Escape or the clear control SHALL clear the selection.
+  *Tests:* `spec/lib/repository_selector_controller_node_harness_spec.rb`,
+  `spec/requests/projects_spec.rb`, `spec/requests/github_tokens_spec.rb`,
+  `spec/requests/github_installations_spec.rb`, `spec/models/github_token_spec.rb`,
   `spec/services/github/installation_repositories_spec.rb`,
   `spec/system/projects/repository_selector_spec.rb`.
   *Code:* `GithubToken#serialize_repository`,
   `GithubInstallationsController#normalized_repositories`,
   `Github::InstallationRepositories#serialize_repository`,
-  `app/javascript/controllers/repository_selector_controller.js`.
+  `app/javascript/controllers/repository_selector_controller.js`,
+  `app/views/projects/new.html.erb`.
+
+- [x] **PROJECT-CREATION-014** - The existing-repository combobox SHALL remain
+  unavailable until a credential is selected, SHALL report loading and fetch
+  errors, SHALL synchronize the selected repository metadata into the hidden
+  project fields and clear it with the selection, and SHALL restore an
+  attempted repository selection after the form re-renders with validation
+  errors.
+  *Tests:* `spec/lib/repository_selector_controller_node_harness_spec.rb`.
+  *Code:* `app/javascript/controllers/repository_selector_controller.js`.
 
 ## Bootstrap guidance
 

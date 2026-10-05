@@ -61,21 +61,20 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
     Warden.test_reset!
   end
 
-  def repo_option_labels
-    find("select[data-repository-selector-target='repoSelect']").all("option").map(&:text)
+  def repository_option_labels
+    all("[role='option']").map(&:text)
   end
 
-  it "populates the repository select after a successful fetch and records the selection" do
+  it "populates the repository combobox after a successful fetch and records the selection" do
     visit new_project_path
 
     select token.name, from: "project_github_token_id"
 
-    expect(page).to have_css("select[data-repository-selector-target='repoSelect'] option", text: /\(2 available\)/)
-    expect(repo_option_labels).to eq(
-      [ "Select a repository... (2 available)", "acme/alpha", "acme/beta (private)" ]
-    )
+    expect(page).to have_text("2 repositories available.")
+    find("#repository_selection").click
+    expect(repository_option_labels).to eq([ "acme/alpha", "acme/beta (private)" ])
 
-    select "acme/beta (private)", from: "repository_selection"
+    find("[role='option']", text: "acme/beta (private)").click
 
     expect(page).to have_field("project[owner]", with: "acme", visible: :all)
     expect(page).to have_field("project[repo]", with: "beta", visible: :all)
@@ -87,12 +86,11 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
     visit new_project_path
 
     select token.name, from: "project_github_token_id"
-    expect(page).to have_css("select[data-repository-selector-target='repoSelect'] option", text: /\(2 available\)/)
+    expect(page).to have_text("2 repositories available.")
 
     select "Recently created", from: "repository_sort"
+    find("#repository_selection").click
 
-    expect(repo_option_labels).to eq(
-      [ "Select a repository... (2 available)", "acme/beta (private)", "acme/alpha" ]
-    )
+    expect(repository_option_labels).to eq([ "acme/beta (private)", "acme/alpha" ])
   end
 end
