@@ -210,7 +210,7 @@ arrow. Evidence per child:
 | #4017 structured results | Verified | `Llm::GenerateSessionSummary` and `Knowledge::ContextIntake::GenerateQuestions` use `operation: :schema` with `Llm::TextMode.enabled?` capability routing; CLI/subscription callers keep the text path (no silent auth-mode switch). |
 | #4018 attempt accounting | **Active gap** | Mechanics verified in isolation only: `ApiUsageAttempt` (forced RLS, unique `attempt_id`, unknown-usage validations) + idempotent `ChatSessions::RecordTransportAttempt` + `Billing::AggregateTenantUsage` integration, with `record_transport_attempt_spec.rb` and `aggregate_tenant_usage_spec.rb` covering exactly-once, redelivery, unknown-vs-zero, and non-USD provenance. The migrated request path is not wired to them: `HttpClient#call` discards the harness's `result[:attempts]` reports and `RecordTransportAttempt` has no production caller, so real API-key chat attempt reports cannot yet receive that handling. API-CONVERSATION-DELEGATION-002 stays `[ ]` until the transport reports are wired through (gap 1 below). |
 | #4019 loop outcome | Verified | Loop retained per the agent-harness #448 evaluation (EARS 006); `FallbackLoop#discard_partial_attempt` rolls back only the failed attempt's rows by id so a runner fallback cannot replay stale partial work. |
-| #4020 close RDR-072 | **Blocked** | See remaining gaps below. |
+| #4020 close RDR-072 | **Partially Implemented** | The 2026-10-05 closeout records the verified retained-loop outcome and the remaining attempt-report/recovery completion dependency; it must not close #4013. |
 
 Test evidence (this audit): 464 examples ran across `spec/services/chat_sessions/`,
 `spec/services/billing/aggregate_tenant_usage_spec.rb`,
@@ -251,3 +251,21 @@ was reconciled back to an active gap: its persistence mechanics are verified
 only in isolation because the migrated request path discards
 `result[:attempts]` and never calls `ChatSessions::RecordTransportAttempt`
 (#4018 above, gap 1 below).
+
+## Closeout reconciliation (viamin/paid#4020, 2026-10-05)
+
+RDR-072 is **Partially Implemented**, not Implemented. The closeout audit at
+[`docs/rdrs/audit-report-2026-10-05-rdr-072.md`](../../rdrs/audit-report-2026-10-05-rdr-072.md)
+re-ran the affected chat, approval, fallback, billing, generator, request, and
+channel suites against the installed 0.44.3 host dependency. It also verified
+that the environment has no Docker CLI, so an agent-image check cannot be
+claimed from this audit; the RDR's existing release procedure still requires
+that check before deployment.
+
+The precise completion dependency is a focused follow-up issue for
+API-CONVERSATION-DELEGATION-002/003: stable Paid request identity, harness
+attempt-report persistence, Paid-supplied retry/deadline/cancellation context,
+and restart-safe runner recovery. It had not been filed when this audit was
+performed, so #4020 and the #4013 umbrella remain open and use non-closing
+`Tracks #4013` language. This is explicit tracking, not a claim that #4018's
+isolated mechanics completed live API-chat accounting.
