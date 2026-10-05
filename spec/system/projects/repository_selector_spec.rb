@@ -87,6 +87,7 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
 
     select token.name, from: "project_github_token_id"
     expect(page).to have_text("2 repositories available.")
+    expect(page).to have_select("repository_sort", disabled: false)
 
     select "Recently created", from: "repository_sort"
     find("#repository_selection").click
