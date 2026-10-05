@@ -129,9 +129,19 @@ comment failure to self-heal once the human-visible rationale exists.
 A run that creates a PR can still leave acceptance criteria unmet. Before the
 workflow treats such a run as successfully closed out, `ReconcilePartialCloseoutActivity`
 uses an agent-harness structured assessment of approved intent, the run/PR
-evidence, and current open issues. The deterministic reconciler validates that
-assessment, reuses only current open owners, creates bounded focused issues
-when needed, and records local `IssueDependency` edges plus visible `Depends on
-#N` text on the parent. It persists its progress on the run so a GitHub failure
-can resume without duplicate issues. Human-only prerequisites create a blocking
-Inbox notification with the exact next step rather than an agent retry.
+evidence, and current open issues (the assessment prompt lists the bounded
+open-issue set so owner reuse is grounded, not guessed from evidence prose).
+The assessment follows the same transport routing as the other schema-boundary
+services: the API-key schema transport when `Llm::TextMode` is enabled, the
+CLI transport otherwise, so a keyless deployment keeps working. The assessment
+is persisted on the run on first success and reused across activity retries,
+keeping gap indices — the replay keys — stable. The deterministic reconciler
+validates that assessment, reuses only current open owners (never the parent
+itself), creates bounded focused issues when needed (labeled with the
+project's automation/generated labels so they route into auto-pick), and
+records local `IssueDependency` edges plus dependency text on the parent in
+the project's configured `issue_dependency_format` wording. It persists its
+progress on the run so a GitHub failure can resume without duplicate issues.
+Human-only prerequisites create one aggregated blocking Inbox notification
+covering every prerequisite with its exact next step rather than an agent
+retry.

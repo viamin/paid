@@ -16,7 +16,7 @@ module PartialCloseouts
 
     def call # @spec NO-OUTPUT-ISSUE-007
       validate!
-      gaps.each_with_index { |gap, index| reconcile_gap(gap, index) }
+      publish_operator_prerequisites!(reconcile_gaps)
       publish_parent_dependencies!
       finalize!
     rescue GithubClient::Error => e
@@ -37,9 +37,23 @@ module PartialCloseouts
       gaps.each { |gap| raise ArgumentError, "gap criterion is required" if gap["criterion"].blank? }
     end
 
-    def reconcile_gap(gap, index)
-      return record_operator_prerequisite!(gap, index) if gap["kind"] == "human"
+    # Returns the human gaps so every prerequisite is visible in one Inbox
+    # notification: per-gap publishes dedup onto the same row and would
+    # overwrite all but the last prerequisite.
+    def reconcile_gaps
+      human_gaps = []
+      gaps.each_with_index do |gap, index|
+        if gap["kind"] == "human"
+          record_gap!(index, gap, status: "awaiting_operator")
+          human_gaps << gap
+        else
+          reconcile_agent_gap(gap, index)
+        end
+      end
+      human_gaps
+    end
 
+    def reconcile_agent_gap(gap, index)
       owner = reusable_owner(gap) || create_owner!(gap, index)
       IssueDependency.find_or_create_by!(issue: agent_run.issue, depends_on_issue: owner)
       record_gap!(index, gap, owner_issue_id: owner.id, owner_issue_number: owner.github_number)
@@ -49,12 +63,17 @@ module PartialCloseouts
       number = gap["owner_issue_number"].to_i
       return if number.zero?
 
-      agent_run.project.issues.find_by(github_number: number, github_state: "open")
+      owner = agent_run.project.issues.find_by(github_number: number, github_state: "open")
+      # The parent cannot own its own residual gap; a self-referential edge
+      # would fail IssueDependency#not_self_referential with
+      # ActiveRecord::RecordInvalid, which is not a GithubClient::Error and
+      # would bypass the retryable-failure path in +call+.
+      owner if owner && owner.id != agent_run.issue.id
     end
 
     def create_owner!(gap, index)
       prior_owner(index) || begin
-        title = gap.fetch("title").to_s.strip
+        title = gap["title"].to_s.strip
         raise ArgumentError, "agent gap title is required" if title.blank?
 
         marker = "<!-- paid:partial-closeout:#{agent_run.id}:#{index} -->"
@@ -64,10 +83,20 @@ module PartialCloseouts
         record_gap!(index, gap, status: "creating", marker: marker)
         created = agent_run.project.client.create_issue(
           agent_run.project.full_name,
-          title: title.truncate(255), body: "#{gap["body"].to_s.strip}\n\n#{marker}"
+          title: title.truncate(255), body: "#{gap["body"].to_s.strip}\n\n#{marker}", labels: owner_labels
         )
         Issues::UpsertFromGithub.call(project: agent_run.project, github_issue: created)
       end
+    end
+
+    # Same labeling convention as the other Paid-created issue paths so the
+    # owner issue routes into automation (auto-pick) and is recognizable as
+    # generated; without labels it sits unpicked on labeled projects.
+    def owner_labels
+      labels = []
+      labels << agent_run.project.automation_label_name if agent_run.project.automation_on_label_enabled?
+      labels << agent_run.project.generated_label_name if agent_run.project.auto_add_labels_enabled?
+      labels
     end
 
     def prior_owner(index)
@@ -75,27 +104,60 @@ module PartialCloseouts
       agent_run.project.issues.find_by(id: id, github_state: "open") if id
     end
 
-    def record_operator_prerequisite!(gap, index)
-      record_gap!(index, gap, status: "awaiting_operator")
+    def publish_operator_prerequisites!(human_gaps)
+      return if human_gaps.empty?
+
       Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
         source: "partial_closeout.prerequisite", severity: :error, blocking: true,
-        title: "#{gap["criterion"]} needs operator action",
-        description: gap.fetch("next_step").to_s.presence || "Review the recorded partial-closeout prerequisite."
+        title: operator_prerequisite_title(human_gaps),
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
       )
+    end
+
+    def operator_prerequisite_title(human_gaps)
+      criteria = human_gaps.map { |gap| gap["criterion"] }
+      if criteria.one?
+        "#{criteria.first} needs operator action"
+      else
+        "#{criteria.size} partial-closeout prerequisites need operator action"
+      end
+    end
+
+    def operator_prerequisite_step(gap)
+      "#{gap["criterion"]}: #{gap["next_step"].to_s.presence || "Review the recorded partial-closeout prerequisite."}"
     end
 
     def publish_parent_dependencies!
       numbers = agent_run.issue.issue_dependencies.includes(:depends_on_issue).filter_map { |dependency| dependency.depends_on_issue&.github_number }
       return if numbers.empty?
 
-      body = agent_run.issue.body.to_s
-      lines = numbers.reject { |number| body.include?("Depends on ##{number}") }.map { |number| "- Depends on ##{number}" }
+      lines = new_dependency_lines(numbers)
       return if lines.empty?
 
-      updated_body = [ body, "## Dependencies", *lines ].reject(&:blank?).join("\n\n")
+      updated_body = append_dependency_lines(lines)
       agent_run.project.client.update_issue(agent_run.project.full_name, agent_run.issue.github_number, body: updated_body)
       agent_run.issue.update!(body: updated_body)
+    end
+
+    def new_dependency_lines(numbers)
+      body = agent_run.issue.body.to_s
+      numbers.filter_map do |number|
+        line = ProjectConventions::IssueDependencies.depends_on_line(project: agent_run.project, github_number: number, resolved: dependency_conventions)
+        "- #{line}" unless body.match?(/\b#{Regexp.escape(line)}\b/)
+      end
+    end
+
+    def append_dependency_lines(lines)
+      body = agent_run.issue.body.to_s
+      heading = ProjectConventions::IssueDependencies.heading(project: agent_run.project, resolved: dependency_conventions)
+      return "#{body}\n#{lines.join("\n")}" if body.include?(heading)
+
+      [ body, heading, lines.join("\n") ].reject(&:blank?).join("\n\n")
+    end
+
+    def dependency_conventions
+      @dependency_conventions ||= ProjectConventions::IssueDependencies.convention_value(agent_run.project)
     end
 
     def finalize!

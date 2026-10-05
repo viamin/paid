@@ -45,6 +45,89 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
   end
 
+  # @spec NO-OUTPUT-ISSUE-007
+  it "labels a created owner issue for automation and generated routing" do
+    created = OpenStruct.new(number: 445, html_url: "https://example.test/issues/445", id: 445, title: "Finish dispatch", body: "")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(create(:issue, project: project, github_number: 445))
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+
+    expect(client).to have_received(:create_issue).with(
+      project.full_name,
+      hash_including(labels: %w[paid-automation paid-generated])
+    )
+  end
+
+  it "raises the intended validation when the agent gap omits a title" do
+    created = OpenStruct.new(number: 446, html_url: "https://example.test/issues/446", id: 446, title: "Fallback", body: "")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(create(:issue, project: project, github_number: 446))
+
+    expect {
+      described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "body" => "Wire dispatch" } ]))
+    }.to raise_error(ArgumentError, "agent gap title is required")
+    expect(client).not_to have_received(:create_issue)
+  end
+
+  it "falls back to a generic next step when a human gap omits next_step" do
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "sign-off", "kind" => "human" } ]))
+
+    notification = Notification.find_by(subject: parent, blocking: true)
+    expect(notification.description).to include("Review the recorded partial-closeout prerequisite.")
+  end
+
+  it "publishes one aggregated notification covering every human prerequisite" do
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the approved macOS pilot." },
+      { "criterion" => "security sign-off", "kind" => "human", "next_step" => "Approve the audit in the portal." }
+    ]))
+
+    notifications = Notification.where(subject: parent, blocking: true)
+    expect(notifications.count).to eq(1)
+    expect(notifications.first.title).to eq("2 partial-closeout prerequisites need operator action")
+    expect(notifications.first.description).to include("macOS acceptance: Run the approved macOS pilot.")
+    expect(notifications.first.description).to include("security sign-off: Approve the audit in the portal.")
+  end
+
+  it "does not attach the parent issue to itself when reuse guesses its number" do
+    created = OpenStruct.new(number: 447, html_url: "https://example.test/issues/447", id: 447, title: "Finish dispatch", body: "")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(create(:issue, project: project, github_number: 447))
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "owner_issue_number" => parent.github_number, "title" => "Finish dispatch" } ]))
+
+    expect(parent.issue_dependencies.where(depends_on_issue: parent)).to be_empty
+    expect(IssueDependency.where(issue: parent).count).to eq(1)
+  end
+
+  it "writes dependency lines through the project's configured conventions" do
+    create(:project_convention_override,
+      project: project,
+      key: "issue_dependency_format",
+      value: { "depends_on_prefix" => "Requires", "blocked_by_prefix" => "Awaits", "heading" => "## Blockers" })
+    owner = create(:issue, project: project, github_state: "open", paid_state: "new")
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "owner_issue_number" => owner.github_number } ]))
+
+    expect(client).to have_received(:update_issue).with(
+      project.full_name, parent.github_number,
+      body: a_string_including("## Blockers").and(a_string_including("- Requires ##{owner.github_number}"))
+    )
+  end
+
+  it "appends under the existing heading instead of adding a second one" do
+    parent.update!(body: "Original body\n\n## Dependencies\n\n- Depends on #1")
+    owner = create(:issue, project: project, github_state: "open", paid_state: "new")
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "owner_issue_number" => owner.github_number } ]))
+
+    expect(client).to have_received(:update_issue) do |_, _, body:|
+      expect(body.scan("## Dependencies").count).to eq(1)
+      expect(body).to include("- Depends on ##{owner.github_number}")
+    end
+  end
+
   def gaps(gaps)
     { "gaps" => gaps }
   end
