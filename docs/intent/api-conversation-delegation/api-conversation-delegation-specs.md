@@ -12,9 +12,9 @@
   directly, and a harness result SHALL NOT be granted authority to execute or
   approve an application tool. Paid-supplied attempt identity, retry-limit,
   deadline, and cancellation context are **not yet wired through** this call
-  (tracked by API-CONVERSATION-DELEGATION-003 below); each turn currently
-  issues an ephemeral request UUID and a single-attempt (`retry.max_attempts: 1`)
-  request, with runner switching and retries still owned entirely by
+  (implemented by API-CONVERSATION-DELEGATION-003 below); each turn receives a
+  Paid-owned durable request identity and one effective retry owner, while
+  runner switching and workflow recovery remain owned entirely by
   `ChatSessions::FallbackLoop` at the Paid layer.
   *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
   *Code:* `ChatSessions::BuildLlmClient::HttpClient#call`,
@@ -44,17 +44,24 @@
    consuming `result[:attempts]` and a production caller of
    `ChatSessions::RecordTransportAttempt`.
 
-- [ ] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
+- [x] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
   is cancelled, or Paid changes runner after a classified terminal result, the
   harness SHALL honor the supplied request bound and cancellation signal, and
   Paid SHALL either accept a matching durable attempt report or allocate a new
   outbound attempt. Neither recovery path SHALL replay a completed tool or
   multiply request retry loops.
-  Active gap tracked by viamin/paid#4126.
+  `ChatSessions::HarnessTransport` allocates a monotonic request sequence in
+  Paid-owned session metadata and supplies that stable request identity, a
+  single effective request-attempt limit, read deadline, and monotonic
+  cancellation signal to the public harness request contract. A restarted
+  delivery or runner fallback allocates a new request identity; persisted
+  transcript rows, including completed tool results, are retained as the loop
+  rebuilds its conversation, so the harness never executes a tool and Paid
+  does not introduce a second request-retry loop.
   *Tests:* `spec/services/chat_sessions/harness_transport_spec.rb`,
   `spec/services/chat_sessions/fallback_loop_spec.rb`,
   `spec/jobs/chat_sessions/process_message_job_spec.rb`.
-  *Planned code:* `ChatSessions::HarnessTransport`,
+  *Code:* `ChatSessions::HarnessTransport`,
   `ChatSessions::FallbackLoop` recovery boundary.
 
 - [x] **API-CONVERSATION-DELEGATION-004** — When a migrated chat turn contains
@@ -99,9 +106,9 @@
   plain-Ruby restart recovery, external dispatch boundary, bounded completion,
   or stable attempt identity, so Paid SHALL retain `AgentLoop` and
   `ResolveToolCall`. A runner fallback SHALL discard the failed attempt's own
-  partial rows — including its tool call/results — by id-scoped rollback so
-  the fallback turn is not replayed stale partial work; rows persisted by a
-  concurrent turn SHALL remain untouched. No loop
+  partial rows by id-scoped rollback, while retaining completed tool
+  call/result rows so the fallback transcript cannot replay their side effects;
+  rows persisted by a concurrent turn SHALL remain untouched. No loop
   API release, runtime flag, schema migration, or backup rehearsal is required
   for this retained-loop outcome; separately activated transport/accounting
   work remains subject to its own release gate and image verification.

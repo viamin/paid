@@ -375,6 +375,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
     t.bigint "continuation_request_id", comment: "The scoped continuation authorization this run executes, if any."
+    t.jsonb "reconciliation", default: {}, null: false, comment: "Durable replay state for partial PR closeout gap reconciliation."
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
@@ -2094,12 +2095,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
     t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
     t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."
     t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
+    t.datetime "partial_completion_at", comment: "When an evidence-backed assessment recorded that a merged implementation PR left this source issue incomplete."
+    t.integer "partial_completion_pr_number", comment: "Merged pull request correlated with the latest partial-completion assessment."
+    t.text "partial_completion_reason", comment: "Operator-visible evidence for the latest partial-completion assessment."
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["needs_input_since"], name: "index_issues_needs_input_since_active", where: "((paid_state)::text = 'needs_input'::text)"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
+    t.index ["partial_completion_at"], name: "index_issues_on_partial_completion_at", where: "(partial_completion_at IS NOT NULL)"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }

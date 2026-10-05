@@ -63,6 +63,16 @@ module Automation
         # number, sync backlog) does not strand the issue forever.
         PR_SYNC_GRACE_PERIOD = 1.hour
         EPIC_LABEL = "epic"
+        # A reconciliation that persisted assessment gaps, or exhausted its
+        # retries after publishing a PR, is the durable partial-closeout
+        # signal (NO-OUTPUT-ISSUE-007): the run's PR is progress evidence,
+        # not a terminal outcome for the parent. The jsonb_typeof guard keeps
+        # a corrupted non-array gaps value from failing the whole
+        # eligible-scope query.
+        PARTIAL_CLOSEOUT_GAPS_CONDITION =
+          "((jsonb_typeof(reconciliation->'assessment'->'gaps') = 'array' " \
+          "AND jsonb_array_length(reconciliation->'assessment'->'gaps') > 0) " \
+          "OR reconciliation->>'status' = 'retryable_failure')"
 
         class << self
           def eligible_issue_ids(displayed_issues)
@@ -326,7 +336,9 @@ module Automation
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
             blocking_issue_ids = blocking_runs.select(:issue_id)
 
-            reauditable_epic_ids = reauditable_epic_ids(project, epic_ids)
+            reauditable_issue_ids = reauditable_issue_ids(project, epic_ids)
+            reauditable_closeout_ids = partial_closeout_reaudit_issue_ids(project)
+            prerequisite_block_ids = partial_closeout_prerequisite_block_issue_ids(project)
             # @spec PARTIAL-CLOSEOUT-004 — a scoped continuation authorization
             # lifts ONLY the merged-PR and no-code guards below, and only for
             # the explicitly authorized issues. Every other guard applies
@@ -351,8 +363,11 @@ module Automation
               # PR_SYNC_GRACE_PERIOD, so a stale or wrong recorded PR number
               # cannot strand the issue forever (#3432/#3588 review follow-up).
               # For a synthetic code-scanning issue the guard is provisional,
-              # not permanent — see +merged_block_issue_ids+ (#4052).
-              .where.not(id: merged_block_issue_ids(project) - reauditable_epic_ids - authorized_ids)
+              # not permanent — see +merged_block_issue_ids+ (#4052). A
+              # recorded partial closeout is the other exception: its merged
+              # PR is partial progress, and the parent must re-enter
+              # selection once the gap owners resolve (#4119).
+              .where.not(id: merged_block_issue_ids(project) - reauditable_issue_ids - reauditable_closeout_ids - authorized_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -367,10 +382,17 @@ module Automation
               # just loop (the agent will likely declare no-code-required again).
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
-              .where(
-                "issues.no_code_required_at IS NULL OR issues.id IN (?)",
-                reauditable_epic_ids + authorized_ids
-              )
+              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_issue_ids + authorized_ids)
+              # Partial-closeout human prerequisites surface as blocking Inbox
+              # notifications rather than durable IssueDependency edges
+              # (NO-OUTPUT-ISSUE-007). Without this exclusion the partial-closeout
+              # re-audit exception above would re-pick the parent once the partial
+              # PR merges, even though the operator has not yet completed the
+              # prerequisite the notification states. The notification dismissal
+              # or system resolve clears the block (see Notification's callback),
+              # so the parent re-enters selection through the same eager-enqueue
+              # path that dependency resolution uses.
+              .where.not(id: prerequisite_block_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -446,8 +468,73 @@ module Automation
             terminal_at = terminal_audit_times(project, epic_ids)
             return [] if terminal_at.empty?
 
-            resolved_prerequisite_linked_at(epic_ids).filter_map do |issue_id, linked_at|
+            resolved_prerequisite_linked_at(project, epic_ids).filter_map do |issue_id, linked_at|
               issue_id if linked_at > terminal_at.fetch(issue_id, Time.at(0))
+            end
+          end
+
+          # A partial closeout's merged PR is progress evidence, not a
+          # terminal outcome for the parent (#4119): the parent re-enters
+          # selection for a continuation run once the shared gates that
+          # govern every other issue clear — the gap-owner dependencies
+          # (+ready_for_work+) and the open paid-generated PR guards (the
+          # partial PR must merge or close first). Keyed on the issue's
+          # latest PR-producing run so a later gap-free closeout, which
+          # completes the parent, restores the permanent merged-PR guard —
+          # while a re-audit attempt that fails before publishing another PR
+          # supersedes nothing and keeps the exception armed.
+          def partial_closeout_reaudit_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
+            latest_run_ids = AgentRun.where(project: project, goal: "create_pr")
+              .where.not(issue_id: nil).where.not(pull_request_number: nil)
+              .group(:issue_id)
+              .pluck(:issue_id, Arel.sql("MAX(id)"))
+              .to_h
+            return [] if latest_run_ids.empty?
+
+            AgentRun.where(id: latest_run_ids.values)
+              .where(PARTIAL_CLOSEOUT_GAPS_CONDITION)
+              .pluck(:issue_id)
+          end
+
+          # Issue ids whose partial closeout surfaced one or more human
+          # prerequisites (NO-OUTPUT-ISSUE-007). Unlike agent gaps, which
+          # produce durable IssueDependency edges that the shared
+          # +ready_for_work+ gate filters, human prerequisites publish a
+          # blocking Inbox notification whose subject is the parent issue.
+          # The notification is the durable scheduling block until the
+          # operator dismisses it (Inbox dismiss action) or the system
+          # resolves it (Notifications::Resolve), so the partial-closeout
+          # re-audit exception does not re-pick the parent ahead of the
+          # prerequisite the notification names.
+          def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
+            Notification.where(
+              account_id: project.account_id,
+              source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+              subject_type: "Issue"
+            ).where(resolved_at: nil, dismissed_at: nil)
+              .where("subject_id IN (?)", project.issues.select(:id))
+              .pluck(:subject_id)
+          end
+
+          # A merged PR remains terminal for ordinary implementation work unless
+          # Paid has durably assessed that it was partial. That assessment carries
+          # the same authoritative child/dependency graph used for epic audits;
+          # a prerequisite resolving after the assessment permits one fresh run.
+          # The strict resolution-time comparison makes polling and metadata sync
+          # idempotent, rather than treating a merge or an incidental update as a
+          # reason to run again. @spec AUTO-PICK-QUEUE-012 EAGER-QUEUE-009
+          def reauditable_issue_ids(project, epic_ids)
+            reauditable_epic_ids(project, epic_ids) + continuable_partial_issue_ids(project)
+          end
+
+          def continuable_partial_issue_ids(project)
+            partial_times = Issue.where(project: project, is_pull_request: false, github_state: "open")
+              .where.not(partial_completion_at: nil)
+              .pluck(:id, :partial_completion_at).to_h
+            return [] if partial_times.empty?
+
+            resolved_prerequisite_linked_at(project, partial_times.keys).filter_map do |issue_id, resolved_at|
+              issue_id if resolved_at > partial_times.fetch(issue_id)
             end
           end
 
@@ -535,7 +622,16 @@ module Automation
           #   rows that predate +parent_issue_linked_at+.
           # - For dependencies, fall back to +issue_dependencies.created_at+
           #   (the edge creation time) when +closed_at+ isn't stamped.
-          def resolved_prerequisite_linked_at(issue_ids)
+          # - For external owner/repo#N dependencies, mirror
+          #   {Issue.ready_for_work}'s `blocked_by_external` rule via
+          #   {IssueDependency.external_resolved_for_account} and use the
+          #   matching target issue's +closed_at+ as the stable
+          #   resolution timestamp (AUTO-PICK-QUEUE-012). External deps
+          #   whose target project is not in the same account or whose
+          #   target issue is not synced contribute NULL rows that the
+          #   strict comparison drops, mirroring the conservative local
+          #   fallback.
+          def resolved_prerequisite_linked_at(project, issue_ids)
             child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
               .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
               .group(:parent_issue_id)
@@ -545,9 +641,16 @@ module Automation
               .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
               .group(:issue_id)
               .maximum(Arel.sql("COALESCE(issues.closed_at, issue_dependencies.created_at)"))
+            external_dependency_times = IssueDependency
+              .external_resolved_for_account(project.account_id)
+              .where(issue_id: issue_ids)
+              .where("ext_issue.github_state = 'closed' OR ext_issue.paid_state IN (?)",
+                Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .group(:issue_id)
+              .maximum(Arel.sql("COALESCE(ext_issue.closed_at, issue_dependencies.created_at)"))
 
-            (child_times.keys | dependency_times.keys).to_h do |issue_id|
-              [ issue_id, [ child_times[issue_id], dependency_times[issue_id] ].compact.max ]
+            (child_times.keys | dependency_times.keys | external_dependency_times.keys).to_h do |issue_id|
+              [ issue_id, [ child_times[issue_id], dependency_times[issue_id], external_dependency_times[issue_id] ].compact.max ]
             end
           end
 

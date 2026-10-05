@@ -338,6 +338,30 @@ RSpec.describe Issue do
       expect(Issues::EnqueueEligible).not_to have_received(:call)
     end
 
+    it "resolves active partial-closeout prerequisite notifications when the issue closes" do # @spec NO-OUTPUT-ISSUE-007
+      project = create(:project, auto_pick_enabled: true)
+      parent = create(:issue, project: project, github_state: "open")
+      notification = create(:notification, :error, account: project.account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      parent.update!(github_state: "closed")
+
+      expect(notification.reload.resolved_at).to be_present
+    end
+
+    it "leaves already-dismissed partial-closeout prerequisite notifications untouched on close" do # @spec NO-OUTPUT-ISSUE-007
+      project = create(:project, auto_pick_enabled: true)
+      parent = create(:issue, project: project, github_state: "open")
+      notification = create(:notification, :error, :dismissed, account: project.account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      parent.update!(github_state: "closed")
+
+      expect(notification.reload.resolved_at).to be_nil
+    end
+
     it "enqueues dependents transitively as blockers close in sequence" do
       project = create(:project, auto_pick_enabled: true)
       issue_a = create(:issue, project: project, github_state: "open")
@@ -407,6 +431,38 @@ RSpec.describe Issue do
           error: "transient failure"
         )
       )
+    end
+
+    # @spec AUTO-PICK-QUEUE-012
+    it "enqueues a partial-completion parent when a non-PR child closes" do
+      project = create(:project, auto_pick_enabled: true)
+      parent = create(:issue, project: project, github_state: "open",
+        partial_completion_at: 2.hours.ago,
+        partial_completion_pr_number: 91)
+      child = create(:issue, project: project, github_state: "open", parent_issue: parent)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      child.update!(github_state: "closed")
+
+      expect(Issues::EnqueueEligible).to have_received(:call).with(parent, project: project, skip_project_gate: true)
+    end
+
+    # @spec AUTO-PICK-QUEUE-012
+    it "does not enqueue a partial-completion parent when only its merged tracking PR closes" do
+      project = create(:project, auto_pick_enabled: true)
+      parent = create(:issue, project: project, github_state: "open",
+        partial_completion_at: 2.hours.ago,
+        partial_completion_pr_number: 91)
+      tracking_pr = create(:issue, :pull_request, project: project, github_state: "open",
+        parent_issue: parent)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      tracking_pr.update!(github_state: "closed")
+
+      # Queue admission's `child_times` excludes PRs (AUTO-PICK-QUEUE-012),
+      # so a merged tracking PR is not authoritative prerequisite evidence
+      # on its own — the eager path must mirror that filter.
+      expect(Issues::EnqueueEligible).not_to have_received(:call)
     end
   end
 
