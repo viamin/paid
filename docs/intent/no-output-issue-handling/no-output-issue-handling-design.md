@@ -151,10 +151,17 @@ retry.
 
 The activity result tells the workflow whether any gaps remain (the persisted
 status alone is ambiguous: `reconciled` covers both a gap-free closeout and one
-whose gaps all received agent owners). When gaps remain, the workflow skips
-`UpdateIssueWithPrActivity` entirely: its completion path also gates the PR
-comment and trigger-label cleanup, so the parent issue stays in its
+whose gaps all received agent owners). When gaps remain, the workflow splits
+`UpdateIssueWithPrActivity`'s two duties: the completion path (which also owns
+trigger-label cleanup) is skipped, so the parent issue stays in its
 non-terminal state, keeps its trigger label, and remains dependency-blocked —
 which leaves it re-pickable by auto-pick once the gap owners resolve, the
-existing label-driven continuation path. When no gaps remain, the parent is
-completed and updated exactly as a full closeout.
+existing label-driven continuation path. The PR-link evidence does not skip
+with it: a dedicated `PostPartialCloseoutEvidenceActivity` posts a
+marker-tagged `Partial pull request created: …` comment on the still-open
+parent, so the partial PR is visible on the issue where the
+dependency-blocked remaining work is listed — not only on the internal
+`AgentRun`. The marker embeds the run id and the dedup check restricts
+matching to Paid-authored comments, so activity retries never double-post and
+a forged marker from another author cannot suppress the evidence. When no
+gaps remain, the parent is completed and updated exactly as a full closeout.

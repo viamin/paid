@@ -23,6 +23,7 @@ class AgentRunPhase < ApplicationRecord
     "push_branch" => "Push Branch",
     "create_pull_request" => "Create Pull Request",
     "update_issue_with_pr" => "Update Issue With PR",
+    "post_partial_closeout_evidence" => "Post Partial Closeout Evidence",
     "complete_existing_pr_run" => "Complete Existing PR Run",
     "mark_agent_run_complete" => "Mark Agent Run Complete",
     "verified_review" => "Verified Review",

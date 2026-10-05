@@ -1384,6 +1384,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
         when "Activities::ReconcilePartialCloseoutActivity" then reconcile_result
         when "Activities::UpdateIssueWithPrActivity" then {}
+        when "Activities::PostPartialCloseoutEvidenceActivity" then { agent_run_id: 42, posted: true }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::CaptureScreenshotsActivity" then { status: "captured", screenshot_count: 2 }
         when "Activities::DraftDecisionRecordActivity" then {}
@@ -1427,6 +1428,10 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::UpdateIssueWithPrActivity, any_args)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::PostPartialCloseoutEvidenceActivity,
+          { agent_run_id: 42, pull_request_url: "https://github.com/o/r/pull/99" },
+          timeout: 30)
     end
 
     # @spec NO-OUTPUT-ISSUE-007
@@ -1437,6 +1442,17 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::UpdateIssueWithPrActivity, any_args)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::PostPartialCloseoutEvidenceActivity, any_args)
+    end
+
+    it "does not run the partial evidence activity on a full closeout" do
+      stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "reconciled", gaps_remain: false })
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::PostPartialCloseoutEvidenceActivity, any_args)
     end
 
     it "still requests a review-bot review on the partial closeout PR" do

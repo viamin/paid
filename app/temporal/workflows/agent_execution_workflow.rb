@@ -430,16 +430,21 @@ module Workflows
               # remaining acceptance work BEFORE completing the parent issue:
               # when gaps remain, the parent must stay incomplete and
               # dependency-blocked (#4119), so the workflow skips
-              # UpdateIssueWithPrActivity — whose completion path also gates the
-              # PR comment and trigger-label removal — and leaves the parent
-              # re-pickable by auto-pick once the gap owners resolve. The
-              # activity retains retry state if GitHub is down. # @spec NO-OUTPUT-ISSUE-007
+              # UpdateIssueWithPrActivity — whose completion path also gates
+              # trigger-label removal — and leaves the parent re-pickable by
+              # auto-pick once the gap owners resolve. The activity retains
+              # retry state if GitHub is down. # @spec NO-OUTPUT-ISSUE-007
               reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
                 { agent_run_id: agent_run_id }, timeout: 120)
 
-              # Step 7: Update issue with PR link — only when reconciliation
-              # confirmed a full closeout with no remaining gaps.
-              unless reconcile_result[:gaps_remain]
+              # Step 7: Update issue with PR link. Full closeout: complete the
+              # parent. Partial closeout: keep the parent incomplete, but post
+              # the PR-link evidence on it (idempotent) so the partial PR is
+              # visible where the dependency-blocked remaining work is shown.
+              if reconcile_result[:gaps_remain]
+                run_activity(Activities::PostPartialCloseoutEvidenceActivity,
+                  { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+              else
                 run_activity(Activities::UpdateIssueWithPrActivity,
                   { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
               end
