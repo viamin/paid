@@ -73,6 +73,21 @@ GitHub API failures (`NotFoundError`, `AuthenticationError`, `RateLimitError`,
 `ApiError`, `Error`) and GitHub App installation-token provisioning failures
 are surfaced as form errors on the add-project page.
 
+## Existing repository picker
+
+The connect-existing path loads the complete accessible repository set for the
+selected credential in the browser. Its repository picker is a typable,
+accessible combobox rather than a native select: users can filter by a
+case-insensitive substring of the repository's full name, owner, or short
+name, then choose with the keyboard or pointer. The list remains client-side
+because the credential repository endpoints already return the accessible set.
+
+The picker retains the connect path's credential gating, loading and error
+feedback, and its synchronization of the selected repository's owner, name,
+GitHub id, and default branch into the submitted hidden fields. Clearing the
+picker clears that metadata. When validation re-renders the form, the picker
+restores the project owner/repository once its repository list has loaded.
+
 ## Setup guidance
 
 Blank projects with `setup_status` below `completed` render a setup banner on
