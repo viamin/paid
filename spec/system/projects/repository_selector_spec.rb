@@ -77,10 +77,10 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
 
     find("[role='option']", text: "acme/beta (private)").trigger("mousedown")
 
-    expect(page).to have_field("project[owner]", with: "acme", visible: :all)
-    expect(page).to have_field("project[repo]", with: "beta", visible: :all)
-    expect(page).to have_field("project[github_id]", with: "102", visible: :all)
-    expect(page).to have_field("project[default_branch]", with: "develop", visible: :all)
+    expect(page).to have_css('input[name="project[owner]"][value="acme"]', visible: :all)
+    expect(page).to have_css('input[name="project[repo]"][value="beta"]', visible: :all)
+    expect(page).to have_css('input[name="project[github_id]"][value="102"]', visible: :all)
+    expect(page).to have_css('input[name="project[default_branch]"][value="develop"]', visible: :all)
   end
 
   it "re-orders repositories by recency when the sort selection changes" do
