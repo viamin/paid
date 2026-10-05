@@ -114,7 +114,11 @@ class RepositorySelectorControllerNodeHarness
       const restored = controllerWith(repositories);
       restored.hasSelectedRepositoryValue = true;
       restored.selectedRepositoryValue = "octo/website";
+      restored.sortSelectTarget.disabled = true;
       restored.populateRepoSelect(repositories);
+      if (restored.sortSelectTarget.disabled) {
+        throw new Error("Expected sort control to enable when repositories finish loading");
+      }
       if (restored.repoSelectTarget.value !== "octo/website" || restored.ownerTarget.value !== "octo" || restored.defaultBranchTarget.value !== "trunk") {
         throw new Error("Expected a re-rendered form to restore its repository selection");
       }

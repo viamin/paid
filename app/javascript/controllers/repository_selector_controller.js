@@ -123,6 +123,7 @@ export default class extends Controller {
     this.filteredRepositories = this.sortedRepositories()
     this.activeIndex = -1
     this.repoSelectTarget.placeholder = `Search ${repos.length} repositories...`
+    this.updateSortDisabledState()
     this.setRepoStatus(`${repos.length} repositories available.`)
 
     const selectedRepository = this.repositories.find((repo) => repo.full_name === this.selectedRepositoryValue)
