@@ -87,6 +87,7 @@ module Github
       raise Error, "GitHub App installation repositories returned invalid JSON (status #{response.status})"
     end
 
+    # @spec PROJECT-CREATION-013
     def serialize_repository(repo)
       {
         "id" => repo["id"],
@@ -94,7 +95,8 @@ module Github
         "name" => repo["name"],
         "owner" => repo.dig("owner", "login") || repo["full_name"].to_s.split("/").first,
         "default_branch" => repo["default_branch"],
-        "private" => repo["private"] || false
+        "private" => repo["private"] || false,
+        "created_at" => repo["created_at"]
       }
     end
   end

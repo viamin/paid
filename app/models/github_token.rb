@@ -181,6 +181,7 @@ class GithubToken < ApplicationRecord
     errors.add(:created_by, "must belong to the same account")
   end
 
+  # @spec PROJECT-CREATION-013
   def serialize_repository(repo)
     {
       "id" => repo.id,
@@ -188,7 +189,8 @@ class GithubToken < ApplicationRecord
       "name" => repo.name,
       "owner" => repo.full_name.split("/").first,
       "default_branch" => repo.default_branch,
-      "private" => repo.private
+      "private" => repo.private,
+      "created_at" => repo.created_at
     }
   end
 

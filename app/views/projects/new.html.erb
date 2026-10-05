@@ -139,6 +139,17 @@
               </div>
 
               <div class="mt-4" data-project-creation-mode-target="connectPane">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <label for="repository_sort" class="text-sm font-medium leading-6 text-gray-900">Sort repositories</label>
+                  <select id="repository_sort"
+                          class="rounded-md border-0 py-1.5 pl-3 pr-8 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 disabled:bg-gray-50 disabled:text-gray-500"
+                          data-repository-selector-target="sortSelect"
+                          data-action="change->repository-selector#sortChanged"
+                          disabled>
+                    <option value="name">Name (A–Z)</option>
+                    <option value="recent">Recently created</option>
+                  </select>
+                </div>
                 <div class="relative">
                   <input type="text" id="repository_selection" name="repository_selection"
                          autocomplete="off"

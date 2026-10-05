@@ -88,6 +88,13 @@ GitHub id, and default branch into the submitted hidden fields. Clearing the
 picker clears that metadata. When validation re-renders the form, the picker
 restores the project owner/repository once its repository list has loaded.
 
+It defaults to an alphabetical name ordering and lets the user reorder the
+already-loaded options by newest GitHub `created_at` first. A sort change is
+client-side only and does not issue another repository request. Repository rows
+without a usable creation timestamp (including rows cached before that field was
+added) sort after dated rows. Repositories already linked to the account remain
+excluded by each endpoint.
+
 ## Setup guidance
 
 Blank projects with `setup_status` below `completed` render a setup banner on

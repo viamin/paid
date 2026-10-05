@@ -40,6 +40,8 @@ class RepositorySelectorControllerNodeHarness
       controller.hasLoadingTarget = false;
       controller.hasRepoStatusTarget = true;
       controller.repoStatusTarget = target();
+      controller.hasSortSelectTarget = true;
+      controller.sortSelectTarget = target("name");
       controller.hasTokenSelectTarget = true;
       controller.tokenSelectTarget = { value: "1" };
       controller.hasInstallationSelectTarget = false;
@@ -51,8 +53,11 @@ class RepositorySelectorControllerNodeHarness
     }
 
     const repositories = [
-      { full_name: "Acme/Api-Server", owner: "Acme", name: "Api-Server", id: 1, default_branch: "main" },
-      { full_name: "octo/website", owner: "octo", name: "website", id: 2, default_branch: "trunk" }
+      { full_name: "Acme/Api-Server", owner: "Acme", name: "Api-Server", id: 1, default_branch: "main", created_at: "2026-09-01T12:00:00Z" },
+      { full_name: "octo/website", owner: "octo", name: "website", id: 2, default_branch: "trunk", created_at: "2026-09-02T12:00:00Z" },
+      { full_name: "beta/numeric-cache", owner: "beta", name: "numeric-cache", id: 3, default_branch: "main", created_at: 0 },
+      { full_name: "zeta/legacy", owner: "zeta", name: "legacy", id: 4, default_branch: "main" },
+      { full_name: "gamma/invalid-date", owner: "gamma", name: "invalid-date", id: 5, default_branch: "main", created_at: "2026-02-31T12:00:00Z" }
     ];
 
     function run() {
@@ -111,7 +116,11 @@ class RepositorySelectorControllerNodeHarness
       const restored = controllerWith(repositories);
       restored.hasSelectedRepositoryValue = true;
       restored.selectedRepositoryValue = "octo/website";
+      restored.sortSelectTarget.disabled = true;
       restored.populateRepoSelect(repositories);
+      if (restored.sortSelectTarget.disabled) {
+        throw new Error("Expected sort control to enable when repositories finish loading");
+      }
       if (restored.repoSelectTarget.value !== "octo/website" || restored.ownerTarget.value !== "octo" || restored.defaultBranchTarget.value !== "trunk") {
         throw new Error("Expected a re-rendered form to restore its repository selection");
       }
@@ -119,6 +128,12 @@ class RepositorySelectorControllerNodeHarness
       restored.showError("Failed to load repositories.");
       if (restored.repoStatusTarget.textContent !== "Failed to load repositories.") {
         throw new Error("Expected repository load failures to remain visible to the user");
+      }
+
+      controller.sortSelectTarget.value = "recent";
+      controller.sortChanged();
+      if (controller.filteredRepositories.map((repo) => repo.full_name).join(",") !== "octo/website,Acme/Api-Server,beta/numeric-cache,gamma/invalid-date,zeta/legacy") {
+        throw new Error("Expected recent sorting to place repositories with unusable timestamps after dated repositories, including invalid calendar dates");
       }
     }
 

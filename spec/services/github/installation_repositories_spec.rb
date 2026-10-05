@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec PROJECT-CREATION-013
 RSpec.describe Github::InstallationRepositories do
   let(:installation_id) { 42 }
   let(:app_id) { "123456" }
@@ -85,7 +86,8 @@ RSpec.describe Github::InstallationRepositories do
       "name" => "repo-1",
       "owner" => "acme",
       "default_branch" => "main",
-      "private" => false
+      "private" => false,
+      "created_at" => "2026-09-01T12:00:00Z"
     }
   end
 
@@ -98,7 +100,8 @@ RSpec.describe Github::InstallationRepositories do
       name: name,
       owner: { login: owner },
       default_branch: "main",
-      private: false
+      private: false,
+      created_at: "2026-09-01T12:00:00Z"
     }
   end
 end

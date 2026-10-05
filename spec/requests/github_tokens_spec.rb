@@ -117,6 +117,39 @@ RSpec.describe "GithubTokens" do
     end
   end
 
+  # @spec PROJECT-CREATION-013
+  describe "GET /github_tokens/:id/repositories" do
+    before { sign_in user }
+
+    let(:repository) do
+      {
+        "id" => 123,
+        "full_name" => "acme/widgets",
+        "name" => "widgets",
+        "owner" => "acme",
+        "default_branch" => "main",
+        "private" => true,
+        "created_at" => "2026-09-01T12:00:00Z"
+      }
+    end
+
+    it "includes repository creation timestamps" do
+      token = create_current_account_token(
+        accessible_repositories: [ repository ],
+        repositories_synced_at: Time.current
+      )
+
+      get repositories_github_token_path(token)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to contain_exactly(a_hash_including(
+        "id" => 123,
+        "full_name" => "acme/widgets",
+        "created_at" => "2026-09-01T12:00:00Z"
+      ))
+    end
+  end
+
   describe "GET /github_tokens/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

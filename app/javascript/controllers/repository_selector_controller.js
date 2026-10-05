@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 
 // @spec PROJECT-CREATION-013 PROJECT-CREATION-014
 export default class extends Controller {
-  static targets = ["tokenSelect", "installationSelect", "repoSelect", "repoList", "repoClear", "repoStatus", "owner", "repo", "githubId", "defaultBranch", "loading"]
+  static targets = ["tokenSelect", "installationSelect", "repoSelect", "repoList", "repoClear", "repoStatus", "sortSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
   static values = { selectedRepository: String }
 
   connect() {
@@ -12,6 +12,7 @@ export default class extends Controller {
     this.loading = false
     this.updateRepoDisabledState()
     this.updateRepoClearState()
+    this.updateSortDisabledState()
     this.loadRepositoriesFromSelection()
   }
 
@@ -54,12 +55,19 @@ export default class extends Controller {
   clearRepository() {
     this.repoSelectTarget.value = ""
     this.clearHiddenFields()
-    this.filteredRepositories = this.repositories
+    this.filteredRepositories = this.sortedRepositories()
     this.activeIndex = -1
     this.renderRepoList()
     this.closeRepoList()
     this.updateRepoClearState()
     this.repoSelectTarget.focus()
+  }
+
+  // @spec PROJECT-CREATION-013
+  sortChanged() {
+    this.filteredRepositories = this.matchingRepositories()
+    this.activeIndex = this.filteredRepositories.length ? 0 : -1
+    this.renderRepoList()
   }
 
   // Private
@@ -68,6 +76,7 @@ export default class extends Controller {
     const selection = this.selectedCredential()
     this.clearRepoSelect()
     this.updateRepoDisabledState()
+    this.updateSortDisabledState()
     if (!selection) return
 
     this.showLoading()
@@ -93,6 +102,7 @@ export default class extends Controller {
     } finally {
       this.hideLoading()
       this.updateRepoDisabledState()
+      this.updateSortDisabledState()
     }
   }
 
@@ -109,10 +119,11 @@ export default class extends Controller {
   }
 
   populateRepoSelect(repos) {
-    this.repositories = repos.sort((a, b) => a.full_name.localeCompare(b.full_name))
-    this.filteredRepositories = this.repositories
+    this.repositories = repos
+    this.filteredRepositories = this.sortedRepositories()
     this.activeIndex = -1
     this.repoSelectTarget.placeholder = `Search ${repos.length} repositories...`
+    this.updateSortDisabledState()
     this.setRepoStatus(`${repos.length} repositories available.`)
 
     const selectedRepository = this.repositories.find((repo) => repo.full_name === this.selectedRepositoryValue)
@@ -122,10 +133,45 @@ export default class extends Controller {
 
   matchingRepositories() {
     const query = this.repoSelectTarget.value.trim().toLocaleLowerCase()
-    if (!query) return this.repositories
+    if (!query) return this.sortedRepositories()
 
-    return this.repositories.filter((repo) => [repo.full_name, repo.owner, repo.name]
+    return this.sortedRepositories().filter((repo) => [repo.full_name, repo.owner, repo.name]
       .some((value) => value.toLocaleLowerCase().includes(query)))
+  }
+
+  sortedRepositories() {
+    return this.repositories.slice().sort((left, right) => {
+      if (this.sortSelectTarget.value === "recent") return this.recentlyCreatedComparator(left, right)
+
+      return left.full_name.localeCompare(right.full_name)
+    })
+  }
+
+  recentlyCreatedComparator(left, right) {
+    const leftCreatedAt = this.createdAt(left)
+    const rightCreatedAt = this.createdAt(right)
+
+    if (leftCreatedAt === null && rightCreatedAt === null) return left.full_name.localeCompare(right.full_name)
+    if (leftCreatedAt === null) return 1
+    if (rightCreatedAt === null) return -1
+
+    return rightCreatedAt - leftCreatedAt || left.full_name.localeCompare(right.full_name)
+  }
+
+  createdAt(repository) {
+    if (typeof repository.created_at !== "string") return null
+
+    const parts = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.exec(repository.created_at)
+    if (!parts) return null
+
+    const timestamp = Date.parse(repository.created_at)
+    const date = new Date(timestamp)
+    const validDate = Number.isFinite(timestamp) &&
+      date.getUTCFullYear() === Number(parts[1]) &&
+      date.getUTCMonth() + 1 === Number(parts[2]) &&
+      date.getUTCDate() === Number(parts[3])
+
+    return validDate ? timestamp : null
   }
 
   moveActiveOption(event, direction) {
@@ -154,7 +200,7 @@ export default class extends Controller {
 
     this.repoSelectTarget.value = repository.full_name
     this.syncRepositoryFields(repository)
-    this.filteredRepositories = this.repositories
+    this.filteredRepositories = this.sortedRepositories()
     this.activeIndex = -1
     this.renderRepoList()
     this.closeRepoList()
@@ -284,6 +330,10 @@ export default class extends Controller {
 
   updateRepoClearState() {
     this.repoClearTarget.disabled = this.repoSelectTarget.disabled || !this.repoSelectTarget.value
+  }
+
+  updateSortDisabledState() {
+    if (this.hasSortSelectTarget) this.sortSelectTarget.disabled = this.repositories.length === 0
   }
 
   clearOtherCredential(type) {
