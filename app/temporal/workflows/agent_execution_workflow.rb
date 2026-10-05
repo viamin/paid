@@ -430,6 +430,12 @@ module Workflows
               run_activity(Activities::UpdateIssueWithPrActivity,
                 { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
 
+              # A PR can be an intentionally partial closeout. Reconcile its
+              # remaining acceptance work before treating the successful run as
+              # terminal; the activity retains retry state if GitHub is down.
+              run_activity(Activities::ReconcilePartialCloseoutActivity,
+                { agent_run_id: agent_run_id }, timeout: 120)
+
               # Step 8: Request review-bot review on the new draft PR (best-effort)
               request_review_bot_review(project_id, pr_result[:pull_request_number])
 

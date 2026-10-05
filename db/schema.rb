@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_025936) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -374,6 +374,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
+    t.jsonb "reconciliation", default: {}, null: false, comment: "Durable replay state for partial PR closeout gap reconciliation."
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["execution_origin"], name: "index_agent_runs_on_execution_origin"

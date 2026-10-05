@@ -67,3 +67,16 @@
   required work resolves.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+## PR-producing partial closeouts
+
+- [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved
+  acceptance criterion unmet, the system SHALL use an agent-harness structured
+  assessment and SHALL reconcile every gap to an existing open owner, a
+  replay-safe focused follow-up with an explicit local and GitHub-visible
+  dependency, or a blocking Inbox prerequisite for an authorized operator.
+  A closed historical issue SHALL NOT satisfy ownership. GitHub failures SHALL
+  retain durable retry state on the run.
+  *Tests:* `spec/services/partial_closeouts/reconcile_spec.rb`.
+  *Code:* `app/services/partial_closeouts/reconcile.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.

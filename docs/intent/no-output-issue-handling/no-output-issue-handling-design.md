@@ -123,3 +123,15 @@ The activity remains safe to retry:
 
 This preserves marker-based deduplication while allowing a previously surfaced
 comment failure to self-heal once the human-visible rationale exists.
+
+## PR-producing partial closeouts
+
+A run that creates a PR can still leave acceptance criteria unmet. Before the
+workflow treats such a run as successfully closed out, `ReconcilePartialCloseoutActivity`
+uses an agent-harness structured assessment of approved intent, the run/PR
+evidence, and current open issues. The deterministic reconciler validates that
+assessment, reuses only current open owners, creates bounded focused issues
+when needed, and records local `IssueDependency` edges plus visible `Depends on
+#N` text on the parent. It persists its progress on the run so a GitHub failure
+can resume without duplicate issues. Human-only prerequisites create a blocking
+Inbox notification with the exact next step rather than an agent retry.
