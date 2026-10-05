@@ -420,7 +420,7 @@ module Automation
             terminal_at = terminal_audit_times(project, epic_ids)
             return [] if terminal_at.empty?
 
-            resolved_prerequisite_linked_at(epic_ids).filter_map do |issue_id, linked_at|
+            resolved_prerequisite_linked_at(project, epic_ids).filter_map do |issue_id, linked_at|
               issue_id if linked_at > terminal_at.fetch(issue_id, Time.at(0))
             end
           end
@@ -442,7 +442,7 @@ module Automation
               .pluck(:id, :partial_completion_at).to_h
             return [] if partial_times.empty?
 
-            resolved_prerequisite_linked_at(partial_times.keys).filter_map do |issue_id, resolved_at|
+            resolved_prerequisite_linked_at(project, partial_times.keys).filter_map do |issue_id, resolved_at|
               issue_id if resolved_at > partial_times.fetch(issue_id)
             end
           end
@@ -531,7 +531,16 @@ module Automation
           #   rows that predate +parent_issue_linked_at+.
           # - For dependencies, fall back to +issue_dependencies.created_at+
           #   (the edge creation time) when +closed_at+ isn't stamped.
-          def resolved_prerequisite_linked_at(issue_ids)
+          # - For external owner/repo#N dependencies, mirror
+          #   {Issue.ready_for_work}'s `blocked_by_external` rule via
+          #   {IssueDependency.external_resolved_for_account} and use the
+          #   matching target issue's +closed_at+ as the stable
+          #   resolution timestamp (AUTO-PICK-QUEUE-012). External deps
+          #   whose target project is not in the same account or whose
+          #   target issue is not synced contribute NULL rows that the
+          #   strict comparison drops, mirroring the conservative local
+          #   fallback.
+          def resolved_prerequisite_linked_at(project, issue_ids)
             child_times = Issue.where(parent_issue_id: issue_ids, is_pull_request: false)
               .where("github_state = 'closed' OR paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
               .group(:parent_issue_id)
@@ -541,9 +550,16 @@ module Automation
               .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
               .group(:issue_id)
               .maximum(Arel.sql("COALESCE(issues.closed_at, issue_dependencies.created_at)"))
+            external_dependency_times = IssueDependency
+              .external_resolved_for_account(project.account_id)
+              .where(issue_id: issue_ids)
+              .where("ext_issue.github_state = 'closed' OR ext_issue.paid_state IN (?)",
+                Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .group(:issue_id)
+              .maximum(Arel.sql("COALESCE(ext_issue.closed_at, issue_dependencies.created_at)"))
 
-            (child_times.keys | dependency_times.keys).to_h do |issue_id|
-              [ issue_id, [ child_times[issue_id], dependency_times[issue_id] ].compact.max ]
+            (child_times.keys | dependency_times.keys | external_dependency_times.keys).to_h do |issue_id|
+              [ issue_id, [ child_times[issue_id], dependency_times[issue_id], external_dependency_times[issue_id] ].compact.max ]
             end
           end
 

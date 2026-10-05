@@ -1024,6 +1024,27 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
 
+    # Cross-project external dep edge: a same-account external dep whose
+    # target issue closes after the audit terminates. Mirrors the
+    # `Issue.ready_for_work` `blocked_by_external` rule (#2216) so the
+    # scheduler honours the same resolution semantics the model uses.
+    it "re-audits an epic after a same-account external dep closes" do # @spec AUTO-PICK-QUEUE-010
+      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        create(:issue, :closed, project: sibling_project, github_number: 42, closed_at: 1.hour.ago)
+        epic.issue_dependencies.create!(
+          depends_on_issue: nil,
+          depends_on_owner: "viamin",
+          depends_on_repo: "agent-harness",
+          depends_on_number: 42
+        )
+
+        expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
     it "continues a partial ordinary issue once its prerequisite resolves" do # @spec AUTO-PICK-QUEUE-012
       travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
         issue = create(:issue, project: project, paid_state: "manual_review",
@@ -1059,6 +1080,101 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
         expect(described_class.eligible_scope(project)).not_to include(issue)
       end
+    end
+
+    # Cross-project external dependency: an owner/repo#N prerequisite whose
+    # target issue is synced into a sibling project of the same account and
+    # closes after the partial-completion assessment. Mirrors the
+    # `Issue.ready_for_work` `blocked_by_external` rule (#2216) so the
+    # scheduler honours the same resolution semantics the model uses.
+    it "continues a partial ordinary issue once a same-account external dep closes" do # @spec AUTO-PICK-QUEUE-012
+      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        issue = create(:issue, project: project, paid_state: "manual_review",
+          partial_completion_at: 2.hours.ago, partial_completion_pr_number: 91)
+        create(:issue, :pull_request, project: project, parent_issue: issue,
+          github_state: "closed", pr_review_phase: "merged", github_number: 91)
+        create(:issue, :closed, project: sibling_project, github_number: 42, closed_at: 1.hour.ago)
+        issue.issue_dependencies.create!(
+          depends_on_issue: nil,
+          depends_on_owner: "viamin",
+          depends_on_repo: "agent-harness",
+          depends_on_number: 42
+        )
+
+        expect(described_class.eligible_scope(project)).to include(issue)
+      end
+    end
+
+    it "keeps a partial ordinary issue blocked when its same-account external dep target is still open" do # @spec AUTO-PICK-QUEUE-012
+      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      issue = create(:issue, project: project, paid_state: "manual_review",
+        partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
+      create(:issue, :pull_request, project: project, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged", github_number: 91)
+      create(:issue, project: sibling_project, github_number: 42, github_state: "open")
+      issue.issue_dependencies.create!(
+        depends_on_issue: nil,
+        depends_on_owner: "viamin",
+        depends_on_repo: "agent-harness",
+        depends_on_number: 42
+      )
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+    end
+
+    it "does not re-arm a partial ordinary issue from a same-account external dep closed before its assessment" do # @spec AUTO-PICK-QUEUE-012
+      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        issue = create(:issue, project: project, paid_state: "manual_review",
+          partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
+        create(:issue, :pull_request, project: project, parent_issue: issue,
+          github_state: "closed", pr_review_phase: "merged", github_number: 91)
+        create(:issue, :closed, project: sibling_project, github_number: 42, closed_at: 2.hours.ago)
+        issue.issue_dependencies.create!(
+          depends_on_issue: nil,
+          depends_on_owner: "viamin",
+          depends_on_repo: "agent-harness",
+          depends_on_number: 42
+        )
+
+        expect(described_class.eligible_scope(project)).not_to include(issue)
+      end
+    end
+
+    it "keeps a partial ordinary issue blocked when its same-account external dep points at an unsynced target" do # @spec AUTO-PICK-QUEUE-012
+      issue = create(:issue, project: project, paid_state: "manual_review",
+        partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
+      create(:issue, :pull_request, project: project, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged", github_number: 91)
+      # Sibling project is in the same account but the matching target issue
+      # is not yet synced, so the external dep cannot resolve.
+      create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      issue.issue_dependencies.create!(
+        depends_on_issue: nil,
+        depends_on_owner: "viamin",
+        depends_on_repo: "agent-harness",
+        depends_on_number: 42
+      )
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+    end
+
+    it "keeps a partial ordinary issue blocked when its external dep target lives in a different account" do # @spec AUTO-PICK-QUEUE-012
+      other_account_project = create(:project, owner: "viamin", name: "agent-harness")
+      issue = create(:issue, project: project, paid_state: "manual_review",
+        partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
+      create(:issue, :pull_request, project: project, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged", github_number: 91)
+      create(:issue, :closed, project: other_account_project, github_number: 42, closed_at: 1.hour.ago)
+      issue.issue_dependencies.create!(
+        depends_on_issue: nil,
+        depends_on_owner: "viamin",
+        depends_on_repo: "agent-harness",
+        depends_on_number: 42
+      )
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
     end
 
     # @spec AUTO-PICK-QUEUE-003

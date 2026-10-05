@@ -138,3 +138,17 @@ The scheduler consumes only the stable resolution timestamp and the persisted
 outcome, so repeated webhooks, polling, concurrent schedulers, and unrelated
 sync writes cannot continuously requeue the issue. Existing queue uniqueness
 and dequeue admission remain the final exactly-once protection.
+
+Authoritative prerequisite resolution covers every prerequisite graph the
+scheduler already reads for readiness: local `IssueDependency` rows whose
+target is a same-project issue, `parent_issue_id` children, and external
+owner/repo#N dependencies whose target issue is observable in another
+project of the same account. The external case joins via
+`IssueDependency.external_resolved_for_account` (the same join
+`Issue.ready_for_work` already uses for cross-project blocking), so the
+partial-completion re-arm stays consistent with the model's blocking rule.
+The matching target issue's `closed_at` is the stable resolution timestamp;
+external targets whose target project is not synced into the account, whose
+target issue is not yet synced, or whose target remains in an open blocking
+paid_state contribute no resolution timestamp and therefore cannot re-arm the
+source.

@@ -111,7 +111,13 @@
   `parent_issue_linked_at` for children or `issue_dependencies.created_at`
   for legacy data) rather than the link timestamp, so an audit run that
   files work mid-run still re-arms once that work resolves after the audit
-  terminates.
+  terminates. Cross-project external owner/repo#N prerequisites whose
+  target issue is observable in another project of the same account SHALL
+  participate in the resolution comparison (joined via
+  `IssueDependency.external_resolved_for_account`, mirroring
+  `Issue.ready_for_work`'s `blocked_by_external` rule); targets whose project
+  is not synced into the account or whose issue is not yet synced contribute
+  no resolution timestamp and SHALL NOT re-arm the epic.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/models/issue.rb`.
@@ -121,11 +127,21 @@
   persist the partial outcome, the source PR correlation, and its authoritative
   prerequisite evidence. It SHALL keep the issue blocked until a prerequisite
   resolves after that assessment, then allow exactly one normal auto-pick
-  continuation. Repeated polling, unrelated sync writes, and an unchanged
-  prerequisite SHALL NOT re-arm it. This exception does not apply without the
-  explicit partial outcome and therefore preserves merged-PR duplicate-work
-  protection. Semantic assessment is performed by the completion workflow via
-  `agent_harness`; queue admission only consumes its persisted outcome.
+  continuation. Authoritative prerequisites SHALL include local
+  `IssueDependency` targets, `parent_issue_id` children, and external
+  owner/repo#N dependencies whose target issue is observable in another
+  project of the same account (joined via
+  `IssueDependency.external_resolved_for_account`, the same join
+  `Issue.ready_for_work` uses for cross-project blocking). The external
+  target's `closed_at` SHALL be the resolution timestamp; targets whose
+  project is not synced into the account, whose issue is not yet synced, or
+  whose target remains in an open blocking paid_state SHALL contribute no
+  resolution timestamp and SHALL NOT re-arm the source. Repeated polling,
+  unrelated sync writes, and an unchanged prerequisite SHALL NOT re-arm it.
+  This exception does not apply without the explicit partial outcome and
+  therefore preserves merged-PR duplicate-work protection. Semantic
+  assessment is performed by the completion workflow via `agent_harness`;
+  queue admission only consumes its persisted outcome.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `Issue#mark_partial_completion!`,
   `Automation::Strategies::AutoPick::DefaultCandidateSource`.
