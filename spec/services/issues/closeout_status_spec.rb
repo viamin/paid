@@ -51,6 +51,38 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.unresolved_prerequisites).to include("#44")
   end
 
+  it "explains an active issue-analysis backoff as the continuation blocker" do
+    merged_partial_pr(number: 12)
+    issue.update_columns(
+      issue_analysis_next_attempt_at: 2.hours.from_now,
+      issue_analysis_backoff_set_at: 1.hour.ago
+    )
+
+    status = described_class.call(issue.reload)
+
+    expect(status.blocker_codes).to include(:analysis_backoff)
+    expect(status.reason).to include("backoff")
+  end
+
+  it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
+    merged_partial_pr(number: 12)
+    create(
+      :issue,
+      project: project,
+      github_state: "open",
+      paid_state: "in_progress",
+      parent_issue_id: issue.id,
+      github_number: 55
+    )
+
+    status = described_class.call(issue)
+
+    expect(status.stalled?).to be(true)
+    expect(status.blocker_codes).to contain_exactly(:ineligible)
+    expect(status.reason).to include("auto-pick eligibility guard")
+    expect(status.reason).not_to include("duplicate-work")
+  end
+
   it "is not stalled without closeout evidence" do
     status = described_class.call(issue)
 

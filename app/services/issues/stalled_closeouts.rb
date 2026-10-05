@@ -24,9 +24,20 @@ module Issues
 
       eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(project).pluck(:id).to_set
+      # The scoped admission decision each candidate's continuation would
+      # face at dequeue (`CloseoutStatus#residual_eligibility_blocker`),
+      # batched once per project. The guards are per-issue, so authorizing
+      # every candidate at once yields each candidate's own scoped verdict.
+      continuation_eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_scope(project, continuation_authorized_issue_ids: candidates.map(&:id))
+        .pluck(:id).to_set
 
       candidates.filter_map do |issue|
-        status = CloseoutStatus.call(issue, eligible_issue_ids: eligible_ids)
+        status = CloseoutStatus.call(
+          issue,
+          eligible_issue_ids: eligible_ids,
+          continuation_eligible_issue_ids: continuation_eligible_ids
+        )
         Pair.new(issue: issue, status: status) if status.stalled?
       end
     end

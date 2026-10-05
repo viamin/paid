@@ -192,6 +192,45 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.message).to include("Feature intent")
     end
 
+    it "refuses when an active issue-analysis backoff holds the issue" do
+      merged_partial_pr(number: 12)
+      issue.update_columns(
+        issue_analysis_next_attempt_at: 2.hours.from_now,
+        issue_analysis_backoff_set_at: 1.hour.ago
+      )
+
+      result = request_continuation
+
+      expect(result.code).to eq(:analysis_backoff)
+      expect(result.message).to include("backoff")
+      expect(issue.agent_runs).to be_empty
+      expect(IssueContinuationRequest.count).to eq(0)
+    end
+
+    it "refuses instead of queueing a run another eligibility guard would cancel at dequeue" do
+      # A guard the targeted blocker walk does not enumerate (here: an open
+      # non-PR sub-issue keeps the parent out of every eligible scope) must
+      # refuse up front with its reason, never queue a run the dequeue-time
+      # recheck would cancel and supersede (#4130 review).
+      merged_partial_pr(number: 12)
+      create(
+        :issue,
+        project: project,
+        github_state: "open",
+        paid_state: "in_progress",
+        parent_issue_id: issue.id,
+        github_number: 55
+      )
+
+      result = request_continuation
+
+      expect(result.success?).to be(false)
+      expect(result.code).to eq(:ineligible)
+      expect(result.message).to include("auto-pick eligibility guard")
+      expect(issue.agent_runs).to be_empty
+      expect(IssueContinuationRequest.count).to eq(0)
+    end
+
     it "refuses when the project budget is exhausted" do
       merged_partial_pr(number: 12)
       create(:cost_budget, :monthly, :exceeded, :hard_stop, project: project)

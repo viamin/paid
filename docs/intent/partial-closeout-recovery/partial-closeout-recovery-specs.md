@@ -62,12 +62,21 @@
   design revision holds, analysis backoff, tier feasibility, budgets, issue
   and project pauses, skip labels, needs-input, and manual review — and the
   request SHALL be refused with the specific reason when any of them blocks.
-  With no authorized ids, `eligible_scope` SHALL behave exactly as before.
+  The admission decision SHALL be preflighted with the same scoped
+  `eligible_for_dequeue?` evaluation the dequeue recheck applies
+  (`CloseoutStatus` residual guard, batched per project in
+  `StalledCloseouts`), so a request can never queue a run that dequeue would
+  cancel and supersede, and the lane explains the real blocker instead of the
+  duplicate-work fallback. With no authorized ids, `eligible_scope` SHALL
+  behave exactly as before.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/services/issues/request_continuation.rb`,
-  `app/services/issues/closeout_status.rb`.
+  `app/services/issues/closeout_status.rb`,
+  `app/services/issues/stalled_closeouts.rb`.
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
-  `spec/services/issues/request_continuation_spec.rb`.
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue

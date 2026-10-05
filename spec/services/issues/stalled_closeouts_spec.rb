@@ -45,6 +45,25 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
     )
   end
 
+  describe ".pairs_for" do
+    it "keeps a stall held by a non-walked eligibility guard in the lane with that guard as its reason" do
+      merged_pr_row(number: 12, parent_issue_id: issue.id)
+      create(
+        :issue,
+        project: project,
+        github_state: "open",
+        paid_state: "in_progress",
+        parent_issue_id: issue.id,
+        github_number: 55
+      )
+
+      pairs = described_class.pairs_for(project)
+
+      expect(pairs.map { |pair| pair.issue.id }).to contain_exactly(issue.id)
+      expect(pairs.first.status.reason).to include("auto-pick eligibility guard")
+    end
+  end
+
   describe ".closeout_evidence_sql" do
     it "matches a parent-linked merged PR via the parent_issue_id prefilter" do
       create(

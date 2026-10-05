@@ -62,10 +62,13 @@ module Issues
       end
     end
 
-    def self.call(issue, eligible_issue_ids: nil)
+    def self.call(issue, eligible_issue_ids: nil, continuation_eligible_issue_ids: nil)
       evidence = CloseoutEvidence.call(issue)
       eligible_ids = eligible_issue_ids || admissible_issue_ids(issue)
       blockers = admission_blockers(issue)
+      if blockers.empty? && evidence.present?
+        blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids) ].compact
+      end
 
       Result.new(
         evidence: evidence,
@@ -91,7 +94,39 @@ module Issues
     # explains it.
     def self.admission_blockers(issue)
       prerequisite_blockers(issue) + operator_pause_blockers(issue) +
-        run_in_flight_blockers(issue) + trust_blockers(issue) + feature_hold_blockers(issue)
+        run_in_flight_blockers(issue) + trust_blockers(issue) + feature_hold_blockers(issue) +
+        analysis_backoff_blockers(issue)
+    end
+
+    # The walk above only explains the guards with clear per-issue reasons;
+    # it can lag `eligible_scope` as new guards are added. This residual
+    # preflight settles admission with the exact scoped decision the
+    # dequeue-time recheck enforces (`eligible_for_dequeue?` carrying this
+    # issue's continuation authorization), so {RequestContinuation} refuses
+    # up front — with the reason — instead of queueing a run dequeue would
+    # cancel and supersede, and the lane explains the real blocker instead
+    # of the duplicate-work fallback (#4130 review).
+    # @spec PARTIAL-CLOSEOUT-004
+    def self.residual_eligibility_blocker(issue, continuation_eligible_issue_ids)
+      admissible = if continuation_eligible_issue_ids
+        continuation_eligible_issue_ids.include?(issue.id)
+      else
+        Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_for_dequeue?(
+          issue.project,
+          issue.id,
+          excluding_run_id: nil,
+          continuation_authorized_issue_ids: [ issue.id ]
+        )
+      end
+      return nil if admissible
+
+      Blocker.new(
+        code: :ineligible,
+        message: "Another auto-pick eligibility guard (for example open tracker references, " \
+                 "an open linked pull request, an unresolved prerequisite notification, or a model " \
+                 "tier no enabled runner can satisfy) still holds this issue out of scheduling; " \
+                 "clear that guard before requesting a continuation."
+      )
     end
 
     def self.prerequisite_blockers(issue)
@@ -157,6 +192,27 @@ module Issues
       return [] if admission.allowed?
 
       [ Blocker.new(code: :feature_held, message: admission.reason || "A feature release gate holds this issue.") ]
+    end
+
+    # Mirrors the `apply_issue_analysis_backoff` eligibility filter via the
+    # canonical `Issue#issue_analysis_backoff_active?` predicate, so an
+    # evidence-carrying issue cooling down after provider exhaustion refuses
+    # continuation with the specific wait-until reason instead of queueing a
+    # run the dequeue recheck would cancel.
+    # @spec PARTIAL-CLOSEOUT-004
+    def self.analysis_backoff_blockers(issue)
+      next_attempt_at = issue.issue_analysis_next_attempt_at
+      return [] if next_attempt_at.blank? || next_attempt_at <= Time.current
+
+      reset_at = Issues::IssueAnalysisBackoffResetContext.call(project: issue.project)
+      return [] unless issue.issue_analysis_backoff_active?(reset_at: reset_at)
+
+      [ Blocker.new(
+        code: :analysis_backoff,
+        message: "Automatic issue analysis is in a provider-exhaustion backoff until " \
+                 "#{next_attempt_at.utc.iso8601}; wait for the window to clear (or restore a " \
+                 "capable runner to reset it) before requesting a continuation."
+      ) ]
     end
 
     def self.prerequisite_labels(issue)

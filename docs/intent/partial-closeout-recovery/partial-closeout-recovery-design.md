@@ -80,7 +80,14 @@ paid_state edit and never a blanket guard lift:
   uniqueness, tenant isolation, trust, feature release/design revision holds,
   analysis backoff, tier feasibility, budgets, skip labels, needs-input,
   manual review, paused flags, and unmet dependencies all still apply — with
-  the unmet prerequisites explained to the user.
+  the unmet prerequisites explained to the user. A targeted blocker walk
+  (`CloseoutStatus.admission_blockers`) explains the guards that have clear
+  per-issue reasons; a residual preflight then settles admission with the
+  exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
+  (batched once per project in `StalledCloseouts`), so a request the walk
+  cannot explain is refused up front instead of queueing a run dequeue would
+  cancel and supersede — the walk explains the authority, it never
+  substitutes for it.
 
 ### Consistency at dequeue and run start
 
