@@ -61,6 +61,21 @@
   *Tests:* `spec/services/projects/create_blank_spec.rb`.
   *Code:* `Projects::CreateBlank`.
 
+- [x] **PROJECT-CREATION-013** - When the user connects an existing
+  repository, the repository endpoints SHALL include each repository's GitHub
+  creation timestamp. The selector SHALL default to Name (A–Z) and allow
+  Recently created ordering without another request; repositories without a
+  usable timestamp SHALL sort after dated repositories, and repositories
+  already linked to the account SHALL remain excluded.
+  *Tests:* `spec/requests/github_tokens_spec.rb`,
+  `spec/requests/github_installations_spec.rb`,
+  `spec/models/github_token_spec.rb`,
+  `spec/services/github/installation_repositories_spec.rb`.
+  *Code:* `GithubToken#serialize_repository`,
+  `GithubInstallationsController#normalized_repositories`,
+  `Github::InstallationRepositories#serialize_repository`,
+  `app/javascript/controllers/repository_selector_controller.js`.
+
 ## Bootstrap guidance
 
 - [x] **PROJECT-CREATION-007** - When a blank project's `setup_status` is not

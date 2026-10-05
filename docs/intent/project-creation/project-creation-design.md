@@ -73,6 +73,16 @@ GitHub API failures (`NotFoundError`, `AuthenticationError`, `RateLimitError`,
 `ApiError`, `Error`) and GitHub App installation-token provisioning failures
 are surfaced as form errors on the add-project page.
 
+## Connecting an existing repository
+
+The existing-repository selector receives normalized repository metadata from
+the selected PAT or GitHub App installation. It defaults to an alphabetical
+name ordering and lets the user reorder the already-loaded options by newest
+GitHub `created_at` first. Repository rows without a usable creation timestamp
+(including rows cached before that field was added) sort after dated rows. A
+sort change is client-side only and does not issue another repository request;
+repositories already linked to the account remain excluded by each endpoint.
+
 ## Setup guidance
 
 Blank projects with `setup_status` below `completed` render a setup banner on

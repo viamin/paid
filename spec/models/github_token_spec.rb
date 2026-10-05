@@ -544,14 +544,15 @@ RSpec.describe GithubToken do # @spec POSTGRESQL-PERSISTENCE-003
     end
   end
 
+  # @spec PROJECT-CREATION-013
   describe "#sync_repositories!" do
     let(:api_base) { "https://api.github.com" }
     let(:repo_data) do
       [
         { id: 1, full_name: "owner/repo1", name: "repo1", default_branch: "main",
-          private: false, permissions: { admin: true, push: true, pull: true } },
+          private: false, created_at: "2026-09-01T12:00:00Z", permissions: { admin: true, push: true, pull: true } },
         { id: 2, full_name: "owner/repo2", name: "repo2", default_branch: "main",
-          private: false, permissions: { admin: true, push: true, pull: true } }
+          private: false, created_at: "2026-09-02T12:00:00Z", permissions: { admin: true, push: true, pull: true } }
       ]
     end
 
@@ -571,6 +572,7 @@ RSpec.describe GithubToken do # @spec POSTGRESQL-PERSISTENCE-003
         github_token.sync_repositories!
 
         expect(github_token.accessible_repositories.size).to eq(2)
+        expect(github_token.accessible_repositories.first.fetch("created_at")).to eq("2026-09-01T12:00:00.000Z")
       end
 
       it "does not probe write access" do

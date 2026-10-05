@@ -1,11 +1,13 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["tokenSelect", "installationSelect", "repoSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
+  static targets = ["tokenSelect", "installationSelect", "repoSelect", "sortSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
   static values = { selectedRepository: String }
 
   connect() {
+    this.repositories = []
     this.updateRepoDisabledState()
+    this.updateSortDisabledState()
     this.loadRepositoriesFromSelection()
   }
 
@@ -33,12 +35,19 @@ export default class extends Controller {
     this.defaultBranchTarget.value = selectedOption.dataset.defaultBranch
   }
 
+  // @spec PROJECT-CREATION-013
+  sortChanged() {
+    this.renderRepoSelect()
+  }
+
   // Private
 
   async loadRepositoriesFromSelection() {
     const selection = this.selectedCredential()
+    this.repositories = []
     this.clearRepoSelect()
     this.updateRepoDisabledState()
+    this.updateSortDisabledState()
 
     if (!selection) return
 
@@ -71,6 +80,7 @@ export default class extends Controller {
     } finally {
       this.hideLoading()
       this.updateRepoDisabledState()
+      this.updateSortDisabledState()
     }
   }
 
@@ -87,6 +97,12 @@ export default class extends Controller {
   }
 
   populateRepoSelect(repos) {
+    this.repositories = repos
+    this.renderRepoSelect()
+  }
+
+  renderRepoSelect() {
+    const selectedRepository = this.repoSelectTarget.value || this.selectedRepositoryValue
     this.clearRepoSelect()
 
     const prompt = document.createElement("option")
@@ -94,8 +110,7 @@ export default class extends Controller {
     prompt.textContent = `Select a repository... (${repos.length} available)`
     this.repoSelectTarget.appendChild(prompt)
 
-    repos
-      .sort((a, b) => a.full_name.localeCompare(b.full_name))
+    this.sortedRepositories()
       .forEach((repo) => {
         const option = document.createElement("option")
         option.value = repo.full_name
@@ -107,10 +122,34 @@ export default class extends Controller {
         this.repoSelectTarget.appendChild(option)
       })
 
-    if (this.hasSelectedRepositoryValue && this.selectedRepositoryValue) {
-      this.repoSelectTarget.value = this.selectedRepositoryValue
+    if (selectedRepository) {
+      this.repoSelectTarget.value = selectedRepository
       this.repoSelected()
     }
+  }
+
+  sortedRepositories() {
+    return this.repositories.slice().sort((left, right) => {
+      if (this.sortSelectTarget.value === "recent") return this.recentlyCreatedComparator(left, right)
+
+      return left.full_name.localeCompare(right.full_name)
+    })
+  }
+
+  recentlyCreatedComparator(left, right) {
+    const leftCreatedAt = this.createdAt(left)
+    const rightCreatedAt = this.createdAt(right)
+
+    if (leftCreatedAt === null && rightCreatedAt === null) return left.full_name.localeCompare(right.full_name)
+    if (leftCreatedAt === null) return 1
+    if (rightCreatedAt === null) return -1
+
+    return rightCreatedAt - leftCreatedAt || left.full_name.localeCompare(right.full_name)
+  }
+
+  createdAt(repository) {
+    const timestamp = Date.parse(repository.created_at)
+    return Number.isNaN(timestamp) ? null : timestamp
   }
 
   clearRepoSelect() {
@@ -149,6 +188,10 @@ export default class extends Controller {
     if (this.hasRepoSelectTarget) {
       this.repoSelectTarget.disabled = !hasCredential
     }
+  }
+
+  updateSortDisabledState() {
+    if (this.hasSortSelectTarget) this.sortSelectTarget.disabled = this.repositories.length === 0
   }
 
   clearOtherCredential(type) {
