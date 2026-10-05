@@ -273,8 +273,8 @@ still drops harness attempt reports. viamin/paid#4125 owns attempt-report persis
 (API-CONVERSATION-DELEGATION-002); viamin/paid#4126 implemented stable request
 identity, cancellation/deadline propagation, and restart recovery
 (API-CONVERSATION-DELEGATION-003); both are sub-issues of #4013, but only
-#4125 remains a completion dependency for closing #4013, so this closeout uses
-`Tracks #4013` rather than closing language.
+issue #4125 remains a completion dependency for closing #4013, so this
+closeout uses `Tracks #4013` rather than closing language.
 
 ## 2026-10-05 Closeout
 
