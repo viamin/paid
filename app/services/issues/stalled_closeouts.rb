@@ -60,16 +60,7 @@ module Issues
             AND merged_prs.pr_review_phase = 'merged'
         )
         OR EXISTS (
-          SELECT 1 FROM agent_runs evidence_runs
-          INNER JOIN issues run_prs
-            ON run_prs.project_id = evidence_runs.project_id
-           AND run_prs.github_number = evidence_runs.pull_request_number
-           AND run_prs.is_pull_request = TRUE
-           AND run_prs.pr_review_phase = 'merged'
-          WHERE evidence_runs.project_id = issues.project_id
-            AND evidence_runs.issue_id = issues.id
-            AND evidence_runs.goal = 'create_pr'
-            AND evidence_runs.pull_request_number IS NOT NULL
+          #{Issue::AUTO_PICK_MERGED_PR_CORRELATED_SUBQUERY}
         )
       SQL
     end

@@ -47,7 +47,9 @@ module Issues
     # or via an originating create_pr run's recorded pull_request_number
     # matched through the repo-qualified URL join (same discipline as
     # Issue.paid_generated_pull_request_source_issue_ids so fork/upstream
-    # number collisions cannot fabricate evidence).
+    # number collisions cannot fabricate evidence; a run whose fork PR #42 is
+    # open cannot be treated as terminal evidence by an upstream PR #42 in the
+    # same project).
     def self.merged_pull_requests(issue)
       linked = Issue.where(
         project_id: issue.project_id,
@@ -62,6 +64,22 @@ module Issues
           INNER JOIN issues merged_prs
             ON merged_prs.project_id = agent_runs.project_id
            AND merged_prs.github_number = agent_runs.pull_request_number
+          INNER JOIN projects merged_pr_projects
+            ON merged_pr_projects.id = merged_prs.project_id
+           AND (
+             merged_prs.github_html_url = agent_runs.pull_request_url
+             OR (
+               merged_prs.github_html_url IS NULL
+               AND agent_runs.pull_request_url = CONCAT(
+                 'https://github.com/',
+                 merged_pr_projects.owner,
+                 '/',
+                 merged_pr_projects.repo,
+                 '/pull/',
+                 merged_prs.github_number
+               )
+             )
+           )
            AND merged_prs.is_pull_request = TRUE
            AND merged_prs.pr_review_phase = 'merged'
         SQL
