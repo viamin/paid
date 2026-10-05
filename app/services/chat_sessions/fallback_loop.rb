@@ -52,16 +52,21 @@ module ChatSessions
       {}
     end
 
-    # Remove only the rows the failed attempt itself persisted, identified by the
-    # IDs AgentLoop recorded for that attempt. Scoping by id (rather than a
-    # blanket "everything after a checkpoint") is safe under concurrency:
+    # Remove only partial rows the failed attempt itself persisted, identified
+    # by the IDs AgentLoop recorded for that attempt. Completed tool
+    # call/result pairs remain in the rebuilt transcript so fallback cannot
+    # replay their side effects. Scoping by id (rather than a blanket
+    # "everything after a checkpoint") is safe under concurrency:
     # SendMessage and ResolveToolCall hold no lock on the session, so ChatChannel
     # / the HTTP controller can enqueue another turn while this retry runs, and a
     # concurrent turn's messages have different ids and are left untouched.
     def discard_partial_attempt(created_ids)
       return if created_ids.blank?
 
-      chat_session.messages.where(id: created_ids).delete_all
+      messages = chat_session.messages.where(id: created_ids)
+      completed_tool_call_ids = messages.where(role: "tool").where.not(tool_call_id: nil).pluck(:tool_call_id)
+      completed_tool_messages = messages.where(tool_call_id: completed_tool_call_ids)
+      messages.where.not(id: completed_tool_messages.select(:id)).delete_all
     end
 
     # Switch the session to the fallback runner and record the user-facing

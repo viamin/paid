@@ -426,9 +426,44 @@ module Workflows
               { agent_run_id: agent_run_id }, timeout: 120)
 
             unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
-              # Step 7: Update issue with PR link
-              run_activity(Activities::UpdateIssueWithPrActivity,
-                { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+              # A PR can be an intentionally partial closeout. Reconcile its
+              # remaining acceptance work BEFORE completing the parent issue:
+              # when gaps remain, the parent must stay incomplete and
+              # dependency-blocked (#4119), so the workflow skips
+              # UpdateIssueWithPrActivity — whose completion path also gates
+              # trigger-label removal — and leaves the parent re-pickable by
+              # auto-pick once the gap owners resolve, through the
+              # partial-closeout re-audit exception to the merged-PR guard in
+              # AutoPick::DefaultCandidateSource. The activity retains
+              # retry state if GitHub is down. # @spec NO-OUTPUT-ISSUE-007
+              #
+              # The new branch is gated on `partial-closeout-reconciliation-v1`
+              # so workflows that started on the pre-reconcile code path
+              # (which ran UpdateIssueWithPrActivity directly) replay the same
+              # event sequence on a worker running this code, rather than
+              # emitting a brand-new ReconcilePartialCloseoutActivity before
+              # the already-recorded UpdateIssueWithPrActivity and failing
+              # with nondeterministic-history. Workflows started on or after
+              # the patch marker take the new path; see docs/PATCH_GUARDS.md.
+              if Temporalio::Workflow.patched("partial-closeout-reconciliation-v1")
+                reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
+                  { agent_run_id: agent_run_id }, timeout: 120)
+
+                # Step 7: Update issue with PR link. Full closeout: complete the
+                # parent. Partial closeout: keep the parent incomplete, but post
+                # the PR-link evidence on it (idempotent) so the partial PR is
+                # visible where the dependency-blocked remaining work is shown.
+                if reconcile_result[:gaps_remain]
+                  run_activity(Activities::PostPartialCloseoutEvidenceActivity,
+                    { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+                else
+                  run_activity(Activities::UpdateIssueWithPrActivity,
+                    { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+                end
+              else
+                run_activity(Activities::UpdateIssueWithPrActivity,
+                  { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+              end
 
               # Step 8: Request review-bot review on the new draft PR (best-effort)
               request_review_bot_review(project_id, pr_result[:pull_request_number])

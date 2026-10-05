@@ -16,6 +16,15 @@ class Notification < ApplicationRecord
   validate :blocking_requires_error_severity
 
   after_commit :bump_inbox_cache_version, if: :saved_change_to_action_required_membership?
+  # When an operator dismisses — or the system resolves — a partial-closeout
+  # human prerequisite notification, the auto-pick eligibility block in
+  # {Automation::Strategies::AutoPick::DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids}
+  # lifts for the parent issue (#4119). Mirror the dependency-resolved eager
+  # re-enqueue ({Issue#enqueue_newly_unblocked_dependents}) so the parent
+  # picks up through the same path every other freshly-unblocked issue uses,
+  # instead of waiting out the periodic eligibility sweep.
+  after_update_commit :enqueue_partial_closeout_subject_on_release,
+    if: :partial_closeout_prerequisite_released?
 
   scope :unread, -> { where(read_at: nil) }
   scope :undismissed, -> { where(dismissed_at: nil) }
@@ -85,6 +94,40 @@ class Notification < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def partial_closeout_prerequisite_released?
+    return false unless source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
+    return false unless subject.is_a?(Issue)
+
+    dismissed_now = saved_change_to_dismissed_at? && attribute_before_last_save("dismissed_at").nil?
+    resolved_now = saved_change_to_resolved_at? && attribute_before_last_save("resolved_at").nil?
+    dismissed_now || resolved_now
+  end
+
+  def enqueue_partial_closeout_subject_on_release
+    issue = subject
+    project = issue.project
+    return unless project&.auto_pick_enabled?
+    return unless issue.github_state == "open"
+    return unless Issue.ready_for_work(project).where(id: issue.id).exists?
+
+    Rails.logger.info(
+      message: "enqueue_eligible.partial_closeout_prerequisite_released",
+      notification_id: id,
+      issue_id: issue.id,
+      issue_number: issue.github_number,
+      project_id: project.id
+    )
+
+    Issues::EnqueueEligible.call(issue, project: project, skip_project_gate: true)
+  rescue => e
+    Rails.logger.error(
+      message: "enqueue_eligible.partial_closeout_prerequisite_release_failed",
+      notification_id: id,
+      issue_id: subject_id,
+      error: e.message
+    )
   end
 
   def action_url_is_safe

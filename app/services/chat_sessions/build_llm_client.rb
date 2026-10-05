@@ -68,12 +68,12 @@ module ChatSessions
       model = chat_session.model || ANTHROPIC_DEFAULT_MODEL
 
       HttpClient.new(
+        chat_session: chat_session,
         provider: :anthropic,
         protocol: :messages,
         endpoint: ANTHROPIC_BASE_URL,
         api_key: api_key,
         model: model,
-        chat_session: chat_session,
         actor: actor,
         message: message
       )
@@ -88,6 +88,7 @@ module ChatSessions
       model = chat_model_for(provider)
 
       HttpClient.new(
+        chat_session: chat_session,
         provider: :openai,
         protocol: :chat_completions,
         endpoint: base_url,
@@ -95,7 +96,6 @@ module ChatSessions
         model: model,
         max_tokens: config&.dig(:chat_max_tokens),
         model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil,
-        chat_session: chat_session,
         actor: actor,
         message: message
       )
@@ -144,8 +144,9 @@ module ChatSessions
 
       attr_reader :model
 
-      def initialize(provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
-        chat_transport: AgentHarness::Api::ChatTransport.new, chat_session: nil, actor: nil, message: nil)
+      def initialize(chat_session:, provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
+        chat_transport: AgentHarness::Api::ChatTransport.new, actor: nil, message: nil)
+        @chat_session = chat_session
         @provider = provider
         @protocol = protocol
         @endpoint = endpoint
@@ -153,10 +154,9 @@ module ChatSessions
         @model = model
         @max_tokens = max_tokens
         @model_resolver = model_resolver
-        @chat_transport = chat_transport
-        @chat_session = chat_session
         @actor = actor
         @message = message
+        @harness_transport = HarnessTransport.new(chat_session: chat_session, transport: chat_transport)
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
@@ -165,9 +165,9 @@ module ChatSessions
         request = build_request(conversation, tools, on_chunk.present?)
 
         result = if on_chunk
-          @chat_transport.call(request, &stream_observer(on_chunk))
+          @harness_transport.call(request, &stream_observer(on_chunk))
         else
-          @chat_transport.call(request)
+          @harness_transport.call(request)
         end
 
         persist_attempts(result)
@@ -193,7 +193,6 @@ module ChatSessions
       def build_request(conversation, tools, stream)
         {
           operation: :chat,
-          request_id: SecureRandom.uuid,
           candidates: [ candidate ],
           messages: format_messages(conversation),
           tools: format_tools(tools),

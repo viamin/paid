@@ -78,7 +78,8 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
   def stub_chat_transport(client, result: succeeded_result)
     chat_transport = instance_double(AgentHarness::Api::ChatTransport)
-    client.instance_variable_set(:@chat_transport, chat_transport)
+    client.instance_variable_set(:@harness_transport,
+      ChatSessions::HarnessTransport.new(chat_session: client.instance_variable_get(:@chat_session), transport: chat_transport))
     allow(chat_transport).to receive(:call).and_return(result)
     chat_transport
   end
@@ -328,6 +329,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
   # @spec API-CONVERSATION-DELEGATION-001
   # @spec API-CONVERSATION-DELEGATION-002
+  # @spec API-CONVERSATION-DELEGATION-003
   describe described_class::HttpClient do
     let(:tool_definitions) do
       [
@@ -348,7 +350,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport) }
     let(:model) { "claude-sonnet-4-20250514" }
     let(:client) do
-      described_class.new(provider: :anthropic, protocol: :messages, endpoint: ChatSessions::BuildLlmClient::ANTHROPIC_BASE_URL,
+      described_class.new(chat_session: chat_session, provider: :anthropic, protocol: :messages, endpoint: ChatSessions::BuildLlmClient::ANTHROPIC_BASE_URL,
         api_key: "sk-ant-test", model: model, chat_transport: chat_transport)
     end
     let(:conversation) do
@@ -394,6 +396,10 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         usage: { input_tokens: 20, output_tokens: 10 },
         tool_calls: []
       }
+    end
+
+    def chat_session
+      @chat_session ||= create(:chat_session, account: account, created_by: user)
     end
 
     it "passes a single-candidate normalized request and translates the result" do
@@ -575,12 +581,12 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
     context "with an OpenAI-compatible candidate" do
       let(:client) do
-        described_class.new(provider: :openai, protocol: :chat_completions, endpoint: "https://api.openai.com/v1",
+        described_class.new(chat_session: chat_session, provider: :openai, protocol: :chat_completions, endpoint: "https://api.openai.com/v1",
           api_key: "sk-openai-test", model: "gpt-4o", chat_transport: chat_transport)
       end
 
       it "passes configured max_tokens as max_output_tokens" do
-        client = described_class.new(provider: :openai, protocol: :chat_completions, endpoint: "https://api.z.ai/api/paas/v4",
+        client = described_class.new(chat_session: chat_session, provider: :openai, protocol: :chat_completions, endpoint: "https://api.z.ai/api/paas/v4",
           api_key: "sk-zai-test", model: "glm-5.3", max_tokens: 16_384, chat_transport: chat_transport)
         allow(chat_transport).to receive(:call).and_return(succeeded_result)
 
