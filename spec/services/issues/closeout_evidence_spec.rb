@@ -131,6 +131,24 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(described_class.call(issue).present?).to be(false)
   end
 
+  it "uses the run's recorded PR URL — not the fork project URL — for pr_target: 'upstream' evidence" do
+    # When pr_target is 'upstream' the create_pr run produces a PR in
+    # upstream_full_name, but project.github_url still points at the fork.
+    # Reconstructing #{project.github_url}/pull/<n> for the Inbox evidence
+    # link sends the operator to a fork PR with the same number that may be
+    # unrelated or open (#4130 review). The correlated run's URL is the
+    # actual upstream PR URL and must be preserved.
+    upstream_project = create(:project, :upstream_pr_target, account: account, owner: "acme", repo: "alpha")
+    upstream_issue = create(:issue, project: upstream_project, github_state: "open")
+    upstream_pr_url = "https://github.com/upstream-owner/upstream-repo/pull/314"
+    merged_pr(project: upstream_project, number: 314, github_html_url: upstream_pr_url)
+    completed_create_pr_run(project: upstream_project, issue: upstream_issue, number: 314, url: upstream_pr_url)
+
+    result = described_class.call(upstream_issue)
+
+    expect(result.merged_prs.map(&:url)).to contain_exactly(upstream_pr_url)
+  end
+
   it "includes a no-code-required declaration as terminal-run evidence" do
     issue.update!(no_code_required_at: 3.hours.ago)
 

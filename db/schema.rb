@@ -2094,10 +2094,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
     t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
     t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
     t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."
-    t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
     t.datetime "partial_completion_at", comment: "When an evidence-backed assessment recorded that a merged implementation PR left this source issue incomplete."
     t.integer "partial_completion_pr_number", comment: "Merged pull request correlated with the latest partial-completion assessment."
     t.text "partial_completion_reason", comment: "Operator-visible evidence for the latest partial-completion assessment."
+    t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -4092,7 +4092,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
   add_foreign_key "issue_merge_subscriptions", "users"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
-  add_foreign_key "issues", "users", column: "closeout_resolved_by_id", validate: false
+  add_foreign_key "issues", "users", column: "closeout_resolved_by_id"
   add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"

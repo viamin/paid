@@ -101,12 +101,18 @@ module Issues
         )
       end
 
-      run_linked.each do |run_id, number, _pull_request_url, completed_at, pr_created_at|
+      run_linked.each do |run_id, number, pull_request_url, completed_at, pr_created_at|
         pr = by_number[number]
         if pr.nil?
+          # Use the run's recorded URL — the same field the join above
+          # correlated — rather than reconstructing from issue.project.github_url,
+          # which points at the fork. For pr_target: "upstream" the merged PR
+          # lives in upstream_full_name, not in the project's own repo, so the
+          # constructed fork URL would send the operator to a fork PR with
+          # the same number that may be unrelated or open (#4130 review).
           by_number[number] = MergedPullRequest.new(
             number: number,
-            url: "#{issue.project.github_url}/pull/#{number}",
+            url: pull_request_url.presence || "#{issue.project.github_url}/pull/#{number}",
             terminal_at: completed_at || pr_created_at,
             run_id: run_id
           )
