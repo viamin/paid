@@ -56,7 +56,8 @@ class RepositorySelectorControllerNodeHarness
       { full_name: "Acme/Api-Server", owner: "Acme", name: "Api-Server", id: 1, default_branch: "main", created_at: "2026-09-01T12:00:00Z" },
       { full_name: "octo/website", owner: "octo", name: "website", id: 2, default_branch: "trunk", created_at: "2026-09-02T12:00:00Z" },
       { full_name: "beta/numeric-cache", owner: "beta", name: "numeric-cache", id: 3, default_branch: "main", created_at: 0 },
-      { full_name: "zeta/legacy", owner: "zeta", name: "legacy", id: 4, default_branch: "main" }
+      { full_name: "zeta/legacy", owner: "zeta", name: "legacy", id: 4, default_branch: "main" },
+      { full_name: "gamma/invalid-date", owner: "gamma", name: "invalid-date", id: 5, default_branch: "main", created_at: "2026-02-31T12:00:00Z" }
     ];
 
     function run() {
@@ -131,8 +132,8 @@ class RepositorySelectorControllerNodeHarness
 
       controller.sortSelectTarget.value = "recent";
       controller.sortChanged();
-      if (controller.filteredRepositories.map((repo) => repo.full_name).join(",") !== "octo/website,Acme/Api-Server,beta/numeric-cache,zeta/legacy") {
-        throw new Error("Expected recent sorting to place repositories with unusable timestamps after dated repositories");
+      if (controller.filteredRepositories.map((repo) => repo.full_name).join(",") !== "octo/website,Acme/Api-Server,beta/numeric-cache,gamma/invalid-date,zeta/legacy") {
+        throw new Error("Expected recent sorting to place repositories with unusable timestamps after dated repositories, including invalid calendar dates");
       }
     }
 

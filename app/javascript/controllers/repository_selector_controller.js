@@ -161,8 +161,17 @@ export default class extends Controller {
   createdAt(repository) {
     if (typeof repository.created_at !== "string") return null
 
+    const parts = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.exec(repository.created_at)
+    if (!parts) return null
+
     const timestamp = Date.parse(repository.created_at)
-    return Number.isFinite(timestamp) ? timestamp : null
+    const date = new Date(timestamp)
+    const validDate = Number.isFinite(timestamp) &&
+      date.getUTCFullYear() === Number(parts[1]) &&
+      date.getUTCMonth() + 1 === Number(parts[2]) &&
+      date.getUTCDate() === Number(parts[3])
+
+    return validDate ? timestamp : null
   }
 
   moveActiveOption(event, direction) {
