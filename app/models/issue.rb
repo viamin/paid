@@ -311,6 +311,22 @@ class Issue < ApplicationRecord
     )
   end
 
+  # Clears stale partial-completion evidence when a follow-up assessment
+  # returns an explicit +partial: false+ outcome. A transient nil assessment
+  # (handled by the caller) leaves the columns in place — partial columns
+  # only ever clear on a durable verdict, never on a harness miss or
+  # timeout, so a stranded issue cannot lose its re-arm evidence to
+  # transport noise (AUTO-PICK-QUEUE-012).
+  def clear_partial_completion!
+    return unless partial_completion_at
+
+    update!(
+      partial_completion_at: nil,
+      partial_completion_pr_number: nil,
+      partial_completion_reason: nil
+    )
+  end
+
   def untrusted?
     !trusted?
   end
@@ -1064,11 +1080,20 @@ class Issue < ApplicationRecord
       .includes(:project)
       .joins(:project)
       .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
-    partial_completion_parents = Issue
-      .includes(:project)
-      .joins(:project)
-      .where(id: parent_issue_id, projects: { auto_pick_enabled: true })
-      .where.not(partial_completion_at: nil)
+    # Only a non-PR child close feeds the partial-completion re-arm path:
+    # queue admission's `child_times` resolution intentionally excludes PRs
+    # (the merged tracking PR is not authoritative prerequisite evidence —
+    # AUTO-PICK-QUEUE-012), so a closing tracking PR must not alone or
+    # together trigger a re-arm of its parent here.
+    partial_completion_parents = if parent_issue_id.present? && !is_pull_request?
+      Issue
+        .includes(:project)
+        .joins(:project)
+        .where(id: parent_issue_id, projects: { auto_pick_enabled: true })
+        .where.not(partial_completion_at: nil)
+    else
+      Issue.none
+    end
 
     dependency_dependents.or(partial_completion_parents)
   end

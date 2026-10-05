@@ -393,49 +393,45 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     # @spec GITHUB-SYNC-016
-    it "records a partial outcome when the harness confirms merged work is incomplete" do # @spec AUTO-PICK-QUEUE-012
+    it "parks a dependency-blocked completed open issue and enqueues an async partial-completion assessment" do # @spec AUTO-PICK-QUEUE-012
       blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
       issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
       issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
       create(:issue, :pull_request, :closed, project: project, github_number: 4048,
         body: "Tracks #3871", pr_review_phase: "merged")
-      response = instance_double(AgentHarness::Response, success?: true,
-        output: '{"partial":true,"reason":"Dependency #3870 remains required."}')
-      allow(AgentHarness).to receive(:send_message).and_return(response)
+      allow(Issues::AssessPartialCompletionJob).to receive(:perform_later)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
       expect(issue.reload.paid_state).to eq("manual_review")
-      expect(issue.partial_completion_pr_number).to eq(4048)
-      expect(issue.partial_completion_reason).to eq("Dependency #3870 remains required.")
+      expect(issue.manual_review_reason).to include("#3870")
+      # The semantic partial/complete verdict runs out-of-band so the
+      # 60-second poll budget is not consumed by a synchronous LLM call;
+      # the activity only persists the parking state and queues the job.
+      expect(issue.partial_completion_at).to be_nil
+      expect(Issues::AssessPartialCompletionJob).to have_received(:perform_later)
+        .with(issue.id, 4048)
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
     # @spec GITHUB-SYNC-016
-    it "clears stale partial-completion columns when a follow-up assessment is partial=false" do # @spec AUTO-PICK-QUEUE-012
+    it "does not enqueue an assessment when the dependency-blocked issue has no merged PR" do # @spec AUTO-PICK-QUEUE-012
       blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
-      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open",
-        partial_completion_at: 2.hours.ago,
-        partial_completion_pr_number: 4048,
-        partial_completion_reason: "Earlier partial assessment.")
+      issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
       issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
-      create(:issue, :pull_request, :closed, project: project, github_number: 4048,
-        body: "Tracks #3871", pr_review_phase: "merged")
-      response = instance_double(AgentHarness::Response, success?: true,
-        output: '{"partial":false,"reason":"Resolved by the follow-up run."}')
-      allow(AgentHarness).to receive(:send_message).and_return(response)
+      # PR exists but is not merged — no semantic assessment is warranted.
+      create(:issue, :pull_request, project: project, github_number: 4048,
+        body: "Tracks #3871", pr_review_phase: "draft")
+      allow(Issues::AssessPartialCompletionJob).to receive(:perform_later)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
-      issue.reload
-      expect(issue.paid_state).to eq("manual_review")
-      expect(issue.partial_completion_at).to be_nil
-      expect(issue.partial_completion_pr_number).to be_nil
-      expect(issue.partial_completion_reason).to be_nil
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(Issues::AssessPartialCompletionJob).not_to have_received(:perform_later)
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 

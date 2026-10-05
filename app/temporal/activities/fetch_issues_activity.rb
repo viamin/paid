@@ -1069,29 +1069,25 @@ module Activities
     # A partial implementation still blocked by an unresolved dependency is
     # never recommended for closure: the agent run's completion does not
     # establish that this remaining, intentionally deferred work is done.
+    #
+    # The poll activity persists only the generic parking state here so its
+    # 60s +sync budget is not consumed by a per-issue LLM round trip. The
+    # semantic partial/complete verdict is produced out-of-band by
+    # Issues::AssessPartialCompletionJob, which records the outcome
+    # asynchronously and is the only writer of the partial_completion_*
+    # columns (AUTO-PICK-QUEUE-012).
     # @spec GITHUB-SYNC-016
     def park_dependency_blocked_issues(issues)
       return false if issues.empty?
 
       issues.each do |issue|
         reason = dependency_blocked_reason(issue)
+        issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+
         merged_pr_number = merged_source_pull_request_number(issue)
-        assessment = merged_pr_number && Issues::PartialCompletionAssessment.call(issue: issue)
-        if assessment&.partial
-          issue.mark_partial_completion!(pull_request_number: merged_pr_number, reason: assessment.reason)
-        else
-          attrs = { paid_state: "manual_review", manual_review_reason: reason }
-          # Clear stale partial-completion evidence so queue admission only
-          # consumes a fresh assessment (AUTO-PICK-QUEUE-012).
-          if issue.partial_completion_at
-            attrs.merge!(
-              partial_completion_at: nil,
-              partial_completion_pr_number: nil,
-              partial_completion_reason: nil
-            )
-          end
-          issue.update!(attrs)
-        end
+        next unless merged_pr_number
+
+        Issues::AssessPartialCompletionJob.perform_later(issue.id, merged_pr_number)
       end
       logger.info(
         message: "github_sync.completed_open_issues_blocked_on_dependency",

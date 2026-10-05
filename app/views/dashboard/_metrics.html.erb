@@ -53,7 +53,7 @@
             <% next if count.zero? %>
             <div class="flex items-center gap-1.5">
               <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                <%= case status
+              <%= case status
                     when 'completed' then 'bg-green-100 text-green-700'
                     when 'no_output' then 'bg-slate-100 text-slate-600'
                     when 'failed' then 'bg-red-100 text-red-700'
@@ -290,8 +290,9 @@
     <p class="mt-1 text-sm text-gray-500">Daily avg and median (p50) duration for completed PR creation runs.</p>
     <% dtc = stats[:duration_trend_chart] %>
     <% dtc_has_data = dtc[:series].any? { |s| s[:data].any? } %>
-    <% if dtc_has_data %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <% if dtc_has_data %>
+
         <div class="px-4 py-5 sm:p-6">
           <% slope = dtc[:slope_seconds_per_day] %>
           <% if slope != 0.0 %>
@@ -317,12 +318,13 @@
                 }
               } %>
         </div>
-      </div>
-    <% else %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+
+      <% else %>
+
         <div class="px-4 py-5 text-sm text-gray-500">No completed PR creation runs yet.</div>
-      </div>
-    <% end %>
+
+      <% end %>
+    </div>
   </div>
 
   <%# Phase Breakdown %>

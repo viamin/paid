@@ -140,10 +140,25 @@
   unrelated sync writes, and an unchanged prerequisite SHALL NOT re-arm it.
   This exception does not apply without the explicit partial outcome and
   therefore preserves merged-PR duplicate-work protection. Semantic
-  assessment is performed by the completion workflow via `agent_harness`;
-  queue admission only consumes its persisted outcome.
-  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  assessment runs asynchronously in
+  `Issues::AssessPartialCompletionJob` so the GitHub poll path persists
+  only the generic parking state and is not consumed by a synchronous LLM
+  round trip per blocked row; queue admission consumes only that job's
+  persisted outcome. A transient nil assessment (harness error, timeout,
+  malformed JSON) SHALL leave any existing partial-completion evidence in
+  place so a stranded issue cannot lose its re-arm data to noise; only an
+  explicit `partial: false` verdict SHALL clear the columns. The partial
+  re-arm's eager path mirrors `child_times`'s PR exclusion by skipping the
+  `partial_completion_parents` branch when the closing child is a pull
+  request, so a closing tracking PR alone does not re-arm the parent.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/jobs/issues/assess_partial_completion_job_spec.rb`,
+  `spec/models/issue_spec.rb`.
   *Code:* `Issue#mark_partial_completion!`,
+  `Issue#clear_partial_completion!`,
+  `Issues::AssessPartialCompletionJob`,
+  `Activities::FetchIssuesActivity#park_dependency_blocked_issues`,
   `Automation::Strategies::AutoPick::DefaultCandidateSource`.
 
 ## Tier-infeasibility gating
