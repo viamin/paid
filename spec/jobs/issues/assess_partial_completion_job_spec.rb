@@ -26,6 +26,23 @@ RSpec.describe Issues::AssessPartialCompletionJob do
     expect(issue.manual_review_reason).to eq("Still missing the migration step.")
   end
 
+  it "uses the parking time when a prerequisite resolves during the assessment" do # @spec AUTO-PICK-QUEUE-012
+    parked_at = 2.hours.ago
+    prerequisite = create(:issue, project: project)
+    create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)
+    create(:issue, :pull_request, project: project, parent_issue: issue,
+      github_state: "closed", pr_review_phase: "merged", github_number: 92)
+    allow(Issues::PartialCompletionAssessment).to receive(:call) do
+      prerequisite.update!(github_state: "closed", closed_at: 1.hour.ago)
+      Issues::PartialCompletionAssessment::Result.new(partial: true, reason: "Still missing the migration step.")
+    end
+
+    described_class.perform_now(issue.id, 92, parked_at)
+
+    expect(issue.reload.partial_completion_at).to be_within(0.000001).of(parked_at)
+    expect(Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project)).to include(issue)
+  end
+
   it "clears the partial-completion columns when the assessment returns partial=false" do
     allow(Issues::PartialCompletionAssessment).to receive(:call).and_return(
       Issues::PartialCompletionAssessment::Result.new(partial: false, reason: "Resolved by the follow-up run.")

@@ -412,7 +412,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       # the activity only persists the parking state and queues the job.
       expect(issue.partial_completion_at).to be_nil
       expect(Issues::AssessPartialCompletionJob).to have_received(:perform_later)
-        .with(issue.id, 4048)
+        .with(issue.id, 4048, kind_of(ActiveSupport::TimeWithZone))
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 

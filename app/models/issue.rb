@@ -299,11 +299,12 @@ class Issue < ApplicationRecord
 
   # Records that a merged implementation is deliberately incomplete. The
   # assessment is produced by the completion workflow; this model method only
-  # persists its deterministic outcome and correlation evidence.
+  # persists its deterministic outcome, parking-time baseline, and correlation
+  # evidence.
   # @spec AUTO-PICK-QUEUE-012
-  def mark_partial_completion!(pull_request_number:, reason:, assessed_at: Time.current)
+  def mark_partial_completion!(pull_request_number:, reason:, parked_at: Time.current)
     update!(
-      partial_completion_at: assessed_at,
+      partial_completion_at: parked_at,
       partial_completion_pr_number: pull_request_number,
       partial_completion_reason: reason,
       paid_state: "manual_review",

@@ -128,14 +128,15 @@ audit-filed-mid-run case still re-arms after the linked work resolves.
 A merged implementation PR is normally terminal evidence for duplicate-work
 prevention, not evidence that its source issue is complete. When the completion
 workflow's semantic assessment records an explicit partial outcome, Paid stores
-the assessment time, the merged PR number, and an operator-visible reason on
+the time the issue was parked for assessment, the merged PR number, and an operator-visible reason on
 the source issue. The assessment uses `agent_harness`; scheduler code does not
 infer semantics from a PR title, body, or closing-reference syntax.
 
 The semantic assessment runs asynchronously in
 `Issues::AssessPartialCompletionJob`. The GitHub poll activity only persists
 the generic parking state (manual review with a dependency-blocked reason) and
-queues the assessment job per issue with a merged source PR; the poll's
+queues the assessment job per issue with a merged source PR and its parking
+time; the poll's
 `start_to_close_timeout` budget is therefore not consumed by a synchronous
 LLM round trip per blocked row, and a slow harness cannot fail the whole
 sync. The job records partial columns only on an explicit `partial: true`
@@ -146,7 +147,10 @@ lose its re-arm data to transport noise. Queue admission consumes only the
 durable verdict the job records.
 
 The stored outcome permits the same bounded re-arm used by an epic audit: an
-authoritative child or dependency must resolve strictly after the assessment.
+authoritative child or dependency must resolve strictly after the issue was
+parked for assessment. Capturing that baseline before the asynchronous LLM
+round trip ensures a prerequisite that resolves while the assessment runs can
+re-arm the issue.
 The scheduler consumes only the stable resolution timestamp and the persisted
 outcome, so repeated webhooks, polling, concurrent schedulers, and unrelated
 sync writes cannot continuously requeue the issue. Existing queue uniqueness

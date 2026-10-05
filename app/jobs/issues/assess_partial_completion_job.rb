@@ -19,7 +19,7 @@ module Issues
 
     discard_on ActiveRecord::RecordNotFound
 
-    def perform(issue_id, pull_request_number) # @spec AUTO-PICK-QUEUE-012
+    def perform(issue_id, pull_request_number, parked_at = Time.current) # @spec AUTO-PICK-QUEUE-012
       issue = Issue.find(issue_id)
       return if issue.is_pull_request?
 
@@ -32,7 +32,8 @@ module Issues
       if assessment.partial
         issue.mark_partial_completion!(
           pull_request_number: pull_request_number,
-          reason: assessment.reason
+          reason: assessment.reason,
+          parked_at: parked_at
         )
       else
         issue.clear_partial_completion!

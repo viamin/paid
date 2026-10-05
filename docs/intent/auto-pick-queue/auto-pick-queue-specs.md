@@ -144,7 +144,10 @@
   `Issues::AssessPartialCompletionJob` so the GitHub poll path persists
   only the generic parking state and is not consumed by a synchronous LLM
   round trip per blocked row; queue admission consumes only that job's
-  persisted outcome. A transient nil assessment (harness error, timeout,
+  persisted outcome. The re-arm timestamp SHALL be captured when the issue
+  is parked and passed to the asynchronous assessment, so a prerequisite
+  resolving while the assessment runs can re-arm the issue. A transient nil
+  assessment (harness error, timeout,
   malformed JSON) SHALL leave any existing partial-completion evidence in
   place so a stranded issue cannot lose its re-arm data to noise; only an
   explicit `partial: false` verdict SHALL clear the columns. The partial
