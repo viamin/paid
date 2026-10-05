@@ -33,16 +33,16 @@
   `result[:attempts]` reports and `ChatSessions::RecordTransportAttempt` has
   no production caller — so live API-key chat attempt reports cannot yet
   receive this exactly-once/unknown-usage handling. This stays an active gap
-  until the transport reports are wired through (same follow-up as
-  API-CONVERSATION-DELEGATION-003 below).
-  *Tests (mechanics only):*
-  `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
-  `spec/services/billing/aggregate_tenant_usage_spec.rb`.
-  *Implemented code (mechanics only):* `ApiUsageAttempt`,
-  `ChatSessions::RecordTransportAttempt`, `TokenUsageTracker` integration.
-  *Wiring still required:* `ChatSessions::BuildLlmClient::HttpClient#call`
-  consuming `result[:attempts]` and a production caller of
-  `ChatSessions::RecordTransportAttempt`.
+  until the transport reports are wired through (tracked by viamin/paid#4125).
+   *Tests (mechanics only):*
+   `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
+   `spec/services/billing/aggregate_tenant_usage_spec.rb`.
+   *Implemented code (mechanics only):* `ApiUsageAttempt`,
+   `ChatSessions::RecordTransportAttempt`, `TokenUsageTracker` integration.
+   *Wiring still required (viamin/paid#4125):*
+   `ChatSessions::BuildLlmClient::HttpClient#call`
+   consuming `result[:attempts]` and a production caller of
+   `ChatSessions::RecordTransportAttempt`.
 
 - [ ] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
   is cancelled, or Paid changes runner after a classified terminal result, the
@@ -50,6 +50,7 @@
   Paid SHALL either accept a matching durable attempt report or allocate a new
   outbound attempt. Neither recovery path SHALL replay a completed tool or
   multiply request retry loops.
+  Active gap tracked by viamin/paid#4126.
   *Tests:* `spec/services/chat_sessions/harness_transport_spec.rb`,
   `spec/services/chat_sessions/fallback_loop_spec.rb`,
   `spec/jobs/chat_sessions/process_message_job_spec.rb`.

@@ -230,10 +230,10 @@ arrows:
     specs: docs/intent/api-conversation-delegation/api-conversation-delegation-specs.md
     parent: PAID
     taxonomy: chat
-    status: MAPPED
-    sampled: 2026-10-01
+    status: PARTIAL
+    sampled: 2026-10-05
     blockedBy: [api-mode-chat]
-    next: "Open and reference the follow-up issue for API-CONVERSATION-DELEGATION-002/003 attempt-report persistence and recovery wiring, then close RDR-072 via viamin/paid#4020 using the epic audit record in the design doc."
+    next: "File and reference a focused follow-up for API-CONVERSATION-DELEGATION-002/003 attempt-report persistence and recovery wiring; only then re-audit RDR-072 via viamin/paid#4020 for a possible #4013 closure."
   context-intake:
     title: Knowledge Context Intake
     path: docs/intent/context-intake/context-intake-design.md
