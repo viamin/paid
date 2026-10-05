@@ -297,6 +297,20 @@ class Issue < ApplicationRecord
     end
   end
 
+  # Records that a merged implementation is deliberately incomplete. The
+  # assessment is produced by the completion workflow; this model method only
+  # persists its deterministic outcome and correlation evidence.
+  # @spec AUTO-PICK-QUEUE-012
+  def mark_partial_completion!(pull_request_number:, reason:, assessed_at: Time.current)
+    update!(
+      partial_completion_at: assessed_at,
+      partial_completion_pr_number: pull_request_number,
+      partial_completion_reason: reason,
+      paid_state: "manual_review",
+      manual_review_reason: reason
+    )
+  end
+
   def untrusted?
     !trusted?
   end
@@ -1046,10 +1060,17 @@ class Issue < ApplicationRecord
   end
 
   def auto_pick_enabled_dependents
-    Issue
+    dependency_dependents = Issue
       .includes(:project)
       .joins(:project)
       .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
+    partial_completion_parents = Issue
+      .includes(:project)
+      .joins(:project)
+      .where(id: parent_issue_id, projects: { auto_pick_enabled: true })
+      .where.not(partial_completion_at: nil)
+
+    dependency_dependents.or(partial_completion_parents)
   end
 
   def auto_pick_recheck_needed?

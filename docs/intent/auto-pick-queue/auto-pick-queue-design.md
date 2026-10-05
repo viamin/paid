@@ -122,3 +122,19 @@ on long-closed prerequisites do not move the resolution timestamp either.
 For legacy rows the comparison falls back to `parent_issue_linked_at` (for
 children) or `issue_dependencies.created_at` (for dependencies), so the
 audit-filed-mid-run case still re-arms after the linked work resolves.
+
+## Partial merged implementations
+
+A merged implementation PR is normally terminal evidence for duplicate-work
+prevention, not evidence that its source issue is complete. When the completion
+workflow's semantic assessment records an explicit partial outcome, Paid stores
+the assessment time, the merged PR number, and an operator-visible reason on
+the source issue. The assessment uses `agent_harness`; scheduler code does not
+infer semantics from a PR title, body, or closing-reference syntax.
+
+The stored outcome permits the same bounded re-arm used by an epic audit: an
+authoritative child or dependency must resolve strictly after the assessment.
+The scheduler consumes only the stable resolution timestamp and the persisted
+outcome, so repeated webhooks, polling, concurrent schedulers, and unrelated
+sync writes cannot continuously requeue the issue. Existing queue uniqueness
+and dequeue admission remain the final exactly-once protection.

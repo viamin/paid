@@ -309,7 +309,7 @@ module Automation
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
             blocking_issue_ids = blocking_runs.select(:issue_id)
 
-            reauditable_epic_ids = reauditable_epic_ids(project, epic_ids)
+            reauditable_issue_ids = reauditable_issue_ids(project, epic_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
@@ -329,7 +329,7 @@ module Automation
               # cannot strand the issue forever (#3432/#3588 review follow-up).
               # For a synthetic code-scanning issue the guard is provisional,
               # not permanent — see +merged_block_issue_ids+ (#4052).
-              .where.not(id: merged_block_issue_ids(project) - reauditable_epic_ids)
+              .where.not(id: merged_block_issue_ids(project) - reauditable_issue_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -344,7 +344,7 @@ module Automation
               # just loop (the agent will likely declare no-code-required again).
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
-              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_epic_ids)
+              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_issue_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -422,6 +422,28 @@ module Automation
 
             resolved_prerequisite_linked_at(epic_ids).filter_map do |issue_id, linked_at|
               issue_id if linked_at > terminal_at.fetch(issue_id, Time.at(0))
+            end
+          end
+
+          # A merged PR remains terminal for ordinary implementation work unless
+          # Paid has durably assessed that it was partial. That assessment carries
+          # the same authoritative child/dependency graph used for epic audits;
+          # a prerequisite resolving after the assessment permits one fresh run.
+          # The strict resolution-time comparison makes polling and metadata sync
+          # idempotent, rather than treating a merge or an incidental update as a
+          # reason to run again. @spec AUTO-PICK-QUEUE-012 EAGER-QUEUE-009
+          def reauditable_issue_ids(project, epic_ids)
+            reauditable_epic_ids(project, epic_ids) + continuable_partial_issue_ids(project)
+          end
+
+          def continuable_partial_issue_ids(project)
+            partial_times = Issue.where(project: project, is_pull_request: false, github_state: "open")
+              .where.not(partial_completion_at: nil)
+              .pluck(:id, :partial_completion_at).to_h
+            return [] if partial_times.empty?
+
+            resolved_prerequisite_linked_at(partial_times.keys).filter_map do |issue_id, resolved_at|
+              issue_id if resolved_at > partial_times.fetch(issue_id)
             end
           end
 

@@ -116,6 +116,20 @@
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/models/issue.rb`.
 
+- [x] **AUTO-PICK-QUEUE-012** — When a completion assessment records that a
+  merged implementation PR left an ordinary source issue incomplete, Paid SHALL
+  persist the partial outcome, the source PR correlation, and its authoritative
+  prerequisite evidence. It SHALL keep the issue blocked until a prerequisite
+  resolves after that assessment, then allow exactly one normal auto-pick
+  continuation. Repeated polling, unrelated sync writes, and an unchanged
+  prerequisite SHALL NOT re-arm it. This exception does not apply without the
+  explicit partial outcome and therefore preserves merged-PR duplicate-work
+  protection. Semantic assessment is performed by the completion workflow via
+  `agent_harness`; queue admission only consumes its persisted outcome.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `Issue#mark_partial_completion!`,
+  `Automation::Strategies::AutoPick::DefaultCandidateSource`.
+
 ## Tier-infeasibility gating
 
 - [x] **AUTO-PICK-QUEUE-011** — When an issue's most recent model selection

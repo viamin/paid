@@ -1024,6 +1024,43 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
 
+    it "continues a partial ordinary issue once its prerequisite resolves" do # @spec AUTO-PICK-QUEUE-012
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        issue = create(:issue, project: project, paid_state: "manual_review",
+          partial_completion_at: 2.hours.ago, partial_completion_pr_number: 91)
+        create(:issue, :pull_request, project: project, parent_issue: issue,
+          github_state: "closed", pr_review_phase: "merged", github_number: 91)
+        prerequisite = create(:issue, :closed, project: project, closed_at: 1.hour.ago)
+        create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)
+
+        expect(described_class.eligible_scope(project)).to include(issue)
+      end
+    end
+
+    it "keeps a partial ordinary issue blocked when its prerequisite has not resolved" do # @spec AUTO-PICK-QUEUE-012
+      issue = create(:issue, project: project, paid_state: "manual_review",
+        partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
+      create(:issue, :pull_request, project: project, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged", github_number: 91)
+      prerequisite = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+    end
+
+    it "does not re-arm a partial ordinary issue from a prerequisite resolved before its assessment" do # @spec AUTO-PICK-QUEUE-012
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        issue = create(:issue, project: project, paid_state: "manual_review",
+          partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
+        create(:issue, :pull_request, project: project, parent_issue: issue,
+          github_state: "closed", pr_review_phase: "merged", github_number: 91)
+        prerequisite = create(:issue, :closed, project: project, closed_at: 2.hours.ago)
+        create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)
+
+        expect(described_class.eligible_scope(project)).not_to include(issue)
+      end
+    end
+
     # @spec AUTO-PICK-QUEUE-003
     it "includes a recommend_close issue with no dependencies during queue sweeps" do # @spec AUTO-PICK-QUEUE-008
       issue = create(:issue, :recommend_close, project: project, github_number: 1)

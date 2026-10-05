@@ -1074,7 +1074,14 @@ module Activities
       return false if issues.empty?
 
       issues.each do |issue|
-        issue.update!(paid_state: "manual_review", manual_review_reason: dependency_blocked_reason(issue))
+        reason = dependency_blocked_reason(issue)
+        merged_pr_number = merged_source_pull_request_number(issue)
+        assessment = merged_pr_number && Issues::PartialCompletionAssessment.call(issue: issue)
+        if assessment&.partial
+          issue.mark_partial_completion!(pull_request_number: merged_pr_number, reason: assessment.reason)
+        else
+          issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+        end
       end
       logger.info(
         message: "github_sync.completed_open_issues_blocked_on_dependency",
@@ -1082,6 +1089,21 @@ module Activities
         issue_numbers: issues.map(&:github_number)
       )
       true
+    end
+
+    def merged_source_pull_request_number(issue)
+      project = issue.project
+      AgentRun.where(project: project, issue: issue, goal: "create_pr")
+        .where.not(pull_request_number: nil)
+        .joins(<<~SQL.squish)
+          INNER JOIN issues merged_prs
+            ON merged_prs.project_id = agent_runs.project_id
+           AND merged_prs.github_number = agent_runs.pull_request_number
+           AND merged_prs.is_pull_request = TRUE
+           AND merged_prs.pr_review_phase = 'merged'
+        SQL
+        .order(completed_at: :desc)
+        .pick(:pull_request_number)
     end
 
     def dependency_blocked_reason(issue)
