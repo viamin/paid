@@ -107,7 +107,7 @@ export default class extends Controller {
 
     const prompt = document.createElement("option")
     prompt.value = ""
-    prompt.textContent = `Select a repository... (${repos.length} available)`
+    prompt.textContent = `Select a repository... (${this.repositories.length} available)`
     this.repoSelectTarget.appendChild(prompt)
 
     this.sortedRepositories()

@@ -70,7 +70,8 @@
   *Tests:* `spec/requests/github_tokens_spec.rb`,
   `spec/requests/github_installations_spec.rb`,
   `spec/models/github_token_spec.rb`,
-  `spec/services/github/installation_repositories_spec.rb`.
+  `spec/services/github/installation_repositories_spec.rb`,
+  `spec/system/projects/repository_selector_spec.rb`.
   *Code:* `GithubToken#serialize_repository`,
   `GithubInstallationsController#normalized_repositories`,
   `Github::InstallationRepositories#serialize_repository`,
