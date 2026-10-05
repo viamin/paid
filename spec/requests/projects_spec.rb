@@ -414,11 +414,19 @@ RSpec.describe "Projects" do
         expect(response.body).to include('data-controller="repository-selector project-creation-mode"')
       end
 
-      it "renders the repository select as disabled initially" do
+      # @spec PROJECT-CREATION-013
+      it "renders the repository picker as a disabled typable combobox initially" do
         github_token # create the token
         get new_project_path
+
+        document = Nokogiri::HTML(response.body)
+        picker = document.at_css('[data-repository-selector-target="repoSelect"]')
+
         expect(response.body).to include('name="repository_selection"')
-        expect(response.body).to match(/<select\s(?:"[^"]*"|[^">])*\sdisabled[\s>]/m)
+        expect(picker.name).to eq("input")
+        expect(picker["role"]).to eq("combobox")
+        expect(picker["disabled"]).to be_present
+        expect(response.body).to include('data-repository-selector-target="repoList"')
       end
 
       it "does not show revoked tokens in the dropdown" do
