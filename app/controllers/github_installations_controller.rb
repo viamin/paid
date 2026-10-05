@@ -118,6 +118,7 @@ class GithubInstallationsController < ApplicationController
     @github_installation = policy_scope(GithubInstallation).find(params[:id])
   end
 
+  # @spec PROJECT-CREATION-013
   def normalized_repositories
     Array(@github_installation.cached_repositories).filter_map do |repo|
       data = repo.with_indifferent_access
@@ -132,7 +133,8 @@ class GithubInstallationsController < ApplicationController
         "name" => data[:name].presence || name,
         "owner" => data[:owner].presence || owner,
         "default_branch" => data[:default_branch],
-        "private" => data[:private] || false
+        "private" => data[:private] || false,
+        "created_at" => data[:created_at]
       }
     end
   end

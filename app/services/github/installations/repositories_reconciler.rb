@@ -58,7 +58,8 @@ module Github
             "name" => name,
             "owner" => owner,
             "default_branch" => repo["default_branch"],
-            "private" => repo["private"] || false
+            "private" => repo["private"] || false,
+            "created_at" => repo["created_at"]
           }.with_indifferent_access.compact
         end.compact
       end
