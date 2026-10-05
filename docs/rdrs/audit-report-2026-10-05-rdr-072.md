@@ -5,7 +5,8 @@
 This audit follows the [RDR Closeout Checklist](closeout-checklist.md) for
 viamin/paid#4020 and `Tracks #4013`. RDR-072 is **Partially Implemented**.
 It must not close #4013: API-CONVERSATION-DELEGATION-002 and -003 remain
-unmet in the live API-key chat path.
+unmet in the live API-key chat path, tracked by the focused child issues
+viamin/paid#4125 and viamin/paid#4126.
 
 The accepted retained-loop outcome is complete. `ChatSessions::AgentLoop` and
 `ChatSessions::ResolveToolCall` remain the application authority boundary;
@@ -31,18 +32,20 @@ does not receive a durable Paid request identity, cancellation signal, or
 deadline. Consequently the isolated accounting mechanics cannot attribute
 actual API-chat attempts and restart recovery is not defined.
 
-A focused child issue must be filed before closure, with these acceptance
-criteria:
+Focused child issues were filed for each unmet criterion, as sub-issues of
+the #4013 umbrella:
 
-1. Give each outbound API-chat request a Paid-owned stable identity and pass
-   its retry limit, deadline, and cancellation signal to agent-harness.
-2. Persist every harness `result[:attempts]` report through
+1. viamin/paid#4126 owns API-CONVERSATION-DELEGATION-003: give each outbound
+   API-chat request a Paid-owned stable identity and pass its retry limit,
+   deadline, and cancellation signal to agent-harness, and specify and test
+   restart and runner-fallback recovery so completed tools are not replayed
+   and a new outbound request gets a new attempt identity.
+2. viamin/paid#4125 owns API-CONVERSATION-DELEGATION-002: persist every
+   harness `result[:attempts]` report through
    `ChatSessions::RecordTransportAttempt` exactly once, including failed and
    unknown-usage reports.
-3. Specify and test restart and runner-fallback recovery so completed tools
-   are not replayed and a new outbound request gets a new attempt identity.
 
-Until that child exists and is complete, #4020 and #4013 remain open. No
+Until #4125 and #4126 are complete, the #4013 umbrella remains open. No
 temporary rollout guard is removed: the API-key runner-selection boundary is
 still required by RDR-072 while CLI/subscription and recovery scopes are not
 verified.

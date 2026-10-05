@@ -185,7 +185,7 @@ host process, not inside agent containers.
 | Runner fallback eligibility, notices, rate-limit resumption (`ChatSessions::FallbackLoop`/`FallbackRunners`/`MarkRateLimited`) | `retained` | `HttpClient` raises the same `AgentHarness::*Error` subclasses as the old transports (translated from the harness's classified `result[:error]`), so this policy layer needed no changes. Multi-candidate/`fallback:` support in `ChatTransport` is intentionally unused — one call is one provider attempt, matching "transient model fallback alone cannot replace this policy." |
 | CLI/subscription chat runners | `retained` (unsupported path, unchanged) | Chat still requires an API-key runner (`BuildLlmClient.usable_runner?`); this was true before this migration and is not a new restriction. |
 | Chat loop sequencing, tool dispatch, approval resumption (`ChatSessions::AgentLoop`, `ResolveToolCall`, `Tools::Registry`) | `retained` | Out of scope per the Loop Delegation Decision; `HttpClient`'s public `#call(conversation, tools:, on_chunk:)` contract is unchanged so `AgentLoop`'s reflection-based kwarg detection and streaming replay keep working unmodified. |
-| Request attempt identity, retry-limit/deadline/cancellation plumbing, durable attempt-report persistence (API-CONVERSATION-DELEGATION-002/003) | `unsupported` (tracked gap) | Each `HttpClient#call` issues an ephemeral request UUID and defaults to one harness attempt (`retry.max_attempts: 1`); Paid does not yet supply a stable recovery identity, deadline, or cancellation token, and does not persist per-attempt harness reports. Left for a follow-up issue. |
+| Request attempt identity, retry-limit/deadline/cancellation plumbing, durable attempt-report persistence (API-CONVERSATION-DELEGATION-002/003) | `unsupported` (tracked gap) | Each `HttpClient#call` issues an ephemeral request UUID and defaults to one harness attempt (`retry.max_attempts: 1`); Paid does not yet supply a stable recovery identity, deadline, or cancellation token, and does not persist per-attempt harness reports. Tracked by viamin/paid#4125 (report persistence) and viamin/paid#4126 (identity, bounds, recovery). |
 
 **Tests:** `spec/services/chat_sessions/build_llm_client_spec.rb` (black-box
 against `AgentHarness::Api::ChatTransport`, including normalized request,
@@ -235,11 +235,12 @@ production caller yet.
    discards the harness's `result[:attempts]` reports (no production caller of
    `ChatSessions::RecordTransportAttempt` yet), so neither attempt-report
    persistence (002) nor bounded recovery (003) is wired into the migrated
-   path. The matrix above tracks this as "left for a follow-up issue", but no
-   follow-up issue number is recorded anywhere in this repository. RDR-072's
-   provider-coverage decision requires each remaining migration to be tracked
-   explicitly in an implementation issue; that issue must exist and be
-   referenced here before #4020 closes the RDR.
+   path. RDR-072's provider-coverage decision requires each remaining
+   migration to be tracked explicitly in an implementation issue:
+   viamin/paid#4125 owns attempt-report persistence
+   (API-CONVERSATION-DELEGATION-002) and viamin/paid#4126 owns request
+   identity, bounds, and recovery (API-CONVERSATION-DELEGATION-003). Both are
+   sub-issues of #4013 and completion dependencies for closing the RDR.
 2. The RDR-072 closeout itself (status flip to Implemented in the RDR and
    `docs/rdrs/README.md`, plus the delegated/retained-responsibility record)
    has not been written; it should consume this audit table.
@@ -262,10 +263,11 @@ that the environment has no Docker CLI, so an agent-image check cannot be
 claimed from this audit; the RDR's existing release procedure still requires
 that check before deployment.
 
-The precise completion dependency is a focused follow-up issue for
-API-CONVERSATION-DELEGATION-002/003: stable Paid request identity, harness
-attempt-report persistence, Paid-supplied retry/deadline/cancellation context,
-and restart-safe runner recovery. It had not been filed when this audit was
-performed, so #4020 and the #4013 umbrella remain open and use non-closing
-`Tracks #4013` language. This is explicit tracking, not a claim that #4018's
-isolated mechanics completed live API-chat accounting.
+The precise completion dependencies are viamin/paid#4125
+(API-CONVERSATION-DELEGATION-002: harness attempt-report persistence) and
+viamin/paid#4126 (API-CONVERSATION-DELEGATION-003: stable Paid request
+identity, Paid-supplied retry/deadline/cancellation context, and restart-safe
+runner recovery), filed as sub-issues of #4013. Until they complete, the
+umbrella remains open and uses non-closing `Tracks #4013` language.
+This is explicit tracking, not a claim that #4018's isolated mechanics
+completed live API-chat accounting.

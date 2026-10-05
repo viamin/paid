@@ -7,7 +7,7 @@
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
-- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020; a focused follow-up for the unimplemented attempt-report/recovery contract must be filed before this RDR can close.
+- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) and #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) are the remaining completion dependencies before this RDR can close.
 
 ## Problem Statement
 
@@ -269,11 +269,12 @@ evaluation.
 The RDR cannot be marked Implemented or close viamin/paid#4013 yet. The
 migrated API-key transport still generates an ephemeral request ID, supplies
 no Paid-owned retry bound or cancellation signal, and drops harness attempt
-reports. A focused follow-up issue must own stable attempt identity, report
-persistence, cancellation/deadline propagation, and restart recovery for
-API-CONVERSATION-DELEGATION-002 and -003. That issue is a completion
-dependency for #4020 and #4013; it was not yet filed at the time of this
-closeout, so this closeout uses `Tracks #4013` rather than closing language.
+reports. viamin/paid#4125 owns attempt-report persistence
+(API-CONVERSATION-DELEGATION-002) and viamin/paid#4126 owns stable request
+identity, cancellation/deadline propagation, and restart recovery
+(API-CONVERSATION-DELEGATION-003); both are sub-issues of #4013. They are
+completion dependencies for closing #4013, so this closeout uses
+`Tracks #4013` rather than closing language.
 
 ## 2026-10-05 Closeout
 
