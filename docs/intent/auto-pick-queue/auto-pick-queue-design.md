@@ -122,3 +122,56 @@ on long-closed prerequisites do not move the resolution timestamp either.
 For legacy rows the comparison falls back to `parent_issue_linked_at` (for
 children) or `issue_dependencies.created_at` (for dependencies), so the
 audit-filed-mid-run case still re-arms after the linked work resolves.
+
+## Partial merged implementations
+
+A merged implementation PR is normally terminal evidence for duplicate-work
+prevention, not evidence that its source issue is complete. When the completion
+workflow's semantic assessment records an explicit partial outcome, Paid stores
+the time the issue was parked for assessment, the merged PR number, and an operator-visible reason on
+the source issue. The assessment uses `agent_harness`; scheduler code does not
+infer semantics from a PR title, body, or closing-reference syntax.
+
+The semantic assessment runs asynchronously in
+`Issues::AssessPartialCompletionJob`. The GitHub poll activity only persists
+the generic parking state (manual review with a dependency-blocked reason) and
+queues the assessment job per issue with a merged source PR and its parking
+time; the poll's
+`start_to_close_timeout` budget is therefore not consumed by a synchronous
+LLM round trip per blocked row, and a slow harness cannot fail the whole
+sync. The job records partial columns only on an explicit `partial: true`
+verdict and clears them only on an explicit `partial: false` verdict. A
+transient nil assessment (harness error, timeout, malformed JSON) leaves
+existing partial-completion evidence in place, so a stranded issue cannot
+lose its re-arm data to transport noise. Queue admission consumes only the
+durable verdict the job records.
+
+The stored outcome permits the same bounded re-arm used by an epic audit: an
+authoritative child or dependency must resolve strictly after the issue was
+parked for assessment. Capturing that baseline before the asynchronous LLM
+round trip ensures a prerequisite that resolves while the assessment runs can
+re-arm the issue.
+The scheduler consumes only the stable resolution timestamp and the persisted
+outcome, so repeated webhooks, polling, concurrent schedulers, and unrelated
+sync writes cannot continuously requeue the issue. Existing queue uniqueness
+and dequeue admission remain the final exactly-once protection.
+
+The partial-completion re-arm's eager path mirrors `child_times`'s PR
+exclusion by skipping the `partial_completion_parents` branch when the
+closing child is a pull request, so a closing tracking PR alone does not
+re-arm the parent and waste an admission that queue admission would deny
+anyway.
+
+Authoritative prerequisite resolution covers every prerequisite graph the
+scheduler already reads for readiness: local `IssueDependency` rows whose
+target is a same-project issue, `parent_issue_id` children, and external
+owner/repo#N dependencies whose target issue is observable in another
+project of the same account. The external case joins via
+`IssueDependency.external_resolved_for_account` (the same join
+`Issue.ready_for_work` already uses for cross-project blocking), so the
+partial-completion re-arm stays consistent with the model's blocking rule.
+The matching target issue's `closed_at` is the stable resolution timestamp;
+external targets whose target project is not synced into the account, whose
+target issue is not yet synced, or whose target remains in an open blocking
+paid_state contribute no resolution timestamp and therefore cannot re-arm the
+source.

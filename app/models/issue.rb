@@ -304,6 +304,37 @@ class Issue < ApplicationRecord
     end
   end
 
+  # Records that a merged implementation is deliberately incomplete. The
+  # assessment is produced by the completion workflow; this model method only
+  # persists its deterministic outcome, parking-time baseline, and correlation
+  # evidence.
+  # @spec AUTO-PICK-QUEUE-012
+  def mark_partial_completion!(pull_request_number:, reason:, parked_at: Time.current)
+    update!(
+      partial_completion_at: parked_at,
+      partial_completion_pr_number: pull_request_number,
+      partial_completion_reason: reason,
+      paid_state: "manual_review",
+      manual_review_reason: reason
+    )
+  end
+
+  # Clears stale partial-completion evidence when a follow-up assessment
+  # returns an explicit +partial: false+ outcome. A transient nil assessment
+  # (handled by the caller) leaves the columns in place — partial columns
+  # only ever clear on a durable verdict, never on a harness miss or
+  # timeout, so a stranded issue cannot lose its re-arm evidence to
+  # transport noise (AUTO-PICK-QUEUE-012).
+  def clear_partial_completion!
+    return unless partial_completion_at
+
+    update!(
+      partial_completion_at: nil,
+      partial_completion_pr_number: nil,
+      partial_completion_reason: nil
+    )
+  end
+
   def untrusted?
     !trusted?
   end
@@ -1053,10 +1084,26 @@ class Issue < ApplicationRecord
   end
 
   def auto_pick_enabled_dependents
-    Issue
+    dependency_dependents = Issue
       .includes(:project)
       .joins(:project)
       .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
+    # Only a non-PR child close feeds the partial-completion re-arm path:
+    # queue admission's `child_times` resolution intentionally excludes PRs
+    # (the merged tracking PR is not authoritative prerequisite evidence —
+    # AUTO-PICK-QUEUE-012), so a closing tracking PR must not alone or
+    # together trigger a re-arm of its parent here.
+    partial_completion_parents = if parent_issue_id.present? && !is_pull_request?
+      Issue
+        .includes(:project)
+        .joins(:project)
+        .where(id: parent_issue_id, projects: { auto_pick_enabled: true })
+        .where.not(partial_completion_at: nil)
+    else
+      Issue.none
+    end
+
+    dependency_dependents.or(partial_completion_parents)
   end
 
   # See the after_update_commit hook that calls this: when the issue just
@@ -1069,7 +1116,8 @@ class Issue < ApplicationRecord
       source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
       subject_type: "Issue",
       subject_id: id,
-      resolved_at: nil
+      resolved_at: nil,
+      dismissed_at: nil
     ).find_each do |notification|
       Notifications::Resolve.call(
         account: notification.account,
