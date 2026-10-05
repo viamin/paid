@@ -45,8 +45,8 @@
       <h3 class="text-sm font-semibold text-gray-900">Unresolved prerequisites</h3>
       <p class="text-sm text-gray-600">
         <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
-        requesting continuation. A follow-up issue whose body says <code>Depends on #<%= issue.github_number %></code>
-        (or that names this issue as a dependency) links automatically on the next sync, and an agent can file it
+        requesting continuation. To make a follow-up issue <code>#B</code> a prerequisite, add
+        <code>Depends on #B</code> to this stalled issue's body, then sync. An agent can file the follow-up
         with the existing <code>create_issue</code> tool.
       </p>
     </div>
