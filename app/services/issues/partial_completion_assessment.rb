@@ -72,8 +72,14 @@ module Issues
       "##{issue.github_number} #{issue.title}\n#{issue.body.to_s.truncate(4000)}"
     end
 
+    # Filter prerequisites through the project's trusted-user allowlist before
+    # sending their titles to the LLM. The trust gate on the source issue
+    # (`issue.trusted?`) does not cover the blockers that are listed, and a
+    # title authored by a user outside `Project#allowed_github_usernames` can
+    # carry prompt-injection text that steers the partial/complete decision.
+    # Mirrors `FeatureIntents::CriteriaClarityReview#trusted_issues`.
     def prerequisite_context
-      issue.blocking_issues.map { |blocker| "##{blocker.github_number} #{blocker.title}" }.join("\n")
+      issue.blocking_issues.select(&:trusted?).map { |blocker| "##{blocker.github_number} #{blocker.title}" }.join("\n")
     end
   end
 end

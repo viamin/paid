@@ -1080,7 +1080,17 @@ module Activities
         if assessment&.partial
           issue.mark_partial_completion!(pull_request_number: merged_pr_number, reason: assessment.reason)
         else
-          issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+          attrs = { paid_state: "manual_review", manual_review_reason: reason }
+          # Clear stale partial-completion evidence so queue admission only
+          # consumes a fresh assessment (AUTO-PICK-QUEUE-012).
+          if issue.partial_completion_at
+            attrs.merge!(
+              partial_completion_at: nil,
+              partial_completion_pr_number: nil,
+              partial_completion_reason: nil
+            )
+          end
+          issue.update!(attrs)
         end
       end
       logger.info(
