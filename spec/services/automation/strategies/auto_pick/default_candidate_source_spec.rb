@@ -1024,6 +1024,168 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
 
+    describe "partial-closeout re-audit (#4119)" do
+      let(:parent) { create(:issue, :in_progress, project: project, github_state: "open") }
+      let(:owner) { create(:issue, project: project, github_state: "open") }
+
+      before do
+        create(:agent_run, :completed, :automatic, project: project, issue: parent,
+          goal: "create_pr", auto_pick: true, pull_request_number: 42,
+          pull_request_url: "https://example.test/pr/42",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute,
+          reconciliation: {
+            "status" => "reconciled",
+            "assessment" => { "gaps" => [ { "criterion" => "dispatch", "kind" => "agent", "title" => "Finish dispatch" } ] }
+          })
+        create(:issue_dependency, issue: parent, depends_on_issue: owner)
+      end
+
+      # Without the re-audit exception the permanent merged-PR guard keeps a
+      # non-epic partial-closeout parent ineligible forever, even after every
+      # gap owner resolves — stranding the continuation the workflow promises.
+      it "re-admits the parent after the partial PR merges and its gap owners resolve" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+
+        expect(described_class.eligible_scope(project)).not_to include(parent)
+
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        # Resolving the gap owner eagerly enqueues the continuation run
+        # (EAGER-QUEUE-004) through the same eligible scope, so the parent
+        # re-enters the pipeline as a queued run whose dequeue-time recheck
+        # must accept it.
+        queued = AgentRun.where(project: project, issue: parent, status: "queued").last
+        expect(queued).to be_present
+        expect(queued.auto_pick).to be(true)
+        expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
+      end
+
+      it "keeps the parent out while the partial PR is still open" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, project: project, github_number: 42,
+          github_state: "open", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        expect(described_class.eligible_scope(project)).not_to include(parent)
+      end
+
+      it "keeps the parent out while a gap-owner dependency is unresolved" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+
+        expect(described_class.eligible_scope(project)).not_to include(parent)
+      end
+
+      it "restores the merged-PR guard after a later full closeout" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        create(:agent_run, :completed, :automatic, project: project, issue: parent,
+          goal: "create_pr", auto_pick: true, pull_request_number: 43,
+          pull_request_url: "https://example.test/pr/43",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute,
+          reconciliation: { "status" => "reconciled", "assessment" => { "gaps" => [] } })
+        create(:issue, :pull_request, :closed, project: project, github_number: 43,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/43")
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        expect(described_class.eligible_scope(project)).not_to include(parent)
+        expect(AgentRun.where(project: project, issue: parent, status: "queued")).not_to exist
+      end
+
+      it "keeps the re-audit exception when a re-audit attempt fails before publishing another PR" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        create(:agent_run, :failed, :automatic, project: project, issue: parent,
+          goal: "create_pr", auto_pick: true, completed_at: 1.minute.ago)
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        # The failed attempt published no PR, so the partial closeout remains
+        # the latest PR-producing outcome and the continuation still enqueues.
+        queued = AgentRun.where(project: project, issue: parent, status: "queued").last
+        expect(queued).to be_present
+        expect(queued.auto_pick).to be(true)
+        expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
+      end
+
+      it "keeps the re-audit exception when reconciliation fails after publishing a later PR" do # @spec NO-OUTPUT-ISSUE-007
+        create(:agent_run, :failed, :automatic, project: project, issue: parent,
+          goal: "create_pr", auto_pick: true, pull_request_number: 43,
+          pull_request_url: "https://example.test/pr/43",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute,
+          reconciliation: { "status" => "retryable_failure", "error" => "LLM unavailable" })
+        create(:issue, :pull_request, :closed, project: project, github_number: 43,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/43")
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        queued = AgentRun.where(project: project, issue: parent, status: "queued").last
+        expect(queued).to be_present
+        expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
+      end
+
+      describe "human prerequisite notification (#4119 review)" do
+        let(:continuation_run) { AgentRun.where(project: project, issue: parent, status: "queued").last }
+
+        # An assessment whose gaps are all human prerequisites publishes a
+        # blocking Inbox notification rather than creating IssueDependency edges
+        # (NO-OUTPUT-ISSUE-007). The partial-closeout re-audit exception above
+        # alone would re-pick the parent once the partial PR merges, defeating
+        # the operator gate. The auto-pick eligibility gate must exclude any
+        # parent whose notification is still unresolved.
+        before do
+          create(:issue, :pull_request, :closed, project: project, github_number: 42,
+            pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+          # Close the synthetic gap-owner dependency the +before+ block above
+          # added so each test isolates the notification block from the
+          # shared dependency block. Closing the owner also enqueues a
+          # continuation run; the dequeue-time recheck is the gate that
+          # honors the prerequisite notification, so the assertions below
+          # compare against that recheck rather than the raw eligible scope.
+          owner.update!(github_state: "closed", github_updated_at: Time.current)
+        end
+
+        it "keeps the parent out while a partial-closeout prerequisite notification is unresolved" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, account: project.account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          expect(continuation_run).to be_present
+          expect(continuation_run.auto_pick).to be(true)
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
+        end
+
+        it "treats a dismissed notification as resolved for the eligibility block" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, :dismissed, account: project.account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          # Without a dependency edge or notification gate, the dequeue recheck
+          # accepts the continuation run through the partial-closeout re-audit
+          # exception.
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+        end
+
+        it "treats a system-resolved notification as resolved for the eligibility block" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, :resolved, account: project.account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+        end
+
+        it "ignores notifications under different sources" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, account: project.account, subject: parent,
+            source: "some_other_source", blocking: true)
+
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+        end
+
+        it "ignores notifications from other accounts" do # @spec NO-OUTPUT-ISSUE-007
+          other_account = create(:account)
+          create(:notification, :error, account: other_account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+        end
+      end
+    end
+
     # Cross-project external dep edge: a same-account external dep whose
     # target issue closes after the audit terminates. Mirrors the
     # `Issue.ready_for_work` `blocked_by_external` rule (#2216) so the

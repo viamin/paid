@@ -338,6 +338,30 @@ RSpec.describe Issue do
       expect(Issues::EnqueueEligible).not_to have_received(:call)
     end
 
+    it "resolves active partial-closeout prerequisite notifications when the issue closes" do # @spec NO-OUTPUT-ISSUE-007
+      project = create(:project, auto_pick_enabled: true)
+      parent = create(:issue, project: project, github_state: "open")
+      notification = create(:notification, :error, account: project.account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      parent.update!(github_state: "closed")
+
+      expect(notification.reload.resolved_at).to be_present
+    end
+
+    it "leaves already-dismissed partial-closeout prerequisite notifications untouched on close" do # @spec NO-OUTPUT-ISSUE-007
+      project = create(:project, auto_pick_enabled: true)
+      parent = create(:issue, project: project, github_state: "open")
+      notification = create(:notification, :error, :dismissed, account: project.account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      parent.update!(github_state: "closed")
+
+      expect(notification.reload.resolved_at).to be_nil
+    end
+
     it "enqueues dependents transitively as blockers close in sequence" do
       project = create(:project, auto_pick_enabled: true)
       issue_a = create(:issue, project: project, github_state: "open")

@@ -67,3 +67,38 @@
   required work resolves.
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+## PR-producing partial closeouts
+
+- [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved
+  acceptance criterion unmet, the system SHALL use an agent-harness structured
+  assessment and SHALL reconcile every gap to an existing open owner, a
+  replay-safe focused follow-up with an explicit local and GitHub-visible
+  dependency, or a blocking Inbox prerequisite for an authorized operator
+  that states the gap's exact next step; an assessment whose human gap omits
+  a nonblank next step SHALL be rejected before reconciliation persists it,
+  so a retry regenerates the assessment instead of publishing a generic
+  prerequisite. A closed historical issue SHALL NOT satisfy ownership.
+  GitHub failures SHALL retain durable retry state on the run. The
+  reconciliation SHALL run before the parent issue is completed; while any
+  gap remains outstanding, the parent SHALL stay incomplete and
+  dependency-blocked, SHALL still receive the run's PR-link evidence as a
+  comment on the parent issue (idempotent across retries), and SHALL NOT be
+  transitioned to `paid_state: "completed"` by the run's closeout path.
+  Once the partial PR is no longer open and the recorded gap-owner
+  dependencies are satisfied, Auto-Pick SHALL re-admit the parent through a
+  partial-closeout re-audit exception to the permanent merged-PR guard,
+  keyed on the issue's latest PR-producing run; a later gap-free closeout
+  SHALL restore the guard.
+  *Tests:* `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
+  `spec/temporal/activities/post_partial_closeout_evidence_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/temporal/activities/post_partial_closeout_evidence_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.

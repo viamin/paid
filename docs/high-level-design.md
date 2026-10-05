@@ -149,6 +149,12 @@ approved intent and evidence. The audit may correct bounded gaps or file
 focused blocking follow-ups; only evidence-backed completion closes the
 umbrella.
 
+When a run ships only part of an issue, this accounting happens before its
+successful closeout becomes terminal: every unmet criterion has a current
+actionable owner or a clearly routed operator prerequisite. The parent retains
+the PR evidence and explicit dependency edges; a merged audit alone is never
+proof that its acceptance criteria passed.
+
 ## Approach: All LLM Calls Through One Interface
 
 Every LLM interaction in the application goes through the `agent_harness` gem —

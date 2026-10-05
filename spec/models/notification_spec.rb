@@ -194,4 +194,83 @@ RSpec.describe Notification do
       expect(notification.resolved_project).to be_nil
     end
   end
+
+  describe "partial-closeout prerequisite release (#4119 review)" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account, auto_pick_enabled: true) }
+    let(:parent) { create(:issue, :in_progress, project: project, github_state: "open") }
+    let(:continuation_run) { AgentRun.where(project: project, issue: parent, status: "queued").last }
+
+    before do
+      # Create an open gap owner and a dependency edge from the parent, then
+      # transition the owner to closed so +Issue#enqueue_newly_unblocked_dependents+
+      # fires (EAGER-QUEUE-004) and eagerly enqueues a continuation run on the
+      # otherwise-eligible parent. That setup isolates the notification gate
+      # under test from the dependency gate.
+      owner = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: parent, depends_on_issue: owner)
+      owner.update!(github_state: "closed", github_updated_at: Time.current)
+    end
+
+    it "eagerly enqueues the subject issue when the operator dismisses a partial-closeout prerequisite notification" do # @spec NO-OUTPUT-ISSUE-007
+      create(:notification, :error, account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+      expect(continuation_run).to be_present
+      # The dismissal callback mirrors the dependency-resolved eager re-enqueue
+      # (EAGER-QUEUE-004) — the continuation run is still +queued+; the gate
+      # that blocked its auto-pick release is the prerequisite notification,
+      # and dismissing it lifts that block.
+      expect(Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
+
+      described_class.where(account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).first
+        .update!(dismissed_at: Time.current)
+
+      expect(Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+    end
+
+    it "eagerly enqueues the subject issue when the system resolves the notification" do # @spec NO-OUTPUT-ISSUE-007
+      create(:notification, :error, account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+      expect(continuation_run).to be_present
+      expect(Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
+
+      Notifications::Resolve.call(
+        account: account,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        subject: parent
+      )
+
+      expect(Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+    end
+
+    it "ignores dismissals of unrelated notification sources" do # @spec NO-OUTPUT-ISSUE-007
+      notification = create(:notification, :error, account: account, subject: parent,
+        source: "some_other_source", blocking: true)
+
+      notification.update!(dismissed_at: Time.current)
+
+      expect(Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+    end
+
+    it "does not double-enqueue if the issue is closed before dismissal" do # @spec NO-OUTPUT-ISSUE-007
+      create(:notification, :error, account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      expect(continuation_run).to be_present
+      parent.update!(github_state: "closed", github_updated_at: Time.current)
+
+      described_class.where(account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).first
+        .update!(dismissed_at: Time.current)
+
+      expect(AgentRun.where(project: project, issue: parent, status: "queued")).to be_empty
+    end
+  end
 end
