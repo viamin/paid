@@ -159,8 +159,10 @@ export default class extends Controller {
   }
 
   createdAt(repository) {
+    if (typeof repository.created_at !== "string") return null
+
     const timestamp = Date.parse(repository.created_at)
-    return Number.isNaN(timestamp) ? null : timestamp
+    return Number.isFinite(timestamp) ? timestamp : null
   }
 
   moveActiveOption(event, direction) {

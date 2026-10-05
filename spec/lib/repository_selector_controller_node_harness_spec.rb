@@ -55,7 +55,8 @@ class RepositorySelectorControllerNodeHarness
     const repositories = [
       { full_name: "Acme/Api-Server", owner: "Acme", name: "Api-Server", id: 1, default_branch: "main", created_at: "2026-09-01T12:00:00Z" },
       { full_name: "octo/website", owner: "octo", name: "website", id: 2, default_branch: "trunk", created_at: "2026-09-02T12:00:00Z" },
-      { full_name: "zeta/legacy", owner: "zeta", name: "legacy", id: 3, default_branch: "main" }
+      { full_name: "beta/numeric-cache", owner: "beta", name: "numeric-cache", id: 3, default_branch: "main", created_at: 0 },
+      { full_name: "zeta/legacy", owner: "zeta", name: "legacy", id: 4, default_branch: "main" }
     ];
 
     function run() {
@@ -130,8 +131,8 @@ class RepositorySelectorControllerNodeHarness
 
       controller.sortSelectTarget.value = "recent";
       controller.sortChanged();
-      if (controller.filteredRepositories[0].full_name !== "octo/website" || controller.filteredRepositories[2].full_name !== "zeta/legacy") {
-        throw new Error("Expected recent sorting to place undated repositories after dated repositories");
+      if (controller.filteredRepositories.map((repo) => repo.full_name).join(",") !== "octo/website,Acme/Api-Server,beta/numeric-cache,zeta/legacy") {
+        throw new Error("Expected recent sorting to place repositories with unusable timestamps after dated repositories");
       }
     }
 
