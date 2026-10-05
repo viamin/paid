@@ -75,7 +75,7 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
     expect(page).to have_css("[role='option']", count: 2)
     expect(repository_option_labels).to eq([ "acme/alpha", "acme/beta (private)" ])
 
-    find("[role='option']", text: "acme/beta (private)").click
+    find("[role='option']", text: "acme/beta (private)").trigger("mousedown")
 
     expect(page).to have_field("project[owner]", with: "acme", visible: :all)
     expect(page).to have_field("project[repo]", with: "beta", visible: :all)
