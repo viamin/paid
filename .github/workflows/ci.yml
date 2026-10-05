@@ -364,7 +364,19 @@ jobs:
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:create db:schema:load
+        run: |
+          for attempt in 1 2 3; do
+            if bin/rails db:create db:schema:load; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Database setup failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 5))"
+            fi
+          done
+
+          exit 1
 
       - name: Bootstrap test defaults
         run: bin/rails ci:bootstrap_test_defaults
