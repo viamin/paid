@@ -3,10 +3,11 @@
 ## Metadata
 
 - **Date**: 2026-09-24
-- **Status**: Accepted
+- **Status**: Partially Implemented
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
+- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) and #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) are the remaining completion dependencies before this RDR can close.
 
 ## Problem Statement
 
@@ -254,6 +255,39 @@ remaining gaps. Mark implemented only from that evidence. If the evaluation
 supports retaining Paid's loop, record that supported outcome and align the
 implementation issues; it is not an unfulfilled promise of eventual delegation.
 Any other scope reduction requires an explicit recommendation and issue update.
+
+## Implementation Status
+
+**Partially Implemented (2026-10-05).** The closeout evidence is recorded in
+[`audit-report-2026-10-05-rdr-072.md`](audit-report-2026-10-05-rdr-072.md).
+The API-key chat transport, embedding transport, selected schema operations,
+and retained-loop outcome are shipped. The retained loop is the accepted final
+outcome: it preserves Paid authority and recovery behavior without introducing
+the upstream persistence and recovery adapters that failed the delegation
+evaluation.
+
+The RDR cannot be marked Implemented or close viamin/paid#4013 yet. The
+migrated API-key transport still generates an ephemeral request ID, supplies
+no Paid-owned retry bound or cancellation signal, and drops harness attempt
+reports. viamin/paid#4125 owns attempt-report persistence
+(API-CONVERSATION-DELEGATION-002) and viamin/paid#4126 owns stable request
+identity, cancellation/deadline propagation, and restart recovery
+(API-CONVERSATION-DELEGATION-003); both are sub-issues of #4013. They are
+completion dependencies for closing #4013, so this closeout uses
+`Tracks #4013` rather than closing language.
+
+## 2026-10-05 Closeout
+
+This closeout follows the
+[RDR Closeout Checklist](closeout-checklist.md). It reconciles the RDR status
+to the shipped code rather than treating closed child issues as evidence. The
+host resolves the protected `agent-harness` 0.44.3 pin. Docker is unavailable
+in the audit environment, so agent-image verification remains a deployment
+release requirement; API chat itself executes in the Rails host and needs no
+image rebuild. The audit found no temporary rollout flag to remove: the
+existing API-key runner-selection boundary remains necessary while the
+unimplemented attempt/recovery contract and other authentication modes remain
+outside the verified scope.
 
 ## Technical Investigation
 
