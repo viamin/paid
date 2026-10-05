@@ -249,7 +249,7 @@ export default class extends Controller {
     option.id = this.optionId(index)
     option.role = "option"
     option.dataset.repositoryIndex = index
-    option.dataset.action = "click->repository-selector#repoOptionSelected"
+    option.dataset.action = "mousedown->repository-selector#repoOptionSelected"
     option.className = this.optionClass(index)
     option.setAttribute("aria-selected", String(index === this.activeIndex))
     option.textContent = repository.full_name + (repository.private ? " (private)" : "")

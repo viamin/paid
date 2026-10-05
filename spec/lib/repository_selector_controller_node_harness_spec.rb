@@ -8,6 +8,7 @@ class RepositorySelectorControllerNodeHarness
     const fs = require("node:fs");
 
     const source = fs.readFileSync("app/javascript/controllers/repository_selector_controller.js", "utf8");
+    const form = fs.readFileSync("app/views/projects/new.html.erb", "utf8");
     const transformed = source
       .replace('import { Controller } from "@hotwired/stimulus"', "class Controller {}")
       .replace("export default class extends Controller {", "return class RepositorySelectorController extends Controller {");
@@ -56,6 +57,14 @@ class RepositorySelectorControllerNodeHarness
 
     function run() {
       const controller = controllerWith(repositories);
+
+      if (!form.includes("blur->repository-selector#closeRepoList")) {
+        throw new Error("Expected the repository combobox to close its list on blur");
+      }
+
+      if (!source.includes('option.dataset.action = "mousedown->repository-selector#repoOptionSelected"')) {
+        throw new Error("Expected pointer selection to occur before input blur closes the list");
+      }
 
       controller.repoSelectTarget.value = "SERVER";
       controller.inputChanged();
