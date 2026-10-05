@@ -366,7 +366,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
       fallback_runner = configure_chat_fallback
       fallback_client = inspecting_llm_client(final_response)
       allow(ChatSessions::BuildLlmClient).to receive(:call)
-        .with(chat_session: chat_session).and_return(fallback_client)
+        .with(hash_including(chat_session: chat_session)).and_return(fallback_client)
 
       result = described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,

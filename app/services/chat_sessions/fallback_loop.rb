@@ -18,7 +18,11 @@ module ChatSessions
       attempted_runners = [ chat_session.runner ].compact
 
       loop do
-        @llm_client ||= ChatSessions::BuildLlmClient.call(chat_session: chat_session)
+        @llm_client ||= ChatSessions::BuildLlmClient.call(
+          chat_session: chat_session,
+          actor: actor,
+          message: transport_attempt_message
+        )
         agent_loop = ChatSessions::AgentLoop.new(**fallback_loop_kwargs)
         return agent_loop.run
       rescue AgentHarness::Error => e
@@ -46,6 +50,10 @@ module ChatSessions
     # pre-computed token budget). Default: none.
     def extra_agent_loop_kwargs
       {}
+    end
+
+    def transport_attempt_message
+      chat_session.messages.where(role: "user").order(created_at: :desc).first
     end
 
     # Remove only the rows the failed attempt itself persisted, identified by the

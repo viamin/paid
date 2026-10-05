@@ -421,7 +421,7 @@ RSpec.describe ChatSessions::SendMessage do
       primary_client = rate_limited_llm_client
       fallback_client = inspecting_llm_client(llm_response)
       fallback_runner = configure_chat_fallback
-      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(hash_including(chat_session: chat_session)).and_return(fallback_client)
 
       result = described_class.call(chat_session: chat_session, content: "Hello", llm_client: primary_client)
 
@@ -442,7 +442,7 @@ RSpec.describe ChatSessions::SendMessage do
       fallback_runner = configure_chat_fallback
       attempts = 0
       allow(ChatSessions::BuildLlmClient).to receive(:call)
-        .with(chat_session: chat_session) do
+        .with(hash_including(chat_session: chat_session)) do
           attempts += 1
           raise AgentHarness::Error, "provider unavailable" if attempts == 1
 
@@ -465,7 +465,7 @@ RSpec.describe ChatSessions::SendMessage do
       allow(Tools::Registry).to receive(:dispatch).and_return(successful_tool_dispatch_result)
       fallback_client = inspecting_llm_client(llm_response)
       fallback_runner = configure_chat_fallback
-      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(hash_including(chat_session: chat_session)).and_return(fallback_client)
 
       # Primary runner streams a tool round (persisted) then rate-limits on the
       # follow-up call, leaving a half-finished assistant/tool turn behind.
@@ -492,7 +492,7 @@ RSpec.describe ChatSessions::SendMessage do
       allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
       fallback_client = inspecting_llm_client(llm_response)
       configure_chat_fallback
-      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(hash_including(chat_session: chat_session)).and_return(fallback_client)
 
       # SendMessage holds no lock on the session, so ChatChannel / the HTTP
       # controller can enqueue another turn while the retry loop runs. Simulate

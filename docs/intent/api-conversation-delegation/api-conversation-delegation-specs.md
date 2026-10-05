@@ -21,28 +21,25 @@
   `ChatSessions::BuildLlmClient::HttpClient#build_request`,
   `ChatSessions::BuildLlmClient::HttpClient#translate_result`.
 
-- [ ] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
+- [x] **API-CONVERSATION-DELEGATION-002** — When a migrated transport reports
   request attempts, Paid SHALL persist every report exactly once by stable
   attempt ID and ordinal, attribute it to the initiating actor, chat session,
   originating message, runner, and provider, and aggregate reported usage
   without double counting. Missing usage SHALL remain unknown rather than be
   recorded as zero; a failed attempt with reported usage SHALL remain visible.
-  Active gap: the persistence mechanics are implemented and tested in
-  isolation, but the migrated request path is not wired to them —
-  `ChatSessions::BuildLlmClient::HttpClient#call` discards the harness's
-  `result[:attempts]` reports and `ChatSessions::RecordTransportAttempt` has
-  no production caller — so live API-key chat attempt reports cannot yet
-  receive this exactly-once/unknown-usage handling. This stays an active gap
-  until the transport reports are wired through (tracked by viamin/paid#4125).
-   *Tests (mechanics only):*
+  `ChatSessions::BuildLlmClient::HttpClient#call` persists every
+  `result[:attempts]` report through `ChatSessions::RecordTransportAttempt`
+  before translating a successful, partial, or classified failed result. The
+  retained loop supplies the actor and originating message when it builds the
+  client, preserving runner/session attribution. The recorder's unique
+  attempt identity and `token_usage_id` claim make report redelivery safe.
+   *Tests:*
+   `spec/services/chat_sessions/build_llm_client_spec.rb`,
    `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
    `spec/services/billing/aggregate_tenant_usage_spec.rb`.
-   *Implemented code (mechanics only):* `ApiUsageAttempt`,
-   `ChatSessions::RecordTransportAttempt`, `TokenUsageTracker` integration.
-   *Wiring still required (viamin/paid#4125):*
-   `ChatSessions::BuildLlmClient::HttpClient#call`
-   consuming `result[:attempts]` and a production caller of
-   `ChatSessions::RecordTransportAttempt`.
+   *Code:* `ApiUsageAttempt`, `ChatSessions::RecordTransportAttempt`,
+   `ChatSessions::BuildLlmClient::HttpClient`, `ChatSessions::FallbackLoop`,
+   and `TokenUsageTracker` integration.
 
 - [ ] **API-CONVERSATION-DELEGATION-003** — When a process restarts, a request
   is cancelled, or Paid changes runner after a classified terminal result, the

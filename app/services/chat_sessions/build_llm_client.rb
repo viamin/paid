@@ -6,8 +6,8 @@ module ChatSessions
     ANTHROPIC_BASE_URL = "https://api.anthropic.com"
     ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-20250514"
 
-    def self.call(chat_session:)
-      new(chat_session: chat_session).call
+    def self.call(chat_session:, actor: chat_session.created_by, message: nil)
+      new(chat_session: chat_session, actor: actor, message: message).call
     end
 
     # Default outbound model for a provider service type. Shared with
@@ -22,8 +22,10 @@ module ChatSessions
       runner&.enabled_for_chat? && runner.api_key? && runner.effective_api_secret.present?
     end
 
-    def initialize(chat_session:)
+    def initialize(chat_session:, actor: chat_session.created_by, message: nil)
       @chat_session = chat_session
+      @actor = actor
+      @message = message
     end
 
     def call
@@ -45,7 +47,7 @@ module ChatSessions
 
     private
 
-    attr_reader :chat_session
+    attr_reader :chat_session, :actor, :message
 
     def resolved_runner
       runner = chat_session.runner
@@ -70,7 +72,10 @@ module ChatSessions
         protocol: :messages,
         endpoint: ANTHROPIC_BASE_URL,
         api_key: api_key,
-        model: model
+        model: model,
+        chat_session: chat_session,
+        actor: actor,
+        message: message
       )
     end
 
@@ -89,7 +94,10 @@ module ChatSessions
         api_key: api_key,
         model: model,
         max_tokens: config&.dig(:chat_max_tokens),
-        model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil
+        model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil,
+        chat_session: chat_session,
+        actor: actor,
+        message: message
       )
     end
 
@@ -137,7 +145,7 @@ module ChatSessions
       attr_reader :model
 
       def initialize(provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
-        chat_transport: AgentHarness::Api::ChatTransport.new)
+        chat_transport: AgentHarness::Api::ChatTransport.new, chat_session: nil, actor: nil, message: nil)
         @provider = provider
         @protocol = protocol
         @endpoint = endpoint
@@ -146,6 +154,9 @@ module ChatSessions
         @max_tokens = max_tokens
         @model_resolver = model_resolver
         @chat_transport = chat_transport
+        @chat_session = chat_session
+        @actor = actor
+        @message = message
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
@@ -159,10 +170,25 @@ module ChatSessions
           @chat_transport.call(request)
         end
 
+        persist_attempts(result)
         translate_result(result)
       end
 
       private
+
+      # @spec API-CONVERSATION-DELEGATION-002
+      def persist_attempts(result)
+        return if @message.nil? || result[:attempts].blank?
+
+        result[:attempts].each do |report|
+          ChatSessions::RecordTransportAttempt.call(
+            chat_session: @chat_session,
+            actor: @actor,
+            message: @message,
+            report: report
+          )
+        end
+      end
 
       def build_request(conversation, tools, stream)
         {
