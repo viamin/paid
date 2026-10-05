@@ -130,6 +130,13 @@ class Issue < ApplicationRecord
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
   after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
+  # When the parent issue closes (operator action on GitHub, or a later
+  # full closeout run via UpdateIssueWithPrActivity), the partial-closeout
+  # prerequisite Inbox notification the operator never dismissed is stale:
+  # the work it gated is no longer pending. Mirror the dependency-resolved
+  # eager re-enqueue path so stale notifications do not keep the dismissal
+  # state out of date when the parent is later reopened.
+  after_update_commit :resolve_partial_closeout_prerequisite_notifications, if: :github_just_closed?
   after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
@@ -1050,6 +1057,33 @@ class Issue < ApplicationRecord
       .includes(:project)
       .joins(:project)
       .where(id: reverse_issue_dependencies.select(:issue_id), projects: { auto_pick_enabled: true })
+  end
+
+  # See the after_update_commit hook that calls this: when the issue just
+  # closed on GitHub, any active partial-closeout prerequisite notification
+  # is stale. Resolve every active notification for the issue under that
+  # source so reopening the issue starts from a clean notification state.
+  def resolve_partial_closeout_prerequisite_notifications # @spec NO-OUTPUT-ISSUE-007
+    Notification.where(
+      account_id: project&.account_id,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      subject_type: "Issue",
+      subject_id: id,
+      resolved_at: nil
+    ).find_each do |notification|
+      Notifications::Resolve.call(
+        account: notification.account,
+        source: notification.source,
+        subject: notification.subject,
+        user: notification.user
+      )
+    end
+  rescue => e
+    Rails.logger.error(
+      message: "notifications.partial_closeout_prerequisite_resolve_failed",
+      issue_id: id,
+      error: e.message
+    )
   end
 
   def auto_pick_recheck_needed?

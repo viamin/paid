@@ -175,7 +175,7 @@ module PartialCloseouts
 
       Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
-        source: "partial_closeout.prerequisite", severity: :error, blocking: true,
+        source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
         description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
       )

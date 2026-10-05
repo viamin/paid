@@ -1106,6 +1106,68 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(queued.auto_pick).to be(true)
         expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
       end
+
+      describe "human prerequisite notification (#4119 review)" do
+        # An assessment whose gaps are all human prerequisites publishes a
+        # blocking Inbox notification rather than creating IssueDependency edges
+        # (NO-OUTPUT-ISSUE-007). The partial-closeout re-audit exception above
+        # alone would re-pick the parent once the partial PR merges, defeating
+        # the operator gate. The auto-pick eligibility gate must exclude any
+        # parent whose notification is still unresolved.
+        before do
+          create(:issue, :pull_request, :closed, project: project, github_number: 42,
+            pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+          # Close the synthetic gap-owner dependency the +before+ block above
+          # added so each test isolates the notification block from the
+          # shared dependency block. Closing the owner also enqueues a
+          # continuation run; the dequeue-time recheck is the gate that
+          # honors the prerequisite notification, so the assertions below
+          # compare against that recheck rather than the raw eligible scope.
+          owner.update!(github_state: "closed", github_updated_at: Time.current)
+          @continuation_run = AgentRun.where(project: project, issue: parent, status: "queued").last
+        end
+
+        it "keeps the parent out while a partial-closeout prerequisite notification is unresolved" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, account: project.account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          expect(@continuation_run).to be_present
+          expect(@continuation_run.auto_pick).to be(true)
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: @continuation_run.id)).to be(false)
+        end
+
+        it "treats a dismissed notification as resolved for the eligibility block" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, :dismissed, account: project.account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          # Without a dependency edge or notification gate, the dequeue recheck
+          # accepts the continuation run through the partial-closeout re-audit
+          # exception.
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: @continuation_run.id)).to be(true)
+        end
+
+        it "treats a system-resolved notification as resolved for the eligibility block" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, :resolved, account: project.account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: @continuation_run.id)).to be(true)
+        end
+
+        it "ignores notifications under different sources" do # @spec NO-OUTPUT-ISSUE-007
+          create(:notification, :error, account: project.account, subject: parent,
+            source: "some_other_source", blocking: true)
+
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: @continuation_run.id)).to be(true)
+        end
+
+        it "ignores notifications from other accounts" do # @spec NO-OUTPUT-ISSUE-007
+          other_account = create(:account)
+          create(:notification, :error, account: other_account, subject: parent,
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: @continuation_run.id)).to be(true)
+        end
+      end
     end
 
     # @spec AUTO-PICK-QUEUE-003

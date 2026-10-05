@@ -319,6 +319,7 @@ module Automation
 
             reauditable_epic_ids = reauditable_epic_ids(project, epic_ids)
             reauditable_closeout_ids = partial_closeout_reaudit_issue_ids(project)
+            prerequisite_block_ids = partial_closeout_prerequisite_block_issue_ids(project)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
@@ -357,6 +358,16 @@ module Automation
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
               .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_epic_ids)
+              # Partial-closeout human prerequisites surface as blocking Inbox
+              # notifications rather than durable IssueDependency edges
+              # (NO-OUTPUT-ISSUE-007). Without this exclusion the partial-closeout
+              # re-audit exception above would re-pick the parent once the partial
+              # PR merges, even though the operator has not yet completed the
+              # prerequisite the notification states. The notification dismissal
+              # or system resolve clears the block (see Notification's callback),
+              # so the parent re-enters selection through the same eager-enqueue
+              # path that dependency resolution uses.
+              .where.not(id: prerequisite_block_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -458,6 +469,26 @@ module Automation
             AgentRun.where(id: latest_run_ids.values)
               .where(PARTIAL_CLOSEOUT_GAPS_CONDITION)
               .pluck(:issue_id)
+          end
+
+          # Issue ids whose partial closeout surfaced one or more human
+          # prerequisites (NO-OUTPUT-ISSUE-007). Unlike agent gaps, which
+          # produce durable IssueDependency edges that the shared
+          # +ready_for_work+ gate filters, human prerequisites publish a
+          # blocking Inbox notification whose subject is the parent issue.
+          # The notification is the durable scheduling block until the
+          # operator dismisses it (Inbox dismiss action) or the system
+          # resolves it (Notifications::Resolve), so the partial-closeout
+          # re-audit exception does not re-pick the parent ahead of the
+          # prerequisite the notification names.
+          def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
+            Notification.where(
+              account_id: project.account_id,
+              source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+              subject_type: "Issue"
+            ).where(resolved_at: nil, dismissed_at: nil)
+              .where("subject_id IN (?)", project.issues.select(:id))
+              .pluck(:subject_id)
           end
 
           def epic_issue_ids(project)
