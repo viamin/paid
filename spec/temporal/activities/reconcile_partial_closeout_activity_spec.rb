@@ -9,6 +9,18 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
   let(:run) { create(:agent_run, :completed, project: project, issue: parent, pull_request_number: 99) }
 
   describe "#execute" do
+    # @spec NO-OUTPUT-ISSUE-007
+    it "skips reconciliation for issue-less PR runs instead of failing them" do
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+      issueless_run = create(:agent_run, :completed, :with_custom_prompt, project: project)
+
+      result = activity.execute(agent_run_id: issueless_run.id)
+
+      expect(result).to include(agent_run_id: issueless_run.id, status: "skipped_no_issue")
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(issueless_run.reload.reconciliation).to eq({})
+    end
+
     it "persists the assessment on the run and reuses it across retries" do
       assessment = { "gaps" => [] }
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(assessment)

@@ -64,6 +64,56 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
     end
 
+    it "caps the gaps array at the reconciler's bound in the response schema" do
+      expect(described_class::MAX_GAPS).to eq(PartialCloseouts::Reconcile::MAX_GAPS)
+      expect(described_class::RESPONSE_SCHEMA.dig(:properties, :gaps, :maxItems)).to eq(described_class::MAX_GAPS)
+    end
+
+    it "raises when the model returns more gaps than the reconciler accepts" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      oversized = (1..(described_class::MAX_GAPS + 1)).map { |i| { criterion: "gap #{i}", kind: "agent", title: "Task #{i}" } }
+      allow(legacy_response).to receive(:output).and_return({ gaps: oversized }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "raises when a gap entry is not an object" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ "wire dispatch" ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "raises when a gap omits its criterion" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ { kind: "agent", title: "Finish dispatch" } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "raises when a gap carries an unknown kind" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ { criterion: "dispatch", kind: "robot", title: "Finish dispatch" } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "raises when an agent gap has neither a title nor an owner issue" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ { criterion: "dispatch", kind: "agent", body: "Wire dispatch" } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "accepts an agent gap that reuses an existing owner without a title" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ { criterion: "dispatch", kind: "agent", owner_issue_number: 77 } ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "owner_issue_number")).to eq(77)
+    end
+
     context "when API-key authentication is configured" do
       let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport, call: schema_result) }
 

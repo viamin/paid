@@ -85,6 +85,10 @@ module PartialCloseouts
           agent_run.project.full_name,
           title: title.truncate(255), body: "#{gap["body"].to_s.strip}\n\n#{marker}", labels: owner_labels
         )
+        # Persist the created number BEFORE the local upsert so a crash
+        # between the GitHub call and the upsert is still recoverable on
+        # retry via prior_owner's number lookup.
+        record_gap!(index, gap, status: "creating", marker: marker, owner_issue_number: created.number)
         Issues::UpsertFromGithub.call(project: agent_run.project, github_issue: created)
       end
     end
@@ -100,8 +104,27 @@ module PartialCloseouts
     end
 
     def prior_owner(index)
-      id = reconciliation.fetch("gaps", {}).dig(index.to_s, "owner_issue_id")
-      agent_run.project.issues.find_by(id: id, github_state: "open") if id
+      state = reconciliation.fetch("gaps", {}).fetch(index.to_s, {})
+      owner_from_id(state) || owner_from_number(state)
+    end
+
+    def owner_from_id(state)
+      return unless state["owner_issue_id"]
+
+      agent_run.project.issues.find_by(id: state["owner_issue_id"], github_state: "open")
+    end
+
+    # Recovers a gap whose GitHub issue was created but whose local owner row
+    # was never linked back (crash between create_issue and the upsert): the
+    # replay state carries the created number, and a later sync may have
+    # landed the row. Same parent exclusion as reusable_owner so a recorded
+    # number pointing at the parent cannot create a self-referential edge.
+    def owner_from_number(state)
+      number = state["owner_issue_number"].to_i
+      return if number.zero?
+
+      owner = agent_run.project.issues.find_by(github_number: number, github_state: "open")
+      owner if owner && owner.id != agent_run.issue.id
     end
 
     def publish_operator_prerequisites!(human_gaps)
@@ -132,28 +155,42 @@ module PartialCloseouts
       numbers = agent_run.issue.issue_dependencies.includes(:depends_on_issue).filter_map { |dependency| dependency.depends_on_issue&.github_number }
       return if numbers.empty?
 
-      lines = new_dependency_lines(numbers)
+      # Base the rewrite on the live GitHub body, not the local copy, so
+      # human edits made since the last sync survive (same pattern as
+      # CreateMultipleIssuesActivity#update_parent_issue).
+      body = agent_run.project.client.issue(agent_run.project.full_name, agent_run.issue.github_number).body.to_s
+      lines = new_dependency_lines(numbers, body)
       return if lines.empty?
 
-      updated_body = append_dependency_lines(lines)
+      updated_body = append_dependency_lines(lines, body)
       agent_run.project.client.update_issue(agent_run.project.full_name, agent_run.issue.github_number, body: updated_body)
       agent_run.issue.update!(body: updated_body)
     end
 
-    def new_dependency_lines(numbers)
-      body = agent_run.issue.body.to_s
+    def new_dependency_lines(numbers, body)
       numbers.filter_map do |number|
         line = ProjectConventions::IssueDependencies.depends_on_line(project: agent_run.project, github_number: number, resolved: dependency_conventions)
         "- #{line}" unless body.match?(/\b#{Regexp.escape(line)}\b/)
       end
     end
 
-    def append_dependency_lines(lines)
-      body = agent_run.issue.body.to_s
+    def append_dependency_lines(lines, body)
       heading = ProjectConventions::IssueDependencies.heading(project: agent_run.project, resolved: dependency_conventions)
-      return "#{body}\n#{lines.join("\n")}" if body.include?(heading)
+      return insert_under_heading(lines, body, heading) if body.include?(heading)
 
       [ body, heading, lines.join("\n") ].reject(&:blank?).join("\n\n")
+    end
+
+    # The heading may sit mid-body with sections after it; insert the new
+    # lines at the end of the heading's own section rather than at the very
+    # end of the body, outside the section they belong to.
+    def insert_under_heading(lines, body, heading)
+      heading_start = body.index(heading)
+      remainder = body[(heading_start + heading.length)..].to_s
+      section, trailing = remainder.split(/(?=\n\s*#)/, 2)
+      updated_section = [ section.rstrip, lines.join("\n") ].reject(&:blank?).join("\n")
+      [ body[0...heading_start].rstrip, heading, updated_section, trailing.to_s.lstrip ]
+        .reject(&:blank?).join("\n\n")
     end
 
     def dependency_conventions

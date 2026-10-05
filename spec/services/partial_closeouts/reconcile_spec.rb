@@ -12,6 +12,7 @@ RSpec.describe PartialCloseouts::Reconcile do
   before do
     allow(project).to receive(:client).and_return(client)
     allow(client).to receive(:update_issue)
+    allow(client).to receive(:issue) { OpenStruct.new(body: parent.body.to_s) }
   end
 
   # @spec NO-OUTPUT-ISSUE-007
@@ -126,6 +127,84 @@ RSpec.describe PartialCloseouts::Reconcile do
       expect(body.scan("## Dependencies").count).to eq(1)
       expect(body).to include("- Depends on ##{owner.github_number}")
     end
+  end
+
+  # @spec NO-OUTPUT-ISSUE-007
+  it "rewrites from the live GitHub body so human edits made since the last sync survive" do
+    parent.update!(body: "Stale local body")
+    owner = create(:issue, project: project, github_state: "open", paid_state: "new")
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: "Human-edited body\n\n## Notes\n\nedited on GitHub"))
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "owner_issue_number" => owner.github_number } ]))
+
+    expect(client).to have_received(:update_issue) do |_, _, body:|
+      expect(body).to include("Human-edited body")
+      expect(body).not_to include("Stale local body")
+      expect(body).to include("- Depends on ##{owner.github_number}")
+    end
+    expect(parent.reload.body).to include("Human-edited body")
+  end
+
+  # @spec NO-OUTPUT-ISSUE-007
+  it "inserts new lines inside the dependencies section when later sections follow the heading" do
+    allow(client).to receive(:issue).and_return(OpenStruct.new(
+      body: "Original body\n\n## Dependencies\n\n- Depends on #1\n\n## Acceptance\n\n- criterion A"
+    ))
+    owner = create(:issue, project: project, github_state: "open", paid_state: "new")
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "owner_issue_number" => owner.github_number } ]))
+
+    expect(client).to have_received(:update_issue) do |_, _, body:|
+      dependencies_section = body[/## Dependencies\n.*?(?=\n## |\z)/m]
+      expect(dependencies_section).to include("- Depends on ##{owner.github_number}")
+      expect(body).to include("## Acceptance\n\n- criterion A")
+    end
+  end
+
+  # @spec NO-OUTPUT-ISSUE-007
+  it "resumes from a marker on an already-synced local issue without filing again" do
+    allow(client).to receive(:create_issue)
+    existing = create(:issue, project: project, github_state: "open",
+      body: "Wire dispatch\n\n<!-- paid:partial-closeout:#{run.id}:0 -->")
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+
+    expect(client).not_to have_received(:create_issue)
+    expect(parent.issue_dependencies.find_by(depends_on_issue: existing)).to be_present
+  end
+
+  # @spec NO-OUTPUT-ISSUE-007
+  it "records the created number before the local upsert so a crash mid-reconcile does not duplicate the issue" do
+    created = OpenStruct.new(number: 448, html_url: "https://example.test/issues/448", id: 448, title: "Finish dispatch", body: "")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_raise(StandardError, "upsert crashed")
+
+    expect {
+      described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+    }.to raise_error(StandardError, "upsert crashed")
+    expect(run.reconciliation.dig("gaps", "0", "owner_issue_number")).to eq(448)
+
+    # A later sync landed the created issue locally; the retry must reuse it.
+    synced = create(:issue, project: project, github_number: 448, github_state: "open")
+    allow(Issues::UpsertFromGithub).to receive(:call).and_call_original
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+
+    expect(client).to have_received(:create_issue).once
+    expect(parent.reload.issue_dependencies.find_by(depends_on_issue: synced)).to be_present
+    expect(run.reload.reconciliation.fetch("status")).to eq("reconciled")
+  end
+
+  it "does not recover the parent itself from a recorded owner number" do
+    run.update!(reconciliation: { "gaps" => { "0" => { "owner_issue_number" => parent.github_number, "status" => "creating" } } })
+    created = OpenStruct.new(number: 449, html_url: "https://example.test/issues/449", id: 449, title: "Finish dispatch", body: "")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(create(:issue, project: project, github_number: 449))
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch" } ]))
+
+    expect(client).to have_received(:create_issue).once
+    expect(parent.issue_dependencies.where(depends_on_issue: parent)).to be_empty
   end
 
   def gaps(gaps)
