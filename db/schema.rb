@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -374,7 +374,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
+    t.bigint "continuation_request_id", comment: "The scoped continuation authorization this run executes, if any."
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
+    t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["execution_origin"], name: "index_agent_runs_on_execution_origin"
     t.index ["focus"], name: "index_agent_runs_on_focus"
@@ -1976,6 +1978,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
     t.index ["reviewer_run_id"], name: "index_intent_conformance_verdicts_on_reviewer_run_id"
   end
 
+  create_table "issue_continuation_requests", comment: "Scoped authorizations to deliberately continue an issue past prior terminal closeout evidence (merged PR / no-code).", force: :cascade do |t|
+    t.bigint "issue_id", null: false, comment: "The issue whose terminal evidence the request authorizes continuing past."
+    t.bigint "project_id", null: false, comment: "Denormalized project for scoped admission queries; always matches issue.project_id."
+    t.bigint "requested_by_id", null: false, comment: "Actor who requested the deliberate continuation."
+    t.text "reason", null: false, comment: "Required operator/agent justification recorded with the authorization."
+    t.jsonb "evidence", default: {}, null: false, comment: "Snapshot of the terminal closeout evidence the request authorizes against (merged PRs, no-code timestamp)."
+    t.string "evidence_digest", null: false, comment: "SHA-256 outcome-generation identity; a changed digest supersedes the request."
+    t.string "status", default: "queued", null: false, comment: "queued (run in flight) / consumed (run terminal, guards re-armed) / superseded (authorization invalidated)."
+    t.datetime "closed_at", comment: "When the request left the open state."
+    t.text "closure_reason", comment: "Why the request closed (terminal outcome or supersede reason)."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["issue_id"], name: "index_issue_continuation_requests_on_issue_id"
+    t.index ["issue_id"], name: "index_issue_continuation_requests_open_per_issue", unique: true, where: "((status)::text = 'queued'::text)"
+    t.index ["project_id"], name: "index_issue_continuation_requests_on_project_id"
+    t.index ["requested_by_id"], name: "index_issue_continuation_requests_on_requested_by_id"
+  end
+
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "depends_on_issue_id"
@@ -2070,6 +2090,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
     t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
     t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
     t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
+    t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
+    t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
+    t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."
+    t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
@@ -3887,6 +3911,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
   add_foreign_key "agent_run_session_summaries", "projects", on_delete: :cascade
   add_foreign_key "agent_run_session_summaries", "users", column: "promoted_by_id", on_delete: :nullify
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
+  add_foreign_key "agent_runs", "issue_continuation_requests", column: "continuation_request_id"
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
@@ -4053,12 +4078,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
   add_foreign_key "intent_conformance_verdicts", "agent_runs", column: "reviewer_run_id"
   add_foreign_key "intent_conformance_verdicts", "issues"
   add_foreign_key "intent_conformance_verdicts", "projects"
+  add_foreign_key "issue_continuation_requests", "issues"
+  add_foreign_key "issue_continuation_requests", "projects"
+  add_foreign_key "issue_continuation_requests", "users", column: "requested_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"
   add_foreign_key "issue_merge_subscriptions", "users"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "issues", "users", column: "closeout_resolved_by_id", validate: false
   add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
@@ -5074,6 +5103,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -5160,13 +5197,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_02_064637) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 end

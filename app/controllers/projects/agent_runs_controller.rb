@@ -282,6 +282,41 @@ module Projects
       redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
     end
 
+    # Deliberate continuation of an issue stalled behind terminal closeout
+    # evidence: persists the scoped authorization (actor, reason, evidence
+    # generation) and queues exactly one run. Mirrors the OPERATOR-INBOX
+    # recovery-action shape (authorize :run_agent?, service result → flash,
+    # safe_return_target redirect).
+    # @spec PARTIAL-CLOSEOUT-007
+    def request_continuation
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = Issues::RequestContinuation.call(issue: issue, actor: current_user, reason: params[:reason])
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Continuation queued.")
+    end
+
+    # Records the operator's attestation that the recorded closeout evidence
+    # completes the issue (evidence-gated; see Issues::ResolveCloseout).
+    # @spec PARTIAL-CLOSEOUT-007
+    def resolve_closeout
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = Issues::ResolveCloseout.call(issue: issue, actor: current_user, reason: params[:reason])
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Issue resolved as complete.")
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation
@@ -741,6 +776,10 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.find(params[:issue_id])
+    end
+
+    def closeout_flash(result, success_message)
+      result.success? ? { notice: success_message } : { alert: result.message }
     end
 
     def resolve_priority_tier

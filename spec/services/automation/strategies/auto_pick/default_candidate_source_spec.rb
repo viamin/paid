@@ -1262,4 +1262,62 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(held.id)
     end
   end
+
+  # @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
+  describe "scoped continuation authorization" do
+    def merged_partial_issue(pr_number:, **attrs)
+      issue = create(:issue, project: project, github_state: "open", **attrs)
+      create(:issue, :pull_request, :closed, project: project, github_number: pr_number,
+        pr_review_phase: "merged", parent_issue: issue)
+      issue
+    end
+
+    it "keeps a completed issue protected by the merged-PR guard without authorization" do
+      issue = merged_partial_issue(pr_number: 41, paid_state: "completed")
+
+      expect(described_class.eligible_scope(project).pluck(:id)).not_to include(issue.id)
+      expect(described_class.eligible_for_dequeue?(project, issue.id, excluding_run_id: nil)).to be(false)
+    end
+
+    it "lifts only the merged-PR and no-code guards for explicitly authorized issues" do
+      authorized = merged_partial_issue(pr_number: 42, paid_state: "completed")
+      no_code = create(:issue, project: project, github_state: "open", paid_state: "completed", no_code_required_at: 1.hour.ago)
+      unauthorized = merged_partial_issue(pr_number: 44, paid_state: "completed")
+
+      scope = described_class.eligible_scope(
+        project,
+        continuation_authorized_issue_ids: [ authorized.id, no_code.id ]
+      )
+
+      expect(scope.pluck(:id)).to contain_exactly(authorized.id, no_code.id)
+    end
+
+    it "still applies every other guard to an authorized issue" do
+      skip_labeled = merged_partial_issue(pr_number: 45, labels: [ project.effective_auto_pick_skip_labels.first ])
+      paused = merged_partial_issue(pr_number: 46)
+      paused.update_columns(paused: true)
+      blocked = merged_partial_issue(pr_number: 47)
+      blocker = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: blocked, depends_on_issue: blocker)
+
+      ids = [ skip_labeled.id, paused.id, blocked.id ]
+
+      expect(
+        described_class.eligible_scope(project, continuation_authorized_issue_ids: ids).pluck(:id)
+      ).not_to include(*ids)
+    end
+
+    it "is admitted at dequeue time with the scoped lift" do
+      issue = merged_partial_issue(pr_number: 48)
+
+      expect(
+        described_class.eligible_for_dequeue?(
+          project,
+          issue.id,
+          excluding_run_id: nil,
+          continuation_authorized_issue_ids: [ issue.id ]
+        )
+      ).to be(true)
+    end
+  end
 end

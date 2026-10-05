@@ -108,6 +108,9 @@ class Issue < ApplicationRecord
                                         dependent: :destroy,
                                         inverse_of: :depends_on_issue
   has_many :dependents, through: :reverse_issue_dependencies, source: :issue
+  has_many :continuation_requests, class_name: "IssueContinuationRequest", dependent: :destroy
+  has_one :open_continuation_request, -> { open }, class_name: "IssueContinuationRequest"
+  belongs_to :closeout_resolved_by, class_name: "User", optional: true
 
   validates :github_issue_id, presence: true, uniqueness: { scope: :project_id }
   validates :github_number, presence: true
@@ -775,6 +778,7 @@ class Issue < ApplicationRecord
     saved_change_to_needs_input_since? ||
       saved_change_to_manual_review_started_at? ||
       saved_change_to_runner_retry_abandoned_at? ||
+      saved_change_to_closeout_resolved_at? ||
       waiting_issue_github_state_changed? ||
       retry_limited_issue_github_state_changed? ||
       merge_approval_candidate_state_changed?
@@ -1223,6 +1227,36 @@ class Issue < ApplicationRecord
       project_id: project_id,
       issue_number: github_number,
       reason: reason
+    )
+  end
+
+  def closeout_resolved?
+    closeout_resolved_at.present?
+  end
+
+  # Records the operator's attestation that the recorded closeout evidence
+  # (merged partial PR / no-code outcome) completes this issue. The digest
+  # scopes the dismissal to one evidence generation: newer terminal evidence
+  # re-surfaces the partial_closeout inbox entry, and repeated GitHub sync
+  # cannot recreate the suppressed item because sync writes no state here.
+  # Deliberately does NOT write to GitHub — the issue stays open there for a
+  # human to close; Paid only stops surfacing it.
+  # @spec PARTIAL-CLOSEOUT-006
+  def resolve_closeout!(actor:, evidence_digest:)
+    update!(
+      paid_state: "completed",
+      closeout_resolved_at: Time.current,
+      closeout_resolution_digest: evidence_digest,
+      closeout_resolved_by: actor
+    )
+
+    Rails.logger.info(
+      message: "issue.closeout_resolved",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      resolved_by_id: actor&.id
     )
   end
 
