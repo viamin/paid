@@ -17,7 +17,8 @@ RSpec.describe Activities::PostPartialCloseoutEvidenceActivity do
     allow(github_client).to receive_messages(
       authenticated_login: "paid-agents[bot]",
       recent_issue_comments: [],
-      add_comment: nil
+      add_comment: nil,
+      remove_label_from_issue: nil
     )
   end
 

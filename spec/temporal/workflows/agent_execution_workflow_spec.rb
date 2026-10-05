@@ -1467,6 +1467,55 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
   end
 
+  describe "partial closeout reconciliation patch guard" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def execute_create_pr_with_partial_closeout_guard(enabled:)
+      activities = []
+      allow(Temporalio::Workflow).to receive(:patched) do |guard_name|
+        next enabled if guard_name == "partial-closeout-reconciliation-v1"
+
+        true
+      end
+
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        activities << activity_class
+
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::CreatePullRequestActivity"
+          { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::ReconcilePartialCloseoutActivity"
+          { agent_run_id: 42, status: "reconciled", gaps_remain: false }
+        when "Activities::PostPartialCloseoutEvidenceActivity" then { agent_run_id: 42, posted: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+      activities
+    end
+
+    it "schedules ReconcilePartialCloseoutActivity for new histories" do
+      activities = execute_create_pr_with_partial_closeout_guard(enabled: true)
+
+      expect(activities).to include(Activities::ReconcilePartialCloseoutActivity)
+    end
+
+    it "skips ReconcilePartialCloseoutActivity while replaying pre-marker histories" do
+      activities = execute_create_pr_with_partial_closeout_guard(enabled: false)
+
+      expect(activities).not_to include(Activities::ReconcilePartialCloseoutActivity)
+      expect(activities).to include(Activities::UpdateIssueWithPrActivity)
+    end
+  end
+
   describe "ensure block cleanup and janitor enqueue" do
     let(:input) { { project_id: 1, issue_id: 1 } }
 

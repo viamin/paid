@@ -23,6 +23,8 @@ workflows:
       introduced_on: "2026-08-11"
     review-independent-verification-v1:
       introduced_on: "2026-09-18"
+    partial-closeout-reconciliation-v1:
+      introduced_on: "2026-10-05"
   Workflows::ParallelAgentExecutionWorkflow:
     parallel-agent-execution-remove-pr-aggregation-v1:
       introduced_on: "2026-09-03"
