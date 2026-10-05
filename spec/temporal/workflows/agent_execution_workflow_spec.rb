@@ -1241,6 +1241,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::PushBranchActivity" then {}
         when "Activities::CreatePullRequestActivity"
           { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::ReconcilePartialCloseoutActivity"
+          { agent_run_id: 42, status: "reconciled", gaps_remain: false }
         when "Activities::UpdateIssueWithPrActivity" then {}
         when "Activities::RequestReviewActivity" then {}
         when "Activities::CaptureScreenshotsActivity" then { status: "captured", screenshot_count: 2 }
@@ -1266,6 +1268,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::PushBranchActivity" then {}
         when "Activities::CreatePullRequestActivity"
           { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::ReconcilePartialCloseoutActivity"
+          { agent_run_id: 42, status: "reconciled", gaps_remain: false }
         when "Activities::UpdateIssueWithPrActivity" then {}
         when "Activities::RequestReviewActivity" then {}
         when "Activities::CaptureScreenshotsActivity"
@@ -1349,9 +1353,101 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::UpdateIssueWithPrActivity, any_args)
       expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ReconcilePartialCloseoutActivity, any_args)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::DraftDecisionRecordActivity, any_args)
+    end
+  end
+
+  describe "partial closeout reconciliation" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    def stub_new_pr_creation_with_reconciliation(reconcile_result, call_order = [])
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        call_order << activity_class.name
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CheckProxyHealthActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::CreatePullRequestActivity"
+          { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::ReconcilePartialCloseoutActivity" then reconcile_result
+        when "Activities::UpdateIssueWithPrActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CaptureScreenshotsActivity" then { status: "captured", screenshot_count: 2 }
+        when "Activities::DraftDecisionRecordActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "reconciles remaining gaps before completing the parent issue" do
+      call_order = []
+      stub_new_pr_creation_with_reconciliation(
+        { agent_run_id: 42, status: "reconciled", gaps_remain: false }, call_order
+      )
+
+      workflow.execute(input)
+
+      expect(call_order.index("Activities::ReconcilePartialCloseoutActivity"))
+        .to be < call_order.index("Activities::UpdateIssueWithPrActivity")
+    end
+
+    it "completes the parent issue when reconciliation confirms a full closeout" do
+      stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "reconciled", gaps_remain: false })
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::UpdateIssueWithPrActivity,
+          { agent_run_id: 42, pull_request_url: "https://github.com/o/r/pull/99" },
+          timeout: 30)
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "keeps the parent issue incomplete when agent-owned gaps remain" do
+      stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "reconciled", gaps_remain: true })
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::UpdateIssueWithPrActivity, any_args)
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "keeps the parent issue incomplete when operator prerequisites remain" do
+      stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "awaiting_operator", gaps_remain: true })
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::UpdateIssueWithPrActivity, any_args)
+    end
+
+    it "still requests a review-bot review on the partial closeout PR" do
+      stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "awaiting_operator", gaps_remain: true })
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 99 },
+          timeout: 60)
     end
   end
 

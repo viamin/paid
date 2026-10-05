@@ -126,18 +126,21 @@ comment failure to self-heal once the human-visible rationale exists.
 
 ## PR-producing partial closeouts
 
-A run that creates a PR can still leave acceptance criteria unmet. Before the
-workflow treats such a run as successfully closed out, `ReconcilePartialCloseoutActivity`
-uses an agent-harness structured assessment of approved intent, the run/PR
-evidence, and current open issues (the assessment prompt lists the bounded
-open-issue set so owner reuse is grounded, not guessed from evidence prose).
-The assessment follows the same transport routing as the other schema-boundary
-services: the API-key schema transport when `Llm::TextMode` is enabled, the
-CLI transport otherwise, so a keyless deployment keeps working. The assessment
-is persisted on the run on first success and reused across activity retries,
-keeping gap indices — the replay keys — stable. The deterministic reconciler
-validates that assessment, reuses only current open owners (never the parent
-itself), creates bounded focused issues when needed (labeled with the
+A run that creates a PR can still leave acceptance criteria unmet. The workflow
+runs `ReconcilePartialCloseoutActivity` after PR creation but **before**
+`UpdateIssueWithPrActivity` — the step that completes the parent issue — so gap
+reconciliation lands on a still-incomplete parent (dependency edges, Inbox
+subject, and parent-body rewrite all target an open work item, not a terminal
+one). The activity uses an agent-harness structured assessment of approved
+intent, the run/PR evidence, and current open issues (the assessment prompt
+lists the bounded open-issue set so owner reuse is grounded, not guessed from
+evidence prose). The assessment follows the same transport routing as the other
+schema-boundary services: the API-key schema transport when `Llm::TextMode` is
+enabled, the CLI transport otherwise, so a keyless deployment keeps working. The
+assessment is persisted on the run on first success and reused across activity
+retries, keeping gap indices — the replay keys — stable. The deterministic
+reconciler validates that assessment, reuses only current open owners (never the
+parent itself), creates bounded focused issues when needed (labeled with the
 project's automation/generated labels so they route into auto-pick), and
 records local `IssueDependency` edges plus dependency text on the parent in
 the project's configured `issue_dependency_format` wording. It persists its
@@ -145,3 +148,13 @@ progress on the run so a GitHub failure can resume without duplicate issues.
 Human-only prerequisites create one aggregated blocking Inbox notification
 covering every prerequisite with its exact next step rather than an agent
 retry.
+
+The activity result tells the workflow whether any gaps remain (the persisted
+status alone is ambiguous: `reconciled` covers both a gap-free closeout and one
+whose gaps all received agent owners). When gaps remain, the workflow skips
+`UpdateIssueWithPrActivity` entirely: its completion path also gates the PR
+comment and trigger-label cleanup, so the parent issue stays in its
+non-terminal state, keeps its trigger label, and remains dependency-blocked —
+which leaves it re-pickable by auto-pick once the gap owners resolve, the
+existing label-driven continuation path. When no gaps remain, the parent is
+completed and updated exactly as a full closeout.

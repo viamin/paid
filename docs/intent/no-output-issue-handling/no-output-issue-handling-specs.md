@@ -76,7 +76,14 @@
   replay-safe focused follow-up with an explicit local and GitHub-visible
   dependency, or a blocking Inbox prerequisite for an authorized operator.
   A closed historical issue SHALL NOT satisfy ownership. GitHub failures SHALL
-  retain durable retry state on the run.
-  *Tests:* `spec/services/partial_closeouts/reconcile_spec.rb`.
+  retain durable retry state on the run. The reconciliation SHALL run before
+  the parent issue is completed; while any gap remains outstanding, the parent
+  SHALL stay incomplete and dependency-blocked with its PR/run evidence
+  preserved, and SHALL NOT be transitioned to `paid_state: "completed"` by the
+  run's closeout path.
+  *Tests:* `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
   *Code:* `app/services/partial_closeouts/reconcile.rb`,
-  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`.

@@ -426,15 +426,23 @@ module Workflows
               { agent_run_id: agent_run_id }, timeout: 120)
 
             unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
-              # Step 7: Update issue with PR link
-              run_activity(Activities::UpdateIssueWithPrActivity,
-                { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
-
               # A PR can be an intentionally partial closeout. Reconcile its
-              # remaining acceptance work before treating the successful run as
-              # terminal; the activity retains retry state if GitHub is down.
-              run_activity(Activities::ReconcilePartialCloseoutActivity,
+              # remaining acceptance work BEFORE completing the parent issue:
+              # when gaps remain, the parent must stay incomplete and
+              # dependency-blocked (#4119), so the workflow skips
+              # UpdateIssueWithPrActivity — whose completion path also gates the
+              # PR comment and trigger-label removal — and leaves the parent
+              # re-pickable by auto-pick once the gap owners resolve. The
+              # activity retains retry state if GitHub is down. # @spec NO-OUTPUT-ISSUE-007
+              reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
                 { agent_run_id: agent_run_id }, timeout: 120)
+
+              # Step 7: Update issue with PR link — only when reconciliation
+              # confirmed a full closeout with no remaining gaps.
+              unless reconcile_result[:gaps_remain]
+                run_activity(Activities::UpdateIssueWithPrActivity,
+                  { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+              end
 
               # Step 8: Request review-bot review on the new draft PR (best-effort)
               request_review_bot_review(project_id, pr_result[:pull_request_number])
