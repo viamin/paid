@@ -25,8 +25,11 @@
   request attempts, Paid SHALL persist every report exactly once by stable
   attempt ID and ordinal, attribute it to the initiating actor, chat session,
   originating message, runner, and provider, and aggregate reported usage
-  without double counting. Missing usage SHALL remain unknown rather than be
-  recorded as zero; a failed attempt with reported usage SHALL remain visible.
+  without double counting. A project-backed session SHALL retain its project;
+  a projectless session SHALL persist an account-scoped attempt and SHALL NOT
+  discard a successful provider response. Missing usage SHALL remain unknown
+  rather than be recorded as zero; a failed attempt with reported usage SHALL
+  remain visible.
   `ChatSessions::BuildLlmClient::HttpClient#call` persists every
   `result[:attempts]` report through `ChatSessions::RecordTransportAttempt`
   before translating a successful, partial, or classified failed result. The

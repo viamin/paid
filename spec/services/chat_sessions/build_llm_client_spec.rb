@@ -436,6 +436,25 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       expect_persisted_transport_attempts(reports:, chat_session:, message:)
     end
 
+    # @spec API-CONVERSATION-DELEGATION-002
+    it "persists account-level attempts without discarding a projectless chat response" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      runner = create(:runner, :api_key, user: user, provider_api_key: api_key)
+      chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+      message = create(:chat_message, chat_session: chat_session, role: "user")
+      report = attempt_report(attempt_id: "account-level-attempt")
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(attempts: [ report ]))
+
+      result = attributed_client(chat_session:, message:).call(conversation)
+
+      aggregate_failures do
+        expect(result[:content]).to eq("I'm doing well!")
+        expect(ApiUsageAttempt.find_by!(attempt_id: report[:attempt_id])).to have_attributes(
+          account: account, project: nil, chat_session: chat_session, chat_message: message, actor: user
+        )
+      end
+    end
+
     it "folds later system messages into a single leading system message" do
       allow(chat_transport).to receive(:call).and_return(succeeded_result)
 
