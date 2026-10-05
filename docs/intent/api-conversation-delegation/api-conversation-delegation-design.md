@@ -185,7 +185,8 @@ host process, not inside agent containers.
 | Runner fallback eligibility, notices, rate-limit resumption (`ChatSessions::FallbackLoop`/`FallbackRunners`/`MarkRateLimited`) | `retained` | `HttpClient` raises the same `AgentHarness::*Error` subclasses as the old transports (translated from the harness's classified `result[:error]`), so this policy layer needed no changes. Multi-candidate/`fallback:` support in `ChatTransport` is intentionally unused — one call is one provider attempt, matching "transient model fallback alone cannot replace this policy." |
 | CLI/subscription chat runners | `retained` (unsupported path, unchanged) | Chat still requires an API-key runner (`BuildLlmClient.usable_runner?`); this was true before this migration and is not a new restriction. |
 | Chat loop sequencing, tool dispatch, approval resumption (`ChatSessions::AgentLoop`, `ResolveToolCall`, `Tools::Registry`) | `retained` | Out of scope per the Loop Delegation Decision; `HttpClient`'s public `#call(conversation, tools:, on_chunk:)` contract is unchanged so `AgentLoop`'s reflection-based kwarg detection and streaming replay keep working unmodified. |
-| Request attempt identity, retry-limit/deadline/cancellation plumbing, durable attempt-report persistence (API-CONVERSATION-DELEGATION-002/003) | `unsupported` (tracked gap) | Each `HttpClient#call` issues an ephemeral request UUID and defaults to one harness attempt (`retry.max_attempts: 1`); Paid does not yet supply a stable recovery identity, deadline, or cancellation token, and does not persist per-attempt harness reports. Tracked by viamin/paid#4125 (report persistence) and viamin/paid#4126 (identity, bounds, recovery). |
+| Request attempt identity, retry-limit/deadline/cancellation plumbing (API-CONVERSATION-DELEGATION-003) | `migrated` | `HarnessTransport` persists a per-session request sequence, supplies its Paid-owned request identity, one-attempt bound, read deadline, and deadline cancellation signal to every harness call. `FallbackLoop` retains runner changes and receives a new identity for each new outbound request. |
+| Durable attempt-report persistence (API-CONVERSATION-DELEGATION-002) | `unsupported` (tracked gap) | `HttpClient#call` still does not persist per-attempt harness reports. Tracked by viamin/paid#4125. |
 
 **Tests:** `spec/services/chat_sessions/build_llm_client_spec.rb` (black-box
 against `AgentHarness::Api::ChatTransport`, including normalized request,
@@ -229,18 +230,14 @@ production caller yet.
 
 **Remaining gaps that block closing RDR-072 (via #4020):**
 
-1. API-CONVERSATION-DELEGATION-002 and -003 are active gaps: the live API-key
-   chat path issues ephemeral request UUIDs with `retry.max_attempts: 1`,
-   supplies no Paid-owned attempt identity, deadline, or cancellation, and
-   discards the harness's `result[:attempts]` reports (no production caller of
-   `ChatSessions::RecordTransportAttempt` yet), so neither attempt-report
-   persistence (002) nor bounded recovery (003) is wired into the migrated
-   path. RDR-072's provider-coverage decision requires each remaining
-   migration to be tracked explicitly in an implementation issue:
-   viamin/paid#4125 owns attempt-report persistence
-   (API-CONVERSATION-DELEGATION-002) and viamin/paid#4126 owns request
-   identity, bounds, and recovery (API-CONVERSATION-DELEGATION-003). Both are
-   sub-issues of #4013 and completion dependencies for closing the RDR.
+1. API-CONVERSATION-DELEGATION-002 remains an active gap: the migrated request
+   path still discards `result[:attempts]` (no production caller of
+   `ChatSessions::RecordTransportAttempt` yet), so durable attempt-report
+   persistence is not wired into the migrated path. viamin/paid#4125 owns this
+   remaining completion dependency for closing the RDR. API-CONVERSATION-
+   DELEGATION-003 is implemented: `HarnessTransport` supplies a durable
+   request sequence, bounds, cancellation, restart allocation, and the
+   fallback transcript preserves completed tool results.
 2. The RDR-072 closeout itself (status flip to Implemented in the RDR and
    `docs/rdrs/README.md`, plus the delegated/retained-responsibility record)
    has not been written; it should consume this audit table.
