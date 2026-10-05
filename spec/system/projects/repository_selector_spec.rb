@@ -72,6 +72,7 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
 
     expect(page).to have_text("2 repositories available.")
     find("#repository_selection").click
+    expect(page).to have_css("[role='option']", count: 2)
     expect(repository_option_labels).to eq([ "acme/alpha", "acme/beta (private)" ])
 
     find("[role='option']", text: "acme/beta (private)").click
@@ -91,6 +92,7 @@ RSpec.describe "Project form repository selector", :js, system_driver: :paid_cup
 
     select "Recently created", from: "repository_sort"
     find("#repository_selection").click
+    expect(page).to have_css("[role='option']", count: 2)
 
     expect(repository_option_labels).to eq([ "acme/beta (private)", "acme/alpha" ])
   end
