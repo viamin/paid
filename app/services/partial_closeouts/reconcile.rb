@@ -76,9 +76,11 @@ module PartialCloseouts
         title = gap["title"].to_s.strip
         raise ArgumentError, "agent gap title is required" if title.blank?
 
-        marker = "<!-- paid:partial-closeout:#{agent_run.id}:#{index} -->"
-        existing = agent_run.project.issues.where("body LIKE ?", "%#{marker}%").where(github_state: "open").first
+        marker = owner_marker(index)
+        existing = local_owner_with_marker(marker)
         return existing if existing
+        recovered = recovered_remote_owner(marker) if creation_was_recorded?(index, marker)
+        return recovered if recovered
 
         record_gap!(index, gap, status: "creating", marker: marker)
         created = agent_run.project.client.create_issue(
@@ -91,6 +93,37 @@ module PartialCloseouts
         record_gap!(index, gap, status: "creating", marker: marker, owner_issue_number: created.number)
         Issues::UpsertFromGithub.call(project: agent_run.project, github_issue: created)
       end
+    end
+
+    def owner_marker(index)
+      "<!-- paid:partial-closeout:#{agent_run.id}:#{index} -->"
+    end
+
+    def local_owner_with_marker(marker)
+      owner = agent_run.project.issues.where("body LIKE ?", "%#{marker}%").where(github_state: "open").first
+      owner if owner && owner.id != agent_run.issue.id
+    end
+
+    # A worker can terminate after GitHub accepts create_issue but before the
+    # response number is persisted. The durable pre-request marker distinguishes
+    # that replay from a first attempt; recover the remote issue before sending
+    # another create request.
+    def creation_was_recorded?(index, marker)
+      state = reconciliation.fetch("gaps", {}).fetch(index.to_s, {})
+      state["status"] == "creating" && state["marker"] == marker
+    end
+
+    def recovered_remote_owner(marker)
+      remote_owner = agent_run.project.client.search_issues(remote_owner_query(marker), per_page: 100).items
+        .find { |issue| issue.body.to_s.include?(marker) }
+      return unless remote_owner
+
+      owner = Issues::UpsertFromGithub.call(project: agent_run.project, github_issue: remote_owner)
+      owner if owner.id != agent_run.issue.id && owner.github_state == "open"
+    end
+
+    def remote_owner_query(marker)
+      %(repo:#{agent_run.project.full_name} is:issue state:open in:body "#{marker}")
     end
 
     # Same labeling convention as the other Paid-created issue paths so the

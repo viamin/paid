@@ -195,6 +195,48 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("reconciled")
   end
 
+  # @spec NO-OUTPUT-ISSUE-007
+  it "recovers a remotely created marked issue after a crash before its number is persisted" do
+    marker = "<!-- paid:partial-closeout:#{run.id}:0 -->"
+    remote_issue = OpenStruct.new(number: 449, html_url: "https://example.test/issues/449", id: 449, title: "Finish dispatch", body: "Wire dispatch\n\n#{marker}")
+    synced = create(:issue, project: project, github_number: 449, github_state: "open")
+    allow(client).to receive(:create_issue).and_raise(SystemExit, "worker crashed")
+
+    expect {
+      described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+    }.to raise_error(SystemExit, "worker crashed")
+    expect(run.reload.reconciliation.dig("gaps", "0", "marker")).to eq(marker)
+
+    allow(run.project).to receive(:client).and_return(client)
+    allow(client).to receive(:search_issues)
+      .with(%(repo:#{project.full_name} is:issue state:open in:body "#{marker}"), per_page: 100)
+      .and_return(OpenStruct.new(items: [ remote_issue ]))
+    allow(Issues::UpsertFromGithub).to receive(:call).with(project:, github_issue: remote_issue).and_return(synced)
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+
+    expect(client).to have_received(:create_issue).once
+    expect(parent.reload.issue_dependencies.find_by(depends_on_issue: synced)).to be_present
+  end
+
+  # @spec NO-OUTPUT-ISSUE-007
+  it "creates an owner when a recorded attempt never reached GitHub" do
+    marker = "<!-- paid:partial-closeout:#{run.id}:0 -->"
+    run.update!(reconciliation: { "gaps" => { "0" => { "status" => "creating", "marker" => marker } } })
+    created = OpenStruct.new(number: 450, html_url: "https://example.test/issues/450", id: 450, title: "Finish dispatch", body: "Wire dispatch\n\n#{marker}")
+    owner = create(:issue, project: project, github_number: 450, github_state: "open")
+    allow(client).to receive(:search_issues)
+      .with(%(repo:#{project.full_name} is:issue state:open in:body "#{marker}"), per_page: 100)
+      .and_return(OpenStruct.new(items: []))
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).with(project:, github_issue: created).and_return(owner)
+
+    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "title" => "Finish dispatch", "body" => "Wire dispatch" } ]))
+
+    expect(client).to have_received(:create_issue).once
+    expect(parent.reload.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
+  end
+
   it "does not recover the parent itself from a recorded owner number" do
     run.update!(reconciliation: { "gaps" => { "0" => { "owner_issue_number" => parent.github_number, "status" => "creating" } } })
     created = OpenStruct.new(number: 449, html_url: "https://example.test/issues/449", id: 449, title: "Finish dispatch", body: "")
