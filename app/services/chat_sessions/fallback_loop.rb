@@ -6,10 +6,10 @@ module ChatSessions
   # switches to the next configured fallback runner and retries until one
   # succeeds or no untried fallback remains (then the original error re-raises).
   #
-  # Hosts (SendMessage, ResolveToolCall) must expose `chat_session`,
-  # `llm_client`, `on_chunk`, `on_message_persisted`, and `stream_message_id`,
-  # and own the `@llm_client` ivar (it is reset on each switch so the next
-  # attempt rebuilds the client for the new runner).
+  # Hosts must expose `chat_session`, `llm_client`, `on_chunk`,
+  # `on_message_persisted`, `stream_message_id`, and the originating
+  # `transport_attempt_message`. They own the `@llm_client` ivar (it is reset
+  # on each switch so the next attempt rebuilds the client for the new runner).
   module FallbackLoop
     private
 
@@ -50,10 +50,6 @@ module ChatSessions
     # pre-computed token budget). Default: none.
     def extra_agent_loop_kwargs
       {}
-    end
-
-    def transport_attempt_message
-      chat_session.messages.where(role: "user").order(created_at: :desc).first
     end
 
     # Remove only the rows the failed attempt itself persisted, identified by the

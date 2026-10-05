@@ -363,10 +363,14 @@ RSpec.describe ChatSessions::ResolveToolCall do
     before { allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result) }
 
     it "switches to a configured fallback runner and retries when the resumed loop hits a provider error" do
+      # @spec API-CONVERSATION-DELEGATION-002
+      originating_message = create(:chat_message, chat_session: chat_session, role: "user", content: "Original request")
+      tool_call_message
+      create(:chat_message, chat_session: chat_session, role: "user", content: "Concurrent request")
       fallback_runner = configure_chat_fallback
       fallback_client = inspecting_llm_client(final_response)
       allow(ChatSessions::BuildLlmClient).to receive(:call)
-        .with(hash_including(chat_session: chat_session)).and_return(fallback_client)
+        .with(chat_session: chat_session, actor: user, message: originating_message).and_return(fallback_client)
 
       result = described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,
