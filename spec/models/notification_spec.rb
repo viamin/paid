@@ -263,15 +263,14 @@ RSpec.describe Notification do
     it "does not double-enqueue if the issue is closed before dismissal" do # @spec NO-OUTPUT-ISSUE-007
       create(:notification, :error, account: account, subject: parent,
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      expect(continuation_run).to be_present
       parent.update!(github_state: "closed", github_updated_at: Time.current)
 
       described_class.where(account: account, subject: parent,
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).first
         .update!(dismissed_at: Time.current)
 
-      requeued = AgentRun.where(project: project, issue: parent, status: "queued")
-        .where.not(id: continuation_run.id).last
-      expect(requeued).to be_nil
+      expect(AgentRun.where(project: project, issue: parent, status: "queued")).to be_empty
     end
   end
 end
