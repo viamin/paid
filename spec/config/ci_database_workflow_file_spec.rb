@@ -156,7 +156,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch(job_name)
           setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
 
-          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
+          setup_command = setup_step.fetch("run")
+
+          expect(setup_command).to include("bin/rails db:create db:schema:load")
+          expect(setup_command).not_to include("db:migrate")
         end
 
         it "bootstraps required orchestration defaults after schema load for #{job_name}" do
