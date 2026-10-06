@@ -160,6 +160,7 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Changes requested", "Reword the title.")
+    expect(response.body).not_to include(discard_project_change_intent_path(project, change_intent))
   end
 
   it "selects the first entry on the collection route" do

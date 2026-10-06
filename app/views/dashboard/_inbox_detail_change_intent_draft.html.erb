@@ -84,7 +84,7 @@
               class: "inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50",
               form: { data: { turbo_frame: "_top" } } %>
       <% end %>
-      <% if can_review %>
+      <% if can_review && change_intent.status == "draft" %>
         <%= button_to "Discard",
               discard_project_change_intent_path(change_intent.project, change_intent, return_to: return_to),
               method: :post,
