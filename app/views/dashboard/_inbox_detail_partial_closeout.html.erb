@@ -1,4 +1,4 @@
-<%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 %>
+<%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 @spec PARTIAL-CLOSEOUT-010 %>
 <% issue = entry.issue %>
 <% status = Issues::CloseoutStatus.call(issue) %>
 <div class="space-y-6">
@@ -87,16 +87,18 @@
         Queues exactly one run scoped to the current evidence generation. The authorization records you as the
         actor with this reason, and the merged-PR / no-code guards re-arm once its run finishes.
       </p>
-      <%= form_with url: request_continuation_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2 sm:flex-row" do |form| %>
+      <%= form_with url: request_continuation_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2" do |form| %>
         <%= form.hidden_field :issue_id, value: issue.id %>
         <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
-        <%= form.text_field :reason,
+        <%= form.label :reason, "Reason for continuation", class: "text-sm font-medium text-gray-700" %>
+        <%= form.text_area :reason,
               required: true,
               maxlength: 2000,
-              placeholder: "Why should this continue now? (recorded with the authorization)",
-              class: "flex-1 rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+              rows: 3,
+              placeholder: "What work remains, and why should Paid continue now?",
+              class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
         <%= form.submit "Request continuation",
-              class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
+              class: "inline-flex self-start items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
               data: { turbo_confirm: "Queue one scoped continuation run for ##{issue.github_number}?" } %>
       <% end %>
     </div>
