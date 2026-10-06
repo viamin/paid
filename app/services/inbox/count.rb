@@ -32,7 +32,7 @@ module Inbox
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
-        retry_limited_count
+        retry_limited_count + partial_closeout_count
     end
 
     def needs_input_count
@@ -153,6 +153,20 @@ module Inbox
       Issue.where(project_id: project_ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .count
+    end
+
+    # Shares the exact lane computation with Inbox::Queue
+    # (Issues::StalledCloseouts) so the badge can never disagree with the
+    # list. The SQL prefilter on indexed state columns keeps the scan bounded;
+    # the stall population is small by construction (terminal evidence plus no
+    # operator hold and no work in flight).
+    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009
+    def partial_closeout_count
+      projects = Project.where(id: gated_project_ids)
+        .includes(account: :tenant_setting, created_by: :user_setting).to_a
+      return 0 if projects.empty?
+
+      Issues::StalledCloseouts.call(projects).size
     end
 
     def gated_project_ids

@@ -69,6 +69,34 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(2)
     end
 
+    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009
+    it "counts stalled partial-closeout issues but not paused or resolved ones" do
+      create_partial_closeout_issue(github_number: 300)
+      create_partial_closeout_issue(github_number: 301) do |issue|
+        issue.update_columns(paused: true)
+      end
+      resolved = create_partial_closeout_issue(github_number: 302)
+      Issues::ResolveCloseout.call(
+        issue: resolved,
+        actor: user,
+        reason: "Merged PR #14 covers it."
+      )
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-009 — the badge follows lane membership transitions
+    it "bumps the cache automatically when a continuation request opens" do
+      issue = create_partial_closeout_issue(github_number: 303)
+      first = described_class.call(user: user)
+
+      create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      after_request = described_class.call(user: user)
+
+      expect(first).to eq(1)
+      expect(after_request).to eq(0)
+    end
+
     # @spec OPERATOR-INBOX-002E
     it "excludes retry-limited issues on non-gated projects" do
       other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
@@ -400,6 +428,24 @@ RSpec.describe Inbox::Count do
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: intent_conformance_snapshot
     )
+  end
+
+  # An open issue with a merged partial PR linked via parent_issue_id — the
+  # canonical partial-closeout stall (#4120).
+  def create_partial_closeout_issue(github_number:, merged_pr_number: 14, **attrs, &block)
+    issue = create(:issue, project: project, github_number: github_number, paid_state: "in_progress", **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: merged_pr_number,
+      github_state: "closed",
+      pr_review_phase: "merged",
+      parent_issue_id: issue.id,
+      created_at: 2.days.ago
+    )
+    block&.call(issue)
+    issue
   end
 
   def intent_conformance_snapshot

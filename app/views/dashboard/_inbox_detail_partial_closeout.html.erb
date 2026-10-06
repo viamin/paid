@@ -1,0 +1,104 @@
+<%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 %>
+<% issue = entry.issue %>
+<% status = Issues::CloseoutStatus.call(issue) %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
+    <h3 class="text-sm font-semibold text-violet-900">
+      A prior terminal outcome keeps this open issue out of automatic scheduling
+    </h3>
+    <p class="mt-1 text-sm text-violet-800"><%= status.reason %></p>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Recorded evidence</h3>
+    <p class="text-sm text-gray-600"><%= status.outcome %></p>
+    <ul class="space-y-1 text-sm">
+      <% status.evidence.merged_prs.each do |pull_request| %>
+        <li class="flex flex-wrap items-center gap-2">
+          <%= link_to "Merged PR ##{pull_request.number}",
+                pull_request.url,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% if pull_request.run_id %>
+            <%= link_to "originating run",
+                  project_agent_run_path(entry.project, pull_request.run_id),
+                  data: { turbo_frame: "_top" },
+                  class: "text-xs text-gray-500 hover:text-gray-700" %>
+          <% end %>
+          <% if pull_request.terminal_at %>
+            <span class="text-xs text-gray-500">merged <%= time_ago_in_words(pull_request.terminal_at) %> ago</span>
+          <% end %>
+        </li>
+      <% end %>
+      <% if status.evidence.no_code_required_at.present? %>
+        <li class="text-xs text-gray-500">
+          Agent declared no code required <%= time_ago_in_words(status.evidence.no_code_required_at) %> ago —
+          see the declaration comment on the issue.
+        </li>
+      <% end %>
+    </ul>
+  </div>
+
+  <% if status.unresolved_prerequisites.any? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Unresolved prerequisites</h3>
+      <p class="text-sm text-gray-600">
+        <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
+        requesting continuation. To make a follow-up issue <code>#B</code> a prerequisite, add
+        <code>Depends on #B</code> to this stalled issue's body, then sync. An agent can file the follow-up
+        with the existing <code>create_issue</code> tool.
+      </p>
+    </div>
+  <% end %>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <%= link_to "View on GitHub",
+          issue.github_url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <%= link_to "Open project runs",
+          project_agent_runs_path(entry.project),
+          data: { turbo_frame: "_top" },
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% if policy(entry.project).run_agent? %>
+      <%= button_to "Resolve as complete",
+            resolve_closeout_project_agent_runs_path(entry.project),
+            method: :post,
+            params: {
+              issue_id: issue.id,
+              reason: "Operator attests the recorded closeout evidence completes ##{issue.github_number}.",
+              return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind))
+            },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
+            form: { data: {
+              turbo_confirm: "Resolve ##{issue.github_number} as complete against the recorded evidence? " \
+                "The GitHub issue stays open for a human to close; newer terminal evidence would resurface it here.",
+              turbo_frame: "_top"
+            } } %>
+    <% end %>
+  </div>
+
+  <% if policy(entry.project).run_agent? %>
+    <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Request a deliberate continuation</h3>
+      <p class="text-xs text-gray-500">
+        Queues exactly one run scoped to the current evidence generation. The authorization records you as the
+        actor with this reason, and the merged-PR / no-code guards re-arm once its run finishes.
+      </p>
+      <%= form_with url: request_continuation_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2 sm:flex-row" do |form| %>
+        <%= form.hidden_field :issue_id, value: issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.text_field :reason,
+              required: true,
+              maxlength: 2000,
+              placeholder: "Why should this continue now? (recorded with the authorization)",
+              class: "flex-1 rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+        <%= form.submit "Request continuation",
+              class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
+              data: { turbo_confirm: "Queue one scoped continuation run for ##{issue.github_number}?" } %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

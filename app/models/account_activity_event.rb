@@ -23,6 +23,8 @@ class AccountActivityEvent < ApplicationRecord
     "issue.reopened" => "project",
     "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
+    "issue.continuation_requested" => "project",
+    "issue.closeout_resolved" => "project",
     "runner.created" => "runner",
     "runner.updated" => "runner",
     "runner.deleted" => "runner",

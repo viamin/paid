@@ -19,6 +19,8 @@ RSpec.describe Tools::Registry do
     %w[
       trigger_agent_run
       cancel_agent_run
+      request_issue_continuation
+      resolve_issue_closeout
       record_change_intent
       invite_account_member
       update_account_membership
