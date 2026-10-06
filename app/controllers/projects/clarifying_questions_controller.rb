@@ -96,8 +96,15 @@ module Projects
       authorize @project, :show?
     end
 
+    # The :chat action opens a contextual chat session for the same issue the
+    # :create action posts answers to. The Answer in chat affordance is gated
+    # by `Inbox::InteractiveChatAccess` (`manage_issues?` admits account members
+    # and project collaborators), so the POST must match that gate -- otherwise
+    # the new view gate shows the button to a user the controller then rejects.
+    # :create still requires the stricter :update? (account owner/admin) because
+    # it submits answers to GitHub on the project's behalf.
     def authorize_project_update
-      authorize @project, :update?
+      authorize @project, (action_name == "chat" ? :manage_issues? : :update?)
     end
 
     def current_questions

@@ -60,12 +60,20 @@ module Inbox
       authoritative_entry.project
     end
 
+    # @spec OPERATOR-INBOX-002I
+    # record-backed lanes do not always carry an ActiveRecord: intent_conformance
+    # wraps an Inbox::IntentConformance::Snapshot and escalated_pr wraps a
+    # Dashboard::BlockedPullRequests::Entry. Both are plain data objects without
+    # `#id`, so `record&.id` would raise NoMethodError and 500 the new chat
+    # affordance for exactly those lanes. `try` is a no-op on nil and on any
+    # object that does not implement the method, which is what every record-backed
+    # lane needs.
     def audit_metadata
       {
         "kind" => authoritative_entry.kind,
         "issue_id" => authoritative_entry.issue&.id,
-        "record_id" => authoritative_entry.record&.id,
-        "record_type" => authoritative_entry.record&.class&.name,
+        "record_id" => authoritative_entry.record.try(:id),
+        "record_type" => authoritative_entry.record.try(:class)&.name,
         "waiting_since" => authoritative_entry.waiting_since&.iso8601,
         "reason" => authoritative_entry.summary.presence,
         "return_count" => return_count
