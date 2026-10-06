@@ -409,8 +409,8 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   def stub_mid_attempt_runner_switch(fallback_runner)
     build_attempts = 0
     allow(ChatSessions::BuildLlmClient).to receive(:call)
-      .with(chat_session: chat_session)
-      .and_wrap_original do |_method, chat_session:|
+      .with(hash_including(chat_session: chat_session, actor: user, message: be_a(ChatMessage)))
+      .and_wrap_original do |_method, chat_session:, **|
         build_attempts += 1
         ChatSession.where(id: chat_session.id).update_all(runner_id: fallback_runner.id)
         build_attempts == 1 ? rate_limited_llm_client : successful_fallback_llm_client
