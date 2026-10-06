@@ -60,6 +60,20 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     expect(form).to have_button("Submit Answers")
   end
 
+  it "renders a labeled, multi-line continuation reason in a partial closeout" do # @spec PARTIAL-CLOSEOUT-010
+    issue = create(:issue, project:, github_number: 201, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_number: 202, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+
+    sign_in_as(user)
+    visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    form = page.find(%(form[action="#{request_continuation_project_agent_runs_path(project)}"]))
+    expect(form).to have_field("Reason for continuation", type: :textarea)
+    expect(form).to have_button("Request continuation")
+  end
+
   it "embeds an empty inbox_kind when the All tab is active so the submit preserves the mixed scope" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 

@@ -148,3 +148,15 @@
   `app/views/inbox/index.html.erb`.
   *Test:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/models/issue_continuation_request_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-010** — When a partial-closeout detail pane renders
+  at any supported viewport width, the system SHALL keep the continuation
+  reason input and submit button within the available pane width, with a
+  persistent label and multi-line reason input above the submit button even
+  in a narrow desktop pane.
+  *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/system/dashboard_inbox_spec.rb`,
+  `spec/system/partial_closeout_layout_spec.rb`.
+  *Verification:* Chromium layout checks at 320, 375, 640, 768, 1024, and
+  1280px viewport widths in a 300px-wide continuation section, plus a
+  rendered Inbox browser check at mobile and desktop widths.
