@@ -3916,7 +3916,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
   add_foreign_key "agent_run_session_summaries", "projects", on_delete: :cascade
   add_foreign_key "agent_run_session_summaries", "users", column: "promoted_by_id", on_delete: :nullify
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
-  add_foreign_key "agent_runs", "issue_continuation_requests", column: "continuation_request_id"
+  add_foreign_key "agent_runs", "issue_continuation_requests", column: "continuation_request_id", on_delete: :nullify, validate: false
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
@@ -4092,7 +4092,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_070203) do
   add_foreign_key "issue_merge_subscriptions", "users"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
-  add_foreign_key "issues", "users", column: "closeout_resolved_by_id"
+  add_foreign_key "issues", "users", column: "closeout_resolved_by_id", validate: false
   add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"

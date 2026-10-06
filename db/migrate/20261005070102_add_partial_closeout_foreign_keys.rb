@@ -2,7 +2,7 @@
 
 class AddPartialCloseoutForeignKeys < ActiveRecord::Migration[8.1]
   def up
-    add_foreign_key :agent_runs, :issue_continuation_requests, column: :continuation_request_id, validate: false unless foreign_key_exists?(:agent_runs, :issue_continuation_requests, column: :continuation_request_id)
+    add_foreign_key :agent_runs, :issue_continuation_requests, column: :continuation_request_id, on_delete: :nullify, validate: false unless foreign_key_exists?(:agent_runs, :issue_continuation_requests, column: :continuation_request_id)
     add_foreign_key :issues, :users, column: :closeout_resolved_by_id, validate: false unless foreign_key_exists?(:issues, :users, column: :closeout_resolved_by_id)
   end
 

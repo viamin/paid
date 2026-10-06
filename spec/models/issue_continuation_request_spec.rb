@@ -54,6 +54,34 @@ RSpec.describe IssueContinuationRequest do # @spec PARTIAL-CLOSEOUT-003 @spec PA
     expect(request.closure_reason).to include("cancelled")
   end
 
+  it "nullifies linked runs when the request is destroyed" do
+    request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+    run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr",
+      trigger_type: "manual", continuation_request: request)
+
+    request.destroy!
+
+    expect(run.reload.continuation_request_id).to be_nil
+  end
+
+  it "nullifies linked runs when the request is deleted directly" do
+    request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+    run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr",
+      trigger_type: "manual", continuation_request: request)
+
+    request.delete
+
+    expect(run.reload.continuation_request_id).to be_nil
+  end
+
+  it "allows deleting a project with a continuation request" do
+    request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+    create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr",
+      trigger_type: "manual", continuation_request: request)
+
+    expect { project.destroy! }.to change(Project, :count).by(-1)
+  end
+
   describe ".open_for_issue" do
     it "returns the open request and ignores closed ones" do
       open_request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)

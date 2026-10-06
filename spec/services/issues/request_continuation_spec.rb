@@ -83,7 +83,8 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       existing = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
       # First lookup misses (simulating a concurrent insert landing between
       # the pre-check and the insert); the rescue path re-queries and finds it.
-      allow(issue).to receive(:open_continuation_request).and_return(nil, existing)
+      allow(IssueContinuationRequest).to receive(:open_for_issue).and_return(nil, existing)
+      expect(IssueContinuationRequest).to receive(:create!).and_call_original
 
       result = request_continuation
 
