@@ -27,6 +27,12 @@ Request handling establishes tenant context before application code runs and
 clears it after the request completes, including failure paths. This keeps the
 control plane aligned with the database RLS model.
 
+Development database connections disable PostgreSQL JIT. Inbox eligibility
+queries have large plans that PostgreSQL otherwise compiles for seconds even
+when the underlying execution takes milliseconds. The setting is scoped to
+development connections so request and background workers use the same plan
+behavior without changing production database policy.
+
 That same request lifecycle fail-closes tenant access at the controller layer.
 Active accounts proceed normally, suspended accounts stay read-only for
 mutating requests, and deactivated accounts lose both HTML and API access with
