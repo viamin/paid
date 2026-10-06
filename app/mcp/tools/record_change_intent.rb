@@ -94,7 +94,7 @@ module Tools
     end
 
     def existing_draft
-      change_intent_from_inbox || issue_draft || session_draft
+      change_intent_from_inbox || issue_draft
     end
 
     def revise_draft(change_intent, attributes)
@@ -110,10 +110,6 @@ module Tools
 
     def issue_draft
       issue_for_session&.change_intents&.pending_review&.first
-    end
-
-    def session_draft
-      session.change_intents.pending_review.first
     end
 
     def draft_attributes(title:, intent:, behavior:, constraints:, decisions_made:)

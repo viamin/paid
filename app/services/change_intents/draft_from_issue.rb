@@ -26,7 +26,8 @@ module ChangeIntents
     def call
       return unless cir_worthy?
 
-      existing_draft.then { |draft| revise_draft(draft) } || create_draft
+      draft = existing_draft
+      draft ? revise_draft(draft) : create_draft
     end
 
     private
