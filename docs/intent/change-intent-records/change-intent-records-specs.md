@@ -38,3 +38,39 @@
 - [D] **CHANGE-INTENT-005** — Heuristics for automatically suggesting that a
   direction is CIR-worthy may expand over time, but the current contract
   remains explicit human confirmation of a drafted record.
+
+- [x] **CHANGE-INTENT-INBOX-001** — When a draft Change Intent Record exists
+  in `draft` or `requested_changes` status on a project the operator can see,
+  the system SHALL surface it as a `change_intent_draft` Inbox entry with the
+  CIR's title, intent, behavior, constraints, rejected alternatives, and (for
+  `requested_changes`) the operator's review reason and timestamp. The entry
+  SHALL clear when the record transitions to `active`, `superseded`, or
+  `reverted`. Approving from the Inbox (`Projects::ChangeIntentsController#approve`)
+  SHALL activate the draft and synchronize the record into the knowledge
+  artifact pipeline (`ChangeIntents::Activate`); requesting changes
+  (`#request_changes`, backed by `ChangeIntents::RequestChanges`) SHALL keep
+  the entry actionable in the `requested_changes` state with the operator's
+  reason and review timestamp stamped on the record itself. The Inbox detail
+  pane SHALL expose an inline `Chat about this` button that opens the
+  canonical interactive chat session for the entry via the existing
+  `Inbox::OpenInteractiveChat` flow, so a follow-up chat or MCP-driven
+  revision overwrites the draft in place and the operator can re-approve.
+  Approve, discard, and request-changes actions SHALL honour a
+  `return_to` parameter scoped to `/inbox…` and otherwise fall back to the
+  pre-inbox project page, so the bell/notification surface is never invoked.
+  `Inbox::Count`'s cached badge SHALL invalidate on transitions into and out
+  of the lane via `ChangeIntent`'s `after_commit :bump_inbox_cache_version`
+  callback, so the nav badge tracks `pending_review` records.
+  *Code:* `app/models/change_intent.rb`,
+  `app/services/change_intents/request_changes.rb`,
+  `app/services/change_intents/activate.rb`,
+  `app/controllers/projects/change_intents_controller.rb`,
+  `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/views/dashboard/_inbox_detail_change_intent_draft.html.erb`,
+  `app/views/inbox/index.html.erb`, `config/routes.rb`,
+  `app/helpers/inbox/path_helper.rb`.
+  *Test:* `spec/models/change_intent_spec.rb`,
+  `spec/services/change_intents/request_changes_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/requests/projects/change_intents_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

@@ -1,0 +1,120 @@
+<%# @spec CHANGE-INTENT-INBOX-001 %>
+<% change_intent = entry.record %>
+<% return_to = inbox_safe_return_target(project: scoped_project, kind: selected_kind) %>
+<% can_review = policy(change_intent).update? %>
+<% can_chat = Inbox::InteractiveChatAccess.allowed?(user: current_user, project: change_intent.project) %>
+<div class="space-y-6">
+  <div class="rounded-xl border <%= change_intent.requested_changes? ? "border-amber-200 bg-amber-50" : "border-indigo-200 bg-indigo-50" %> p-4">
+    <div class="flex items-start justify-between gap-3">
+      <h3 class="text-sm font-semibold <%= change_intent.requested_changes? ? "text-amber-900" : "text-indigo-900" %>">
+        <%= change_intent.requested_changes? ? "Changes requested" : "Draft awaiting approval" %>
+      </h3>
+      <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= change_intent.requested_changes? ? "bg-amber-100 text-amber-800" : "bg-indigo-100 text-indigo-800" %>">
+        <%= change_intent.status.titleize %>
+      </span>
+    </div>
+    <p class="mt-1 text-sm <%= change_intent.requested_changes? ? "text-amber-800" : "text-indigo-800" %>">
+      <%= change_intent.requested_changes? ?
+        "An operator has reviewed this draft and asked for changes. The draft stays in the Inbox until a follow-up chat or MCP update overwrites it and the operator re-approves." :
+        "Reviewing adds this record to the knowledge base so future agents can reuse it. You can also request changes or chat with Paid about it." %>
+    </p>
+    <% if change_intent.requested_changes? && change_intent.requested_changes_reason.present? %>
+      <div class="mt-3 rounded-lg border border-amber-200 bg-white px-4 py-3 text-sm text-amber-900">
+        <div class="text-xs font-semibold uppercase tracking-wide text-amber-700">Reason</div>
+        <p class="mt-1 whitespace-pre-wrap"><%= change_intent.requested_changes_reason %></p>
+        <% if change_intent.requested_changes_at %>
+          <p class="mt-2 text-xs text-amber-700">Requested <%= time_ago_in_words(change_intent.requested_changes_at) %> ago.</p>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <% if change_intent.issue %>
+    <p class="text-sm text-gray-600">
+      Drafted from
+      <%= link_to "##{change_intent.issue.github_number} #{change_intent.issue.title}", change_intent.issue.github_url,
+            target: "_blank", rel: "noopener noreferrer",
+            class: "font-medium text-indigo-600 hover:text-indigo-500" %>.
+    </p>
+  <% end %>
+
+  <dl class="space-y-5 text-sm text-gray-700">
+    <div>
+      <dt class="font-medium text-gray-900">Title</dt>
+      <dd class="mt-1 whitespace-pre-wrap"><%= change_intent.title %></dd>
+    </div>
+    <div>
+      <dt class="font-medium text-gray-900">Intent</dt>
+      <dd class="mt-1 whitespace-pre-wrap"><%= change_intent.intent %></dd>
+    </div>
+    <% if change_intent.behavior.present? %>
+      <div>
+        <dt class="font-medium text-gray-900">Behavior</dt>
+        <dd class="mt-1 whitespace-pre-wrap"><%= change_intent.behavior %></dd>
+      </div>
+    <% end %>
+    <% if change_intent.constraints.present? %>
+      <div>
+        <dt class="font-medium text-gray-900">Constraints</dt>
+        <dd class="mt-1 whitespace-pre-wrap"><%= change_intent.constraints %></dd>
+      </div>
+    <% end %>
+    <% if change_intent.decisions_made.present? %>
+      <div>
+        <dt class="font-medium text-gray-900">Rejected alternatives</dt>
+        <dd class="mt-1 whitespace-pre-wrap"><%= change_intent.decisions_made %></dd>
+      </div>
+    <% end %>
+  </dl>
+
+  <div class="space-y-3 border-t border-gray-200 pt-4">
+    <h3 class="text-sm font-semibold text-gray-900">Resolve this draft</h3>
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <% if can_review %>
+        <%= button_to "Approve",
+              approve_project_change_intent_path(change_intent.project, change_intent, return_to: return_to),
+              method: :post,
+              class: "inline-flex items-center justify-center rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500",
+              form: { data: { turbo_frame: "_top" } } %>
+      <% end %>
+      <% if can_chat %>
+        <%= button_to "Chat about this",
+              inbox_interactive_chat_path(entry),
+              method: :post,
+              class: "inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50",
+              form: { data: { turbo_frame: "_top" } } %>
+      <% end %>
+      <% if can_review && change_intent.status == "draft" %>
+        <%= button_to "Discard",
+              discard_project_change_intent_path(change_intent.project, change_intent, return_to: return_to),
+              method: :post,
+              class: "inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3.5 py-2 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50",
+              data: { turbo_confirm: "Discard this proposed Change Intent Record?" },
+              form: { data: { turbo_frame: "_top" } } %>
+      <% end %>
+    </div>
+    <p class="text-xs text-gray-500">
+      Approving activates this record and removes it from the Inbox. Discarding removes the draft entirely.
+    </p>
+  </div>
+
+  <% if can_review %>
+    <details class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+      <summary class="cursor-pointer text-sm font-semibold text-gray-900">Request changes on this draft</summary>
+      <%= form_with url: request_changes_project_change_intent_path(change_intent.project, change_intent),
+            method: :post,
+            local: true,
+            data: { turbo_frame: "_top" },
+            class: "mt-3 space-y-3" do |form| %>
+        <%= hidden_field_tag :return_to, return_to %>
+        <%= text_area_tag :reason, nil,
+              placeholder: "What should change about this draft?",
+              required: true,
+              rows: 3,
+              class: "block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+        <%= form.submit "Mark as changes requested",
+              class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500" %>
+      <% end %>
+    </details>
+  <% end %>
+</div>

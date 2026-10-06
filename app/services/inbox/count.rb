@@ -32,7 +32,7 @@ module Inbox
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
-        retry_limited_count + partial_closeout_count
+        retry_limited_count + change_intent_draft_count + partial_closeout_count
     end
 
     def needs_input_count
@@ -153,6 +153,13 @@ module Inbox
       Issue.where(project_id: project_ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .count
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    # Change Intent Records follow project membership visibility, independent
+    # of the auto-pick gate used by issue-backed inbox lanes.
+    def change_intent_draft_count
+      ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review.count
     end
 
     # Shares the exact lane computation with Inbox::Queue

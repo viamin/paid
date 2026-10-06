@@ -11,6 +11,7 @@ module Inbox
     INTENT_CONFORMANCE_KIND = "intent_conformance"
     FEATURE_DECISION_KIND = "feature_decision"
     RETRY_LIMITED_KIND = "retry_limited"
+    CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
     PARTIAL_CLOSEOUT_KIND = "partial_closeout"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
@@ -22,6 +23,7 @@ module Inbox
       INTENT_CONFORMANCE_KIND,
       FEATURE_DECISION_KIND,
       RETRY_LIMITED_KIND,
+      CHANGE_INTENT_DRAFT_KIND,
       PARTIAL_CLOSEOUT_KIND
     ].freeze
 
@@ -93,6 +95,11 @@ module Inbox
         kind == RETRY_LIMITED_KIND
       end
 
+      # @spec CHANGE-INTENT-INBOX-001
+      def change_intent_draft?
+        kind == CHANGE_INTENT_DRAFT_KIND
+      end
+
       def partial_closeout?
         kind == PARTIAL_CLOSEOUT_KIND
       end
@@ -104,7 +111,7 @@ module Inbox
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
-          intent_conformance? || feature_decision? || retry_limited? || partial_closeout?
+          intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout?
 
         "#{tasks.size} proposed tasks"
       end
@@ -168,6 +175,7 @@ module Inbox
       entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
       entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
       entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
+      entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
       entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
       sort_entries(entries)
     end
@@ -538,6 +546,40 @@ module Inbox
         .where.not(runner_retry_abandoned_at: nil)
         .order(runner_retry_abandoned_at: :desc)
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    # Change Intent Records use their policy scope, rather than the auto-pick
+    # gate, because they are project-level knowledge artifacts.
+    def change_intent_draft_entries
+      scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
+      scope = scope.where(project: project) if project
+
+      scope.includes(:project, :issue).order(:created_at, :id).map do |change_intent|
+        change_intent_draft_entry(change_intent)
+      end
+    end
+
+    def change_intent_draft_entry(change_intent)
+      Entry.new(
+        id: "#{CHANGE_INTENT_DRAFT_KIND}:#{change_intent.id}",
+        kind: CHANGE_INTENT_DRAFT_KIND,
+        project: change_intent.project,
+        issue: change_intent.issue,
+        record: change_intent,
+        waiting_since: change_intent.requested_changes_at || change_intent.created_at,
+        questions: [],
+        tasks: [],
+        summary_text: change_intent_summary(change_intent),
+        title_text: change_intent.title,
+        action_url: nil
+      )
+    end
+
+    def change_intent_summary(change_intent)
+      return change_intent.intent.to_s if change_intent.requested_changes?
+
+      change_intent.intent.to_s.truncate(220)
     end
 
     # Derived lane like retry_limited: open issues carrying terminal closeout
