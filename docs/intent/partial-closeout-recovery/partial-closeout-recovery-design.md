@@ -117,7 +117,8 @@ recording completion, so a continuation cannot dispatch after the attestation.
 
 - Inbox: `Inbox::Queue`/`Inbox::Count` lane + `partial_closeout` detail pane
   with authorized actions (request continuation, resolve complete, guidance
-  for prerequisite work), `Inbox::Count` badge invalidation on the new
+  for prerequisite work), a contextual chat action which retrieves current
+  evidence and recovery state without mutating it, and `Inbox::Count` badge invalidation on the new
   transitions.
 - Controller: `request_continuation` and `resolve_closeout` collection routes
   on `projects/agent_runs` (authorize `:run_agent?`, audit events,

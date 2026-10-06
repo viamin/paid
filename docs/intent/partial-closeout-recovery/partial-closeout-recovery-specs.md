@@ -148,3 +148,13 @@
   `app/views/inbox/index.html.erb`.
   *Test:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/models/issue_continuation_request_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-010** — When an authorized operator requests
+  `partial_closeout` chat context, the system SHALL retrieve the current
+  closeout outcome, merged PRs and originating runs, issue acceptance
+  criteria, unresolved prerequisites, scheduling blocker, and recorded
+  resolution or continuation state on demand. It SHALL expose unavailable
+  evidence as absent data rather than infer completion, and opening chat
+  SHALL not resolve, continue, or otherwise mutate the issue.
+  *Code:* `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/chat_context_spec.rb`.
