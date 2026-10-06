@@ -95,6 +95,18 @@
   values. *Tests:* `spec/lib/project_settings_form_controller_node_harness_spec.rb`,
   `app/javascript/controllers/project_settings_form_controller.js`.
 
+- [x] **PR-TARGET-013** - The settings page SHALL render the "Open Source /
+  Upstream Contributions" fieldset only when `Project#upstream_pr_target?` is
+  true, or when fork-parent detection does not return a definitive
+  `not_a_fork` result. A definitive `not_a_fork` result (no `upstream_pr_target?`
+  override) SHALL hide the fieldset entirely (no heading, fields, or DOM).
+  Detection failures (`github_request_failed`, `no_github_credential`,
+  `controller_failure`) and the `same_as_project` edge case fail open and keep
+  the fieldset visible so GitHub outages never make an upstream-configured
+  workflow unreachable. *Tests:* `spec/requests/projects_spec.rb` ("PR target
+  settings form rendering"). *Code:* `app/views/projects/edit.html.erb`
+  (`show_upstream_section`).
+
 ## Server-side enforcement
 
 - [D] **PR-TARGET-011** - When `pr_target=upstream`, the PR creation flow
