@@ -279,6 +279,8 @@ Rails.application.routes.draw do
     resources :interoperability_imports, only: [ :create ], controller: "projects/interoperability_imports"
     resources :connector_events, only: [ :index ], controller: "projects/connector_events"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
+      post :request_continuation, on: :collection
+      post :resolve_closeout, on: :collection
       post :cancel, on: :member
       post :retry, on: :member
       post :refresh_auth, on: :member

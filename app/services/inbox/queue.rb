@@ -12,6 +12,7 @@ module Inbox
     FEATURE_DECISION_KIND = "feature_decision"
     RETRY_LIMITED_KIND = "retry_limited"
     CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
+    PARTIAL_CLOSEOUT_KIND = "partial_closeout"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
@@ -22,7 +23,8 @@ module Inbox
       INTENT_CONFORMANCE_KIND,
       FEATURE_DECISION_KIND,
       RETRY_LIMITED_KIND,
-      CHANGE_INTENT_DRAFT_KIND
+      CHANGE_INTENT_DRAFT_KIND,
+      PARTIAL_CLOSEOUT_KIND
     ].freeze
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
@@ -98,6 +100,10 @@ module Inbox
         kind == CHANGE_INTENT_DRAFT_KIND
       end
 
+      def partial_closeout?
+        kind == PARTIAL_CLOSEOUT_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -105,7 +111,7 @@ module Inbox
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
-          intent_conformance? || feature_decision? || retry_limited? || change_intent_draft?
+          intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout?
 
         "#{tasks.size} proposed tasks"
       end
@@ -170,6 +176,7 @@ module Inbox
       entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
       entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
       entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
+      entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
       sort_entries(entries)
     end
 
@@ -542,24 +549,15 @@ module Inbox
     end
 
     # @spec CHANGE-INTENT-INBOX-001
-    # Surfaces every pending-review Change Intent Record on the operator's
-    # gated projects as a single Inbox lane. We re-use the existing
-    # `ChangeIntentPolicy::Scope` for visibility (rather than scoping via
-    # auto-pick like other Issue-backed lanes) because CIRs are project-level
-    # knowledge artifacts: an operator with `:show?` on the project is
-    # entitled to see the draft, even when auto-pick is off. The lane derives
-    # directly from the `pending_review` scope the model ships (#4136),
-    # rather than from a separate notification, so a freshly-recorded draft
-    # (chat-driven or issue-enhancement-driven) appears in the Inbox without
-    # any extra wiring.
+    # Change Intent Records use their policy scope, rather than the auto-pick
+    # gate, because they are project-level knowledge artifacts.
     def change_intent_draft_entries
       scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
       scope = scope.where(project: project) if project
 
-      scope
-        .includes(:project, :issue)
-        .order(:created_at, :id)
-        .map { |change_intent| change_intent_draft_entry(change_intent) }
+      scope.includes(:project, :issue).order(:created_at, :id).map do |change_intent|
+        change_intent_draft_entry(change_intent)
+      end
     end
 
     def change_intent_draft_entry(change_intent)
@@ -581,10 +579,35 @@ module Inbox
     def change_intent_summary(change_intent)
       return change_intent.intent.to_s if change_intent.requested_changes?
 
-      base = change_intent.intent.to_s
-      return base if base.length <= 220
+      change_intent.intent.to_s.truncate(220)
+    end
 
-      base.truncate(220)
+    # Derived lane like retry_limited: open issues carrying terminal closeout
+    # evidence (merged partial PR / no-code outcome) that auto-pick excludes
+    # with no explicit operator hold and no work in flight. Admission
+    # authority stays with DefaultCandidateSource.eligible_scope (batched once
+    # per project inside Issues::StalledCloseouts), and each entry's summary
+    # carries the exact reason automatic continuation cannot proceed plus the
+    # recorded outcome; the detail pane adds evidence links, unresolved
+    # prerequisites, and the authorized recovery actions (#4120).
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    def partial_closeout_entries
+      Issues::StalledCloseouts.call(scoped_projects).map do |pair|
+        status = pair.status
+        Entry.new(
+          id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
+          kind: PARTIAL_CLOSEOUT_KIND,
+          project: pair.issue.project,
+          issue: pair.issue,
+          record: pair.issue,
+          waiting_since: status.evidence.terminal_at,
+          questions: [],
+          tasks: status.unresolved_prerequisites,
+          summary_text: "#{status.outcome} #{status.reason}",
+          title_text: nil,
+          action_url: nil
+        )
+      end
     end
 
     def visible_blocking_notifications

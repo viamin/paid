@@ -37,6 +37,9 @@ development:
   primary: &primary_development
     <<: *default
     database: <%= development_primary_database %>
+    # Short OLTP requests lose seconds compiling complex eligibility plans with JIT.
+    variables:
+      jit: "off" # @spec RAILS-CONTROL-PLANE-010
   cable:
     <<: *primary_development
     database: <%= development_cable_database %>

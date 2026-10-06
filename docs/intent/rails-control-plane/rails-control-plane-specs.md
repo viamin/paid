@@ -6,6 +6,13 @@
 
 ## Request and Realtime Lifecycle
 
+- [x] **RAILS-CONTROL-PLANE-010** — When Rails connects to the development
+  PostgreSQL database, the connection SHALL disable JIT so interactive
+  requests do not pay compilation cost for short eligibility queries; the
+  production connection SHALL retain its default PostgreSQL JIT policy.
+  *Tests:* `spec/config/active_record/database_configurations_spec.rb`.
+  *Code:* `config/database.yml`.
+
 - [x] **RAILS-CONTROL-PLANE-009** — When Action Cable shuts down during a
   development code reload with a broadcast pending, the control plane SHALL
   complete shutdown without deadlocking, preserve the broadcast, and support

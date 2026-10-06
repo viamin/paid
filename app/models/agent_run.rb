@@ -197,6 +197,7 @@ class AgentRun < ApplicationRecord
 
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
+  belongs_to :continuation_request, class_name: "IssueContinuationRequest", optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
@@ -267,6 +268,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
+  after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -4032,6 +4034,26 @@ class AgentRun < ApplicationRecord
   # they must not trigger terminal-state side effects, so they are excluded.
   def real_run_just_finished?
     just_finished? && !synthetic_operational_run?
+  end
+
+  # True when this run executes a scoped continuation authorization
+  # (@see IssueContinuationRequest) and just reached a terminal status, so the
+  # authorization must be consumed and the terminal guards re-arm.
+  # @spec PARTIAL-CLOSEOUT-003
+  def continuation_run_just_finished?
+    continuation_request_id.present? && just_finished? && !synthetic_operational_run?
+  end
+
+  def close_finished_continuation_request
+    continuation_request&.consume!(run_status: status)
+  rescue => e
+    Rails.logger.error(
+      message: "agent_execution.continuation_request_close_failed",
+      agent_run_id: id,
+      continuation_request_id: continuation_request_id,
+      error_class: e.class.name,
+      error: e.message
+    )
   end
 
   def enqueue_quality_metrics_collection
