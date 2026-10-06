@@ -1,0 +1,273 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+require "fileutils"
+require "json"
+require "open3"
+require "tmpdir"
+require_relative "../support/exec_tmpdir"
+
+# @spec REPO-DEPENDENCY-AUDIT-001, REPO-DEPENDENCY-AUDIT-002,
+# @spec REPO-DEPENDENCY-AUDIT-003, REPO-DEPENDENCY-AUDIT-004,
+# @spec REPO-DEPENDENCY-AUDIT-005, REPO-DEPENDENCY-AUDIT-007
+RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
+  include ExecTmpdir
+
+  let(:future_date) { (Date.today + 30).iso8601 }
+  let(:past_date) { (Date.today - 1).iso8601 }
+
+  it "exits zero when the allowlist is empty and yarn audit reports no advisories" do
+    # @spec REPO-DEPENDENCY-AUDIT-001
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: empty_yarn_output)
+
+      stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("advisories reported: 0")
+      expect(stdout).to include("blocking: 0")
+      expect(File.read(File.join(dir, "yarn-invocations.log")).lines.map(&:chomp)).to eq([
+        "audit --json"
+      ])
+    end
+  end
+
+  it "exits non-zero when yarn audit reports an advisory not covered by the allowlist" do
+    # @spec REPO-DEPENDENCY-AUDIT-001
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: empty_allowlist,
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg")
+      )
+
+      stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stderr).to include("yarn audit reported 1 uncovered advisory")
+      expect(stdout).to include("blocking findings:")
+      expect(stdout).to include("GHSA-xxxx-yyyy-zzzz (high) demo-pkg")
+    end
+  end
+
+  it "exits zero and surfaces an accepted advisory when the allowlist covers it" do
+    # @spec REPO-DEPENDENCY-AUDIT-004
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: allowlist_with(future_date: future_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz"),
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg")
+      )
+
+      stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("accepted (allowlisted): 1")
+      expect(stdout).to include("blocking: 0")
+      expect(stdout).to include("GHSA-xxxx-yyyy-zzzz (high) demo-pkg@1.0.0 expires #{future_date}")
+    end
+  end
+
+  it "fails the run with exit 3 when an allowlist entry has expired" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: allowlist_with(future_date: past_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz"),
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("expired on #{past_date}")
+    end
+  end
+
+  it "fails the run when an allowlist entry is missing a required field" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      broken_allowlist = <<~YAML
+        exceptions:
+          - id: GHSA-xxxx-yyyy-zzzz
+            module: demo-pkg
+            owner: "@paid/test"
+            expires_on: 2099-01-01
+            tracking_issue: "#1"
+      YAML
+      prepare_workspace(dir, allowlist: broken_allowlist, yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("missing required field(s): reason")
+    end
+  end
+
+  it "fails the run when an allowlist id does not match the GHSA format" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      broken_allowlist = <<~YAML
+        exceptions:
+          - id: not-a-ghsa-id
+            module: demo-pkg
+            reason: "test"
+            owner: "@paid/test"
+            expires_on: 2099-01-01
+            tracking_issue: "#1"
+      YAML
+      prepare_workspace(dir, allowlist: broken_allowlist, yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("expected GHSA-...")
+    end
+  end
+
+  it "fails the run when an allowlist id is duplicated" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      duplicate_allowlist = <<~YAML
+        exceptions:
+          - id: GHSA-aaaa-bbbb-cccc
+            module: pkg-a
+            reason: "first"
+            owner: "@paid/test"
+            expires_on: 2099-01-01
+            tracking_issue: "#1"
+          - id: GHSA-aaaa-bbbb-cccc
+            module: pkg-a
+            reason: "second"
+            owner: "@paid/test"
+            expires_on: 2099-01-01
+            tracking_issue: "#2"
+      YAML
+      prepare_workspace(dir, allowlist: duplicate_allowlist, yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("duplicated")
+    end
+  end
+
+  it "fails the run when the allowlist file is missing" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: nil, yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("allowlist not found")
+    end
+  end
+
+  it "fails the run with a scanner-error message when yarn emits an error event" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      scanner_error_output = [
+        JSON.generate(type: "error", data: "could not reach registry.npmjs.org"),
+        JSON.generate(type: "auditSummary", data: { vulnerabilities: {}, dependencies: 1 })
+      ].join("\n")
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: scanner_error_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("yarn audit scanner failed")
+      expect(stderr).to include("could not reach registry.npmjs.org")
+    end
+  end
+
+  it "fails the run when yarn emits unparseable JSON instead of advisories" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: "{broken-json")
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("could not parse yarn audit JSON output")
+    end
+  end
+
+  def env(dir)
+    { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+  end
+
+  def script_path(dir)
+    File.join(dir, "bin", "yarn-audit-check")
+  end
+
+  def prepare_workspace(dir, allowlist:, yarn_output:)
+    FileUtils.mkdir_p(File.join(dir, "bin"))
+    FileUtils.mkdir_p(File.join(dir, "stubbin"))
+    FileUtils.mkdir_p(File.join(dir, "config", "security"))
+
+    FileUtils.cp(
+      File.expand_path("../../bin/yarn-audit-check", __dir__),
+      script_path(dir)
+    )
+    FileUtils.chmod("+x", script_path(dir))
+
+    if allowlist
+      File.write(File.join(dir, "config", "security", "yarn-audit-allowlist.yml"), allowlist)
+    end
+
+    File.write(
+      File.join(dir, "stubbin", "yarn"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf '%s\\n' "$*" >> "#{dir}/yarn-invocations.log"
+        printf '%s\\n' "$(cat "#{File.join(dir, 'yarn-output.txt')}")"
+      BASH
+    )
+    FileUtils.chmod("+x", File.join(dir, "stubbin", "yarn"))
+    File.write(File.join(dir, "yarn-output.txt"), yarn_output)
+  end
+
+  def empty_allowlist
+    <<~YAML
+      exceptions: []
+    YAML
+  end
+
+  def empty_yarn_output
+    JSON.generate(type: "auditSummary", data: { vulnerabilities: {}, dependencies: 0 })
+  end
+
+  def yarn_advisory_output(ghsa_id:, module_name:)
+    advisory = {
+      type: "auditAdvisory",
+      data: {
+        resolution: { id: 1, path: "somepath>#{module_name}" },
+        advisory: {
+          findings: [ { version: "1.0.0", paths: [ "somepath>#{module_name}" ] } ],
+          github_advisory_id: ghsa_id,
+          module_name: module_name,
+          severity: "high",
+          title: "Demo advisory",
+          recommendation: "Upgrade to 2.0.0",
+          vulnerable_versions: "<2.0.0",
+          patched_versions: ">=2.0.0"
+        }
+      }
+    }
+    summary = JSON.generate(type: "auditSummary", data: { vulnerabilities: {}, dependencies: 1 })
+    "#{JSON.generate(advisory)}\n#{summary}"
+  end
+
+  def allowlist_with(future_date:, ghsa_id:)
+    <<~YAML
+      exceptions:
+        - id: #{ghsa_id}
+          module: demo-pkg
+          reason: "Test reason"
+          owner: "@paid/test"
+          expires_on: #{future_date}
+          tracking_issue: "#1"
+    YAML
+  end
+end
