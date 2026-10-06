@@ -17,7 +17,8 @@ module ChatSessions
   class ResumeRateLimited
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id
+    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
+      :transport_attempt_message
 
     def initialize(chat_session:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
       @chat_session = chat_session
@@ -26,6 +27,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @transport_attempt_message = originating_user_message
     end
 
     def self.call(...)
@@ -43,6 +45,13 @@ module ChatSessions
       notice = RecordProviderError.call(chat_session: chat_session, error: e)
       on_message_persisted&.call(notice, stream_message_id: stream_message_id)
       nil
+    end
+
+    private
+
+    # @spec API-CONVERSATION-DELEGATION-002
+    def originating_user_message
+      chat_session.messages.where(role: "user").order(id: :desc).first
     end
   end
 end

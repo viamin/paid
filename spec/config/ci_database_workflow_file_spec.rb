@@ -13,7 +13,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "postgres",
         "db_password" => "postgres",
         "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",
-        "creates_application_role" => false
+        "creates_application_role" => false,
+        "retries_database_setup" => true
       },
       "performance" => {
         "db_username" => "postgres",
@@ -27,7 +28,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "paid",
         "db_password" => "paid",
         "database_url" => "postgres://paid:paid@localhost:5432/paid_test",
-        "creates_application_role" => true
+        "creates_application_role" => true,
+        "retries_database_setup" => true
       }
     },
     ".github/workflows/pr-screenshots.yml" => {
@@ -156,7 +158,19 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch(job_name)
           setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
 
-          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
+          setup_command = setup_step.fetch("run")
+
+          expect(setup_command).to include("bin/rails db:create db:schema:load")
+          expect(setup_command).not_to include("db:migrate")
+        end
+
+        if expectations["retries_database_setup"]
+          it "retries transient database setup failures for #{job_name}" do
+            job = workflow.fetch("jobs").fetch(job_name)
+            setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
+
+            expect(setup_step.fetch("run")).to include("for attempt in 1 2 3")
+          end
         end
 
         it "bootstraps required orchestration defaults after schema load for #{job_name}" do

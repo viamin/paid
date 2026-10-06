@@ -15,7 +15,8 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id
+    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+      :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -108,11 +109,11 @@ module ChatSessions
     end
 
     def persist_user_message
-      message = existing_user_message || create_user_message
+      @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
-      on_message_persisted&.call(message)
-      message
+      on_message_persisted&.call(transport_attempt_message)
+      transport_attempt_message
     end
 
     # A restarted job retains its stream id. Reusing the original user row

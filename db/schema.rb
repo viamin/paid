@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_05_025936) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_124414) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -405,7 +405,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_025936) do
 
   create_table "api_usage_attempts", comment: "Idempotent accounting reports for individual API provider requests.", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "project_id", null: false
+    t.bigint "project_id"
     t.bigint "agent_run_id"
     t.bigint "chat_session_id"
     t.bigint "chat_message_id"

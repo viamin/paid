@@ -6,7 +6,7 @@ class ApiUsageAttempt < ApplicationRecord
   PRICING_SOURCES = %w[provider_reported harness_estimated historical_estimate unknown].freeze
 
   belongs_to :account
-  belongs_to :project
+  belongs_to :project, optional: true
   belongs_to :agent_run, optional: true
   belongs_to :chat_session, optional: true
   belongs_to :chat_message, optional: true

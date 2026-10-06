@@ -328,6 +328,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
   end
 
   # @spec API-CONVERSATION-DELEGATION-001
+  # @spec API-CONVERSATION-DELEGATION-002
   # @spec API-CONVERSATION-DELEGATION-003
   describe described_class::HttpClient do
     let(:tool_definitions) do
@@ -423,6 +424,41 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       expect(result[:model]).to eq("claude-sonnet-4-20250514")
       expect(result[:tokens_input]).to eq(20)
       expect(result[:tokens_output]).to eq(10)
+    end
+
+    it "persists every reported attempt with the live chat attribution" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      runner = create(:runner, :api_key, user: user, provider_api_key: api_key)
+      chat_session = create(:chat_session, :with_project, account: account, created_by: user, runner: runner)
+      message = create(:chat_message, chat_session: chat_session, role: "user")
+      reports = [
+        attempt_report(attempt_id: "failed-with-usage", status: :failed),
+        attempt_report(attempt_id: "unknown-usage", number: 2, status: :failed, usage: nil, cost: nil)
+      ]
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(attempts: reports + [ reports.first ]))
+
+      attributed_client(chat_session:, message:).call(conversation)
+
+      expect_persisted_transport_attempts(reports:, chat_session:, message:)
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-002
+    it "persists account-level attempts without discarding a projectless chat response" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      runner = create(:runner, :api_key, user: user, provider_api_key: api_key)
+      chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+      message = create(:chat_message, chat_session: chat_session, role: "user")
+      report = attempt_report(attempt_id: "account-level-attempt")
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(attempts: [ report ]))
+
+      result = attributed_client(chat_session:, message:).call(conversation)
+
+      aggregate_failures do
+        expect(result[:content]).to eq("I'm doing well!")
+        expect(ApiUsageAttempt.find_by!(attempt_id: report[:attempt_id])).to have_attributes(
+          account: account, project: nil, chat_session: chat_session, chat_message: message, actor: user
+        )
+      end
     end
 
     it "folds later system messages into a single leading system message" do
@@ -569,6 +605,46 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
             endpoint: "https://api.openai.com/v1")
         end
       end
+    end
+  end
+
+  def attempt_report(attempt_id:, number: 1, status: :succeeded, usage: { input_tokens: 20, output_tokens: 10 }, cost: nil)
+    {
+      attempt_id: attempt_id,
+      request_id: "request-123",
+      number: number,
+      provider: :anthropic,
+      model: "claude-sonnet-4-20250514",
+      status: status,
+      started_at: 1.minute.ago,
+      finished_at: Time.current,
+      usage: usage,
+      cost: cost
+    }
+  end
+
+  def attributed_client(chat_session:, message:)
+    ChatSessions::BuildLlmClient::HttpClient.new(
+      provider: :anthropic, protocol: :messages, endpoint: ChatSessions::BuildLlmClient::ANTHROPIC_BASE_URL,
+      api_key: "sk-ant-test", model: "claude-sonnet-4-20250514", chat_transport: chat_transport,
+      chat_session: chat_session, actor: user, message: message
+    )
+  end
+
+  def expect_persisted_transport_attempts(reports:, chat_session:, message:)
+    attempts = ApiUsageAttempt.where(attempt_id: reports.map { |report| report[:attempt_id] }).index_by(&:attempt_id)
+
+    aggregate_failures do
+      expect(attempts["failed-with-usage"]).to have_attributes(
+        chat_session: chat_session, chat_message: message, actor: user, runner: chat_session.runner,
+        status: "failed", input_tokens: 20, output_tokens: 10
+      )
+      expect(attempts["unknown-usage"]).to have_attributes(
+        chat_session: chat_session, chat_message: message, actor: user, runner: chat_session.runner,
+        status: "failed", input_tokens: nil, output_tokens: nil
+      )
+      expect(attempts.size).to eq(2)
+      expect(TokenUsage.where(request_type: "api_attempt").count).to eq(1)
     end
   end
 end

@@ -20,7 +20,8 @@ module ChatSessions
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
-      :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id
+      :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id,
+      :transport_attempt_message
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
@@ -33,6 +34,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @on_tool_call_resolved = on_tool_call_resolved
       @stream_message_id = stream_message_id
+      @transport_attempt_message = originating_user_message
     end
 
     def self.call(...)
@@ -55,6 +57,14 @@ module ChatSessions
     end
 
     private
+
+    # Keep the initial turn's user row for transport attempt accounting. A
+    # confirmation can be resolved while a newer turn is being sent, so using
+    # the session's current last user message would misattribute this request.
+    # @spec API-CONVERSATION-DELEGATION-002
+    def originating_user_message
+      chat_session.messages.where(role: "user").where("id < ?", tool_call_message.id).order(id: :desc).first
+    end
 
     # @spec QUESTION-EXPLORATION-001
     def prepare_resolution!
