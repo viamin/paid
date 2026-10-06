@@ -28,20 +28,36 @@ module SecurityAlerts
     end
 
     def verify(attempt, analyses)
-      analysis = matching_analysis(attempt, analyses)
+      analysis, contains_merge_commit = verification_evidence(attempt, analyses)
       SecurityAlerts::VerifyRemediationAttempt.new(
-        attempt:, alert: alerts[alert_number(attempt.issue)], analysis:,
-        contains_merge_commit: merge_commit_in?(attempt, analysis)
+        attempt:, alert: alerts[alert_number(attempt.issue)], analysis:, contains_merge_commit:
       ).call
     end
 
-    def matching_analysis(attempt, analyses)
-      analyses.find { |analysis| matching_configuration?(attempt, analysis) } || analyses.first
+    # GitHub lists analyses newest-first. Evidence must match the finding's
+    # configuration and live on the target branch, so a newer PR-branch or
+    # unrelated analysis never hides valid evidence; a newer error-bearing
+    # analysis falls through to older successful evidence when it exists.
+    def verification_evidence(attempt, analyses)
+      successful = analyses.find { |analysis| relevant?(attempt, analysis) && analysis[:status] == "succeeded" }
+      return fallback_evidence(attempt, analyses) unless successful
+
+      [ successful, contains_merge_commit?(attempt, successful) ]
     end
 
-    def merge_commit_in?(attempt, analysis)
-      return false unless analysis && matching_configuration?(attempt, analysis) && analysis[:ref] == project.default_branch
+    def relevant?(attempt, analysis)
+      matching_configuration?(attempt, analysis) && analysis[:ref] == project.default_branch
+    end
 
+    # No successful target-branch analysis: retain the closest related analysis
+    # as blocked-attempt evidence instead of comparing unrelated commits.
+    def fallback_evidence(attempt, analyses)
+      partial = analyses.find { |analysis| relevant?(attempt, analysis) } ||
+                analyses.find { |analysis| matching_configuration?(attempt, analysis) }
+      [ partial || analyses.first, false ]
+    end
+
+    def contains_merge_commit?(attempt, analysis)
       comparison = github_client.compare(project.full_name, attempt.merge_commit_sha, analysis[:commit_sha])
       comparison.status.in?(%w[ahead identical])
     end
