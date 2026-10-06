@@ -50,6 +50,57 @@ RSpec.describe Tools::RecordChangeIntent do
 
       expect(project.change_intents.find(result[:id]).issue).to eq(issue)
     end
+
+    it "revises the pending draft opened from an Inbox entry" do
+      change_intent = create(:change_intent, :draft, project: project)
+      session.update!(inbox_item_metadata: { "record_id" => change_intent.id })
+
+      result = described_class.new(user: owner, session:).call(
+        title: "Revised rate limiting",
+        intent: "Clarify the intended smoothing behavior"
+      )
+
+      expect(result).to include(id: change_intent.id, status: "draft")
+      expect(change_intent.reload).to have_attributes(
+        title: "Revised rate limiting",
+        intent: "Clarify the intended smoothing behavior",
+        chat_session: session
+      )
+      expect(project.change_intents.count).to eq(1)
+    end
+
+    it "creates separate drafts for separate directions in an ordinary project chat" do
+      tool = described_class.new(user: owner, session:)
+
+      first = tool.call(title: "Prefer sliding window rate limiting", intent: "Smooth request limiting")
+      second = tool.call(title: "Keep deployment configuration declarative", intent: "Make operations repeatable")
+
+      expect(first[:id]).not_to eq(second[:id])
+      expect(project.change_intents.find(second[:id])).to have_attributes(
+        title: "Keep deployment configuration declarative",
+        intent: "Make operations repeatable"
+      )
+      expect(project.change_intents.count).to eq(2)
+    end
+
+    it "revises the pending draft for the current issue" do
+      issue = create(:issue, project:)
+      session.update!(metadata: { "page_context" => { "issue_id" => issue.id } })
+      existing = create(:change_intent, :draft, project:, issue:, title: "Existing draft", intent: "Existing intent")
+
+      result = described_class.new(user: owner, session:).call(
+        title: "Revised issue direction",
+        intent: "Clarify the issue's intended behavior"
+      )
+
+      expect(result).to include(id: existing.id, status: "draft")
+      expect(existing.reload).to have_attributes(
+        title: "Revised issue direction",
+        intent: "Clarify the issue's intended behavior",
+        chat_session: session
+      )
+      expect(project.change_intents.count).to eq(1)
+    end
   end
 
   describe "#resolve_confirmation" do

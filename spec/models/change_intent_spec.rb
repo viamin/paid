@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe ChangeIntent do
+  include ActiveSupport::Testing::TimeHelpers
+
   subject(:change_intent) { build(:change_intent) }
 
   describe "associations" do
@@ -85,6 +87,28 @@ RSpec.describe ChangeIntent do
 
       expect(record.save).to be true
     end
+
+    it "allows revising content while the record is pending review" do
+      record = create(:change_intent, :draft)
+
+      record.revise!({ title: "Revised title", intent: "Revised intent" })
+
+      expect(record.reload).to have_attributes(title: "Revised title", intent: "Revised intent")
+    end
+
+    it "clears requested-changes feedback when a revision returns the draft for review" do
+      record = create(:change_intent, status: "requested_changes",
+                       requested_changes_at: 1.hour.ago,
+                       requested_changes_reason: "Clarify the constraint.")
+
+      record.revise!({ title: "Clarified title", intent: "Clarified intent" })
+
+      expect(record.reload).to have_attributes(
+        status: "draft",
+        requested_changes_at: nil,
+        requested_changes_reason: nil
+      )
+    end
   end
 
   describe "scopes" do
@@ -101,6 +125,16 @@ RSpec.describe ChangeIntent do
 
       expect(described_class.draft).to eq([ draft ])
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "returns every pending-review record from .pending_review" do
+      draft = create(:change_intent, :draft)
+      changes = create(:change_intent, status: "requested_changes")
+      create(:change_intent, status: "active")
+      create(:change_intent, status: "superseded")
+
+      expect(described_class.pending_review).to contain_exactly(draft, changes)
+    end
   end
 
   describe "#activate!" do
@@ -112,10 +146,138 @@ RSpec.describe ChangeIntent do
       expect(record.reload.status).to eq("active")
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
+    it "transitions from requested_changes back to active" do
+      record = create(:change_intent, status: "requested_changes",
+                                       requested_changes_at: 1.hour.ago,
+                                       requested_changes_reason: "Reword the title.")
+
+      record.activate!
+
+      expect(record.reload.status).to eq("active")
+      expect(record.requested_changes_at).to be_nil
+      expect(record.requested_changes_reason).to be_nil
+    end
+
     it "raises when not in draft" do
       record = create(:change_intent, status: "active")
 
       expect { record.activate! }.to raise_error(ChangeIntent::InvalidTransitionError, /cannot activate from active/)
+    end
+  end
+
+  # @spec CHANGE-INTENT-INBOX-001
+  describe "#request_changes!" do
+    it "transitions from draft to requested_changes with a stamped reason and timestamp" do
+      freeze_time = nil
+      record = create(:change_intent, :draft)
+
+      travel_to(Time.current) do
+        freeze_time = Time.current
+        record.request_changes!(reason: "Reword the title.")
+      end
+
+      expect(record.reload).to have_attributes(
+        status: "requested_changes",
+        requested_changes_reason: "Reword the title.",
+        requested_changes_at: freeze_time
+      )
+    end
+
+    it "overwrites prior review metadata when re-entered from requested_changes" do
+      record = create(:change_intent, status: "requested_changes",
+                                       requested_changes_at: 1.hour.ago,
+                                       requested_changes_reason: "Old reason.")
+
+      travel_to(Time.current) do
+        record.request_changes!(reason: "Fresh reason.")
+      end
+
+      expect(record.reload).to have_attributes(
+        status: "requested_changes",
+        requested_changes_reason: "Fresh reason."
+      )
+      expect(record.requested_changes_at).to be_within(2.seconds).of(Time.current)
+    end
+
+    it "raises when activating from an already terminal status" do
+      record = create(:change_intent, status: "active")
+
+      expect { record.request_changes!(reason: "Too late.") }
+        .to raise_error(ChangeIntent::InvalidTransitionError, /cannot request changes from active/)
+    end
+  end
+
+  describe "#requested_changes?" do
+    it "is true when the status is requested_changes" do
+      expect(build(:change_intent, status: "requested_changes")).to be_requested_changes
+    end
+
+    it "is false for any other status" do
+      %w[draft active superseded reverted].each do |status|
+        expect(build(:change_intent, status: status)).not_to be_requested_changes
+      end
+    end
+  end
+
+  describe "#pending_review?" do
+    it "is true for draft and requested_changes" do
+      expect(build(:change_intent, :draft)).to be_pending_review
+      expect(build(:change_intent, status: "requested_changes")).to be_pending_review
+    end
+
+    it "is false for terminal statuses" do
+      %w[active superseded reverted].each do |status|
+        expect(build(:change_intent, status: status)).not_to be_pending_review
+      end
+    end
+  end
+
+  # @spec CHANGE-INTENT-INBOX-001
+  describe "inbox cache invalidation" do
+    let(:project) { create(:project) }
+    let(:account) { project.account }
+
+    it "bumps the inbox cache version when a draft is recorded" do
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      create(:change_intent, :draft, project: project)
+    end
+
+    it "bumps the inbox cache version when a draft transitions into requested_changes" do
+      record = create(:change_intent, :draft, project: project)
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      record.request_changes!(reason: "Reword the title.")
+    end
+
+    it "bumps the inbox cache version when a record is activated" do
+      record = create(:change_intent, :draft, project: project)
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      record.activate!
+    end
+
+    it "bumps the inbox cache version when a pending-review record is destroyed" do
+      record = create(:change_intent, :draft, project: project)
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      record.destroy!
+    end
+
+    it "does not bump the cache when an unrelated status changes" do
+      record = create(:change_intent, status: "active", project: project)
+
+      expect(Dashboard::CacheVersion).not_to receive(:bump)
+
+      record.revert!
     end
   end
 

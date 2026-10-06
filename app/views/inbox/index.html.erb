@@ -28,6 +28,7 @@
         [ "Intent Conformance", Inbox::Queue::INTENT_CONFORMANCE_KIND ],
         [ "Feature Decision", Inbox::Queue::FEATURE_DECISION_KIND ],
         [ "Retry-limited", Inbox::Queue::RETRY_LIMITED_KIND ],
+        [ "CIR Drafts", Inbox::Queue::CHANGE_INTENT_DRAFT_KIND ],
         [ "Partial closeouts", Inbox::Queue::PARTIAL_CLOSEOUT_KIND ]
       ].each do |label, kind| %>
         <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>

@@ -135,6 +135,53 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Depends on #500")
   end
 
+  # @spec CHANGE-INTENT-INBOX-001
+  it "renders change_intent_draft entries with approve, request changes, discard, and chat actions" do
+    change_intent = create(
+      :change_intent, :draft, :without_context_links, project: project,
+      title: "Sliding window over token bucket",
+      intent: "Smooth per-user limiting.",
+      behavior: nil,
+      constraints: "Use Redis.",
+      decisions_made: "Rejected token bucket."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::CHANGE_INTENT_DRAFT_KIND, change_intent),
+      kind: Inbox::Queue::CHANGE_INTENT_DRAFT_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("CIR Drafts", "Sliding window over token bucket")
+    expect(response.body).to include("Approve", "Request changes on this draft", "Discard", "Chat about this")
+    expect(response.body).to include(approve_project_change_intent_path(project, change_intent))
+    expect(response.body).to include(discard_project_change_intent_path(project, change_intent))
+    expect(response.body).to include(request_changes_project_change_intent_path(project, change_intent))
+  end
+
+  # @spec CHANGE-INTENT-INBOX-001
+  it "renders the requested_changes reason and badge for a re-reviewed draft" do
+    change_intent_issue = create(:issue, project: project, github_number: 88, title: "Source issue")
+    change_intent = create(
+      :change_intent, :draft, project: project, issue: change_intent_issue,
+      title: "Sliding window over token bucket",
+      intent: "Smooth per-user limiting.",
+      constraints: "Use Redis."
+    )
+    change_intent.update!(status: "requested_changes",
+      requested_changes_at: 1.hour.ago,
+      requested_changes_reason: "Reword the title.")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::CHANGE_INTENT_DRAFT_KIND, change_intent),
+      kind: Inbox::Queue::CHANGE_INTENT_DRAFT_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Changes requested", "Reword the title.")
+    expect(response.body).not_to include(discard_project_change_intent_path(project, change_intent))
+  end
+
   it "selects the first entry on the collection route" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
