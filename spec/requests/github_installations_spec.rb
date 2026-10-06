@@ -44,29 +44,21 @@ RSpec.describe "GithubInstallations" do
     end
   end
 
+  # @spec PROJECT-CREATION-013
   describe "GET /github_installations/:id/repositories" do
     it "returns normalized repositories for the installation" do
+      repository = repository_cache_entry(123, "acme/widgets", default_branch: "trunk", created_at: "2026-09-01T12:00:00Z")
+      repository["private"] = true
       installation = create(
         :github_installation,
         account: account,
-        accessible_repositories: [
-          { "id" => 123, "full_name" => "acme/widgets", "private" => true, "default_branch" => "trunk" }
-        ]
+        accessible_repositories: [ repository ]
       )
 
       get repositories_github_installation_path(installation)
 
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body).to eq([
-        {
-          "id" => 123,
-          "full_name" => "acme/widgets",
-          "name" => "widgets",
-          "owner" => "acme",
-          "default_branch" => "trunk",
-          "private" => true
-        }
-      ])
+      expect(response.parsed_body).to eq([ repository.merge("name" => "widgets", "owner" => "acme") ])
     end
 
     it "filters out repositories already linked to the current account" do
@@ -125,8 +117,8 @@ RSpec.describe "GithubInstallations" do
     end
   end
 
-  def repository_cache_entry(id, full_name, default_branch: "main")
-    { "id" => id, "full_name" => full_name, "default_branch" => default_branch }
+  def repository_cache_entry(id, full_name, default_branch: "main", created_at: nil)
+    { "id" => id, "full_name" => full_name, "default_branch" => default_branch, "created_at" => created_at }.compact
   end
 
   def stub_installation_repository_sync(installation)

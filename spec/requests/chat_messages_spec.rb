@@ -97,7 +97,9 @@ RSpec.describe "ChatMessages" do
         chat_session.update!(status: "closed", idle_timeout_at: 1.day.ago)
 
         llm_client = instance_double(Proc)
-        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
+        allow(ChatSessions::BuildLlmClient).to receive(:call)
+          .with(hash_including(chat_session: chat_session, actor: user, message: be_a(ChatMessage)))
+          .and_return(llm_client)
         allow(ChatSessions::SendMessage).to receive(:call).and_call_original
         allow(llm_client).to receive(:call).and_return(llm_response)
 
@@ -116,7 +118,9 @@ RSpec.describe "ChatMessages" do
       it "persists the chat response and token usage through the controller path" do
         # @spec CHAT-API-005
         llm_client = instance_double(Proc, call: llm_response)
-        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
+        allow(ChatSessions::BuildLlmClient).to receive(:call)
+          .with(hash_including(chat_session: chat_session, actor: user, message: be_a(ChatMessage)))
+          .and_return(llm_client)
 
         expect {
           post chat_session_chat_messages_path(chat_session), params: { content: "Hello" }
@@ -134,7 +138,7 @@ RSpec.describe "ChatMessages" do
 
       it "returns a clear setup error when no chat runner is configured" do
         allow(ChatSessions::BuildLlmClient).to receive(:call)
-          .with(chat_session: chat_session)
+          .with(hash_including(chat_session: chat_session, actor: user, message: be_a(ChatMessage)))
           .and_raise(
             ChatSessions::LlmClientConfigurationError,
             "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."

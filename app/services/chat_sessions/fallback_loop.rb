@@ -6,10 +6,10 @@ module ChatSessions
   # switches to the next configured fallback runner and retries until one
   # succeeds or no untried fallback remains (then the original error re-raises).
   #
-  # Hosts (SendMessage, ResolveToolCall) must expose `chat_session`,
-  # `llm_client`, `on_chunk`, `on_message_persisted`, and `stream_message_id`,
-  # and own the `@llm_client` ivar (it is reset on each switch so the next
-  # attempt rebuilds the client for the new runner).
+  # Hosts must expose `chat_session`, `llm_client`, `on_chunk`,
+  # `on_message_persisted`, `stream_message_id`, and the originating
+  # `transport_attempt_message`. They own the `@llm_client` ivar (it is reset
+  # on each switch so the next attempt rebuilds the client for the new runner).
   module FallbackLoop
     private
 
@@ -18,7 +18,11 @@ module ChatSessions
       attempted_runners = [ chat_session.runner ].compact
 
       loop do
-        @llm_client ||= ChatSessions::BuildLlmClient.call(chat_session: chat_session)
+        @llm_client ||= ChatSessions::BuildLlmClient.call(
+          chat_session: chat_session,
+          actor: actor,
+          message: transport_attempt_message
+        )
         agent_loop = ChatSessions::AgentLoop.new(**fallback_loop_kwargs)
         return agent_loop.run
       rescue AgentHarness::Error => e

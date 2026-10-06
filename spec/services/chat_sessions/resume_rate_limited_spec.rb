@@ -8,8 +8,11 @@ RSpec.describe ChatSessions::ResumeRateLimited do
   let(:user) { create(:user, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user, rate_limited_until: 1.minute.ago) }
 
-  before do
+  let!(:initial_user_message) do
     create(:chat_message, chat_session: chat_session, role: "user", content: "Still there?")
+  end
+
+  before do
     allow(Tools::Registry).to receive(:chat_definitions_for).and_return([])
   end
 
@@ -37,6 +40,21 @@ RSpec.describe ChatSessions::ResumeRateLimited do
 
         expect(message.role).to eq("assistant")
         expect(message.content).to eq("Yes, still here.")
+      end
+
+      # @spec API-CONVERSATION-DELEGATION-002
+      it "keeps the initiating message when a concurrent turn is persisted during the retry" do
+        fallback_client = llm_client
+        allow(ChatSessions::BuildLlmClient).to receive(:call)
+          .with(chat_session: chat_session, actor: user, message: initial_user_message) do
+            chat_session.messages.create!(role: "user", content: "Concurrent request")
+            fallback_client
+          end
+
+        described_class.call(chat_session: chat_session)
+
+        expect(ChatSessions::BuildLlmClient).to have_received(:call)
+          .with(chat_session: chat_session, actor: user, message: initial_user_message)
       end
     end
 

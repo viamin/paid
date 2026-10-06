@@ -35,7 +35,7 @@ module ChatSessions
     def attempt_attributes
       {
         account: chat_session.account,
-        project: chat_session.project || raise(ArgumentError, "chat session project is required"),
+        project: chat_session.project,
         chat_session: chat_session,
         chat_message: message,
         actor: actor,

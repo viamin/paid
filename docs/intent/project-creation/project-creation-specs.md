@@ -64,12 +64,20 @@
 - [x] **PROJECT-CREATION-013** - When a user selects a GitHub credential on
   the connect-existing-repository path, the system SHALL present its fetched
   accessible repositories in a typable combobox that filters case-insensitively
-  by full name, owner, or short name. The user SHALL be able to select a
-  filtered repository with arrow keys and Enter or with a pointer, and Escape
-  or the clear control SHALL clear the selection.
+  by full name, owner, or short name. The selector SHALL default to Name (A–Z)
+  and allow Recently created ordering without another request; repositories
+  without a usable timestamp SHALL sort after dated repositories. The user SHALL
+  be able to select a filtered repository with arrow keys and Enter or with a
+  pointer, and Escape or the clear control SHALL clear the selection.
   *Tests:* `spec/lib/repository_selector_controller_node_harness_spec.rb`,
-  `spec/requests/projects_spec.rb`.
-  *Code:* `app/javascript/controllers/repository_selector_controller.js`,
+  `spec/requests/projects_spec.rb`, `spec/requests/github_tokens_spec.rb`,
+  `spec/requests/github_installations_spec.rb`, `spec/models/github_token_spec.rb`,
+  `spec/services/github/installation_repositories_spec.rb`,
+  `spec/system/projects/repository_selector_spec.rb`.
+  *Code:* `GithubToken#serialize_repository`,
+  `GithubInstallationsController#normalized_repositories`,
+  `Github::InstallationRepositories#serialize_repository`,
+  `app/javascript/controllers/repository_selector_controller.js`,
   `app/views/projects/new.html.erb`.
 
 - [x] **PROJECT-CREATION-014** - The existing-repository combobox SHALL remain
