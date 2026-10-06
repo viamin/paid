@@ -109,7 +109,9 @@ suppressed while the digest matches; new terminal evidence is a new
 generation and re-creates the item. Repeated sync cannot recreate a
 dismissed/resolved item without new evidence because nothing is persisted by
 sync for this lane — it is derived from evidence, and the dismissal is
-digest-scoped.
+digest-scoped. Resolution takes the issue lock shared by continuation creation,
+supersedes any open authorization, and cancels its unclaimed queued run before
+recording completion, so a continuation cannot dispatch after the attestation.
 
 ### Surfaces
 

@@ -64,6 +64,21 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(event.subject).to eq(issue)
   end
 
+  # @spec PARTIAL-CLOSEOUT-006 — resolving complete revokes a queued continuation.
+  it "supersedes an open continuation and cancels its queued run" do
+    merged_partial_pr(number: 12)
+    request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+    run = create(:agent_run, project: project, issue: issue, continuation_request: request, goal: "create_pr", status: "queued")
+
+    result = described_class.call(issue: issue, actor: user, reason: "The merged PR completes the issue.")
+
+    expect(result).to be_success
+    expect(issue.reload.paid_state).to eq("completed")
+    expect(request.reload.status).to eq("superseded")
+    expect(request.closure_reason).to eq("Continuation superseded: issue resolved as complete.")
+    expect(run.reload.status).to eq("cancelled")
+  end
+
   it "refuses a closed issue" do
     merged_partial_pr(number: 12)
     issue.update!(github_state: "closed", closed_at: Time.current)

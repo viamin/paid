@@ -99,7 +99,11 @@
   NOT write to GitHub. The resolution SHALL suppress the inbox entry only
   while the digest matches the current evidence generation; repeated GitHub
   sync SHALL NOT recreate the suppressed item without new evidence, and new
-  terminal evidence SHALL recreate it.
+  terminal evidence SHALL recreate it. Resolution and continuation creation
+  SHALL serialize on the issue: resolving SHALL supersede an open continuation
+  authorization and cancel its unclaimed queued run before recording the
+  resolution, so no continuation can dispatch after the issue is declared
+  complete.
   *Code:* `app/services/issues/resolve_closeout.rb`, `app/models/issue.rb`.
   *Test:* `spec/services/issues/resolve_closeout_spec.rb`,
   `spec/services/inbox/queue_spec.rb`.
