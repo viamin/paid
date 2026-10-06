@@ -154,4 +154,108 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(described_class.call(run)).to be true
     expect(run.reload.status).to eq("cancelled")
   end
+
+  # @spec PARTIAL-CLOSEOUT-005 — scoped continuation authorization is honored
+  # at dequeue/run start even though the run is manual-trigger.
+  describe "continuation runs" do
+    let(:user) { create(:user, account: project.account) }
+
+    def continuation_run(issue:, request:)
+      create(
+        :agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        goal: "create_pr",
+        trigger_type: "manual",
+        auto_pick: false,
+        continuation_request: request
+      )
+    end
+
+    def merged_partial_pr(issue:, number:)
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: number,
+        github_state: "closed",
+        pr_review_phase: "merged",
+        parent_issue_id: issue.id,
+        created_at: 2.days.ago
+      )
+    end
+
+    it "keeps a validly authorized continuation run queued" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 61)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "cancels the run and supersedes the request when the evidence generation changed" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 62)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+
+      merged_partial_pr(issue: issue, number: 63)
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(request.reload.status).to eq("superseded")
+      expect(request.closure_reason).to include("evidence")
+    end
+
+    it "cancels the run when its request already closed" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 64)
+      request = create(:issue_continuation_request, :superseded, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+    end
+
+    it "cancels the run when an explicit pause appeared after the request" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 65)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+
+      issue.update_columns(paused: true)
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(request.reload.status).to eq("superseded")
+    end
+
+    it "cancels the run when the project is explicitly paused" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 66)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+
+      project.update!(paused: true)
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+    end
+
+    it "cancels the run when an unmet prerequisite appeared after the request" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 67)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+
+      blocker = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+    end
+  end
 end

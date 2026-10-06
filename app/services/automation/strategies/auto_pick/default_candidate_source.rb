@@ -93,15 +93,32 @@ module Automation
           # issue and be wrongly cancelled). Pass +excluding_run_id: <the
           # candidate run's id>+. Returns true when the issue is still
           # auto-pick eligible ignoring that one run.
-          def eligible_for_dequeue?(project, issue_id, excluding_run_id:)
-            eligible_scope(project, excluding_run_id: excluding_run_id)
+          #
+          # +continuation_authorized_issue_ids+ lifts only the merged-PR and
+          # no-code guards for exactly those issues (a scoped continuation
+          # authorization, @spec PARTIAL-CLOSEOUT-004); every other guard
+          # still applies. It defaults to none so plain auto-pick semantics
+          # are unchanged.
+          def eligible_for_dequeue?(project, issue_id, excluding_run_id:, continuation_authorized_issue_ids: [])
+            eligible_scope(
+              project,
+              excluding_run_id: excluding_run_id,
+              continuation_authorized_issue_ids: continuation_authorized_issue_ids
+            )
               .where(id: issue_id)
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 @spec PARTIAL-CLOSEOUT-004
             epic_ids = epic_issue_ids(project)
-            base = without_open_non_pr_subissues(base_scope(project, epic_ids:, excluding_run_id: excluding_run_id))
+            base = without_open_non_pr_subissues(
+              base_scope(
+                project,
+                epic_ids: epic_ids,
+                excluding_run_id: excluding_run_id,
+                continuation_authorized_issue_ids: continuation_authorized_issue_ids
+              )
+            )
             scope = Issue.auto_pick_eligible_paid_state_scope(base)
 
             blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
@@ -309,7 +326,7 @@ module Automation
             end
           end
 
-          def base_scope(project, epic_ids:, excluding_run_id: nil) # @spec EAGER-QUEUE-009
+          def base_scope(project, epic_ids:, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec EAGER-QUEUE-009
             blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil)
@@ -322,6 +339,12 @@ module Automation
             reauditable_issue_ids = reauditable_issue_ids(project, epic_ids)
             reauditable_closeout_ids = partial_closeout_reaudit_issue_ids(project)
             prerequisite_block_ids = partial_closeout_prerequisite_block_issue_ids(project)
+            # @spec PARTIAL-CLOSEOUT-004 — a scoped continuation authorization
+            # lifts ONLY the merged-PR and no-code guards below, and only for
+            # the explicitly authorized issues. Every other guard applies
+            # unchanged, and plain auto-pick (no authorized ids) behaves
+            # exactly as before.
+            authorized_ids = Array(continuation_authorized_issue_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)
@@ -344,7 +367,7 @@ module Automation
               # recorded partial closeout is the other exception: its merged
               # PR is partial progress, and the parent must re-enter
               # selection once the gap owners resolve (#4119).
-              .where.not(id: merged_block_issue_ids(project) - reauditable_issue_ids - reauditable_closeout_ids)
+              .where.not(id: merged_block_issue_ids(project) - reauditable_issue_ids - reauditable_closeout_ids - authorized_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -359,7 +382,7 @@ module Automation
               # just loop (the agent will likely declare no-code-required again).
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
-              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_issue_ids)
+              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_issue_ids + authorized_ids)
               # Partial-closeout human prerequisites surface as blocking Inbox
               # notifications rather than durable IssueDependency edges
               # (NO-OUTPUT-ISSUE-007). Without this exclusion the partial-closeout

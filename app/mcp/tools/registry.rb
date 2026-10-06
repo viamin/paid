@@ -9,6 +9,8 @@ module Tools
       "Tools::GetProjectPullRequests",
       "Tools::UpdateProjectSettings",
       "Tools::TriggerAgentRun",
+      "Tools::RequestIssueContinuation",
+      "Tools::ResolveIssueCloseout",
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",

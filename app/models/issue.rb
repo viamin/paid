@@ -108,6 +108,9 @@ class Issue < ApplicationRecord
                                         dependent: :destroy,
                                         inverse_of: :depends_on_issue
   has_many :dependents, through: :reverse_issue_dependencies, source: :issue
+  has_many :continuation_requests, class_name: "IssueContinuationRequest", dependent: :destroy
+  has_one :open_continuation_request, -> { open }, class_name: "IssueContinuationRequest"
+  belongs_to :closeout_resolved_by, class_name: "User", optional: true
 
   validates :github_issue_id, presence: true, uniqueness: { scope: :project_id }
   validates :github_number, presence: true
@@ -685,6 +688,44 @@ class Issue < ApplicationRecord
       AND closed_prs.pr_review_phase IS DISTINCT FROM 'merged'
   SQL
 
+  # Counterpart to AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY for the merged-PR
+  # evidence path: matches an agent_run's pull_request_number to a merged PR
+  # row in the same project through the github_html_url/pull_request_url
+  # repository-qualified join (with the null-URL fallback to the project's
+  # owner/repo URL). Without this correlation, a run whose fork PR #42 is
+  # unmerged would be treated as terminal evidence by an upstream-synced PR
+  # #42 in the same project — same fork/upstream number-collision hazard
+  # that Issue.paid_generated_pull_request_source_issue_ids
+  # (app/models/issue.rb:685) explicitly guards against.
+  AUTO_PICK_MERGED_PR_CORRELATED_SUBQUERY = <<~SQL.squish.freeze
+    SELECT 1 FROM agent_runs merged_evidence_runs
+    INNER JOIN issues merged_prs
+      ON merged_prs.project_id = merged_evidence_runs.project_id
+     AND merged_prs.github_number = merged_evidence_runs.pull_request_number
+    INNER JOIN projects merged_pr_projects
+      ON merged_pr_projects.id = merged_prs.project_id
+     AND (
+       merged_prs.github_html_url = merged_evidence_runs.pull_request_url
+       OR (
+         merged_prs.github_html_url IS NULL
+         AND merged_evidence_runs.pull_request_url = CONCAT(
+           'https://github.com/',
+           merged_pr_projects.owner,
+           '/',
+           merged_pr_projects.repo,
+           '/pull/',
+           merged_prs.github_number
+         )
+       )
+     )
+    WHERE merged_evidence_runs.project_id = issues.project_id
+      AND merged_evidence_runs.issue_id = issues.id
+      AND merged_evidence_runs.goal = 'create_pr'
+      AND merged_evidence_runs.pull_request_number IS NOT NULL
+      AND merged_prs.is_pull_request = TRUE
+      AND merged_prs.pr_review_phase = 'merged'
+  SQL
+
   # GitHub's open state, not Paid's internal workflow state, determines
   # whether an issue can be considered. Callers apply the durable safeguards
   # (active runs, dependencies, labels, and pauses) around this shared scope.
@@ -813,6 +854,7 @@ class Issue < ApplicationRecord
     saved_change_to_needs_input_since? ||
       saved_change_to_manual_review_started_at? ||
       saved_change_to_runner_retry_abandoned_at? ||
+      saved_change_to_closeout_resolved_at? ||
       waiting_issue_github_state_changed? ||
       retry_limited_issue_github_state_changed? ||
       merge_approval_candidate_state_changed?
@@ -1305,6 +1347,36 @@ class Issue < ApplicationRecord
       project_id: project_id,
       issue_number: github_number,
       reason: reason
+    )
+  end
+
+  def closeout_resolved?
+    closeout_resolved_at.present?
+  end
+
+  # Records the operator's attestation that the recorded closeout evidence
+  # (merged partial PR / no-code outcome) completes this issue. The digest
+  # scopes the dismissal to one evidence generation: newer terminal evidence
+  # re-surfaces the partial_closeout inbox entry, and repeated GitHub sync
+  # cannot recreate the suppressed item because sync writes no state here.
+  # Deliberately does NOT write to GitHub — the issue stays open there for a
+  # human to close; Paid only stops surfacing it.
+  # @spec PARTIAL-CLOSEOUT-006
+  def resolve_closeout!(actor:, evidence_digest:)
+    update!(
+      paid_state: "completed",
+      closeout_resolved_at: Time.current,
+      closeout_resolution_digest: evidence_digest,
+      closeout_resolved_by: actor
+    )
+
+    Rails.logger.info(
+      message: "issue.closeout_resolved",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      resolved_by_id: actor&.id
     )
   end
 

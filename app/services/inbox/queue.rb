@@ -11,6 +11,7 @@ module Inbox
     INTENT_CONFORMANCE_KIND = "intent_conformance"
     FEATURE_DECISION_KIND = "feature_decision"
     RETRY_LIMITED_KIND = "retry_limited"
+    PARTIAL_CLOSEOUT_KIND = "partial_closeout"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
@@ -20,7 +21,8 @@ module Inbox
       MANUAL_REVIEW_KIND,
       INTENT_CONFORMANCE_KIND,
       FEATURE_DECISION_KIND,
-      RETRY_LIMITED_KIND
+      RETRY_LIMITED_KIND,
+      PARTIAL_CLOSEOUT_KIND
     ].freeze
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
@@ -91,6 +93,10 @@ module Inbox
         kind == RETRY_LIMITED_KIND
       end
 
+      def partial_closeout?
+        kind == PARTIAL_CLOSEOUT_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -98,7 +104,7 @@ module Inbox
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
-          intent_conformance? || feature_decision? || retry_limited?
+          intent_conformance? || feature_decision? || retry_limited? || partial_closeout?
 
         "#{tasks.size} proposed tasks"
       end
@@ -162,6 +168,7 @@ module Inbox
       entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
       entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
       entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
+      entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
       sort_entries(entries)
     end
 
@@ -531,6 +538,34 @@ module Inbox
         .where.not(runner_retry_abandoned_at: nil)
         .order(runner_retry_abandoned_at: :desc)
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
+    end
+
+    # Derived lane like retry_limited: open issues carrying terminal closeout
+    # evidence (merged partial PR / no-code outcome) that auto-pick excludes
+    # with no explicit operator hold and no work in flight. Admission
+    # authority stays with DefaultCandidateSource.eligible_scope (batched once
+    # per project inside Issues::StalledCloseouts), and each entry's summary
+    # carries the exact reason automatic continuation cannot proceed plus the
+    # recorded outcome; the detail pane adds evidence links, unresolved
+    # prerequisites, and the authorized recovery actions (#4120).
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    def partial_closeout_entries
+      Issues::StalledCloseouts.call(scoped_projects).map do |pair|
+        status = pair.status
+        Entry.new(
+          id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
+          kind: PARTIAL_CLOSEOUT_KIND,
+          project: pair.issue.project,
+          issue: pair.issue,
+          record: pair.issue,
+          waiting_since: status.evidence.terminal_at,
+          questions: [],
+          tasks: status.unresolved_prerequisites,
+          summary_text: "#{status.outcome} #{status.reason}",
+          title_text: nil,
+          action_url: nil
+        )
+      end
     end
 
     def visible_blocking_notifications

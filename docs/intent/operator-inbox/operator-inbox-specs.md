@@ -220,6 +220,29 @@
   `spec/services/agent_runs/issue_runner_retry_cap_spec.rb`,
   `spec/requests/agent_runs_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002H** — When an open issue carries terminal
+  closeout evidence (an authoritatively linked merged PR, or an agent-declared
+  no-code-required outcome) that keeps it out of auto-pick regardless of
+  `paid_state` (`EAGER-QUEUE-011` / `AUTO-PICK-QUEUE-004`), and its project is
+  in the operator's auto-pick-gated scope (`INBOX-FOUNDATION-006`, the same
+  gate every other inbox kind uses), and the issue holds no explicit operator
+  state of its own (not paused, not skip/needs-input labeled, not in
+  `needs_input`/`manual_review`, not retry-abandoned, no work in flight, not
+  already resolved-complete against the current evidence generation), the
+  system SHALL expose it as a `partial_closeout` inbox entry showing the
+  source PR/run links, the recorded completion outcome, unresolved
+  prerequisites, and the exact reason automatic continuation cannot proceed,
+  with authorized recovery actions (request continuation, resolve complete,
+  prerequisite guidance) as specified by the owning segment
+  [`partial-closeout-recovery`](../partial-closeout-recovery/partial-closeout-recovery-specs.md)
+  (`PARTIAL-CLOSEOUT-001`…`PARTIAL-CLOSEOUT-009`, #4120).
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/requests/projects/issue_continuations_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

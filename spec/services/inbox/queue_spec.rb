@@ -531,6 +531,126 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:issue)).to include(parked)
     end
 
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    it "filters to partial_closeout when kind: partial_closeout is requested" do
+      stalled = create_partial_closeout_issue(github_number: 200)
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).to eq([ stalled ])
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    it "returns typed entries exposing the blocking reason and evidence waiting timestamp" do
+      issue = create_partial_closeout_issue(github_number: 201)
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      entry = entries.find { |candidate| candidate.issue == issue }
+      expect(entry).to have_attributes(
+        id: "#{described_class::PARTIAL_CLOSEOUT_KIND}:#{issue.id}",
+        kind: described_class::PARTIAL_CLOSEOUT_KIND,
+        project: project,
+        issue: issue
+      )
+      expect(entry.summary).to include("#14")
+      expect(entry.waiting_since).to be_present
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    it "surfaces no-code terminal evidence under the same lane" do
+      issue = create(:issue, project: project, github_number: 202, paid_state: "completed", no_code_required_at: 2.hours.ago)
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).to include(issue)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 — operator holds and other lanes are not stalls
+    it "excludes paused, skip-labeled, needs-input, manual-review, and retry-abandoned issues" do
+      paused = create_partial_closeout_issue(github_number: 203)
+      paused.update_columns(paused: true)
+
+      skip_label = project.effective_auto_pick_skip_labels.first
+      skip_labeled = create_partial_closeout_issue(github_number: 204)
+      skip_labeled.update!(labels: [ skip_label ])
+
+      needs_input = create_partial_closeout_issue(github_number: 205, paid_state: "needs_input")
+      manual_review = create_partial_closeout_issue(github_number: 206, paid_state: "manual_review")
+      retry_limited = create_partial_closeout_issue(github_number: 207, runner_retry_abandoned_at: 1.hour.ago,
+        runner_retry_abandon_reason: "retry cap")
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).not_to include(paused, skip_labeled, needs_input, manual_review, retry_limited)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 — an epic that re-armed under AUTO-PICK-QUEUE-010 is not stalled
+    it "excludes a re-auditable epic whose prerequisite work resolved after its terminal audit" do
+      epic = create(:issue, project: project, github_number: 208, labels: [ "epic" ], no_code_required_at: 3.days.ago)
+      child = create(:issue, project: project, github_number: 209, parent_issue_id: epic.id,
+        parent_issue_linked_at: 1.day.ago, github_state: "closed", closed_at: 1.day.ago)
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).not_to include(epic)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 — an open continuation request means work is in flight
+    it "clears the entry while a continuation request is open and re-arms after the run finished without new evidence" do
+      issue = create_partial_closeout_issue(github_number: 210)
+      create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+
+      expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)).to be_empty
+
+      IssueContinuationRequest.open_for_issue(issue).update!(status: "consumed", closed_at: Time.current)
+
+      expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND).map(&:issue)).to eq([ issue ])
+    end
+
+    # @spec PARTIAL-CLOSEOUT-006 — resolution suppresses the item; only new evidence recreates it
+    it "keeps a resolved issue out of the lane until new terminal evidence arrives" do
+      issue = create_partial_closeout_issue(github_number: 211)
+      Issues::ResolveCloseout.call(issue: issue, actor: user, reason: "Merged PR #14 covers it.")
+
+      expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)).to be_empty
+
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 15,
+        github_state: "closed",
+        pr_review_phase: "merged",
+        parent_issue_id: issue.id,
+        created_at: Time.current
+      )
+
+      expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND).map(&:issue)).to eq([ issue ])
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 — closed issues and non-gated projects stay out
+    it "excludes closed issues, pull requests, and issues on non-gated projects" do
+      stalled = create_partial_closeout_issue(github_number: 212)
+      create_partial_closeout_issue(github_number: 213, github_state: "closed", closed_at: Time.current)
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "echo")
+      create_partial_closeout_issue(github_number: 214, project: other_project)
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).to eq([ stalled ])
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    it "includes partial_closeout entries in the unscoped call alongside the other kinds" do
+      stalled = create_partial_closeout_issue(github_number: 215)
+
+      entries = described_class.call(user: user)
+
+      expect(entries.map(&:kind)).to include(described_class::PARTIAL_CLOSEOUT_KIND)
+      expect(entries.map(&:issue)).to include(stalled)
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
@@ -920,6 +1040,24 @@ RSpec.describe Inbox::Queue do
       runner_retry_abandon_reason: reason,
       **attrs
     )
+  end
+
+  # An open issue with a merged partial PR (no closing reference) linked via
+  # parent_issue_id — the canonical partial-closeout stall from #4120.
+  def create_partial_closeout_issue(github_number:, merged_pr_number: 14, **attrs)
+    issue_project = attrs.delete(:project) || project
+    issue = create(:issue, project: issue_project, github_number: github_number, paid_state: "in_progress", **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: issue_project,
+      github_number: merged_pr_number,
+      github_state: "closed",
+      pr_review_phase: "merged",
+      parent_issue_id: issue.id,
+      created_at: 2.days.ago
+    )
+    issue
   end
 
   # A feature intent exercising every deterministic readiness blocker (open

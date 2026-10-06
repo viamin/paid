@@ -27,7 +27,8 @@
         [ "Manual Review", Inbox::Queue::MANUAL_REVIEW_KIND ],
         [ "Intent Conformance", Inbox::Queue::INTENT_CONFORMANCE_KIND ],
         [ "Feature Decision", Inbox::Queue::FEATURE_DECISION_KIND ],
-        [ "Retry-limited", Inbox::Queue::RETRY_LIMITED_KIND ]
+        [ "Retry-limited", Inbox::Queue::RETRY_LIMITED_KIND ],
+        [ "Partial closeouts", Inbox::Queue::PARTIAL_CLOSEOUT_KIND ]
       ].each do |label, kind| %>
         <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
         <%= link_to label,

@@ -112,6 +112,32 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "request_issue_continuation",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, issue_id: issue.id, reason: "Continue the remaining work", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+          project_record.issues.find(issue.id)
+        }
+      },
+      {
+        tool_name: "resolve_issue_closeout",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, issue_id: issue.id, reason: "The merged work completes this issue", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+          project_record.issues.find(issue.id)
+        }
+      },
+      {
         tool_name: "get_agent_run",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { agent_run_id: agent_run.id } },

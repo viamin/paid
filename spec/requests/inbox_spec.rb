@@ -116,6 +116,25 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
   end
 
+  # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007
+  it "directs operators to make the stalled issue depend on its follow-up prerequisite" do
+    issue = create(:issue, project: project, github_number: 500, paid_state: "in_progress")
+    prerequisite = create(:issue, project: project, github_number: 501, github_state: "open")
+    create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)
+    create(:issue, :pull_request, project: project, github_number: 502, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
+      project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Depends on #B")
+    expect(response.body).not_to include("Depends on #500")
+  end
+
   it "selects the first entry on the collection route" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 

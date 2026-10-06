@@ -30,6 +30,7 @@ module AgentRuns
     # longer eligible; false when the run should proceed normally.
     def call # @spec EAGER-QUEUE-005
       return cancel_feature_held_run if feature_held?
+      return recheck_continuation if continuation_run?
       return false unless recheck_applicable?
       return false if issue_still_eligible?
 
@@ -39,6 +40,10 @@ module AgentRuns
     private
 
     attr_reader :agent_run
+
+    def continuation_run?
+      agent_run.continuation_request_id.present? && agent_run.issue_id.present?
+    end
 
     def recheck_applicable? # @spec EAGER-QUEUE-006
       agent_run.auto_pick? &&
@@ -63,6 +68,40 @@ module AgentRuns
           excluding_run_id: agent_run.id
         )
     end
+
+    # @spec PARTIAL-CLOSEOUT-005
+    def recheck_continuation
+      request = agent_run.continuation_request
+      return cancel_continuation("Continuation authorization is no longer open.") unless request&.open?
+      return cancel_continuation("Continuation evidence generation changed.") unless Issues::CloseoutEvidence.call(issue).digest == request.evidence_digest
+
+      # Manual-trigger runs bypass the scheduler's project-pause filters, so
+      # explicit operator pauses are honored here instead — a continuation
+      # never silently bypasses them (#4120).
+      if issue.paused? || agent_run.project.paused? || agent_run.project.quality_paused_at.present?
+        return cancel_continuation("Continuation superseded: an explicit operator pause is active.")
+      end
+
+      return cancel_continuation("Continuation is no longer eligible at dequeue.") unless continuation_eligible?(request)
+
+      false
+    end
+
+    def continuation_eligible?(request)
+      Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_for_dequeue?(
+        agent_run.project, agent_run.issue_id, excluding_run_id: agent_run.id,
+        continuation_authorized_issue_ids: [ request.issue_id ]
+      )
+    end
+
+    def cancel_continuation(reason)
+      request = agent_run.continuation_request
+      cancelled = cancel_run(reason:)
+      request&.supersede!(reason:) if cancelled
+      cancelled
+    end
+
+    def issue = agent_run.issue
 
     # Cancel only unclaimed queued runs — a claimed/running run is
     # mid-flight and owned by the normal lifecycle. Re-check under the row
