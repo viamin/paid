@@ -169,6 +169,17 @@ RSpec.describe Inbox::Count do
       expect(after_activate).to eq(1)
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
+    it "refreshes the cached count when a pending-review Change Intent Record is discarded" do
+      draft = create(:change_intent, :draft, project: project)
+      first = described_class.call(user: user)
+
+      ChangeIntents::DiscardDraft.call(change_intent: draft)
+
+      expect(first).to eq(1)
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
     it "excludes closed issues and issues on non-gated projects" do
       create(:issue, :needs_input, project: project)
       create(:issue, :closed, :needs_input, project: project)

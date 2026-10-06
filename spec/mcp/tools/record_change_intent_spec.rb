@@ -50,6 +50,24 @@ RSpec.describe Tools::RecordChangeIntent do
 
       expect(project.change_intents.find(result[:id]).issue).to eq(issue)
     end
+
+    it "revises the pending draft opened from an Inbox entry" do
+      change_intent = create(:change_intent, :draft, project: project)
+      session.update!(inbox_item_metadata: { "record_id" => change_intent.id })
+
+      result = described_class.new(user: owner, session:).call(
+        title: "Revised rate limiting",
+        intent: "Clarify the intended smoothing behavior"
+      )
+
+      expect(result).to include(id: change_intent.id, status: "draft")
+      expect(change_intent.reload).to have_attributes(
+        title: "Revised rate limiting",
+        intent: "Clarify the intended smoothing behavior",
+        chat_session: session
+      )
+      expect(project.change_intents.count).to eq(1)
+    end
   end
 
   describe "#resolve_confirmation" do

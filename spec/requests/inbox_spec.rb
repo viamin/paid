@@ -118,9 +118,8 @@ RSpec.describe "Inbox" do
 
   # @spec CHANGE-INTENT-INBOX-001
   it "renders change_intent_draft entries with approve, request changes, discard, and chat actions" do
-    change_intent_issue = create(:issue, project: project, github_number: 77, title: "Source issue")
     change_intent = create(
-      :change_intent, :draft, project: project, issue: change_intent_issue,
+      :change_intent, :draft, :without_context_links, project: project,
       title: "Sliding window over token bucket",
       intent: "Smooth per-user limiting.",
       behavior: nil,

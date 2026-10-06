@@ -19,6 +19,15 @@ class ChangeIntent < ApplicationRecord
     requested_changes_at
     requested_changes_reason
   ].freeze
+  REVISION_FIELDS = %w[
+    title
+    intent
+    behavior
+    constraints
+    decisions_made
+    chat_session
+    chat_session_id
+  ].freeze
 
   belongs_to :project
   belongs_to :chat_session, optional: true
@@ -109,6 +118,24 @@ class ChangeIntent < ApplicationRecord
     end
   end
 
+  # @spec CHANGE-INTENT-INBOX-001
+  # A new proposal supersedes the feedback on a pending draft, so return it to
+  # the ordinary draft lane and clear the review metadata that it addressed.
+  def revise!(attributes)
+    with_lock do
+      reload
+      unless pending_review?
+        raise InvalidTransitionError, "cannot revise from #{status}"
+      end
+
+      update!(attributes.stringify_keys.slice(*REVISION_FIELDS).merge(
+        status: "draft",
+        requested_changes_at: nil,
+        requested_changes_reason: nil
+      ))
+    end
+  end
+
   def pending_review?
     status.in?(PENDING_REVIEW_STATUSES)
   end
@@ -147,7 +174,7 @@ class ChangeIntent < ApplicationRecord
 
   def enforce_immutability
     immutable_changes = changed - MUTABLE_FIELDS
-    return if immutable_changes.empty?
+    return if immutable_changes.empty? || revising_pending_record?(immutable_changes)
 
     immutable_changes.each do |field|
       errors.add(field, "is immutable after creation")
@@ -155,11 +182,16 @@ class ChangeIntent < ApplicationRecord
   end
 
   def inbox_pending_review_state_changed?
+    return true if destroyed? && status.in?(PENDING_REVIEW_STATUSES)
     return true if previously_new_record? && status.in?(PENDING_REVIEW_STATUSES)
 
     saved_change_to_status? && (
       saved_change_to_status.any? { |value| PENDING_REVIEW_STATUSES.include?(value) }
     )
+  end
+
+  def revising_pending_record?(changes)
+    pending_review? && changes.all? { |field| REVISION_FIELDS.include?(field) }
   end
 
   def bump_inbox_cache_version

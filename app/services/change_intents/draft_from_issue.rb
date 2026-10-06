@@ -7,10 +7,10 @@ module ChangeIntents
   # enhancement prompt (ZFC); this service is the mechanical persistence step.
   #
   # A draft is created only when the payload carries a usable title and intent,
-  # and at most one draft is kept per issue so re-evaluation rounds do not
-  # accumulate duplicates. Drafts remain `draft` until a human approves them
-  # through the review path, so they never enter the knowledge pipeline on
-  # their own.
+  # and at most one pending-review record is kept per issue so re-evaluation
+  # rounds revise the same proposal rather than accumulating duplicates.
+  # Drafts remain `draft` until a human approves them through the review path,
+  # so they never enter the knowledge pipeline on their own.
   class DraftFromIssue
     def self.call(...)
       new(...).call
@@ -26,7 +26,7 @@ module ChangeIntents
     def call
       return unless cir_worthy?
 
-      existing_draft || create_draft
+      existing_draft.then { |draft| revise_draft(draft) } || create_draft
     end
 
     private
@@ -40,20 +40,30 @@ module ChangeIntents
     end
 
     def existing_draft
-      issue&.change_intents&.draft&.first
+      issue&.change_intents&.pending_review&.first
+    end
+
+    def revise_draft(change_intent)
+      ChangeIntents::ReviseDraft.call(change_intent:, attributes: draft_attributes)
     end
 
     def create_draft
       ChangeIntent.create!(
         project: project,
         issue: issue,
+        **draft_attributes,
+        status: "draft"
+      )
+    end
+
+    def draft_attributes
+      {
         title: title,
         intent: intent,
         behavior: clean(payload[:behavior]),
         constraints: clean(payload[:constraints]),
-        decisions_made: clean(payload[:decisions_made]),
-        status: "draft"
-      )
+        decisions_made: clean(payload[:decisions_made])
+      }
     end
 
     def title

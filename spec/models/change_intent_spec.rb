@@ -87,6 +87,28 @@ RSpec.describe ChangeIntent do
 
       expect(record.save).to be true
     end
+
+    it "allows revising content while the record is pending review" do
+      record = create(:change_intent, :draft)
+
+      record.revise!({ title: "Revised title", intent: "Revised intent" })
+
+      expect(record.reload).to have_attributes(title: "Revised title", intent: "Revised intent")
+    end
+
+    it "clears requested-changes feedback when a revision returns the draft for review" do
+      record = create(:change_intent, status: "requested_changes",
+                       requested_changes_at: 1.hour.ago,
+                       requested_changes_reason: "Clarify the constraint.")
+
+      record.revise!({ title: "Clarified title", intent: "Clarified intent" })
+
+      expect(record.reload).to have_attributes(
+        status: "draft",
+        requested_changes_at: nil,
+        requested_changes_reason: nil
+      )
+    end
   end
 
   describe "scopes" do
@@ -239,6 +261,15 @@ RSpec.describe ChangeIntent do
         .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
 
       record.activate!
+    end
+
+    it "bumps the inbox cache version when a pending-review record is destroyed" do
+      record = create(:change_intent, :draft, project: project)
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      record.destroy!
     end
 
     it "does not bump the cache when an unrelated status changes" do

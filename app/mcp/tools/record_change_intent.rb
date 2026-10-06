@@ -53,17 +53,9 @@ module Tools
 
     def perform(title:, intent:, behavior: nil, constraints: nil, decisions_made: nil)
       # @spec CHANGE-INTENT-001
-      change_intent = ChangeIntent.create!(
-        project: project_for_session!,
-        chat_session: session,
-        issue: issue_for_session,
-        title: title.to_s.truncate(500),
-        intent: intent.to_s,
-        behavior: behavior.to_s.presence,
-        constraints: constraints.to_s.presence,
-        decisions_made: decisions_made.to_s.presence,
-        status: "draft"
-      )
+      attributes = draft_attributes(title:, intent:, behavior:, constraints:, decisions_made:)
+      change_intent = existing_draft
+      change_intent = change_intent ? revise_draft(change_intent, attributes) : create_draft(attributes)
 
       serialize(change_intent)
     end
@@ -91,6 +83,49 @@ module Tools
     end
 
     private
+
+    def create_draft(attributes)
+      ChangeIntent.create!(
+        project: project_for_session!,
+        issue: issue_for_session,
+        **attributes,
+        status: "draft"
+      )
+    end
+
+    def existing_draft
+      change_intent_from_inbox || issue_draft || session_draft
+    end
+
+    def revise_draft(change_intent, attributes)
+      ChangeIntents::ReviseDraft.call(
+        change_intent:,
+        attributes:
+      )
+    end
+
+    def change_intent_from_inbox
+      project_for_session!.change_intents.pending_review.find_by(id: session.inbox_item_metadata["record_id"])
+    end
+
+    def issue_draft
+      issue_for_session&.change_intents&.pending_review&.first
+    end
+
+    def session_draft
+      session.change_intents.pending_review.first
+    end
+
+    def draft_attributes(title:, intent:, behavior:, constraints:, decisions_made:)
+      {
+        chat_session: session,
+        title: title.to_s.truncate(500),
+        intent: intent.to_s,
+        behavior: behavior.to_s.presence,
+        constraints: constraints.to_s.presence,
+        decisions_made: decisions_made.to_s.presence
+      }
+    end
 
     def project_for_session!
       session.project || raise(ArgumentError, "record_change_intent requires a chat session with a current project")
