@@ -155,7 +155,7 @@
   persistent label and multi-line reason input above the submit button even
   in a narrow desktop pane.
   *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
-  *Tests:* `spec/system/dashboard_inbox_spec.rb`,
+  *Test:* `spec/system/dashboard_inbox_spec.rb`,
   `spec/system/partial_closeout_layout_spec.rb`.
   *Verification:* Chromium layout checks at 320, 375, 640, 768, 1024, and
   1280px viewport widths in a 300px-wide continuation section, plus a

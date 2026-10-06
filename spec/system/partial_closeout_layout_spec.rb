@@ -24,25 +24,28 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
     Warden.test_reset!
   end
 
-  it "keeps the reason and action inside the inbox detail pane on mobile and desktop" do # @spec PARTIAL-CLOSEOUT-010
+  it "keeps the reason and action inside a 300px-wide continuation section at every supported viewport width" do # @spec PARTIAL-CLOSEOUT-010
     issue = create(:issue, project:, github_number: 201, paid_state: "in_progress")
     create(:issue, :pull_request, project:, github_number: 202, github_state: "closed",
       pr_review_phase: "merged", parent_issue_id: issue.id)
 
-    [ 375, 1024 ].each do |width|
+    [ 320, 375, 640, 768, 1024, 1280 ].each do |width|
       page.current_window.resize_to(width, 800)
       visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
         kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
       expect(page).to have_field("Reason for continuation", type: :textarea)
 
-      expect(continuation_form_geometry).to include("direction" => "column", "contained" => true)
+      expect(continuation_form_geometry(section_width: 300)).to include(
+        "direction" => "column", "contained" => true
+      )
     end
   end
 
-  def continuation_form_geometry
+  def continuation_form_geometry(section_width:)
     page.evaluate_script(<<~JS)
       (() => {
         const form = document.querySelector('form[action*="request_continuation"]');
+        form.style.width = '#{section_width}px';
         const reason = form.querySelector('textarea[name="reason"]');
         const submit = form.querySelector('input[type="submit"]');
         const bounds = form.getBoundingClientRect();
