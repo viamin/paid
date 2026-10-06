@@ -3,8 +3,22 @@
 class ChangeIntent < ApplicationRecord
   class InvalidTransitionError < StandardError; end
 
-  STATUSES = %w[draft active superseded reverted].freeze
-  MUTABLE_FIELDS = %w[status superseded_by_id updated_at].freeze
+  # @spec CHANGE-INTENT-INBOX-001
+  # Lifecycle states that keep a Change Intent Record actionable in the Inbox:
+  # `draft` is a fresh capture awaiting its first review, `requested_changes`
+  # is a draft that already received feedback and is waiting for the draft's
+  # editor (chat session, MCP tool, or follow-up issue enhancement) to revise
+  # before the next approve pass.
+  PENDING_REVIEW_STATUSES = %w[draft requested_changes].freeze
+
+  STATUSES = (PENDING_REVIEW_STATUSES + %w[active superseded reverted]).freeze
+  MUTABLE_FIELDS = %w[
+    status
+    superseded_by_id
+    updated_at
+    requested_changes_at
+    requested_changes_reason
+  ].freeze
 
   belongs_to :project
   belongs_to :chat_session, optional: true
@@ -24,17 +38,29 @@ class ChangeIntent < ApplicationRecord
   validate :superseded_by_belongs_to_same_project, if: -> { superseded_by.present? }
   validate :superseded_by_is_not_self
 
+  # @spec CHANGE-INTENT-INBOX-001
+  # Status changes into or out of the Inbox "pending review" lane must
+  # invalidate the cached nav badge so the count tracks the new state.
+  # Also bumps on initial create so a freshly recorded draft CIR (chat-driven
+  # or issue-enhancement-driven) appears in the cached count without
+  # waiting for the 90-second TTL to roll over.
+  after_commit :bump_inbox_cache_version, if: :inbox_pending_review_state_changed?
+
   scope :active, -> { where(status: "active") }
   scope :draft, -> { where(status: "draft") }
+  scope :requested_changes, -> { where(status: "requested_changes") }
+  scope :pending_review, -> { where(status: PENDING_REVIEW_STATUSES) }
   scope :for_project, ->(project) { where(project: project) }
   scope :by_status, ->(status) { where(status: status) }
 
   def activate!
     with_lock do
       reload
-      raise InvalidTransitionError, "cannot activate from #{status}" unless status == "draft"
+      unless status.in?(PENDING_REVIEW_STATUSES)
+        raise InvalidTransitionError, "cannot activate from #{status}"
+      end
 
-      update!(status: "active")
+      update!(status: "active", requested_changes_at: nil, requested_changes_reason: nil)
     end
   end
 
@@ -60,6 +86,35 @@ class ChangeIntent < ApplicationRecord
 
       update!(status: "reverted")
     end
+  end
+
+  # @spec CHANGE-INTENT-INBOX-001
+  # Transitions a draft into "requested changes", stamping the review
+  # timestamp and operator reason so the inbox entry keeps explaining what
+  # the operator wants changed. Re-entering the lane from a prior
+  # `requested_changes` round overwrites the prior review metadata, matching
+  # the contract that the latest review reason is the one the inbox shows.
+  def request_changes!(reason:)
+    with_lock do
+      reload
+      unless status.in?(PENDING_REVIEW_STATUSES)
+        raise InvalidTransitionError, "cannot request changes from #{status}"
+      end
+
+      update!(
+        status: "requested_changes",
+        requested_changes_at: Time.current,
+        requested_changes_reason: reason.to_s.strip.presence
+      )
+    end
+  end
+
+  def pending_review?
+    status.in?(PENDING_REVIEW_STATUSES)
+  end
+
+  def requested_changes?
+    status == "requested_changes"
   end
 
   private
@@ -97,5 +152,17 @@ class ChangeIntent < ApplicationRecord
     immutable_changes.each do |field|
       errors.add(field, "is immutable after creation")
     end
+  end
+
+  def inbox_pending_review_state_changed?
+    return true if previously_new_record? && status.in?(PENDING_REVIEW_STATUSES)
+
+    saved_change_to_status? && (
+      saved_change_to_status.any? { |value| PENDING_REVIEW_STATUSES.include?(value) }
+    )
+  end
+
+  def bump_inbox_cache_version
+    Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 end

@@ -20,6 +20,10 @@ The repository now ships the core model and knowledge-path implementation:
 - activation that indexes the approved record into the knowledge base
 - context-bundle retrieval that shows recent Change Intent Records after
   stronger decision artifacts
+- the `change_intent_draft` Inbox lane (#4136) so draft and
+  `requested_changes` records are surfaced for human approval, change
+  requests, or follow-up chat, with the nav badge cache invalidating on
+  every transition into or out of the lane
 
 This segment replaces the stale RDR statement that the capability is entirely
 unimplemented.
@@ -42,6 +46,36 @@ the flow drafts an issue-linked `ChangeIntent` (in `draft` status) via
 comment with a review link, and never indexes it until a human approves it
 through the `Projects::ChangeIntentsController` review path.
 
+## Inbox lane
+
+Draft CIRs now surface in the Operator Inbox as a `change_intent_draft` lane
+(#4136) so the operator has a single, discoverable surface for review. The
+lane derives directly from `ChangeIntent.pending_review`, reuses the existing
+`ChangeIntentPolicy::Scope` for visibility (rather than the auto-pick gate
+other issue lanes use), and offers three actions from the detail pane:
+
+- **Approve** — calls `Projects::ChangeIntentsController#approve`, which
+  invokes `ChangeIntents::Activate` and indexes the record into the knowledge
+  pipeline. The entry clears from the queue on the next render.
+- **Request changes** — calls `#request_changes`, which stamps the operator
+  reason and timestamp via `ChangeIntents::RequestChanges` and transitions the
+  draft into `requested_changes`. The entry stays in the Inbox with the
+  reason visible until a follow-up chat or MCP revision overwrites the draft
+  and the operator re-approves.
+- **Chat about this** — POSTs to the existing `inbox_interactive_chat_path`,
+  opening the canonical interactive chat session for the entry so the
+  operator can discuss the draft and revise it through conversation. Edits
+  update the draft in place (the model only allows status, supersedes, and
+  the requested_changes metadata to mutate; title/intent/etc. are written by
+  re-recording the change intent).
+
+Approve, request-changes, and discard actions all honour a `return_to`
+parameter scoped to `/inbox…` and fall back to the pre-inbox project page
+otherwise, so the bell/notification surface is never invoked from this lane.
+The nav badge cache (`Inbox::Count`) is invalidated on every transition into
+or out of the lane via `ChangeIntent`'s
+`after_commit :bump_inbox_cache_version` callback.
+
 ## Active Gap
 
 The remaining work is around broader capture surfaces and heuristics, not the
@@ -60,3 +94,6 @@ core record mechanics:
   non-obvious constraints and rejected alternatives.
 - **Not an unreviewed write path.** Drafts remain human-confirmed before they
   become active knowledge.
+- **Not a notification surface.** Draft CIRs appear in the Inbox (which is
+  the home for actionable items), never in the bell/notification surface,
+  which stays reserved for blocking notifications and account events.

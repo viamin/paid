@@ -119,6 +119,56 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(2)
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
+    it "counts pending-review Change Intent Records, including on projects with auto-pick off" do
+      create(:change_intent, :draft, project: project)
+      create(:change_intent, :draft, status: "requested_changes", project: project,
+        requested_changes_at: 1.hour.ago, requested_changes_reason: "Reword.")
+      create(:change_intent, status: "active", project: project)
+      planning_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "planning")
+      create(:change_intent, :draft, project: planning_project)
+
+      expect(described_class.call(user: user)).to eq(3)
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "excludes pending-review Change Intent Records from accounts the user cannot see" do
+      create(:change_intent, :draft, project: project)
+      other_user = create(:user, account: create(:account))
+      hidden_project = create(
+        :project,
+        account: other_user.account,
+        created_by: other_user,
+        auto_pick_enabled: false,
+        active: true,
+        owner: "acme",
+        repo: "private"
+      )
+      create(:change_intent, :draft, project: hidden_project)
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "bumps the cache automatically when a draft is created and when it transitions into requested_changes or active" do
+      first = described_class.call(user: user)
+
+      create(:change_intent, :draft, project: project)
+      after_create = described_class.call(user: user)
+
+      draft = create(:change_intent, :draft, project: project)
+      draft.update!(status: "requested_changes", requested_changes_at: Time.current, requested_changes_reason: "Reword.")
+      after_request = described_class.call(user: user)
+
+      draft.activate!
+      after_activate = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_create).to eq(1)
+      expect(after_request).to eq(2)
+      expect(after_activate).to eq(1)
+    end
+
     it "excludes closed issues and issues on non-gated projects" do
       create(:issue, :needs_input, project: project)
       create(:issue, :closed, :needs_input, project: project)

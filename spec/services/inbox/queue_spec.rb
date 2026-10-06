@@ -531,6 +531,96 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:issue)).to include(parked)
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
+    it "returns change_intent_draft entries for draft and requested_changes Change Intents" do
+      draft = create(:change_intent, :draft, project: project, title: "Sliding window over token bucket")
+      changes = create(:change_intent, status: "requested_changes", project: project,
+        title: "Prefer Redis-only rate limiting",
+        requested_changes_at: 1.hour.ago,
+        requested_changes_reason: "Mention the auth middleware layout.")
+      create(:change_intent, status: "active", project: project, title: "Already active")
+
+      entries = described_class.call(user: user, kind: described_class::CHANGE_INTENT_DRAFT_KIND)
+
+      expect(entries.map(&:record)).to contain_exactly(draft, changes)
+      expect(entries.find { |entry| entry.record == draft }).to have_attributes(
+        kind: described_class::CHANGE_INTENT_DRAFT_KIND,
+        project: project,
+        title: "Sliding window over token bucket"
+      )
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "uses requested_changes_at for waiting_since when the draft was reviewed" do
+      freeze_time = 3.days.ago
+      changes = travel_to(2.days.ago) do
+        create(:change_intent, :draft, project: project, title: "First review")
+      end
+      changes.update!(status: "requested_changes", requested_changes_at: freeze_time,
+        requested_changes_reason: "Tighten the constraints.")
+
+      entry = described_class.call(user: user, kind: described_class::CHANGE_INTENT_DRAFT_KIND).sole
+
+      expect(entry.waiting_since).to be_within(1.second).of(freeze_time)
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "includes change_intent_draft entries in the unscoped call alongside the other kinds" do
+      draft = create(:change_intent, :draft, project: project, title: "Sliding window over token bucket")
+
+      entries = described_class.call(user: user)
+
+      expect(entries.map(&:kind)).to include(described_class::CHANGE_INTENT_DRAFT_KIND)
+      expect(entries.map(&:record)).to include(draft)
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "excludes active, superseded, and reverted Change Intent Records" do
+      create(:change_intent, status: "active", project: project, title: "Already active")
+      superseded_source = create(:change_intent, status: "active", project: project, title: "Superseded source")
+      superseded_source.supersede!(create(:change_intent, project: project, title: "Replacement"))
+      reverted = create(:change_intent, status: "active", project: project, title: "Reverted later")
+      reverted.revert!
+
+      entries = described_class.call(user: user, kind: described_class::CHANGE_INTENT_DRAFT_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "hides change_intent_draft entries from projects the user cannot see" do
+      visible = create(:change_intent, :draft, project: project, title: "Visible draft")
+      other_user = create(:user, account: create(:account))
+      hidden_project = create(
+        :project,
+        account: other_user.account,
+        created_by: other_user,
+        auto_pick_enabled: false,
+        active: true,
+        owner: "acme",
+        repo: "private"
+      )
+      create(:change_intent, :draft, project: hidden_project, title: "Hidden draft")
+
+      entries = described_class.call(user: user, kind: described_class::CHANGE_INTENT_DRAFT_KIND)
+
+      expect(entries.map(&:record)).to contain_exactly(visible)
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "narrows change_intent_draft entries to the scoped project" do
+      scoped = create(:change_intent, :draft, project: project, title: "Scoped draft")
+      create(
+        :change_intent, :draft,
+        project: create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "delta"),
+        title: "Other draft"
+      )
+
+      entries = described_class.call(user: user, project: project, kind: described_class::CHANGE_INTENT_DRAFT_KIND)
+
+      expect(entries.map(&:record)).to eq([ scoped ])
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)

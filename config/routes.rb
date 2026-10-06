@@ -318,6 +318,7 @@ Rails.application.routes.draw do
       member do
         post :approve
         post :discard
+        post :request_changes
       end
     end
     resources :intent_conformance_decisions, only: [ :create ],

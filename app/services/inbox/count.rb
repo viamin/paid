@@ -32,7 +32,7 @@ module Inbox
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
-        retry_limited_count
+        retry_limited_count + change_intent_draft_count
     end
 
     def needs_input_count
@@ -153,6 +153,18 @@ module Inbox
       Issue.where(project_id: project_ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .count
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    # Change Intent Records are scoped through `ChangeIntentPolicy::Scope`
+    # (project membership visibility) rather than the auto-pick-gated list
+    # the issue lanes use. CIRs are project-level knowledge artifacts an
+    # operator with `:show?` should always see — the same divergence
+    # `feature_decision_count` records for FeatureIntent lane entries
+    # (FEATURE-APPROVAL-013). Visibility stays consistent with the lane's
+    # full queue entries.
+    def change_intent_draft_count
+      ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review.count
     end
 
     def gated_project_ids

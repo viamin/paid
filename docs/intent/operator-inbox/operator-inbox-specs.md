@@ -425,3 +425,38 @@
   *Test:* `spec/requests/projects/clarifying_questions_spec.rb`,
   `spec/services/clarifying_questions/submit_answers_spec.rb`,
   `spec/services/clarifying_questions/answer_pairs_spec.rb`.
+
+- [x] **OPERATOR-INBOX-014** — When a `ChangeIntent` record is in `draft` or
+  `requested_changes` status and the operator has visibility on its project,
+  the system SHALL surface it as a `change_intent_draft` Inbox entry, sharing
+  the same master-detail shell every other lane uses. The Inbox nav filter
+  (`KINDS` in `Inbox::Queue`) and `valid_inbox_kind` SHALL accept
+  `change_intent_draft`, the empty-state copy SHALL name the new lane, and the
+  detail pane SHALL render the CIR's title, intent, behavior, constraints, and
+  rejected alternatives alongside three actions: **Approve** (POST to
+  `approve_project_change_intent_path`, which activates the record and indexes
+  it into the knowledge pipeline via `ChangeIntents::Activate`),
+  **Request changes** (POST to `request_changes_project_change_intent_path`
+  with a reason — backstopped by `ChangeIntents::RequestChanges`, transitions
+  to that state, stamps the reason and timestamp on the record, and keeps
+  the entry actionable until a follow-up chat or MCP revision overwrites the
+  draft and the operator re-approves), and **Chat about this** (POST to
+  `inbox_interactive_chat_path`, opening the canonical interactive chat
+  session via `Inbox::OpenInteractiveChat` so the operator can revise the
+  draft conversationally). Approve, request-changes, and discard actions
+  SHALL honour a `return_to` parameter scoped to `/inbox…` and fall back to
+  the pre-inbox project page otherwise, keeping the bell/notification
+  surface untouched. `Inbox::Count`'s cached badge SHALL invalidate on
+  transitions into and out of the lane via the model's
+  `after_commit :bump_inbox_cache_version` callback, the same pattern
+  `OPERATOR-INBOX-002D` / `002E` already follow for `manual_review` and
+  `retry_limited`. The full contract lives at
+  **CHANGE-INTENT-INBOX-001** in
+  `docs/intent/change-intent-records/change-intent-records-specs.md`; this
+  spec cross-references it from the Inbox lane register so the lane is
+  discoverable alongside the other actionable surfaces.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/views/dashboard/_inbox_detail_change_intent_draft.html.erb`,
+  `app/views/inbox/index.html.erb`, `app/controllers/projects/change_intents_controller.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/count_spec.rb`, `spec/requests/inbox_spec.rb`.

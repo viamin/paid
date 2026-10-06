@@ -18,6 +18,28 @@ RSpec.describe "Projects::ChangeIntents" do
 
   before { sign_in owner }
 
+  describe "inbox-driven returns" do
+    let(:inbox_return) { "/inbox?kind=change_intent_draft&project_id=#{project.id}" }
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "redirects to the inbox when the approve action is called from the Inbox" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent, return_to: inbox_return)
+
+      expect(response).to redirect_to(inbox_return)
+      expect(change_intent.reload.status).to eq("active")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "redirects to the inbox when the discard action is called from the Inbox" do
+      post discard_project_change_intent_path(project, change_intent, return_to: inbox_return)
+
+      expect(response).to redirect_to(inbox_return)
+      expect(ChangeIntent.where(id: change_intent.id)).to be_empty
+    end
+  end
+
   describe "GET /projects/:project_id/change_intents/:id" do
     it "renders the draft with its content and approve/discard path" do
       get project_change_intent_path(project, change_intent)
@@ -89,6 +111,63 @@ RSpec.describe "Projects::ChangeIntents" do
 
       expect(response).to redirect_to(root_path)
       expect(change_intent.reload.status).to eq("draft")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "forbids a viewer from requesting changes" do
+      viewer = create(:user, account: account)
+      viewer.add_role(:viewer, account)
+      sign_in viewer
+
+      post request_changes_project_change_intent_path(project, change_intent),
+        params: { reason: "Reword the title." }
+
+      expect(response).to redirect_to(root_path)
+      expect(change_intent.reload.status).to eq("draft")
+    end
+  end
+
+  # @spec CHANGE-INTENT-INBOX-001
+  describe "POST /projects/:project_id/change_intents/:id/request_changes" do
+    let(:inbox_return) { "/inbox?kind=change_intent_draft&project_id=#{project.id}" }
+
+    it "stamps requested_changes_at and reason, then redirects back to the Inbox" do
+      post request_changes_project_change_intent_path(project, change_intent, return_to: inbox_return),
+        params: { reason: "Reword the title." }
+
+      expect(response).to redirect_to(inbox_return)
+      expect(change_intent.reload).to have_attributes(
+        status: "requested_changes",
+        requested_changes_reason: "Reword the title."
+      )
+      expect(change_intent.requested_changes_at).to be_present
+    end
+
+    it "tolerates a blank reason by storing nil and still redirecting" do
+      post request_changes_project_change_intent_path(project, change_intent, return_to: inbox_return),
+        params: { reason: "   " }
+
+      expect(response).to redirect_to(inbox_return)
+      expect(change_intent.reload).to have_attributes(
+        status: "requested_changes",
+        requested_changes_reason: nil
+      )
+    end
+
+    it "redirects back to the project when no inbox return target is provided" do
+      post request_changes_project_change_intent_path(project, change_intent),
+        params: { reason: "Tighten the constraints." }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "redirects gracefully when the record is no longer in a pending-review state" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent, return_to: inbox_return),
+        params: { reason: "Too late." }
+
+      expect(response).to redirect_to(inbox_return)
     end
   end
 end

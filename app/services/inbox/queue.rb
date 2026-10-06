@@ -11,6 +11,7 @@ module Inbox
     INTENT_CONFORMANCE_KIND = "intent_conformance"
     FEATURE_DECISION_KIND = "feature_decision"
     RETRY_LIMITED_KIND = "retry_limited"
+    CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
@@ -20,7 +21,8 @@ module Inbox
       MANUAL_REVIEW_KIND,
       INTENT_CONFORMANCE_KIND,
       FEATURE_DECISION_KIND,
-      RETRY_LIMITED_KIND
+      RETRY_LIMITED_KIND,
+      CHANGE_INTENT_DRAFT_KIND
     ].freeze
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
@@ -91,6 +93,11 @@ module Inbox
         kind == RETRY_LIMITED_KIND
       end
 
+      # @spec CHANGE-INTENT-INBOX-001
+      def change_intent_draft?
+        kind == CHANGE_INTENT_DRAFT_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -98,7 +105,7 @@ module Inbox
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
-          intent_conformance? || feature_decision? || retry_limited?
+          intent_conformance? || feature_decision? || retry_limited? || change_intent_draft?
 
         "#{tasks.size} proposed tasks"
       end
@@ -162,6 +169,7 @@ module Inbox
       entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
       entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
       entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
+      entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
       sort_entries(entries)
     end
 
@@ -531,6 +539,52 @@ module Inbox
         .where.not(runner_retry_abandoned_at: nil)
         .order(runner_retry_abandoned_at: :desc)
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    # Surfaces every pending-review Change Intent Record on the operator's
+    # gated projects as a single Inbox lane. We re-use the existing
+    # `ChangeIntentPolicy::Scope` for visibility (rather than scoping via
+    # auto-pick like other Issue-backed lanes) because CIRs are project-level
+    # knowledge artifacts: an operator with `:show?` on the project is
+    # entitled to see the draft, even when auto-pick is off. The lane derives
+    # directly from the `pending_review` scope the model ships (#4136),
+    # rather than from a separate notification, so a freshly-recorded draft
+    # (chat-driven or issue-enhancement-driven) appears in the Inbox without
+    # any extra wiring.
+    def change_intent_draft_entries
+      scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
+      scope = scope.where(project: project) if project
+
+      scope
+        .includes(:project, :issue)
+        .order(:created_at, :id)
+        .map { |change_intent| change_intent_draft_entry(change_intent) }
+    end
+
+    def change_intent_draft_entry(change_intent)
+      Entry.new(
+        id: "#{CHANGE_INTENT_DRAFT_KIND}:#{change_intent.id}",
+        kind: CHANGE_INTENT_DRAFT_KIND,
+        project: change_intent.project,
+        issue: change_intent.issue,
+        record: change_intent,
+        waiting_since: change_intent.requested_changes_at || change_intent.created_at,
+        questions: [],
+        tasks: [],
+        summary_text: change_intent_summary(change_intent),
+        title_text: change_intent.title,
+        action_url: nil
+      )
+    end
+
+    def change_intent_summary(change_intent)
+      return change_intent.intent.to_s if change_intent.requested_changes?
+
+      base = change_intent.intent.to_s
+      return base if base.length <= 220
+
+      base.truncate(220)
     end
 
     def visible_blocking_notifications
