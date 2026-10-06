@@ -288,7 +288,7 @@
 
           <% pr_target_upstream = @project.upstream_pr_target? %>
           <%# @spec PR-TARGET-013 - hide for non-forks; fail open on detection failure or when already in upstream mode %>
-          <% show_upstream_section = pr_target_upstream || @upstream_prefill&.reason != "not_a_fork" %>
+          <% show_upstream_section = pr_target_upstream || !@upstream_prefill&.not_a_fork? %>
           <% upstream_full_name = @project.upstream_full_name.nil? ? @upstream_prefill&.upstream_full_name : @project.upstream_full_name %>
           <% if show_upstream_section %>
             <fieldset id="pr-target" class="rounded-md border border-gray-200 p-4">

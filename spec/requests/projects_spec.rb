@@ -2474,7 +2474,7 @@ RSpec.describe "Projects" do
 
         it "hides the section when the repository is definitively not a fork" do
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.unavailable("not_a_fork")
+            Projects::ForkParentPrefill::Prefill.unavailable(Projects::ForkParentPrefill::NOT_A_FORK_REASON)
           )
 
           get edit_project_path(project)
@@ -2488,7 +2488,7 @@ RSpec.describe "Projects" do
           project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
             auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.unavailable("not_a_fork")
+            Projects::ForkParentPrefill::Prefill.unavailable(Projects::ForkParentPrefill::NOT_A_FORK_REASON)
           )
 
           get edit_project_path(project)
@@ -2509,6 +2509,16 @@ RSpec.describe "Projects" do
         it "fails open and shows the section when detection raises a controller failure" do
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
             Projects::ForkParentPrefill::Prefill.unavailable("controller_failure")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Open Source / Upstream Contributions")
+        end
+
+        it "fails open and shows the section when the detected parent is the project itself" do # @spec PR-TARGET-013
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable("same_as_project")
           )
 
           get edit_project_path(project)

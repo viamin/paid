@@ -13,6 +13,7 @@ module Projects
   # an expected GitHub outage or credential failure.
   class ForkParentPrefill
     PREFILLABLE_REASON = "detected_from_fork_parent".freeze
+    NOT_A_FORK_REASON = "not_a_fork".freeze
 
     # @return [Prefill] describing whether a fork parent could be detected.
     def self.call(project, github_client: nil)
@@ -30,7 +31,7 @@ module Projects
 
       payload = client.repository(project.full_name)
       parent_full_name = read_parent_full_name(payload)
-      return Prefill.unavailable("not_a_fork") if parent_full_name.blank?
+      return Prefill.unavailable(NOT_A_FORK_REASON) if parent_full_name.blank?
       return Prefill.unavailable("same_as_project") if parent_full_name.casecmp?(project.full_name)
 
       Prefill.detected(parent_full_name)
@@ -72,6 +73,10 @@ module Projects
 
       def detected?
         status == :detected
+      end
+
+      def not_a_fork?
+        reason == NOT_A_FORK_REASON
       end
     end
   end
