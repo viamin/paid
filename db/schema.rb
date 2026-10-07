@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_131401) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_142103) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1240,6 +1240,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_131401) do
     t.index ["accepted_by_id"], name: "index_dependabot_alert_coverages_on_accepted_by_id"
     t.index ["account_id"], name: "index_dependabot_alert_coverages_on_account_id"
     t.index ["project_id", "alert_number"], name: "idx_on_project_id_alert_number_4aee5d2590", unique: true
+    t.index ["project_id", "alert_state", "last_detected_at"], name: "idx_dependabot_coverages_project_alert_state_detected", comment: "Supports projects#show listing of open Dependabot alerts (alert_state='open' filtered by project_id, ordered by last_detected_at desc) so the query stays a cheap index scan instead of growing linearly with backlog size."
     t.index ["project_id", "coverage_state"], name: "idx_on_project_id_coverage_state_9626caa4b8"
     t.index ["project_id", "dependency_ecosystem", "dependency_name", "advisory_ghsa_id", "manifest_path"], name: "index_dependabot_coverages_on_dependency_advisory_identity", unique: true
     t.index ["project_id"], name: "index_dependabot_alert_coverages_on_project_id"

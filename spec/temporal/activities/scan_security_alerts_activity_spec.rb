@@ -172,7 +172,8 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(github_client).to have_received(:code_scanning_alerts)
         project.reload
         expect(project.last_code_scanning_scan_at).to be_present
-        expect(project.dependabot_permission_error_at).to be_present
+        expect(project.dependabot_fetch_error_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_nil
       end
 
       # @spec DEPENDABOT-COVERAGE-001
@@ -243,6 +244,18 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           dependabot_permission_error_at: nil
         )
       end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "clears the fetch-failure backoff after a successful Dependabot scan" do
+        project.update_column(:dependabot_fetch_error_at, 2.hours.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload).to have_attributes(
+          last_dependabot_scan_at: be_present,
+          dependabot_fetch_error_at: nil
+        )
+      end
     end
 
     context "with a recorded permission error" do
@@ -273,6 +286,28 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         activity.execute(project_id: project.id)
 
         expect(project.reload.code_scanning_permission_error_at).to be_nil
+      end
+    end
+
+    context "with a recorded fetch failure" do
+      before { project.update_columns(last_code_scanning_scan_at: nil, last_dependabot_scan_at: nil) }
+
+      it "skips the Dependabot scan while within the fetch-failure backoff window" do
+        project.update_column(:dependabot_fetch_error_at, 5.minutes.ago)
+        allow(github_client).to receive_messages(code_scanning_alerts: [], dependabot_alerts: [])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      it "retries Dependabot once the fetch-failure backoff window has elapsed" do
+        project.update_column(:dependabot_fetch_error_at, 2.hours.ago)
+        allow(github_client).to receive_messages(code_scanning_alerts: [], dependabot_alerts: [])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:dependabot_alerts)
       end
     end
 

@@ -125,7 +125,11 @@ module Activities
 
       heartbeat("scan_security_alerts.fetch_dependabot_alerts", project_id: project.id)
       SecurityAlerts::ProcessDependabotAlerts.new(project).call(fetch_dependabot_alerts(project))
-      project.update_columns(last_dependabot_scan_at: Time.current, dependabot_permission_error_at: nil)
+      project.update_columns(
+        last_dependabot_scan_at: Time.current,
+        dependabot_permission_error_at: nil,
+        dependabot_fetch_error_at: nil
+      )
     rescue SecurityAlerts::DependabotPermissionsError => e
       # A permission failure blocks the poll cycle on its own (the workflow's
       # `maybe_scan_code_scanning_alerts` treats this as a configuration error
@@ -142,8 +146,14 @@ module Activities
       # scan_code_scanning_alerts proceed. Re-raising here would couple an
       # independent Dependabot outage to the whole poll cycle and skip
       # `last_code_scanning_scan_at` until the Dependabot endpoint recovered.
+      # Use dependabot_fetch_error_at (not dependabot_permission_error_at):
+      # the two failure classes are diagnosed differently — fetch errors are
+      # transient infra and will usually recover without operator action,
+      # permission errors are misconfigurations that need a credential or App
+      # permission change. Sharing the same column would make the schema
+      # ambiguous and prevent operators from telling them apart in the DB.
       # # @spec DEPENDABOT-COVERAGE-001
-      project.update_columns(dependabot_permission_error_at: Time.current)
+      project.update_columns(dependabot_fetch_error_at: Time.current)
       publish_dependabot_ingestion_failure(project, e.message, "fetch_failed")
     end
 
@@ -156,6 +166,7 @@ module Activities
 
     def should_scan_dependabot?(project)
       return false if recent_dependabot_permission_error?(project)
+      return false if recent_dependabot_fetch_error?(project)
       return true if project.last_dependabot_scan_at.nil?
 
       project.last_dependabot_scan_at <= project.code_scanning_interval_hours.hours.ago
@@ -169,6 +180,11 @@ module Activities
     def recent_dependabot_permission_error?(project)
       project.dependabot_permission_error_at.present? &&
         project.dependabot_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
+    end
+
+    def recent_dependabot_fetch_error?(project)
+      project.dependabot_fetch_error_at.present? &&
+        project.dependabot_fetch_error_at > PERMISSION_ERROR_BACKOFF.ago
     end
 
     def fetch_code_scanning_alerts(project)

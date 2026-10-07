@@ -27,6 +27,7 @@ class ProjectsController < ApplicationController
     @open_dependabot_alert_coverages = @project.dependabot_alert_coverages
       .where(alert_state: "open")
       .order(last_detected_at: :desc)
+      .limit(50)
       .load
     @preview_session = PreviewSession.for_project(@project).active.recent.first ||
       PreviewSession.for_project(@project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
