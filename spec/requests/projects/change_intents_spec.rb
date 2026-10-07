@@ -38,6 +38,24 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(inbox_return)
       expect(ChangeIntent.where(id: change_intent.id)).to be_empty
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on approve and falls back to the project page" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on discard and falls back to the project page" do
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
   end
 
   describe "GET /projects/:project_id/change_intents/:id" do
@@ -98,6 +116,16 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("cannot discard from active")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change-intent page when an external return_to is supplied on the invalid-transition rescue branch" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 
@@ -168,6 +196,17 @@ RSpec.describe "Projects::ChangeIntents" do
         params: { reason: "Too late." }
 
       expect(response).to redirect_to(inbox_return)
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change-intent page on the rescue branch when return_to is external" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox"),
+        params: { reason: "Too late." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 
