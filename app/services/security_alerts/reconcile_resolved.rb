@@ -1,74 +1,52 @@
 # frozen_string_literal: true
 
 module SecurityAlerts
-  # Closes synthetic issues whose upstream CodeQL code scanning alerts are no
-  # longer open (fixed, dismissed, or auto_dismissed upstream).
-  #
-  # Skips issues with active agent runs to avoid orphaned work.
-  # Sets github_state to "closed" for all resolved alerts; preserves
-  # paid_state "failed" for diagnostic value while marking others "completed".
+  # Applies explicit upstream dispositions from an authoritative snapshot.
+  # An omitted alert is not evidence that it was fixed.
+  # @spec GITHUB-SYNC-019
   class ReconcileResolved
-    def initialize(project, current_open_alerts, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+    def initialize(project, snapshot:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       @project = project
-      @current_open_alerts = current_open_alerts
+      @snapshot = snapshot
       @source = source
     end
 
     def call
-      id_offset =
-        case @source
-        when Issue::SYNTHETIC_CODE_SCANNING_SOURCE
-          Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
-        else
-          raise ArgumentError, "Unsupported synthetic issue source for SecurityAlerts::ReconcileResolved: #{@source.inspect}"
-        end
+      return unless snapshot.authoritative_for?(project)
 
-      open_alert_ids = @current_open_alerts
-        .select { |a| a[:state] == "open" }
-        .map { |a| id_offset + a[:number] }
-        .to_set
+      resolved_alerts.each { |alert| reconcile(alert) }
+    end
 
-      scope = @project.issues.where(
-        github_state: "open",
-        source: @source
-      )
-      scope = scope.where.not(github_issue_id: open_alert_ids) if open_alert_ids.any?
+    private
 
-      # Exclude issues with active agent runs — closing them mid-run would
-      # leave orphaned runs attached to completed/closed issues.
-      active_runs = AgentRun.where(
-        issue_id: scope.select(:id),
-        status: AgentRun::UNFINISHED_STATUSES
-      )
-      active_run_count = active_runs.count
-      if active_run_count.positive?
-        Rails.logger.warn(
-          message: "github_sync.security_active_runs_for_resolved_alerts",
-          project_id: @project.id,
-          active_run_count: active_run_count
-        )
+    attr_reader :project, :snapshot, :source
+
+    def resolved_alerts
+      snapshot.alerts.group_by { |alert| alert[:number] }.filter_map do |_number, alerts|
+        alerts.none? { |alert| alert[:state] == "open" } && alerts.first
       end
+    end
 
-      scope = scope.where.not(id: active_runs.select(:issue_id))
+    def reconcile(alert)
+      issue = project.issues.find_by(source:, github_issue_id: synthetic_issue_id(alert))
+      return unless issue&.github_state == "open"
+      return if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
 
-      now = Time.current
-      # Close github_state for all resolved alerts. Preserve paid_state for
-      # failed issues (diagnostic value) while marking others as completed.
-      closed_count = scope.update_all(
-        ActiveRecord::Base.sanitize_sql_array([
-          "github_state = 'closed', paid_state = CASE WHEN paid_state = 'failed' THEN paid_state ELSE 'completed' END, updated_at = ?, github_updated_at = ?",
-          now, now
-        ])
-      )
-      return if closed_count.zero?
+      issue.update!(github_state: "closed", github_updated_at: Time.current, paid_state: "manual_review",
+        manual_review_reason: "Upstream code-scanning alert #{alert[:state]}; scanner-verified remediation is not recorded.",
+        code_scanning_disposition: alert[:state],
+        code_scanning_disposition_reason: alert[:dismissed_reason] || alert[:dismissed_comment],
+        code_scanning_disposition_evidence: disposition_evidence(alert))
+    end
 
-      # update_all bypasses callbacks, so manually broadcast UI updates.
-      @project.broadcast_issues_update
-      Rails.logger.info(
-        message: "github_sync.security_reconciled_resolved_alerts",
-        project_id: @project.id,
-        closed_count: closed_count
-      )
+    def synthetic_issue_id(alert)
+      return Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + alert[:number] if source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+
+      raise ArgumentError, "Unsupported synthetic issue source for SecurityAlerts::ReconcileResolved: #{source.inspect}"
+    end
+
+    def disposition_evidence(alert)
+      alert.slice(:number, :state, :dismissed_reason, :dismissed_comment, :dismissed_by, :html_url, :updated_at)
     end
   end
 end

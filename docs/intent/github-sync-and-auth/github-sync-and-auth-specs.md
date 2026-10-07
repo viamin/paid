@@ -202,8 +202,18 @@
   *Test:* `spec/temporal/activities/scan_security_alerts_activity_spec.rb`,
   `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`.
 
-- [x] **GITHUB-SYNC-019** — Before an agent remediates a synthetic
-  code-scanning issue, the system SHALL refresh and require authoritative open
+- [x] **GITHUB-SYNC-019** — Code-scanning reconciliation SHALL act only on an
+  authoritative, complete snapshot explicitly scoped to the repository, target
+  branch, and all scanner configurations. A partial, failed, filtered, or
+  differently scoped response SHALL not close a synthetic finding. Resolution
+  SHALL retain GitHub's fixed, dismissed, or other disposition plus available
+  reason and evidence; an omitted finding with no explicit state SHALL remain
+  unresolved/unknown rather than being treated as fixed. A dismissed finding
+  may close the upstream work item but SHALL not be presented as a verified
+  code remediation. A later open scanner observation SHALL preserve prior
+  attempts and record a recurrence rather than erase verification history.
+  Before an agent remediates an open synthetic code-scanning issue, the system
+  SHALL refresh and require authoritative open
   alert identity, target branch, analyzed commit, scanner configuration, and
   one unambiguous target-branch location. It SHALL require either an excerpt
   read at that commit or a verified alternative source-read path at that
@@ -215,10 +225,16 @@
   GitHub failures SHALL use bounded client retry; permission and configuration
   failures SHALL surface without retry.
   *Code:* `app/services/github_client.rb`,
+  `app/services/security_alerts/code_scanning_snapshot.rb`,
+  `app/services/security_alerts/reconcile_resolved.rb`,
   `app/services/prompt_assembly/build_issue_prompt.rb`, `app/models/agent_run.rb`,
   `app/temporal/activities/run_agent_activity.rb`,
   `app/temporal/activities/mark_agent_run_failed_activity.rb`.
   *Test:* `spec/services/github_client_spec.rb`,
+  `spec/services/security_alerts/reconcile_resolved_spec.rb`,
+  `spec/services/security_alerts/process_code_scanning_alerts_spec.rb`,
+  `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
+  `spec/services/security_alerts/verify_merged_remediation_attempts_spec.rb`,
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/models/agent_run_prompt_assembly_spec.rb`,
   `spec/temporal/activities/run_agent_activity_spec.rb`,

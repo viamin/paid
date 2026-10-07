@@ -72,6 +72,15 @@ discovery cadence: while an attempt awaits verification, the next successful
 coverage check is eligible after one hour. Failure backoff always takes
 precedence over that verification cadence.
 
+Resolution reconciliation is narrower than ordinary issue polling. It consumes
+only a complete, repository- and target-branch-scoped snapshot covering all
+scanner configurations and explicit upstream states. An alert omitted from a
+response is unknown, not fixed. Fixed and dismissed dispositions, their reason,
+and bounded GitHub evidence remain visible on the synthetic issue; neither
+disposition claims that Paid verified a code fix. A later open observation
+preserves the remediation-attempt history so operators can distinguish a real
+recurrence from a finding that was never scanner-verified.
+
 Remediation has a separate execution gate: immediately before dispatch, Paid
 re-reads the alert and accepts only an open alert with its selected default
 branch, analyzed commit, scanner configuration, and exactly one usable finding

@@ -33,7 +33,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     stub_analyses([ analysis ])
     stub_compare("ahead")
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload.status).to eq("verification_failed")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -48,11 +48,22 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
+  it "passes an upstream dismissal to verification rather than treating it as an absent alert" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
+    stub_analyses([ analysis ])
+    stub_compare("identical")
+
+    described_class.new(
+      project:, alerts: [ { number: 1838, state: "dismissed", dismissed_reason: "false positive" } ], github_client:
+    ).call
+
+    expect(attempt.reload.status).to eq("verification_blocked")
+  end
+
   it "does not resolve from the merge or an aggregate result count while the alert is open" do # @spec EAGER-QUEUE-013
     stub_analyses([ analysis.merge(results_count: 0) ])
     stub_compare("identical")
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload.status).to eq("verification_failed")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -63,7 +74,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     stub_analyses([ pr_branch_analysis, analysis ])
     stub_compare("ahead")
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload).to have_attributes(
       status: "verification_failed", verification_analysis_id: "1842809913", verification_ref: "main"
