@@ -124,7 +124,7 @@ class PromptAssembly::BuildIssuePrompt
   # stops the run instead of executing a remediation prompt for a finding that
   # was already fixed or dismissed upstream.
   # @spec GITHUB-SYNC-015
-  # @spec GITHUB-SYNC-018
+  # @spec GITHUB-SYNC-019
   def refresh_code_scanning_context
     return unless github_client && issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
 
@@ -163,7 +163,7 @@ class PromptAssembly::BuildIssuePrompt
       .call([ alert ], excluding_run_id: agent_run&.id)
   end
 
-  # @spec GITHUB-SYNC-018
+  # @spec GITHUB-SYNC-019
   def validate_remediation_evidence!(alert, alert_number:)
     target_ref = "refs/heads/#{project.default_branch}"
     missing = []

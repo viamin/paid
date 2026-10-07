@@ -5063,7 +5063,7 @@ expect(container_service).to receive(:execute).with(
     end
 
     it "raises CodeScanningEvidenceUnavailable when finding evidence cannot be refreshed" do
-      # @spec GITHUB-SYNC-018
+      # @spec GITHUB-SYNC-019
       allow(agent_run).to receive(:effective_prompt)
         .and_raise(PromptAssembly::BuildIssuePrompt::AlertEvidenceError, "Code scanning alert evidence refresh failed")
 

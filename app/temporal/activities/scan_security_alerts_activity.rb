@@ -13,17 +13,12 @@ module Activities
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"
 
-    # Backoff for a confirmed permission/configuration error (403 -- missing
-    # security_events / code_scanning_alerts:read). Deliberately much shorter
-    # than code_scanning_interval_hours: a stale credential is retried every
-    # poll cycle otherwise (every 1-2 minutes in some environments), which
-    # wastes worker capacity and API quota on a call that will fail
-    # identically until a human fixes the token/App permission. An hour still
-    # picks up a fix promptly without the full-interval "stale blackout" the
-    # original no-backoff design was written to avoid.
     PERMISSION_ERROR_BACKOFF = 1.hour
+    UNAVAILABLE_CONFIGURATION_BACKOFF = 1.hour
+    TRANSIENT_ERROR_BACKOFF = 5.minutes
+    VERIFICATION_INTERVAL = 1.hour
 
-    # @spec AUTOMATION-ACTIVATION-003
+    # @spec AUTOMATION-ACTIVATION-003 GITHUB-SYNC-018
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -64,14 +59,10 @@ module Activities
       return unless should_scan_code_scanning?(project)
 
       heartbeat("scan_security_alerts.fetch_alerts", project_id: project.id)
+      project.update_columns(last_code_scanning_scan_attempted_at: Time.current)
       snapshot = fetch_code_scanning_alerts(project)
-
-      if snapshot.nil?
-        project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
-        return
-      end
-
       all_alerts = snapshot.alerts
+
       heartbeat("scan_security_alerts.reconcile_resolved", project_id: project.id, alert_count: all_alerts.size)
       SecurityAlerts::ReconcileResolved.new(
         project, snapshot:,
@@ -88,10 +79,7 @@ module Activities
         project:, alerts: all_alerts, github_client: project.client
       ).call
 
-      # Record scan timestamp only after successful processing. Retryable
-      # errors (5xx) intentionally skip this so Temporal retries within the
-      # same interval window.
-      project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
+      record_successful_snapshot(project)
 
       logger.info(
         message: "github_sync.code_scanning_scan_complete",
@@ -99,29 +87,79 @@ module Activities
         alerts_fetched: all_alerts.size,
         alerts_actionable: open_alerts.size
       )
-    rescue SecurityAlerts::CodeScanningPermissionsError
-      # Do NOT advance last_code_scanning_scan_at here. A 403 means the token
-      # lacks the required scope — advancing the timestamp would suppress
-      # retries for the full code_scanning_interval_hours window, turning a
-      # recoverable misconfiguration into a stale blackout. Instead, record
-      # code_scanning_permission_error_at so should_scan_code_scanning? backs
-      # off for PERMISSION_ERROR_BACKOFF (much shorter than the full
-      # interval) instead of retrying every poll cycle. The workflow also
-      # catches ConfigurationError and logs a warning.
-      project.update_columns(code_scanning_permission_error_at: Time.current)
+    rescue GithubClient::NotFoundError => e
+      record_failure(project, kind: "not_configured", reason: e.message,
+        retry_at: UNAVAILABLE_CONFIGURATION_BACKOFF.from_now)
+    rescue SecurityAlerts::CodeScanningPermissionsError => e
+      record_failure(project, kind: "permission", reason: e.message,
+        retry_at: PERMISSION_ERROR_BACKOFF.from_now, permission_error: true)
+      raise
+    rescue SecurityAlerts::ConfigurationError => e
+      record_failure(project, kind: "not_configured", reason: e.message,
+        retry_at: UNAVAILABLE_CONFIGURATION_BACKOFF.from_now)
+      raise
+    rescue GithubClient::RateLimitError => e
+      record_failure(project, kind: "rate_limited", reason: e.message,
+        retry_at: e.reset_at || TRANSIENT_ERROR_BACKOFF.from_now)
+      raise
+    rescue GithubClient::Error => e
+      record_failure(project, kind: "transient", reason: e.message,
+        retry_at: TRANSIENT_ERROR_BACKOFF.from_now)
       raise
     end
 
     def should_scan_code_scanning?(project)
-      return false if recent_permission_error?(project)
+      return false if retry_scheduled?(project)
       return true if project.last_code_scanning_scan_at.nil?
+      return true if verification_due?(project)
 
       project.last_code_scanning_scan_at <= project.code_scanning_interval_hours.hours.ago
     end
 
-    def recent_permission_error?(project)
+    def retry_scheduled?(project)
+      project.next_code_scanning_scan_at&.future? || recent_legacy_permission_error?(project)
+    end
+
+    def recent_legacy_permission_error?(project)
       project.code_scanning_permission_error_at.present? &&
         project.code_scanning_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
+    end
+
+    def verification_due?(project)
+      awaiting_remediation_verification?(project) &&
+        project.last_code_scanning_scan_at <= VERIFICATION_INTERVAL.ago
+    end
+
+    def awaiting_remediation_verification?(project)
+      CodeScanningRemediationAttempt.joins(:issue)
+        .where(issues: { project_id: project.id }, status: "awaiting_verification").exists?
+    end
+
+    def record_successful_snapshot(project)
+      project.update_columns(
+        last_code_scanning_scan_at: Time.current,
+        code_scanning_permission_error_at: nil,
+        code_scanning_scan_error_kind: nil,
+        code_scanning_scan_error_reason: nil,
+        next_code_scanning_scan_at: nil
+      )
+    end
+
+    def record_failure(project, kind:, reason:, retry_at:, permission_error: false)
+      attributes = {
+        code_scanning_scan_error_kind: kind,
+        code_scanning_scan_error_reason: AgentRun::ErrorMessageSanitizer.call(text: reason),
+        next_code_scanning_scan_at: retry_at
+      }
+      attributes[:code_scanning_permission_error_at] = Time.current if permission_error
+      project.update_columns(attributes)
+
+      logger.warn(
+        message: "github_sync.code_scanning_coverage_unavailable",
+        project_id: project.id,
+        error_kind: kind,
+        next_retry_at: retry_at
+      )
     end
 
     def fetch_code_scanning_alerts(project)
@@ -132,13 +170,6 @@ module Activities
       end)
       SecurityAlerts::CodeScanningSnapshot.new(repository: project.full_name, branch: project.default_branch,
         configuration_scope: :all, complete: true, alerts:)
-    rescue GithubClient::NotFoundError => e
-      logger.warn(
-        message: "github_sync.code_scanning_fetch_failed",
-        project_id: project.id,
-        error: e.message
-      )
-      nil
     rescue GithubClient::ApiError => e
       if e.status == 403
         raise SecurityAlerts::CodeScanningPermissionsError,

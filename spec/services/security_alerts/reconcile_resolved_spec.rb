@@ -16,20 +16,20 @@ RSpec.describe SecurityAlerts::ReconcileResolved do
     )
   end
 
-  it "does not close a finding from an empty snapshot without explicit disposition" do # @spec GITHUB-SYNC-018
+  it "does not close a finding from an empty snapshot without explicit disposition" do # @spec GITHUB-SYNC-019
     described_class.new(project, snapshot: snapshot).call
 
     expect(issue.reload).to have_attributes(github_state: "open", paid_state: "new")
   end
 
-  it "does not close a finding from an incomplete or filtered snapshot" do # @spec GITHUB-SYNC-018
+  it "does not close a finding from an incomplete or filtered snapshot" do # @spec GITHUB-SYNC-019
     described_class.new(project, snapshot: snapshot(complete: false)).call
     described_class.new(project, snapshot: snapshot(configuration_scope: :filtered)).call
 
     expect(issue.reload.github_state).to eq("open")
   end
 
-  it "closes a dismissed finding without claiming a verified code fix" do # @spec GITHUB-SYNC-018
+  it "closes a dismissed finding without claiming a verified code fix" do # @spec GITHUB-SYNC-019
     result = snapshot(alerts: [ {
       number: 42, state: "dismissed", dismissed_reason: "won't fix", html_url: "https://example.test/42"
     } ])
@@ -43,7 +43,7 @@ RSpec.describe SecurityAlerts::ReconcileResolved do
     )
   end
 
-  it "leaves one configuration's active finding open when another is fixed" do # @spec GITHUB-SYNC-018
+  it "leaves one configuration's active finding open when another is fixed" do # @spec GITHUB-SYNC-019
     described_class.new(project, snapshot: snapshot(alerts: [
       { number: 42, state: "open", tool_name: "CodeQL", category: "/ruby" },
       { number: 42, state: "fixed", tool_name: "CodeQL", category: "/javascript" }
