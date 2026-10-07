@@ -40,7 +40,9 @@ module Security
 
     def run
       allowlist = load_allowlist!
-      raw_events = run_yarn_audit
+      raw_events, stderr, status = run_yarn_audit
+      return scanner_failure(process_failure_detail(stderr, status)) unless status.success?
+
       findings, scanner_error = parse_events(raw_events)
       return scanner_failure(scanner_error) if scanner_error
 
@@ -105,8 +107,13 @@ module Security
     end
 
     def run_yarn_audit
-      stdout, _stderr, _status = Open3.capture3("yarn", "audit", "--json", *@argv)
-      stdout
+      Open3.capture3("yarn", "audit", "--json", *@argv)
+    end
+
+    def process_failure_detail(stderr, status)
+      return stderr.strip unless stderr.strip.empty?
+
+      "yarn audit exited with status #{status.exitstatus || "unknown"}"
     end
 
     def parse_events(raw)

@@ -181,6 +181,25 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "fails the run when yarn exits non-zero without emitting a JSON error event" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: empty_allowlist,
+        yarn_output: "",
+        yarn_stderr: "yarn command failed before producing audit output",
+        yarn_exit: 1
+      )
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("yarn audit scanner failed")
+      expect(stderr).to include("yarn command failed before producing audit output")
+    end
+  end
+
   it "fails the run when yarn emits unparseable JSON instead of advisories" do
     # @spec REPO-DEPENDENCY-AUDIT-002
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
@@ -201,7 +220,7 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     File.join(dir, "bin", "yarn-audit-check")
   end
 
-  def prepare_workspace(dir, allowlist:, yarn_output:)
+  def prepare_workspace(dir, allowlist:, yarn_output:, yarn_stderr: "", yarn_exit: 0)
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "config", "security"))
@@ -222,10 +241,13 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
         #!/usr/bin/env bash
         printf '%s\\n' "$*" >> "#{dir}/yarn-invocations.log"
         printf '%s\\n' "$(cat "#{File.join(dir, 'yarn-output.txt')}")"
+        printf '%s\\n' "$(cat "#{File.join(dir, 'yarn-stderr.txt')}")" >&2
+        exit #{yarn_exit}
       BASH
     )
     FileUtils.chmod("+x", File.join(dir, "stubbin", "yarn"))
     File.write(File.join(dir, "yarn-output.txt"), yarn_output)
+    File.write(File.join(dir, "yarn-stderr.txt"), yarn_stderr)
   end
 
   def empty_allowlist
