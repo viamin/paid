@@ -252,15 +252,20 @@
   seven-day grace period uncovered alerts SHALL escalate; an escalation SHALL
   clear its blocking notification once the alert regains coverage, is accepted,
   or disappears from the authoritative snapshot. Accepted alerts SHALL
-  retain owner, reason, and expiry. Dependabot scans SHALL respect the configured
+  retain owner, reason, and expiry; removing an acceptance's owner (by
+  deleting that operator) SHALL end the acceptance and return the alert to
+  the uncovered escalation path with a fresh grace period rather than leave
+  an ownerless acceptance. Dependabot scans SHALL respect the configured
   security scan interval, and a permission failure SHALL back off for one hour
   before retrying or re-arming its visible coverage failure. Permission or
   ingestion failures SHALL be visible coverage failures that resolve once a
   scan succeeds again or Dependabot scanning is disabled.
   *Code:* `app/services/github_client.rb`,
   `app/services/security_alerts/process_dependabot_alerts.rb`,
+  `app/models/user.rb`,
   `app/temporal/activities/scan_security_alerts_activity.rb`.
   *Test:* `spec/services/security_alerts/process_dependabot_alerts_spec.rb`,
+  `spec/models/user_spec.rb`,
   `spec/temporal/activities/scan_security_alerts_activity_spec.rb`.
 
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
