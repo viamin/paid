@@ -331,11 +331,18 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
-    it "counts code-scanning verification blockers through their synthetic issue" do # @spec EAGER-QUEUE-016
+    it "does not count passive code-scanning verification waits" do # @spec EAGER-QUEUE-016 OPERATOR-INBOX-002B
       issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       attempt = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked")
-      create(:notification, :error, account: account, subject: attempt,
-        source: "code_scanning_verification_blocked", blocking: true)
+      create(:notification, :info, account: account, subject: attempt,
+        source: "code_scanning_verification_blocked", blocking: false)
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
+    it "counts actionable code-scanning permission errors" do # @spec EAGER-QUEUE-016 OPERATOR-INBOX-002B
+      create(:notification, :error, account: account, subject: project,
+        source: "code_scanning_permissions_error", blocking: true)
 
       expect(described_class.call(user: user)).to eq(1)
     end

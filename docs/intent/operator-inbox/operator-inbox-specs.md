@@ -31,7 +31,10 @@
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
   entry until the notification resolves or is dismissed, reusing notification
   metadata for remediation copy instead of introducing a separate persistence
-  model.
+  model. Informational status/history notifications, including automatic
+  code-scanning verification waits, SHALL remain outside this lane and its
+  badge; credential and configuration notifications that require an operator
+  correction remain blocking entries.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.

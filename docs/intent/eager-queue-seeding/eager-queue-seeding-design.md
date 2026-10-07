@@ -216,13 +216,16 @@ not a separate retry job:
   duplicate-prevention guards remain the durable stop against a second
   concurrent fix PR (EAGER-QUEUE-009).
 - `Notifications::Rules::CodeScanningVerificationBlocked` surfaces a
-  retryable blocker: alert URL, linked PRs, blocked reason, age, last
-  successful scan, and a recommended next action. Persistent configuration
-  failures (`ConfigurationError` from a missing trusted-username list) and
-  permission errors (`CodeScanningPermissionsError`) each get their own
-  project-scoped blocking notification so an operator can disambiguate a
-  credential problem from a scanner verdict. All three auto-resolve on the
-  next successful scan.
+  non-blocking verification-status notification: alert URL, linked PRs,
+  blocked reason, age, and last successful scan. It is status/history, not an
+  operator task: the recommendation describes the recorded condition and
+  automatic re-evaluation without directing another fix or predicting an
+  outcome. Re-evaluation reconciles older blocking rows in place. Persistent
+  configuration failures (`ConfigurationError` from a missing
+  trusted-username list) and permission errors
+  (`CodeScanningPermissionsError`) each get their own project-scoped blocking
+  notification so an operator can disambiguate a credential problem from a
+  scanner verdict. All three auto-resolve on the next successful scan.
 
 ### Post-merge analysis evidence (#4147)
 
