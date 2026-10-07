@@ -63,9 +63,8 @@ The policy is symmetric after this segment:
 
 The repository ships a single allowlist file at
 `config/security/yarn-audit-allowlist.yml`. The format is intentionally
-narrow: each entry covers one advisory ID, one module name, and one
-vulnerable version range, with rationale, owner, expiry, and review
-metadata. Schema:
+narrow: each entry covers one advisory ID and one module name, with
+rationale, owner, expiry, and review metadata. Schema:
 
 ```yaml
 # Yarn audit advisory exceptions.

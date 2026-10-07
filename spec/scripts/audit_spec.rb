@@ -55,7 +55,7 @@ RSpec.describe "bin/audit" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(File.expand_path("../../bin/audit", __dir__), audit_path)
     FileUtils.chmod("+x", audit_path)
 
-    %w[secret-scan brakeman bundler-audit yarn-audit-check].each do |tool|
+    %w[secret-scan brakeman bundler-audit].each do |tool|
       write_executable(
         File.join(dir, "bin", tool),
         <<~BASH
@@ -66,23 +66,9 @@ RSpec.describe "bin/audit" do # rubocop:disable RSpec/DescribeClass
       )
     end
 
-    # bin/audit invokes `bin/yarn-audit-check` (without the prefix) and relies
-    # on PATH containing the bin/ directory, which is set up by the wrapper
-    # itself. To make the bin/audit test work in a tmpdir, symlink the
-    # stubbed yarn-audit-check into the bin/ directory and place a yarn
-    # binary on PATH.
-    write_executable(
-      File.join(dir, "stubbin", "yarn"),
-      <<~BASH
-        #!/usr/bin/env bash
-        exit 0
-      BASH
-    )
-
-    # The real bin/audit script expects `bin/yarn-audit-check` to be the
-    # production tool; the stub is the one we want to run. Replace the
-    # yarn-audit-check stub with one that exits with the requested status
-    # so we can verify bin/audit propagates the failure correctly.
+    # bin/audit invokes bin/yarn-audit-check from the repository root. Stub it
+    # here so the test can verify that its exit status propagates through the
+    # suite without invoking Yarn.
     write_executable(
       File.join(dir, "bin", "yarn-audit-check"),
       <<~BASH

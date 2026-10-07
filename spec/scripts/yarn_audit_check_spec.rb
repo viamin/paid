@@ -129,6 +129,28 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "fails the run with exit 3 when YAML contains an unpermitted class" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      allowlist = <<~YAML
+        exceptions:
+          - id: GHSA-xxxx-yyyy-zzzz
+            module: demo-pkg
+            reason: "test"
+            owner: "@paid/test"
+            expires_on: 2026-12-31 12:00:00
+            tracking_issue: "#1"
+      YAML
+      prepare_workspace(dir, allowlist: allowlist, yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("yarn-audit allowlist invalid: invalid YAML:")
+      expect(stderr).to include("Tried to load unspecified class: Time")
+    end
+  end
+
   it "fails the run when an allowlist entry is missing a required field" do
     # @spec REPO-DEPENDENCY-AUDIT-003
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|

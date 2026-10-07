@@ -89,7 +89,7 @@ module Security
         entry["expires_on"] = parse_date(entry.fetch("expires_on"))
         acc[entry.fetch("id")] = entry
       end
-    rescue Psych::SyntaxError => e
+    rescue Psych::Exception => e
       abort_allowlist("invalid YAML: #{e.message}")
     end
 
