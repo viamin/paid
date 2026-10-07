@@ -22,6 +22,11 @@ module Activities
     # picks up a fix promptly without the full-interval "stale blackout" the
     # original no-backoff design was written to avoid.
     PERMISSION_ERROR_BACKOFF = 1.hour
+    CODE_SCANNING_NOTIFICATION_SOURCES = [
+      Notifications::Rules::CodeScanningVerificationBlocked::SOURCE,
+      Notifications::Rules::CodeScanningConfigurationError::SOURCE,
+      Notifications::Rules::CodeScanningPermissionsError::SOURCE
+    ].freeze
 
     # @spec AUTOMATION-ACTIVATION-003
     def execute(input)
@@ -29,6 +34,7 @@ module Activities
       project = Project.find_by(id: project_id)
       return { alerts_to_fix: [], project_missing: true } unless project
       unless Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_security")
+        resolve_code_scanning_notifications(project)
         return { alerts_to_fix: [] }
       end
 
@@ -62,7 +68,10 @@ module Activities
     private
 
     def scan_code_scanning_alerts(project)
-      return unless project.security_alert_types.include?("code_scanning")
+      unless project.security_alert_types.include?("code_scanning")
+        resolve_code_scanning_notifications(project)
+        return
+      end
       return unless should_scan_code_scanning?(project)
 
       heartbeat("scan_security_alerts.fetch_alerts", project_id: project.id)
@@ -97,7 +106,10 @@ module Activities
       # errors (5xx) intentionally skip this so Temporal retries within the
       # same interval window.
       project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
-      sync_code_scanning_notifications(project, CodeScanningRemediationAttempt.where(id: retryable_attempt_ids))
+      retryable_scope = CodeScanningRemediationAttempt
+        .where(id: retryable_attempt_ids)
+        .includes(issue: :project)
+      sync_code_scanning_notifications(project, retryable_scope)
 
       logger.info(
         message: "github_sync.code_scanning_scan_complete",
@@ -134,6 +146,24 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    # @spec EAGER-QUEUE-016
+    def resolve_code_scanning_notifications(project)
+      code_scanning_notifications_for(project).find_each do |notification|
+        Notifications::Resolve.call(
+          account: project.account,
+          source: notification.source,
+          subject: notification.subject
+        )
+      end
+    end
+
+    def code_scanning_notifications_for(project)
+      Notification.active
+        .where(account: project.account, source: CODE_SCANNING_NOTIFICATION_SOURCES)
+        .where("metadata ->> 'project_id' = ?", project.id.to_s)
+        .includes(:subject)
     end
 
     def should_scan_code_scanning?(project)

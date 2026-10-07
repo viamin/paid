@@ -34,6 +34,14 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(result).to eq(alerts_to_fix: [])
       end
+
+      it "resolves code-scanning blocker notifications" do # @spec EAGER-QUEUE-016
+        publish_code_scanning_blocker_notifications
+
+        activity.execute(project_id: project.id)
+
+        expect(active_code_scanning_blocker_notifications).to be_empty
+      end
     end
 
     context "when auto_scan_security is disabled but a PR activation is present" do
@@ -76,6 +84,17 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         activity.execute(project_id: project.id)
 
         expect(github_client).not_to have_received(:code_scanning_alerts)
+      end
+    end
+
+    context "when code scanning is disabled for the project" do
+      it "resolves code-scanning blocker notifications" do # @spec EAGER-QUEUE-016
+        publish_code_scanning_blocker_notifications
+        project.update_column(:security_alert_types, [])
+
+        activity.execute(project_id: project.id)
+
+        expect(active_code_scanning_blocker_notifications).to be_empty
       end
     end
 
@@ -332,5 +351,21 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       notification = Notification.find_by!(source: "code_scanning_verification_blocked", subject: attempt)
       expect(notification.metadata["last_successful_scan_at"]).to eq(project.reload.last_code_scanning_scan_at.iso8601)
     end
+  end
+
+  def publish_code_scanning_blocker_notifications
+    issue = create(:issue, project:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+    attempt = create(:code_scanning_remediation_attempt, issue:, status: "verification_blocked")
+    Notifications::Rules::CodeScanningVerificationBlocked.call(scope: [ attempt ])
+
+    project.update_columns(code_scanning_permission_error_at: Time.current, allowed_github_usernames: [])
+    Notifications::Rules::CodeScanningPermissionsError.call(scope: [ project ])
+    Notifications::Rules::CodeScanningConfigurationError.call(scope: [ project ])
+  end
+
+  def active_code_scanning_blocker_notifications
+    Notification.active
+      .where(account: project.account, source: Activities::ScanSecurityAlertsActivity::CODE_SCANNING_NOTIFICATION_SOURCES)
+      .where("metadata ->> 'project_id' = ?", project.id.to_s)
   end
 end
