@@ -627,16 +627,20 @@ module Inbox
     # notification_context dereferences subject.project for every entry, and
     # for AgentRun subjects also calls source_pull_request_record. Batch both
     # up front so an inbox page with N blocking notifications doesn't issue
-    # O(N) extra project/PR lookups.
+    # O(N) extra project/PR lookups. CodeScanningRemediationAttempt subjects
+    # (`@spec EAGER-QUEUE-016`) carry the synthetic code-scanning issue whose
+    # row is the only thing `notification_context` reads from the attempt.
     def preload_notification_subjects(notifications)
       Notification.preload_resolved_projects(notifications)
 
       subjects = notifications.filter_map(&:subject)
       agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
       runners = subjects.select { |subject| subject.is_a?(Runner) }
+      attempts = subjects.select { |subject| subject.is_a?(CodeScanningRemediationAttempt) }
 
       ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
       ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
+      ActiveRecord::Associations::Preloader.new(records: attempts, associations: :issue).call
       AgentRun.preload_source_pull_requests(agent_runs)
     end
 
@@ -651,6 +655,7 @@ module Inbox
       issue = case notification.subject
       when Issue then notification.subject
       when AgentRun then notification.subject.source_pull_request_record || notification.subject.issue
+      when CodeScanningRemediationAttempt then notification.subject.issue
       end
 
       project = case notification.subject

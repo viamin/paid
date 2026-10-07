@@ -3,6 +3,7 @@
 module SecurityAlerts
   # Applies only scanner evidence that is structurally tied to a merged fix.
   # @spec EAGER-QUEUE-013
+  # @spec EAGER-QUEUE-014
   class VerifyRemediationAttempt
     def initialize(attempt:, alert:, analysis:, contains_merge_commit:)
       @attempt = attempt
@@ -49,12 +50,32 @@ module SecurityAlerts
         blocked_reason: "finding remains open in matching post-merge analysis",
         verification_analysis_id: analysis[:id], verification_commit_sha: analysis[:commit_sha],
         verification_ref: analysis[:ref], evidence: attempt.evidence.merge(evidence))
-      attempt.issue.update!(paid_state: "manual_review")
+      move_issue_to_manual_review
     end
 
+    # A retryable block — the verifier still cannot prove the fix worked, but
+    # the attempt is not terminal: it keeps its prior status and appends the
+    # latest evidence. Without this idempotency, a worker restart or repeated
+    # poll would silently strand the attempt forever (#4152). On the first
+    # transition from `awaiting_verification`, status moves to
+    # `verification_blocked`; on a re-verification of an already-blocked
+    # attempt, status is preserved and only the evidence + reason advance.
     def block!(reason)
-      attempt.update!(status: "verification_blocked", blocked_reason: reason,
-        evidence: attempt.evidence.merge(evidence))
+      attrs = { blocked_reason: reason, evidence: attempt.evidence.merge(evidence) }
+      attrs[:status] = "verification_blocked" unless attempt.status == "verification_blocked"
+      attempt.update!(attrs)
+    end
+
+    # Only move to manual_review on the FIRST scanner-confirmed unsuccessful
+    # fix (EAGER-QUEUE-014). A subsequent re-verification that re-confirms the
+    # finding is already-open leaves the issue where it was — moving it would
+    # override any operator annotations on `manual_review_reason` since the
+    # earlier transition.
+    def move_issue_to_manual_review
+      issue = attempt.issue
+      return if issue.paid_state == "manual_review"
+
+      issue.update!(paid_state: "manual_review")
     end
   end
 end

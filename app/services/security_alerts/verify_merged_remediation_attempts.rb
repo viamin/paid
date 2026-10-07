@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 module SecurityAlerts
-  # Verifies each newly merged remediation against a post-merge scanner analysis.
+  # Verifies each newly merged remediation against a post-merge scanner analysis,
+  # and re-verifies any previously blocked attempt whose evidence has become
+  # available (worker restart, repeated poll, repaired credential, next scan).
   # @spec EAGER-QUEUE-013
+  # @spec EAGER-QUEUE-014
   class VerifyMergedRemediationAttempts
     def initialize(project:, alerts:, github_client:)
       @project = project
@@ -12,15 +15,22 @@ module SecurityAlerts
 
     def call
       analyses = github_client.code_scanning_analyses(project.full_name)
-      awaiting_attempts.find_each { |attempt| verify(attempt, analyses) }
+      retryable_attempts.find_each { |attempt| verify(attempt, analyses) }
     end
 
     private
 
     attr_reader :project, :alerts, :github_client
 
-    def awaiting_attempts
-      CodeScanningRemediationAttempt.where(issue: code_scanning_issues, status: "awaiting_verification")
+    # Both `awaiting_verification` and `verification_blocked` are revisit-able.
+    # The verifier applies the same evidence rules EAGER-QUEUE-013 requires for
+    # first-time verification, so a re-evaluation is idempotent: a still-blocked
+    # attempt keeps its prior status with the latest evidence appended, and a
+    # previously blocked attempt that now meets the rules transitions to
+    # `verified_fixed` or `verification_failed` (#4152).
+    def retryable_attempts
+      CodeScanningRemediationAttempt
+        .where(issue: code_scanning_issues, status: CodeScanningRemediationAttempt::RETRYABLE_STATUSES)
     end
 
     def code_scanning_issues

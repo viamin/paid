@@ -52,4 +52,42 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
       status: "verification_blocked", blocked_reason: "analysis is unavailable"
     )
   end
+
+  describe "blocked-attempt re-verification" do
+    before do
+      attempt.update!(status: "verification_blocked", blocked_reason: "analysis is unavailable",
+        evidence: { "prior_attempt_at" => 1.hour.ago.iso8601 })
+    end
+
+    it "preserves the blocked status on a re-verification that still cannot confirm the fix" do # @spec EAGER-QUEUE-014
+      verify(analysis: analysis.merge(status: "in_progress"))
+
+      expect(attempt.reload.status).to eq("verification_blocked")
+      expect(attempt.blocked_reason).to include("did not succeed")
+      expect(attempt.evidence).to include("prior_attempt_at")
+    end
+
+    it "transitions a blocked attempt to verified_fixed when the alert is no longer reported" do # @spec EAGER-QUEUE-014
+      verify
+
+      expect(attempt.reload.status).to eq("verified_fixed")
+    end
+
+    it "transitions a blocked attempt to verification_failed when the alert is still open" do # @spec EAGER-QUEUE-014
+      verify(alert: { number: 1838 })
+
+      expect(attempt.reload.status).to eq("verification_failed")
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    it "does not re-move the issue to manual_review on a subsequent re-confirmation" do # @spec EAGER-QUEUE-014
+      issue.update!(paid_state: "manual_review", manual_review_reason: "operator-attached reason")
+      attempt.update!(status: "verification_failed", blocked_reason: "prior")
+
+      verify(alert: { number: 1838 })
+
+      expect(attempt.reload.status).to eq("verification_failed")
+      expect(issue.reload.manual_review_reason).to eq("operator-attached reason")
+    end
+  end
 end

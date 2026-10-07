@@ -83,9 +83,13 @@ module Activities
       SecurityAlerts::RecordMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
+      retryable_attempts = CodeScanningRemediationAttempt
+        .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
+          status: CodeScanningRemediationAttempt::RETRYABLE_STATUSES)
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
+      sync_code_scanning_notifications(project, retryable_attempts)
 
       # Record scan timestamp only after successful processing. Retryable
       # errors (5xx) intentionally skip this so Temporal retries within the
@@ -109,6 +113,24 @@ module Activities
       # catches ConfigurationError and logs a warning.
       project.update_columns(code_scanning_permission_error_at: Time.current)
       raise
+    end
+
+    # Surface retryable verification blockers as blocking inbox notifications
+    # and auto-resolve notifications for attempts that have moved to a terminal
+    # state on this scan (EAGER-QUEUE-016). Idempotent on (source, subject):
+    # Notifications::Publish collapses the metadata merge, and Resolve drops
+    # any stale row once the underlying attempt has cleared.
+    def sync_code_scanning_notifications(project, retryable_attempts)
+      Notifications::Rules::CodeScanningVerificationBlocked.call(scope: retryable_attempts.to_a)
+      Notifications::Rules::CodeScanningConfigurationError.call(scope: [ project ])
+      Notifications::Rules::CodeScanningPermissionsError.call(scope: [ project ])
+    rescue => e
+      logger.warn(
+        message: "github_sync.code_scanning_notification_sync_failed",
+        project_id: project.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def should_scan_code_scanning?(project)
