@@ -163,7 +163,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(reason).not_to include(token)
       end
 
-      it "raises CodeScanningPermissionsError on 403 without advancing last_code_scanning_scan_at" do
+      it "keeps an ambiguous 403 as a permission error without advancing last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
@@ -177,6 +177,21 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_at).to be_nil
         expect(project.code_scanning_scan_error_kind).to eq("permission")
         expect(project.next_code_scanning_scan_at).to be_within(1.second).of(1.hour.from_now)
+      end
+
+      # @spec GITHUB-SYNC-020 EAGER-QUEUE-016
+      it "disables only code scanning and resolves stale permission notifications when GitHub says scanning is disabled" do
+        project.update!(security_alert_types: %w[dependabot code_scanning])
+        publish_code_scanning_blocker_notifications
+        allow(github_client).to receive(:code_scanning_alerts).and_raise(
+          GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403)
+        )
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(project.reload.security_alert_types).to eq([ "dependabot" ])
+        expect(project.code_scanning_scan_error_kind).to eq("unavailable")
+        expect(active_code_scanning_blocker_notifications).to be_empty
       end
 
       it "records code_scanning_permission_error_at on 403 so subsequent cycles back off" do

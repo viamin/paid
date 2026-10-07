@@ -494,10 +494,12 @@ RSpec.describe "Projects" do
       end
 
       context "with valid parameters" do
+        let(:github_client) { instance_double(GithubClient) }
+
         before do
-          github_client = instance_double(GithubClient)
           allow(GithubClient).to receive(:new).and_return(github_client)
           allow(github_client).to receive(:repository).with("octocat/hello-world").and_return(repo_response)
+          allow(github_client).to receive(:code_scanning_alerts).with("octocat/hello-world", default_branch: "main").and_return([])
           allow(github_client).to receive(:labels).with("octocat/hello-world").and_return([])
           allow(github_client).to receive(:create_label)
         end
@@ -545,6 +547,17 @@ RSpec.describe "Projects" do
             }
           }
           expect(Project.last.name).to eq("hello-world")
+        end
+
+        # @spec GITHUB-SYNC-020
+        it "removes code scanning during import when GitHub explicitly says it is disabled" do
+          allow(github_client).to receive(:code_scanning_alerts)
+            .and_raise(GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403))
+
+          post projects_path, params: valid_params
+
+          expect(Project.last.security_alert_types).not_to include("code_scanning")
+          expect(Project.last.code_scanning_scan_error_kind).to eq("unavailable")
         end
       end
 
@@ -1998,6 +2011,19 @@ RSpec.describe "Projects" do
         expect(response.body).to include('name="project[auto_scan_security]"')
       end
 
+      # @spec GITHUB-SYNC-020
+      it "explains unavailable code scanning and offers a refresh in settings" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "dependabot" ],
+          code_scanning_scan_error_kind: "unavailable",
+          code_scanning_scan_error_reason: "Code scanning is not enabled for this repository.")
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Code scanning is not enabled for this repository.")
+        expect(response.body).to include("Refresh code-scanning availability")
+      end
+
       it "shows the repository name (not editable)" do
         project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
         get edit_project_path(project)
@@ -2645,6 +2671,39 @@ RSpec.describe "Projects" do
         patch project_path(project), params: { project: { auto_scan_security: true } }
 
         expect(project.reload.auto_scan_security).to be true
+      end
+
+      # @spec GITHUB-SYNC-020
+      it "checks availability before restoring code scanning when security scanning is enabled" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: false, security_alert_types: [ "dependabot" ])
+        client = instance_double(GithubClient)
+        allow(GithubClient).to receive(:new).and_return(client)
+        allow(client).to receive(:code_scanning_alerts)
+          .with(project.full_name, default_branch: project.default_branch)
+          .and_raise(GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403))
+
+        patch project_path(project), params: { project: { auto_scan_security: true } }
+
+        expect(project.reload).to have_attributes(
+          auto_scan_security: true,
+          security_alert_types: [ "dependabot" ],
+          code_scanning_scan_error_kind: "unavailable"
+        )
+      end
+
+      # @spec GITHUB-SYNC-020
+      it "refreshes and explicitly restores code scanning after GitHub setup" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "dependabot" ], code_scanning_scan_error_kind: "unavailable")
+        client = instance_double(GithubClient)
+        allow(GithubClient).to receive(:new).and_return(client)
+        allow(client).to receive(:code_scanning_alerts)
+          .with(project.full_name, default_branch: project.default_branch).and_return([])
+
+        post refresh_code_scanning_availability_project_path(project)
+
+        expect(project.reload.security_alert_types).to contain_exactly("dependabot", "code_scanning")
       end
 
       it "allows updating the TDD mode" do # @spec TDD-MODE-002
