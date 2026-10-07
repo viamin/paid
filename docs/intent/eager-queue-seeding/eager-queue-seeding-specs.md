@@ -157,8 +157,9 @@
   issue into manual review, not create another automatic fix run. Missing,
   failed, malformed, wrong-branch/configuration, or pre-merge analysis SHALL
   be blocked, never treated as resolution, and resolution SHALL never be
-  derived from the merge alone or result counts. Alert timestamps are not
-  scan-freshness evidence.
+  derived from the merge alone or result counts. An upstream alert disposition,
+  including dismissal, SHALL remain recorded and SHALL never transition an
+  attempt to `verified_fixed`. Alert timestamps are not scan-freshness evidence.
   *Code:* `CodeScanningRemediationAttempt`,
   `GithubClient#code_scanning_analyses`,
   `SecurityAlerts::VerifyMergedRemediationAttempts`,
@@ -167,6 +168,66 @@
   *Test:* `spec/services/github_client_spec.rb`,
   `spec/services/security_alerts/verify_merged_remediation_attempts_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`.
+
+- [x] **EAGER-QUEUE-014** — When `SecurityAlerts::VerifyMergedRemediationAttempts`
+  runs against a synthetic code-scanning issue whose latest attempt is
+  `verification_blocked`, the verifier SHALL re-evaluate it against the freshly
+  fetched analyses and SHALL treat the re-evaluation under the same evidence
+  rules EAGER-QUEUE-013 requires for first-time verification: a matching
+  post-merge analysis on the target branch that contains the merge commit.
+  Each blocked attempt SHALL be revisited on every relevant scan or
+  credential repair (worker restart, repeated polls, manual retry) without
+  deleting or rewriting prior attempt history. A still-blocked attempt SHALL
+  keep its previous status and append the latest evidence; a previously
+  blocked attempt that now meets the rules SHALL transition to `verified_fixed`
+  (alert closed) or `verification_failed` (alert still open), and only the
+  latter SHALL move the source issue into `manual_review`. A blocked attempt
+  whose source issue was closed on GitHub or whose underlying PR has been
+  unmerged SHALL be left as historical, not relaunched into a new fix run.
+  *Code:* `SecurityAlerts::VerifyMergedRemediationAttempts`,
+  `SecurityAlerts::VerifyRemediationAttempt`,
+  `CodeScanningRemediationAttempt.retryable_block`,
+  `CodeScanningRemediationAttempt.latest_per_issue`.
+  *Test:* `spec/services/security_alerts/verify_merged_remediation_attempts_spec.rb`,
+  `spec/models/code_scanning_remediation_attempt_spec.rb`.
+
+- [x] **EAGER-QUEUE-015** — The auto-pick exclusion derived from a
+  `code_scanning_remediation_attempts` row SHALL be governed by the latest
+  attempt per issue, not by any earlier superseded attempt. A new merged
+  remediation PR SHALL be permitted to record a fresh attempt whose status
+  alone determines whether the issue is excluded; a prior
+  `verification_failed` or `verification_blocked` row SHALL NOT keep the
+  issue out of auto-pick once superseded. The duplicate-PR prevention
+  guards (EAGER-QUEUE-009) remain authoritative — a freshly merged PR still
+  excludes the issue until scanner reconciliation and verification clear it.
+  *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource#code_scanning_verification_block_issue_ids`,
+  `CodeScanningRemediationAttempt.latest_per_issue`.
+  *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+
+- [x] **EAGER-QUEUE-016** — When a project's latest attempt against a synthetic
+  code-scanning issue is `verification_blocked` and the issue is not already
+  in the manual_review lane (i.e. retryable evidence has not yet escalated),
+  the system SHALL publish a blocking `code_scanning_verification_blocked`
+  notification carrying the alert URL, linked PRs, blocked reason, the
+  attempt's age, the project's last successful scan timestamp, and a next
+  action. The notification SHALL be re-issued (idempotent on
+  `(source, subject)`) on every relevant scan so repeated polls and worker
+  restarts keep the surfaced state current, and SHALL be auto-resolved when
+  the attempt transitions to `verified_fixed` or `verification_failed` (the
+  latter moves the issue into the existing manual_review lane and provides
+  the operator escalation). Persistent configuration failures (missing
+  trusted GitHub usernames) and token permission errors (missing
+  `code_scanning_alerts:read` scope) SHALL each publish a distinct blocking
+  notification scoped to the project so the operator can resolve them; both
+  SHALL be auto-resolved on the next successful scan.
+  *Code:* `Notifications::Rules::CodeScanningVerificationBlocked`,
+  `Notifications::Rules::CodeScanningConfigurationError`,
+  `Notifications::Rules::CodeScanningPermissionsError`,
+  `Activities::ScanSecurityAlertsActivity#sync_code_scanning_notifications`.
+  *Test:* `spec/services/notifications/rules/code_scanning_verification_blocked_spec.rb`,
+  `spec/services/notifications/rules/code_scanning_configuration_error_spec.rb`,
+  `spec/services/notifications/rules/code_scanning_permissions_error_spec.rb`,
+  `spec/temporal/activities/scan_security_alerts_activity_spec.rb`.
 
 - [x] **EAGER-QUEUE-012** — An operator-invoked repair path SHALL exist to
   backfill a missing `parent_issue_id` link between an existing PR and its

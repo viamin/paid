@@ -26,6 +26,20 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
     }
   end
 
+  describe ".trusted_login_configured?" do
+    it "accepts a non-blank trusted GitHub username" do
+      project.update!(allowed_github_usernames: [ "  paid-bot  " ])
+
+      expect(described_class.trusted_login_configured?(project)).to be(true)
+    end
+
+    it "rejects a missing or blank trusted GitHub username" do
+      project.update_column(:allowed_github_usernames, [ nil, "  " ])
+
+      expect(described_class.trusted_login_configured?(project)).to be(false)
+    end
+  end
+
   describe "#call" do
     # @spec GITHUB-SYNC-015
     it "refreshes an existing issue with finding context and prior run evidence" do
@@ -136,6 +150,7 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
 
       existing.reload
       expect(existing.github_state).to eq("closed")
+      expect(existing).to have_attributes(paid_state: "manual_review", code_scanning_disposition: "dismissed")
     end
 
     it "reopens a closed issue when the alert reappears" do
@@ -145,7 +160,10 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
         github_number: 200_001_667,
         source: source,
         github_state: "closed",
-        paid_state: "completed")
+        paid_state: "manual_review",
+        code_scanning_disposition: "fixed")
+      prior_attempt = create(:code_scanning_remediation_attempt, issue: existing,
+        pull_request_number: 404, merge_commit_sha: "merge", merged_at: 1.hour.ago, status: "verified_fixed")
 
       described_class.new(project).call([ alert ])
 
@@ -153,6 +171,8 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
       expect(existing.github_state).to eq("open")
       expect(existing.paid_state).to eq("new")
       expect(existing.labels).to eq(%w[security code-scanning P1])
+      expect(existing.code_scanning_disposition).to eq("open")
+      expect(existing.code_scanning_remediation_attempts).to contain_exactly(prior_attempt)
     end
 
     it "updates metadata when an existing open issue has changed alert payload" do

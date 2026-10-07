@@ -33,7 +33,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     stub_analyses([ analysis ])
     stub_compare("ahead")
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload.status).to eq("verification_failed")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -48,11 +48,22 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
+  it "passes an upstream dismissal to verification rather than treating it as an absent alert" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
+    stub_analyses([ analysis ])
+    stub_compare("identical")
+
+    described_class.new(
+      project:, alerts: [ { number: 1838, state: "dismissed", dismissed_reason: "false positive" } ], github_client:
+    ).call
+
+    expect(attempt.reload.status).to eq("verification_blocked")
+  end
+
   it "does not resolve from the merge or an aggregate result count while the alert is open" do # @spec EAGER-QUEUE-013
     stub_analyses([ analysis.merge(results_count: 0) ])
     stub_compare("identical")
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload.status).to eq("verification_failed")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -63,7 +74,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     stub_analyses([ pr_branch_analysis, analysis ])
     stub_compare("ahead")
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload).to have_attributes(
       status: "verification_failed", verification_analysis_id: "1842809913", verification_ref: "main"
@@ -166,6 +177,75 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
 
     expect(attempt.reload.blocked_reason).to include("configuration differs")
     expect(github_client).not_to have_received(:compare)
+  end
+
+  describe "blocked-attempt recovery" do
+    before { attempt.update!(status: "verification_blocked", blocked_reason: "analysis is unavailable") }
+
+    it "resolves a blocked attempt when a later scan finds the alert closed" do # @spec EAGER-QUEUE-014
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([ analysis ])
+      allow(github_client).to receive(:compare).with(project.full_name, "merge", "descendant")
+        .and_return(Struct.new(:status).new("identical"))
+
+      described_class.new(project:, alerts: [], github_client:).call
+
+      expect(attempt.reload.status).to eq("verified_fixed")
+    end
+
+    it "fails a blocked attempt when a later scan still reports the finding open" do # @spec EAGER-QUEUE-014
+      issue.update!(paid_state: "completed")
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([ analysis ])
+      allow(github_client).to receive(:compare).with(project.full_name, "merge", "descendant")
+        .and_return(Struct.new(:status).new("ahead"))
+
+      described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
+
+      expect(attempt.reload.status).to eq("verification_failed")
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    it "keeps a blocked attempt blocked and appends evidence when evidence remains insufficient" do # @spec EAGER-QUEUE-014
+      attempt.update!(blocked_reason: "analysis is unavailable", evidence: { "prior_pull_id" => "old" })
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([])
+
+      described_class.new(project:, alerts: [], github_client:).call
+
+      expect(attempt.reload).to have_attributes(status: "verification_blocked", blocked_reason: "analysis is unavailable")
+      expect(attempt.evidence).to include("prior_pull_id" => "old")
+    end
+
+    it "is idempotent across repeated polls" do # @spec EAGER-QUEUE-014
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([])
+
+      3.times { described_class.new(project:, alerts: [], github_client:).call }
+
+      expect(attempt.reload.status).to eq("verification_blocked")
+    end
+
+    it "does not relaunch a fix when an attempted issue has been closed on GitHub" do # @spec EAGER-QUEUE-014
+      issue.update!(github_state: "closed", paid_state: "completed")
+      closed_alerts = [] # No open alerts for this synthetic issue
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([])
+
+      described_class.new(project:, alerts: closed_alerts, github_client:).call
+
+      expect(attempt.reload.status).to eq("verification_blocked")
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+  end
+
+  describe "prior verification outcomes" do
+    it "leaves verification_failed attempts untouched — only retryable_block is revisited" do # @spec EAGER-QUEUE-014
+      attempt.update!(status: "verification_failed",
+        blocked_reason: "finding remains open in matching post-merge analysis")
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([ analysis ])
+      allow(github_client).to receive(:compare).with(project.full_name, "merge", "descendant")
+        .and_return(Struct.new(:status).new("identical"))
+
+      described_class.new(project:, alerts: [], github_client:).call
+
+      expect(attempt.reload.status).to eq("verification_failed")
+    end
   end
 
   it "blocks on a malformed analysis that omits configuration identity" do

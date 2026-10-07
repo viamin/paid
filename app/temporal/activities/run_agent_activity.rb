@@ -188,7 +188,7 @@ module Activities
             non_retryable: true
           )
         rescue PromptAssembly::BuildIssuePrompt::AlertEvidenceError => error
-          # @spec GITHUB-SYNC-018
+          # @spec GITHUB-SYNC-019
           raise Temporalio::Error::ApplicationError.new(
             error.message,
             type: "CodeScanningEvidenceUnavailable",

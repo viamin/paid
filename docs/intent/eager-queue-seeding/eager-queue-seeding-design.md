@@ -151,6 +151,12 @@ fixed — the agent's patch might not actually close the CodeQL finding, or a
 regression could reintroduce it. Only the scanner itself, on its next pass
 over the live alert list, can say whether the alert is actually gone.
 
+That scanner evidence is configuration-specific: verification selects only a
+successful target-branch analysis with the finding's tool and category that
+contains the merge commit. It never substitutes aggregate scan counts or an
+analysis from another configuration. A GitHub dismissal closes upstream work
+but remains a disposition, not `verified_fixed` evidence.
+
 `Issue#last_scanner_reconciled_at` records when
 `SecurityAlerts::ProcessCodeScanningAlerts` last reconciled a given alert
 against the live scan results. Every pass over an alert still reported open
@@ -174,6 +180,49 @@ EAGER-QUEUE-009):
 Ordinary GitHub issues are unaffected: `merged_block_issue_ids` only relaxes
 the exclusion for `SYNTHETIC_CODE_SCANNING_SOURCE` issues, so a merged
 implementation PR keeps blocking a regular issue forever, as before.
+
+### Verification recovery and unresolved-state surfacing (#4152)
+
+A merged remediation produces a `CodeScanningRemediationAttempt`. The first
+`VerifyMergedRemediationAttempts` pass moves it through one of three
+terminal/holding states:
+
+- `verified_fixed` — scanner no longer reports the finding. The exclusion
+  lifts the next time `merged_block_issue_ids` is evaluated.
+- `verification_failed` — scanner still reports the same finding in a
+  matching post-merge analysis. The source issue moves into
+  `paid_state: "manual_review"`; the operator picks it up from the existing
+  manual_review inbox lane.
+- `verification_blocked` — evidence is missing, pending, on the wrong
+  branch, configuration-mismatched, or otherwise insufficient to confirm
+  resolution. The attempt keeps its previous status and the issue remains
+  excluded, but the absence of a "current attempt governs eligibility"
+  rule would silently strand it forever (#4152).
+
+The recovery path is a continuation of the same evidence-checked verifier,
+not a separate retry job:
+
+- `VerifyMergedRemediationAttempts.retryable_attempts` selects both
+  `awaiting_verification` and `verification_blocked` attempts so a worker
+  restart, a repeated poll, or a repaired credential automatically picks
+  blocked attempts back up. History is preserved — every blocked attempt is
+  re-evaluated, never rewritten, and a still-blocked attempt keeps its prior
+  status with the latest evidence appended.
+- `CodeScanningRemediationAttempt.latest_per_issue` is the single source of
+  truth for auto-pick eligibility. A new merged PR records a fresh attempt;
+  a prior `verification_failed` or `verification_blocked` row whose PR is
+  superseded SHALL NOT keep the issue out of auto-pick. This is the
+  "current attempt governs eligibility" rule; the merged-PR
+  duplicate-prevention guards remain the durable stop against a second
+  concurrent fix PR (EAGER-QUEUE-009).
+- `Notifications::Rules::CodeScanningVerificationBlocked` surfaces a
+  retryable blocker: alert URL, linked PRs, blocked reason, age, last
+  successful scan, and a recommended next action. Persistent configuration
+  failures (`ConfigurationError` from a missing trusted-username list) and
+  permission errors (`CodeScanningPermissionsError`) each get their own
+  project-scoped blocking notification so an operator can disambiguate a
+  credential problem from a scanner verdict. All three auto-resolve on the
+  next successful scan.
 
 ### Post-merge analysis evidence (#4147)
 

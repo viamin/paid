@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "date"
 require "fileutils"
 require "json"
 require "open3"

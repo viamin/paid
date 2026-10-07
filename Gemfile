@@ -179,10 +179,10 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.19"
+gem "good_job", "~> 4.20"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.6"
+gem "pagy", "~> 43.7"
 
 # PDF text extraction for knowledge imports
 gem "pdf-reader"

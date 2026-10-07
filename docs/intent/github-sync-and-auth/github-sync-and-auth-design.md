@@ -59,6 +59,38 @@ seven-day grace period before a blocking operator escalation. An unfixable
 alert can be accepted only with an owner, reason, and expiry; permission and
 ingestion failures are themselves blocking coverage failures.
 
+## Code-scanning coverage
+
+Code-scanning discovery has a default 24-hour cadence (configurable per
+project) and a 24-hour discovery-latency target after a healthy project is
+activated. A completed response, including a valid empty alert list, is the
+only event that advances the successful-scan watermark. Each fetch separately
+records its attempt time, its durable failure kind/reason, and the earliest
+retry time. This prevents a 404 or another unavailable response from looking
+like a clean snapshot.
+
+Failures use bounded, failure-specific retries: permission and unavailable
+configuration failures retry in one hour; rate limits retry at GitHub's reset
+time (or in five minutes if it is absent); transient API failures retry in five
+minutes. Disabled activation and a project that has not enabled the
+`code_scanning` alert type are coverage states, not empty findings. Operators
+see those states, unavailable failures, and stale/never-completed coverage on
+the project health surface.
+
+Verification of an awaiting remediation does not wait for the general
+discovery cadence: while an attempt awaits verification, the next successful
+coverage check is eligible after one hour. Failure backoff always takes
+precedence over that verification cadence.
+
+Resolution reconciliation is narrower than ordinary issue polling. It consumes
+only a complete, repository- and target-branch-scoped snapshot covering all
+scanner configurations and explicit upstream states. An alert omitted from a
+response is unknown, not fixed. Fixed and dismissed dispositions, their reason,
+and bounded GitHub evidence remain visible on the synthetic issue; neither
+disposition claims that Paid verified a code fix. A later open observation
+preserves the remediation-attempt history so operators can distinguish a real
+recurrence from a finding that was never scanner-verified.
+
 Remediation has a separate execution gate: immediately before dispatch, Paid
 re-reads the alert and accepts only an open alert with its selected default
 branch, analyzed commit, scanner configuration, and exactly one usable finding

@@ -24,7 +24,7 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
   end
 
   it "moves an unresolved post-merge finding to manual review without retrying" do # @spec EAGER-QUEUE-013
-    verify(alert: { number: 1838 })
+    verify(alert: { number: 1838, state: "open" })
 
     expect(attempt.reload).to have_attributes(status: "verification_failed", verification_analysis_id: "1842809913")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -36,8 +36,26 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
+  it "blocks a dismissed upstream finding instead of recording a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
+    verify(alert: { number: 1838, state: "dismissed", dismissed_reason: "false positive" })
+
+    expect(attempt.reload).to have_attributes(
+      status: "verification_blocked", blocked_reason: "finding was dismissed upstream: false positive"
+    )
+    expect(attempt.evidence).to include("alert_state" => "dismissed", "dismissed_reason" => "false positive")
+  end
+
+  it "blocks another upstream disposition instead of recording a verified fix" do # @spec EAGER-QUEUE-013
+    verify(alert: { number: 1838, state: "fixed" })
+
+    expect(attempt.reload).to have_attributes(
+      status: "verification_blocked", blocked_reason: "finding has upstream disposition: fixed"
+    )
+    expect(attempt.evidence).to include("alert_state" => "fixed")
+  end
+
   it "does not resolve from an aggregate result count when the alert is still open" do # @spec EAGER-QUEUE-013
-    verify(alert: { number: 1838 }, analysis: analysis.merge(results_count: 0))
+    verify(alert: { number: 1838, state: "open" }, analysis: analysis.merge(results_count: 0))
 
     expect(attempt.reload).to have_attributes(status: "verification_failed")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -87,7 +105,7 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
   end
 
   it "does not use alert updated_at as scan freshness evidence" do # @spec EAGER-QUEUE-013
-    verify(alert: { number: 1838, updated_at: 3.months.ago })
+    verify(alert: { number: 1838, state: "open", updated_at: 3.months.ago })
 
     expect(attempt.reload.status).to eq("verification_failed")
   end
@@ -98,5 +116,43 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     expect(attempt.reload).to have_attributes(
       status: "verification_blocked", blocked_reason: "analysis is unavailable"
     )
+  end
+
+  describe "blocked-attempt re-verification" do
+    before do
+      attempt.update!(status: "verification_blocked", blocked_reason: "analysis is unavailable",
+        evidence: { "prior_attempt_at" => 1.hour.ago.iso8601 })
+    end
+
+    it "preserves the blocked status on a re-verification that still cannot confirm the fix" do # @spec EAGER-QUEUE-014
+      verify(analysis: analysis.merge(status: "in_progress"))
+
+      expect(attempt.reload.status).to eq("verification_blocked")
+      expect(attempt.blocked_reason).to include("did not succeed")
+      expect(attempt.evidence).to include("prior_attempt_at")
+    end
+
+    it "transitions a blocked attempt to verified_fixed when the alert is no longer reported" do # @spec EAGER-QUEUE-014
+      verify
+
+      expect(attempt.reload.status).to eq("verified_fixed")
+    end
+
+    it "transitions a blocked attempt to verification_failed when the alert is still open" do # @spec EAGER-QUEUE-014
+      verify(alert: { number: 1838, state: "open" })
+
+      expect(attempt.reload.status).to eq("verification_failed")
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    it "does not re-move the issue to manual_review on a subsequent re-confirmation" do # @spec EAGER-QUEUE-014
+      issue.update!(paid_state: "manual_review", manual_review_reason: "operator-attached reason")
+      attempt.update!(status: "verification_failed", blocked_reason: "prior")
+
+      verify(alert: { number: 1838, state: "open" })
+
+      expect(attempt.reload.status).to eq("verification_failed")
+      expect(issue.reload.manual_review_reason).to eq("operator-attached reason")
+    end
   end
 end

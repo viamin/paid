@@ -1554,6 +1554,33 @@ class Project < ApplicationRecord
     @client ||= build_github_client
   end
 
+  # @spec GITHUB-SYNC-018
+  def code_scanning_coverage_status
+    return "disabled" unless auto_scan_security?
+    return "not_configured" unless security_alert_types.include?("code_scanning")
+    return "unavailable" if code_scanning_scan_error_kind.present?
+    return "stale" if last_code_scanning_scan_at.nil? ||
+      last_code_scanning_scan_at <= code_scanning_interval_hours.hours.ago
+
+    "current"
+  end
+
+  # @spec GITHUB-SYNC-018
+  def code_scanning_coverage_detail
+    case code_scanning_coverage_status
+    when "disabled"
+      "Security scanning is disabled. Enable Auto-Scan Security Alerts to establish coverage."
+    when "not_configured"
+      "Code scanning is not selected in this project's security alert types."
+    when "unavailable"
+      [ code_scanning_scan_error_kind.humanize, code_scanning_scan_error_reason.presence ].compact.join(": ")
+    when "stale"
+      "No complete code-scanning snapshot within the #{code_scanning_interval_hours}-hour discovery cadence."
+    else
+      "Last complete snapshot #{last_code_scanning_scan_at.to_fs(:long)}."
+    end
+  end
+
   def build_github_client
     primary = if github_installation_id.present? || github_installation.present?
       credential = github_credential

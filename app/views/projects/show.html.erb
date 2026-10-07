@@ -279,6 +279,25 @@
             </dd>
           </div>
         <% end %>
+        <%# @spec GITHUB-SYNC-018 %>
+        <% coverage_status = @project.code_scanning_coverage_status %>
+        <% coverage_color = case coverage_status
+          when "current" then "bg-green-100 text-green-700"
+          when "disabled", "not_configured" then "bg-gray-100 text-gray-600"
+          else "bg-amber-100 text-amber-700"
+        end %>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Code Scanning Coverage</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= coverage_color %>">
+              <%= coverage_status.humanize %>
+            </span>
+            <p class="mt-1 text-xs text-gray-500"><%= @project.code_scanning_coverage_detail %></p>
+            <% if @project.next_code_scanning_scan_at.present? %>
+              <p class="mt-1 text-xs text-gray-500">Next retry: <%= @project.next_code_scanning_scan_at.to_fs(:long) %></p>
+            <% end %>
+          </dd>
+        </div>
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
           <dt class="text-sm font-medium text-gray-500">TDD Mode</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">

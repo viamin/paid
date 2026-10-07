@@ -65,7 +65,7 @@ module Activities
             # manual_review_reason via the Issue callback and re-arm the
             # auto-pick re-enqueue pump for a run that deterministic evidence
             # validation just blocked.
-            # @spec GITHUB-SYNC-018
+            # @spec GITHUB-SYNC-019
             "manual_review"
           else
             "failed"
