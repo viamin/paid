@@ -43,8 +43,6 @@ RSpec.describe "Projects::ChangeIntents" do
   # @spec CHANGE-INTENT-INBOX-001
   describe "hostile return_to targets" do
     it "falls back to the project page for forged absolute, protocol-relative, and backslash targets" do
-      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
-
       [ "https://evil.com/inbox", "//evil.com/inbox", "/inbox\\evil.com" ].each do |forged|
         change_intent.update!(status: "draft")
 
