@@ -217,6 +217,7 @@ not a separate retry job:
   project-scoped blocking notification so an operator can disambiguate a
   credential problem from a scanner verdict. All three auto-resolve on the
   next successful scan.
+
 ### Post-merge analysis evidence (#4147)
 
 `SecurityAlerts::VerifyMergedRemediationAttempts` verifies a recorded attempt
