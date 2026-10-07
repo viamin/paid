@@ -505,6 +505,38 @@ RSpec.describe "ChatSessions" do
         expect(wrapper["class"].split.sort).to include("min-h-0")
       end
 
+      it "renders both jump-to-latest and jump-to-input buttons in the top bar (#4174)" do
+        # The on-load jump lands the user on the top of the last assistant
+        # response so they don't have to scroll past the rest of the
+        # transcript. A button is still exposed for the same target in case
+        # the user scrolls back up and wants to return (#4174).
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        jump_to_latest = doc.at_xpath("//button[@data-action='click->chat#scrollToLatestResponse'][contains(., 'Jump to latest')]")
+        jump_to_input = doc.at_xpath("//button[@data-action='click->chat#scrollToInput'][contains(., 'Jump to input')]")
+
+        expect(jump_to_latest).to be_present
+        expect(jump_to_input).to be_present
+      end
+
+      it "renders the sticky icon-only jump-to-latest button next to back-to-top (#4174)" do
+        # Both sticky buttons share a single sticky wrapper so they sit side
+        # by side centered at the top of the transcript, instead of stacking
+        # on top of each other.
+        get chat_session_path(chat_session)
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        sticky_cluster = doc.at_xpath(
+          "//div[contains(@class, 'sticky') and .//button[@data-chat-target='backToTop'] and .//button[@data-chat-target='stickyJumpToLatest']]"
+        )
+
+        expect(sticky_cluster).to be_present
+        expect(sticky_cluster["class"].split.sort).to include("flex", "items-center", "justify-center")
+      end
+
       it "height-bounds the chat panel so the conversation container is the scroll container (#3459, #3635)" do
         # @spec CHAT-API-008, CHAT-API-009
         # The #3331 fix added `min-h-0` to the inner flex-1 wrapper, but the
