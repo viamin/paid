@@ -79,6 +79,30 @@ RSpec.describe AgentRun do
   end
 
   describe "#effective_prompt with a custom prompt" do
+    it "rebuilds a code-scanning custom prompt around refreshed evidence" do
+      # @spec GITHUB-SYNC-018
+      alert_number = 1666
+      issue.update!(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + alert_number)
+      agent_run.update!(custom_prompt: "Use the refreshed scanner evidence.")
+      github_client = instance_double(GithubClient)
+      github_token = instance_double(GithubToken, client: github_client)
+      allow(project).to receive(:github_token).and_return(github_token)
+      allow(github_client).to receive_messages(
+        issue_comments: [],
+        code_scanning_alert: {
+          number: alert_number, state: "open", target_ref: "refs/heads/#{project.default_branch}",
+          ref: "refs/heads/#{project.default_branch}", commit_sha: "a" * 40,
+          tool_name: "CodeQL", analysis_key: "codeql/ruby",
+          location: { path: "app/controllers/runners_controller.rb", start_line: 1 },
+          source_read_verified: true
+        }
+      )
+
+      prompt = agent_run.effective_prompt
+
+      expect(prompt).to include("code-scanning-alert-1666", "Supplementary run instructions", "Use the refreshed scanner evidence.")
+    end
+
     it "stops a code-scanning run when its refreshed alert is resolved" do
       # @spec GITHUB-SYNC-015
       alert_number = 1667
