@@ -112,18 +112,22 @@ JSON stream itself rather than trusting the exit code alone. The script:
 
 1. Captures the JSON output, ignoring progress noise, and reads every
    `auditAdvisory` event into an in-memory list of findings.
-3. Validates the allowlist: each entry has `id`, `module`, `reason`,
+2. Validates the allowlist: each entry has `id`, `module`, `reason`,
    `owner`, `expires_on`, `tracking_issue`; each `expires_on` is a parseable
    ISO 8601 date and is not in the past; each `id` is unique; each `id`
    matches `^GHSA-[0-9a-z-]+$`. Any malformed or expired entry fails the
    run before findings are evaluated, so a stale exception cannot quietly
    keep a run green.
-4. Classifies each finding: scanner/registry/network errors fail the run;
-   advisory findings are accepted only when matched by an unexpired
+3. Classifies the run: error events and unparseable output fail the run
+   as scanner failures, as does a non-zero exit that produced no advisory
+   report. A non-zero exit with advisory events is a normal report, not a
+   scanner failure — yarn exits 1 whenever it reports advisories.
+   Advisory findings are accepted only when matched by an unexpired
    allowlist entry; everything else fails the run.
-5. Prints a structured summary (counts by severity, accepted findings with
-   expiry, blocking findings) so the CI log and the local run show the
-   same surface area.
+4. Prints a structured summary (counts, accepted findings with expiry,
+   blocking findings) so the CI log and the local run show the same
+   surface area, and (when `YARN_AUDIT_ACCEPTED_REPORT` is set) writes
+   the accepted rows as JSON for the CI step summary.
 
 ## CI Integration
 
@@ -131,8 +135,13 @@ JSON stream itself rather than trusting the exit code alone. The script:
 trusted authors, on pushes to `main`, and on the daily schedule. The job
 fails on a non-zero exit from `bin/audit` exactly as it already fails on
 a non-zero exit from `bin/brakeman` or `bin/bundler-audit`. The audit
-output is printed to the job log; a future change can move the structured
-summary into a step summary annotation without changing the gate.
+step exports the accepted (allowlisted) advisories to a JSON report via
+the `YARN_AUDIT_ACCEPTED_REPORT` environment variable, and the summary
+step renders those rows — advisory ID, package, severity, expiry, owner,
+tracking issue — as a table in `$GITHUB_STEP_SUMMARY` so accepted
+findings are visible without digging through the job log
+(REPO-DEPENDENCY-AUDIT-004). Full finding detail (titles, vulnerable
+paths, recommendations) stays in the job log under `== Yarn audit ==`.
 
 ## What This Segment is Not
 

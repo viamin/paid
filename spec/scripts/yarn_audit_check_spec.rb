@@ -38,30 +38,34 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
       prepare_workspace(
         dir,
         allowlist: empty_allowlist,
-        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg")
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg"),
+        yarn_exit: 1
       )
 
       stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
 
-      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(status.exitstatus).to eq(1), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(stderr).to include("yarn audit reported 1 uncovered advisory")
+      expect(stderr).not_to include("scanner failed")
       expect(stdout).to include("blocking findings:")
       expect(stdout).to include("GHSA-xxxx-yyyy-zzzz (high) demo-pkg")
     end
   end
 
-  it "exits zero and surfaces an accepted advisory when the allowlist covers it" do
+  it "exits zero and surfaces an accepted advisory when the allowlist covers it, even though yarn exits 1 for the advisory report" do
     # @spec REPO-DEPENDENCY-AUDIT-004
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
       prepare_workspace(
         dir,
         allowlist: allowlist_with(future_date: future_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz"),
-        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg")
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg"),
+        yarn_exit: 1
       )
 
       stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stderr).not_to include("scanner failed")
       expect(stdout).to include("accepted (allowlisted): 1")
       expect(stdout).to include("blocking: 0")
       expect(stdout).to include("GHSA-xxxx-yyyy-zzzz (high) demo-pkg@1.0.0 expires #{future_date}")
@@ -212,8 +216,128 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "fails the run as a scanner failure when yarn exits non-zero with a summary but no advisory report" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: empty_yarn_output, yarn_exit: 1)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("yarn audit scanner failed")
+    end
+  end
+
+  it "fails the run as a scanner failure when the yarn binary cannot be executed" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: empty_yarn_output)
+      # A broken interpreter makes execve fail (ENOENT) without the PATH
+      # search falling through to another yarn on PATH.
+      File.write(File.join(dir, "stubbin", "yarn"), "#!/nonexistent/interpreter\n")
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("yarn audit scanner failed")
+      expect(stderr).to include("could not run yarn audit")
+    end
+  end
+
+  it "writes the accepted report with an ISO date even when the allowlist quotes expires_on" do
+    # @spec REPO-DEPENDENCY-AUDIT-004
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      report_path = File.join(dir, "yarn-audit-accepted.json")
+      prepare_workspace(
+        dir,
+        allowlist: allowlist_with(future_date: future_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz").gsub("expires_on: #{future_date}", "expires_on: \"#{future_date}\""),
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg"),
+        yarn_exit: 1
+      )
+
+      _stdout, _stderr, status = run_with_report_env(dir, report_path)
+
+      expect(status.success?).to be(true)
+      expect(JSON.parse(File.read(report_path))).to eq([
+        expected_accepted_row(ghsa_id: "GHSA-xxxx-yyyy-zzzz", expires_on: future_date)
+      ])
+    end
+  end
+
+  it "writes structured accepted rows to YARN_AUDIT_ACCEPTED_REPORT when set" do
+    # @spec REPO-DEPENDENCY-AUDIT-004
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      report_path = File.join(dir, "yarn-audit-accepted.json")
+      prepare_workspace(
+        dir,
+        allowlist: allowlist_with(future_date: future_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz"),
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg"),
+        yarn_exit: 1
+      )
+
+      _stdout, _stderr, status = run_with_report_env(dir, report_path)
+
+      expect(status.success?).to be(true)
+      expect(JSON.parse(File.read(report_path))).to eq([
+        expected_accepted_row(ghsa_id: "GHSA-xxxx-yyyy-zzzz", expires_on: future_date)
+      ])
+    end
+  end
+
+  it "writes an empty accepted report when nothing is accepted" do
+    # @spec REPO-DEPENDENCY-AUDIT-004
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      report_path = File.join(dir, "yarn-audit-accepted.json")
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: empty_yarn_output)
+
+      _stdout, _stderr, status = run_with_report_env(dir, report_path)
+
+      expect(status.success?).to be(true)
+      expect(JSON.parse(File.read(report_path))).to eq([])
+    end
+  end
+
+  it "does not write an accepted report on a scanner failure" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      report_path = File.join(dir, "yarn-audit-accepted.json")
+      prepare_workspace(
+        dir,
+        allowlist: empty_allowlist,
+        yarn_output: "",
+        yarn_stderr: "yarn command failed before producing audit output",
+        yarn_exit: 1
+      )
+
+      _stdout, _stderr, status = run_with_report_env(dir, report_path)
+
+      expect(status.exitstatus).to eq(2)
+      expect(File.exist?(report_path)).to be(false)
+    end
+  end
+
   def env(dir)
     { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+  end
+
+  def run_with_report_env(dir, report_path)
+    Open3.capture3(
+      env(dir).merge("YARN_AUDIT_ACCEPTED_REPORT" => report_path),
+      script_path(dir),
+      chdir: dir
+    )
+  end
+
+  def expected_accepted_row(ghsa_id:, expires_on:)
+    {
+      "id" => ghsa_id,
+      "module" => "demo-pkg",
+      "installed_version" => "1.0.0",
+      "severity" => "high",
+      "expires_on" => expires_on,
+      "owner" => "@paid/test",
+      "tracking_issue" => "#1"
+    }
   end
 
   def script_path(dir)

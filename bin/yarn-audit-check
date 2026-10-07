@@ -11,7 +11,12 @@
 # entry in `config/security/yarn-audit-allowlist.yml`, non-zero when a
 # scanner/network/registry error happened, when the allowlist is
 # malformed or expired, or when an advisory is reported that no entry
-# covers.
+# covers. Note that `yarn audit` exits 1 on its normal advisory-report
+# path, so events are parsed before the exit status is classified.
+#
+# When YARN_AUDIT_ACCEPTED_REPORT points at a writable path, the
+# accepted (allowlisted) findings are also written there as structured
+# JSON so CI can render them in the run summary.
 
 require "json"
 require "yaml"
@@ -26,6 +31,7 @@ module Security
     GHSA_ID_PATTERN = /\AGHSA-[0-9a-z-]+\z/.freeze
     REQUIRED_FIELDS = %w[id module reason owner expires_on tracking_issue].freeze
     ALLOWLIST_PATH = File.expand_path("../config/security/yarn-audit-allowlist.yml", __dir__)
+    ACCEPTED_REPORT_ENV_KEY = "YARN_AUDIT_ACCEPTED_REPORT"
     SCANNER_ERROR_TYPES = %w[error].freeze
 
     Result = Struct.new(:exit_status, :summary, keyword_init: true)
@@ -40,13 +46,21 @@ module Security
 
     def run
       allowlist = load_allowlist!
-      raw_events, stderr, status = run_yarn_audit
-      return scanner_failure(process_failure_detail(stderr, status)) unless status.success?
+      begin
+        raw_events, stderr, status = run_yarn_audit
+      rescue SystemCallError => e
+        return scanner_failure("could not run yarn audit: #{e.message}")
+      end
 
+      # Parse before looking at the exit status: yarn audit exits 1 on its
+      # normal advisory-report path, so a non-zero status with advisory
+      # events is a report to classify, not a scanner failure.
       findings, scanner_error = parse_events(raw_events)
       return scanner_failure(scanner_error) if scanner_error
+      return scanner_failure(process_failure_detail(stderr, status)) if failure_without_report?(status, findings)
 
       accepted, blocking = classify(findings, allowlist)
+      write_accepted_report(accepted)
       print_summary(findings: findings, accepted: accepted, blocking: blocking)
       blocking.empty? ? ok : blocking_failure(blocking)
     end
@@ -64,6 +78,9 @@ module Security
       validate_allowlist_shape!(entries)
 
       entries.each_with_object({}) do |entry, acc|
+        # Normalize to a Date so downstream consumers (report writer) can
+        # rely on iso8601; validation above already rejected nil.
+        entry["expires_on"] = parse_date(entry.fetch("expires_on"))
         acc[entry.fetch("id")] = entry
       end
     rescue Psych::SyntaxError => e
@@ -114,6 +131,12 @@ module Security
       return stderr.strip unless stderr.strip.empty?
 
       "yarn audit exited with status #{status.exitstatus || "unknown"}"
+    end
+
+    # A non-zero exit is only a scanner failure when no advisory report was
+    # produced; see the run method for why the events are parsed first.
+    def failure_without_report?(status, findings)
+      !status.success? && findings.empty?
     end
 
     def parse_events(raw)
@@ -179,6 +202,30 @@ module Security
 
     def normalize_id(id)
       id
+    end
+
+    # Writes the structured accepted rows as JSON to the path named by
+    # YARN_AUDIT_ACCEPTED_REPORT so CI can surface them in the run
+    # summary (REPO-DEPENDENCY-AUDIT-004). No-op when the env var is
+    # unset, so local runs are unaffected.
+    def write_accepted_report(accepted)
+      path = ENV[ACCEPTED_REPORT_ENV_KEY]
+      return unless path
+
+      rows = accepted.map do |row|
+        finding = row[:finding]
+        entry = row[:entry]
+        {
+          id: finding[:id],
+          module: finding[:module_name],
+          installed_version: finding[:installed_version],
+          severity: finding[:severity],
+          expires_on: entry["expires_on"].iso8601,
+          owner: entry["owner"],
+          tracking_issue: entry["tracking_issue"]
+        }
+      end
+      File.write(path, JSON.pretty_generate(rows))
     end
 
     def print_summary(findings:, accepted:, blocking:)
