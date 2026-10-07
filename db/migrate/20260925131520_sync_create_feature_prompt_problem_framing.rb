@@ -17,7 +17,7 @@ class SyncCreateFeaturePromptProblemFraming < ActiveRecord::Migration[8.1]
     {
       "name" => "flag_guard_rule",
       "required" => false,
-      "description" => "Rendered rollout-guard rule: paid FeatureFlags wiring on Ruby projects, repository-native gating elsewhere"
+      "description" => "Rendered rollout-guard rule: paid FeatureFlags wiring when repository scan confirms the API, repository-native gating elsewhere"
     }
   ].freeze
 

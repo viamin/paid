@@ -37,6 +37,13 @@ evidence before applying the Paid wiring. A Ruby, Rails, or undetected project
 without that evidence uses a repository-native guard and can never be blocked
 on artifacts it cannot produce.
 
+Existing projects scanned before this field was added keep a stored profile
+without `feature_flags_pattern` and would silently fall back to the
+repository-native guard even when they actually host the API. The transition
+migration `20261007202504_backfill_repo_profile_feature_flags_pattern_for_ruby_projects`
+re-enqueues `EnqueueKnowledgeCollectionJob` for active Ruby projects so the
+detector repopulates the field once after deploy.
+
 `Features::RdrContract` enforces the section for `create_feature` docs-only PRs;
 on a project without the detected API it drops the two `FeatureFlags::` wiring
 checks and keeps the language-agnostic enablement-surface requirement.

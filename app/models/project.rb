@@ -950,6 +950,13 @@ class Project < ApplicationRecord
   # Whether a repository scan found the paid FeatureFlags API. This is kept
   # separate from language/framework detection because Ruby alone does not
   # establish that a project implements Paid's feature-flag convention.
+  #
+  # Projects scanned before #4172 added `feature_flags_pattern` keep a stored
+  # profile without this key and would render the generic rollout guard until
+  # the detector runs again — see
+  # `db/migrate/20261007202504_backfill_repo_profile_feature_flags_pattern_for_ruby_projects.rb`
+  # which re-enqueues `EnqueueKnowledgeCollectionJob` for active Ruby projects
+  # so the new field gets populated.
   # @spec RDR-ROLLOUT-GUARD-003
   # @spec RDR-ROLLOUT-GUARD-004
   def uses_feature_flags_pattern?
