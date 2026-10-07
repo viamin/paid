@@ -65,22 +65,24 @@ module Projects
     # redirect back to the inbox pane that initiated the action). Falls back
     # to the project page, matching the pre-inbox lifecycle.
     def safe_return_target
-      inbox_return_target || project_path(@project)
+      requested = normalized_return_to(params[:return_to])
+      return requested if inbox_safe_return?(requested)
+
+      project_path(@project)
     end
 
     def redirect_on_invalid_transition
-      inbox_return_target || project_change_intent_path(@project, @change_intent)
+      requested = normalized_return_to(params[:return_to])
+      return requested if inbox_safe_return?(requested)
+
+      project_change_intent_path(@project, @change_intent)
     end
 
-    # Parses `params[:return_to]` with `normalized_return_to` (URI scheme/host
-    # validation) and keeps only inbox-scoped paths so the bell/notification
-    # surface is never invoked from the Inbox-driven flows.
-    def inbox_return_target
-      target = normalized_return_to(params[:return_to])
-      return nil if target.blank?
-      return target if target.start_with?(inbox_path)
-
-      nil
+    # Restricts the validated local URL to the inbox surface we own. `normalized_return_to`
+    # already guarantees the URL is a relative path with no scheme or host; the inbox
+    # prefix check keeps the user on the inbox pane that initiated the action.
+    def inbox_safe_return?(path)
+      path.present? && path.start_with?(inbox_path)
     end
   end
 end
