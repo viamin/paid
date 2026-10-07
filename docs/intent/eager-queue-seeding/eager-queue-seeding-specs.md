@@ -157,8 +157,9 @@
   issue into manual review, not create another automatic fix run. Missing,
   failed, malformed, wrong-branch/configuration, or pre-merge analysis SHALL
   be blocked, never treated as resolution, and resolution SHALL never be
-  derived from the merge alone or result counts. Alert timestamps are not
-  scan-freshness evidence.
+  derived from the merge alone or result counts. An upstream alert disposition,
+  including dismissal, SHALL remain recorded and SHALL never transition an
+  attempt to `verified_fixed`. Alert timestamps are not scan-freshness evidence.
   *Code:* `CodeScanningRemediationAttempt`,
   `GithubClient#code_scanning_analyses`,
   `SecurityAlerts::VerifyMergedRemediationAttempts`,
