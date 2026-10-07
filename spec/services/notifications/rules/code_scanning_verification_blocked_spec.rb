@@ -19,7 +19,7 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
 
   before { allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) }
 
-  it "publishes a blocking notification carrying alert/PR/evidence/blocked-reason/age/next-action" do # @spec EAGER-QUEUE-016
+  it "publishes a non-blocking verification-status notification with accurate guidance" do # @spec EAGER-QUEUE-016
     project.update!(last_code_scanning_scan_at: 2.hours.ago)
 
     expect {
@@ -27,8 +27,7 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
       }.to change(Notification, :count).by(1)
 
     notification = Notification.find_by!(source: "code_scanning_verification_blocked", subject: attempt)
-    expect(notification.severity).to eq("error")
-    expect(notification.blocking).to be(true)
+    expect(notification).to have_attributes(severity: "info", blocking: false)
     expect(notification.metadata).to include(
       "alert_url" => issue.github_url,
       "issue_id" => issue.id,
@@ -38,8 +37,20 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
       "blocked_reason" => "analysis is unavailable",
       "last_successful_scan_at" => project.last_code_scanning_scan_at.iso8601
     )
-    expect(notification.metadata["remediation_steps"]).to be_an(Array).and(be_present)
+    expect(notification.metadata["recommended_action"])
+      .to eq("Review the recorded scanner evidence and alert status; Paid will re-evaluate this verification wait on relevant scans.")
+    expect(notification.metadata["remediation_steps"])
+      .to eq([ "Review the recorded scanner evidence and alert status." ])
     expect(notification.action_url).to eq("/projects/#{project.id}")
+  end
+
+  it "reconciles a previously published blocking wait to non-blocking on the next evaluation" do # @spec EAGER-QUEUE-016
+    notification = create(:notification, :error, account: account, subject: attempt,
+      source: described_class::SOURCE, blocking: true)
+
+    described_class.call(scope: [ attempt ])
+
+    expect(notification.reload).to have_attributes(severity: "info", blocking: false)
   end
 
   it "deduplicates by (source, subject) on repeated polls" do # @spec EAGER-QUEUE-016
