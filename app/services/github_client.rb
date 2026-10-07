@@ -1138,6 +1138,7 @@ class GithubClient
   # The alert list's most_recent_instance can belong to a different branch, so
   # it is never used as the remediation location without branch selection.
   # @spec GITHUB-SYNC-015
+  # @spec GITHUB-SYNC-018
   def code_scanning_alerts(repo, severity: nil, state: "open", per_page: 100, default_branch: nil)
     handle_errors do
       params = { state: state, per_page: per_page }
@@ -1173,25 +1174,51 @@ class GithubClient
 
   # Fetches normalized code-scanning analyses used to verify merged remediations.
   #
-  # @return [Array<Hash>] Scanner analyses, including their configuration and commit evidence
+  # GitHub's list-analyses response carries required +error+/+warning+ strings
+  # and identity fields, but no +status+ field. Each entry is normalized to a
+  # status: "succeeded" (documented empty +error+ with complete identity,
+  # including +tool.name+ and +category+ — both are required so a remediation
+  # attempt with nil configuration cannot falsely match via +nil == nil+),
+  # "failed" (non-blank +error+, retained verbatim), or "malformed" (any
+  # documented field missing, so success cannot be affirmed). Success is never
+  # inferred from HTTP 200 or +results_count+. The API lists analyses
+  # newest-first.
+  #
+  # @return [Array<Hash>] Scanner analyses with :id, :status, :ref, :commit_sha,
+  #   :tool_name, :category, :error, :warning, :created_at, :results_count
   # @spec EAGER-QUEUE-013
   def code_scanning_analyses(repo, per_page: 100)
     handle_errors do
       path = "#{Octokit::Repository.path(repo)}/code-scanning/analyses"
-      client.paginate(path, per_page:).map do |analysis|
-        {
-          id: analysis.id.to_s,
-          status: analysis.status,
-          ref: analysis.ref&.delete_prefix("refs/heads/"),
-          commit_sha: analysis.commit_sha,
-          tool_name: analysis.tool&.name,
-          category: analysis.category
-        }
-      end
+      client.paginate(path, per_page:).map { |analysis| code_scanning_analysis_payload(analysis) }
     end
   end
 
   private
+
+  def code_scanning_analysis_payload(analysis)
+    {
+      id: analysis.id.to_s,
+      status: code_scanning_analysis_status(analysis),
+      ref: analysis.ref&.delete_prefix("refs/heads/"),
+      commit_sha: analysis.commit_sha,
+      tool_name: analysis.tool&.name,
+      category: analysis.category,
+      error: analysis.error.to_s,
+      warning: analysis.warning.to_s,
+      created_at: analysis.created_at,
+      results_count: analysis.results_count
+    }
+  end
+
+  def code_scanning_analysis_status(analysis)
+    return "failed" if analysis.error.is_a?(String) && analysis.error.present?
+    return "malformed" unless analysis.error.is_a?(String) && analysis.warning.is_a?(String)
+    return "malformed" if analysis.id.nil? || analysis.ref.blank? || analysis.commit_sha.blank?
+    return "malformed" if analysis.tool&.name.blank? || analysis.category.blank?
+
+    "succeeded"
+  end
 
   def code_scanning_alert_payload(repo, alert, default_branch:, analyses_cache:)
     rule = alert.rule
@@ -1200,7 +1227,7 @@ class GithubClient
     target_ref = default_branch.present? ? "refs/heads/#{default_branch}" : nil
     target_instances = target_ref && instances ? instances.select { |instance| instance[:ref] == target_ref } : []
     selected = target_instances.one? ? target_instances.first : nil
-    excerpt = selected ? code_scanning_source_excerpt(repo, selected) : nil
+    source_evidence = selected ? code_scanning_source_evidence(repo, selected) : {}
 
     {
       number: alert.number, state: alert.state, severity: rule&.security_severity_level,
@@ -1212,19 +1239,20 @@ class GithubClient
       ref: selected&.dig(:ref), commit_sha: selected&.dig(:commit_sha),
       analysis_key: selected&.dig(:analysis_key), category: selected&.dig(:category),
       scan_time: selected && code_scanning_analysis_time(repo, selected, analyses_cache),
-      source_excerpt: excerpt,
+      source_excerpt: source_evidence[:excerpt],
+      source_read_verified: source_evidence[:verified],
       location_context_status: location_context_status(target_ref, instances, target_instances)
     }
   end
 
-  # Returns nil when the instances fetch fails so the payload can distinguish a
-  # degraded fetch from a genuinely empty instance list.
+  # Instance access is part of the remediation evidence boundary. Do not turn
+  # an authorization or transport failure into an apparently ordinary missing
+  # location: callers must be able to block remediation and report the cause.
+  # @spec GITHUB-SYNC-018
   def code_scanning_alert_instances(repo, alert_number)
     path = "#{Octokit::Repository.path(repo)}/code-scanning/alerts/#{alert_number}/instances"
     instances = handle_errors { Array(client.paginate(path, per_page: 100)) }
     instances.map { |instance| code_scanning_instance(instance) }
-  rescue GithubClient::Error
-    nil
   end
 
   def code_scanning_instance(instance)
@@ -1240,21 +1268,21 @@ class GithubClient
     }
   end
 
-  def code_scanning_source_excerpt(repo, instance)
+  # @spec GITHUB-SYNC-018
+  def code_scanning_source_evidence(repo, instance)
     location = instance[:location]
-    return unless location&.dig(:path) && instance[:commit_sha].present?
+    return {} unless location&.dig(:path) && instance[:commit_sha].present?
 
     source = file_content(repo, path: location[:path], ref: instance[:commit_sha])
     source_lines = source.to_s.lines
     start_line = [ location[:start_line].to_i - 3, 1 ].max
     end_line = [ location[:end_line].to_i + 3, source_lines.length ].min
-    return if source_lines.empty? || start_line > source_lines.length
+    return { verified: source.present? } if source_lines.empty? || start_line > source_lines.length
 
-    source_lines[(start_line - 1)..(end_line - 1)].each_with_index.map do |line, index|
+    excerpt = source_lines[(start_line - 1)..(end_line - 1)].each_with_index.map do |line, index|
       "%4d | %s" % [ start_line + index, line ]
     end.join
-  rescue GithubClient::Error
-    nil
+    { excerpt:, verified: true }
   end
 
   def code_scanning_analysis_time(repo, instance, analyses_cache)

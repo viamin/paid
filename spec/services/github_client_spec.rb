@@ -2510,21 +2510,17 @@ RSpec.describe GithubClient do
         expect(analyses_stub).to have_been_requested.once
       end
 
-      it "degrades to an explicit status instead of failing the batch when one alert's instances fetch fails" do
-        # @spec GITHUB-SYNC-015
+      it "preserves an instance-fetch failure for remediation admission" do
+        # @spec GITHUB-SYNC-018
         stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/5/instances")
           .with(query: { "per_page" => "100" })
           .to_return(status: 500, body: { message: "Server Error" }.to_json)
         stub_target_branch_instance(6)
         stub_analyses_for_ref
 
-        alerts = client.code_scanning_alerts(repo, default_branch: "main")
-        degraded = alerts.find { |alert| alert[:number] == 5 }
-        healthy = alerts.find { |alert| alert[:number] == 6 }
-
-        expect(degraded[:location_context_status]).to eq("instance_fetch_failed")
-        expect(degraded[:location]).to be_nil
-        expect(healthy[:location_context_status]).to eq("available")
+        expect {
+          client.code_scanning_alerts(repo, default_branch: "main")
+        }.to raise_error(GithubClient::ApiError, /instances/)
       end
     end
 
@@ -2633,20 +2629,86 @@ RSpec.describe GithubClient do
 
   describe "#code_scanning_analyses" do
     let(:repo) { "owner/repo" }
+    let(:commit_sha) { "a1" + "b" * 38 }
+    let(:analysis_url) { "https://api.github.com/repos/octocat/hello-world/code-scanning/analyses/1842809913" }
 
-    it "returns normalized analysis evidence" do
-      # @spec EAGER-QUEUE-013
+    # Sanitized shape of a real list-analyses response (live observation
+    # 2026-10-06, matching GitHub's documented schema): required error and
+    # warning strings, identity fields, tool object, and no status field.
+    let(:documented_analysis) do
+      { ref: "refs/heads/main", commit_sha: commit_sha,
+        analysis_key: ".github/workflows/codeql.yml:analyze", environment: %({"language":"ruby"}),
+        error: "", category: "/language:ruby", created_at: "2026-10-06T09:00:00Z",
+        results_count: 7, rules_count: 92, id: 1_842_809_913, url: analysis_url,
+        sarif_id: "6c81cd8e-b078-4ac3-a3be-1dad7dbd0b53",
+        tool: { name: "CodeQL", version: "2.21.0", guid: nil }, deletable: true, warning: "" }
+    end
+
+    def stub_analyses(payload)
       stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/analyses")
         .with(query: { "per_page" => "100" })
-        .to_return(status: 200, body: [
-          { id: 1_842_809_913, status: "succeeded", ref: "refs/heads/main", commit_sha: "abc123",
-            tool: { name: "CodeQL" }, category: "/language:ruby" }
-        ].to_json, headers: { "Content-Type" => "application/json" })
+        .to_return(status: 200, body: payload.to_json, headers: { "Content-Type" => "application/json" })
+    end
 
-      expect(client.code_scanning_analyses(repo)).to eq([
-        id: "1842809913", status: "succeeded", ref: "main", commit_sha: "abc123",
-        tool_name: "CodeQL", category: "/language:ruby"
+    it "normalizes a documented success that carries no status field" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([ documented_analysis ])
+
+      expect(client.code_scanning_analyses(repo)).to contain_exactly(
+        hash_including(
+          id: "1842809913", status: "succeeded", ref: "main", commit_sha: commit_sha,
+          tool_name: "CodeQL", category: "/language:ruby", error: "", warning: "",
+          results_count: 7
+        )
+      )
+    end
+
+    it "classifies error-bearing analyses as failed and retains the error detail" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([ documented_analysis.merge(error: "processing timed out after 30m0s", results_count: 0) ])
+
+      analysis = client.code_scanning_analyses(repo).first
+
+      expect(analysis[:status]).to eq("failed")
+      expect(analysis[:error]).to eq("processing timed out after 30m0s")
+    end
+
+    it "classifies analyses missing documented fields as malformed instead of trusting them" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([
+        documented_analysis.except(:error, :ref, :commit_sha),
+        documented_analysis.merge(error: nil)
       ])
+
+      statuses = client.code_scanning_analyses(repo).map { |analysis| analysis[:status] }
+
+      expect(statuses).to all(eq("malformed"))
+    end
+
+    it "classifies analyses missing tool.name or category as malformed so nil configuration cannot falsely match" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([
+        documented_analysis.merge(tool: {}),
+        documented_analysis.merge(tool: { name: nil }),
+        documented_analysis.merge(category: nil),
+        documented_analysis.merge(category: "")
+      ])
+
+      statuses = client.code_scanning_analyses(repo).map { |analysis| analysis[:status] }
+
+      expect(statuses).to all(eq("malformed"))
+    end
+
+    it "classifies analyses with a missing or null warning as malformed instead of trusting them" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([
+        documented_analysis.except(:warning),
+        documented_analysis.merge(warning: nil)
+      ])
+
+      statuses = client.code_scanning_analyses(repo).map { |analysis| analysis[:status] }
+
+      expect(statuses).to all(eq("malformed"))
     end
   end
 
