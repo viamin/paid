@@ -3,6 +3,7 @@
 module Prompts
   # @spec LID-RUNS-002
   # @spec LID-RUNS-005
+  # @spec LID-RUNS-007
   class BuildForLidPlanning
     # Documentation copy of the prompt this class builds, seeded into the
     # Prompts admin UI for reference (see db/seeds/prompts.rb, slug
@@ -26,7 +27,10 @@ module Prompts
       rationale as `[inferred]`.
 
       Produce docs-only Linked-Intent Development artifacts: HLD, LLDs, and EARS specs. When
-      adopting LID, also add the `## LID` block to AGENTS.md and create docs/arrows/index.yaml.
+      adopting LID, also add the exact `## LID` heading with `- Mode: Full` and
+      `- Version: 1.3.0` to root AGENTS.md or CLAUDE.md and create docs/arrows/index.yaml.
+      Only change files under docs/ or the instruction files AGENTS.md, CLAUDE.md,
+      and .github/copilot-instructions.md. Other paths are rejected before PR creation.
       Open a Planning PR containing only these docs changes, with an inference checklist so a
       human reviewer can confirm or correct every `[inferred]` item before implementation work
       begins.
@@ -57,6 +61,8 @@ module Prompts
         "",
         run_kind_directive,
         "",
+        "Only change files under docs/ or the instruction files AGENTS.md, CLAUDE.md, and .github/copilot-instructions.md. Other paths are rejected before PR creation.",
+        "",
         "Treat named plan docs as authored intent (not inferred) and map them as follows:",
         "- Problem / context sections -> HLD problem statement and LLD context",
         "- Alternatives / decisions -> LLD decisions and alternatives with authored rationale",
@@ -83,7 +89,8 @@ module Prompts
           "",
           "Required docs-only outputs: docs/high-level-design.md (HLD), one or more LLDs",
           "under docs/intent/<segment>/, matching EARS specs (*-specs.md), the ## LID block",
-          "added to AGENTS.md (or CLAUDE.md), and docs/arrows/index.yaml."
+          "added to root AGENTS.md or CLAUDE.md, and docs/arrows/index.yaml.",
+          "Use the exact heading `## LID` with bullets `- Mode: Full` and `- Version: 1.3.0`."
         ].join("\n")
       else
         [

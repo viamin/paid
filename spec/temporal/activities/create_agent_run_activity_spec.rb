@@ -250,6 +250,21 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(queued_run.custom_prompt).to include("docs/hld.md")
     end
 
+    # @spec LID-RUNS-005
+    it "includes the stored plan source alongside metadata docs when resuming planning" do
+      queued_run = create(:agent_run, :queued, :automatic,
+        project: project, goal: "lid_planning", custom_prompt: nil,
+        plan_doc_source: "docs/rdrs/RDR-001-seasonal-data-core.md",
+        external_metadata: { "plan_docs" => [ { "name" => "docs/hld.md" } ] })
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      prompt = queued_run.reload.custom_prompt
+      expect(prompt).to include("docs/rdrs/RDR-001-seasonal-data-core.md", "docs/hld.md")
+      expect(prompt).to include("no `[inferred]` marker")
+      expect(prompt).not_to include("No named plan docs were provided")
+    end
+
     it "persists the focus when provided" do
       result = activity.execute(
         project_id: project.id,

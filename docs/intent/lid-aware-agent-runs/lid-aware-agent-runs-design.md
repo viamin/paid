@@ -43,13 +43,17 @@ carries two explicit contracts:
   intent, not a free-form hint. The prompt instructs the agent that decisions
   sourced from named plan docs map into HLD/LLD/EARS as authored rationale and
   MUST NOT carry an `[inferred]` marker; only code-sourced rationale is
-  `[inferred]`.
+  `[inferred]`. Queued-run prompt preparation includes both `plan_doc_source`
+  and named docs in run metadata.
 - **Output artifact contract (LID-RUNS-007).** A successful run must produce the
   required docs-only artifact set, validated run-kind aware: adoption runs (no
   `lid_mode`) require the HLD, at least one LLD and its EARS specs, the `## LID`
   block, and `docs/arrows/index.yaml`; refinement runs (`lid_mode` present)
   require at least one LLD and its EARS specs. The contract is server-side
-  enforced at PR creation alongside the docs-only allowlist.
+  enforced at PR creation alongside the docs-only allowlist. Planning prompts
+  enumerate allowed paths and require adoption configuration in root `AGENTS.md`
+  or `CLAUDE.md` with an exact `## LID` heading and Mode/Version bullets, matching
+  repository LID detection.
 
 Finally, coherence checking is operational and intentionally soft-blocking:
 failed reports are persisted on the run and surfaced in the PR body rather
