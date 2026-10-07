@@ -330,10 +330,10 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     end
 
     # @spec QUESTION-EXPLORATION-002
-    it "denies users who cannot update the project" do
-      member = create(:user, :member, account: account)
+    it "denies users who cannot manage issues on the project" do
+      viewer = create(:user, :viewer, account: account)
       sign_out user
-      sign_in member
+      sign_in viewer
 
       expect {
         post project_issue_clarifying_questions_chat_path(project, issue)
@@ -342,6 +342,40 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       expect(response).to redirect_to(root_path)
       follow_redirect!
       expect(response.body).to include("You are not authorized to perform this action.")
+    end
+
+    # @spec OPERATOR-INBOX-002I
+    # The "Answer in chat" affordance is gated by Inbox::InteractiveChatAccess,
+    # which admits project collaborators without an account-level owner/admin
+    # role. The POST endpoint must match that gate so a user the view shows the
+    # button to can also click it.
+    it "opens chat for a project_member who is not an account owner/admin" do
+      collaborator = create(:user, account: account)
+      collaborator.add_role(:project_member, project)
+      sign_out user
+      sign_in collaborator
+
+      expect {
+        post project_issue_clarifying_questions_chat_path(project, issue)
+      }.to change(ChatSession, :count).by(1)
+
+      chat = ChatSession.find_by(clarifying_question_issue: issue)
+      expect(chat.created_by).to eq(collaborator)
+      expect(response).to redirect_to(chat_session_path(chat))
+    end
+
+    # @spec OPERATOR-INBOX-002I
+    it "opens chat for a project_admin collaborator" do
+      collaborator = create(:user, account: account)
+      collaborator.add_role(:project_admin, project)
+      sign_out user
+      sign_in collaborator
+
+      expect {
+        post project_issue_clarifying_questions_chat_path(project, issue)
+      }.to change(ChatSession, :count).by(1)
+
+      expect(response).to redirect_to(chat_session_path(ChatSession.last))
     end
 
     context "when the pending questions cannot be loaded" do

@@ -251,6 +251,23 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "get_inbox_chat_context",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { sections: [ "queue_metadata" ] } },
+        session: ->(user) {
+          build(:chat_session, account: user.account, created_by: user, project: project,
+            inbox_item_key: "clarifying_questions:#{issue.id}",
+            inbox_item_metadata: { "kind" => "clarifying_questions", "issue_id" => issue.id })
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "search_code",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, query: "agent run" } },

@@ -328,6 +328,19 @@
   `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`.
   *Test:* `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002I** — When any supported `Inbox::Queue::KINDS`
+  entry renders in an Inbox detail pane, the system SHALL offer authorized
+  contextual chat on desktop and mobile. The existing Answer in chat,
+  Investigate in chat, and Change Intent Chat about this actions SHALL remain
+  the sole chat action for their respective lanes; every other lane SHALL use
+  the shared Chat about this action. Opening the action SHALL reuse the
+  existing item-scoped session and SHALL not mutate the inbox item.
+  *Code:* `app/services/inbox/chat_action.rb`,
+  `app/views/dashboard/_inbox_chat_action.html.erb`,
+  `app/services/inbox/open_interactive_chat.rb`.
+  *Test:* `spec/services/inbox/chat_action_spec.rb`,
+  `spec/services/inbox/open_interactive_chat_spec.rb`.
+
 - [x] **OPERATOR-INBOX-009** — When a signed-in user opens `/inbox/:entry_id`
   for a stale or invalid entry in their current queue scope, the system SHALL
   redirect to `/inbox` with `303 See Other` instead of silently selecting the

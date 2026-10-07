@@ -95,6 +95,37 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("agent_run_output")).to include(hash_including(id: run.id, output: [ "runner exhausted" ]))
   end
 
+  it "retrieves a record-backed change-intent item on demand" do
+    # @spec OPERATOR-INBOX-002I
+    change_intent = create(:change_intent, :draft, :without_context_links, project:, title: "Audit closeout", intent: "Explain evidence")
+    chat_session.update!(
+      inbox_item_key: "change_intent_draft:#{change_intent.id}",
+      inbox_item_metadata: { "kind" => "change_intent_draft", "record_id" => change_intent.id }
+    )
+
+    context = described_class.call(chat_session:, user:, sections: [ :record ])
+
+    expect(context.fetch("record")).to include("id" => change_intent.id, "title" => "Audit closeout", "intent" => "Explain evidence")
+  end
+
+  it "retrieves partial-closeout evidence and recovery state on demand" do
+    # @spec PARTIAL-CLOSEOUT-010
+    pull_request = create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
+    chat_session.update!(
+      inbox_item_key: "partial_closeout:#{issue.id}",
+      inbox_item_metadata: { "kind" => "partial_closeout", "issue_id" => issue.id }
+    )
+
+    context = described_class.call(chat_session:, user:, sections: [ :partial_closeout ])
+
+    expect(context.fetch("partial_closeout")).to include(
+      issue: hash_including(id: issue.id),
+      merged_pull_requests: include(hash_including(number: pull_request.github_number)),
+      continuation_requests: [],
+      resolution: include("closeout_resolved_at" => nil)
+    )
+  end
+
   def github_comment(id:, login:, body:)
     user = Struct.new(:login).new(login)
     Struct.new(:id, :user, :body, :created_at).new(id, user, body, Time.current)

@@ -129,4 +129,73 @@ RSpec.describe Inbox::OpenInteractiveChat do
 
     expect(chat.inbox_item_metadata).to include("return_count" => 0)
   end
+
+  # @spec OPERATOR-INBOX-002I
+  # The intent_conformance lane stores an Inbox::IntentConformance::Snapshot
+  # (a plain data object) in `record`, not an ActiveRecord. audit_metadata must
+  # read the snapshot's `id`/`class` defensively so opening chat for that lane
+  # does not 500 on the first click.
+  it "creates a chat for an intent_conformance entry whose record is a Snapshot, not an AR record" do
+    project.update!(auto_merge_mode: "all")
+    pr = create_intent_conformance_pull_request
+    entry = inbox_entry(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)
+
+    chat = described_class.call(user:, entry:)
+
+    expect(chat).to have_attributes(inbox_item_key: entry.id, status: "active", project: project)
+    expect(chat.inbox_item_metadata).to include("kind" => Inbox::Queue::INTENT_CONFORMANCE_KIND, "issue_id" => pr.id)
+    expect(chat.inbox_item_metadata).not_to have_key("record_id")
+    expect(chat.inbox_item_metadata).to include("record_type" => "Inbox::IntentConformance::Snapshot")
+  end
+
+  # @spec OPERATOR-INBOX-002I
+  # The escalated_pr lane stores a Dashboard::BlockedPullRequests::Entry (also
+  # a plain Data object) in `record`. audit_metadata must read it defensively.
+  it "creates a chat for an escalated_pr entry whose record is a BlockedPullRequests Entry" do
+    pr = create_escalated_pull_request
+    entry = inbox_entry(kind: Inbox::Queue::ESCALATED_PR_KIND)
+    expect(entry.record).to be_a(Dashboard::BlockedPullRequests::Entry)
+
+    chat = described_class.call(user:, entry:)
+
+    expect(chat).to have_attributes(inbox_item_key: entry.id, status: "active", project: project)
+    expect(chat.inbox_item_metadata).to include("kind" => Inbox::Queue::ESCALATED_PR_KIND, "issue_id" => pr.id)
+    expect(chat.inbox_item_metadata).not_to have_key("record_id")
+    expect(chat.inbox_item_metadata).to include("record_type" => "Dashboard::BlockedPullRequests::Entry")
+  end
+
+  def create_intent_conformance_pull_request
+    pr = create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: 51,
+      last_scanned_head_sha: "sha1",
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: {
+        "failed" => [
+          { "signal" => "intent_conformance_ok", "reason_code" => "intent_conformance_blocked" }
+        ],
+        "not_evaluated" => []
+      }
+    )
+    create(:intent_conformance_verdict, :material_drift, issue: pr, pr_head_sha: "sha1")
+    pr
+  end
+
+  def create_escalated_pull_request
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: 91,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
+      labels: [ "paid-generated", "paid-automation", "paid-escalated" ]
+    )
+  end
+
+  def inbox_entry(kind:)
+    Inbox::Queue.call(user:, project:, kind:).sole
+  end
 end
