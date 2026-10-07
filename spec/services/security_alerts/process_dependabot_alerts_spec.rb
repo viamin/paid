@@ -123,6 +123,19 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  it "resolves open coverage records absent from the authoritative alert snapshot" do
+    open_coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 42,
+      alert_state: "open")
+    resolved_coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 43,
+      advisory_ghsa_id: "GHSA-already-resolved", alert_state: "resolved")
+
+    described_class.new(project).call([ alert ])
+
+    expect(open_coverage.reload.alert_state).to eq("resolved")
+    expect(resolved_coverage.reload.alert_state).to eq("resolved")
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
   it "lands constraint-blocked alerts in awaiting_processing when GitHub provides no incompatibility evidence" do
     described_class.new(project).call([
       alert.merge(number: 44, advisory_ghsa_id: "GHSA-pinned", first_patched_version: nil)

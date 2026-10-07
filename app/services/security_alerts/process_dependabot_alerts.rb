@@ -43,12 +43,12 @@ module SecurityAlerts
     # historically-resolved coverage row. @spec DEPENDABOT-COVERAGE-001
     def close_missing_alerts(by_number, alerts)
       open_numbers = alerts.each_with_object({}) { |alert, hash| hash[alert.fetch(:number)] = true }
-      by_number.each_value do |coverage|
-        next unless coverage.alert_state == "open"
-        next if open_numbers.key?(coverage.alert_number)
-
-        coverage.update!(alert_state: "resolved")
+      ids_to_close = by_number.each_value.filter_map do |coverage|
+        coverage.id if coverage.alert_state == "open" && !open_numbers.key?(coverage.alert_number)
       end
+      return if ids_to_close.empty?
+
+      project.dependabot_alert_coverages.where(id: ids_to_close).update_all(alert_state: "resolved")
     end
 
     def reconcile(alert, indexes)
