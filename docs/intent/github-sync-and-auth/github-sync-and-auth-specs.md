@@ -185,6 +185,22 @@
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/models/agent_run_prompt_assembly_spec.rb`.
 
+- [x] **GITHUB-SYNC-018** — Code-scanning reconciliation SHALL act only on an
+  authoritative, complete snapshot explicitly scoped to the repository, target
+  branch, and all scanner configurations. A partial, failed, filtered, or
+  differently scoped response SHALL not close a synthetic finding. Resolution
+  SHALL retain GitHub's fixed, dismissed, or other disposition plus available
+  reason and evidence; an omitted finding with no explicit state SHALL remain
+  unresolved/unknown rather than being treated as fixed. A dismissed finding
+  may close the upstream work item but SHALL not be presented as a verified
+  code remediation. A later open scanner observation SHALL preserve prior
+  attempts and record a recurrence rather than erase verification history.
+  *Code:* `SecurityAlerts::CodeScanningSnapshot`,
+  `SecurityAlerts::ReconcileResolved`,
+  `SecurityAlerts::ProcessCodeScanningAlerts`.
+  *Test:* `spec/services/security_alerts/reconcile_resolved_spec.rb`,
+  `spec/services/security_alerts/process_code_scanning_alerts_spec.rb`.
+
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including

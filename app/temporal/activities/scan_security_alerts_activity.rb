@@ -64,16 +64,17 @@ module Activities
       return unless should_scan_code_scanning?(project)
 
       heartbeat("scan_security_alerts.fetch_alerts", project_id: project.id)
-      all_alerts = fetch_code_scanning_alerts(project)
+      snapshot = fetch_code_scanning_alerts(project)
 
-      if all_alerts.nil?
+      if snapshot.nil?
         project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
         return
       end
 
+      all_alerts = snapshot.alerts
       heartbeat("scan_security_alerts.reconcile_resolved", project_id: project.id, alert_count: all_alerts.size)
       SecurityAlerts::ReconcileResolved.new(
-        project, all_alerts,
+        project, snapshot:,
         source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE
       ).call
 
@@ -125,7 +126,11 @@ module Activities
 
     def fetch_code_scanning_alerts(project)
       client = project.client
-      client.code_scanning_alerts(project.full_name, default_branch: project.default_branch)
+      alerts = %w[open fixed dismissed].flat_map do |state|
+        client.code_scanning_alerts(project.full_name, state:, default_branch: project.default_branch)
+      end
+      SecurityAlerts::CodeScanningSnapshot.new(repository: project.full_name, branch: project.default_branch,
+        configuration_scope: :all, complete: true, alerts:)
     rescue GithubClient::NotFoundError => e
       logger.warn(
         message: "github_sync.code_scanning_fetch_failed",

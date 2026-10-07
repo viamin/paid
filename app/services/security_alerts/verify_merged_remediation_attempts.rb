@@ -31,12 +31,17 @@ module SecurityAlerts
       analysis = matching_analysis(attempt, analyses)
       SecurityAlerts::VerifyRemediationAttempt.new(
         attempt:, alert: alerts[alert_number(attempt.issue)], analysis:,
-        contains_merge_commit: merge_commit_in?(attempt, analysis)
+        contains_merge_commit: merge_commit_in?(attempt, analysis),
+        analysis_missing_reason: analysis_missing_reason(analyses)
       ).call
     end
 
     def matching_analysis(attempt, analyses)
-      analyses.find { |analysis| matching_configuration?(attempt, analysis) } || analyses.first
+      analyses.find { |analysis| matching_configuration?(attempt, analysis) }
+    end
+
+    def analysis_missing_reason(analyses)
+      "analysis configuration differs from the finding" if analyses.any?
     end
 
     def merge_commit_in?(attempt, analysis)

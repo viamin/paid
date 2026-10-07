@@ -4,15 +4,16 @@ module SecurityAlerts
   # Applies only scanner evidence that is structurally tied to a merged fix.
   # @spec EAGER-QUEUE-013
   class VerifyRemediationAttempt
-    def initialize(attempt:, alert:, analysis:, contains_merge_commit:)
+    def initialize(attempt:, alert:, analysis:, contains_merge_commit:, analysis_missing_reason: nil)
       @attempt = attempt
       @alert = alert
       @analysis = analysis
       @contains_merge_commit = contains_merge_commit
+      @analysis_missing_reason = analysis_missing_reason
     end
 
     def call
-      return block!("analysis is unavailable") unless analysis
+      return block!(analysis_missing_reason || "analysis is unavailable") unless analysis
       return block!("analysis did not succeed") unless analysis[:status] == "succeeded"
       return block!("analysis is not on the target branch") unless analysis[:ref] == attempt.issue.project.default_branch
       return block!("analysis configuration differs from the finding") unless matching_configuration?
@@ -23,7 +24,7 @@ module SecurityAlerts
 
     private
 
-    attr_reader :attempt, :alert, :analysis, :contains_merge_commit
+    attr_reader :attempt, :alert, :analysis, :contains_merge_commit, :analysis_missing_reason
 
     def matching_configuration?
       analysis[:tool_name] == attempt.tool_name && analysis[:category] == attempt.category

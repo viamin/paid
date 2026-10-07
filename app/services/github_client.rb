@@ -1205,6 +1205,8 @@ class GithubClient
     {
       number: alert.number, state: alert.state, severity: rule&.security_severity_level,
       rule_id: rule&.id, rule_description: rule&.description, tool_name: tool&.name,
+      dismissed_reason: alert.dismissed_reason, dismissed_comment: alert.dismissed_comment,
+      dismissed_by: alert.dismissed_by&.login,
       summary: selected&.dig(:message),
       html_url: alert.html_url, created_at: alert.created_at,
       updated_at: alert.updated_at || alert.created_at, target_ref: target_ref,

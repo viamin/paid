@@ -146,6 +146,10 @@
   manual review, not create another automatic fix run. Missing, failed,
   wrong-branch/configuration, or pre-merge analysis SHALL be blocked, never
   treated as resolution. Alert timestamps are not scan-freshness evidence.
+  Verification SHALL select evidence only from the finding's matching scanner
+  configuration; aggregate counts, an unrelated configuration, and a merged
+  PR are not proof. A dismissed upstream alert SHALL never transition an
+  attempt to `verified_fixed`.
   *Code:* `CodeScanningRemediationAttempt`,
   `SecurityAlerts::VerifyRemediationAttempt`,
   `Automation::Strategies::AutoPick::DefaultCandidateSource`.
