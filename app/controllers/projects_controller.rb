@@ -214,7 +214,7 @@ class ProjectsController < ApplicationController
     result = SecurityAlerts::CodeScanningAvailability.call(project: @project, enable: true)
     notice = result.available? ? "Code-scanning availability refreshed and enabled." : "GitHub code scanning is unavailable for this repository."
     redirect_to edit_project_path(@project), notice:
-  rescue GithubClient::Error => e
+  rescue => e
     redirect_to edit_project_path(@project), alert: "Could not refresh code-scanning availability: #{e.message}"
   end
 
@@ -1047,7 +1047,7 @@ class ProjectsController < ApplicationController
 
   def refresh_code_scanning_after_enable
     SecurityAlerts::CodeScanningAvailability.call(project: @project, enable: true)
-  rescue GithubClient::Error => e
+  rescue => e
     flash[:alert] = "Security scanning was enabled, but GitHub availability could not be refreshed: #{e.message}"
   end
 
@@ -1058,7 +1058,7 @@ class ProjectsController < ApplicationController
 
   def check_code_scanning_availability(project)
     SecurityAlerts::CodeScanningAvailability.call(project:, enable: false)
-  rescue GithubClient::Error => e
+  rescue => e
     Rails.logger.warn(
       message: "github_sync.code_scanning_availability_check_failed",
       project_id: project.id,

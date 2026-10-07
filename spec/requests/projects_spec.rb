@@ -499,7 +499,7 @@ RSpec.describe "Projects" do
         before do
           allow(GithubClient).to receive(:new).and_return(github_client)
           allow(github_client).to receive(:repository).with("octocat/hello-world").and_return(repo_response)
-          allow(github_client).to receive(:code_scanning_alerts).with("octocat/hello-world", default_branch: "main").and_return([])
+          allow(github_client).to receive(:code_scanning_available?).with("octocat/hello-world").and_return(true)
           allow(github_client).to receive(:labels).with("octocat/hello-world").and_return([])
           allow(github_client).to receive(:create_label)
         end
@@ -551,13 +551,23 @@ RSpec.describe "Projects" do
 
         # @spec GITHUB-SYNC-020
         it "removes code scanning during import when GitHub explicitly says it is disabled" do
-          allow(github_client).to receive(:code_scanning_alerts)
+          allow(github_client).to receive(:code_scanning_available?)
             .and_raise(GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403))
 
           post projects_path, params: valid_params
 
           expect(Project.last.security_alert_types).not_to include("code_scanning")
           expect(Project.last.code_scanning_scan_error_kind).to eq("unavailable")
+        end
+
+        it "completes import when the availability probe has a transport failure" do # @spec GITHUB-SYNC-020
+          allow(github_client).to receive(:code_scanning_available?)
+            .and_raise(Faraday::Error.new("connection failed"))
+
+          post projects_path, params: valid_params
+
+          expect(response).to redirect_to(project_path(Project.last))
+          expect(Project.last.security_alert_types).to include("code_scanning")
         end
       end
 
@@ -2022,6 +2032,8 @@ RSpec.describe "Projects" do
 
         expect(response.body).to include("Code scanning is not enabled for this repository.")
         expect(response.body).to include("Refresh code-scanning availability")
+        expect(response.body).to include("formaction=\"#{refresh_code_scanning_availability_project_path(project)}\"")
+        expect(response.body).to include("formmethod=\"post\"")
       end
 
       it "shows the repository name (not editable)" do
@@ -2679,8 +2691,8 @@ RSpec.describe "Projects" do
           auto_scan_security: false, security_alert_types: [ "dependabot" ])
         client = instance_double(GithubClient)
         allow(GithubClient).to receive(:new).and_return(client)
-        allow(client).to receive(:code_scanning_alerts)
-          .with(project.full_name, default_branch: project.default_branch)
+        allow(client).to receive(:code_scanning_available?)
+          .with(project.full_name)
           .and_raise(GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403))
 
         patch project_path(project), params: { project: { auto_scan_security: true } }
@@ -2692,18 +2704,46 @@ RSpec.describe "Projects" do
         )
       end
 
+      it "keeps settings updates successful when the availability probe has a transport failure" do # @spec GITHUB-SYNC-020
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: false, security_alert_types: [ "dependabot" ])
+        client = instance_double(GithubClient)
+        allow(GithubClient).to receive(:new).and_return(client)
+        allow(client).to receive(:code_scanning_available?)
+          .with(project.full_name).and_raise(Faraday::Error.new("connection failed"))
+
+        patch project_path(project), params: { project: { auto_scan_security: true } }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "dependabot" ])
+      end
+
       # @spec GITHUB-SYNC-020
       it "refreshes and explicitly restores code scanning after GitHub setup" do
         project = create(:project, account: account, github_token: github_token,
           security_alert_types: [ "dependabot" ], code_scanning_scan_error_kind: "unavailable")
         client = instance_double(GithubClient)
         allow(GithubClient).to receive(:new).and_return(client)
-        allow(client).to receive(:code_scanning_alerts)
-          .with(project.full_name, default_branch: project.default_branch).and_return([])
+        allow(client).to receive(:code_scanning_available?)
+          .with(project.full_name).and_return(true)
 
         post refresh_code_scanning_availability_project_path(project)
 
         expect(project.reload.security_alert_types).to contain_exactly("dependabot", "code_scanning")
+      end
+
+      it "reports a transport failure when refreshing availability" do # @spec GITHUB-SYNC-020
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "dependabot" ], code_scanning_scan_error_kind: "unavailable")
+        client = instance_double(GithubClient)
+        allow(GithubClient).to receive(:new).and_return(client)
+        allow(client).to receive(:code_scanning_available?)
+          .with(project.full_name).and_raise(Faraday::Error.new("connection failed"))
+
+        post refresh_code_scanning_availability_project_path(project)
+
+        expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:alert]).to include("Could not refresh code-scanning availability")
       end
 
       it "allows updating the TDD mode" do # @spec TDD-MODE-002

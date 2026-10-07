@@ -183,6 +183,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "disables only code scanning and resolves stale permission notifications when GitHub says scanning is disabled" do
         project.update!(security_alert_types: %w[dependabot code_scanning])
         publish_code_scanning_blocker_notifications
+        project.update_columns(code_scanning_permission_error_at: 2.hours.ago)
         allow(github_client).to receive(:code_scanning_alerts).and_raise(
           GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403)
         )

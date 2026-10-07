@@ -51,7 +51,7 @@ module SecurityAlerts
 
     # @spec GITHUB-SYNC-020
     def call
-      project.client.code_scanning_alerts(project.full_name, default_branch: project.default_branch)
+      project.client.code_scanning_available?(project.full_name)
       enable_code_scanning if enable
       clear_unavailable_state
       Result.new(:available)
