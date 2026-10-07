@@ -92,7 +92,8 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_at).to be_present
       end
 
-      it "raises CodeScanningPermissionsError on 403 without advancing last_code_scanning_scan_at" do
+      # @spec DEPENDABOT-COVERAGE-001
+      it "reconciles Dependabot before raising CodeScanningPermissionsError on 403" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
@@ -104,6 +105,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         project.reload
         expect(project.last_code_scanning_scan_at).to be_nil
+        expect(github_client).to have_received(:dependabot_alerts)
       end
 
       it "records code_scanning_permission_error_at on 403 so subsequent cycles back off" do

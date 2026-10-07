@@ -33,8 +33,8 @@ module Activities
       end
 
       with_periodic_heartbeat("scan_security_alerts", project_id: project_id) do
-        scan_code_scanning_alerts(project)
         scan_dependabot_alerts(project)
+        scan_code_scanning_alerts(project)
       end
 
       { alerts_to_fix: [] }
