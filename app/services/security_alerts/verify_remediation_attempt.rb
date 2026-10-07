@@ -19,7 +19,10 @@ module SecurityAlerts
       return block!("analysis configuration differs from the finding") unless matching_configuration?
       return block!("analysis commit does not contain the merge commit") unless contains_merge_commit
 
-      alert ? fail! : resolve!
+      return fail! if alert&.dig(:state) == "open"
+      return block!(dismissal_reason) if alert&.dig(:state) == "dismissed"
+
+      resolve!
     end
 
     private
@@ -35,8 +38,15 @@ module SecurityAlerts
         "pull_request_number" => attempt.pull_request_number,
         "merge_commit_sha" => attempt.merge_commit_sha,
         "analysis_id" => analysis&.dig(:id), "analysis_commit_sha" => analysis&.dig(:commit_sha),
-        "analysis_ref" => analysis&.dig(:ref), "alert_number" => alert&.fetch(:number, nil)
+        "analysis_ref" => analysis&.dig(:ref), "alert_number" => alert&.fetch(:number, nil),
+        "alert_state" => alert&.dig(:state), "dismissed_reason" => alert&.dig(:dismissed_reason),
+        "dismissed_comment" => alert&.dig(:dismissed_comment), "dismissed_by" => alert&.dig(:dismissed_by)
       }.compact
+    end
+
+    def dismissal_reason
+      reason = alert[:dismissed_reason].presence || "no reason supplied"
+      "finding was dismissed upstream: #{reason}"
     end
 
     def resolve!

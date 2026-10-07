@@ -16,7 +16,7 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
   end
 
   it "moves an unresolved post-merge finding to manual review without retrying" do # @spec EAGER-QUEUE-013
-    verify(alert: { number: 1838 })
+    verify(alert: { number: 1838, state: "open" })
 
     expect(attempt.reload).to have_attributes(status: "verification_failed", verification_analysis_id: "1842809913")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -26,6 +26,15 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     verify
 
     expect(attempt.reload.status).to eq("verified_fixed")
+  end
+
+  it "blocks a dismissed upstream finding instead of recording a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-018
+    verify(alert: { number: 1838, state: "dismissed", dismissed_reason: "false positive" })
+
+    expect(attempt.reload).to have_attributes(
+      status: "verification_blocked", blocked_reason: "finding was dismissed upstream: false positive"
+    )
+    expect(attempt.evidence).to include("alert_state" => "dismissed", "dismissed_reason" => "false positive")
   end
 
   it "blocks instead of resolving for pending, wrong-branch, or old analyses" do # @spec EAGER-QUEUE-013
@@ -40,7 +49,7 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
   end
 
   it "does not use alert updated_at as scan freshness evidence" do # @spec EAGER-QUEUE-013
-    verify(alert: { number: 1838, updated_at: 3.months.ago })
+    verify(alert: { number: 1838, state: "open", updated_at: 3.months.ago })
 
     expect(attempt.reload.status).to eq("verification_failed")
   end

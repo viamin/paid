@@ -85,7 +85,7 @@ module Activities
         project:, alerts: open_alerts, github_client: project.client
       ).call
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
-        project:, alerts: open_alerts, github_client: project.client
+        project:, alerts: all_alerts, github_client: project.client
       ).call
 
       # Record scan timestamp only after successful processing. Retryable
@@ -126,9 +126,10 @@ module Activities
 
     def fetch_code_scanning_alerts(project)
       client = project.client
-      alerts = %w[open fixed dismissed].flat_map do |state|
-        client.code_scanning_alerts(project.full_name, state:, default_branch: project.default_branch)
-      end
+      alerts = client.code_scanning_alerts(project.full_name, default_branch: project.default_branch)
+      alerts.concat(%w[fixed dismissed].flat_map do |state|
+        client.code_scanning_alert_dispositions(project.full_name, state:)
+      end)
       SecurityAlerts::CodeScanningSnapshot.new(repository: project.full_name, branch: project.default_branch,
         configuration_scope: :all, complete: true, alerts:)
     rescue GithubClient::NotFoundError => e

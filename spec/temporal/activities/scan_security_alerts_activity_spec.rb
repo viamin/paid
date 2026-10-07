@@ -14,7 +14,10 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:code_scanning_analyses).and_return([])
+    allow(github_client).to receive_messages(
+      code_scanning_analyses: [],
+      code_scanning_alert_dispositions: []
+    )
   end
 
   describe "#execute" do
@@ -47,7 +50,11 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "still scans" do
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts).exactly(3).times
+        expect(github_client).to have_received(:code_scanning_alerts).once
+        expect(github_client).to have_received(:code_scanning_alert_dispositions)
+          .with(project.full_name, state: "fixed").once
+        expect(github_client).to have_received(:code_scanning_alert_dispositions)
+          .with(project.full_name, state: "dismissed").once
       end
     end
 
@@ -59,7 +66,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts).exactly(3).times
+        expect(github_client).to have_received(:code_scanning_alerts).once
       end
 
       it "scans when interval has elapsed" do
@@ -67,7 +74,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts).exactly(3).times
+        expect(github_client).to have_received(:code_scanning_alerts).once
       end
 
       it "skips scan when interval has not elapsed" do
@@ -164,7 +171,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts).exactly(3).times
+        expect(github_client).to have_received(:code_scanning_alerts).once
       end
 
       it "clears the flag once a scan succeeds again" do

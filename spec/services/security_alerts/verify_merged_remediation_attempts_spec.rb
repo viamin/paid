@@ -23,7 +23,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     allow(github_client).to receive(:compare).with(project.full_name, "merge", "descendant")
       .and_return(Struct.new(:status).new("ahead"))
 
-    described_class.new(project:, alerts: [ { number: 1838 } ], github_client:).call
+    described_class.new(project:, alerts: [ { number: 1838, state: "open" } ], github_client:).call
 
     expect(attempt.reload.status).to eq("verification_failed")
     expect(issue.reload.paid_state).to eq("manual_review")
@@ -37,6 +37,18 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     described_class.new(project:, alerts: [], github_client:).call
 
     expect(attempt.reload.status).to eq("verified_fixed")
+  end
+
+  it "passes an upstream dismissal to verification rather than treating it as an absent alert" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-018
+    allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([ analysis ])
+    allow(github_client).to receive(:compare).with(project.full_name, "merge", "descendant")
+      .and_return(Struct.new(:status).new("identical"))
+
+    described_class.new(
+      project:, alerts: [ { number: 1838, state: "dismissed", dismissed_reason: "false positive" } ], github_client:
+    ).call
+
+    expect(attempt.reload.status).to eq("verification_blocked")
   end
 
   it "blocks verification when no matching post-merge analysis is available" do # @spec EAGER-QUEUE-013
