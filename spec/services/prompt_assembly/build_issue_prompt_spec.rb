@@ -12,23 +12,9 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     OpenStruct.new(running: running_scope, to_a: configured_containers)
   end
 
-  let(:project) do
-    OpenStruct.new(
-      full_name: "owner-1/repo-1",
-      account: OpenStruct.new(id: 7),
-      allowed_github_usernames: [ "viamin" ],
-      service_containers: service_containers_relation,
-      lid_mode: nil
-    ).tap do |p|
-      def p.trusted_github_user?(login)
-        return false if login.nil?
-        allowed_github_usernames.any? { |u| u.downcase == login.downcase }
-      end
-
-      def p.paid_bot_author?(login)
-        login == "paid-code-reviewer[bot]"
-      end
-    end
+  let(:project) { assembly_project }
+  let(:feature_flags_project) do
+    assembly_project(detected_languages: %w[ruby], feature_flags_pattern: true)
   end
 
   let(:issue) do
@@ -47,6 +33,28 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
       content: "", sections: [], total_tokens: 0, queries_made: 0
     )
+  end
+
+  def assembly_project(detected_languages: [], feature_flags_pattern: false)
+    OpenStruct.new(
+      full_name: "owner-1/repo-1",
+      account: OpenStruct.new(id: 7),
+      allowed_github_usernames: [ "viamin" ],
+      service_containers: service_containers_relation,
+      lid_mode: nil,
+      detected_languages: detected_languages
+    ).tap do |p|
+      def p.trusted_github_user?(login)
+        return false if login.nil?
+        allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+      end
+
+      def p.paid_bot_author?(login)
+        login == "paid-code-reviewer[bot]"
+      end
+
+      p.define_singleton_method(:uses_feature_flags_pattern?) { feature_flags_pattern }
+    end
   end
 
   describe ".call" do
@@ -109,7 +117,23 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).not_to include("# RDR Rollout Guard")
     end
 
-    it "includes RDR rollout guard guidance when the issue references an RDR" do
+    # @spec RDR-ROLLOUT-GUARD-003
+    it "includes RDR rollout guard guidance with paid FeatureFlags wiring when the API is detected" do
+      rdr_issue = OpenStruct.new(issue.to_h.merge(body: "#{issue.body}\n\nPart of RDR-099")).tap do |i|
+        i.define_singleton_method(:trusted?) { true }
+      end
+
+      result = described_class.call(issue: rdr_issue, project: feature_flags_project)
+
+      expect(result.text).to include("# RDR Rollout Guard")
+      expect(result.text).to include("read that RDR's `## Rollout Guard`")
+      expect(result.text).to include("FeatureFlags::DEFINITIONS")
+      expect(result.text).to include("FeatureFlags.enabled?")
+      expect(result.text).to include("Do not make guarded behavior default")
+    end
+
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "includes RDR rollout guard guidance for non-ruby projects without the paid flag system" do
       rdr_issue = OpenStruct.new(issue.to_h.merge(body: "#{issue.body}\n\nPart of RDR-099")).tap do |i|
         i.define_singleton_method(:trusted?) { true }
       end
@@ -118,8 +142,9 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(result.text).to include("# RDR Rollout Guard")
       expect(result.text).to include("read that RDR's `## Rollout Guard`")
-      expect(result.text).to include("FeatureFlags::DEFINITIONS")
-      expect(result.text).to include("FeatureFlags.enabled?")
+      expect(result.text).to include("repository's own flag or config mechanism")
+      expect(result.text).not_to include("FeatureFlags::DEFINITIONS")
+      expect(result.text).not_to include("FeatureFlags.enabled?")
       expect(result.text).to include("Do not make guarded behavior default")
     end
 
