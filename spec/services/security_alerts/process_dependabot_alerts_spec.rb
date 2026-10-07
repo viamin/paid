@@ -31,6 +31,20 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  it "preserves an unexpired operator acceptance during a normal poll" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      dependency_name: alert[:dependency_name], dependency_ecosystem: alert[:dependency_ecosystem],
+      manifest_path: alert[:manifest_path], advisory_ghsa_id: alert[:advisory_ghsa_id],
+      first_detected_at: 8.days.ago)
+    coverage.accept!(owner: project.account.users.first, reason: "Risk accepted", expires_at: 1.day.from_now)
+
+    described_class.new(project).call([ alert ])
+
+    expect(coverage.reload).to have_attributes(coverage_state: "accepted", reason: "operator_accepted")
+    expect(Notifications::Publish).not_to have_received(:call)
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
   it "escalates a persistent uncovered alert after the documented grace period" do
     create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
       advisory_ghsa_id: "GHSA-test", first_detected_at: 8.days.ago)

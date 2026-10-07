@@ -1162,7 +1162,10 @@ class GithubClient
   def dependabot_alerts(repo, state: "open", per_page: 100)
     handle_errors do
       path = "#{Octokit::Repository.path(repo)}/dependabot/alerts"
-      client.paginate(path, state:, per_page:).map { |alert| dependabot_alert_payload(alert) }
+      remediation_pull_requests = dependabot_remediation_pull_requests(repo, state:)
+      client.paginate(path, state:, per_page:).map do |alert|
+        dependabot_alert_payload(alert, remediation_pull_requests.fetch(alert.number, []))
+      end
     end
   end
 
@@ -1206,22 +1209,62 @@ class GithubClient
 
   private
 
-  def dependabot_alert_payload(alert)
+  def dependabot_alert_payload(alert, remediation_pull_requests)
     dependency = alert.dependency
     advisory = alert.security_advisory
-    remediation = alert.respond_to?(:remediation_pull_requests) ? alert.remediation_pull_requests : nil
     {
       number: alert.number, state: alert.state, dependency_name: dependency&.package&.name,
       dependency_ecosystem: dependency&.package&.ecosystem, manifest_path: dependency&.manifest_path,
       advisory_ghsa_id: advisory&.ghsa_id, advisory_cve_id: advisory&.cve_id,
       first_patched_version: alert.security_vulnerability&.first_patched_version&.identifier,
-      remediation_pull_requests: Array(remediation).map { |pr| dependabot_remediation_pr(pr) },
+      remediation_pull_requests: remediation_pull_requests,
       evidence: { html_url: alert.html_url, created_at: alert.created_at, updated_at: alert.updated_at }
     }
   end
 
+  def dependabot_remediation_pull_requests(repo, state:)
+    owner, name = repo.split("/", 2)
+    alerts = dependabot_vulnerability_alerts(owner, name, dependabot_alert_state(state))
+    alerts.each_with_object({}) do |alert, pull_requests|
+      pull_request = alert.dig("dependabotUpdate", "pullRequest")
+      pull_requests[alert["number"]] = [ dependabot_remediation_pr(pull_request) ] if pull_request
+    end
+  end
+
+  def dependabot_vulnerability_alerts(owner, name, state)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $after: String, $states: [RepositoryVulnerabilityAlertState!]) {
+        repository(owner: $owner, name: $name) {
+          vulnerabilityAlerts(first: 100, after: $after, states: $states) {
+            nodes { number dependabotUpdate { pullRequest { number url state mergedAt } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    GRAPHQL
+
+    alerts = []
+    after = nil
+    loop do
+      data = graphql_request(query, owner:, name:, after:, states: [ state ])
+      raise_graphql_errors(data, context: "fetching Dependabot updates for #{owner}/#{name}")
+      connection = data.dig("data", "repository", "vulnerabilityAlerts") || {}
+      alerts.concat(connection["nodes"] || [])
+      page_info = connection["pageInfo"] || {}
+      break unless page_info["hasNextPage"]
+
+      after = page_info.fetch("endCursor")
+      raise ApiError, "Dependabot update pagination returned no cursor" if after.blank?
+    end
+    alerts
+  end
+
+  def dependabot_alert_state(state)
+    state.to_s.upcase.tr("-", "_")
+  end
+
   def dependabot_remediation_pr(pr)
-    { number: pr.number, url: pr.html_url, state: pr.state, merged_at: pr.merged_at }
+    { number: pr["number"], url: pr["url"], state: pr["state"].downcase, merged_at: pr["mergedAt"] }
   end
 
   def code_scanning_analysis_payload(analysis)

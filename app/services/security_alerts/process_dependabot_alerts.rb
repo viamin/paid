@@ -41,7 +41,7 @@ module SecurityAlerts
     end
 
     def attributes_for(alert, coverage)
-      state, reason = coverage_state_for(alert)
+      state, reason = coverage_state_for(alert, coverage)
       {
         account: project.account, alert_number: alert.fetch(:number),
         dependency_name: alert.fetch(:dependency_name), dependency_ecosystem: alert.fetch(:dependency_ecosystem),
@@ -53,8 +53,8 @@ module SecurityAlerts
       }
     end
 
-    def coverage_state_for(alert)
-      return [ "accepted", "operator_accepted" ] if alert[:accepted]
+    def coverage_state_for(alert, coverage)
+      return [ "accepted", "operator_accepted" ] if coverage.accepted?
       return [ alert[:coverage_state], alert.fetch(:reason, "unknown") ] if alert[:coverage_state].present?
       return [ "no_patched_version", "no_patched_version" ] if alert[:first_patched_version].blank?
 
