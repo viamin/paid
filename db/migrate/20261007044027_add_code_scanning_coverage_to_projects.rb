@@ -5,7 +5,7 @@ class AddCodeScanningCoverageToProjects < ActiveRecord::Migration[8.1]
     last_code_scanning_scan_attempted_at: [ :datetime,
       "Timestamp of the most recent request to fetch code-scanning alerts. This is distinct from the last complete successful snapshot." ],
     code_scanning_scan_error_kind: [ :string,
-      "Current code-scanning coverage failure classification: disabled, not_configured, permission, rate_limited, or transient." ],
+      "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient." ],
     code_scanning_scan_error_reason: [ :string,
       "Sanitized explanation of the current code-scanning coverage failure." ],
     next_code_scanning_scan_at: [ :datetime,

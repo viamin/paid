@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_044027) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_071046) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2975,7 +2975,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_044027) do
     t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
     t.datetime "last_code_scanning_scan_attempted_at", comment: "Timestamp of the most recent request to fetch code-scanning alerts. This is distinct from the last complete successful snapshot."
-    t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: disabled, not_configured, permission, rate_limited, or transient."
+    t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
     t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
     t.datetime "next_code_scanning_scan_at", comment: "Earliest time a failed code-scanning fetch may be retried."
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"

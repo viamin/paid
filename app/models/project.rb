@@ -1571,7 +1571,7 @@ class Project < ApplicationRecord
     when "not_configured"
       "Code scanning is not selected in this project's security alert types."
     when "unavailable"
-      "#{code_scanning_scan_error_kind.humanize}: #{code_scanning_scan_error_reason}"
+      [ code_scanning_scan_error_kind.humanize, code_scanning_scan_error_reason.presence ].compact.join(": ")
     when "stale"
       "No complete code-scanning snapshot within the #{code_scanning_interval_hours}-hour discovery cadence."
     else

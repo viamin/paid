@@ -1589,6 +1589,20 @@ RSpec.describe "Projects" do
         )
         expect(response.body).to include("Code Scanning Coverage")
         expect(response.body).to include("Security scanning is disabled")
+        expect(response.body).to match(
+          %r{Code Scanning Coverage\s*</dt>\s*<dd[^>]*>\s*<span class="[^"]*bg-gray-100[^"]*"[^>]*>\s*Disabled\s*</span>}m
+        )
+      end
+
+      it "shows unconfigured code-scanning coverage as inert" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: true, security_alert_types: [])
+
+        get project_path(project)
+
+        expect(response.body).to match(
+          %r{Code Scanning Coverage\s*</dt>\s*<dd[^>]*>\s*<span class="[^"]*bg-gray-100[^"]*"[^>]*>\s*Not configured\s*</span>}m
+        )
       end
 
       # @spec GITHUB-SYNC-018
@@ -1605,6 +1619,9 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Unavailable")
         expect(response.body).to include("Missing code-scanning permission")
         expect(response.body).to include("Next retry:")
+        expect(response.body).to match(
+          %r{Code Scanning Coverage\s*</dt>\s*<dd[^>]*>\s*<span class="[^"]*bg-amber-100[^"]*"[^>]*>\s*Unavailable\s*</span>}m
+        )
       end
 
       it "shows edit automation link for users with update permission" do

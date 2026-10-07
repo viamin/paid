@@ -6,11 +6,84 @@ require "temporalio/client"
 RSpec.describe Project do
   describe "#code_scanning_coverage_status" do
     # @spec GITHUB-SYNC-018
+    it "reports disabled coverage when security scanning is disabled" do
+      project = build(:project, auto_scan_security: false, security_alert_types: [ "code_scanning" ])
+
+      expect(project.code_scanning_coverage_status).to eq("disabled")
+    end
+
+    it "reports not configured coverage when code scanning is not selected" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [])
+
+      expect(project.code_scanning_coverage_status).to eq("not_configured")
+    end
+
+    it "reports unavailable coverage after a failed scan" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        code_scanning_scan_error_kind: "permission")
+
+      expect(project.code_scanning_coverage_status).to eq("unavailable")
+    end
+
     it "reports stale coverage when no successful snapshot exists" do
       project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
         last_code_scanning_scan_at: nil)
 
       expect(project.code_scanning_coverage_status).to eq("stale")
+    end
+
+    it "reports current coverage after a recent successful snapshot" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        last_code_scanning_scan_at: Time.current)
+
+      expect(project.code_scanning_coverage_status).to eq("current")
+    end
+  end
+
+  describe "#code_scanning_coverage_detail" do
+    # @spec GITHUB-SYNC-018
+    it "explains disabled coverage" do
+      project = build(:project, auto_scan_security: false, security_alert_types: [ "code_scanning" ])
+
+      expect(project.code_scanning_coverage_detail)
+        .to eq("Security scanning is disabled. Enable Auto-Scan Security Alerts to establish coverage.")
+    end
+
+    it "explains coverage without code scanning configured" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [])
+
+      expect(project.code_scanning_coverage_detail)
+        .to eq("Code scanning is not selected in this project's security alert types.")
+    end
+
+    it "includes the failure kind and reason for unavailable coverage" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        code_scanning_scan_error_kind: "rate_limited", code_scanning_scan_error_reason: "Try again later")
+
+      expect(project.code_scanning_coverage_detail).to eq("Rate limited: Try again later")
+    end
+
+    it "omits the separator when unavailable coverage has no failure reason" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        code_scanning_scan_error_kind: "rate_limited", code_scanning_scan_error_reason: nil)
+
+      expect(project.code_scanning_coverage_detail).to eq("Rate limited")
+    end
+
+    it "explains stale coverage" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        last_code_scanning_scan_at: nil)
+
+      expect(project.code_scanning_coverage_detail)
+        .to eq("No complete code-scanning snapshot within the #{project.code_scanning_interval_hours}-hour discovery cadence.")
+    end
+
+    it "reports the time of a current complete snapshot" do
+      timestamp = Time.zone.parse("2026-10-07 10:00:00")
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        last_code_scanning_scan_at: timestamp)
+
+      expect(project.code_scanning_coverage_detail).to eq("Last complete snapshot #{timestamp.to_fs(:long)}.")
     end
   end
 
