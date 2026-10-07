@@ -947,6 +947,15 @@ class Project < ApplicationRecord
     effective_repo_profile.fetch("languages", [])
   end
 
+  # Whether a repository scan found the paid FeatureFlags API. This is kept
+  # separate from language/framework detection because Ruby alone does not
+  # establish that a project implements Paid's feature-flag convention.
+  # @spec RDR-ROLLOUT-GUARD-003
+  # @spec RDR-ROLLOUT-GUARD-004
+  def uses_feature_flags_pattern?
+    effective_repo_profile["feature_flags_pattern"] == true
+  end
+
   def test_languages
     effective_repo_profile.fetch("test_languages", detected_languages)
   end

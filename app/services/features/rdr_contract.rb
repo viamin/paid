@@ -61,9 +61,9 @@ module Features
       "feature flag enablement surface" => /enablement surface/i
     }.freeze
 
-    # The paid Rails flag wiring is only enforceable where a Ruby codebase can
-    # host it; non-Ruby projects get a project-appropriate gate instead of
-    # paid's flag system (#4172).
+    # The paid feature-flag wiring is only enforceable when a repository scan
+    # confirms the exact API; all other projects get a project-appropriate
+    # gate instead of paid's flag system (#4172).
     # @spec RDR-ROLLOUT-GUARD-003
     RAILS_FEATURE_FLAG_GUARD_REQUIREMENTS = {
       "feature flag definition: FeatureFlags::DEFINITIONS" => /FeatureFlags::DEFINITIONS/,

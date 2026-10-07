@@ -43,7 +43,8 @@ module Projects
           "detected_at" => stored["detected_at"],
           "source" => stored["source"],
           "manifest_path" => stored["manifest_path"],
-          "marker_files" => normalize_strings(stored["marker_files"])
+          "marker_files" => normalize_strings(stored["marker_files"]),
+          "feature_flags_pattern" => stored["feature_flags_pattern"] == true
         )
       end
 

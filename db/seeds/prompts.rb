@@ -877,7 +877,7 @@ upsert_global_prompt.call(
     var.call("feature_brief", "Structured feature brief (title, problem, desired behavior, constraints, rejected alternatives, scope, done criteria, optional problem_framing, lid_requested, target_rdr_number)"),
     var.call("lid_mode", "Project LID mode when enabled", required: false),
     var.call("lid_section", "Rendered LID instructions when the project has or requested LID", required: false),
-    var.call("flag_guard_rule", "Rendered rollout-guard rule: paid FeatureFlags wiring on Ruby projects, repository-native gating elsewhere", required: false)
+    var.call("flag_guard_rule", "Rendered rollout-guard rule: paid FeatureFlags wiring when repository scan confirms the API, repository-native gating elsewhere", required: false)
   ]
 )
 

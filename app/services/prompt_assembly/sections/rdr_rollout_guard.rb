@@ -18,9 +18,9 @@ class PromptAssembly::Sections::RdrRolloutGuard
     PROMPT
   end
 
-  # The paid `FeatureFlags` wiring is only meaningful where a Ruby codebase can
-  # host it; non-Ruby projects keep their guard in the repository's own flag or
-  # config mechanism (#4172).
+  # The paid `FeatureFlags` wiring is only meaningful when repository scan
+  # evidence confirms its API; other projects keep their guard in their own
+  # flag or config mechanism (#4172).
   # @spec RDR-ROLLOUT-GUARD-003
   # @spec RDR-ROLLOUT-GUARD-004
   def flag_guard_rule

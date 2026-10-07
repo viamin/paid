@@ -42,7 +42,7 @@ RSpec.describe Prompts::BuildForCreateFeature do
         project_name: "Paid",
         full_name: "viamin/paid",
         feature_brief: feature_brief,
-        ruby_project: true
+        feature_flags_pattern: true
       )
 
       expect(prompt).to include(
@@ -256,12 +256,12 @@ RSpec.describe Prompts::BuildForCreateFeature do
 
   describe "rollout guard rule" do
     # @spec RDR-ROLLOUT-GUARD-003
-    it "names the paid FeatureFlags wiring for ruby projects" do
+    it "names the paid FeatureFlags wiring when the API pattern is detected" do
       prompt = described_class.call(
         project_name: "Paid",
         full_name: "viamin/paid",
         feature_brief: feature_brief,
-        ruby_project: true
+        feature_flags_pattern: true
       )
 
       expect(prompt).to include("FeatureFlags::DEFINITIONS")
@@ -270,12 +270,12 @@ RSpec.describe Prompts::BuildForCreateFeature do
     end
 
     # @spec RDR-ROLLOUT-GUARD-004
-    it "uses the repository's own flag mechanism for non-ruby projects" do
+    it "uses the repository's own flag mechanism without the API pattern" do
       prompt = described_class.call(
         project_name: "Forager",
         full_name: "viamin/Forager-iOS",
         feature_brief: feature_brief,
-        ruby_project: false
+        feature_flags_pattern: false
       )
 
       expect(prompt).to include("repository's own flag or config mechanism")

@@ -13,7 +13,9 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
   end
 
   let(:project) { assembly_project }
-  let(:ruby_project) { assembly_project(detected_languages: %w[ruby]) }
+  let(:feature_flags_project) do
+    assembly_project(detected_languages: %w[ruby], feature_flags_pattern: true)
+  end
 
   let(:issue) do
     OpenStruct.new(
@@ -33,7 +35,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     )
   end
 
-  def assembly_project(detected_languages: [])
+  def assembly_project(detected_languages: [], feature_flags_pattern: false)
     OpenStruct.new(
       full_name: "owner-1/repo-1",
       account: OpenStruct.new(id: 7),
@@ -50,6 +52,8 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       def p.paid_bot_author?(login)
         login == "paid-code-reviewer[bot]"
       end
+
+      p.define_singleton_method(:uses_feature_flags_pattern?) { feature_flags_pattern }
     end
   end
 
@@ -114,12 +118,12 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     # @spec RDR-ROLLOUT-GUARD-003
-    it "includes RDR rollout guard guidance with the paid FeatureFlags wiring when the project is ruby" do
+    it "includes RDR rollout guard guidance with paid FeatureFlags wiring when the API is detected" do
       rdr_issue = OpenStruct.new(issue.to_h.merge(body: "#{issue.body}\n\nPart of RDR-099")).tap do |i|
         i.define_singleton_method(:trusted?) { true }
       end
 
-      result = described_class.call(issue: rdr_issue, project: ruby_project)
+      result = described_class.call(issue: rdr_issue, project: feature_flags_project)
 
       expect(result.text).to include("# RDR Rollout Guard")
       expect(result.text).to include("read that RDR's `## Rollout Guard`")

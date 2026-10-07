@@ -27,9 +27,9 @@ module Prompts
     PROMPT_SLUG = "coding.create_feature_prompt"
 
     # Rollout-guard rule interpolated into the prompt as {{flag_guard_rule}}.
-    # The Rails wiring is only demanded where a Ruby codebase can host it;
-    # every other project is told to gate behavior with its own mechanism
-    # (#4172).
+    # The Paid wiring is only demanded when repository scan evidence confirms
+    # its API; every other project is told to gate behavior with its own
+    # mechanism (#4172).
     # @spec RDR-ROLLOUT-GUARD-003
     RAILS_FLAG_GUARD_RULE = "For feature flags, name the implementation issue that adds the key to " \
       "`FeatureFlags::DEFINITIONS` and wires the runtime decision through `FeatureFlags.enabled?(:flag_name, project:)`."
@@ -147,17 +147,17 @@ module Prompts
       new(...).build
     end
 
-    attr_reader :project_name, :full_name, :feature_brief, :lid_mode, :ruby_project
+    attr_reader :project_name, :full_name, :feature_brief, :lid_mode, :feature_flags_pattern
 
-    # ruby_project defaults to false so an undetected project is never told to
-    # port a foreign flag system; the AgentRun caller resolves it from the
-    # project's detected languages via Features::FlagGuardPattern.
-    def initialize(project_name:, full_name:, feature_brief:, lid_mode: nil, ruby_project: false)
+    # Defaults to false so a project without scan evidence is never told to
+    # port a foreign flag system; the AgentRun caller resolves the value via
+    # Features::FlagGuardPattern.
+    def initialize(project_name:, full_name:, feature_brief:, lid_mode: nil, feature_flags_pattern: false)
       @project_name = project_name
       @full_name = full_name
       @feature_brief = feature_brief.to_h
       @lid_mode = lid_mode
-      @ruby_project = ruby_project
+      @feature_flags_pattern = feature_flags_pattern
     end
 
     def build
@@ -185,7 +185,7 @@ module Prompts
     # @spec RDR-ROLLOUT-GUARD-003
     # @spec RDR-ROLLOUT-GUARD-004
     def flag_guard_rule
-      ruby_project ? RAILS_FLAG_GUARD_RULE : GENERIC_FLAG_GUARD_RULE
+      feature_flags_pattern ? RAILS_FLAG_GUARD_RULE : GENERIC_FLAG_GUARD_RULE
     end
 
     def formatted_brief

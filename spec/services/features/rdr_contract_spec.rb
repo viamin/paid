@@ -5,7 +5,9 @@ require "rails_helper"
 # @spec RDR-ROLLOUT-GUARD-003
 # @spec RDR-ROLLOUT-GUARD-004
 RSpec.describe Features::RdrContract do
-  let(:project) { build_stubbed(:project, primary_language: "Ruby") }
+  let(:project) do
+    build_stubbed(:project, primary_language: "Ruby", repo_profile: { "feature_flags_pattern" => true })
+  end
   let(:agent_run) { build_stubbed(:agent_run, goal: "create_feature", project: project) }
 
   def contract(changed_files: nil, contents: {})
@@ -249,6 +251,32 @@ RSpec.describe Features::RdrContract do
       )
 
       expect(result.valid?).to be true
+    end
+  end
+
+  describe "feature flag guards on Ruby projects without the FeatureFlags pattern" do
+    let(:project) { build_stubbed(:project, primary_language: "Ruby") }
+
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "accepts a repository-native flag guard without paid FeatureFlags wiring" do
+      rdr_path = "docs/rdrs/RDR-099-ruby-feature.md"
+      body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = if section == "Rollout Guard"
+          "Feature flag: `new_thing`, default off. Enablement surface: application settings. " \
+            "Rollback: disable the setting. Cleanup: remove after closeout."
+        else
+          "body"
+        end
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+
+      result = contract(
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-ruby-feature.md" }
+      )
+
+      expect(result).to be_valid
+      expect(result.missing).to be_empty
     end
   end
 

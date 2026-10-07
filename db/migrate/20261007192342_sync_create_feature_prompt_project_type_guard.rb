@@ -2,7 +2,7 @@
 
 # @spec RDR-ROLLOUT-GUARD-004
 class SyncCreateFeaturePromptProjectTypeGuard < ActiveRecord::Migration[8.1]
-  CHANGE_NOTES = "Condition Rails feature-flag rollout-guard guidance on project language (#4172)"
+  CHANGE_NOTES = "Condition Paid feature-flag rollout-guard guidance on repository API evidence (#4172)"
   PROMPT_SLUG = Prompts::BuildForCreateFeature::PROMPT_SLUG
   VARIABLES = [
     { "name" => "project_name", "required" => true, "description" => "Human-readable project name" },
@@ -17,7 +17,7 @@ class SyncCreateFeaturePromptProjectTypeGuard < ActiveRecord::Migration[8.1]
     {
       "name" => "flag_guard_rule",
       "required" => false,
-      "description" => "Rendered rollout-guard rule: paid FeatureFlags wiring on Ruby projects, repository-native gating elsewhere"
+      "description" => "Rendered rollout-guard rule: paid FeatureFlags wiring when repository scan confirms the API, repository-native gating elsewhere"
     }
   ].freeze
 
