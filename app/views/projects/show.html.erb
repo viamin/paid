@@ -260,13 +260,12 @@
           </dd>
         </div>
         <%# @spec DEPENDABOT-COVERAGE-001 %>
-        <% dependabot_coverages = @project.dependabot_alert_coverages.where(alert_state: "open").order(last_detected_at: :desc).limit(20) %>
-        <% if dependabot_coverages.any? %>
+        <% if @open_dependabot_alert_coverages.any? %>
           <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
             <dt class="text-sm font-medium text-gray-500">Dependabot alert coverage</dt>
             <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
               <ul class="space-y-1">
-                <% dependabot_coverages.each do |coverage| %>
+                <% @open_dependabot_alert_coverages.each do |coverage| %>
                   <li>
                     <code><%= coverage.dependency_name %></code>
                     (<%= coverage.advisory_ghsa_id %>): <%= coverage.coverage_state.humanize %>

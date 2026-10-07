@@ -21,8 +21,13 @@ class ProjectsController < ApplicationController
     @projects = apply_nulls_last_ordering(@q.result)
   end
 
+  # @spec DEPENDABOT-COVERAGE-001
   def show
     authorize @project
+    @open_dependabot_alert_coverages = @project.dependabot_alert_coverages
+      .where(alert_state: "open")
+      .order(last_detected_at: :desc)
+      .load
     @preview_session = PreviewSession.for_project(@project).active.recent.first ||
       PreviewSession.for_project(@project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
     tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)

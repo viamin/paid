@@ -881,6 +881,26 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      # @spec DEPENDABOT-COVERAGE-001
+      it "shows every open Dependabot alert coverage record" do
+        project = create(:project, account: account, github_token: github_token)
+        21.times do |index|
+          create(
+            :dependabot_alert_coverage,
+            project: project,
+            account: account,
+            alert_number: index + 1,
+            dependency_name: "dependency-#{index + 1}",
+            advisory_ghsa_id: "GHSA-#{format('%012d', index + 1)}"
+          )
+        end
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("dependency-1", "dependency-21")
+      end
+
       it "shows each open issue's actual internal Paid state" do # @spec AUTO-PICK-QUEUE-008
         project = create(:project, account: account, github_token: github_token)
         create(:issue, project: project, paid_state: "recommend_close")
