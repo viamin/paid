@@ -21,7 +21,7 @@ module Projects
       # @spec CHANGE-INTENT-004
       ChangeIntents::Activate.call(change_intent: @change_intent)
 
-      redirect_to safe_return_target, notice: "Change Intent Record approved and added to the knowledge base."
+      redirect_to redirect_target, notice: "Change Intent Record approved and added to the knowledge base."
     rescue ChangeIntent::InvalidTransitionError => e
       redirect_to redirect_on_invalid_transition, alert: e.message
     end
@@ -37,7 +37,7 @@ module Projects
         reason: params[:reason].to_s
       )
 
-      redirect_to safe_return_target, notice: "Change Intent Record marked for changes."
+      redirect_to redirect_target, notice: "Change Intent Record marked for changes."
     rescue ChangeIntent::InvalidTransitionError => e
       redirect_to redirect_on_invalid_transition, alert: e.message
     end
@@ -46,7 +46,7 @@ module Projects
       authorize @change_intent, :update?, policy_class: ChangeIntentPolicy
       ChangeIntents::DiscardDraft.call(change_intent: @change_intent)
 
-      redirect_to safe_return_target, notice: "Proposed Change Intent Record discarded."
+      redirect_to redirect_target, notice: "Proposed Change Intent Record discarded."
     rescue ChangeIntent::InvalidTransitionError => e
       redirect_to redirect_on_invalid_transition, alert: e.message
     end
@@ -61,21 +61,32 @@ module Projects
       @change_intent = @project.change_intents.find(params[:id])
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
     # Returns the safe return target when present (inbox-driven flows
     # redirect back to the inbox pane that initiated the action). Falls back
     # to the project page, matching the pre-inbox lifecycle.
-    def safe_return_target
-      safe = params[:return_to].to_s
-      return safe if safe.start_with?("/") && safe.start_with?(inbox_path)
-
-      project_path(@project)
+    def redirect_target
+      inbox_safe_return_target || project_path(@project)
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
+    # Returns the safe return target for an invalid-transition error. The
+    # destination is still inbox-scoped when supplied, but the default
+    # fallback is the change-intent show page so the operator can see why
+    # the transition was rejected.
     def redirect_on_invalid_transition
-      target = params[:return_to].to_s
-      return target if target.start_with?("/") && target.start_with?(inbox_path)
+      inbox_safe_return_target || project_change_intent_path(@project, @change_intent)
+    end
 
-      project_change_intent_path(@project, @change_intent)
+    # @spec CHANGE-INTENT-INBOX-001
+    # Returns the inbound `return_to` value after sanitizing it through the
+    # same-origin guard used elsewhere in the app, but only when it points
+    # at an inbox page. Any other value (including off-host URLs and
+    # protocol-relative redirects) is discarded so the controller never
+    # honours an attacker-controlled redirect.
+    def inbox_safe_return_target
+      requested = normalized_return_to(params[:return_to])
+      requested if requested.present? && requested.start_with?(inbox_path)
     end
   end
 end

@@ -169,5 +169,74 @@ RSpec.describe "Projects::ChangeIntents" do
 
       expect(response).to redirect_to(inbox_return)
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the project page when return_to points off-host" do
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example/phish"),
+        params: { reason: "Reason" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the project page for a protocol-relative return_to" do
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example/phish"),
+        params: { reason: "Reason" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the project page when return_to is not inbox-scoped" do
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "/projects/some-other-project/edit"),
+        params: { reason: "Reason" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+  end
+
+  describe "open-redirect protection" do
+    let(:inbox_return) { "/inbox?kind=change_intent_draft&project_id=#{project.id}" }
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an off-host return_to on approve and falls back to the project" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example/phish")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores a protocol-relative return_to on approve and falls back to the project" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example/phish")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an off-host return_to on discard and falls back to the project" do
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example/phish")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change-intent show page for invalid transitions with an off-host return_to" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example/phish")
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
   end
 end
