@@ -204,7 +204,7 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(inbox_return)
     end
 
-    it "falls back to the project when return_to is an absolute URL on an invalid transition" do
+    it "falls back to the change intent when return_to is an absolute URL on an invalid transition" do
       change_intent.update!(status: "active")
 
       post request_changes_project_change_intent_path(project, change_intent),
@@ -213,7 +213,7 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
 
-    it "falls back to the project for a protocol-relative return_to on an invalid transition" do
+    it "falls back to the change intent for a protocol-relative return_to on an invalid transition" do
       change_intent.update!(status: "active")
 
       post request_changes_project_change_intent_path(project, change_intent),
