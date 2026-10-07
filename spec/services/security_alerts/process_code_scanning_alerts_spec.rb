@@ -26,6 +26,20 @@ RSpec.describe SecurityAlerts::ProcessCodeScanningAlerts do
     }
   end
 
+  describe ".trusted_login_configured?" do
+    it "accepts a non-blank trusted GitHub username" do
+      project.update!(allowed_github_usernames: [ "  paid-bot  " ])
+
+      expect(described_class.trusted_login_configured?(project)).to be(true)
+    end
+
+    it "rejects a missing or blank trusted GitHub username" do
+      project.update_column(:allowed_github_usernames, [ nil, "  " ])
+
+      expect(described_class.trusted_login_configured?(project)).to be(false)
+    end
+  end
+
   describe "#call" do
     # @spec GITHUB-SYNC-015
     it "refreshes an existing issue with finding context and prior run evidence" do
