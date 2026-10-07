@@ -179,8 +179,36 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
 
     described_class.new(project).call([ alert ])
 
-    expect(coverage.reload.alert_state).to eq("resolved")
+    expect(coverage.reload).to have_attributes(alert_state: "resolved", escalated_at: nil, uncovered_since: nil)
     expect(notification.reload.resolved_at).to be_present
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
+  it "re-arms escalation when an alert disappears and then reappears still uncovered" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 42,
+      advisory_ghsa_id: "GHSA-rearmed", coverage_state: "awaiting_processing",
+      alert_state: "open", first_detected_at: 30.days.ago, uncovered_since: 30.days.ago,
+      escalated_at: 23.days.ago)
+    create(:notification, :error, account: project.account, blocking: true,
+      source: "dependabot_alert_coverage", subject: coverage,
+      metadata: { project_id: project.id, alert_number: 42, reason: "unknown" })
+
+    described_class.new(project).call([ alert ])
+    expect(coverage.reload).to have_attributes(alert_state: "resolved", escalated_at: nil, uncovered_since: nil)
+
+    reopened = alert.merge(number: 42, advisory_ghsa_id: "GHSA-rearmed")
+    described_class.new(project).call([ reopened ])
+    coverage.reload
+    expect(coverage).to have_attributes(alert_state: "open", escalated_at: nil)
+    expect(coverage.uncovered_since).to be_within(2.seconds).of(Time.current)
+    expect(Notifications::Publish).not_to have_received(:call)
+
+    travel 8.days do
+      described_class.new(project).call([ reopened ])
+    end
+
+    expect(coverage.reload.escalated_at).to be_present
+    expect(Notifications::Publish).to have_received(:call).with(hash_including(blocking: true, severity: :error))
   end
 
   # @spec DEPENDABOT-COVERAGE-001

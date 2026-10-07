@@ -21,7 +21,11 @@ module SecurityAlerts
     attr_reader :project
 
     def load_coverages(project)
-      project.dependabot_alert_coverages.to_a
+      # Query through the class to bypass any cached association on `project`
+      # so a bulk update in `close_missing_alerts` is visible on the next
+      # scan (otherwise the cached pre-close snapshot would re-flag already
+      # closed rows as open and miss the reopen-after-resolve path).
+      DependabotAlertCoverage.where(project_id: project.id).to_a
     end
 
     # Build the number and identity lookups once per scan so a repository with N
@@ -40,7 +44,14 @@ module SecurityAlerts
 
     # Only currently-open alerts are candidates for resolution — every scan
     # would otherwise re-run validations and an updated_at bump on every
-    # historically-resolved coverage row. @spec DEPENDABOT-COVERAGE-001
+    # historically-resolved coverage row. A closed-alert reappearance (e.g. a
+    # dismissed alert reopened after the vulnerable dependency is reintroduced)
+    # must start a fresh uncovered episode: clearing escalated_at releases the
+    # `escalated?` lock so escalation_due? can re-arm, and clearing
+    # uncovered_since lets `uncovered_since_for` start a new grace period from
+    # the reappearance instead of inheriting an elapsed one. The Inbox
+    # notification has already been resolved by the path below.
+    # @spec DEPENDABOT-COVERAGE-001
     def close_missing_alerts(by_number, alerts)
       open_numbers = alerts.each_with_object({}) { |alert, hash| hash[alert.fetch(:number)] = true }
       coverages_to_close = by_number.each_value.select do |coverage|
@@ -48,7 +59,8 @@ module SecurityAlerts
       end
       return if coverages_to_close.empty?
 
-      project.dependabot_alert_coverages.where(id: coverages_to_close.map(&:id)).update_all(alert_state: "resolved")
+      project.dependabot_alert_coverages.where(id: coverages_to_close.map(&:id))
+        .update_all(alert_state: "resolved", escalated_at: nil, uncovered_since: nil)
       coverages_to_close.each { |coverage| resolve_escalation_notification(coverage) }
     end
 
@@ -56,8 +68,9 @@ module SecurityAlerts
       coverage = find_coverage(alert, indexes) ||
         project.dependabot_alert_coverages.build(alert_number: alert.fetch(:number))
       previous_state = coverage.coverage_state
+      previous_alert_state = coverage.alert_state
       coverage.assign_attributes(attributes_for(alert, coverage))
-      coverage.uncovered_since = uncovered_since_for(coverage, previous_state)
+      coverage.uncovered_since = uncovered_since_for(coverage, previous_state, previous_alert_state)
       coverage.escalated_at = nil unless coverage.uncovered?
       coverage.save!
       escalate!(coverage) if coverage.escalation_due?
@@ -90,15 +103,17 @@ module SecurityAlerts
     # An alert that lost its open remediation PR receives the documented grace
     # period from the transition, not from first_detected_at: a PR that was
     # open for thirty days and then closed unmerged would otherwise escalate on
-    # the next poll. # @spec DEPENDABOT-COVERAGE-001
-    def uncovered_since_for(coverage, previous_state)
+    # the next poll. An alert whose alert_state was previously "resolved" (the
+    # row was closed by `close_missing_alerts` and then reopened by GitHub)
+    # likewise starts a fresh uncovered episode: it would otherwise inherit an
+    # already-elapsed `uncovered_since` and escalate immediately on reappearance.
+    # @spec DEPENDABOT-COVERAGE-001
+    def uncovered_since_for(coverage, previous_state, previous_alert_state)
       return nil if coverage.effective_pr_open?
+      return Time.current if %w[accepted effective_pr_open].include?(previous_state)
+      return Time.current if previous_alert_state == "resolved"
 
-      if %w[accepted effective_pr_open].include?(previous_state)
-        Time.current
-      else
-        coverage.uncovered_since.presence || coverage.first_detected_at || Time.current
-      end
+      coverage.uncovered_since.presence || coverage.first_detected_at || Time.current
     end
 
     # GitHub's Dependabot REST payload does not surface constraint-incompatibility
