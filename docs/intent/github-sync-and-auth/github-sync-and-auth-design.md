@@ -58,6 +58,20 @@ disposition claims that Paid verified a code fix. A later open observation
 preserves the remediation-attempt history so operators can distinguish a real
 recurrence from a finding that was never scanner-verified.
 
+Remediation has a separate execution gate: immediately before dispatch, Paid
+re-reads the alert and accepts only an open alert with its selected default
+branch, analyzed commit, scanner configuration, and exactly one usable finding
+location. The location requires either the GitHub excerpt read at that commit
+or a verified alternate source-read path at that same commit. Any unreadable,
+missing, stale, or ambiguous evidence parks the synthetic issue in manual
+review with the diagnostic; it never becomes a guessed remediation. The
+parking is durable: run failure finalization keeps the manual-review state and
+diagnostic instead of degrading to the generic failed state, which would clear
+the diagnostic and re-arm auto-pick for a run that evidence validation just
+blocked. A resolved or dismissed alert is closed distinctly. The refreshed
+issue prompt replaces a stale custom remediation prompt, while preserving its
+custom text only as supplementary instructions.
+
 When sync observes a non-PR issue transition from closed back to open, it
 resets Paid's internal state to `new`. This makes GitHub's reopened state the
 authoritative renewal signal and prevents a prior completion or recommendation
