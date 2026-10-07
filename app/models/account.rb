@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Account < ApplicationRecord
+  has_many :dependabot_alert_coverages, dependent: :destroy
   has_logidze
   MAX_SLUG_GENERATION_ATTEMPTS = 10
   PLANS = %w[trial free professional enterprise].freeze

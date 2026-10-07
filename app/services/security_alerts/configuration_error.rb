@@ -4,4 +4,5 @@ module SecurityAlerts
   # Raised when a project lacks required configuration for security alert processing
   # (e.g. no trusted GitHub usernames configured).
   class ConfigurationError < StandardError; end
+  class DependabotPermissionsError < ConfigurationError; end
 end

@@ -14,7 +14,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:code_scanning_analyses).and_return([])
+    allow(github_client).to receive_messages(code_scanning_analyses: [], dependabot_alerts: [])
   end
 
   describe "#execute" do
@@ -143,6 +143,24 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           end
 
         expect(project.reload.code_scanning_permission_error_at).to be_nil
+      end
+    end
+
+    context "when Dependabot alert ingestion fails" do
+      before do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Server error", status: 500))
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "surfaces the failed fetch as a blocking coverage failure" do
+        expect { activity.execute(project_id: project.id) }.to raise_error(GithubClient::ApiError)
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(blocking: true, severity: :error, metadata: hash_including(reason: "fetch_failed"))
+        )
       end
     end
 

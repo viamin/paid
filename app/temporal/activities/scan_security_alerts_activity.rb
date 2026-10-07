@@ -34,6 +34,7 @@ module Activities
 
       with_periodic_heartbeat("scan_security_alerts", project_id: project_id) do
         scan_code_scanning_alerts(project)
+        scan_dependabot_alerts(project)
       end
 
       { alerts_to_fix: [] }
@@ -41,6 +42,12 @@ module Activities
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "CodeScanningPermissionsError",
+        non_retryable: true
+      )
+    rescue SecurityAlerts::DependabotPermissionsError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "DependabotPermissionsError",
         non_retryable: true
       )
     rescue SecurityAlerts::ConfigurationError => e
@@ -111,6 +118,18 @@ module Activities
       raise
     end
 
+    # @spec DEPENDABOT-COVERAGE-001
+    def scan_dependabot_alerts(project)
+      heartbeat("scan_security_alerts.fetch_dependabot_alerts", project_id: project.id)
+      SecurityAlerts::ProcessDependabotAlerts.new(project).call(fetch_dependabot_alerts(project))
+    rescue SecurityAlerts::DependabotPermissionsError => e
+      publish_dependabot_ingestion_failure(project, e.message, "permission_denied")
+      raise
+    rescue GithubClient::Error => e
+      publish_dependabot_ingestion_failure(project, e.message, "fetch_failed")
+      raise
+    end
+
     def should_scan_code_scanning?(project)
       return false if recent_permission_error?(project)
       return true if project.last_code_scanning_scan_at.nil?
@@ -142,6 +161,27 @@ module Activities
       else
         raise
       end
+    end
+
+    def fetch_dependabot_alerts(project)
+      project.client.dependabot_alerts(project.full_name)
+    rescue GithubClient::ApiError => e
+      raise unless e.status == 403
+
+      raise SecurityAlerts::DependabotPermissionsError,
+        "GitHub token lacks permission to read Dependabot alerts for #{project.full_name}."
+    rescue GithubClient::NotFoundError => e
+      raise SecurityAlerts::DependabotPermissionsError,
+        "GitHub Dependabot alert ingestion is unavailable for #{project.full_name}: #{e.message}"
+    end
+
+    def publish_dependabot_ingestion_failure(project, message, reason)
+      Notifications::Publish.call(
+        account: project.account, source: "dependabot_alert_coverage_ingestion", subject: project,
+        severity: :error, blocking: true, nav_section: "projects",
+        title: "Dependabot alert coverage is unavailable", description: message,
+        metadata: { project_id: project.id, reason: reason }
+      )
     end
   end
 end

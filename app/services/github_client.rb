@@ -1156,6 +1156,16 @@ class GithubClient
     end
   end
 
+  # Fetches the authoritative repository Dependabot-alert snapshot. The API
+  # does not make an absent remediation PR a failure reason, so callers retain
+  # that case as unknown. # @spec DEPENDABOT-COVERAGE-001
+  def dependabot_alerts(repo, state: "open", per_page: 100)
+    handle_errors do
+      path = "#{Octokit::Repository.path(repo)}/dependabot/alerts"
+      client.paginate(path, state:, per_page:).map { |alert| dependabot_alert_payload(alert) }
+    end
+  end
+
   # Fetches a single code scanning alert with the same target-branch enrichment
   # as {#code_scanning_alerts} at a fixed API cost, regardless of how many
   # other alerts are open on the repository.
@@ -1195,6 +1205,24 @@ class GithubClient
   end
 
   private
+
+  def dependabot_alert_payload(alert)
+    dependency = alert.dependency
+    advisory = alert.security_advisory
+    remediation = alert.respond_to?(:remediation_pull_requests) ? alert.remediation_pull_requests : nil
+    {
+      number: alert.number, state: alert.state, dependency_name: dependency&.package&.name,
+      dependency_ecosystem: dependency&.package&.ecosystem, manifest_path: dependency&.manifest_path,
+      advisory_ghsa_id: advisory&.ghsa_id, advisory_cve_id: advisory&.cve_id,
+      first_patched_version: alert.security_vulnerability&.first_patched_version&.identifier,
+      remediation_pull_requests: Array(remediation).map { |pr| dependabot_remediation_pr(pr) },
+      evidence: { html_url: alert.html_url, created_at: alert.created_at, updated_at: alert.updated_at }
+    }
+  end
+
+  def dependabot_remediation_pr(pr)
+    { number: pr.number, url: pr.html_url, state: pr.state, merged_at: pr.merged_at }
+  end
 
   def code_scanning_analysis_payload(analysis)
     {

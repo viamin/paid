@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_050524) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_061633) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1212,6 +1212,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_050524) do
     t.index ["project_id", "created_at"], name: "index_decomposition_decisions_on_project_id_and_created_at"
     t.index ["project_id"], name: "index_decomposition_decisions_on_project_id"
     t.index ["workflow_id", "decision_type"], name: "index_decomposition_decisions_on_workflow_id_and_decision_type"
+  end
+
+  create_table "dependabot_alert_coverages", comment: "Durable alert-level Dependabot remediation coverage and escalation evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "project_id", null: false
+    t.integer "alert_number", null: false, comment: "GitHub Dependabot alert number within the repository."
+    t.string "dependency_name", null: false
+    t.string "dependency_ecosystem", null: false
+    t.string "manifest_path"
+    t.string "advisory_ghsa_id", null: false
+    t.string "advisory_cve_id"
+    t.string "alert_state", default: "open", null: false
+    t.string "coverage_state", default: "awaiting_processing", null: false
+    t.string "reason", default: "unknown", null: false
+    t.jsonb "remediation_pull_requests", default: [], null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "first_detected_at", null: false
+    t.datetime "last_detected_at", null: false
+    t.datetime "escalated_at"
+    t.bigint "accepted_by_id"
+    t.text "acceptance_reason"
+    t.datetime "acceptance_expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["accepted_by_id"], name: "index_dependabot_alert_coverages_on_accepted_by_id"
+    t.index ["account_id"], name: "index_dependabot_alert_coverages_on_account_id"
+    t.index ["project_id", "alert_number"], name: "idx_on_project_id_alert_number_4aee5d2590", unique: true
+    t.index ["project_id", "coverage_state"], name: "idx_on_project_id_coverage_state_9626caa4b8"
+    t.index ["project_id", "dependency_ecosystem", "dependency_name", "advisory_ghsa_id", "manifest_path"], name: "index_dependabot_coverages_on_dependency_advisory_identity", unique: true
+    t.index ["project_id"], name: "index_dependabot_alert_coverages_on_project_id"
   end
 
   create_table "design_amendment_follow_ups", comment: "Follow-up human decisions for already-merged work affected by a design revision; never auto-rolled back.", force: :cascade do |t|
@@ -4015,6 +4045,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_050524) do
   add_foreign_key "decision_records", "projects", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "issues", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
+  add_foreign_key "dependabot_alert_coverages", "accounts"
+  add_foreign_key "dependabot_alert_coverages", "projects"
+  add_foreign_key "dependabot_alert_coverages", "users", column: "accepted_by_id"
   add_foreign_key "design_amendment_follow_ups", "design_amendments"
   add_foreign_key "design_amendment_follow_ups", "issues"
   add_foreign_key "design_amendment_follow_ups", "users", column: "decided_by_id"

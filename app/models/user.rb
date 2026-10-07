@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class User < ApplicationRecord
+  has_many :accepted_dependabot_alert_coverages,
+    class_name: "DependabotAlertCoverage", foreign_key: :accepted_by_id, dependent: :nullify
   has_logidze
   belongs_to :account
   has_many :account_memberships, dependent: :destroy

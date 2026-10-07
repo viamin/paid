@@ -261,6 +261,8 @@ class Project < ApplicationRecord
   # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002
   include Project::UpstreamAutomation
 
+  has_many :dependabot_alert_coverages, dependent: :destroy
+
   belongs_to :github_token, counter_cache: true, optional: true
   belongs_to :github_installation, optional: true
   # Optional PAT used as the git push/fetch credential for app-backed projects
