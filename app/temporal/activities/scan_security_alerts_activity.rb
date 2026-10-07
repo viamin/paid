@@ -17,6 +17,11 @@ module Activities
     UNAVAILABLE_CONFIGURATION_BACKOFF = 1.hour
     TRANSIENT_ERROR_BACKOFF = 5.minutes
     VERIFICATION_INTERVAL = 1.hour
+    CODE_SCANNING_NOTIFICATION_SOURCES = [
+      Notifications::Rules::CodeScanningVerificationBlocked::SOURCE,
+      Notifications::Rules::CodeScanningConfigurationError::SOURCE,
+      Notifications::Rules::CodeScanningPermissionsError::SOURCE
+    ].freeze
 
     # @spec AUTOMATION-ACTIVATION-003 GITHUB-SYNC-018
     def execute(input)
@@ -24,6 +29,7 @@ module Activities
       project = Project.find_by(id: project_id)
       return { alerts_to_fix: [], project_missing: true } unless project
       unless Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_security")
+        resolve_code_scanning_notifications(project)
         return { alerts_to_fix: [] }
       end
 
@@ -33,12 +39,14 @@ module Activities
 
       { alerts_to_fix: [] }
     rescue SecurityAlerts::CodeScanningPermissionsError => e
+      sync_code_scanning_notifications(project, [])
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "CodeScanningPermissionsError",
         non_retryable: true
       )
     rescue SecurityAlerts::ConfigurationError => e
+      sync_code_scanning_notifications(project, [])
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "ConfigurationError",
@@ -55,7 +63,10 @@ module Activities
     private
 
     def scan_code_scanning_alerts(project)
-      return unless project.security_alert_types.include?("code_scanning")
+      unless project.security_alert_types.include?("code_scanning")
+        resolve_code_scanning_notifications(project)
+        return
+      end
       return unless should_scan_code_scanning?(project)
 
       heartbeat("scan_security_alerts.fetch_alerts", project_id: project.id)
@@ -75,11 +86,19 @@ module Activities
       SecurityAlerts::RecordMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
+      retryable_attempt_ids = CodeScanningRemediationAttempt
+        .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE))
+        .retryable_block
+        .ids
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
         project:, alerts: all_alerts, github_client: project.client
       ).call
 
       record_successful_snapshot(project)
+      retryable_scope = CodeScanningRemediationAttempt
+        .where(id: retryable_attempt_ids)
+        .includes(issue: :project)
+      sync_code_scanning_notifications(project, retryable_scope)
 
       logger.info(
         message: "github_sync.code_scanning_scan_complete",
@@ -108,6 +127,35 @@ module Activities
       raise
     end
 
+    # Surface retryable verification blockers as blocking inbox notifications
+    # and auto-resolve notifications for attempts that have moved to a terminal
+    # state on this scan (EAGER-QUEUE-016). Idempotent on (source, subject):
+    # Notifications::Publish collapses the metadata merge, and Resolve drops
+    # any stale row once the underlying attempt has cleared.
+    def sync_code_scanning_notifications(project, retryable_attempts)
+      Notifications::Rules::CodeScanningVerificationBlocked.call(scope: retryable_attempts.to_a)
+      Notifications::Rules::CodeScanningConfigurationError.call(scope: [ project ])
+      Notifications::Rules::CodeScanningPermissionsError.call(scope: [ project ])
+    end
+
+    # @spec EAGER-QUEUE-016
+    def resolve_code_scanning_notifications(project)
+      code_scanning_notifications_for(project).find_each do |notification|
+        Notifications::Resolve.call(
+          account: project.account,
+          source: notification.source,
+          subject: notification.subject
+        )
+      end
+    end
+
+    def code_scanning_notifications_for(project)
+      Notification.active
+        .where(account: project.account, source: CODE_SCANNING_NOTIFICATION_SOURCES)
+        .where("metadata ->> 'project_id' = ?", project.id.to_s)
+        .includes(:subject)
+    end
+
     def should_scan_code_scanning?(project)
       return false if retry_scheduled?(project)
       return true if project.last_code_scanning_scan_at.nil?
@@ -132,7 +180,9 @@ module Activities
 
     def awaiting_remediation_verification?(project)
       CodeScanningRemediationAttempt.joins(:issue)
-        .where(issues: { project_id: project.id }, status: "awaiting_verification").exists?
+        .where(issues: { project_id: project.id })
+        .retryable_block
+        .exists?
     end
 
     def record_successful_snapshot(project)

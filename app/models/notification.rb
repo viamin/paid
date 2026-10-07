@@ -42,11 +42,18 @@ class Notification < ApplicationRecord
   # counting or rendering a set of notifications — otherwise each row costs an
   # extra project lookup. Subjects must already be loaded (includes(:subject)).
   def self.preload_resolved_projects(notifications)
-    notifications.filter_map(&:subject).group_by(&:class).each do |klass, subjects|
+    subjects_by_class = notifications.filter_map(&:subject).group_by(&:class)
+    preload_code_scanning_attempt_projects(subjects_by_class.delete(CodeScanningRemediationAttempt) || [])
+
+    subjects_by_class.each do |klass, subjects|
       next unless klass.reflect_on_association(:project)
 
       ActiveRecord::Associations::Preloader.new(records: subjects, associations: :project).call
     end
+  end
+
+  def self.preload_code_scanning_attempt_projects(attempts)
+    ActiveRecord::Associations::Preloader.new(records: attempts, associations: { issue: :project }).call
   end
 
   def active?

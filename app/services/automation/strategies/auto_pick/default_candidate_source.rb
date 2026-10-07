@@ -654,8 +654,16 @@ module Automation
             end
           end
 
-          def code_scanning_verification_block_issue_ids(project) # @spec EAGER-QUEUE-013
+          def code_scanning_verification_block_issue_ids(project) # @spec EAGER-QUEUE-013 @spec EAGER-QUEUE-015
+            # Only the latest attempt per issue governs eligibility (EAGER-QUEUE-015):
+            # a prior `verification_failed` row whose PR was superseded by a fresh
+            # merged attempt SHALL NOT keep the issue out of auto-pick. The
+            # duplicate-PR prevention guards above remain the durable stop against
+            # a second concurrent fix PR (EAGER-QUEUE-009); `retryable_block`
+            # attempts are revisited by the verifier on the next scan rather than
+            # producing a second fix run.
             CodeScanningRemediationAttempt.blocking_automation
+              .latest_per_issue
               .joins(:issue)
               .where(issues: { project_id: project.id, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE })
               .select(:issue_id)

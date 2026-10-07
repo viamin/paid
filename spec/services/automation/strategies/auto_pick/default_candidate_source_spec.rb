@@ -758,6 +758,21 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
       end
 
+      it "keeps a reconciled finding blocked while verification awaits scanner evidence" do # @spec EAGER-QUEUE-013 @spec EAGER-QUEUE-015
+        issue = create_code_scanning_issue(paid_state: "completed")
+        create(:agent_run, :completed, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true, pull_request_number: 4047, pull_request_url: "https://example.test/pr/4047",
+          completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute)
+        create(:issue, :pull_request, :closed, project: project, github_number: 4047, pr_review_phase: "merged", parent_issue: issue)
+
+        SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(
+          [ { number: alert_number, state: "open", severity: "high", created_at: 1.day.ago, updated_at: Time.current } ]
+        )
+        create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked")
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+      end
+
       it "does not resurrect an ordinary GitHub issue's permanent merged-PR guard" do # @spec EAGER-QUEUE-011
         # Regression guard: the code-scanning carve-out must not leak into
         # the ordinary-issue path covered by "does not recover completed
