@@ -2535,9 +2535,14 @@ class AgentRun < ApplicationRecord
   # avoid duplication. Section provenance is persisted to external_metadata.
   #
   # @return [String, nil] The prompt to send to the agent
+  # @spec GITHUB-SYNC-018
   def effective_prompt
-    refresh_code_scanning_context if custom_prompt.present?
-    base = custom_prompt.presence || prompt_for_goal
+    if code_scanning_remediation?
+      base = prompt_for_goal
+      base = [ base, "# Supplementary run instructions\n\n#{custom_prompt}" ].compact.join("\n\n") if custom_prompt.present?
+    else
+      base = custom_prompt.presence || prompt_for_goal
+    end
 
     unless prompt_assembly_marketplace_handled?
       if agent_run_marketplace_entries.exists?
@@ -2564,6 +2569,11 @@ class AgentRun < ApplicationRecord
     )
   end
   private :refresh_code_scanning_context
+
+  def code_scanning_remediation?
+    issue&.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+  end
+  private :code_scanning_remediation?
 
   # Whether the PromptAssembly result already included marketplace content,
   # so {#effective_prompt} can skip the separate injection step.
