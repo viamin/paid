@@ -25,8 +25,31 @@ wires the runtime decision through `FeatureFlags.enabled?(:flag_name, project:)`
 Non-runtime work uses `docs-only`, `migration-only`, or `none required` with a
 short justification.
 
-`Features::RdrContract` enforces the section for `create_feature` docs-only PRs.
-`Prompts::BuildForCreateFeature` tells RDR authors to fill it in, and
+## Project-type conditioning
+
+`FeatureFlags` is a Paid-specific Ruby API, not a Ruby or Rails convention.
+Demanding `FeatureFlags::DEFINITIONS` / `FeatureFlags.enabled?` artifacts from
+a repository without that API would force porting a foreign flag system into
+the target project (#4172). `Projects::DetectRepoProfile` records the pattern
+only when `app/services/feature_flags.rb` defines the `FeatureFlags` class,
+`DEFINITIONS`, and `enabled?`. `Features::FlagGuardPattern` requires that scan
+evidence before applying the Paid wiring. A Ruby, Rails, or undetected project
+without that evidence uses a repository-native guard and can never be blocked
+on artifacts it cannot produce.
+
+Existing projects scanned before this field was added keep a stored profile
+without `feature_flags_pattern` and would silently fall back to the
+repository-native guard even when they actually host the API. The transition
+migration `20261007202504_backfill_repo_profile_feature_flags_pattern_for_ruby_projects`
+re-enqueues `EnqueueKnowledgeCollectionJob` for active Ruby projects so the
+detector repopulates the field once after deploy.
+
+`Features::RdrContract` enforces the section for `create_feature` docs-only PRs;
+on a project without the detected API it drops the two `FeatureFlags::` wiring
+checks and keeps the language-agnostic enablement-surface requirement.
+`Prompts::BuildForCreateFeature` tells RDR authors to fill the section in —
+naming the Paid flag system only where detected, or the repository's own
+flag/config mechanism elsewhere — and
 `PromptAssembly::Sections::RdrRolloutGuard` reminds implementation agents to
 read and preserve it before changing runtime behavior. The guard trigger reads
 the issue title, body, and any trusted/admitted collaborator comments

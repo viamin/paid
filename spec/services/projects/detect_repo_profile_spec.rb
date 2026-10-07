@@ -36,6 +36,37 @@ RSpec.describe Projects::DetectRepoProfile, :no_db do
     end
   end
 
+  # @spec RDR-ROLLOUT-GUARD-003
+  it "detects the FeatureFlags pattern only when its API is defined" do
+    with_repo do |repo_path|
+      FileUtils.mkdir_p(File.join(repo_path, "app/services"))
+      File.write(File.join(repo_path, "Gemfile"), "gem 'rails'\n")
+      File.write(File.join(repo_path, "app/services/feature_flags.rb"), <<~RUBY)
+        class FeatureFlags
+          DEFINITIONS = {}.freeze
+
+          def self.enabled?(flag_name, project: nil)
+          end
+        end
+      RUBY
+
+      profile = described_class.call(project:, repo_path:)
+
+      expect(profile["feature_flags_pattern"]).to be(true)
+    end
+  end
+
+  # @spec RDR-ROLLOUT-GUARD-004
+  it "does not infer the FeatureFlags pattern from Ruby or Rails alone" do
+    with_repo do |repo_path|
+      File.write(File.join(repo_path, "Gemfile"), "gem 'rails'\n")
+
+      profile = described_class.call(project:, repo_path:)
+
+      expect(profile).not_to have_key("feature_flags_pattern")
+    end
+  end
+
   it "applies .paid.yml overrides for languages, test languages, and framework" do # @spec POLYGLOT-TEST-002
     with_repo do |repo_path|
       File.write(File.join(repo_path, "mix.exs"), "defmodule Demo.MixProject do end\n")

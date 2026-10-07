@@ -55,10 +55,19 @@ module Features
       "Implementation Plan",
       "Validation"
     ].freeze
+    # Language-agnostic requirements for any rollout guard that names a
+    # feature flag, enforced on every project type.
     FEATURE_FLAG_GUARD_REQUIREMENTS = {
-      "feature flag definition: FeatureFlags::DEFINITIONS" => /FeatureFlags::DEFINITIONS/,
-      "feature flag runtime check: FeatureFlags.enabled?" => /FeatureFlags\.enabled\?/,
       "feature flag enablement surface" => /enablement surface/i
+    }.freeze
+
+    # The paid feature-flag wiring is only enforceable when a repository scan
+    # confirms the exact API; all other projects get a project-appropriate
+    # gate instead of paid's flag system (#4172).
+    # @spec RDR-ROLLOUT-GUARD-003
+    RAILS_FEATURE_FLAG_GUARD_REQUIREMENTS = {
+      "feature flag definition: FeatureFlags::DEFINITIONS" => /FeatureFlags::DEFINITIONS/,
+      "feature flag runtime check: FeatureFlags.enabled?" => /FeatureFlags\.enabled\?/
     }.freeze
 
     Result = Data.define(:new_rdr_path, :valid?, :missing, :index_updated) do
@@ -112,13 +121,20 @@ module Features
     end
 
     # @spec RDR-ROLLOUT-GUARD-003
+    # @spec RDR-ROLLOUT-GUARD-004
     def feature_flag_guard_gaps
       guard = section_body("Rollout Guard")
       return [] unless guard.match?(/feature flag|FeatureFlags/i)
 
-      FEATURE_FLAG_GUARD_REQUIREMENTS.filter_map do |label, pattern|
+      flag_guard_requirements.filter_map do |label, pattern|
         "RDR rollout guard: #{label}" unless guard.match?(pattern)
       end
+    end
+
+    def flag_guard_requirements
+      return FEATURE_FLAG_GUARD_REQUIREMENTS unless Features::FlagGuardPattern.applicable?(agent_run.project)
+
+      FEATURE_FLAG_GUARD_REQUIREMENTS.merge(RAILS_FEATURE_FLAG_GUARD_REQUIREMENTS)
     end
 
     def section_body(section)

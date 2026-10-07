@@ -558,6 +558,41 @@ RSpec.describe "CreateFeature E2E", type: :model do
       expect(result.valid?).to be false
       expect(result.missing).to include(a_string_matching(/index update/))
     end
+
+    # Regression for #4172: a create_feature run on a non-Rails project must
+    # satisfy the goal contract with a project-appropriate rollout guard
+    # instead of paid's Rails FeatureFlags wiring.
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "completes the goal contract on a non-ruby project with a project-appropriate flag guard" do
+      gdscript_run = build_stubbed(
+        :agent_run, goal: "create_feature",
+        project: build_stubbed(:project, primary_language: "GDScript")
+      )
+
+      result = Features::RdrContract.call(
+        agent_run: gdscript_run,
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: {
+          rdr_path => flag_guard_rdr_body,
+          "docs/rdrs/README.md" => "| [RDR-053](RDR-053-new-feature-creation.md) | New | Draft | P1 |"
+        }
+      )
+
+      expect(result.valid?).to be true
+      expect(result.missing).to eq([])
+    end
+
+    def flag_guard_rdr_body
+      Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = if section == "Rollout Guard"
+          "Feature flag: `new_thing`, default off. Enablement surface: in-game settings screen. " \
+            "Rollback: disable the setting. Cleanup: remove after closeout."
+        else
+          "body"
+        end
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------

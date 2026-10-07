@@ -5,6 +5,8 @@ require "find"
 module Projects
   class DetectRepoProfile
     SKIP_DIRECTORIES = %w[.git node_modules vendor tmp log dist build coverage].freeze
+    FEATURE_FLAGS_PATH = "app/services/feature_flags.rb"
+    FEATURE_FLAGS_API = [ /class\s+FeatureFlags\b/, /DEFINITIONS\s*=/, /def\s+(?:self\.)?enabled\?/ ].freeze
 
     def self.call(...)
       new(...).call
@@ -45,7 +47,8 @@ module Projects
         "confidence" => detected_framework.present? ? 0.95 : nil,
         "detected_at" => Time.current.iso8601,
         "source" => "repo_scan",
-        "marker_files" => marker_files
+        "marker_files" => marker_files,
+        "feature_flags_pattern" => feature_flags_pattern?
       }
     end
 
@@ -101,6 +104,14 @@ module Projects
     def detected_framework
       framework = ::Screenshots::DetectFramework.detect_framework_only(repo_path:)
       framework == :generic ? nil : framework.to_s
+    end
+
+    def feature_flags_pattern?
+      path = File.join(repo_path, FEATURE_FLAGS_PATH)
+      return false unless File.file?(path)
+
+      source = File.read(path)
+      FEATURE_FLAGS_API.all? { |pattern| source.match?(pattern) }
     end
 
     def repo_files

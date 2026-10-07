@@ -8,15 +8,29 @@ class PromptAssembly::Sections::RdrRolloutGuard
   private
 
   # @spec RDR-ROLLOUT-GUARD-002
-  # @spec RDR-ROLLOUT-GUARD-003
   def build_section
     return "" unless issue_references_rdr?
 
     <<~PROMPT
       # RDR Rollout Guard
 
-      If this issue references an RDR, read that RDR's `## Rollout Guard` before changing runtime behavior. Preserve the named feature flag, config gate, migration-only boundary, docs-only boundary, or explicit "none required" rationale. For feature flags, make sure the flag is listed in `FeatureFlags::DEFINITIONS`, has a named enablement surface, and guards the runtime decision with `FeatureFlags.enabled?(:flag_name, project:)`. Do not make guarded behavior default unless the issue or RDR closeout explicitly asks for that cleanup.
+      If this issue references an RDR, read that RDR's `## Rollout Guard` before changing runtime behavior. Preserve the named feature flag, config gate, migration-only boundary, docs-only boundary, or explicit "none required" rationale. #{flag_guard_rule} Do not make guarded behavior default unless the issue or RDR closeout explicitly asks for that cleanup.
     PROMPT
+  end
+
+  # The paid `FeatureFlags` wiring is only meaningful when repository scan
+  # evidence confirms its API; other projects keep their guard in their own
+  # flag or config mechanism (#4172).
+  # @spec RDR-ROLLOUT-GUARD-003
+  # @spec RDR-ROLLOUT-GUARD-004
+  def flag_guard_rule
+    if Features::FlagGuardPattern.applicable?(project)
+      "For feature flags, make sure the flag is listed in `FeatureFlags::DEFINITIONS`, has a named " \
+        "enablement surface, and guards the runtime decision with `FeatureFlags.enabled?(:flag_name, project:)`."
+    else
+      "For feature flags, keep the flag defined and read through this repository's own flag or config " \
+        "mechanism, with a named enablement surface."
+    end
   end
 
   def inclusion_reason
