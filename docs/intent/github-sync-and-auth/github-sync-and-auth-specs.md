@@ -185,6 +185,23 @@
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/models/agent_run_prompt_assembly_spec.rb`.
 
+- [x] **GITHUB-SYNC-018** — When code-scanning discovery runs, the system
+  SHALL record the fetch attempt separately from the last successful complete
+  snapshot. It SHALL advance the successful watermark and clear an unresolved
+  failure only after a complete GitHub response, including a valid zero-alert
+  response. For disabled activation, an omitted `code_scanning` alert type,
+  permission denial, unavailable/not-configured scanning, rate limiting, and
+  transient API failure, it SHALL retain the successful watermark and expose a
+  non-clean coverage state to operators. It SHALL record the failure kind,
+  sanitized reason, and earliest retry using a failure-specific backoff.
+  Discovery SHALL target completion within 24 hours of activation at the
+  configured 24-hour default cadence; awaiting-remediation verification SHALL
+  be eligible at least hourly and SHALL not wait for that discovery cadence.
+  *Code:* `app/temporal/activities/scan_security_alerts_activity.rb`,
+  `app/models/project.rb`, `app/views/projects/show.html.erb`.
+  *Test:* `spec/temporal/activities/scan_security_alerts_activity_spec.rb`,
+  `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`.
+
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including

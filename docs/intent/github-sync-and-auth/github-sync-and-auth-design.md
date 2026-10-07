@@ -49,6 +49,29 @@ prior run/PR outcomes into the final agent prompt. Agents must compare a
 historical location to their checkout, investigate false-positive status, and
 must not claim scanner resolution without supporting verification.
 
+## Code-scanning coverage
+
+Code-scanning discovery has a default 24-hour cadence (configurable per
+project) and a 24-hour discovery-latency target after a healthy project is
+activated. A completed response, including a valid empty alert list, is the
+only event that advances the successful-scan watermark. Each fetch separately
+records its attempt time, its durable failure kind/reason, and the earliest
+retry time. This prevents a 404 or another unavailable response from looking
+like a clean snapshot.
+
+Failures use bounded, failure-specific retries: permission and unavailable
+configuration failures retry in one hour; rate limits retry at GitHub's reset
+time (or in five minutes if it is absent); transient API failures retry in five
+minutes. Disabled activation and a project that has not enabled the
+`code_scanning` alert type are coverage states, not empty findings. Operators
+see those states, unavailable failures, and stale/never-completed coverage on
+the project health surface.
+
+Verification of an awaiting remediation does not wait for the general
+discovery cadence: while an attempt awaits verification, the next successful
+coverage check is eligible after one hour. Failure backoff always takes
+precedence over that verification cadence.
+
 When sync observes a non-PR issue transition from closed back to open, it
 resets Paid's internal state to `new`. This makes GitHub's reopened state the
 authoritative renewal signal and prevents a prior completion or recommendation

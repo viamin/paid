@@ -4,6 +4,16 @@ require "rails_helper"
 require "temporalio/client"
 
 RSpec.describe Project do
+  describe "#code_scanning_coverage_status" do
+    # @spec GITHUB-SYNC-018
+    it "reports stale coverage when no successful snapshot exists" do
+      project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
+        last_code_scanning_scan_at: nil)
+
+      expect(project.code_scanning_coverage_status).to eq("stale")
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:github_token).optional }
