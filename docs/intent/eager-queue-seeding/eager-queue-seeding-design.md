@@ -181,6 +181,45 @@ Ordinary GitHub issues are unaffected: `merged_block_issue_ids` only relaxes
 the exclusion for `SYNTHETIC_CODE_SCANNING_SOURCE` issues, so a merged
 implementation PR keeps blocking a regular issue forever, as before.
 
+### Post-merge analysis evidence (#4147)
+
+`SecurityAlerts::VerifyMergedRemediationAttempts` verifies a recorded attempt
+against `GET /repos/{owner}/{repo}/code-scanning/analyses`. That endpoint does
+not return a `status` field: per GitHub's documented schema each analysis
+carries required `error` and `warning` strings plus identity fields (`id`,
+`ref`, `commit_sha`, `category`, `tool.name`), and is listed newest-first.
+`GithubClient#code_scanning_analyses` therefore normalizes each documented
+response into one of four evidence states — success is never inferred from
+HTTP 200 or from `results_count`:
+
+- **succeeded** — `error` is present as an empty string and the identity
+  fields needed as evidence (`id`, `ref`, `commit_sha`) are complete.
+- **failed** — `error` carries the analysis failure text (retained verbatim).
+- **malformed** — the response omits documented required fields (e.g. no
+  `error` key, missing branch/commit identity, or missing `tool.name` /
+  `category`), so success cannot be affirmed and configuration matching
+  cannot be trusted; the attempt stays blocked.
+- **unavailable** — no analyses exist for the repository at all.
+
+`VerifyMergedRemediationAttempts` selects evidence from analyses that match
+the finding's tool/category *and* live on the target branch, iterating
+newest-first over matching successful entries until one is found whose commit
+contains the merge — so a newer PR-branch, unrelated-configuration, or stale
+rerun analysis can never hide valid evidence, and an error-bearing newer
+analysis falls through to older successful evidence when it exists. Iterating
+matters specifically because a newer entry can be a rerun of an older main
+SHA after a valid post-merge analysis has already been uploaded: taking the
+newest entry alone would yield `behind` on the compare, blocking the attempt
+on `verification_blocked` while `awaiting_attempts` skips that status, so the
+legitimate later analysis would never be reconsidered. When no matching
+successful analysis contains the merge, the closest related analysis is
+retained as blocked-attempt evidence (relevant analysis first, then any
+configuration match, then the newest analysis). Blocked evidence records the
+analysis `error`/`warning` text alongside branch/commit/configuration
+identity. Resolution (`verified_fixed`) is only ever derived from that
+structural evidence plus the alert no longer being reported open — never from
+the merge itself or from aggregate result counts.
+
 ## Idempotent PR/issue link repair (#4052)
 
 `Issues::ReconcilePullRequestSource.candidate_source_issues` exposes the same

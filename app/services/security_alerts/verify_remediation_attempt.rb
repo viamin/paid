@@ -4,30 +4,35 @@ module SecurityAlerts
   # Applies only scanner evidence that is structurally tied to a merged fix.
   # @spec EAGER-QUEUE-013
   class VerifyRemediationAttempt
-    def initialize(attempt:, alert:, analysis:, contains_merge_commit:, analysis_missing_reason: nil)
+    def initialize(attempt:, alert:, analysis:, contains_merge_commit:)
       @attempt = attempt
       @alert = alert
       @analysis = analysis
       @contains_merge_commit = contains_merge_commit
-      @analysis_missing_reason = analysis_missing_reason
     end
 
     def call
-      return block!(analysis_missing_reason || "analysis is unavailable") unless analysis
-      return block!("analysis did not succeed") unless analysis[:status] == "succeeded"
+      return block!("analysis is unavailable") unless analysis
+      return block!("analysis evidence is malformed") if analysis[:status] == "malformed"
       return block!("analysis is not on the target branch") unless analysis[:ref] == attempt.issue.project.default_branch
       return block!("analysis configuration differs from the finding") unless matching_configuration?
+      return block!(failure_reason) unless analysis[:status] == "succeeded"
       return block!("analysis commit does not contain the merge commit") unless contains_merge_commit
 
       return fail! if alert&.dig(:state) == "open"
-      return block!(dismissal_reason) if alert&.dig(:state) == "dismissed"
+      return block!(upstream_disposition_reason) if alert
 
       resolve!
     end
 
     private
 
-    attr_reader :attempt, :alert, :analysis, :contains_merge_commit, :analysis_missing_reason
+    attr_reader :attempt, :alert, :analysis, :contains_merge_commit
+
+    def failure_reason
+      detail = analysis[:error].to_s
+      detail.empty? ? "analysis did not succeed" : "analysis did not succeed: #{detail}"
+    end
 
     def matching_configuration?
       analysis[:tool_name] == attempt.tool_name && analysis[:category] == attempt.category
@@ -40,13 +45,19 @@ module SecurityAlerts
         "analysis_id" => analysis&.dig(:id), "analysis_commit_sha" => analysis&.dig(:commit_sha),
         "analysis_ref" => analysis&.dig(:ref), "alert_number" => alert&.fetch(:number, nil),
         "alert_state" => alert&.dig(:state), "dismissed_reason" => alert&.dig(:dismissed_reason),
-        "dismissed_comment" => alert&.dig(:dismissed_comment), "dismissed_by" => alert&.dig(:dismissed_by)
+        "dismissed_comment" => alert&.dig(:dismissed_comment), "dismissed_by" => alert&.dig(:dismissed_by),
+        "analysis_error" => analysis&.dig(:error).presence, "analysis_warning" => analysis&.dig(:warning).presence
       }.compact
     end
 
+    def upstream_disposition_reason
+      return dismissal_reason if alert[:state] == "dismissed"
+
+      "finding has upstream disposition: #{alert[:state].presence || "unknown"}"
+    end
+
     def dismissal_reason
-      reason = alert[:dismissed_reason].presence || "no reason supplied"
-      "finding was dismissed upstream: #{reason}"
+      "finding was dismissed upstream: #{alert[:dismissed_reason].presence || "no reason supplied"}"
     end
 
     def resolve!

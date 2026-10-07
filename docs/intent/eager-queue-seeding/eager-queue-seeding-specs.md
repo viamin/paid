@@ -139,21 +139,35 @@
 - [x] **EAGER-QUEUE-013** — After a remediation PR for a synthetic code-scanning
   issue merges, Paid SHALL retain a distinct remediation-attempt record and
   suppress automatic remediation while verification is awaiting, blocked, or
-  has found the same finding still open. Verification SHALL use a successful
-  analysis on the target branch with the finding's tool/category and a commit
-  containing the merge commit; it SHALL record the analysis and PR evidence.
-  A matching analysis with the finding still open SHALL put the issue into
-  manual review, not create another automatic fix run. Missing, failed,
-  wrong-branch/configuration, or pre-merge analysis SHALL be blocked, never
-  treated as resolution. Alert timestamps are not scan-freshness evidence.
-  Verification SHALL select evidence only from the finding's matching scanner
-  configuration; aggregate counts, an unrelated configuration, and a merged
-  PR are not proof. A dismissed upstream alert SHALL never transition an
-  attempt to `verified_fixed`.
+  has found the same finding still open. GitHub list-analyses responses (which
+  carry `error`/`warning` and no `status` field) SHALL be normalized into
+  succeeded, failed, malformed, or unavailable evidence — success SHALL NOT be
+  inferred from HTTP 200 or aggregate result count, and error/warning detail
+  plus branch/commit/configuration identity SHALL be retained as evidence.
+  Evidence selection SHALL iterate newest-first over matching successful
+  analyses on the target branch with the finding's tool/category, preferring
+  the first whose analysis commit contains the merge commit over newer
+  PR-branch, unrelated, error-bearing, or stale rerun entries so valid
+  evidence is never hidden — taking only the newest entry would block on
+  `behind` whenever GitHub receives a rerun for an older main SHA, and the
+  blocked attempt would never be retried because `awaiting_attempts` excludes
+  `verification_blocked`. When no matching successful analysis contains the
+  merge, the closest related analysis SHALL be retained as blocked-attempt
+  evidence. A matching analysis with the finding still open SHALL put the
+  issue into manual review, not create another automatic fix run. Missing,
+  failed, malformed, wrong-branch/configuration, or pre-merge analysis SHALL
+  be blocked, never treated as resolution, and resolution SHALL never be
+  derived from the merge alone or result counts. An upstream alert disposition,
+  including dismissal, SHALL remain recorded and SHALL never transition an
+  attempt to `verified_fixed`. Alert timestamps are not scan-freshness evidence.
   *Code:* `CodeScanningRemediationAttempt`,
+  `GithubClient#code_scanning_analyses`,
+  `SecurityAlerts::VerifyMergedRemediationAttempts`,
   `SecurityAlerts::VerifyRemediationAttempt`,
   `Automation::Strategies::AutoPick::DefaultCandidateSource`.
-  *Test:* `spec/services/security_alerts/verify_remediation_attempt_spec.rb`.
+  *Test:* `spec/services/github_client_spec.rb`,
+  `spec/services/security_alerts/verify_merged_remediation_attempts_spec.rb`,
+  `spec/services/security_alerts/verify_remediation_attempt_spec.rb`.
 
 - [x] **EAGER-QUEUE-012** — An operator-invoked repair path SHALL exist to
   backfill a missing `parent_issue_id` link between an existing PR and its
