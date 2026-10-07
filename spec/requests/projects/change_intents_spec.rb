@@ -77,6 +77,22 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response.body).to include("approved and added to the knowledge base")
     end
+
+    it "falls back to the project when return_to is an absolute URL" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "https://evil.example/phish" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(change_intent.reload.status).to eq("active")
+    end
+
+    it "falls back to the project for a protocol-relative return_to" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "//evil.example/phish" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(change_intent.reload.status).to eq("active")
+    end
   end
 
   describe "POST /projects/:project_id/change_intents/:id/discard" do
@@ -98,6 +114,24 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("cannot discard from active")
+    end
+
+    it "falls back to the change intent when return_to is unsafe on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent),
+        params: { return_to: "https://evil.example/phish" }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+
+    it "falls back to the change intent for a protocol-relative return_to on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent),
+        params: { return_to: "//evil.example/phish" }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 
@@ -168,6 +202,24 @@ RSpec.describe "Projects::ChangeIntents" do
         params: { reason: "Too late." }
 
       expect(response).to redirect_to(inbox_return)
+    end
+
+    it "falls back to the project when return_to is an absolute URL on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent),
+        params: { return_to: "https://evil.example/phish", reason: "Tighten constraints." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+
+    it "falls back to the project for a protocol-relative return_to on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent),
+        params: { return_to: "//evil.example/phish", reason: "Tighten constraints." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 end
