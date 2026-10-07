@@ -84,7 +84,7 @@ metadata. Schema:
 # this window whether a fix exists."
 #
 # Format:
-#   advisories:
+#   exceptions:
 #     - id: GHSA-...                # GitHub advisory ID (required, unique)
 #       module: <npm package name>  # affected module (required)
 #       reason: <one-line rationale>  # required
@@ -122,8 +122,9 @@ JSON stream itself rather than trusting the exit code alone. The script:
    as scanner failures, as does a non-zero exit that produced no advisory
    report. A non-zero exit with advisory events is a normal report, not a
    scanner failure — yarn exits 1 whenever it reports advisories.
-   Advisory findings are accepted only when matched by an unexpired
-   allowlist entry; everything else fails the run.
+   Advisory findings are accepted only when both their advisory ID and
+   affected module match an unexpired allowlist entry; everything else fails
+   the run.
 4. Prints a structured summary (counts, accepted findings with expiry,
    blocking findings) so the CI log and the local run show the same
    surface area, and (when `YARN_AUDIT_ACCEPTED_REPORT` is set) writes

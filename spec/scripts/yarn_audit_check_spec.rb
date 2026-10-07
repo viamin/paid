@@ -14,6 +14,7 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
   include ExecTmpdir
 
   let(:future_date) { (Date.today + 30).iso8601 }
+  let(:today_date) { Date.today.iso8601 }
   let(:past_date) { (Date.today - 1).iso8601 }
 
   it "exits zero when the allowlist is empty and yarn audit reports no advisories" do
@@ -85,6 +86,46 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
 
       expect(status.exitstatus).to eq(3)
       expect(stderr).to include("expired on #{past_date}")
+    end
+  end
+
+  it "accepts an allowlist entry that expires today" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: allowlist_with(future_date: today_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz"),
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg"),
+        yarn_exit: 1
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.success?).to be(true)
+    end
+  end
+
+  it "fails the run with exit 3 when the allowlist root is not a mapping" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: "# No exceptions remain.\n", yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("must be a YAML mapping with an `exceptions` list")
+    end
+  end
+
+  it "fails the run with exit 3 when exceptions is not a list" do
+    # @spec REPO-DEPENDENCY-AUDIT-003
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: "exceptions: GHSA-xxxx-yyyy-zzzz\n", yarn_output: empty_yarn_output)
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(3)
+      expect(stderr).to include("must have an `exceptions` list")
     end
   end
 
@@ -264,6 +305,24 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "blocks an advisory when its allowlist entry names a different module" do
+    # @spec REPO-DEPENDENCY-AUDIT-004
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: allowlist_with(future_date: future_date, ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "other-pkg"),
+        yarn_output: yarn_advisory_output(ghsa_id: "GHSA-xxxx-yyyy-zzzz", module_name: "demo-pkg"),
+        yarn_exit: 1
+      )
+
+      stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(1), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("blocking findings:")
+      expect(stdout).to include("demo-pkg")
+    end
+  end
+
   it "writes structured accepted rows to YARN_AUDIT_ACCEPTED_REPORT when set" do
     # @spec REPO-DEPENDENCY-AUDIT-004
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
@@ -405,11 +464,11 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     "#{JSON.generate(advisory)}\n#{summary}"
   end
 
-  def allowlist_with(future_date:, ghsa_id:)
+  def allowlist_with(future_date:, ghsa_id:, module_name: "demo-pkg")
     <<~YAML
       exceptions:
         - id: #{ghsa_id}
-          module: demo-pkg
+          module: #{module_name}
           reason: "Test reason"
           owner: "@paid/test"
           expires_on: #{future_date}

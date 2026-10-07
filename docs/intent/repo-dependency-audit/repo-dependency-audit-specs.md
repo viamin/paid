@@ -35,24 +35,25 @@
   `id` is duplicated; and SHALL reject entries whose `id` does not match
   the GitHub advisory ID format (`^GHSA-[0-9a-z-]+$`). A malformed or
   expired allowlist SHALL fail the run before findings are evaluated.
-  *Tests:* `spec/scripts/audit_spec.rb`.
-  *Code:* `bin/audit`.
+  *Tests:* `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/yarn-audit-check`.
 
 - [x] **REPO-DEPENDENCY-AUDIT-004** — When a Yarn audit finding's GitHub
-  advisory ID matches an unexpired allowlist entry, the wrapper SHALL
+  advisory ID and affected module match an unexpired allowlist entry, the wrapper SHALL
   report the finding as accepted (advisory ID, severity, module, expiry
   date, owner, tracking issue) in the run output and SHALL NOT fail the
   run for that finding. Accepted findings SHALL be visible in the CI
   summary so they are not silently waived.
-  *Tests:* `spec/scripts/audit_spec.rb`.
-  *Code:* `bin/audit`.
+  *Tests:* `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/yarn-audit-check`.
 
 - [x] **REPO-DEPENDENCY-AUDIT-005** — `config/security/yarn-audit-allowlist.yml`
   is the only file consulted for Yarn audit exceptions; no blanket
   suppression for transitive or development dependencies is permitted.
   Entries MUST each cover a single advisory ID and MUST each cite a
   tracking issue or PR.
-  *Code:* `config/security/yarn-audit-allowlist.yml`.
+  *Tests:* `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/yarn-audit-check`, `config/security/yarn-audit-allowlist.yml`.
 
 ## CI Integration
 

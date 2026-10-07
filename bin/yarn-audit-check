@@ -73,7 +73,13 @@ module Security
       end
 
       parsed = YAML.safe_load_file(ALLOWLIST_PATH, permitted_classes: [ Date ])
-      entries = Array(parsed["exceptions"])
+      unless parsed.is_a?(Hash)
+        abort_allowlist("allowlist at #{ALLOWLIST_PATH} must be a YAML mapping with an `exceptions` list")
+      end
+      entries = parsed.fetch("exceptions", [])
+      unless entries.is_a?(Array)
+        abort_allowlist("allowlist at #{ALLOWLIST_PATH} must have an `exceptions` list")
+      end
 
       validate_allowlist_shape!(entries)
 
@@ -93,6 +99,8 @@ module Security
 
       entries.each_with_index do |entry, index|
         position = "exception ##{index + 1}"
+        abort_allowlist("#{position} must be a YAML mapping") unless entry.is_a?(Hash)
+
         missing = REQUIRED_FIELDS.reject { |key| entry.key?(key) && !entry[key].to_s.strip.empty? }
         abort_allowlist("#{position} is missing required field(s): #{missing.join(', ')}") if missing.any?
 
@@ -109,7 +117,7 @@ module Security
           abort_allowlist("#{position} has unparseable expires_on #{entry['expires_on'].inspect}")
         end
 
-        if expires_on <= today
+        if expires_on < today
           abort_allowlist("#{position} expired on #{expires_on.iso8601} (today is #{today.iso8601}); renew or remove")
         end
       end
@@ -189,8 +197,8 @@ module Security
       blocking = []
 
       findings.each do |finding|
-        entry = allowlist[normalize_id(finding[:id])]
-        if entry
+        entry = allowlist[finding[:id]]
+        if entry && entry["module"] == finding[:module_name]
           accepted << { finding: finding, entry: entry }
         else
           blocking << finding
@@ -198,10 +206,6 @@ module Security
       end
 
       [ accepted, blocking ]
-    end
-
-    def normalize_id(id)
-      id
     end
 
     # Writes the structured accepted rows as JSON to the path named by
