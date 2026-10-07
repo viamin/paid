@@ -5062,6 +5062,18 @@ expect(container_service).to receive(:execute).with(
       }
     end
 
+    it "raises CodeScanningEvidenceUnavailable when finding evidence cannot be refreshed" do
+      # @spec GITHUB-SYNC-018
+      allow(agent_run).to receive(:effective_prompt)
+        .and_raise(PromptAssembly::BuildIssuePrompt::AlertEvidenceError, "Code scanning alert evidence refresh failed")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("CodeScanningEvidenceUnavailable")
+      }
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       allow(AgentRun).to receive(:find).and_call_original
 

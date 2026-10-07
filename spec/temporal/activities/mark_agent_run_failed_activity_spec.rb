@@ -133,6 +133,36 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "preserves manual_review and its reason when code scanning evidence blocks the run" do
+      # @spec GITHUB-SYNC-018
+      # BuildIssuePrompt#refresh_code_scanning_context parks the synthetic
+      # issue in manual_review before the failure propagates; failure
+      # finalization must not clear the parking and re-arm auto-pick.
+      reason = "Code scanning remediation blocked: missing source evidence at analyzed commit"
+      issue = create(:issue, project: project,
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, github_state: "open",
+        paid_state: "manual_review", manual_review_reason: reason)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+      activity.execute(agent_run_id: agent_run.id, error: reason)
+
+      expect(agent_run.reload.status).to eq("failed")
+      issue.reload
+      expect(issue.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to eq(reason)
+      expect(issue.manual_review_started_at).to be_present
+    end
+
+    it "still fails an unparked code scanning issue on unrelated run failures" do
+      issue = create(:issue, :in_progress, project: project,
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, github_state: "open")
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+      activity.execute(agent_run_id: agent_run.id, error: "Container crashed")
+
+      expect(issue.reload.paid_state).to eq("failed")
+    end
+
     it "keeps the issue in_progress for recoverable rate-limited runs" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue)

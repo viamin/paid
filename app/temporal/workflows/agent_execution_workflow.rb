@@ -52,10 +52,12 @@ module Workflows
     # Error types from activities where the agent never produced useful work
     # or the outcome is expected/recoverable — containers are cleaned up
     # immediately for these rather than retained for diagnostics.
+    # @spec GITHUB-SYNC-018
     KNOWN_FAILURE_TYPES = %w[
       AllProvidersExhausted
       AgentExecutionFailed
       CodeScanningAlertResolved
+      CodeScanningEvidenceUnavailable
       IssueDraftInvalid
       McpProvisioningFailed
       MissingPrompt

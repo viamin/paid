@@ -2510,21 +2510,17 @@ RSpec.describe GithubClient do
         expect(analyses_stub).to have_been_requested.once
       end
 
-      it "degrades to an explicit status instead of failing the batch when one alert's instances fetch fails" do
-        # @spec GITHUB-SYNC-015
+      it "preserves an instance-fetch failure for remediation admission" do
+        # @spec GITHUB-SYNC-018
         stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/5/instances")
           .with(query: { "per_page" => "100" })
           .to_return(status: 500, body: { message: "Server Error" }.to_json)
         stub_target_branch_instance(6)
         stub_analyses_for_ref
 
-        alerts = client.code_scanning_alerts(repo, default_branch: "main")
-        degraded = alerts.find { |alert| alert[:number] == 5 }
-        healthy = alerts.find { |alert| alert[:number] == 6 }
-
-        expect(degraded[:location_context_status]).to eq("instance_fetch_failed")
-        expect(degraded[:location]).to be_nil
-        expect(healthy[:location_context_status]).to eq("available")
+        expect {
+          client.code_scanning_alerts(repo, default_branch: "main")
+        }.to raise_error(GithubClient::ApiError, /instances/)
       end
     end
 

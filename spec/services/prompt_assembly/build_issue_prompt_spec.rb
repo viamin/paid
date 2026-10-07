@@ -295,7 +295,11 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         rule_id: "py/sensitive-get-query", rule_description: "Sensitive data read from GET request",
         tool_name: "CodeQL", summary: "Reading sensitive data from a GET request.",
         html_url: "https://github.com/owner-1/repo-1/security/code-scanning/1667",
-        created_at: "2026-03-29T10:00:00Z", updated_at: "2026-03-29T12:00:00Z"
+        created_at: "2026-03-29T10:00:00Z", updated_at: "2026-03-29T12:00:00Z",
+        target_ref: "refs/heads/main", ref: "refs/heads/main", commit_sha: "a" * 40,
+        analysis_key: "codeql/ruby", location_context_status: "available",
+        location: { path: "app/controllers/runners_controller.rb", start_line: 69 },
+        source_read_verified: true
       }
     end
 
@@ -337,13 +341,36 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         .with([ alert_payload ], excluding_run_id: agent_run.id)
     end
 
-    it "keeps building the prompt when the refresh fetch fails" do
+    it "blocks remediation when the refresh fetch fails" do
+      # @spec GITHUB-SYNC-018
       allow(github_client).to receive(:code_scanning_alert)
         .and_raise(GithubClient::ApiError.new("boom"))
 
-      result = described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+      expect {
+        described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+      }.to raise_error(PromptAssembly::BuildIssuePrompt::AlertEvidenceError, /refresh failed/)
+    end
 
-      expect(result.text).to include("Fix login redirect")
+    it "blocks an ambiguous or wrong-branch finding instead of selecting one" do
+      # @spec GITHUB-SYNC-018
+      wrong_branch = alert_payload.merge(
+        ref: "refs/heads/release", location_context_status: "target_branch_instance_ambiguous"
+      )
+      allow(github_client).to receive(:code_scanning_alert).and_return(wrong_branch)
+
+      expect {
+        described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+      }.to raise_error(PromptAssembly::BuildIssuePrompt::AlertEvidenceError, /target branch/)
+    end
+
+    it "blocks a location without an excerpt or verified source read" do
+      # @spec GITHUB-SYNC-018
+      missing_source = alert_payload.merge(source_read_verified: false, source_excerpt: nil)
+      allow(github_client).to receive(:code_scanning_alert).and_return(missing_source)
+
+      expect {
+        described_class.call(issue: code_scanning_issue, project: project, github_client: github_client)
+      }.to raise_error(PromptAssembly::BuildIssuePrompt::AlertEvidenceError, /source evidence/)
     end
 
     it "stops the run instead of building a stale prompt when the alert resolved since queuing" do
