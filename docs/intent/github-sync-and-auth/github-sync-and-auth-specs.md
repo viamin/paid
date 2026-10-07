@@ -217,8 +217,10 @@
   unknown reasons SHALL remain visible. A verified reason SHALL be reported
   only when evidence supplies it; otherwise it SHALL be `unknown`. After a
   seven-day grace period uncovered alerts SHALL escalate. Accepted alerts SHALL
-  retain owner, reason, and expiry. Permission or ingestion failures SHALL be
-  visible coverage failures.
+  retain owner, reason, and expiry. Dependabot scans SHALL respect the configured
+  security scan interval, and a permission failure SHALL back off for one hour
+  before retrying or re-arming its visible coverage failure. Permission or
+  ingestion failures SHALL be visible coverage failures.
   *Code:* `app/services/github_client.rb`,
   `app/services/security_alerts/process_dependabot_alerts.rb`,
   `app/temporal/activities/scan_security_alerts_activity.rb`.

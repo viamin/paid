@@ -1162,8 +1162,11 @@ class GithubClient
   def dependabot_alerts(repo, state: "open", per_page: 100)
     handle_errors do
       path = "#{Octokit::Repository.path(repo)}/dependabot/alerts"
+      alerts = Array(client.paginate(path, state:, per_page:))
+      next [] if alerts.empty?
+
       remediation_pull_requests = dependabot_remediation_pull_requests(repo, state:)
-      client.paginate(path, state:, per_page:).map do |alert|
+      alerts.map do |alert|
         dependabot_alert_payload(alert, remediation_pull_requests.fetch(alert.number, []))
       end
     end

@@ -1477,6 +1477,16 @@ RSpec.describe GithubClient do
         remediation_pull_requests: [ { number: 42, url: "https://github.com/#{repo}/pull/42", state: "open", merged_at: nil } ]
       ))
     end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "does not fetch remediation PR evidence when there are no open alerts" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+        .with(query: { state: "open", per_page: 100 })
+        .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+
+      expect(client.dependabot_alerts(repo)).to eq([])
+      expect(a_request(:post, "#{api_base}/graphql")).not_to have_been_requested
+    end
   end
 
   describe "#review_threads" do

@@ -120,9 +120,14 @@ module Activities
 
     # @spec DEPENDABOT-COVERAGE-001
     def scan_dependabot_alerts(project)
+      return unless project.security_alert_types.include?("dependabot")
+      return unless should_scan_dependabot?(project)
+
       heartbeat("scan_security_alerts.fetch_dependabot_alerts", project_id: project.id)
       SecurityAlerts::ProcessDependabotAlerts.new(project).call(fetch_dependabot_alerts(project))
+      project.update_columns(last_dependabot_scan_at: Time.current, dependabot_permission_error_at: nil)
     rescue SecurityAlerts::DependabotPermissionsError => e
+      project.update_columns(dependabot_permission_error_at: Time.current)
       publish_dependabot_ingestion_failure(project, e.message, "permission_denied")
       raise
     rescue GithubClient::Error => e
@@ -131,15 +136,27 @@ module Activities
     end
 
     def should_scan_code_scanning?(project)
-      return false if recent_permission_error?(project)
+      return false if recent_code_scanning_permission_error?(project)
       return true if project.last_code_scanning_scan_at.nil?
 
       project.last_code_scanning_scan_at <= project.code_scanning_interval_hours.hours.ago
     end
 
-    def recent_permission_error?(project)
+    def should_scan_dependabot?(project)
+      return false if recent_dependabot_permission_error?(project)
+      return true if project.last_dependabot_scan_at.nil?
+
+      project.last_dependabot_scan_at <= project.code_scanning_interval_hours.hours.ago
+    end
+
+    def recent_code_scanning_permission_error?(project)
       project.code_scanning_permission_error_at.present? &&
         project.code_scanning_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
+    end
+
+    def recent_dependabot_permission_error?(project)
+      project.dependabot_permission_error_at.present? &&
+        project.dependabot_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
     end
 
     def fetch_code_scanning_alerts(project)

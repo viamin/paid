@@ -7,7 +7,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
   let(:project) do
     create(:project,
       auto_scan_security: true,
-      security_alert_types: %w[code_scanning],
+      security_alert_types: %w[dependabot code_scanning],
       code_scanning_interval_hours: 72)
   end
   let(:github_client) { instance_double(GithubClient) }
@@ -160,6 +160,66 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(Notifications::Publish).to have_received(:call).with(
           hash_including(blocking: true, severity: :error, metadata: hash_including(reason: "fetch_failed"))
+        )
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "converts a Dependabot permission failure to a non-retryable activity error" do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+
+        expect { activity.execute(project_id: project.id) }
+          .to raise_error(Temporalio::Error::ApplicationError) do |error|
+            expect(error.type).to eq("DependabotPermissionsError")
+          end
+      end
+    end
+
+    context "with Dependabot interval and permission-error backoff" do
+      before { project.update_columns(last_code_scanning_scan_at: Time.current, last_dependabot_scan_at: nil) }
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "does not scan Dependabot when the alert type is disabled" do
+        project.update_column(:security_alert_types, %w[code_scanning])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "skips Dependabot scans until the configured interval has elapsed" do
+        project.update_column(:last_dependabot_scan_at, 1.hour.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "backs off permission failures without re-arming the blocking notification" do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+
+        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:dependabot_alerts).once
+        expect(Notifications::Publish).to have_received(:call).once
+        expect(project.reload.dependabot_permission_error_at).to be_present
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "clears the permission backoff after a successful Dependabot scan" do
+        project.update_column(:dependabot_permission_error_at, 2.hours.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload).to have_attributes(
+          last_dependabot_scan_at: be_present,
+          dependabot_permission_error_at: nil
         )
       end
     end

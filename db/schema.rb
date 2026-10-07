@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_090111) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3005,6 +3005,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090111) do
     t.text "webhook_secret"
     t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
+    t.datetime "last_dependabot_scan_at", comment: "Timestamp of the most recent successful Dependabot alert scan. Uses code_scanning_interval_hours to limit polling."
+    t.datetime "dependabot_permission_error_at", comment: "Timestamp of the most recent Dependabot permissions error. Used to back off identical failures until credentials or repository settings change."
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
