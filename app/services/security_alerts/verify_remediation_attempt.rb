@@ -20,7 +20,9 @@ module SecurityAlerts
       return block!(failure_reason) unless analysis[:status] == "succeeded"
       return block!("analysis commit does not contain the merge commit") unless contains_merge_commit
 
-      alert ? fail! : resolve!
+      return resolve! unless alert
+
+      fail!
     end
 
     private
