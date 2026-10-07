@@ -38,6 +38,24 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(inbox_return)
       expect(ChangeIntent.where(id: change_intent.id)).to be_empty
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on approve and falls back to the project page" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on discard and falls back to the project page" do
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
   end
 
   describe "GET /projects/:project_id/change_intents/:id" do
@@ -77,6 +95,43 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response.body).to include("approved and added to the knowledge base")
     end
+
+    it "falls back to the project when return_to is an absolute URL" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "https://evil.example/phish" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(change_intent.reload.status).to eq("active")
+    end
+
+    it "falls back to the project for a protocol-relative return_to" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "//evil.example/phish" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(change_intent.reload.status).to eq("active")
+    end
+
+    it "falls back to the project when return_to is a javascript: URL" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "javascript:alert(1)" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project when return_to is not inbox-scoped" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "/projects/other" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project when return_to is a malformed URI" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: '/\\evil.example/inbox' }
+
+      expect(response).to redirect_to(project_path(project))
+    end
   end
 
   describe "POST /projects/:project_id/change_intents/:id/discard" do
@@ -98,6 +153,25 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("cannot discard from active")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change intent when return_to is unsafe on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent),
+        params: { return_to: "https://evil.example/phish" }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+
+    it "falls back to the change intent for a protocol-relative return_to on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent),
+        params: { return_to: "//evil.example/phish" }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 
@@ -169,6 +243,25 @@ RSpec.describe "Projects::ChangeIntents" do
 
       expect(response).to redirect_to(inbox_return)
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change intent when return_to is an absolute URL on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent),
+        params: { return_to: "https://evil.example/phish", reason: "Tighten constraints." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+
+    it "falls back to the change intent for a protocol-relative return_to on an invalid transition" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent),
+        params: { return_to: "//evil.example/phish", reason: "Tighten constraints." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
   end
 
   # @spec CHANGE-INTENT-INBOX-001
@@ -178,13 +271,6 @@ RSpec.describe "Projects::ChangeIntents" do
     # @spec CHANGE-INTENT-INBOX-001
     it "falls back to the project page when return_to is an absolute URL" do
       post discard_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish")
-
-      expect(response).to redirect_to(project_path(project))
-    end
-
-    # @spec CHANGE-INTENT-INBOX-001
-    it "falls back to the project page when return_to is a protocol-relative URL" do
-      post discard_project_change_intent_path(project, change_intent, return_to: "//evil.example/phish")
 
       expect(response).to redirect_to(project_path(project))
     end
@@ -208,33 +294,6 @@ RSpec.describe "Projects::ChangeIntents" do
       post discard_project_change_intent_path(project, change_intent, return_to: '/\\evil.example/inbox')
 
       expect(response).to redirect_to(project_path(project))
-    end
-
-    # @spec CHANGE-INTENT-INBOX-001
-    it "falls back to the project page when approve succeeds with an unsafe return_to" do
-      post approve_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish")
-
-      expect(response).to redirect_to(project_path(project))
-      expect(change_intent.reload.status).to eq("active")
-    end
-
-    # @spec CHANGE-INTENT-INBOX-001
-    it "falls back to the change_intent show page on invalid transition when return_to is unsafe" do
-      change_intent.update!(status: "active")
-
-      post discard_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish")
-
-      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
-    end
-
-    # @spec CHANGE-INTENT-INBOX-001
-    it "falls back to the change_intent page for request_changes with an unsafe return_to on invalid transition" do
-      change_intent.update!(status: "active")
-
-      post request_changes_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish"),
-        params: { reason: "Too late." }
-
-      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 end
