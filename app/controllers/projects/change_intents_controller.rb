@@ -65,17 +65,19 @@ module Projects
     # redirect back to the inbox pane that initiated the action). Falls back
     # to the project page, matching the pre-inbox lifecycle.
     def safe_return_target
-      safe = params[:return_to].to_s
-      return safe if safe.start_with?("/") && safe.start_with?(inbox_path)
-
-      project_path(@project)
+      inbox_return_target(project_path(@project))
     end
 
     def redirect_on_invalid_transition
-      target = params[:return_to].to_s
-      return target if target.start_with?("/") && target.start_with?(inbox_path)
+      inbox_return_target(project_change_intent_path(@project, @change_intent))
+    end
 
-      project_change_intent_path(@project, @change_intent)
+    # @spec CHANGE-INTENT-INBOX-001
+    def inbox_return_target(fallback)
+      target = normalized_return_to(params[:return_to])
+      return target if target.present? && target.start_with?(inbox_path)
+
+      fallback
     end
   end
 end
