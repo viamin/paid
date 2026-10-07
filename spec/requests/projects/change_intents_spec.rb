@@ -42,8 +42,8 @@ RSpec.describe "Projects::ChangeIntents" do
 
   # @spec CHANGE-INTENT-INBOX-001
   describe "hostile return_to targets" do
-    it "falls back to the project page for forged absolute, protocol-relative, and backslash targets" do
-      [ "https://evil.com/inbox", "//evil.com/inbox", "/inbox\\evil.com" ].each do |forged|
+    it "falls back to the project page for forged, non-inbox-scoped, and backslash targets" do
+      [ "https://evil.com/inbox", "//evil.com/inbox", "javascript:alert(1)", "/projects/other", "/inbox\\evil.com" ].each do |forged|
         change_intent.update!(status: "draft")
 
         post request_changes_project_change_intent_path(project, change_intent, return_to: forged),
