@@ -240,7 +240,7 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
-  it "lands constraint-blocked alerts in awaiting_processing when GitHub provides no incompatibility evidence" do
+  it "records alerts with no patched version as no_patched_version" do
     described_class.new(project).call([
       alert.merge(number: 44, advisory_ghsa_id: "GHSA-pinned", first_patched_version: nil)
     ])
