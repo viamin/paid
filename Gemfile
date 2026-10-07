@@ -110,7 +110,7 @@ gem "solid_cache"
 # @spec RAILS-CONTROL-PLANE-009
 # 4.1.0's batched writer deadlocks during development reload. Keep synchronous
 # writes until a newer release passes spec/integration/action_cable/subscription_adapter/solid_cable_reload_spec.rb.
-gem "solid_cable", "4.0.2"
+gem "solid_cable", "4.1.0"
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
@@ -179,10 +179,10 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.19"
+gem "good_job", "~> 4.20"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.6"
+gem "pagy", "~> 43.7"
 
 # PDF text extraction for knowledge imports
 gem "pdf-reader"
