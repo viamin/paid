@@ -31,9 +31,5 @@ class CodeScanningRemediationAttempt < ApplicationRecord
   # attempt's `verified_fixed` outcome (EAGER-QUEUE-015). The duplicate-PR
   # prevention guards remain the durable stop against a second concurrent
   # fix PR (EAGER-QUEUE-009).
-  scope :latest_per_issue, -> { where(id: latest_ids_per_issue) }
-
-  def self.latest_ids_per_issue
-    group(:issue_id).maximum(:id).values
-  end
+  scope :latest_per_issue, -> { where(id: unscoped.select("MAX(id)").group(:issue_id)) }
 end

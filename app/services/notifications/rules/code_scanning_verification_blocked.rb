@@ -15,7 +15,12 @@ module Notifications
       def source = SOURCE
 
       def detect(scope)
-        Array(scope).select { |attempt| attempt.status == "verification_blocked" }
+        attempts = Array(scope)
+        latest_blocked_ids = CodeScanningRemediationAttempt.latest_per_issue
+          .where(id: attempts.map(&:id), status: "verification_blocked")
+          .pluck(:id)
+
+        attempts.select { |attempt| latest_blocked_ids.include?(attempt.id) }
       end
 
       def resolve_candidates(scope)

@@ -49,6 +49,18 @@ RSpec.describe CodeScanningRemediationAttempt do
   end
 
   describe ".latest_per_issue" do
+    it "keeps the latest-id lookup in SQL when applying a caller's scope" do # @spec EAGER-QUEUE-015
+      other_issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+      create(:code_scanning_remediation_attempt, issue: issue, pull_request_number: 20)
+      latest = create(:code_scanning_remediation_attempt, issue: issue, pull_request_number: 21)
+      create(:code_scanning_remediation_attempt, issue: other_issue, pull_request_number: 22)
+
+      relation = described_class.where(issue: issue).latest_per_issue
+
+      expect(relation.pluck(:id)).to contain_exactly(latest.id)
+      expect(relation.to_sql).to include("IN (SELECT MAX")
+    end
+
     it "returns one attempt per issue, the latest by id" do # @spec EAGER-QUEUE-014 @spec EAGER-QUEUE-015
       older = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_failed", pull_request_number: 21)
       newer = create(:code_scanning_remediation_attempt, issue: issue, status: "verified_fixed", pull_request_number: 22)

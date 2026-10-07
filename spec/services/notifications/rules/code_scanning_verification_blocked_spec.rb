@@ -67,6 +67,16 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
     }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
   end
 
+  it "resolves a superseded blocked attempt instead of publishing it again" do # @spec EAGER-QUEUE-016
+    described_class.call(scope: [ attempt ])
+    create(:code_scanning_remediation_attempt, issue: issue, pull_request_number: 4035,
+      status: "verified_fixed")
+
+    expect {
+      described_class.call(scope: [ attempt ])
+    }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
+  end
+
   it "ignores attempts in non-blocked statuses" do # @spec EAGER-QUEUE-016
     attempt.update!(status: "verified_fixed")
 
