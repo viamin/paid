@@ -10,23 +10,47 @@ module SecurityAlerts
     end
 
     def call(alerts)
-      seen_numbers = alerts.map { |alert| alert.fetch(:number) }
-      close_missing_alerts(seen_numbers)
-      alerts.each { |alert| reconcile(alert) }
+      coverages = load_coverages(project)
+      numbers = alerts.map { |alert| alert.fetch(:number) }
+      close_missing_alerts(coverages, numbers)
+      alerts.each { |alert| reconcile(alert, coverages) }
     end
 
     private
 
     attr_reader :project
 
-    def close_missing_alerts(numbers)
-      project.dependabot_alert_coverages.where.not(alert_number: numbers).find_each do |coverage|
+    def load_coverages(project)
+      project.dependabot_alert_coverages.to_a
+    end
+
+    def coverages_by_number(coverages)
+      coverages.each_with_object({}) { |coverage, hash| hash[coverage.alert_number] = coverage }
+    end
+
+    def coverages_by_identity(coverages)
+      coverages.each_with_object({}) do |coverage, hash|
+        key = [ coverage.dependency_ecosystem, coverage.dependency_name,
+                coverage.advisory_ghsa_id, coverage.manifest_path ]
+        hash[key] = coverage
+      end
+    end
+
+    def close_missing_alerts(coverages, numbers)
+      # Only currently-open alerts are candidates for resolution — every scan
+      # would otherwise re-run validations and an updated_at bump on every
+      # historically-resolved coverage row. @spec DEPENDABOT-COVERAGE-001
+      coverages_by_number(coverages).each_value do |coverage|
+        next unless coverage.alert_state == "open"
+        next if numbers.include?(coverage.alert_number)
+
         coverage.update!(alert_state: "resolved")
       end
     end
 
-    def reconcile(alert)
-      coverage = existing_coverage(alert) || project.dependabot_alert_coverages.build(alert_number: alert.fetch(:number))
+    def reconcile(alert, coverages)
+      coverage = find_coverage(alert, coverages) ||
+        project.dependabot_alert_coverages.build(alert_number: alert.fetch(:number))
       previous_state = coverage.coverage_state
       coverage.assign_attributes(attributes_for(alert, coverage))
       coverage.uncovered_since = uncovered_since_for(coverage, previous_state)
@@ -35,12 +59,17 @@ module SecurityAlerts
       escalate!(coverage) if coverage.escalation_due?
     end
 
-    def existing_coverage(alert)
-      project.dependabot_alert_coverages.find_by(alert_number: alert.fetch(:number)) ||
-        project.dependabot_alert_coverages.find_by(
-          dependency_ecosystem: alert.fetch(:dependency_ecosystem), dependency_name: alert.fetch(:dependency_name),
-          advisory_ghsa_id: alert.fetch(:advisory_ghsa_id), manifest_path: alert[:manifest_path]
-        )
+    # The indexes are built once in `call`, so two-alert lookups resolve in
+    # memory instead of issuing a SELECT per alert.
+    def find_coverage(alert, coverages)
+      by_number = coverages_by_number(coverages)
+      number = alert.fetch(:number)
+      return by_number[number] if by_number.key?(number)
+
+      by_identity = coverages_by_identity(coverages)
+      identity = [ alert.fetch(:dependency_ecosystem), alert.fetch(:dependency_name),
+                   alert.fetch(:advisory_ghsa_id), alert[:manifest_path] ]
+      by_identity[identity]
     end
 
     def attributes_for(alert, coverage)
@@ -70,9 +99,15 @@ module SecurityAlerts
       end
     end
 
+    # GitHub's Dependabot REST payload does not surface constraint-incompatibility
+    # evidence (e.g. pinned vulnerable resolutions or blocked package upgrades)
+    # in a structured way Paid could consume without guessing, so those alerts
+    # honestly land in `awaiting_processing`/`unknown` until GitHub exposes the
+    # evidence — see DEPENDABOT-COVERAGE-001 ("permanently unclear reasons SHALL
+    # remain visible" + "A verified reason SHALL be reported only when evidence
+    # supplies it; otherwise it SHALL be `unknown`"). # @spec DEPENDABOT-COVERAGE-001
     def coverage_state_for(alert, coverage)
       return [ "accepted", "operator_accepted" ] if coverage.accepted?
-      return [ alert[:coverage_state], alert.fetch(:reason, "unknown") ] if alert[:coverage_state].present?
       return [ "no_patched_version", "no_patched_version" ] if alert[:first_patched_version].blank?
 
       remediation = Array(alert[:remediation_pull_requests]).first

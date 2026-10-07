@@ -127,12 +127,24 @@ module Activities
       SecurityAlerts::ProcessDependabotAlerts.new(project).call(fetch_dependabot_alerts(project))
       project.update_columns(last_dependabot_scan_at: Time.current, dependabot_permission_error_at: nil)
     rescue SecurityAlerts::DependabotPermissionsError => e
+      # A permission failure blocks the poll cycle on its own (the workflow's
+      # `maybe_scan_code_scanning_alerts` treats this as a configuration error
+      # and logs/swallows), so let it propagate as an ApplicationError — but
+      # only after the visible coverage failure has been published and the
+      # one-hour backoff window is armed. # @spec DEPENDABOT-COVERAGE-001
       project.update_columns(dependabot_permission_error_at: Time.current)
       publish_dependabot_ingestion_failure(project, e.message, "permission_denied")
       raise
     rescue GithubClient::Error => e
+      # A transient fetch failure (5xx, GraphQL error, etc.) must be a visible
+      # coverage failure but MUST NOT starve healthy code-scanning coverage:
+      # publish the failure, arm the one-hour fetch-failure backoff, and let
+      # scan_code_scanning_alerts proceed. Re-raising here would couple an
+      # independent Dependabot outage to the whole poll cycle and skip
+      # `last_code_scanning_scan_at` until the Dependabot endpoint recovered.
+      # # @spec DEPENDABOT-COVERAGE-001
+      project.update_columns(dependabot_permission_error_at: Time.current)
       publish_dependabot_ingestion_failure(project, e.message, "fetch_failed")
-      raise
     end
 
     def should_scan_code_scanning?(project)

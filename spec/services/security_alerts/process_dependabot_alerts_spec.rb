@@ -112,15 +112,24 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
-  it "retains closed, merged, and constraint-blocked remediation states as uncovered" do
+  it "retains closed and merged remediation states as uncovered" do
     described_class.new(project).call([
       alert.merge(number: 42, remediation_pull_requests: [ { number: 1, state: "closed" } ]),
-      alert.merge(number: 43, advisory_ghsa_id: "GHSA-merged", remediation_pull_requests: [ { number: 2, state: "merged" } ]),
-      alert.merge(number: 44, advisory_ghsa_id: "GHSA-pinned", coverage_state: "incompatible_constraints", reason: "pinned_vulnerable_resolution")
+      alert.merge(number: 43, advisory_ghsa_id: "GHSA-merged", remediation_pull_requests: [ { number: 2, state: "merged" } ])
     ])
 
     states = project.dependabot_alert_coverages.pluck(:coverage_state)
-    expect(states).to include("effective_pr_closed_unmerged", "merged_still_vulnerable", "incompatible_constraints")
+    expect(states).to include("effective_pr_closed_unmerged", "merged_still_vulnerable")
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
+  it "lands constraint-blocked alerts in awaiting_processing when GitHub provides no incompatibility evidence" do
+    described_class.new(project).call([
+      alert.merge(number: 44, advisory_ghsa_id: "GHSA-pinned", first_patched_version: nil)
+    ])
+
+    coverage = project.dependabot_alert_coverages.find_by!(alert_number: 44)
+    expect(coverage.coverage_state).to eq("no_patched_version")
   end
 
   # @spec DEPENDABOT-COVERAGE-001

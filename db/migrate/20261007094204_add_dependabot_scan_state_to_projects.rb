@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddDependabotScanStateToProjects < ActiveRecord::Migration[8.1]
   def change
     add_column :projects, :last_dependabot_scan_at, :datetime,

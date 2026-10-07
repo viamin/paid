@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_122814) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1937,14 +1937,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
   end
 
   create_table "intent_conformance_decisions", comment: "Human resolutions of a material_drift/uncertain/not_evaluated intent-conformance verdict (RDR-067). A bounded_exception decision is scoped to its exact head_sha and stops applying the moment a new commit changes the PR HEAD.", force: :cascade do |t|
-    t.string "action", null: false, comment: "fix_pr, bounded_exception, or design_amendment (see IntentConformanceDecision::ACTIONS)."
-    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
-    t.datetime "created_at", null: false
-    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
     t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this decision resolves."
-    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
-    t.datetime "updated_at", null: false
     t.bigint "verdict_id", comment: "The intent-conformance verdict this decision responds to, when one exists."
+    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
+    t.string "action", null: false, comment: "fix_pr, bounded_exception, or design_amendment (see IntentConformanceDecision::ACTIONS)."
+    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
+    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
     t.index ["actor_id"], name: "index_intent_conformance_decisions_on_actor_id"
     t.index ["issue_id", "action", "head_sha"], name: "index_intent_conformance_decisions_on_issue_action_head"
     t.index ["issue_id"], name: "index_intent_conformance_decisions_on_issue_id"
@@ -1993,18 +1993,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
   end
 
   create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|
+    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
+    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
+    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
     t.string "approved_design_revision", null: false, comment: "Merged repository commit SHA of the approved RDR/LID design revision compared against."
+    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
+    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
     t.jsonb "cited_claims", default: [], null: false, comment: "Approved design claims the reviewer cited, e.g. [{design_ref:, claim_text:}]."
     t.jsonb "cited_diff_locations", default: [], null: false, comment: "PR diff locations the reviewer cited, e.g. [{file:, anchor:}]."
-    t.datetime "created_at", null: false
-    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
-    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
-    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
-    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
-    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
     t.text "reasoning_summary", comment: "Reviewer's reasoning summary, shown to a human resolving the Inbox decision."
-    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
-    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
+    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
+    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["issue_id", "pr_head_sha", "evaluated_at"], name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
     t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
@@ -2994,7 +2994,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
     t.datetime "scheduler_paused_at"
     t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
-    t.jsonb "security_alert_types", default: ["code_scanning"], null: false
+    t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
     t.string "setup_status", comment: "Blank-project bootstrap state: pending, in_progress, or completed. Null when setup is not required."
     t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
@@ -3007,6 +3007,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
     t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
     t.datetime "last_dependabot_scan_at", comment: "Timestamp of the most recent successful Dependabot alert scan. Uses code_scanning_interval_hours to limit polling."
     t.datetime "dependabot_permission_error_at", comment: "Timestamp of the most recent Dependabot permissions error. Used to back off identical failures until credentials or repository settings change."
+    t.datetime "dependabot_fetch_error_at", comment: "Timestamp of the most recent transient Dependabot fetch failure. Used to back off retries without blocking code-scanning coverage."
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
@@ -5147,14 +5148,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
-  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -5241,5 +5234,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_094204) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 end

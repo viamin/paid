@@ -158,11 +158,30 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
       # @spec DEPENDABOT-COVERAGE-001
       it "surfaces the failed fetch as a blocking coverage failure" do
-        expect { activity.execute(project_id: project.id) }.to raise_error(GithubClient::ApiError)
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
 
         expect(Notifications::Publish).to have_received(:call).with(
           hash_including(blocking: true, severity: :error, metadata: hash_including(reason: "fetch_failed"))
         )
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "still scans CodeQL even when the Dependabot fetch fails" do
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(github_client).to have_received(:code_scanning_alerts)
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_present
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "arms the one-hour fetch-failure backoff so subsequent polls skip Dependabot" do
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:dependabot_alerts).once
       end
 
       # @spec DEPENDABOT-COVERAGE-001
