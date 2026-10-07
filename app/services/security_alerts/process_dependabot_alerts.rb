@@ -30,6 +30,7 @@ module SecurityAlerts
       previous_state = coverage.coverage_state
       coverage.assign_attributes(attributes_for(alert, coverage))
       coverage.uncovered_since = uncovered_since_for(coverage, previous_state)
+      coverage.escalated_at = nil if coverage.effective_pr_open?
       coverage.save!
       escalate!(coverage) if coverage.escalation_due?
     end

@@ -86,6 +86,25 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  it "re-arms escalation after an effective remediation PR later closes unmerged" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      advisory_ghsa_id: "GHSA-test", coverage_state: "effective_pr_closed_unmerged",
+      first_detected_at: 30.days.ago, uncovered_since: 30.days.ago, escalated_at: 1.day.ago)
+
+    described_class.new(project).call([ alert.merge(remediation_pull_requests: [ { number: 42, state: "open" } ]) ])
+
+    expect(coverage.reload).to have_attributes(uncovered_since: nil, escalated_at: nil)
+
+    described_class.new(project).call([ alert.merge(remediation_pull_requests: [ { number: 42, state: "closed" } ]) ])
+
+    travel 8.days do
+      described_class.new(project).call([ alert.merge(remediation_pull_requests: [ { number: 42, state: "closed" } ]) ])
+    end
+
+    expect(Notifications::Publish).to have_received(:call).with(hash_including(blocking: true, severity: :error))
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
   it "retains no patched version as an explicit uncovered state" do
     described_class.new(project).call([ alert.merge(first_patched_version: nil) ])
 
