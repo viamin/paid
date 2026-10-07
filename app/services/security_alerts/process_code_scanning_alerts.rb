@@ -63,10 +63,18 @@ module SecurityAlerts
     def close_resolved_issues(alerts)
       return if alerts.empty?
 
-      ids = alerts.map { |a| synthetic_issue_id(a) }
-      now = Time.current
-      @project.issues.where(source: SYNTHETIC_SOURCE, github_issue_id: ids, github_state: "open").find_each do |issue|
-        issue.update!(github_state: "closed", github_updated_at: now)
+      alerts.each do |alert|
+        issue = @project.issues.find_by(source: SYNTHETIC_SOURCE,
+          github_issue_id: synthetic_issue_id(alert), github_state: "open")
+        next unless issue
+
+        issue.update!(github_state: "closed", github_updated_at: Time.current,
+          paid_state: "manual_review",
+          manual_review_reason: "Upstream code-scanning alert #{alert[:state]}; scanner-verified remediation is not recorded.",
+          code_scanning_disposition: alert[:state],
+          code_scanning_disposition_reason: alert[:dismissed_reason] || alert[:dismissed_comment],
+          code_scanning_disposition_evidence: alert.slice(:number, :state, :dismissed_reason, :dismissed_comment,
+            :dismissed_by, :html_url, :updated_at))
       end
     end
 
@@ -93,6 +101,8 @@ module SecurityAlerts
         github_created_at: parse_alert_time(alert[:created_at]) || now,
         github_updated_at: parse_alert_time(alert[:updated_at]) || now,
         paid_state: "new",
+        code_scanning_disposition: "open",
+        code_scanning_disposition_evidence: { "number" => alert[:number], "state" => "open" },
         labels: labels_for_alert(alert),
         source: SYNTHETIC_SOURCE
       )
@@ -122,6 +132,9 @@ module SecurityAlerts
         body: formatted_body(issue, alert, excluding_run_id:),
         github_state: "open",
         paid_state: "new",
+        code_scanning_disposition: "open",
+        code_scanning_disposition_reason: nil,
+        code_scanning_disposition_evidence: { "number" => alert[:number], "state" => "open" },
         labels: labels_for_alert(alert),
         github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
       )

@@ -14,7 +14,10 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:code_scanning_analyses).and_return([])
+    allow(github_client).to receive_messages(
+      code_scanning_analyses: [],
+      code_scanning_alert_dispositions: []
+    )
   end
 
   describe "#execute" do
@@ -55,7 +58,11 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "still scans" do
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts)
+        expect(github_client).to have_received(:code_scanning_alerts).once
+        expect(github_client).to have_received(:code_scanning_alert_dispositions)
+          .with(project.full_name, state: "fixed").once
+        expect(github_client).to have_received(:code_scanning_alert_dispositions)
+          .with(project.full_name, state: "dismissed").once
       end
     end
 
@@ -67,7 +74,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts)
+        expect(github_client).to have_received(:code_scanning_alerts).once
       end
 
       it "scans when interval has elapsed" do
@@ -75,7 +82,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts)
+        expect(github_client).to have_received(:code_scanning_alerts).once
       end
 
       it "skips scan when interval has not elapsed" do
@@ -211,7 +218,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:code_scanning_alerts)
+        expect(github_client).to have_received(:code_scanning_alerts).once
       end
 
       it "clears the flag once a scan succeeds again" do
@@ -230,7 +237,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
       before { project.update_column(:last_code_scanning_scan_at, nil) }
 
-      it "closes synthetic issues whose alerts are no longer open" do
+      it "retains synthetic issues when an empty snapshot has no explicit disposition" do
         issue = create(:issue,
           project: project,
           source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
@@ -239,14 +246,14 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           github_state: "open",
           paid_state: "new")
 
-        # API returns no open alerts — alert #42 was resolved upstream
+        # An all-empty response does not identify alert #42's disposition.
         allow(github_client).to receive(:code_scanning_alerts).and_return([])
 
         activity.execute(project_id: project.id)
 
         issue.reload
-        expect(issue.github_state).to eq("closed")
-        expect(issue.paid_state).to eq("completed")
+        expect(issue.github_state).to eq("open")
+        expect(issue.paid_state).to eq("new")
       end
 
       it "skips closure when an issue has an active agent run" do
@@ -269,7 +276,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.paid_state).to eq("in_progress")
       end
 
-      it "preserves paid_state 'failed' when closing resolved alerts" do
+      it "preserves paid_state 'failed' when an alert is absent without disposition" do
         issue = create(:issue,
           project: project,
           source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
@@ -283,7 +290,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         activity.execute(project_id: project.id)
 
         issue.reload
-        expect(issue.github_state).to eq("closed")
+        expect(issue.github_state).to eq("open")
         expect(issue.paid_state).to eq("failed")
       end
 
