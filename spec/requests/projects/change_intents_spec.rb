@@ -38,6 +38,24 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(inbox_return)
       expect(ChangeIntent.where(id: change_intent.id)).to be_empty
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on approve and falls back to the project page" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on discard and falls back to the project page" do
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
   end
 
   describe "GET /projects/:project_id/change_intents/:id" do
@@ -137,6 +155,7 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response.body).to include("cannot discard from active")
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
     it "falls back to the change intent when return_to is unsafe on an invalid transition" do
       change_intent.update!(status: "active")
 
@@ -225,6 +244,7 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(inbox_return)
     end
 
+    # @spec CHANGE-INTENT-INBOX-001
     it "falls back to the change intent when return_to is an absolute URL on an invalid transition" do
       change_intent.update!(status: "active")
 
