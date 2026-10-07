@@ -55,7 +55,7 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
 
     expect {
       described_class.call(scope: [ attempt ])
-    }.to change { Notification.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
+    }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
   end
 
   it "auto-resolves the notification when the attempt transitions to verification_failed" do # @spec EAGER-QUEUE-016
@@ -64,7 +64,7 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
 
     expect {
       described_class.call(scope: [ attempt ])
-    }.to change { Notification.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
+    }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
   end
 
   it "ignores attempts in non-blocked statuses" do # @spec EAGER-QUEUE-016

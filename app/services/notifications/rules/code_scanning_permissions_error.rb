@@ -59,6 +59,10 @@ module Notifications
       def edit_project_path(project)
         "/projects/#{project.id}/edit"
       end
+
+      def build_description(_project)
+        "Re-authorize the GitHub App or rotate the PAT with code-scanning read permission, then wait for the next scan to confirm access."
+      end
     end
   end
 end

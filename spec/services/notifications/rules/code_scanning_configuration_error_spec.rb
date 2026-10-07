@@ -3,7 +3,11 @@
 require "rails_helper"
 
 RSpec.describe Notifications::Rules::CodeScanningConfigurationError do
-  let(:project) { create(:project, security_alert_types: %w[code_scanning], allowed_github_usernames: []) }
+  let(:project) do
+    create(:project, security_alert_types: %w[code_scanning]).tap do |record|
+      record.update_column(:allowed_github_usernames, [])
+    end
+  end
 
   before { allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) }
 
