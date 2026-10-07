@@ -2,8 +2,11 @@
 
 require "rails_helper"
 
+# @spec RDR-ROLLOUT-GUARD-003
+# @spec RDR-ROLLOUT-GUARD-004
 RSpec.describe Features::RdrContract do
-  let(:agent_run) { build_stubbed(:agent_run, goal: "create_feature") }
+  let(:project) { build_stubbed(:project, primary_language: "Ruby") }
+  let(:agent_run) { build_stubbed(:agent_run, goal: "create_feature", project: project) }
 
   def contract(changed_files: nil, contents: {})
     files = changed_files || contents.keys
@@ -149,6 +152,7 @@ RSpec.describe Features::RdrContract do
       expect(result.missing.length).to eq(9)
     end
 
+    # @spec RDR-ROLLOUT-GUARD-003
     it "requires enablement and runtime wiring details when rollout guard names a feature flag" do
       rdr_path = "docs/rdrs/RDR-099-flagged.md"
       body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
@@ -177,6 +181,71 @@ RSpec.describe Features::RdrContract do
       result = contract(
         changed_files: [ rdr_path, "docs/rdrs/README.md" ],
         contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-config.md" }
+      )
+
+      expect(result.valid?).to be true
+    end
+  end
+
+  # Non-Ruby projects cannot host the paid Rails FeatureFlags pattern, so the
+  # contract must accept a project-appropriate gate instead of demanding paid's
+  # flag system (#4172).
+  describe "feature flag guards on non-ruby projects" do
+    let(:project) { build_stubbed(:project, primary_language: "GDScript") }
+
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "accepts a project-appropriate flag guard without paid FeatureFlags wiring" do
+      rdr_path = "docs/rdrs/RDR-099-godot-feature.md"
+      body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = if section == "Rollout Guard"
+          "Feature flag: `new_thing`, default off. Enablement surface: in-game settings screen. " \
+          "Rollback: disable the setting. Cleanup: remove after closeout."
+        else
+          "body"
+        end
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+
+      result = contract(
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-godot-feature.md" }
+      )
+
+      expect(result.valid?).to be true
+      expect(result.missing).to eq([])
+    end
+
+    it "still requires a named enablement surface when the guard names a feature flag" do
+      rdr_path = "docs/rdrs/RDR-099-godot-short-guard.md"
+      body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = section == "Rollout Guard" ? "Feature flag: new_thing, default off." : "body"
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+
+      result = contract(
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-godot-short-guard.md" }
+      )
+
+      expect(result.valid?).to be false
+      expect(result.missing).to include("RDR rollout guard: feature flag enablement surface")
+      expect(result.missing).not_to include(a_string_including("FeatureFlags"))
+    end
+
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "does not demand FeatureFlags artifacts when no language is detected" do
+      project = build_stubbed(:project, primary_language: nil)
+      agent_run = build_stubbed(:agent_run, goal: "create_feature", project: project)
+      rdr_path = "docs/rdrs/RDR-099-undetected.md"
+      body = Features::RdrContract::REQUIRED_SECTIONS.each_with_object(+"") do |section, str|
+        text = section == "Rollout Guard" ? "Feature flag: new_thing, default off. Enablement surface: config file." : "body"
+        str << "## #{section}\n\n#{text}\n\n"
+      end
+
+      result = described_class.call(
+        agent_run: agent_run,
+        changed_files: [ rdr_path, "docs/rdrs/README.md" ],
+        contents: { rdr_path => body, "docs/rdrs/README.md" => "RDR-099-undetected.md" }
       )
 
       expect(result.valid?).to be true

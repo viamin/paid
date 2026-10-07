@@ -26,6 +26,17 @@ module Prompts
   class BuildForCreateFeature
     PROMPT_SLUG = "coding.create_feature_prompt"
 
+    # Rollout-guard rule interpolated into the prompt as {{flag_guard_rule}}.
+    # The Rails wiring is only demanded where a Ruby codebase can host it;
+    # every other project is told to gate behavior with its own mechanism
+    # (#4172).
+    # @spec RDR-ROLLOUT-GUARD-003
+    RAILS_FLAG_GUARD_RULE = "For feature flags, name the implementation issue that adds the key to " \
+      "`FeatureFlags::DEFINITIONS` and wires the runtime decision through `FeatureFlags.enabled?(:flag_name, project:)`."
+    # @spec RDR-ROLLOUT-GUARD-004
+    GENERIC_FLAG_GUARD_RULE = "For feature flags, name where the flag key is defined and how runtime behavior " \
+      "reads it, using this repository's own flag or config mechanism; do not port another project's flag system into this repo."
+
     # Documentation copy of the prompt this class builds. Seeded into the
     # Prompts admin UI for reference; `build` composes the live prompt from
     # project_name/feature_brief/lid_mode and does not render this template.
@@ -120,14 +131,12 @@ module Prompts
       - **Issues reference the RDR.** Every filed issue must link back to the
         RDR by number so the tree is traceable to the specification.
       - **Guard incomplete runtime behavior.** If the RDR changes runtime
-        behavior, its `## Rollout Guard` section must name a feature flag or
-        config gate, default state, enablement surface, rollback action, and
-        cleanup criteria. For feature flags, name the implementation issue that
-        adds the key to `FeatureFlags::DEFINITIONS` and wires the runtime
-        decision through `FeatureFlags.enabled?(:flag_name, project:)`. Use
-        `docs-only`, `migration-only`, or `none required` only with a short
-        justification. Implementation issues must preserve that guard until the
-        RDR closeout audit marks the behavior complete and safe by default.
+         behavior, its `## Rollout Guard` section must name a feature flag or
+         config gate, default state, enablement surface, rollback action, and
+         cleanup criteria. {{flag_guard_rule}} Use
+         `docs-only`, `migration-only`, or `none required` only with a short
+         justification. Implementation issues must preserve that guard until the
+         RDR closeout audit marks the behavior complete and safe by default.
       - **Lint and tests MUST pass** for any non-RDR changes (none expected in
         this run).
 
@@ -138,13 +147,17 @@ module Prompts
       new(...).build
     end
 
-    attr_reader :project_name, :full_name, :feature_brief, :lid_mode
+    attr_reader :project_name, :full_name, :feature_brief, :lid_mode, :ruby_project
 
-    def initialize(project_name:, full_name:, feature_brief:, lid_mode: nil)
+    # ruby_project defaults to false so an undetected project is never told to
+    # port a foreign flag system; the AgentRun caller resolves it from the
+    # project's detected languages via Features::FlagGuardPattern.
+    def initialize(project_name:, full_name:, feature_brief:, lid_mode: nil, ruby_project: false)
       @project_name = project_name
       @full_name = full_name
       @feature_brief = feature_brief.to_h
       @lid_mode = lid_mode
+      @ruby_project = ruby_project
     end
 
     def build
@@ -164,8 +177,15 @@ module Prompts
         full_name: full_name,
         feature_brief: formatted_brief,
         lid_mode: lid_mode.to_s,
-        lid_section: lid_section
+        lid_section: lid_section,
+        flag_guard_rule: flag_guard_rule
       }
+    end
+
+    # @spec RDR-ROLLOUT-GUARD-003
+    # @spec RDR-ROLLOUT-GUARD-004
+    def flag_guard_rule
+      ruby_project ? RAILS_FLAG_GUARD_RULE : GENERIC_FLAG_GUARD_RULE
     end
 
     def formatted_brief

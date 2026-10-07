@@ -25,8 +25,22 @@ wires the runtime decision through `FeatureFlags.enabled?(:flag_name, project:)`
 Non-runtime work uses `docs-only`, `migration-only`, or `none required` with a
 short justification.
 
-`Features::RdrContract` enforces the section for `create_feature` docs-only PRs.
-`Prompts::BuildForCreateFeature` tells RDR authors to fill it in, and
+## Project-type conditioning
+
+`FeatureFlags` is a Ruby class in the Rails codebase pattern this design came
+from. Demanding `FeatureFlags::DEFINITIONS` / `FeatureFlags.enabled?` artifacts
+from a non-Ruby repository (GDScript, Python, Rust, ...) would force porting a
+foreign flag system into the target project (#4172). `Features::FlagGuardPattern`
+therefore decides applicability from the project's detected languages: the
+Rails wiring is required only where Ruby is among them, and a project with no
+detected language is treated as non-Ruby so an undetected greenfield repo can
+never be blocked on artifacts it cannot produce.
+
+`Features::RdrContract` enforces the section for `create_feature` docs-only PRs;
+on non-Ruby projects it drops the two `FeatureFlags::` wiring checks and keeps
+the language-agnostic enablement-surface requirement. `Prompts::BuildForCreateFeature`
+tells RDR authors to fill the section in — naming the paid flag system on Ruby
+projects, or the repository's own flag/config mechanism elsewhere — and
 `PromptAssembly::Sections::RdrRolloutGuard` reminds implementation agents to
 read and preserve it before changing runtime behavior. The guard trigger reads
 the issue title, body, and any trusted/admitted collaborator comments

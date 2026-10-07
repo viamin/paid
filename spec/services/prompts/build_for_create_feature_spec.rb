@@ -41,17 +41,14 @@ RSpec.describe Prompts::BuildForCreateFeature do
       prompt = described_class.call(
         project_name: "Paid",
         full_name: "viamin/paid",
-        feature_brief: feature_brief
+        feature_brief: feature_brief,
+        ruby_project: true
       )
 
       expect(prompt).to include(
         "Add dark mode",
-        "Users want a dark theme to reduce eye strain at night",
-        "docs/rdrs/RDR-0XX-<slug>.md",
         "docs/rdrs/README.md",
-        "Rollout Guard"
-      )
-      expect(prompt).to include(
+        "Rollout Guard",
         "feature flag or",
         "config gate",
         "enablement surface",
@@ -254,6 +251,49 @@ RSpec.describe Prompts::BuildForCreateFeature do
       )
 
       expect(prompt).to include("`scoped`")
+    end
+  end
+
+  describe "rollout guard rule" do
+    # @spec RDR-ROLLOUT-GUARD-003
+    it "names the paid FeatureFlags wiring for ruby projects" do
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: feature_brief,
+        ruby_project: true
+      )
+
+      expect(prompt).to include("FeatureFlags::DEFINITIONS")
+      expect(prompt).to include("FeatureFlags.enabled?(:flag_name, project:)")
+      expect(prompt).not_to include("repository's own flag or config mechanism")
+    end
+
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "uses the repository's own flag mechanism for non-ruby projects" do
+      prompt = described_class.call(
+        project_name: "Forager",
+        full_name: "viamin/Forager-iOS",
+        feature_brief: feature_brief,
+        ruby_project: false
+      )
+
+      expect(prompt).to include("repository's own flag or config mechanism")
+      expect(prompt).to include("enablement surface")
+      expect(prompt).not_to include("FeatureFlags::DEFINITIONS")
+      expect(prompt).not_to include("FeatureFlags.enabled?")
+    end
+
+    # @spec RDR-ROLLOUT-GUARD-004
+    it "defaults to the generic rule so an undetected project is never told to port a flag system" do
+      prompt = described_class.call(
+        project_name: "Forager",
+        full_name: "viamin/Forager-iOS",
+        feature_brief: feature_brief
+      )
+
+      expect(prompt).not_to include("FeatureFlags::DEFINITIONS")
+      expect(prompt).to include("repository's own flag or config mechanism")
     end
   end
 

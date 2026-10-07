@@ -3772,7 +3772,8 @@ class AgentRun < ApplicationRecord
       project_name: project.full_name,
       full_name: project.full_name,
       feature_brief: brief,
-      lid_mode: project.lid_mode
+      lid_mode: project.lid_mode,
+      ruby_project: Features::FlagGuardPattern.applicable?(project)
     )
   end
 

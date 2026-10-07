@@ -19,13 +19,31 @@
   *Code:* `PromptAssembly::Sections::RdrRolloutGuard`,
   `PromptAssembly::BuildIssuePrompt`
 
-- [x] **RDR-ROLLOUT-GUARD-003** — When a rollout guard uses a feature flag, RDR
-  authoring and implementation prompts SHALL require a reachable enablement
-  path: the flag key is added to `FeatureFlags::DEFINITIONS`, the RDR names the
-  enablement surface, and runtime behavior is guarded with
+- [x] **RDR-ROLLOUT-GUARD-003** — When a rollout guard on a project whose
+  detected languages include Ruby uses a feature flag, RDR authoring and
+  implementation prompts SHALL require a reachable enablement path: the flag
+  key is added to `FeatureFlags::DEFINITIONS`, the RDR names the enablement
+  surface, and runtime behavior is guarded with
   `FeatureFlags.enabled?(:flag_name, project:)`.
   *Tests:* `spec/services/features/rdr_contract_spec.rb`,
   `spec/services/prompts/build_for_create_feature_spec.rb`,
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`
-  *Code:* `Features::RdrContract`, `Prompts::BuildForCreateFeature`,
-  `PromptAssembly::Sections::RdrRolloutGuard`
+  *Code:* `Features::RdrContract`, `Features::FlagGuardPattern`,
+  `Prompts::BuildForCreateFeature`, `PromptAssembly::Sections::RdrRolloutGuard`
+
+- [x] **RDR-ROLLOUT-GUARD-004** — On a project whose detected languages do not
+  include Ruby, the `create_feature` RDR output contract SHALL NOT require
+  `FeatureFlags::DEFINITIONS` or `FeatureFlags.enabled?` artifacts. A rollout
+  guard that names a project-appropriate feature flag or config gate with a
+  named enablement surface SHALL satisfy the contract, and RDR authoring and
+  implementation prompts SHALL instruct the agent to use the repository's own
+  flag/config mechanism instead of porting another project's flag system. A
+  project with no detected language SHALL be treated as non-Ruby (the safe
+  default that cannot block a run on artifacts the repo cannot produce).
+  *Tests:* `spec/services/features/rdr_contract_spec.rb`,
+  `spec/services/features/flag_guard_pattern_spec.rb`,
+  `spec/services/prompts/build_for_create_feature_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/integration/create_feature_e2e_spec.rb`
+  *Code:* `Features::FlagGuardPattern`, `Features::RdrContract`,
+  `Prompts::BuildForCreateFeature`, `PromptAssembly::Sections::RdrRolloutGuard`

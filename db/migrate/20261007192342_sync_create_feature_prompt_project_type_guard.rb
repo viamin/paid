@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-CREATION-008
-class SyncCreateFeaturePromptProblemFraming < ActiveRecord::Migration[8.1]
-  CHANGE_NOTES = "Preserve problem framing in create-feature RDR prompts"
+# @spec RDR-ROLLOUT-GUARD-004
+class SyncCreateFeaturePromptProjectTypeGuard < ActiveRecord::Migration[8.1]
+  CHANGE_NOTES = "Condition Rails feature-flag rollout-guard guidance on project language (#4172)"
   PROMPT_SLUG = Prompts::BuildForCreateFeature::PROMPT_SLUG
   VARIABLES = [
     { "name" => "project_name", "required" => true, "description" => "Human-readable project name" },
