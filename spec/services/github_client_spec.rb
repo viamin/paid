@@ -2702,6 +2702,18 @@ RSpec.describe GithubClient do
 
       expect(statuses).to all(eq("malformed"))
     end
+
+    it "classifies analyses with a missing or null warning as malformed instead of trusting them" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([
+        documented_analysis.except(:warning),
+        documented_analysis.merge(warning: nil)
+      ])
+
+      statuses = client.code_scanning_analyses(repo).map { |analysis| analysis[:status] }
+
+      expect(statuses).to all(eq("malformed"))
+    end
   end
 
   describe "#review_comment_reactions_batch" do

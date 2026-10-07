@@ -1212,7 +1212,7 @@ class GithubClient
 
   def code_scanning_analysis_status(analysis)
     return "failed" if analysis.error.is_a?(String) && analysis.error.present?
-    return "malformed" unless analysis.error.is_a?(String)
+    return "malformed" unless analysis.error.is_a?(String) && analysis.warning.is_a?(String)
     return "malformed" if analysis.id.nil? || analysis.ref.blank? || analysis.commit_sha.blank?
     return "malformed" if analysis.tool&.name.blank? || analysis.category.blank?
 
