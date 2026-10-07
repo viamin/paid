@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
+# @spec REPO-DEPENDENCY-AUDIT-001, REPO-DEPENDENCY-AUDIT-002,
+# @spec REPO-DEPENDENCY-AUDIT-006
 set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+export PATH="${script_dir}:${PATH}"
+
+cd "${repo_root}"
 
 echo "== Security: Secret scan =="
 bin/secret-scan --repo
@@ -11,9 +20,11 @@ echo "== Security: Gem audit =="
 bin/bundler-audit
 
 echo "== Security: Yarn audit =="
-# yarn audit exit codes: 0=clean, other=vulnerabilities found.
-# Report findings but don't block on transitive dependency advisories
-# that have no available fix (e.g. minimatch in eslint).
-yarn audit || echo "  (yarn audit reported advisories — review above)"
+# yarn audit exit codes are not enough on their own: yarn exits 0 on a
+# clean audit but also on registry/network/parse failures, and exits
+# non-zero on advisory findings. The wrapper classifies scanner failures
+# vs findings, enforces the allowlist at config/security/yarn-audit-allowlist.yml,
+# and prints a structured summary that CI logs and humans can both read.
+bin/yarn-audit-check "$@"
 
 echo "All security checks passed."

@@ -1,0 +1,300 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# @spec REPO-DEPENDENCY-AUDIT-001, REPO-DEPENDENCY-AUDIT-002,
+# @spec REPO-DEPENDENCY-AUDIT-003, REPO-DEPENDENCY-AUDIT-004,
+# @spec REPO-DEPENDENCY-AUDIT-005, REPO-DEPENDENCY-AUDIT-007
+#
+# Runs `yarn audit --json`, parses the JSON event stream, and exits with
+# the same status the surrounding `bin/audit` suite expects: zero when
+# every reported advisory is either absent or covered by an unexpired
+# entry in `config/security/yarn-audit-allowlist.yml`, non-zero when a
+# scanner/network/registry error happened, when the allowlist is
+# malformed or expired, or when an advisory is reported that no entry
+# covers. Note that `yarn audit` exits 1 on its normal advisory-report
+# path, so events are parsed before the exit status is classified.
+#
+# When YARN_AUDIT_ACCEPTED_REPORT points at a writable path, the
+# accepted (allowlisted) findings are also written there as structured
+# JSON so CI can render them in the run summary.
+
+require "json"
+require "yaml"
+require "date"
+require "open3"
+require "time"
+
+module Security
+  # Runs Yarn audit with a structured-allowlist failure policy. See
+  # docs/intent/repo-dependency-audit/repo-dependency-audit-design.md.
+  class YarnAuditCheck
+    GHSA_ID_PATTERN = /\AGHSA-[0-9a-z-]+\z/.freeze
+    REQUIRED_FIELDS = %w[id module reason owner expires_on tracking_issue].freeze
+    ALLOWLIST_PATH = File.expand_path("../config/security/yarn-audit-allowlist.yml", __dir__)
+    ACCEPTED_REPORT_ENV_KEY = "YARN_AUDIT_ACCEPTED_REPORT"
+    SCANNER_ERROR_TYPES = %w[error].freeze
+
+    Result = Struct.new(:exit_status, :summary, keyword_init: true)
+
+    def self.run(argv:)
+      new(argv: argv).run
+    end
+
+    def initialize(argv:)
+      @argv = argv
+    end
+
+    def run
+      allowlist = load_allowlist!
+      begin
+        raw_events, stderr, status = run_yarn_audit
+      rescue SystemCallError => e
+        return scanner_failure("could not run yarn audit: #{e.message}")
+      end
+
+      # Parse before looking at the exit status: yarn audit exits 1 on its
+      # normal advisory-report path, so a non-zero status with advisory
+      # events is a report to classify, not a scanner failure.
+      findings, scanner_error = parse_events(raw_events)
+      return scanner_failure(process_failure_detail(stderr, status)) if failure_without_report?(status, findings)
+      return scanner_failure(scanner_error) if scanner_error
+
+      accepted, blocking = classify(findings, allowlist)
+      write_accepted_report(accepted)
+      print_summary(findings: findings, accepted: accepted, blocking: blocking)
+      blocking.empty? ? ok : blocking_failure(blocking)
+    end
+
+    private
+
+    def load_allowlist!
+      unless File.exist?(ALLOWLIST_PATH)
+        abort_allowlist("allowlist not found at #{ALLOWLIST_PATH}")
+      end
+
+      parsed = YAML.safe_load_file(ALLOWLIST_PATH, permitted_classes: [ Date ])
+      unless parsed.is_a?(Hash)
+        abort_allowlist("allowlist at #{ALLOWLIST_PATH} must be a YAML mapping with an `exceptions` list")
+      end
+      entries = parsed.fetch("exceptions", [])
+      unless entries.is_a?(Array)
+        abort_allowlist("allowlist at #{ALLOWLIST_PATH} must have an `exceptions` list")
+      end
+
+      validate_allowlist_shape!(entries)
+
+      entries.each_with_object({}) do |entry, acc|
+        # Normalize to a Date so downstream consumers (report writer) can
+        # rely on iso8601; validation above already rejected nil.
+        entry["expires_on"] = parse_date(entry.fetch("expires_on"))
+        acc[entry.fetch("id")] = entry
+      end
+    rescue Psych::Exception => e
+      abort_allowlist("invalid YAML: #{e.message}")
+    end
+
+    def validate_allowlist_shape!(entries)
+      seen_ids = {}
+      today = Date.today
+
+      entries.each_with_index do |entry, index|
+        position = "exception ##{index + 1}"
+        abort_allowlist("#{position} must be a YAML mapping") unless entry.is_a?(Hash)
+
+        missing = REQUIRED_FIELDS.reject { |key| entry.key?(key) && !entry[key].to_s.strip.empty? }
+        abort_allowlist("#{position} is missing required field(s): #{missing.join(', ')}") if missing.any?
+
+        id = entry.fetch("id").to_s
+        abort_allowlist("#{position} has malformed id #{id.inspect}; expected GHSA-... format") unless id.match?(GHSA_ID_PATTERN)
+
+        if seen_ids.key?(id)
+          abort_allowlist("exception id #{id} is duplicated (also at #{seen_ids.fetch(id)})")
+        end
+        seen_ids[id] = position
+
+        expires_on = parse_date(entry["expires_on"])
+        if expires_on.nil?
+          abort_allowlist("#{position} has unparseable expires_on #{entry['expires_on'].inspect}")
+        end
+
+        if expires_on < today
+          abort_allowlist("#{position} expired on #{expires_on.iso8601} (today is #{today.iso8601}); renew or remove")
+        end
+      end
+    end
+
+    def parse_date(value)
+      return value if value.is_a?(Date)
+
+      Date.iso8601(value.to_s)
+    rescue ArgumentError
+      nil
+    end
+
+    def run_yarn_audit
+      Open3.capture3("yarn", "audit", "--json", *@argv)
+    end
+
+    def process_failure_detail(stderr, status)
+      return stderr.strip unless stderr.strip.empty?
+
+      "yarn audit exited with status #{status.exitstatus || "unknown"}"
+    end
+
+    # A non-zero exit is only a scanner failure when no advisory report was
+    # produced; see the run method for why the events are parsed first.
+    def failure_without_report?(status, findings)
+      !status.success? && findings.empty?
+    end
+
+    def parse_events(raw)
+      findings = []
+      scanner_error = nil
+      audit_summary = nil
+
+      raw.each_line do |line|
+        line = line.strip
+        next if line.empty?
+
+        unless line.start_with?("{")
+          scanner_error ||= "could not parse yarn audit JSON output: expected a JSON event"
+          next
+        end
+
+        event = JSON.parse(line)
+        unless event.is_a?(Hash)
+          scanner_error ||= "could not parse yarn audit JSON output: expected a JSON event object"
+          next
+        end
+
+        type = event["type"]
+
+        case type
+        when "auditAdvisory"
+          findings << build_finding(event)
+        when "auditSummary"
+          audit_summary = event["data"] if event["data"].is_a?(Hash)
+        when *SCANNER_ERROR_TYPES
+          scanner_error = event["data"].to_s
+        else
+          scanner_error ||= "could not parse yarn audit JSON output: unexpected event #{type.inspect}"
+        end
+      rescue JSON::ParserError => e
+        scanner_error ||= "could not parse yarn audit JSON output: #{e.message}"
+      end
+
+      scanner_error ||= "could not parse yarn audit JSON output: missing audit summary" unless audit_summary
+
+      [ findings, scanner_error ]
+    end
+
+    def build_finding(event)
+      data = event.fetch("data", {})
+      advisory = data.fetch("advisory", {})
+      resolution = data.fetch("resolution", {})
+      finding = advisory.fetch("findings", []).first || {}
+
+      {
+        id: advisory["github_advisory_id"].to_s,
+        module_name: advisory["module_name"].to_s,
+        severity: advisory["severity"].to_s,
+        title: advisory["title"].to_s,
+        recommendation: advisory["recommendation"].to_s,
+        vulnerable_versions: advisory["vulnerable_versions"].to_s,
+        patched_versions: advisory["patched_versions"].to_s,
+        path: resolution["path"].to_s,
+        installed_version: finding["version"].to_s,
+        occurrences: Array(finding["paths"])
+      }
+    end
+
+    def classify(findings, allowlist)
+      accepted = []
+      blocking = []
+
+      findings.each do |finding|
+        entry = allowlist[finding[:id]]
+        if entry && entry["module"] == finding[:module_name]
+          accepted << { finding: finding, entry: entry }
+        else
+          blocking << finding
+        end
+      end
+
+      [ accepted, blocking ]
+    end
+
+    # Writes the structured accepted rows as JSON to the path named by
+    # YARN_AUDIT_ACCEPTED_REPORT so CI can surface them in the run
+    # summary (REPO-DEPENDENCY-AUDIT-004). No-op when the env var is
+    # unset, so local runs are unaffected.
+    def write_accepted_report(accepted)
+      path = ENV[ACCEPTED_REPORT_ENV_KEY]
+      return unless path
+
+      rows = accepted.map do |row|
+        finding = row[:finding]
+        entry = row[:entry]
+        {
+          id: finding[:id],
+          module: finding[:module_name],
+          installed_version: finding[:installed_version],
+          severity: finding[:severity],
+          expires_on: entry["expires_on"].iso8601,
+          owner: entry["owner"],
+          tracking_issue: entry["tracking_issue"]
+        }
+      end
+      File.write(path, JSON.pretty_generate(rows))
+    end
+
+    def print_summary(findings:, accepted:, blocking:)
+      puts "== Yarn audit =="
+      puts "  advisories reported: #{findings.size}"
+      puts "  accepted (allowlisted): #{accepted.size}"
+      puts "  blocking: #{blocking.size}"
+
+      if accepted.any?
+        puts "  accepted entries:"
+        accepted.each do |row|
+          finding = row[:finding]
+          entry = row[:entry]
+          puts "    - #{finding[:id]} (#{finding[:severity]}) #{finding[:module_name]}@#{finding[:installed_version]} expires #{entry['expires_on']} owner #{entry['owner']} tracking #{entry['tracking_issue']}"
+        end
+      end
+
+      if blocking.any?
+        puts "  blocking findings:"
+        blocking.each do |finding|
+          puts "    - #{finding[:id]} (#{finding[:severity]}) #{finding[:module_name]}@#{finding[:installed_version]} via #{finding[:path]}"
+          puts "        #{finding[:title]}"
+          puts "        recommendation: #{finding[:recommendation]}"
+        end
+      end
+    end
+
+    def ok
+      Result.new(exit_status: 0, summary: "ok")
+    end
+
+    def blocking_failure(blocking)
+      message = "yarn audit reported #{blocking.size} uncovered advisory(ies); add an allowlist entry or fix the dependency"
+      $stderr.puts message
+      Result.new(exit_status: 1, summary: message)
+    end
+
+    def scanner_failure(detail)
+      message = "yarn audit scanner failed: #{detail}"
+      $stderr.puts message
+      Result.new(exit_status: 2, summary: message)
+    end
+
+    def abort_allowlist(detail)
+      $stderr.puts "yarn-audit allowlist invalid: #{detail}"
+      exit 3
+    end
+  end
+end
+
+result = Security::YarnAuditCheck.run(argv: ARGV)
+exit result.exit_status

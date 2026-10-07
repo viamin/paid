@@ -49,7 +49,48 @@ jobs:
         run: yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Run security audit and secret scan
+        # @spec REPO-DEPENDENCY-AUDIT-006 — yarn audit (via bin/yarn-audit-check)
+        # fails the workflow on uncovered findings, scanner failures, or
+        # malformed/expired allowlist entries, exactly like brakeman and
+        # bundler-audit already do. Accepted advisories are written as
+        # structured JSON to YARN_AUDIT_ACCEPTED_REPORT so the summary
+        # step below can surface them (REPO-DEPENDENCY-AUDIT-004).
+        id: security_audit
+        env:
+          YARN_AUDIT_ACCEPTED_REPORT: ${{ runner.temp }}/yarn-audit-accepted.json
         run: bin/audit
+
+      - name: Surface accepted advisories in the run summary
+        if: always()
+        env:
+          CONCLUSION: ${{ steps.security_audit.conclusion }}
+          ACCEPTED_REPORT: ${{ runner.temp }}/yarn-audit-accepted.json
+        run: |
+          {
+            echo "## Security audit"
+            echo
+            echo "Bin/audit step conclusion: \`${CONCLUSION}\` (success means no uncovered advisories, no scanner errors, and an unexpired allowlist)."
+            echo
+            if [ -f "$ACCEPTED_REPORT" ]; then
+              COUNT="$(jq 'length' "$ACCEPTED_REPORT")"
+              if [ "$COUNT" -gt 0 ]; then
+                echo "### Accepted (allowlisted) advisories (${COUNT})"
+                echo
+                echo "| Advisory | Package | Severity | Expires on | Owner | Tracking issue |"
+                echo "| --- | --- | --- | --- | --- | --- |"
+                jq -r '.[] | "| \(.id) | \(.module)@\(.installed_version) | \(.severity) | \(.expires_on) | \(.owner) | \(.tracking_issue) |"' "$ACCEPTED_REPORT"
+              else
+                echo "No advisories were accepted by the allowlist in this run."
+              fi
+            else
+              echo "No accepted-advisory report was produced: the audit step did not reach a completed Yarn audit."
+            fi
+            echo
+            echo "Full finding detail (titles, vulnerable paths, recommendations) remains in the job log under \`== Yarn audit ==\`."
+            echo "A failure means either an uncovered advisory was reported, a scanner/network/registry failure occurred, or the allowlist at \`config/security/yarn-audit-allowlist.yml\` is malformed or expired."
+            echo
+            echo "Renew an entry by editing \`config/security/yarn-audit-allowlist.yml\` (rationale, owner, expires_on, tracking_issue are all required) or remove the entry once a fix is in place."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   workflow-scan:
     if: >-
