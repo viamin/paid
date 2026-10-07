@@ -2443,15 +2443,87 @@ RSpec.describe "Projects" do
           expect(response.body).not_to match(matcher)
         end
 
-        it "renders the manual upstream entry hint when no fork parent is detected" do # @spec PR-TARGET-009
+        it "renders the manual upstream entry hint when fork-parent detection fails" do # @spec PR-TARGET-009, PR-TARGET-013
           allow(Projects::ForkParentPrefill).to receive(:call).and_return(
-            Projects::ForkParentPrefill::Prefill.unavailable("not_a_fork")
+            Projects::ForkParentPrefill::Prefill.unavailable("github_request_failed")
           )
 
           get edit_project_path(project)
 
+          expect(response.body).to include("Open Source / Upstream Contributions")
           expect(response.body).to include("Enter the")
           expect(response.body).not_to include("Detected from fork parent")
+        end
+      end
+
+      describe "Upstream section visibility (#4145)" do # @spec PR-TARGET-013
+        let(:project) do
+          create(:project, account: account, github_token: github_token,
+            owner: "stenoai", repo: "stenoai", name: "stenoai fork")
+        end
+
+        it "shows the section when a fork parent is detected" do
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.detected("stenolabs/stenoai")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Open Source / Upstream Contributions")
+        end
+
+        it "hides the section when the repository is definitively not a fork" do
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable(Projects::ForkParentPrefill::NOT_A_FORK_REASON)
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).not_to include("Open Source / Upstream Contributions")
+          document = Nokogiri::HTML5(response.body)
+          expect(document.at_css("#pr-target")).to be_nil
+        end
+
+        it "keeps the section visible when already configured for upstream, even if not detected as a fork" do
+          project.update!(pr_target: "upstream", upstream_full_name: "stenolabs/stenoai",
+            auto_add_labels_enabled: false, inherit_priority_labels: false, auto_fix_merge_conflicts: false)
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable(Projects::ForkParentPrefill::NOT_A_FORK_REASON)
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Open Source / Upstream Contributions")
+        end
+
+        it "fails open and shows the section when GitHub credentials are missing" do
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable("no_github_credential")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Open Source / Upstream Contributions")
+        end
+
+        it "fails open and shows the section when detection raises a controller failure" do
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable("controller_failure")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Open Source / Upstream Contributions")
+        end
+
+        it "fails open and shows the section when the detected parent is the project itself" do # @spec PR-TARGET-013
+          allow(Projects::ForkParentPrefill).to receive(:call).and_return(
+            Projects::ForkParentPrefill::Prefill.unavailable("same_as_project")
+          )
+
+          get edit_project_path(project)
+
+          expect(response.body).to include("Open Source / Upstream Contributions")
         end
       end
 

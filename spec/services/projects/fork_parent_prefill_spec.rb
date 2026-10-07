@@ -34,7 +34,8 @@ RSpec.describe Projects::ForkParentPrefill do
       result = described_class.call(project)
 
       expect(result.detected?).to be(false)
-      expect(result.reason).to eq("not_a_fork")
+      expect(result.reason).to eq(described_class::NOT_A_FORK_REASON)
+      expect(result.not_a_fork?).to be(true)
     end
 
     it "returns :unavailable when the parent matches the project's own repository" do # @spec PR-TARGET-009

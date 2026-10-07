@@ -30,7 +30,21 @@ the cross-repository PR is deliberately outside its scope.
 
 ## Settings experience
 
-The project settings form presents the own-repository and upstream choices.
+The project settings form presents the own-repository and upstream choices,
+but only for repositories plausibly relevant to upstream contribution: the
+fieldset is hidden entirely when `Projects::ForkParentPrefill` returns a
+definitive `not_a_fork` result and the project is not already in upstream
+mode (issue #4145). Detection failures (`github_request_failed`,
+`no_github_credential`, `controller_failure`) fail open and keep the fieldset
+visible, since a GitHub outage must never make an already-configured
+upstream workflow unreachable or block a legitimate non-fork from manually
+targeting an upstream repository while GitHub is unreachable. A project with
+`pr_target: "upstream"` always keeps the fieldset visible regardless of
+detection, so a user can switch back to `own_repo`. Hiding the fieldset for a
+confirmed non-fork trades away the ability to manually configure an upstream
+target that is not GitHub's literal fork parent for such repositories — an
+accepted trade-off for this issue.
+
 On edit, `Projects::ForkParentPrefill` reads GitHub repository metadata and
 uses `parent.full_name` as a non-persisting field prefill when available. A
 user may replace it because a contribution target need not be GitHub's literal
