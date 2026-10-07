@@ -190,8 +190,9 @@ HTTP 200 or from `results_count`:
   fields needed as evidence (`id`, `ref`, `commit_sha`) are complete.
 - **failed** — `error` carries the analysis failure text (retained verbatim).
 - **malformed** — the response omits documented required fields (e.g. no
-  `error` key, or missing branch/commit identity), so success cannot be
-  affirmed; the attempt stays blocked.
+  `error` key, missing branch/commit identity, or missing `tool.name` /
+  `category`), so success cannot be affirmed and configuration matching
+  cannot be trusted; the attempt stays blocked.
 - **unavailable** — no analyses exist for the repository at all.
 
 `VerifyMergedRemediationAttempts` selects evidence from analyses that match

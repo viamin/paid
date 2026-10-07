@@ -72,6 +72,20 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     )
   end
 
+  it "does not resolve from a malformed analysis even when both attempt and analysis have nil configuration" do
+    # @spec EAGER-QUEUE-013
+    nil_attempt = create(:code_scanning_remediation_attempt, issue:, pull_request_number: 4035,
+      merge_commit_sha: "merge", merged_at: 1.hour.ago, tool_name: nil, category: nil)
+    nil_analysis = analysis.merge(status: "malformed", tool_name: nil, category: nil)
+
+    described_class.new(attempt: nil_attempt, alert: nil, analysis: nil_analysis,
+      contains_merge_commit: true).call
+
+    expect(nil_attempt.reload).to have_attributes(
+      status: "verification_blocked", blocked_reason: "analysis evidence is malformed"
+    )
+  end
+
   it "does not use alert updated_at as scan freshness evidence" do # @spec EAGER-QUEUE-013
     verify(alert: { number: 1838, updated_at: 3.months.ago })
 

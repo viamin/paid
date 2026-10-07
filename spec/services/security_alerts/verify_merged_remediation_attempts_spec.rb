@@ -114,4 +114,18 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     expect(attempt.reload.blocked_reason).to include("configuration differs")
     expect(github_client).not_to have_received(:compare)
   end
+
+  it "blocks on a malformed analysis that omits configuration identity" do
+    # @spec EAGER-QUEUE-013
+    malformed = analysis.merge(status: "malformed", tool_name: nil, category: nil)
+    stub_analyses([ malformed ])
+    allow(github_client).to receive(:compare)
+
+    described_class.new(project:, alerts: [], github_client:).call
+
+    expect(attempt.reload).to have_attributes(
+      status: "verification_blocked", blocked_reason: "analysis evidence is malformed"
+    )
+    expect(github_client).not_to have_received(:compare)
+  end
 end

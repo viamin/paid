@@ -2688,6 +2688,20 @@ RSpec.describe GithubClient do
 
       expect(statuses).to all(eq("malformed"))
     end
+
+    it "classifies analyses missing tool.name or category as malformed so nil configuration cannot falsely match" do
+      # @spec EAGER-QUEUE-013
+      stub_analyses([
+        documented_analysis.merge(tool: {}),
+        documented_analysis.merge(tool: { name: nil }),
+        documented_analysis.merge(category: nil),
+        documented_analysis.merge(category: "")
+      ])
+
+      statuses = client.code_scanning_analyses(repo).map { |analysis| analysis[:status] }
+
+      expect(statuses).to all(eq("malformed"))
+    end
   end
 
   describe "#review_comment_reactions_batch" do
