@@ -11,9 +11,9 @@ module SecurityAlerts
 
     def call(alerts)
       coverages = load_coverages(project)
-      numbers = alerts.map { |alert| alert.fetch(:number) }
-      close_missing_alerts(coverages, numbers)
-      alerts.each { |alert| reconcile(alert, coverages) }
+      indexes = build_indexes(coverages)
+      close_missing_alerts(indexes[:by_number], alerts)
+      alerts.each { |alert| reconcile(alert, indexes) }
     end
 
     private
@@ -24,32 +24,35 @@ module SecurityAlerts
       project.dependabot_alert_coverages.to_a
     end
 
-    def coverages_by_number(coverages)
-      coverages.each_with_object({}) { |coverage, hash| hash[coverage.alert_number] = coverage }
-    end
-
-    def coverages_by_identity(coverages)
-      coverages.each_with_object({}) do |coverage, hash|
-        key = [ coverage.dependency_ecosystem, coverage.dependency_name,
-                coverage.advisory_ghsa_id, coverage.manifest_path ]
-        hash[key] = coverage
+    # Build the number and identity lookups once per scan so a repository with N
+    # open alerts stays O(N) instead of rebuilding each index on every reconcile.
+    def build_indexes(coverages)
+      by_number = {}
+      by_identity = {}
+      coverages.each do |coverage|
+        by_number[coverage.alert_number] = coverage
+        identity_key = [ coverage.dependency_ecosystem, coverage.dependency_name,
+                          coverage.advisory_ghsa_id, coverage.manifest_path ]
+        by_identity[identity_key] = coverage
       end
+      { by_number: by_number, by_identity: by_identity }
     end
 
-    def close_missing_alerts(coverages, numbers)
-      # Only currently-open alerts are candidates for resolution — every scan
-      # would otherwise re-run validations and an updated_at bump on every
-      # historically-resolved coverage row. @spec DEPENDABOT-COVERAGE-001
-      coverages_by_number(coverages).each_value do |coverage|
+    # Only currently-open alerts are candidates for resolution — every scan
+    # would otherwise re-run validations and an updated_at bump on every
+    # historically-resolved coverage row. @spec DEPENDABOT-COVERAGE-001
+    def close_missing_alerts(by_number, alerts)
+      open_numbers = alerts.each_with_object({}) { |alert, hash| hash[alert.fetch(:number)] = true }
+      by_number.each_value do |coverage|
         next unless coverage.alert_state == "open"
-        next if numbers.include?(coverage.alert_number)
+        next if open_numbers.key?(coverage.alert_number)
 
         coverage.update!(alert_state: "resolved")
       end
     end
 
-    def reconcile(alert, coverages)
-      coverage = find_coverage(alert, coverages) ||
+    def reconcile(alert, indexes)
+      coverage = find_coverage(alert, indexes) ||
         project.dependabot_alert_coverages.build(alert_number: alert.fetch(:number))
       previous_state = coverage.coverage_state
       coverage.assign_attributes(attributes_for(alert, coverage))
@@ -59,17 +62,14 @@ module SecurityAlerts
       escalate!(coverage) if coverage.escalation_due?
     end
 
-    # The indexes are built once in `call`, so two-alert lookups resolve in
-    # memory instead of issuing a SELECT per alert.
-    def find_coverage(alert, coverages)
-      by_number = coverages_by_number(coverages)
+    def find_coverage(alert, indexes)
+      by_number = indexes[:by_number]
       number = alert.fetch(:number)
       return by_number[number] if by_number.key?(number)
 
-      by_identity = coverages_by_identity(coverages)
       identity = [ alert.fetch(:dependency_ecosystem), alert.fetch(:dependency_name),
                    alert.fetch(:advisory_ghsa_id), alert[:manifest_path] ]
-      by_identity[identity]
+      indexes[:by_identity][identity]
     end
 
     def attributes_for(alert, coverage)
