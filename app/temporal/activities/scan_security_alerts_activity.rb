@@ -147,7 +147,7 @@ module Activities
     def record_failure(project, kind:, reason:, retry_at:, permission_error: false)
       attributes = {
         code_scanning_scan_error_kind: kind,
-        code_scanning_scan_error_reason: reason.truncate(500),
+        code_scanning_scan_error_reason: AgentRun::ErrorMessageSanitizer.call(text: reason),
         next_code_scanning_scan_at: retry_at
       }
       attributes[:code_scanning_permission_error_at] = Time.current if permission_error

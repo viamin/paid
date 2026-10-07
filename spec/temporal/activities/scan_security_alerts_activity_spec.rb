@@ -124,6 +124,19 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.next_code_scanning_scan_at).to be_within(1.second).of(1.hour.from_now)
       end
 
+      # @spec GITHUB-SYNC-018
+      it "redacts secrets from an unavailable coverage reason before persistence" do
+        token = "github_pat_#{"a" * 22}"
+        allow(github_client).to receive(:code_scanning_alerts)
+          .and_raise(GithubClient::NotFoundError.new("GitHub rejected #{token}"))
+
+        activity.execute(project_id: project.id)
+
+        reason = project.reload.code_scanning_scan_error_reason
+        expect(reason).to include("[REDACTED:github_token]")
+        expect(reason).not_to include(token)
+      end
+
       it "raises CodeScanningPermissionsError on 403 without advancing last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
