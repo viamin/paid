@@ -1172,6 +1172,17 @@ class GithubClient
     end
   end
 
+  # Performs the smallest request that establishes whether the repository's
+  # code-scanning alerts endpoint is available. Alert enrichment belongs to
+  # reconciliation, not to the availability probe.
+  # @spec GITHUB-SYNC-020
+  def code_scanning_available?(repo)
+    handle_errors do
+      client.get("#{Octokit::Repository.path(repo)}/code-scanning/alerts", per_page: 1)
+      true
+    end
+  end
+
   # Fetches terminal alert dispositions needed for reconciliation without the
   # per-alert instance and source enrichment used to create actionable issues.
   # @spec GITHUB-SYNC-019

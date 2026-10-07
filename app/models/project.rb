@@ -949,6 +949,22 @@ class Project < ApplicationRecord
     effective_repo_profile.fetch("languages", [])
   end
 
+  # Whether a repository scan found the paid FeatureFlags API. This is kept
+  # separate from language/framework detection because Ruby alone does not
+  # establish that a project implements Paid's feature-flag convention.
+  #
+  # Projects scanned before #4172 added `feature_flags_pattern` keep a stored
+  # profile without this key and would render the generic rollout guard until
+  # the detector runs again — see
+  # `db/migrate/20261007202504_backfill_repo_profile_feature_flags_pattern_for_ruby_projects.rb`
+  # which re-enqueues `EnqueueKnowledgeCollectionJob` for active Ruby projects
+  # so the new field gets populated.
+  # @spec RDR-ROLLOUT-GUARD-003
+  # @spec RDR-ROLLOUT-GUARD-004
+  def uses_feature_flags_pattern?
+    effective_repo_profile["feature_flags_pattern"] == true
+  end
+
   def test_languages
     effective_repo_profile.fetch("test_languages", detected_languages)
   end
@@ -1557,12 +1573,18 @@ class Project < ApplicationRecord
   # @spec GITHUB-SYNC-018
   def code_scanning_coverage_status
     return "disabled" unless auto_scan_security?
+    return "unavailable" if code_scanning_unavailable?
     return "not_configured" unless security_alert_types.include?("code_scanning")
     return "unavailable" if code_scanning_scan_error_kind.present?
     return "stale" if last_code_scanning_scan_at.nil? ||
       last_code_scanning_scan_at <= code_scanning_interval_hours.hours.ago
 
     "current"
+  end
+
+  # @spec GITHUB-SYNC-020
+  def code_scanning_unavailable?
+    code_scanning_scan_error_kind == "unavailable"
   end
 
   # @spec GITHUB-SYNC-018

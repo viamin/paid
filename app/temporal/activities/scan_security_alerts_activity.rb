@@ -117,6 +117,8 @@ module Activities
     rescue GithubClient::NotFoundError => e
       record_failure(project, kind: "not_configured", reason: e.message,
         retry_at: UNAVAILABLE_CONFIGURATION_BACKOFF.from_now)
+    rescue SecurityAlerts::CodeScanningUnavailableError
+      resolve_code_scanning_notifications(project)
     rescue SecurityAlerts::CodeScanningPermissionsError => e
       record_failure(project, kind: "permission", reason: e.message,
         retry_at: PERMISSION_ERROR_BACKOFF.from_now, permission_error: true)
@@ -289,8 +291,11 @@ module Activities
       end)
       SecurityAlerts::CodeScanningSnapshot.new(repository: project.full_name, branch: project.default_branch,
         configuration_scope: :all, complete: true, alerts:)
-    rescue GithubClient::ApiError => e
-      if e.status == 403
+    rescue GithubClient::ApiError, GithubClient::NotFoundError => e
+      if SecurityAlerts::CodeScanningAvailability.unavailable_response?(e)
+        SecurityAlerts::CodeScanningAvailability.disable(project:, reason: e.message)
+        raise SecurityAlerts::CodeScanningUnavailableError, e.message
+      elsif e.is_a?(GithubClient::ApiError) && e.status == 403
         raise SecurityAlerts::CodeScanningPermissionsError,
           "GitHub token lacks permission to read code scanning alerts for #{project.full_name}. " \
           "Ensure the token includes the security_events scope (classic PAT) or " \

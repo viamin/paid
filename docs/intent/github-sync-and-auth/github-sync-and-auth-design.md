@@ -74,7 +74,18 @@ like a clean snapshot.
 Failures use bounded, failure-specific retries: permission and unavailable
 configuration failures retry in one hour; rate limits retry at GitHub's reset
 time (or in five minutes if it is absent); transient API failures retry in five
-minutes. Disabled activation and a project that has not enabled the
+minutes. Before import completes, and whenever an operator enables or refreshes
+the code-scanning option, Paid probes the alerts endpoint using that project's
+resolved App-installation token or PAT. GitHub's explicit response that code
+scanning is unsupported, unavailable, or not enabled removes only the
+`code_scanning` selection, preserves every other security-alert selection and
+all prior findings/remediation evidence, and displays the sanitized reason
+beside the setting. A refresh may restore that selection after GitHub setup.
+Permission denials, rate limits, transient failures, and ambiguous responses
+are not evidence of unavailability and must leave the selection unchanged.
+The same rule applies if availability changes after activation; stale
+permission notifications are resolved when the explicit unavailable result
+disables the selection. Disabled activation and a project that has not enabled the
 `code_scanning` alert type are coverage states, not empty findings. Operators
 see those states, unavailable failures, and stale/never-completed coverage on
 the project health surface.

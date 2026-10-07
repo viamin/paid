@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -200,6 +200,7 @@ class ProjectsController < ApplicationController
       @project.update!(update_params)
       redetect_lid_mode! if redetect_lid_mode_requested?
     end
+    refresh_code_scanning_after_enable if enabling_security_scan?(update_params)
 
     audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
     redirect_to @project, notice: "Project was successfully updated."
@@ -211,6 +212,16 @@ class ProjectsController < ApplicationController
     @upstream_prefill = load_upstream_prefill
     load_screenshot_settings_context
     render :edit, status: :unprocessable_content
+  end
+
+  # @spec GITHUB-SYNC-020
+  def refresh_code_scanning_availability
+    authorize @project, :update?
+    result = SecurityAlerts::CodeScanningAvailability.call(project: @project, enable: true)
+    notice = result.available? ? "Code-scanning availability refreshed and enabled." : "GitHub code scanning is unavailable for this repository."
+    redirect_to edit_project_path(@project), notice:
+  rescue => e
+    redirect_to edit_project_path(@project), alert: "Could not refresh code-scanning availability: #{e.message}"
   end
 
   def toggle_auto_pick
@@ -941,6 +952,7 @@ class ProjectsController < ApplicationController
     @project.name = @project.name.presence || @project.repo
 
     if @project.save
+      check_code_scanning_availability(@project)
       TenantConfigurations::ApplyProjectDefaults.call(@project)
       ensure_labels_best_effort(@project)
       audit_event("project.created", metadata: { name: @project.name, github_url: "https://github.com/#{@project.full_name}" })
@@ -1014,6 +1026,7 @@ class ProjectsController < ApplicationController
     @project.primary_language = repo_data.language
 
     if @project.save
+      check_code_scanning_availability(@project)
       TenantConfigurations::ApplyProjectDefaults.call(@project)
       ensure_labels_best_effort(@project)
       audit_event("project.created", metadata: { name: @project.name, github_url: "https://github.com/#{@project.full_name}" })
@@ -1036,5 +1049,26 @@ class ProjectsController < ApplicationController
   rescue GithubClient::Error => e
     @project.errors.add(:base, "Unexpected GitHub error: #{e.message}")
     render :new, status: :unprocessable_content
+  end
+
+  def refresh_code_scanning_after_enable
+    SecurityAlerts::CodeScanningAvailability.call(project: @project, enable: true)
+  rescue => e
+    flash[:alert] = "Security scanning was enabled, but GitHub availability could not be refreshed: #{e.message}"
+  end
+
+  def enabling_security_scan?(update_params)
+    ActiveModel::Type::Boolean.new.cast(update_params[:auto_scan_security]) &&
+      !@project.security_alert_types.include?("code_scanning")
+  end
+
+  def check_code_scanning_availability(project)
+    SecurityAlerts::CodeScanningAvailability.call(project:, enable: false)
+  rescue => e
+    Rails.logger.warn(
+      message: "github_sync.code_scanning_availability_check_failed",
+      project_id: project.id,
+      error_class: e.class.name
+    )
   end
 end
