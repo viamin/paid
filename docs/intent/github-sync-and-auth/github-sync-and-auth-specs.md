@@ -202,6 +202,28 @@
   *Test:* `spec/temporal/activities/scan_security_alerts_activity_spec.rb`,
   `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`.
 
+- [x] **GITHUB-SYNC-019** — Before an agent remediates a synthetic
+  code-scanning issue, the system SHALL refresh and require authoritative open
+  alert identity, target branch, analyzed commit, scanner configuration, and
+  one unambiguous target-branch location. It SHALL require either an excerpt
+  read at that commit or a verified alternative source-read path at that
+  commit. Fetch, permission, configuration, missing-source, stale-custom-prompt,
+  and ambiguous-evidence failures SHALL park the issue in manual review with a
+  diagnostic and SHALL prevent execution; the parking and its diagnostic SHALL
+  survive run failure finalization rather than degrading to a generic failed
+  state. Resolved and dismissed alerts SHALL instead stop as resolved. Transient
+  GitHub failures SHALL use bounded client retry; permission and configuration
+  failures SHALL surface without retry.
+  *Code:* `app/services/github_client.rb`,
+  `app/services/prompt_assembly/build_issue_prompt.rb`, `app/models/agent_run.rb`,
+  `app/temporal/activities/run_agent_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`.
+  *Test:* `spec/services/github_client_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/models/agent_run_prompt_assembly_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including

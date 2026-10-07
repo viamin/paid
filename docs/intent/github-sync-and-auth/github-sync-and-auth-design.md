@@ -72,6 +72,20 @@ discovery cadence: while an attempt awaits verification, the next successful
 coverage check is eligible after one hour. Failure backoff always takes
 precedence over that verification cadence.
 
+Remediation has a separate execution gate: immediately before dispatch, Paid
+re-reads the alert and accepts only an open alert with its selected default
+branch, analyzed commit, scanner configuration, and exactly one usable finding
+location. The location requires either the GitHub excerpt read at that commit
+or a verified alternate source-read path at that same commit. Any unreadable,
+missing, stale, or ambiguous evidence parks the synthetic issue in manual
+review with the diagnostic; it never becomes a guessed remediation. The
+parking is durable: run failure finalization keeps the manual-review state and
+diagnostic instead of degrading to the generic failed state, which would clear
+the diagnostic and re-arm auto-pick for a run that evidence validation just
+blocked. A resolved or dismissed alert is closed distinctly. The refreshed
+issue prompt replaces a stale custom remediation prompt, while preserving its
+custom text only as supplementary instructions.
+
 When sync observes a non-PR issue transition from closed back to open, it
 resets Paid's internal state to `new`. This makes GitHub's reopened state the
 authoritative renewal signal and prevents a prior completion or recommendation

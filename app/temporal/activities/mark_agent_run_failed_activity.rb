@@ -58,6 +58,15 @@ module Activities
             # already closed the synthetic issue's github_state). Nothing to
             # remediate, so this isn't a failure.
             "completed"
+          elsif agent_run.issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE && agent_run.issue.paid_state == "manual_review"
+            # The evidence gate in BuildIssuePrompt's pre-run refresh parks the
+            # synthetic issue in manual_review with a diagnostic before the
+            # failure propagates. Flipping it to "failed" would clear
+            # manual_review_reason via the Issue callback and re-arm the
+            # auto-pick re-enqueue pump for a run that deterministic evidence
+            # validation just blocked.
+            # @spec GITHUB-SYNC-019
+            "manual_review"
           else
             "failed"
           end

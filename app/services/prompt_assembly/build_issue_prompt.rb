@@ -24,6 +24,22 @@ class PromptAssembly::BuildIssuePrompt
   # this run rather than execute a remediation prompt for a resolved finding.
   class AlertResolvedError < StandardError; end
 
+  # The alert is still open, but its evidence cannot safely identify what may
+  # be changed. This is intentionally separate from AlertResolvedError: it
+  # needs operator attention, while a resolved alert simply stops work.
+  class AlertEvidenceError < StandardError
+    attr_reader :retryable
+
+    def initialize(message, retryable: false)
+      @retryable = retryable
+      super(message)
+    end
+
+    def retryable?
+      retryable
+    end
+  end
+
   def self.call(...)
     new(...).call
   end
@@ -108,29 +124,73 @@ class PromptAssembly::BuildIssuePrompt
   # stops the run instead of executing a remediation prompt for a finding that
   # was already fixed or dismissed upstream.
   # @spec GITHUB-SYNC-015
+  # @spec GITHUB-SYNC-019
   def refresh_code_scanning_context
     return unless github_client && issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
 
     alert_number = issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
     alert = github_client.code_scanning_alert(project.full_name, alert_number, default_branch: project.default_branch)
-    if alert
-      SecurityAlerts::ProcessCodeScanningAlerts.new(project)
-        .call([ alert ], excluding_run_id: agent_run&.id)
-    end
-    issue.reload
+    raise_evidence_error!("alert was not returned by GitHub") unless alert
+    raise_evidence_error!("alert state was not returned by GitHub") if alert[:state].blank?
 
-    if alert && alert[:state] != "open"
+    if alert[:state] != "open"
+      process_alert!(alert)
+      issue.reload
       raise AlertResolvedError,
         "Code scanning alert ##{alert_number} is no longer open (state: #{alert[:state]})"
     end
+    validate_remediation_evidence!(alert, alert_number:)
+    process_alert!(alert)
+    issue.reload
   rescue GithubClient::Error => e
+    message = "Code scanning alert ##{alert_number} evidence refresh failed: #{e.message}"
+    block_remediation!(message)
     Rails.logger.warn(
-      message: "github_sync.code_scanning_prompt_refresh_failed",
+      message: "github_sync.code_scanning_prompt_refresh_blocked",
       project_id: project.id,
       alert_number: alert_number,
       error: e.message
     )
+    raise AlertEvidenceError.new(message, retryable: transient_error?(e))
   end
 
   public :refresh_code_scanning_context
+
+  private
+
+  def process_alert!(alert)
+    SecurityAlerts::ProcessCodeScanningAlerts.new(project)
+      .call([ alert ], excluding_run_id: agent_run&.id)
+  end
+
+  # @spec GITHUB-SYNC-019
+  def validate_remediation_evidence!(alert, alert_number:)
+    target_ref = "refs/heads/#{project.default_branch}"
+    missing = []
+    missing << "identity" unless alert[:number].to_i == alert_number
+    missing << "target branch" unless project.default_branch.present? && alert[:target_ref] == target_ref && alert[:ref] == target_ref
+    missing << "analyzed commit" unless alert[:commit_sha].present?
+    missing << "scanner configuration" unless alert[:tool_name].present? && alert[:analysis_key].present?
+    location = alert[:location]
+    missing << "finding location (#{alert[:location_context_status] || 'unavailable'})" unless location&.dig(:path).present? && location[:start_line].to_i.positive?
+    missing << "source evidence at analyzed commit" unless alert[:source_excerpt].present? || alert[:source_read_verified]
+    raise_evidence_error!("missing #{missing.join(', ')}") if missing.any?
+  end
+
+  def raise_evidence_error!(detail)
+    message = "Code scanning remediation blocked: #{detail}"
+    block_remediation!(message)
+    raise AlertEvidenceError, message
+  end
+
+  def block_remediation!(reason)
+    return unless issue.respond_to?(:persisted?) && issue.persisted?
+
+    issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+  end
+
+  def transient_error?(error)
+    error.is_a?(GithubClient::RateLimitError) ||
+      (error.is_a?(GithubClient::ApiError) && error.status.to_i >= 500)
+  end
 end
