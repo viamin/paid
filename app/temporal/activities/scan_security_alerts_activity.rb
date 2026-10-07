@@ -30,6 +30,7 @@ module Activities
       return { alerts_to_fix: [], project_missing: true } unless project
       unless Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_security")
         resolve_code_scanning_notifications(project)
+        resolve_dependabot_ingestion_notification(project)
         return { alerts_to_fix: [] }
       end
 
@@ -136,7 +137,10 @@ module Activities
 
     # @spec DEPENDABOT-COVERAGE-001
     def scan_dependabot_alerts(project)
-      return unless project.security_alert_types.include?("dependabot")
+      unless project.security_alert_types.include?("dependabot")
+        resolve_dependabot_ingestion_notification(project)
+        return
+      end
       return unless should_scan_dependabot?(project)
 
       heartbeat("scan_security_alerts.fetch_dependabot_alerts", project_id: project.id)
@@ -146,6 +150,7 @@ module Activities
         dependabot_permission_error_at: nil,
         dependabot_fetch_error_at: nil
       )
+      resolve_dependabot_ingestion_notification(project)
     rescue SecurityAlerts::DependabotPermissionsError => e
       # A permission failure blocks the poll cycle on its own (the workflow's
       # `maybe_scan_code_scanning_alerts` treats this as a configuration error
@@ -313,6 +318,18 @@ module Activities
         severity: :error, blocking: true, nav_section: "projects",
         title: "Dependabot alert coverage is unavailable", description: message,
         metadata: { project_id: project.id, reason: reason }
+      )
+    end
+
+    # A recovered scan (or disabling Dependabot scanning) ends the ingestion
+    # failure: Publish leaves the blocking notification active until Resolve
+    # runs, so without this a recovered project keeps a stale Inbox blocker.
+    # @spec DEPENDABOT-COVERAGE-001
+    def resolve_dependabot_ingestion_notification(project)
+      Notifications::Resolve.call(
+        account: project.account,
+        source: "dependabot_alert_coverage_ingestion",
+        subject: project
       )
     end
   end

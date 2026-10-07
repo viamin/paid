@@ -40,6 +40,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(result).to eq(alerts_to_fix: [])
         expect(project.code_scanning_coverage_status).to eq("disabled")
       end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the dependabot ingestion notification" do
+        publish_dependabot_ingestion_notification
+
+        activity.execute(project_id: project.id)
+
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
+      end
     end
 
     context "when code scanning is not configured" do
@@ -315,6 +324,43 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when a Dependabot ingestion failure recovers" do
+      before { allow(github_client).to receive(:code_scanning_alerts).and_return([]) }
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the blocking ingestion notification after a successful scan" do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Server error", status: 500))
+        activity.execute(project_id: project.id)
+        notification = Notification.active.find_by!(source: "dependabot_alert_coverage_ingestion", subject: project)
+        expect(notification).to have_attributes(severity: "error", blocking: true)
+
+        allow(github_client).to receive(:dependabot_alerts).and_return([])
+        travel 2.hours do
+          activity.execute(project_id: project.id)
+        end
+
+        expect(notification.reload.resolved_at).to be_present
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the blocking ingestion notification after a permission failure is repaired" do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+        expect(Notification.active.find_by!(source: "dependabot_alert_coverage_ingestion", subject: project))
+          .to have_attributes(severity: "error", blocking: true)
+
+        allow(github_client).to receive(:dependabot_alerts).and_return([])
+        travel 2.hours do
+          activity.execute(project_id: project.id)
+        end
+
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
+      end
+    end
+
     context "with Dependabot interval and permission-error backoff" do
       before { project.update_columns(last_code_scanning_scan_at: Time.current, last_dependabot_scan_at: nil) }
 
@@ -325,6 +371,16 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         activity.execute(project_id: project.id)
 
         expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the ingestion notification when the Dependabot alert type is disabled" do
+        publish_dependabot_ingestion_notification
+        project.update_column(:security_alert_types, %w[code_scanning])
+
+        activity.execute(project_id: project.id)
+
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
       end
 
       # @spec DEPENDABOT-COVERAGE-001
@@ -586,6 +642,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     project.update_columns(code_scanning_permission_error_at: Time.current, allowed_github_usernames: [])
     Notifications::Rules::CodeScanningPermissionsError.call(scope: [ project ])
     Notifications::Rules::CodeScanningConfigurationError.call(scope: [ project ])
+  end
+
+  def publish_dependabot_ingestion_notification
+    Notifications::Publish.call(
+      account: project.account, source: "dependabot_alert_coverage_ingestion", subject: project,
+      severity: :error, blocking: true, nav_section: "projects",
+      title: "Dependabot alert coverage is unavailable", description: "Server error",
+      metadata: { project_id: project.id, reason: "fetch_failed" }
+    )
   end
 
   def active_code_scanning_blocker_notifications

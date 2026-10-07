@@ -43,12 +43,13 @@ module SecurityAlerts
     # historically-resolved coverage row. @spec DEPENDABOT-COVERAGE-001
     def close_missing_alerts(by_number, alerts)
       open_numbers = alerts.each_with_object({}) { |alert, hash| hash[alert.fetch(:number)] = true }
-      ids_to_close = by_number.each_value.filter_map do |coverage|
-        coverage.id if coverage.alert_state == "open" && !open_numbers.key?(coverage.alert_number)
+      coverages_to_close = by_number.each_value.select do |coverage|
+        coverage.alert_state == "open" && !open_numbers.key?(coverage.alert_number)
       end
-      return if ids_to_close.empty?
+      return if coverages_to_close.empty?
 
-      project.dependabot_alert_coverages.where(id: ids_to_close).update_all(alert_state: "resolved")
+      project.dependabot_alert_coverages.where(id: coverages_to_close.map(&:id)).update_all(alert_state: "resolved")
+      coverages_to_close.each { |coverage| resolve_escalation_notification(coverage) }
     end
 
     def reconcile(alert, indexes)
@@ -60,6 +61,7 @@ module SecurityAlerts
       coverage.escalated_at = nil if coverage.effective_pr_open?
       coverage.save!
       escalate!(coverage) if coverage.escalation_due?
+      resolve_escalation_notification(coverage) unless coverage.uncovered?
     end
 
     def find_coverage(alert, indexes)
@@ -128,6 +130,17 @@ module SecurityAlerts
         metadata: { project_id: project.id, alert_number: coverage.alert_number, reason: coverage.reason }
       )
       coverage.update!(escalated_at: Time.current)
+    end
+
+    # Publish leaves the escalation notification active until Resolve runs, so
+    # every path that ends the uncovered condition (open remediation PR, operator
+    # acceptance, alert disappearing from the snapshot) must clear the blocking
+    # Inbox item. Resolve is a no-op when no notification exists.
+    # @spec DEPENDABOT-COVERAGE-001
+    def resolve_escalation_notification(coverage)
+      Notifications::Resolve.call(
+        account: project.account, source: "dependabot_alert_coverage", subject: coverage
+      )
     end
   end
 end

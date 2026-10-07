@@ -123,6 +123,65 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  it "resolves the escalation notification when an open remediation PR restores coverage" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      advisory_ghsa_id: "GHSA-test", coverage_state: "effective_pr_closed_unmerged",
+      first_detected_at: 30.days.ago, uncovered_since: 30.days.ago, escalated_at: 1.day.ago)
+    notification = create(:notification, :error, account: project.account, blocking: true,
+      source: "dependabot_alert_coverage", subject: coverage,
+      metadata: { project_id: project.id, alert_number: 41, reason: "closed_unmerged" })
+
+    described_class.new(project).call([ alert.merge(remediation_pull_requests: [ { number: 42, state: "open" } ]) ])
+
+    expect(coverage.reload).to have_attributes(coverage_state: "effective_pr_open", escalated_at: nil)
+    expect(notification.reload.resolved_at).to be_present
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
+  it "resolves the escalation notification when the operator accepts the alert" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      advisory_ghsa_id: "GHSA-test", coverage_state: "awaiting_processing",
+      first_detected_at: 30.days.ago, uncovered_since: 30.days.ago, escalated_at: 1.day.ago)
+    notification = create(:notification, :error, account: project.account, blocking: true,
+      source: "dependabot_alert_coverage", subject: coverage,
+      metadata: { project_id: project.id, alert_number: 41, reason: "unknown" })
+    coverage.accept!(owner: project.account.users.first, reason: "Risk accepted", expires_at: 1.day.from_now)
+
+    described_class.new(project).call([ alert ])
+
+    expect(notification.reload.resolved_at).to be_present
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
+  it "resolves the escalation notification when the alert disappears from GitHub" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 42,
+      alert_state: "open", escalated_at: 1.day.ago)
+    notification = create(:notification, :error, account: project.account, blocking: true,
+      source: "dependabot_alert_coverage", subject: coverage,
+      metadata: { project_id: project.id, alert_number: 42, reason: "unknown" })
+
+    described_class.new(project).call([ alert ])
+
+    expect(coverage.reload.alert_state).to eq("resolved")
+    expect(notification.reload.resolved_at).to be_present
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
+  it "keeps the escalation notification active while the alert stays uncovered" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      advisory_ghsa_id: "GHSA-test", coverage_state: "awaiting_processing",
+      first_detected_at: 30.days.ago, uncovered_since: 30.days.ago, escalated_at: 1.day.ago)
+    notification = create(:notification, :error, account: project.account, blocking: true,
+      source: "dependabot_alert_coverage", subject: coverage,
+      metadata: { project_id: project.id, alert_number: 41, reason: "unknown" })
+
+    described_class.new(project).call([ alert ])
+
+    expect(coverage.reload.escalated_at).to be_present
+    expect(notification.reload.resolved_at).to be_nil
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
   it "resolves open coverage records absent from the authoritative alert snapshot" do
     open_coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 42,
       alert_state: "open")
