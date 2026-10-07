@@ -440,6 +440,23 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       expect(Notification.active.find_by(source: "code_scanning_verification_blocked", subject: attempt)).to be_nil
     end
 
+    it "resolves a verification-blocked notification after authoritative reconciliation concludes the alert" do # @spec EAGER-QUEUE-016 GITHUB-SYNC-019
+      project.update_column(:last_code_scanning_scan_at, nil)
+      issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 42)
+      attempt = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked",
+        merge_commit_sha: "merge", tool_name: "CodeQL", category: "/language:ruby")
+      Notifications::Rules::CodeScanningVerificationBlocked.call(scope: [ attempt ])
+      allow(github_client).to receive(:code_scanning_alerts).and_return([])
+      allow(github_client).to receive(:code_scanning_alert_dispositions).with(project.full_name, state: "fixed")
+        .and_return([ { number: 42, state: "fixed" } ])
+
+      activity.execute(project_id: project.id)
+
+      expect(attempt.reload.status).to eq("upstream_resolved")
+      expect(Notification.active.find_by(source: "code_scanning_verification_blocked", subject: attempt)).to be_nil
+    end
+
     it "publishes the successful scan timestamp with a verification-blocked notification" do # @spec EAGER-QUEUE-016
       project.update_column(:last_code_scanning_scan_at, nil)
       issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,

@@ -159,7 +159,10 @@
   be blocked, never treated as resolution, and resolution SHALL never be
   derived from the merge alone or result counts. An upstream alert disposition,
   including dismissal, SHALL remain recorded and SHALL never transition an
-  attempt to `verified_fixed`. Alert timestamps are not scan-freshness evidence.
+  attempt to `verified_fixed`. An authoritative concluded disposition SHALL
+  instead terminally record `upstream_resolved`, retaining its evidence without
+  presenting it as scanner-verified attribution or retryable missing evidence.
+  Alert timestamps are not scan-freshness evidence.
   *Code:* `CodeScanningRemediationAttempt`,
   `GithubClient#code_scanning_analyses`,
   `SecurityAlerts::VerifyMergedRemediationAttempts`,
@@ -181,7 +184,9 @@
   keep its previous status and append the latest evidence; a previously
   blocked attempt that now meets the rules SHALL transition to `verified_fixed`
   (alert closed) or `verification_failed` (alert still open), and only the
-  latter SHALL move the source issue into `manual_review`. A blocked attempt
+  latter SHALL move the source issue into `manual_review`. An explicit concluded
+  upstream disposition SHALL end the retry loop as `upstream_resolved`; it is
+  retained as history and is not scanner-verified remediation. A blocked attempt
   whose source issue was closed on GitHub or whose underlying PR has been
   unmerged SHALL be left as historical, not relaunched into a new fix run.
   *Code:* `SecurityAlerts::VerifyMergedRemediationAttempts`,
@@ -213,9 +218,11 @@
   action. The notification SHALL be re-issued (idempotent on
   `(source, subject)`) on every relevant scan so repeated polls and worker
   restarts keep the surfaced state current, and SHALL be auto-resolved when
-  the attempt transitions to `verified_fixed` or `verification_failed` (the
-  latter moves the issue into the existing manual_review lane and provides
-  the operator escalation). Persistent configuration failures (missing
+  the attempt transitions to `verified_fixed`, `verification_failed`, or
+  `upstream_resolved` (the latter is an authoritative upstream conclusion,
+  not a scanner-verified Paid remediation; `verification_failed` moves the
+  issue into the existing manual_review lane and provides the operator
+  escalation). Persistent configuration failures (missing
   trusted GitHub usernames) and token permission errors (missing
   `code_scanning_alerts:read` scope) SHALL each publish a distinct blocking
   notification scoped to the project so the operator can resolve them; both

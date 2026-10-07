@@ -181,7 +181,7 @@ Ordinary GitHub issues are unaffected: `merged_block_issue_ids` only relaxes
 the exclusion for `SYNTHETIC_CODE_SCANNING_SOURCE` issues, so a merged
 implementation PR keeps blocking a regular issue forever, as before.
 
-### Verification recovery and unresolved-state surfacing (#4152)
+### Verification recovery and concluded-disposition surfacing (#4152, #4177)
 
 A merged remediation produces a `CodeScanningRemediationAttempt`. The first
 `VerifyMergedRemediationAttempts` pass moves it through one of three
@@ -198,6 +198,14 @@ terminal/holding states:
   resolution. The attempt keeps its previous status and the issue remains
   excluded, but the absence of a "current attempt governs eligibility"
   rule would silently strand it forever (#4152).
+- `upstream_resolved` — an authoritative snapshot explicitly reports the
+  finding as `fixed`, `dismissed`, or another concluded upstream disposition.
+  The disposition and its reason remain in the attempt evidence, but this is
+  not `verified_fixed`: GitHub's conclusion alone never attributes a fix to
+  Paid's PR. It is terminal rather than retryable, so it neither requests a
+  future scan nor leaves a verification-blocked notification behind. If the
+  alert reopens, the existing attempt remains historical and a later merged
+  remediation creates the new attempt that governs eligibility.
 
 The recovery path is a continuation of the same evidence-checked verifier,
 not a separate retry job:
@@ -216,7 +224,7 @@ not a separate retry job:
   duplicate-prevention guards remain the durable stop against a second
   concurrent fix PR (EAGER-QUEUE-009).
 - `Notifications::Rules::CodeScanningVerificationBlocked` surfaces a
-  retryable blocker: alert URL, linked PRs, blocked reason, age, last
+  retryable blocker only: alert URL, linked PRs, blocked reason, age, last
   successful scan, and a recommended next action. Persistent configuration
   failures (`ConfigurationError` from a missing trusted-username list) and
   permission errors (`CodeScanningPermissionsError`) each get their own

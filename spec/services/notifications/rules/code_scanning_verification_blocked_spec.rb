@@ -67,6 +67,24 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
     }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
   end
 
+  it "auto-resolves the notification when GitHub concludes the alert" do # @spec EAGER-QUEUE-016 GITHUB-SYNC-019
+    described_class.call(scope: [ attempt ])
+    attempt.update!(status: "upstream_resolved", evidence: { "alert_state" => "dismissed" })
+
+    expect {
+      described_class.call(scope: [ attempt ])
+    }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
+  end
+
+  it "resolves a stale notification for a closed source issue" do # @spec EAGER-QUEUE-016
+    described_class.call(scope: [ attempt ])
+    issue.update!(github_state: "closed", paid_state: "completed")
+
+    expect {
+      described_class.call(scope: [ attempt ])
+    }.to change { Notification.active.where(source: "code_scanning_verification_blocked", subject: attempt).count }.by(-1)
+  end
+
   it "resolves a superseded blocked attempt instead of publishing it again" do # @spec EAGER-QUEUE-016
     described_class.call(scope: [ attempt ])
     create(:code_scanning_remediation_attempt, issue: issue, pull_request_number: 4035,
