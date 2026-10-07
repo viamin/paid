@@ -13,8 +13,8 @@
   wrapper SHALL exit non-zero and SHALL print the unmatched findings
   (advisory ID, severity, module, vulnerable path, recommendation) so the
   run is not silently green.
-  *Tests:* `spec/scripts/audit_spec.rb`.
-  *Code:* `bin/audit`.
+  *Tests:* `spec/scripts/audit_spec.rb`, `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/audit`, `bin/yarn-audit-check`.
 
 - [x] **REPO-DEPENDENCY-AUDIT-002** — When `bin/audit` runs `yarn audit`
   and Yarn itself fails to complete (registry error, network error,
@@ -22,8 +22,8 @@
   advisory report), the wrapper SHALL exit non-zero with a message that
   distinguishes the scanner failure from a vulnerability finding. A
   scanner failure SHALL NOT be reported as "All security checks passed."
-  *Tests:* `spec/scripts/audit_spec.rb`.
-  *Code:* `bin/audit`.
+  *Tests:* `spec/scripts/audit_spec.rb`, `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/audit`, `bin/yarn-audit-check`.
 
 ## Allowlist
 
