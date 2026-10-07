@@ -56,8 +56,8 @@ module Security
       # normal advisory-report path, so a non-zero status with advisory
       # events is a report to classify, not a scanner failure.
       findings, scanner_error = parse_events(raw_events)
-      return scanner_failure(scanner_error) if scanner_error
       return scanner_failure(process_failure_detail(stderr, status)) if failure_without_report?(status, findings)
+      return scanner_failure(scanner_error) if scanner_error
 
       accepted, blocking = classify(findings, allowlist)
       write_accepted_report(accepted)
@@ -150,24 +150,40 @@ module Security
     def parse_events(raw)
       findings = []
       scanner_error = nil
+      audit_summary = nil
 
       raw.each_line do |line|
         line = line.strip
         next if line.empty?
-        next unless line.start_with?("{")
+
+        unless line.start_with?("{")
+          scanner_error ||= "could not parse yarn audit JSON output: expected a JSON event"
+          next
+        end
 
         event = JSON.parse(line)
+        unless event.is_a?(Hash)
+          scanner_error ||= "could not parse yarn audit JSON output: expected a JSON event object"
+          next
+        end
+
         type = event["type"]
 
         case type
         when "auditAdvisory"
           findings << build_finding(event)
+        when "auditSummary"
+          audit_summary = event["data"] if event["data"].is_a?(Hash)
         when *SCANNER_ERROR_TYPES
           scanner_error = event["data"].to_s
+        else
+          scanner_error ||= "could not parse yarn audit JSON output: unexpected event #{type.inspect}"
         end
       rescue JSON::ParserError => e
         scanner_error ||= "could not parse yarn audit JSON output: #{e.message}"
       end
+
+      scanner_error ||= "could not parse yarn audit JSON output: missing audit summary" unless audit_summary
 
       [ findings, scanner_error ]
     end

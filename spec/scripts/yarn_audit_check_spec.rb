@@ -279,6 +279,19 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "fails the run when yarn exits zero after returning a plain-text invalid response" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: "<html>registry unavailable</html>")
+
+      _stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("yarn audit scanner failed")
+      expect(stderr).to include("expected a JSON event")
+    end
+  end
+
   it "fails the run as a scanner failure when yarn exits non-zero with a summary but no advisory report" do
     # @spec REPO-DEPENDENCY-AUDIT-002
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
