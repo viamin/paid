@@ -32,10 +32,27 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     context "when auto_scan_security is disabled" do
       before { project.update!(auto_scan_security: false) }
 
-      it "returns empty result" do
+      # @spec GITHUB-SYNC-018
+      it "returns empty result and leaves coverage visibly disabled" do
         result = activity.execute(project_id: project.id)
 
         expect(result).to eq(alerts_to_fix: [])
+        expect(project.code_scanning_coverage_status).to eq("disabled")
+      end
+    end
+
+    context "when code scanning is not configured" do
+      before do
+        project.update!(security_alert_types: [ "dependabot" ])
+        allow(github_client).to receive(:code_scanning_alerts)
+      end
+
+      # @spec GITHUB-SYNC-018
+      it "does not fetch and exposes a not-configured coverage state" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:code_scanning_alerts)
+        expect(project.code_scanning_coverage_status).to eq("not_configured")
       end
 
       it "resolves code-scanning blocker notifications" do # @spec EAGER-QUEUE-016
@@ -92,6 +109,17 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(github_client).not_to have_received(:code_scanning_alerts)
       end
+
+      # @spec GITHUB-SYNC-018
+      it "checks blocked remediation verification hourly instead of waiting for discovery cadence" do # @spec EAGER-QUEUE-014
+        project.update_column(:last_code_scanning_scan_at, 2.hours.ago)
+        issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+        create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked")
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:code_scanning_alerts)
+      end
     end
 
     context "when code scanning is disabled for the project" do
@@ -108,14 +136,31 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     context "with graceful 403/404 handling" do
       before { project.update_column(:last_code_scanning_scan_at, nil) }
 
-      it "handles 404 gracefully and updates last_code_scanning_scan_at" do
+      # @spec GITHUB-SYNC-018
+      it "records unavailable coverage for 404 without advancing the successful scan" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::NotFoundError.new("Not found"))
 
         expect { activity.execute(project_id: project.id) }.not_to raise_error
 
         project.reload
-        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.last_code_scanning_scan_at).to be_nil
+        expect(project.last_code_scanning_scan_attempted_at).to be_present
+        expect(project.code_scanning_scan_error_kind).to eq("not_configured")
+        expect(project.next_code_scanning_scan_at).to be_within(1.second).of(1.hour.from_now)
+      end
+
+      # @spec GITHUB-SYNC-018
+      it "redacts secrets from an unavailable coverage reason before persistence" do
+        token = "github_pat_#{"a" * 22}"
+        allow(github_client).to receive(:code_scanning_alerts)
+          .and_raise(GithubClient::NotFoundError.new("GitHub rejected #{token}"))
+
+        activity.execute(project_id: project.id)
+
+        reason = project.reload.code_scanning_scan_error_reason
+        expect(reason).to include("[REDACTED:github_token]")
+        expect(reason).not_to include(token)
       end
 
       it "raises CodeScanningPermissionsError on 403 without advancing last_code_scanning_scan_at" do
@@ -130,6 +175,8 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         project.reload
         expect(project.last_code_scanning_scan_at).to be_nil
+        expect(project.code_scanning_scan_error_kind).to eq("permission")
+        expect(project.next_code_scanning_scan_at).to be_within(1.second).of(1.hour.from_now)
       end
 
       it "records code_scanning_permission_error_at on 403 so subsequent cycles back off" do
@@ -151,7 +198,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           .to have_attributes(severity: "error", blocking: true)
       end
 
-      it "re-raises non-403 ApiError without updating last_code_scanning_scan_at" do
+      it "records a transient retry for 5xx without updating last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Server error", status: 500))
 
@@ -159,6 +206,22 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         project.reload
         expect(project.last_code_scanning_scan_at).to be_nil
+        expect(project.code_scanning_scan_error_kind).to eq("transient")
+        expect(project.next_code_scanning_scan_at).to be_within(1.second).of(5.minutes.from_now)
+      end
+
+      it "records GitHub's rate-limit reset as the next retry" do
+        reset_at = 30.minutes.from_now
+        allow(github_client).to receive(:code_scanning_alerts)
+          .and_raise(GithubClient::RateLimitError.new(reset_at))
+
+        expect { activity.execute(project_id: project.id) }
+          .to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("RateLimit") }
+
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_nil
+        expect(project.code_scanning_scan_error_kind).to eq("rate_limited")
+        expect(project.next_code_scanning_scan_at).to be_within(1.second).of(reset_at)
       end
 
       it "does not record permission backoff for non-permission configuration errors" do
@@ -227,7 +290,27 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(project.reload.code_scanning_permission_error_at).to be_nil
+        project.reload
+        expect(project.code_scanning_permission_error_at).to be_nil
+        expect(project.code_scanning_scan_error_kind).to be_nil
+        expect(project.next_code_scanning_scan_at).to be_nil
+      end
+    end
+
+    context "with a zero-alert response" do
+      # @spec GITHUB-SYNC-018
+      it "records a successful complete snapshot and clears prior failure coverage" do
+        project.update_columns(code_scanning_scan_error_kind: "transient", code_scanning_scan_error_reason: "Timeout",
+          next_code_scanning_scan_at: 1.minute.ago)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.last_code_scanning_scan_attempted_at).to be_present
+        expect(project.code_scanning_scan_error_kind).to be_nil
+        expect(project.next_code_scanning_scan_at).to be_nil
       end
     end
 

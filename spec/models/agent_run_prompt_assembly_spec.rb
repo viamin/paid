@@ -80,7 +80,7 @@ RSpec.describe AgentRun do
 
   describe "#effective_prompt with a custom prompt" do
     it "rebuilds a code-scanning custom prompt around refreshed evidence" do
-      # @spec GITHUB-SYNC-018
+      # @spec GITHUB-SYNC-019
       alert_number = 1666
       issue.update!(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + alert_number)
       agent_run.update!(custom_prompt: "Use the refreshed scanner evidence.")

@@ -342,7 +342,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     it "blocks remediation when the refresh fetch fails" do
-      # @spec GITHUB-SYNC-018
+      # @spec GITHUB-SYNC-019
       allow(github_client).to receive(:code_scanning_alert)
         .and_raise(GithubClient::ApiError.new("boom"))
 
@@ -352,7 +352,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     it "blocks an ambiguous or wrong-branch finding instead of selecting one" do
-      # @spec GITHUB-SYNC-018
+      # @spec GITHUB-SYNC-019
       wrong_branch = alert_payload.merge(
         ref: "refs/heads/release", location_context_status: "target_branch_instance_ambiguous"
       )
@@ -364,7 +364,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     it "blocks a location without an excerpt or verified source read" do
-      # @spec GITHUB-SYNC-018
+      # @spec GITHUB-SYNC-019
       missing_source = alert_payload.merge(source_read_verified: false, source_excerpt: nil)
       allow(github_client).to receive(:code_scanning_alert).and_return(missing_source)
 
