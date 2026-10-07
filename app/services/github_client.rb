@@ -1173,25 +1173,51 @@ class GithubClient
 
   # Fetches normalized code-scanning analyses used to verify merged remediations.
   #
-  # @return [Array<Hash>] Scanner analyses, including their configuration and commit evidence
+  # GitHub's list-analyses response carries required +error+/+warning+ strings
+  # and identity fields, but no +status+ field. Each entry is normalized to a
+  # status: "succeeded" (documented empty +error+ with complete identity,
+  # including +tool.name+ and +category+ — both are required so a remediation
+  # attempt with nil configuration cannot falsely match via +nil == nil+),
+  # "failed" (non-blank +error+, retained verbatim), or "malformed" (any
+  # documented field missing, so success cannot be affirmed). Success is never
+  # inferred from HTTP 200 or +results_count+. The API lists analyses
+  # newest-first.
+  #
+  # @return [Array<Hash>] Scanner analyses with :id, :status, :ref, :commit_sha,
+  #   :tool_name, :category, :error, :warning, :created_at, :results_count
   # @spec EAGER-QUEUE-013
   def code_scanning_analyses(repo, per_page: 100)
     handle_errors do
       path = "#{Octokit::Repository.path(repo)}/code-scanning/analyses"
-      client.paginate(path, per_page:).map do |analysis|
-        {
-          id: analysis.id.to_s,
-          status: analysis.status,
-          ref: analysis.ref&.delete_prefix("refs/heads/"),
-          commit_sha: analysis.commit_sha,
-          tool_name: analysis.tool&.name,
-          category: analysis.category
-        }
-      end
+      client.paginate(path, per_page:).map { |analysis| code_scanning_analysis_payload(analysis) }
     end
   end
 
   private
+
+  def code_scanning_analysis_payload(analysis)
+    {
+      id: analysis.id.to_s,
+      status: code_scanning_analysis_status(analysis),
+      ref: analysis.ref&.delete_prefix("refs/heads/"),
+      commit_sha: analysis.commit_sha,
+      tool_name: analysis.tool&.name,
+      category: analysis.category,
+      error: analysis.error.to_s,
+      warning: analysis.warning.to_s,
+      created_at: analysis.created_at,
+      results_count: analysis.results_count
+    }
+  end
+
+  def code_scanning_analysis_status(analysis)
+    return "failed" if analysis.error.is_a?(String) && analysis.error.present?
+    return "malformed" unless analysis.error.is_a?(String) && analysis.warning.is_a?(String)
+    return "malformed" if analysis.id.nil? || analysis.ref.blank? || analysis.commit_sha.blank?
+    return "malformed" if analysis.tool&.name.blank? || analysis.category.blank?
+
+    "succeeded"
+  end
 
   def code_scanning_alert_payload(repo, alert, default_branch:, analyses_cache:)
     rule = alert.rule

@@ -13,9 +13,10 @@ module SecurityAlerts
 
     def call
       return block!("analysis is unavailable") unless analysis
-      return block!("analysis did not succeed") unless analysis[:status] == "succeeded"
+      return block!("analysis evidence is malformed") if analysis[:status] == "malformed"
       return block!("analysis is not on the target branch") unless analysis[:ref] == attempt.issue.project.default_branch
       return block!("analysis configuration differs from the finding") unless matching_configuration?
+      return block!(failure_reason) unless analysis[:status] == "succeeded"
       return block!("analysis commit does not contain the merge commit") unless contains_merge_commit
 
       alert ? fail! : resolve!
@@ -24,6 +25,11 @@ module SecurityAlerts
     private
 
     attr_reader :attempt, :alert, :analysis, :contains_merge_commit
+
+    def failure_reason
+      detail = analysis[:error].to_s
+      detail.empty? ? "analysis did not succeed" : "analysis did not succeed: #{detail}"
+    end
 
     def matching_configuration?
       analysis[:tool_name] == attempt.tool_name && analysis[:category] == attempt.category
@@ -34,7 +40,8 @@ module SecurityAlerts
         "pull_request_number" => attempt.pull_request_number,
         "merge_commit_sha" => attempt.merge_commit_sha,
         "analysis_id" => analysis&.dig(:id), "analysis_commit_sha" => analysis&.dig(:commit_sha),
-        "analysis_ref" => analysis&.dig(:ref), "alert_number" => alert&.fetch(:number, nil)
+        "analysis_ref" => analysis&.dig(:ref), "alert_number" => alert&.fetch(:number, nil),
+        "analysis_error" => analysis&.dig(:error).presence, "analysis_warning" => analysis&.dig(:warning).presence
       }.compact
     end
 
