@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["backToTop", "jumpToLatest", "stickyJumpToLatest", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
+  static targets = ["backToTop", "stickyJumpToLatest", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
   static values = { sessionId: Number }
 
   connect() {
@@ -670,6 +670,7 @@ export default class extends Controller {
     const target = this.latestResponseScrollTop()
     if (target == null) return
     this.containerTarget.scrollTop = target
+    this.handleScroll()
   }
 
   latestResponseScrollTop() {

@@ -804,6 +804,43 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-SCROLL-001 — A direct scrollTop assignment does not emit a
+    // scroll event. The on-load fallback must therefore recalculate the
+    // sticky control after arriving at the bottom, rather than leaving a
+    // visible button whose action is a no-op.
+    function testJumpToLatestResponseOnLoadUpdatesStickyControl() {
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: {
+          scrollTop: 0,
+          scrollHeight: 800,
+          clientHeight: 200,
+          getBoundingClientRect: () => ({ top: 0 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        hasStickyJumpToLatestTarget: true,
+        stickyJumpToLatestTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+      const origTurbo = globalThis.Turbo;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "advance" } } };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+      }
+
+      const hidden = toggles.find((t) => t.cls === "opacity-0");
+      if (!hidden || hidden.cond !== true) {
+        throw new Error("Expected on-load fallback to hide sticky jump-to-latest at the bottom");
+      }
+    }
+
     // @spec CHAT-SCROLL-001 — Show the sticky jump-to-latest button when
     // the user has scrolled past the start of the last assistant response
     // (anchor's top is above the container's top — viewport-relative).
@@ -1127,6 +1164,7 @@ class ChatControllerNodeHarness
       testJumpToLatestResponseOnLoadSetsScrollTopInstantly();
       testJumpToLatestResponseOnLoadSkipsRestorationVisits();
       testJumpToLatestResponseOnLoadFallsBackToBottom();
+      testJumpToLatestResponseOnLoadUpdatesStickyControl();
       testHandleScrollShowsBackToTopWhenScrolled();
       testHandleScrollHidesBackToTopAtTop();
       testHandleScrollShowsStickyJumpToLatestWhenAnchorAboveViewport();
