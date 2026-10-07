@@ -55,6 +55,37 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  it "does not escalate an alert whose open PR closed unmerged after the alert was first detected" do
+    create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      advisory_ghsa_id: "GHSA-test", coverage_state: "effective_pr_open",
+      first_detected_at: 30.days.ago, uncovered_since: nil)
+
+    described_class.new(project).call([ alert.merge(remediation_pull_requests: [ { number: 42, state: "closed" } ]) ])
+
+    coverage = project.dependabot_alert_coverages.find_by!(alert_number: 41)
+    expect(coverage.coverage_state).to eq("effective_pr_closed_unmerged")
+    expect(coverage.uncovered_since).to be_present
+    expect(coverage.uncovered_since).to be > 1.minute.ago
+    expect(coverage.escalated_at).to be_nil
+    expect(Notifications::Publish).not_to have_received(:call)
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
+  it "resets uncovered_since when a remediation PR reopens and escalates only after a fresh grace period" do
+    create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      advisory_ghsa_id: "GHSA-test", coverage_state: "effective_pr_closed_unmerged",
+      first_detected_at: 30.days.ago, uncovered_since: 30.days.ago)
+
+    described_class.new(project).call([ alert.merge(remediation_pull_requests: [ { number: 42, state: "open" } ]) ])
+
+    coverage = project.dependabot_alert_coverages.find_by!(alert_number: 41)
+    expect(coverage.coverage_state).to eq("effective_pr_open")
+    expect(coverage.uncovered_since).to be_nil
+    expect(coverage.escalated_at).to be_nil
+    expect(Notifications::Publish).not_to have_received(:call)
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
   it "retains no patched version as an explicit uncovered state" do
     described_class.new(project).call([ alert.merge(first_patched_version: nil) ])
 

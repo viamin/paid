@@ -27,7 +27,9 @@ module SecurityAlerts
 
     def reconcile(alert)
       coverage = existing_coverage(alert) || project.dependabot_alert_coverages.build(alert_number: alert.fetch(:number))
+      previous_state = coverage.coverage_state
       coverage.assign_attributes(attributes_for(alert, coverage))
+      coverage.uncovered_since = uncovered_since_for(coverage, previous_state)
       coverage.save!
       escalate!(coverage) if coverage.escalation_due?
     end
@@ -51,6 +53,20 @@ module SecurityAlerts
         evidence: alert.fetch(:evidence, {}), first_detected_at: coverage.first_detected_at || Time.current,
         last_detected_at: Time.current
       }
+    end
+
+    # An alert that lost its open remediation PR receives the documented grace
+    # period from the transition, not from first_detected_at: a PR that was
+    # open for thirty days and then closed unmerged would otherwise escalate on
+    # the next poll. # @spec DEPENDABOT-COVERAGE-001
+    def uncovered_since_for(coverage, previous_state)
+      return nil if coverage.effective_pr_open?
+
+      if previous_state == "effective_pr_open"
+        Time.current
+      else
+        coverage.uncovered_since.presence || coverage.first_detected_at || Time.current
+      end
     end
 
     def coverage_state_for(alert, coverage)

@@ -35,7 +35,11 @@ class DependabotAlertCoverage < ApplicationRecord
   end
 
   def escalation_due?
-    uncovered? && escalated_at.nil? && first_detected_at <= GRACE_PERIOD.ago
+    return false unless uncovered?
+    return false unless escalated_at.nil?
+    return false unless uncovered_since&.<= GRACE_PERIOD.ago
+
+    true
   end
 
   # @spec DEPENDABOT-COVERAGE-001

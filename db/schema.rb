@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_061633) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_090111) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1236,6 +1236,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_061633) do
     t.datetime "acceptance_expires_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "uncovered_since", comment: "When the alert most recently transitioned from an effective remediation to an uncovered state; nil while the alert is covered. Drives the seven-day escalation grace check after a remediation PR closes unmerged."
     t.index ["accepted_by_id"], name: "index_dependabot_alert_coverages_on_accepted_by_id"
     t.index ["account_id"], name: "index_dependabot_alert_coverages_on_account_id"
     t.index ["project_id", "alert_number"], name: "idx_on_project_id_alert_number_4aee5d2590", unique: true
