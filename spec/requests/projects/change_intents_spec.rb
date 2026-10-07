@@ -40,6 +40,41 @@ RSpec.describe "Projects::ChangeIntents" do
     end
   end
 
+  describe "return_to sanitization" do
+    # @spec CHANGE-INTENT-INBOX-001
+    # Guards against CodeQL rb/url-redirection: every public redirect_to must
+    # reach `params[:return_to]` only through the inbox-scoped sanitizer so an
+    # attacker cannot redirect an authenticated operator off-site via an
+    # absolute or protocol-relative URL.
+    [
+      "https://evil.example.com/inbox",
+      "//evil.example.com/inbox",
+      "http://evil.example.com"
+    ].each do |malicious|
+      it "ignores an absolute return_to when approving (#{malicious})" do
+        allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+        post approve_project_change_intent_path(project, change_intent, return_to: malicious)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "ignores an absolute return_to when discarding (#{malicious})" do
+        post discard_project_change_intent_path(project, change_intent, return_to: malicious)
+
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "falls back to the change_intent page when an invalid return_to fires the invalid-transition rescue (#{malicious})" do
+        change_intent.update!(status: "active")
+
+        post discard_project_change_intent_path(project, change_intent, return_to: malicious)
+
+        expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+      end
+    end
+  end
+
   describe "GET /projects/:project_id/change_intents/:id" do
     it "renders the draft with its content and approve/discard path" do
       get project_change_intent_path(project, change_intent)
