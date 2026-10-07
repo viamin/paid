@@ -1,55 +1,36 @@
 # frozen_string_literal: true
 
-# Re-enables Dependabot alert coverage scanning on existing projects after
-# #619 stripped "dependabot" from `security_alert_types`. Mirrors the
-# #619 removal in reverse: restores the column default to include
-# "dependabot" and backfills existing rows so every project (current and
-# newly created) can exercise DEPENDABOT-COVERAGE-001. Operators can still
-# opt out per-project by editing the array, but the feature is no longer
-# unreachable in production. @spec DEPENDABOT-COVERAGE-001
+# Restores Dependabot alert coverage scanning for new rows by reverting the
+# column default that #619 (`remove_dependabot_alert_fields_from_projects`)
+# set to `["code_scanning"]`. Newly created projects once again receive
+# `["dependabot", "code_scanning"]` so DEPENDABOT-COVERAGE-001 is no longer
+# unreachable for fresh installs.
+#
+# We deliberately do NOT backfill existing rows. After #619 every project
+# has `security_alert_types = ["code_scanning"]`, but that single value
+# collapses three pre-#619 states we cannot tell apart:
+#
+#   * a project that enabled Dependabot (now stripped)
+#   * a project that opted out of Dependabot (operator-set `["code_scanning"]`)
+#   * a project created after #619 with the post-removal default
+#
+# Re-adding `"dependabot"` to every row with `["code_scanning"]` would
+# silently override explicit operator opt-outs — projects would start
+# hitting the Dependabot API and emitting coverage-failure notifications
+# despite `scan_dependabot_alerts` being the documented opt-out path
+# (`app/temporal/activities/scan_security_alerts_activity.rb:122-123`,
+# exercised by `spec/temporal/activities/scan_security_alerts_activity_spec.rb:204`).
+#
+# Projects that want Dependabot coverage back after #619 opt in by editing
+# the per-project `security_alert_types` array. That preserves the contract
+# that the array is the operator's opt-out lever.
+# @spec DEPENDABOT-COVERAGE-001
 class RestoreDependabotAlertTypeDefault < ActiveRecord::Migration[8.1]
   def up
     change_column_default :projects, :security_alert_types, %w[dependabot code_scanning]
-
-    # Backfill existing projects: add "dependabot" if it is missing, keeping
-    # any other alert types the project already enabled. The previous removal
-    # (#619) defaulted empty arrays back to ["code_scanning"], so a row with
-    # only ["code_scanning"] becomes ["dependabot","code_scanning"].
-    safety_assured do
-      execute <<~SQL.squish
-        UPDATE projects
-        SET security_alert_types = (
-          SELECT jsonb_agg(DISTINCT elem)
-          FROM jsonb_array_elements(security_alert_types || '["dependabot"]'::jsonb) AS elem
-        )
-        WHERE NOT (security_alert_types @> '["dependabot"]'::jsonb)
-      SQL
-    end
   end
 
   def down
     change_column_default :projects, :security_alert_types, [ "code_scanning" ]
-
-    # Mirror the original #619 removal: strip "dependabot" from every row,
-    # falling back to ["code_scanning"] when the array would otherwise empty.
-    safety_assured do
-      execute <<~SQL.squish
-        UPDATE projects
-        SET security_alert_types = CASE
-          WHEN (
-            SELECT COUNT(*)
-            FROM jsonb_array_elements(security_alert_types) AS elem
-            WHERE elem != '"dependabot"'::jsonb
-          ) = 0
-          THEN '["code_scanning"]'::jsonb
-          ELSE (
-            SELECT jsonb_agg(elem)
-            FROM jsonb_array_elements(security_alert_types) AS elem
-            WHERE elem != '"dependabot"'::jsonb
-          )
-        END
-        WHERE security_alert_types @> '["dependabot"]'::jsonb
-      SQL
-    end
   end
 end
