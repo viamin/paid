@@ -340,6 +340,47 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when the Dependabot transport layer raises Faraday::Error" do
+      # @spec DEPENDABOT-COVERAGE-001
+      it "surfaces the timeout as a transient fetch failure and still runs CodeQL" do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(Faraday::TimeoutError.new("execution expired"))
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(
+            blocking: true,
+            severity: :error,
+            metadata: hash_including(reason: "fetch_failed")
+          )
+        )
+        expect(github_client).to have_received(:code_scanning_alerts)
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.dependabot_fetch_error_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_nil
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "treats a connection failure the same as a server-side fetch error" do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(Faraday::ConnectionFailed.new("connect refused"))
+
+        activity.execute(project_id: project.id)
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(metadata: hash_including(reason: "fetch_failed"))
+        )
+        project.reload
+        expect(project.dependabot_fetch_error_at).to be_present
+      end
+    end
+
     context "when a Dependabot ingestion failure recovers" do
       before { allow(github_client).to receive(:code_scanning_alerts).and_return([]) }
 

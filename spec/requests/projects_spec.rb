@@ -2793,6 +2793,83 @@ RSpec.describe "Projects" do
         expect(flash[:alert]).to include("Could not refresh code-scanning availability")
       end
 
+      # @spec DEPENDABOT-COVERAGE-001
+      it "lets operators opt Dependabot back in for projects left by #619 with only code scanning" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "code_scanning" ])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "dependabot", "code_scanning" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to contain_exactly("dependabot", "code_scanning")
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "lets operators opt out of Dependabot without touching code scanning" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: %w[dependabot code_scanning])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "code_scanning" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "code_scanning" ])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "lets operators disable every alert source by unchecking every checkbox" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: %w[dependabot code_scanning])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "preserves the existing selection when the form omits security_alert_types entirely" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "code_scanning" ])
+
+        patch project_path(project), params: { project: { generated_label_name: "ai-gen" } }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "code_scanning" ])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "drops unknown security_alert_types values submitted via tampering" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "code_scanning" ])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "code_scanning", "bogus_source" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "code_scanning" ])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "renders security alert source checkboxes in the edit form" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: %w[dependabot code_scanning])
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Dependabot alerts")
+        expect(response.body).to include("Code scanning alerts")
+        expect(response.body).to include('name="project[security_alert_types][]"')
+        expect(response.body).to include('value="dependabot"')
+        expect(response.body).to include('value="code_scanning"')
+      end
+
       it "allows updating the TDD mode" do # @spec TDD-MODE-002
         project = create(:project, account: account, github_token: github_token, tdd_mode: "off")
 

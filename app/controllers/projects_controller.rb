@@ -187,6 +187,7 @@ class ProjectsController < ApplicationController
     @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
     update_params = update_params.merge(auto_pick_skip_labels: parse_auto_pick_skip_labels) if auto_pick_skip_labels_param_submitted?
+    update_params = update_params.merge(security_alert_types: parse_security_alert_types) if security_alert_types_param_submitted?
     update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
     update_params = update_params.merge(screenshot_settings: build_screenshot_settings) if params.dig(:project, :screenshot_settings)
     if screenshot_action_requested?
@@ -659,6 +660,7 @@ class ProjectsController < ApplicationController
       :pr_target, :upstream_full_name,
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
+      security_alert_types: [],
       priority_labels: Project::PRIORITY_TIERS)
   end
 
@@ -898,6 +900,21 @@ class ProjectsController < ApplicationController
     return nil unless ActiveModel::Type::Boolean.new.cast(raw[:auto_pick_skip_labels_override])
 
     AutoPickSkipLabels.parse_csv(raw[:auto_pick_skip_labels_csv])
+  end
+
+  # The form always submits a `project[security_alert_types][]` checkbox list
+  # (a hidden "" entry sits ahead of the visible boxes so unchecking every
+  # checkbox still posts the array key). The only way the param is missing is
+  # a partial submit (CSRF failure, Turbolinks race, etc.) — in that case we
+  # leave the existing selection alone rather than collapsing to `[]` and
+  # silently disabling every scan.
+  def security_alert_types_param_submitted?
+    params.dig(:project, :security_alert_types).is_a?(Array)
+  end
+
+  def parse_security_alert_types
+    allowed = Project::SECURITY_ALERT_TYPE_OPTIONS.map(&:first)
+    Array(params.dig(:project, :security_alert_types)).map(&:to_s).uniq & allowed
   end
 
   def load_screenshot_settings_context

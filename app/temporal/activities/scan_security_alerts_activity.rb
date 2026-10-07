@@ -315,6 +315,19 @@ module Activities
     rescue GithubClient::NotFoundError => e
       raise SecurityAlerts::DependabotPermissionsError,
         "GitHub Dependabot alert ingestion is unavailable for #{project.full_name}: #{e.message}"
+    rescue Faraday::Error => e
+      # GithubClient#handle_errors records a health failure for transport-level
+      # errors but re-raises raw `Faraday::Error` rather than wrapping it in a
+      # `GithubClient::Error`. Without this rescue a timeout or connection
+      # failure would abort the activity before `scan_code_scanning_alerts`
+      # could run, and the activity would not publish the required ingestion
+      # failure or arm the fetch-failure backoff (DEPENDABOT-COVERAGE-001).
+      # Re-wrap as `GithubClient::ApiError` so the caller's rescue publishes
+      # the failure notification and proceeds to the code-scanning scan.
+      raise GithubClient::ApiError.new(
+        "Dependabot alert fetch failed: #{e.message}",
+        status: nil
+      )
     end
 
     def publish_dependabot_ingestion_failure(project, message, reason)
