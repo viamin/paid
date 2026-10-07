@@ -12,6 +12,14 @@ module SecurityAlerts
       @project = project
     end
 
+    def self.trusted_login_configured?(project)
+      trusted_logins(project).any?
+    end
+
+    def self.trusted_logins(project)
+      Array(project.allowed_github_usernames).filter_map { |username| username.to_s.strip.presence }
+    end
+
     # @param alerts [Array<Hash>] Enriched alert payloads from GithubClient
     # @param excluding_run_id [Integer, nil] Agent run to omit from the prior
     #   attempts history — the run whose prompt refresh triggers processing is
@@ -165,14 +173,16 @@ module SecurityAlerts
 
     def trusted_login
       @trusted_login ||= begin
-        login = Array(@project.allowed_github_usernames)
-          .filter_map { |u| u.to_s.strip.presence }
-          .first
+        login = trusted_logins.first
         return login if login
 
         raise SecurityAlerts::ConfigurationError,
           "No trusted GitHub usernames configured for project #{@project.id}"
       end
+    end
+
+    def trusted_logins
+      self.class.trusted_logins(@project)
     end
 
     def labels_for_alert(alert)

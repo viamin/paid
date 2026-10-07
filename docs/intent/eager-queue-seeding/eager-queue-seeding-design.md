@@ -196,7 +196,7 @@ terminal/holding states:
 The recovery path is a continuation of the same evidence-checked verifier,
 not a separate retry job:
 
-- `VerifyMergedRemediationAttempts.awaiting_attempts` selects both
+- `VerifyMergedRemediationAttempts.retryable_attempts` selects both
   `awaiting_verification` and `verification_blocked` attempts so a worker
   restart, a repeated poll, or a repaired credential automatically picks
   blocked attempts back up. History is preserved — every blocked attempt is

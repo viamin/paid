@@ -16,12 +16,7 @@ module Notifications
         Array(scope).select do |project|
           next false unless project.security_alert_types.include?("code_scanning")
 
-          begin
-            SecurityAlerts::ProcessCodeScanningAlerts.new(project).send(:trusted_login)
-            false
-          rescue SecurityAlerts::ConfigurationError
-            true
-          end
+          !SecurityAlerts::ProcessCodeScanningAlerts.trusted_login_configured?(project)
         end
       end
 
@@ -52,10 +47,6 @@ module Notifications
             }.compact
           }
         }
-      end
-
-      def edit_project_path(project)
-        "/projects/#{project.id}/edit"
       end
     end
   end

@@ -30,7 +30,8 @@ module SecurityAlerts
     # `verified_fixed` or `verification_failed` (#4152).
     def retryable_attempts
       CodeScanningRemediationAttempt
-        .where(issue: code_scanning_issues, status: CodeScanningRemediationAttempt::RETRYABLE_STATUSES)
+        .where(issue: code_scanning_issues)
+        .retryable_block
     end
 
     def code_scanning_issues

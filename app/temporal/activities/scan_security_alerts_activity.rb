@@ -86,18 +86,18 @@ module Activities
         project:, alerts: open_alerts, github_client: project.client
       ).call
       retryable_attempt_ids = CodeScanningRemediationAttempt
-        .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
-          status: CodeScanningRemediationAttempt::RETRYABLE_STATUSES)
+        .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE))
+        .retryable_block
         .ids
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
-      sync_code_scanning_notifications(project, CodeScanningRemediationAttempt.where(id: retryable_attempt_ids))
 
       # Record scan timestamp only after successful processing. Retryable
       # errors (5xx) intentionally skip this so Temporal retries within the
       # same interval window.
       project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
+      sync_code_scanning_notifications(project, CodeScanningRemediationAttempt.where(id: retryable_attempt_ids))
 
       logger.info(
         message: "github_sync.code_scanning_scan_complete",

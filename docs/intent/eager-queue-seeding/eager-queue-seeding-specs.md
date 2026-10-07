@@ -205,11 +205,11 @@
   *Code:* `Notifications::Rules::CodeScanningVerificationBlocked`,
   `Notifications::Rules::CodeScanningConfigurationError`,
   `Notifications::Rules::CodeScanningPermissionsError`,
-  `SecurityAlerts::ScanSecurityAlertsActivity`,
-  `Activities::EvaluateNotificationRulesActivity`.
+  `Activities::ScanSecurityAlertsActivity#sync_code_scanning_notifications`.
   *Test:* `spec/services/notifications/rules/code_scanning_verification_blocked_spec.rb`,
   `spec/services/notifications/rules/code_scanning_configuration_error_spec.rb`,
-  `spec/services/notifications/rules/code_scanning_permissions_error_spec.rb`.
+  `spec/services/notifications/rules/code_scanning_permissions_error_spec.rb`,
+  `spec/temporal/activities/scan_security_alerts_activity_spec.rb`.
 
 - [x] **EAGER-QUEUE-012** — An operator-invoked repair path SHALL exist to
   backfill a missing `parent_issue_id` link between an existing PR and its

@@ -314,5 +314,23 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       expect(attempt.reload.status).to eq("verified_fixed")
       expect(Notification.active.find_by(source: "code_scanning_verification_blocked", subject: attempt)).to be_nil
     end
+
+    it "publishes the successful scan timestamp with a verification-blocked notification" do # @spec EAGER-QUEUE-016
+      project.update_column(:last_code_scanning_scan_at, nil)
+      issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 42)
+      attempt = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked",
+        merge_commit_sha: "merge", tool_name: "CodeQL", category: "/language:ruby")
+      allow(github_client).to receive(:code_scanning_alerts).and_return([
+        { number: 42, state: "open", severity: "high", rule_id: "test/rule", rule_description: "Test",
+          tool_name: "CodeQL", summary: "Test alert", html_url: "https://github.com/o/r/security/code-scanning/42",
+          created_at: 1.day.ago.iso8601, updated_at: 1.hour.ago.iso8601 }
+      ])
+
+      activity.execute(project_id: project.id)
+
+      notification = Notification.find_by!(source: "code_scanning_verification_blocked", subject: attempt)
+      expect(notification.metadata["last_successful_scan_at"]).to eq(project.reload.last_code_scanning_scan_at.iso8601)
+    end
   end
 end
