@@ -18,18 +18,18 @@ RSpec.describe CodeScanningRemediationAttempt do
   end
 
   describe ".blocking_automation" do
-    it "treats verification_failed as the durable terminal block" do # @spec EAGER-QUEUE-013 @spec EAGER-QUEUE-015
+    it "keeps every unresolved verification status out of automatic remediation" do # @spec EAGER-QUEUE-013 @spec EAGER-QUEUE-015
       failed = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_failed")
-      _awaiting = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
+      awaiting = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
         status: "awaiting_verification")
-      _blocked = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
+      blocked = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
         status: "verification_blocked")
       _fixed = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
         status: "verified_fixed")
 
       ids = described_class.blocking_automation.pluck(:id)
 
-      expect(ids).to contain_exactly(failed.id)
+      expect(ids).to contain_exactly(awaiting.id, blocked.id, failed.id)
     end
   end
 

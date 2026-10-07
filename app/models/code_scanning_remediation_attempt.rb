@@ -12,17 +12,17 @@ class CodeScanningRemediationAttempt < ApplicationRecord
   belongs_to :issue
   belongs_to :agent_run, optional: true
 
+  delegate :project, to: :issue, allow_nil: true
+
   validates :pull_request_number, presence: true, numericality: { greater_than: 0 }
   validates :merge_commit_sha, presence: true
   validates :merged_at, presence: true
   validates :status, inclusion: { in: STATUSES }
 
-  # `verification_failed` is the durable terminal block — scanner confirmed
-  # the merged fix did not close the finding, and the source issue has moved
-  # to manual review. `awaiting_verification` and `verification_blocked` are
-  # both retryable: the verifier revisits them on every relevant scan,
-  # re-applying the same evidence rules EAGER-QUEUE-013 requires (#4152).
-  scope :blocking_automation, -> { where(status: %w[verification_failed]) }
+  # Every unresolved verification state blocks automation. A later merged
+  # attempt supersedes this row via latest_per_issue; until then, retryable
+  # attempts are revisited by the verifier instead of creating another fix PR.
+  scope :blocking_automation, -> { where(status: %w[awaiting_verification verification_failed verification_blocked]) }
   scope :retryable_block, -> { where(status: RETRYABLE_STATUSES) }
 
   # Single attempt per issue that governs auto-pick eligibility. A new

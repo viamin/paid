@@ -38,12 +38,14 @@ module Activities
 
       { alerts_to_fix: [] }
     rescue SecurityAlerts::CodeScanningPermissionsError => e
+      sync_code_scanning_notifications(project, [])
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "CodeScanningPermissionsError",
         non_retryable: true
       )
     rescue SecurityAlerts::ConfigurationError => e
+      sync_code_scanning_notifications(project, [])
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "ConfigurationError",
@@ -83,13 +85,14 @@ module Activities
       SecurityAlerts::RecordMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
-      retryable_attempts = CodeScanningRemediationAttempt
+      retryable_attempt_ids = CodeScanningRemediationAttempt
         .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
           status: CodeScanningRemediationAttempt::RETRYABLE_STATUSES)
+        .ids
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
-      sync_code_scanning_notifications(project, retryable_attempts)
+      sync_code_scanning_notifications(project, CodeScanningRemediationAttempt.where(id: retryable_attempt_ids))
 
       # Record scan timestamp only after successful processing. Retryable
       # errors (5xx) intentionally skip this so Temporal retries within the

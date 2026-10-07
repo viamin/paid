@@ -331,6 +331,15 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
+    it "counts code-scanning verification blockers through their synthetic issue" do # @spec EAGER-QUEUE-016
+      issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+      attempt = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked")
+      create(:notification, :error, account: account, subject: attempt,
+        source: "code_scanning_verification_blocked", blocking: true)
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002B
     it "batch-preloads subject projects for action_required instead of querying per row" do
       create_agent_run_blocking_notification(github_number: 100)

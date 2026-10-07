@@ -115,6 +115,16 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.reload.code_scanning_permission_error_at).to be_present
       end
 
+      it "publishes a blocking permission notification when GitHub rejects the scan" do # @spec EAGER-QUEUE-016
+        allow(github_client).to receive(:code_scanning_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+
+        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+        expect(Notification.active.find_by(source: "code_scanning_permissions_error", subject: project))
+          .to have_attributes(severity: "error", blocking: true)
+      end
+
       it "re-raises non-403 ApiError without updating last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Server error", status: 500))
@@ -143,6 +153,24 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           end
 
         expect(project.reload.code_scanning_permission_error_at).to be_nil
+      end
+
+      it "publishes a blocking configuration notification when trusted users are missing" do # @spec EAGER-QUEUE-016
+        project.update_column(:allowed_github_usernames, [])
+        allow(github_client).to receive(:code_scanning_alerts).and_return([
+          {
+            number: 42, state: "open", severity: "high",
+            rule_id: "test/rule", rule_description: "Test",
+            tool_name: "CodeQL", summary: "Test alert",
+            html_url: "https://github.com/o/r/security/code-scanning/42",
+            created_at: 1.day.ago.iso8601, updated_at: 1.hour.ago.iso8601
+          }
+        ])
+
+        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+        expect(Notification.active.find_by(source: "code_scanning_configuration_error", subject: project))
+          .to have_attributes(severity: "error", blocking: true)
       end
     end
 
@@ -263,6 +291,28 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         issue.reload
         expect(issue.github_state).to eq("open")
       end
+    end
+
+    it "resolves a verification-blocked notification after verification clears the attempt" do # @spec EAGER-QUEUE-016
+      project.update_column(:last_code_scanning_scan_at, nil)
+      issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 42)
+      attempt = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked",
+        merge_commit_sha: "merge", tool_name: "CodeQL", category: "/language:ruby")
+      Notifications::Rules::CodeScanningVerificationBlocked.call(scope: [ attempt ])
+      analysis = {
+        id: "analysis", status: "succeeded", ref: "main", commit_sha: "descendant",
+        tool_name: "CodeQL", category: "/language:ruby"
+      }
+      allow(github_client).to receive(:code_scanning_alerts).and_return([])
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([ analysis ])
+      allow(github_client).to receive(:compare).with(project.full_name, "merge", "descendant")
+        .and_return(Struct.new(:status).new("identical"))
+
+      activity.execute(project_id: project.id)
+
+      expect(attempt.reload.status).to eq("verified_fixed")
+      expect(Notification.active.find_by(source: "code_scanning_verification_blocked", subject: attempt)).to be_nil
     end
   end
 end

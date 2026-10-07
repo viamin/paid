@@ -27,7 +27,7 @@ RSpec.describe Notifications::Rules::CodeScanningVerificationBlocked do
       }.to change(Notification, :count).by(1)
 
     notification = Notification.find_by!(source: "code_scanning_verification_blocked", subject: attempt)
-    expect(notification.severity).to eq("warning")
+    expect(notification.severity).to eq("error")
     expect(notification.blocking).to be(true)
     expect(notification.metadata).to include(
       "alert_url" => issue.github_url,

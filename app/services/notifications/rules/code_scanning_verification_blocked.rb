@@ -27,7 +27,7 @@ module Notifications
         project = issue.project
 
         {
-          severity: :warning,
+          severity: :error,
           blocking: true,
           title: "Code scanning fix awaits scanner evidence",
           description: build_description(attempt),
