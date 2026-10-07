@@ -63,7 +63,12 @@ RSpec.describe Prompts::BuildForLidPlanning do
       )
 
       expect(prompt).to include("Adopt Linked-Intent Development for acme/api")
+      # @spec LID-RUNS-007
       expect(prompt).to include("the ## LID block")
+      expect(prompt).to include("Only change files under docs/")
+      expect(prompt).to include("root AGENTS.md or CLAUDE.md")
+      expect(prompt).to include("exact heading `## LID`")
+      expect(prompt).to include("- Mode: Full", "- Version: 1.3.0")
       expect(prompt).to include("docs/arrows/index.yaml")
       expect(prompt).to include("docs/high-level-design.md (HLD)")
     end
