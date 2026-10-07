@@ -38,11 +38,21 @@ module SecurityAlerts
     # configuration and live on the target branch, so a newer PR-branch or
     # unrelated analysis never hides valid evidence; a newer error-bearing
     # analysis falls through to older successful evidence when it exists.
+    # A newer entry can also be a rerun of an older main SHA after a valid
+    # post-merge analysis has already been uploaded, so we cannot simply take
+    # the newest matching successful entry — iterating newest-first lets us
+    # prefer the first analysis that actually contains the merge commit and
+    # only fall back to closest evidence when none of them does (otherwise
+    # the attempt would block on "behind" and `awaiting_attempts` would skip
+    # it on subsequent runs, leaving the legitimate evidence unconsidered).
     def verification_evidence(attempt, analyses)
-      successful = analyses.find { |analysis| relevant?(attempt, analysis) && analysis[:status] == "succeeded" }
-      return fallback_evidence(attempt, analyses) unless successful
+      matching_successful = analyses.select do |analysis|
+        relevant?(attempt, analysis) && analysis[:status] == "succeeded"
+      end
+      containing = matching_successful.find { |analysis| contains_merge_commit?(attempt, analysis) }
+      return [ containing, true ] if containing
 
-      [ successful, contains_merge_commit?(attempt, successful) ]
+      fallback_evidence(attempt, analyses)
     end
 
     def relevant?(attempt, analysis)

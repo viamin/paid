@@ -144,15 +144,21 @@
   succeeded, failed, malformed, or unavailable evidence — success SHALL NOT be
   inferred from HTTP 200 or aggregate result count, and error/warning detail
   plus branch/commit/configuration identity SHALL be retained as evidence.
-  Evidence selection SHALL use a successful analysis on the target branch with
-  the finding's tool/category and a commit containing the merge commit,
-  preferring it over newer PR-branch, unrelated, or error-bearing analyses so
-  valid evidence is never hidden. A matching analysis with the finding still
-  open SHALL put the issue into manual review, not create another automatic
-  fix run. Missing, failed, malformed, wrong-branch/configuration, or pre-merge
-  analysis SHALL be blocked, never treated as resolution, and resolution SHALL
-  never be derived from the merge alone or result counts. Alert timestamps are
-  not scan-freshness evidence.
+  Evidence selection SHALL iterate newest-first over matching successful
+  analyses on the target branch with the finding's tool/category, preferring
+  the first whose analysis commit contains the merge commit over newer
+  PR-branch, unrelated, error-bearing, or stale rerun entries so valid
+  evidence is never hidden — taking only the newest entry would block on
+  `behind` whenever GitHub receives a rerun for an older main SHA, and the
+  blocked attempt would never be retried because `awaiting_attempts` excludes
+  `verification_blocked`. When no matching successful analysis contains the
+  merge, the closest related analysis SHALL be retained as blocked-attempt
+  evidence. A matching analysis with the finding still open SHALL put the
+  issue into manual review, not create another automatic fix run. Missing,
+  failed, malformed, wrong-branch/configuration, or pre-merge analysis SHALL
+  be blocked, never treated as resolution, and resolution SHALL never be
+  derived from the merge alone or result counts. Alert timestamps are not
+  scan-freshness evidence.
   *Code:* `CodeScanningRemediationAttempt`,
   `GithubClient#code_scanning_analyses`,
   `SecurityAlerts::VerifyMergedRemediationAttempts`,
