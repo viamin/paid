@@ -14,6 +14,13 @@ updates:
       - "dependencies"
       - "ruby"
       - "paid-automation"
+    # 4.1.0's batched writer deadlocks during development reload; the Gemfile
+    # pins 4.0.2 until a release passes
+    # spec/integration/action_cable/subscription_adapter/solid_cable_reload_spec.rb
+    # (@spec RAILS-CONTROL-PLANE-009).
+    ignore:
+      - dependency-name: "solid_cable"
+        versions: ["4.1.x"]
     groups:
       security-updates:
         applies-to: security-updates
