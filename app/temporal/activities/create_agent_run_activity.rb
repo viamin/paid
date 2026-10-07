@@ -271,15 +271,18 @@ module Activities
       )
     end
 
-    # Resumed queued runs were created by the controller/MCP, which stores
-    # plan_docs in external_metadata but leaves custom_prompt blank for
+    # Resumed queued runs carry plan_doc_source and/or metadata plan_docs
+    # from the controller/MCP, which leaves custom_prompt blank for
     # lid_planning goals. Build and persist the prompt eagerly so
     # apply_policy_controls and the audit trail see the same prompt the
     # create path produces.
+    # @spec LID-RUNS-005
     def ensure_lid_planning_prompt!(agent_run)
       return unless agent_run.lid_planning_goal? && agent_run.custom_prompt.blank?
 
-      plan_docs = agent_run.external_metadata.fetch("plan_docs", [])
+      plan_docs = []
+      plan_docs << { name: agent_run.plan_doc_source } if agent_run.plan_doc_source.present?
+      plan_docs.concat(agent_run.external_metadata.fetch("plan_docs", []))
       prompt = build_lid_planning_prompt(
         project: agent_run.project,
         custom_prompt: nil,

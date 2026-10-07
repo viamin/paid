@@ -46,9 +46,12 @@
   SHALL treat them as authored intent (not inferred): the prompt SHALL instruct
   the agent that decisions sourced from named plan docs map into HLD, LLD, and
   EARS as authored rationale and MUST NOT carry an `[inferred]` marker, while
-  code-sourced rationale remains `[inferred]`.
-  *Code:* `app/services/prompts/build_for_lid_planning.rb`.
-  *Test:* `spec/services/prompts/build_for_lid_planning_spec.rb`.
+  code-sourced rationale remains `[inferred]`. Queued-run prompt preparation
+  SHALL include `plan_doc_source` alongside metadata plan docs.
+  *Code:* `app/services/prompts/build_for_lid_planning.rb`,
+  `app/temporal/activities/create_agent_run_activity.rb`.
+  *Test:* `spec/services/prompts/build_for_lid_planning_spec.rb`,
+  `spec/temporal/activities/create_agent_run_activity_spec.rb`.
 
 - [x] **LID-RUNS-006** — External-agent entry points SHALL receive the same
   LID-aware prompt discipline and coherence reporting that native Paid agent
@@ -65,7 +68,9 @@
   `lid_mode` — requires HLD, LLD(s), EARS specs, the `## LID` block, and
   `docs/arrows/index.yaml`) versus refinement (the project declares `lid_mode` —
   requires at least one LLD and its EARS specs). The run SHALL fail when the
-  contract is not met.
+  contract is not met. The prompt SHALL enumerate permitted paths and require
+  adoption configuration in root `AGENTS.md` or `CLAUDE.md` under an exact
+  `## LID` heading with Mode and Version bullets.
   *Code:* `app/services/lid/planning_contract.rb`,
   `app/temporal/activities/create_pull_request_activity.rb`.
   *Test:* `spec/services/lid/planning_contract_spec.rb`,
