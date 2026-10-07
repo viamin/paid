@@ -16,6 +16,7 @@ module Tools
       "Tools::CancelAgentRun",
       "Tools::CloneProject",
       "Tools::RecordChangeIntent",
+      "Tools::GetInboxChatContext",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
       "Tools::SubmitClarifyingAnswers",

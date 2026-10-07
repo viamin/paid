@@ -82,7 +82,11 @@ only a project user who can manage issue comments may open or use the linked
 chat. Authorization is rechecked for HTML, Cable, messages and context queries.
 Inbox context is not appended to the system prompt. `Inbox::ChatContext` is a
 section-addressable query boundary; callers request the work item, comments,
-review comments, labels, queue metadata or relevant agent-run output as needed.
+review comments, labels, queue metadata, relevant agent-run output, or the
+current record-backed lane evidence as needed. Record lookup is scoped to the
+session project rather than trusting the audit snapshot. Partial-closeout
+queries additionally resolve the current closeout status, evidence, recovery
+state, and available uncertainty on demand.
 
 ## Temporary visual lifecycle
 
