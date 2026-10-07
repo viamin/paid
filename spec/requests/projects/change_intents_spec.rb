@@ -245,7 +245,34 @@ RSpec.describe "Projects::ChangeIntents" do
     end
 
     # @spec CHANGE-INTENT-INBOX-001
-    it "falls back to the change intent when return_to is an absolute URL on an invalid transition" do
+    it "falls back to the project page when return_to points off-host" do
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example/phish"),
+        params: { reason: "Reason" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the project page for a protocol-relative return_to" do
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example/phish"),
+        params: { reason: "Reason" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the project page when return_to is not inbox-scoped" do
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "/projects/some-other-project/edit"),
+        params: { reason: "Reason" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change-intent page on the rescue branch when return_to is external" do
       change_intent.update!(status: "active")
 
       post request_changes_project_change_intent_path(project, change_intent),
