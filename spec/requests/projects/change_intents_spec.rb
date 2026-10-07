@@ -40,6 +40,31 @@ RSpec.describe "Projects::ChangeIntents" do
     end
   end
 
+  # @spec CHANGE-INTENT-INBOX-001
+  describe "hostile return_to targets" do
+    it "falls back to the project page for forged absolute, protocol-relative, and backslash targets" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      [ "https://evil.com/inbox", "//evil.com/inbox", "/inbox\\evil.com" ].each do |forged|
+        change_intent.update!(status: "draft")
+
+        post request_changes_project_change_intent_path(project, change_intent, return_to: forged),
+          params: { reason: "Reword the title." }
+
+        expect(response).to redirect_to(project_path(project)), "expected fallback for #{forged.inspect}"
+      end
+    end
+
+    it "falls back to the change intent page on invalid transitions for forged targets" do
+      change_intent.update!(status: "active")
+
+      post request_changes_project_change_intent_path(project, change_intent, return_to: "/inbox\\evil.com"),
+        params: { reason: "Too late." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+  end
+
   describe "GET /projects/:project_id/change_intents/:id" do
     it "renders the draft with its content and approve/discard path" do
       get project_change_intent_path(project, change_intent)
