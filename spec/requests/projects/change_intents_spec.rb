@@ -228,7 +228,7 @@ RSpec.describe "Projects::ChangeIntents" do
     end
 
     # @spec CHANGE-INTENT-INBOX-001
-    it "falls back to the change_intent show page when request_changes hits an invalid transition with an unsafe return_to" do
+    it "falls back to the change_intent page for request_changes with an unsafe return_to on invalid transition" do
       change_intent.update!(status: "active")
 
       post request_changes_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish"),
