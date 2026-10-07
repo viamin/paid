@@ -93,6 +93,27 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(project_path(project))
       expect(change_intent.reload.status).to eq("active")
     end
+
+    it "falls back to the project when return_to is a javascript: URL" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "javascript:alert(1)" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project when return_to is not inbox-scoped" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: "/projects/other" }
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project when return_to is a malformed URI" do
+      post approve_project_change_intent_path(project, change_intent),
+        params: { return_to: '/\\evil.example/inbox' }
+
+      expect(response).to redirect_to(project_path(project))
+    end
   end
 
   describe "POST /projects/:project_id/change_intents/:id/discard" do
