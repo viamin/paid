@@ -202,6 +202,25 @@
   *Test:* `spec/temporal/activities/scan_security_alerts_activity_spec.rb`,
   `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`.
 
+- [x] **GITHUB-SYNC-020** — Before completing repository import, and when an
+  operator enables or refreshes code-scanning, the system SHALL query the
+  repository's code-scanning alerts with the project's resolved GitHub
+  credential. When GitHub explicitly states that code scanning is unsupported,
+  unavailable, or not enabled, the system SHALL remove only `code_scanning`
+  from the project's selected security alert types, preserve other selections,
+  findings, remediation evidence, and the last successful scan watermark, and
+  show the sanitized reason beside the setting. The operator SHALL be able to
+  refresh availability and explicitly restore the selection after GitHub is
+  configured. Permission denials, rate limits, transient failures, and
+  ambiguous responses SHALL remain distinct and SHALL NOT disable the option.
+  A later explicit unavailable result during discovery SHALL apply the same
+  behavior.
+  *Code:* `SecurityAlerts::CodeScanningAvailability`,
+  `ProjectsController`, `Activities::ScanSecurityAlertsActivity`.
+  *Test:* `spec/services/security_alerts/code_scanning_availability_spec.rb`,
+  `spec/requests/projects_spec.rb`,
+  `spec/temporal/activities/scan_security_alerts_activity_spec.rb`.
+
 - [x] **GITHUB-SYNC-019** — Code-scanning reconciliation SHALL act only on an
   authoritative, complete snapshot explicitly scoped to the repository, target
   branch, and all scanner configurations. A partial, failed, filtered, or

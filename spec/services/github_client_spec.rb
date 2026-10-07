@@ -2555,6 +2555,19 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#code_scanning_available?" do
+    let(:repo) { "owner/repo" }
+
+    it "probes the alerts endpoint without fetching alert context" do # @spec GITHUB-SYNC-020
+      alerts_request = stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+        .with(query: { "per_page" => "1" })
+        .to_return(status: 200, body: [].to_json, headers: { "Content-Type" => "application/json" })
+
+      expect(client.code_scanning_available?(repo)).to be(true)
+      expect(alerts_request).to have_been_requested.once
+    end
+  end
+
   describe "#code_scanning_alert_dispositions" do
     let(:repo) { "owner/repo" }
 

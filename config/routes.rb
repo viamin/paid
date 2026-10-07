@@ -243,6 +243,7 @@ Rails.application.routes.draw do
       post :destroy_retained_vm
     end
     post :toggle_auto_pick, on: :member
+    post :refresh_code_scanning_availability, on: :member
     post :toggle_auto_merge, on: :member
     post :toggle_pause, on: :member
     post :start_lid, on: :member
