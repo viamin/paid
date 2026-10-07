@@ -46,7 +46,7 @@ class DependabotAlertCoverage < ApplicationRecord
   def accept!(owner:, reason:, expires_at:)
     update!(
       accepted_by: owner, acceptance_reason: reason, acceptance_expires_at: expires_at,
-      coverage_state: "accepted", reason: "operator_accepted"
+      coverage_state: "accepted", reason: "operator_accepted", escalated_at: nil
     )
   end
 

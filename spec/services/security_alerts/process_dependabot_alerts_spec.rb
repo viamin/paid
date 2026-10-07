@@ -45,6 +45,23 @@ RSpec.describe SecurityAlerts::ProcessDependabotAlerts do
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  it "starts a fresh grace period when an operator acceptance expires" do
+    coverage = create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
+      dependency_name: alert[:dependency_name], dependency_ecosystem: alert[:dependency_ecosystem],
+      manifest_path: alert[:manifest_path], advisory_ghsa_id: alert[:advisory_ghsa_id],
+      first_detected_at: 8.days.ago, uncovered_since: 8.days.ago, escalated_at: 1.day.ago)
+    coverage.accept!(owner: project.account.users.first, reason: "Risk accepted", expires_at: 1.minute.from_now)
+
+    travel 2.minutes do
+      described_class.new(project).call([ alert ])
+    end
+
+    expect(coverage.reload.uncovered_since).to be > 1.minute.ago
+    expect(coverage.escalated_at).to be_nil
+    expect(Notifications::Publish).not_to have_received(:call)
+  end
+
+  # @spec DEPENDABOT-COVERAGE-001
   it "escalates a persistent uncovered alert after the documented grace period" do
     create(:dependabot_alert_coverage, project:, account: project.account, alert_number: 41,
       advisory_ghsa_id: "GHSA-test", first_detected_at: 8.days.ago)

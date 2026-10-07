@@ -58,7 +58,7 @@ module SecurityAlerts
       previous_state = coverage.coverage_state
       coverage.assign_attributes(attributes_for(alert, coverage))
       coverage.uncovered_since = uncovered_since_for(coverage, previous_state)
-      coverage.escalated_at = nil if coverage.effective_pr_open?
+      coverage.escalated_at = nil unless coverage.uncovered?
       coverage.save!
       escalate!(coverage) if coverage.escalation_due?
       resolve_escalation_notification(coverage) unless coverage.uncovered?
@@ -94,7 +94,7 @@ module SecurityAlerts
     def uncovered_since_for(coverage, previous_state)
       return nil if coverage.effective_pr_open?
 
-      if previous_state == "effective_pr_open"
+      if %w[accepted effective_pr_open].include?(previous_state)
         Time.current
       else
         coverage.uncovered_since.presence || coverage.first_detected_at || Time.current
