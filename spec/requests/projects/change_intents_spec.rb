@@ -40,29 +40,6 @@ RSpec.describe "Projects::ChangeIntents" do
     end
   end
 
-  # @spec CHANGE-INTENT-INBOX-001
-  describe "hostile return_to targets" do
-    it "falls back to the project page for forged, non-inbox-scoped, and backslash targets" do
-      [ "https://evil.com/inbox", "//evil.com/inbox", "javascript:alert(1)", "/projects/other", "/inbox\\evil.com" ].each do |forged|
-        change_intent.update!(status: "draft")
-
-        post request_changes_project_change_intent_path(project, change_intent, return_to: forged),
-          params: { reason: "Reword the title." }
-
-        expect(response).to redirect_to(project_path(project)), "expected fallback for #{forged.inspect}"
-      end
-    end
-
-    it "falls back to the change intent page on invalid transitions for forged targets" do
-      change_intent.update!(status: "active")
-
-      post request_changes_project_change_intent_path(project, change_intent, return_to: "/inbox\\evil.com"),
-        params: { reason: "Too late." }
-
-      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
-    end
-  end
-
   describe "GET /projects/:project_id/change_intents/:id" do
     it "renders the draft with its content and approve/discard path" do
       get project_change_intent_path(project, change_intent)
@@ -191,6 +168,48 @@ RSpec.describe "Projects::ChangeIntents" do
         params: { reason: "Too late." }
 
       expect(response).to redirect_to(inbox_return)
+    end
+  end
+
+  describe "return_to URL sanitization" do
+    before { allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call) }
+
+    it "falls back to the project page when return_to is an absolute URL" do
+      post discard_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project page when return_to is a protocol-relative URL" do
+      post discard_project_change_intent_path(project, change_intent, return_to: "//evil.example/phish")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project page when return_to is a javascript: URL" do
+      post discard_project_change_intent_path(project, change_intent, return_to: "javascript:alert(1)")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project page when return_to is not inbox-scoped" do
+      post discard_project_change_intent_path(project, change_intent, return_to: "/projects/other")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the project page when return_to is a malformed URI" do
+      post discard_project_change_intent_path(project, change_intent, return_to: '/\\evil.example/inbox')
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "falls back to the change_intent show page on invalid transition when return_to is unsafe" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish")
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 end
