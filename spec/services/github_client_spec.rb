@@ -2555,6 +2555,31 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#code_scanning_alert_dispositions" do
+    let(:repo) { "owner/repo" }
+
+    it "returns terminal alert dispositions without fetching per-alert context" do # @spec GITHUB-SYNC-018
+      stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+        .with(query: { "state" => "dismissed", "per_page" => "100" })
+        .to_return(
+          status: 200,
+          body: [ {
+            number: 1667, state: "dismissed", dismissed_reason: "false positive",
+            html_url: "https://github.com/owner/repo/security/code-scanning/1667",
+            created_at: "2026-03-29T10:00:00Z", updated_at: "2026-03-29T12:00:00Z"
+          } ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      alerts = client.code_scanning_alert_dispositions(repo, state: "dismissed")
+
+      expect(alerts).to contain_exactly(
+        hash_including(number: 1667, state: "dismissed", dismissed_reason: "false positive")
+      )
+      expect(a_request(:get, %r{/code-scanning/alerts/1667/instances})).not_to have_been_requested
+    end
+  end
+
   describe "#code_scanning_alert" do
     let(:repo) { "owner/repo" }
 

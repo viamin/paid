@@ -151,6 +151,12 @@ fixed — the agent's patch might not actually close the CodeQL finding, or a
 regression could reintroduce it. Only the scanner itself, on its next pass
 over the live alert list, can say whether the alert is actually gone.
 
+That scanner evidence is configuration-specific: verification selects only a
+successful target-branch analysis with the finding's tool and category that
+contains the merge commit. It never substitutes aggregate scan counts or an
+analysis from another configuration. A GitHub dismissal closes upstream work
+but remains a disposition, not `verified_fixed` evidence.
+
 `Issue#last_scanner_reconciled_at` records when
 `SecurityAlerts::ProcessCodeScanningAlerts` last reconciled a given alert
 against the live scan results. Every pass over an alert still reported open

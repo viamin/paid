@@ -49,6 +49,15 @@ prior run/PR outcomes into the final agent prompt. Agents must compare a
 historical location to their checkout, investigate false-positive status, and
 must not claim scanner resolution without supporting verification.
 
+Resolution reconciliation is narrower than ordinary issue polling. It consumes
+only a complete, repository- and target-branch-scoped snapshot covering all
+scanner configurations and explicit upstream states. An alert omitted from a
+response is unknown, not fixed. Fixed and dismissed dispositions, their reason,
+and bounded GitHub evidence remain visible on the synthetic issue; neither
+disposition claims that Paid verified a code fix. A later open observation
+preserves the remediation-attempt history so operators can distinguish a real
+recurrence from a finding that was never scanner-verified.
+
 Remediation has a separate execution gate: immediately before dispatch, Paid
 re-reads the alert and accepts only an open alert with its selected default
 branch, analyzed commit, scanner configuration, and exactly one usable finding

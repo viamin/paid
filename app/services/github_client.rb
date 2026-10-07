@@ -1156,6 +1156,21 @@ class GithubClient
     end
   end
 
+  # Fetches terminal alert dispositions needed for reconciliation without the
+  # per-alert instance and source enrichment used to create actionable issues.
+  # @spec GITHUB-SYNC-018
+  def code_scanning_alert_dispositions(repo, state:, per_page: 100)
+    raise ArgumentError, "state must be fixed or dismissed" unless %w[fixed dismissed].include?(state)
+
+    handle_errors do
+      alerts = client.paginate(
+        "#{Octokit::Repository.path(repo)}/code-scanning/alerts",
+        state:, per_page:
+      )
+      Array(alerts).map { |alert| code_scanning_alert_disposition_payload(alert) }
+    end
+  end
+
   # Fetches a single code scanning alert with the same target-branch enrichment
   # as {#code_scanning_alerts} at a fixed API cost, regardless of how many
   # other alerts are open on the repository.
@@ -1232,6 +1247,8 @@ class GithubClient
     {
       number: alert.number, state: alert.state, severity: rule&.security_severity_level,
       rule_id: rule&.id, rule_description: rule&.description, tool_name: tool&.name,
+      dismissed_reason: alert.dismissed_reason, dismissed_comment: alert.dismissed_comment,
+      dismissed_by: alert.dismissed_by&.login,
       summary: selected&.dig(:message),
       html_url: alert.html_url, created_at: alert.created_at,
       updated_at: alert.updated_at || alert.created_at, target_ref: target_ref,
@@ -1245,6 +1262,17 @@ class GithubClient
     }
   end
 
+  def code_scanning_alert_disposition_payload(alert)
+    {
+      number: alert.number, state: alert.state,
+      dismissed_reason: alert.dismissed_reason, dismissed_comment: alert.dismissed_comment,
+      dismissed_by: alert.dismissed_by&.login, html_url: alert.html_url,
+      created_at: alert.created_at, updated_at: alert.updated_at || alert.created_at
+    }
+  end
+
+  # Returns nil when the instances fetch fails so the payload can distinguish a
+  # degraded fetch from a genuinely empty instance list.
   # Instance access is part of the remediation evidence boundary. Do not turn
   # an authorization or transport failure into an apparently ordinary missing
   # location: callers must be able to block remediation and report the cause.
