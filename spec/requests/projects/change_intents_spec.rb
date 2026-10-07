@@ -38,6 +38,24 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(inbox_return)
       expect(ChangeIntent.where(id: change_intent.id)).to be_empty
     end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on approve and falls back to the project page" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
+      post approve_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "ignores an external return_to on discard and falls back to the project page" do
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "//evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_path(project))
+    end
   end
 
   describe "GET /projects/:project_id/change_intents/:id" do
@@ -98,6 +116,16 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("cannot discard from active")
+    end
+
+    # @spec CHANGE-INTENT-INBOX-001
+    it "falls back to the change-intent page when an external return_to is supplied on the invalid-transition rescue branch" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox")
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
     end
   end
 
@@ -196,32 +224,37 @@ RSpec.describe "Projects::ChangeIntents" do
 
       expect(response).to redirect_to(project_path(project))
     end
-  end
-
-  describe "open-redirect protection" do
-    let(:inbox_return) { "/inbox?kind=change_intent_draft&project_id=#{project.id}" }
 
     # @spec CHANGE-INTENT-INBOX-001
-    it "ignores an off-host return_to on approve and falls back to the project" do
-      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+    it "falls back to the change-intent page on the rescue branch when return_to is external" do
+      change_intent.update!(status: "active")
 
+      post request_changes_project_change_intent_path(project, change_intent,
+        return_to: "https://evil.example.com/inbox"),
+        params: { reason: "Too late." }
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+    end
+  end
+
+  # @spec CHANGE-INTENT-INBOX-001
+  describe "open-redirect protection" do
+    before { allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call) }
+
+    it "ignores an off-host return_to on approve and falls back to the project" do
       post approve_project_change_intent_path(project, change_intent,
         return_to: "https://evil.example/phish")
 
       expect(response).to redirect_to(project_path(project))
     end
 
-    # @spec CHANGE-INTENT-INBOX-001
     it "ignores a protocol-relative return_to on approve and falls back to the project" do
-      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
-
       post approve_project_change_intent_path(project, change_intent,
         return_to: "//evil.example/phish")
 
       expect(response).to redirect_to(project_path(project))
     end
 
-    # @spec CHANGE-INTENT-INBOX-001
     it "ignores an off-host return_to on discard and falls back to the project" do
       post discard_project_change_intent_path(project, change_intent,
         return_to: "https://evil.example/phish")
@@ -229,7 +262,6 @@ RSpec.describe "Projects::ChangeIntents" do
       expect(response).to redirect_to(project_path(project))
     end
 
-    # @spec CHANGE-INTENT-INBOX-001
     it "falls back to the change-intent show page for invalid transitions with an off-host return_to" do
       change_intent.update!(status: "active")
 
@@ -240,10 +272,11 @@ RSpec.describe "Projects::ChangeIntents" do
     end
   end
 
+  # @spec CHANGE-INTENT-INBOX-001
   describe "return_to URL sanitization" do
-    before { allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call) }
-
     it "falls back to the project page when return_to is an absolute URL" do
+      allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+
       post discard_project_change_intent_path(project, change_intent, return_to: "https://evil.example/phish")
 
       expect(response).to redirect_to(project_path(project))
