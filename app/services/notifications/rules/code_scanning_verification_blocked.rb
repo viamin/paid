@@ -3,8 +3,9 @@
 module Notifications
   module Rules
     # Surfaces unresolved code-scanning findings whose latest verification
-    # attempt is `verification_blocked` so operators see retryable blockers
-    # even when the issue is not in the manual_review lane yet. Auto-resolves
+    # attempt is `verification_blocked` so users can inspect retryable
+    # verification status without treating an automatic wait as an operator
+    # task. Auto-resolves
     # when the attempt transitions to `verified_fixed` or `verification_failed`
     # (the latter moves the issue into manual_review, providing the operator
     # escalation path; the manual_review lane replaces this notification).
@@ -32,8 +33,8 @@ module Notifications
         project = issue.project
 
         {
-          severity: :error,
-          blocking: true,
+          severity: :info,
+          blocking: false,
           title: "Code scanning fix awaits scanner evidence",
           description: build_description(attempt),
           nav_section: "projects",
@@ -82,22 +83,11 @@ module Notifications
       end
 
       def next_action_for(attempt)
-        if attempt.evidence["analysis_id"].present?
-          "Awaiting the next code-scanning scan on #{attempt.issue.project.default_branch}; the verifier re-evaluates blocked attempts on every relevant scan."
-        else
-          "Wait for the next code-scanning scan or repair the GitHub App permission; verification will re-run automatically."
-        end
+        "Review the recorded scanner evidence and alert status; Paid will re-evaluate this verification wait on relevant scans."
       end
 
-      def remediation_steps_for(attempt)
-        steps = []
-        steps << "Open the alert URL and confirm the CodeQL finding is still reported on the target branch."
-        steps << "If the finding is closed, the next verification pass will mark this attempt verified_fixed."
-        if attempt.blocked_reason.to_s.include?("configuration")
-          steps << "If the scanner's tool/category changed, update the project's code-scanning configuration and re-scan."
-        end
-        steps << "If the finding is real, merge a fix; the new PR records a fresh attempt that supersedes this blocked row."
-        steps
+      def remediation_steps_for(_attempt)
+        [ "Review the recorded scanner evidence and alert status." ]
       end
 
       def alert_label(attempt)
