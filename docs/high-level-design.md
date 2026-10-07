@@ -26,6 +26,10 @@ have moved elsewhere:
 - **Observability.** You cannot improve what you cannot measure. Token cost,
   iteration counts, success rates, and prompt effectiveness are invisible in an
   ad-hoc agent run.
+- **Coverage truth.** Safety automation is only trustworthy when its operator
+  surfaces distinguish a completed check from an unavailable one. Polling
+  failures, disabled checks, and stale evidence must remain visible rather
+  than being represented as a healthy empty result.
 - **Orchestration.** Turning a labeled issue into a merged PR is a multi-step
   workflow — plan, execute in an isolated container, open a PR, respond to
   review — that must be durable, resumable, and parallelizable.

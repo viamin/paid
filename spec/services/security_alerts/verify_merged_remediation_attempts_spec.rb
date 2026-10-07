@@ -48,7 +48,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
-  it "passes an upstream dismissal to verification rather than treating it as an absent alert" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-018
+  it "passes an upstream dismissal to verification rather than treating it as an absent alert" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
     stub_analyses([ analysis ])
     stub_compare("identical")
 

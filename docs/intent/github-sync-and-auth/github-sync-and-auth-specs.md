@@ -185,7 +185,24 @@
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/models/agent_run_prompt_assembly_spec.rb`.
 
-- [x] **GITHUB-SYNC-018** — Code-scanning reconciliation SHALL act only on an
+- [x] **GITHUB-SYNC-018** — When code-scanning discovery runs, the system
+  SHALL record the fetch attempt separately from the last successful complete
+  snapshot. It SHALL advance the successful watermark and clear an unresolved
+  failure only after a complete GitHub response, including a valid zero-alert
+  response. For disabled activation, an omitted `code_scanning` alert type,
+  permission denial, unavailable/not-configured scanning, rate limiting, and
+  transient API failure, it SHALL retain the successful watermark and expose a
+  non-clean coverage state to operators. It SHALL record the failure kind,
+  sanitized reason, and earliest retry using a failure-specific backoff.
+  Discovery SHALL target completion within 24 hours of activation at the
+  configured 24-hour default cadence; awaiting-remediation verification SHALL
+  be eligible at least hourly and SHALL not wait for that discovery cadence.
+  *Code:* `app/temporal/activities/scan_security_alerts_activity.rb`,
+  `app/models/project.rb`, `app/views/projects/show.html.erb`.
+  *Test:* `spec/temporal/activities/scan_security_alerts_activity_spec.rb`,
+  `spec/models/project_spec.rb`, `spec/requests/projects_spec.rb`.
+
+- [x] **GITHUB-SYNC-019** — Code-scanning reconciliation SHALL act only on an
   authoritative, complete snapshot explicitly scoped to the repository, target
   branch, and all scanner configurations. A partial, failed, filtered, or
   differently scoped response SHALL not close a synthetic finding. Resolution
@@ -208,12 +225,16 @@
   GitHub failures SHALL use bounded client retry; permission and configuration
   failures SHALL surface without retry.
   *Code:* `app/services/github_client.rb`,
+  `app/services/security_alerts/code_scanning_snapshot.rb`,
+  `app/services/security_alerts/reconcile_resolved.rb`,
   `app/services/prompt_assembly/build_issue_prompt.rb`, `app/models/agent_run.rb`,
   `app/temporal/activities/run_agent_activity.rb`,
   `app/temporal/activities/mark_agent_run_failed_activity.rb`.
   *Test:* `spec/services/github_client_spec.rb`,
   `spec/services/security_alerts/reconcile_resolved_spec.rb`,
   `spec/services/security_alerts/process_code_scanning_alerts_spec.rb`,
+  `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
+  `spec/services/security_alerts/verify_merged_remediation_attempts_spec.rb`,
   `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/models/agent_run_prompt_assembly_spec.rb`,
   `spec/temporal/activities/run_agent_activity_spec.rb`,

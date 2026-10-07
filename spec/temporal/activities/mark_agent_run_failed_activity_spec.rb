@@ -134,7 +134,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
     end
 
     it "preserves manual_review and its reason when code scanning evidence blocks the run" do
-      # @spec GITHUB-SYNC-018
+      # @spec GITHUB-SYNC-019
       # BuildIssuePrompt#refresh_code_scanning_context parks the synthetic
       # issue in manual_review before the failure propagates; failure
       # finalization must not clear the parking and re-arm auto-pick.

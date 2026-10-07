@@ -2511,7 +2511,7 @@ RSpec.describe GithubClient do
       end
 
       it "preserves an instance-fetch failure for remediation admission" do
-        # @spec GITHUB-SYNC-018
+        # @spec GITHUB-SYNC-019
         stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts/5/instances")
           .with(query: { "per_page" => "100" })
           .to_return(status: 500, body: { message: "Server Error" }.to_json)
@@ -2558,7 +2558,7 @@ RSpec.describe GithubClient do
   describe "#code_scanning_alert_dispositions" do
     let(:repo) { "owner/repo" }
 
-    it "returns terminal alert dispositions without fetching per-alert context" do # @spec GITHUB-SYNC-018
+    it "returns terminal alert dispositions without fetching per-alert context" do # @spec GITHUB-SYNC-019
       stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
         .with(query: { "state" => "dismissed", "per_page" => "100" })
         .to_return(

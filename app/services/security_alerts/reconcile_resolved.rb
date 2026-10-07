@@ -3,7 +3,7 @@
 module SecurityAlerts
   # Applies explicit upstream dispositions from an authoritative snapshot.
   # An omitted alert is not evidence that it was fixed.
-  # @spec GITHUB-SYNC-018
+  # @spec GITHUB-SYNC-019
   class ReconcileResolved
     def initialize(project, snapshot:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       @project = project

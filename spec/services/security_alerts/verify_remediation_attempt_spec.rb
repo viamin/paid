@@ -36,7 +36,7 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
-  it "blocks a dismissed upstream finding instead of recording a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-018
+  it "blocks a dismissed upstream finding instead of recording a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
     verify(alert: { number: 1838, state: "dismissed", dismissed_reason: "false positive" })
 
     expect(attempt.reload).to have_attributes(

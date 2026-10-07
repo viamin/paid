@@ -2535,7 +2535,7 @@ class AgentRun < ApplicationRecord
   # avoid duplication. Section provenance is persisted to external_metadata.
   #
   # @return [String, nil] The prompt to send to the agent
-  # @spec GITHUB-SYNC-018
+  # @spec GITHUB-SYNC-019
   def effective_prompt
     if code_scanning_remediation?
       base = prompt_for_goal
