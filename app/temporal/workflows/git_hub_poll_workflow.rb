@@ -250,21 +250,25 @@ module Workflows
         error.cause.type == "AuthError"
     end
 
-    # Scan for CodeQL code scanning alerts and create synthetic issues.
-    # Code scanning issues are picked up naturally by AutoPick — no immediate
-    # agent runs are triggered here.
+    # Scan security alerts. Code scanning issues are picked up naturally by
+    # AutoPick — no immediate agent runs are triggered here.
+    # @spec DEPENDABOT-COVERAGE-001
     def maybe_scan_code_scanning_alerts(project_id)
       run_activity(Activities::ScanSecurityAlertsActivity,
         { project_id: project_id }, **poll_activity_options(timeout: 120))
     rescue Temporalio::Error::ActivityError => e
-      raise unless e.cause.is_a?(Temporalio::Error::ApplicationError) &&
-        e.cause.type == "CodeScanningPermissionsError"
+      raise unless security_alert_permission_error?(e)
 
       Temporalio::Workflow.logger.warn(
-        message: "poll.code_scanning_configuration_error",
+        message: "poll.security_alert_configuration_error",
         project_id: project_id,
         error: e.cause.message
       )
+    end
+
+    def security_alert_permission_error?(error)
+      error.cause.is_a?(Temporalio::Error::ApplicationError) &&
+        %w[CodeScanningPermissionsError DependabotPermissionsError].include?(error.cause.type)
     end
 
     # Check if the project's knowledge base needs refreshing after HEAD advances.

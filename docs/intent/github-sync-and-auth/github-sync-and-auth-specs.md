@@ -259,6 +259,36 @@
   `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
 
+- [x] **DEPENDABOT-COVERAGE-001** — When a security scan runs, the system
+  SHALL reconcile each open Dependabot alert into a durable record keyed by
+  repository alert number and dependency/advisory identity. It SHALL retain
+  alert/advisory evidence and only link remediation PRs supplied by
+  authoritative evidence. An open PR SHALL be coverage but not proof of a
+  fix; closed-unmerged PRs, merged-but-still-open alerts, pinned vulnerable
+  resolutions, unavailable fixes, incompatible constraints, new alerts, and
+  unknown reasons SHALL remain visible. A verified reason SHALL be reported
+  only when evidence supplies it; otherwise it SHALL be `unknown`. After a
+  seven-day grace period uncovered alerts SHALL escalate; an escalation SHALL
+  clear its blocking notification once the alert regains coverage, is accepted,
+  or disappears from the authoritative snapshot. Accepted alerts SHALL
+  retain owner, reason, and expiry; removing an acceptance's owner (by
+  deleting that operator) SHALL end the acceptance and return the alert to
+  the uncovered escalation path with a fresh grace period rather than leave
+  an ownerless acceptance. Dependabot scans SHALL respect the configured
+  security scan interval, and a permission failure SHALL back off for one hour
+  before retrying or re-arming its visible coverage failure. Permission or
+  ingestion failures SHALL be visible coverage failures that resolve once a
+  scan succeeds again or Dependabot scanning is disabled. A Dependabot
+  ingestion or permission failure SHALL NOT prevent the independent
+  code-scanning scan from running in the same poll cycle.
+  *Code:* `app/services/github_client.rb`,
+  `app/services/security_alerts/process_dependabot_alerts.rb`,
+  `app/models/user.rb`,
+  `app/temporal/activities/scan_security_alerts_activity.rb`.
+  *Test:* `spec/services/security_alerts/process_dependabot_alerts_spec.rb`,
+  `spec/models/user_spec.rb`,
+  `spec/temporal/activities/scan_security_alerts_activity_spec.rb`.
+
 - [x] **GITHUB-SYNC-017** — When an App-backed project has an active PAT
   fallback and a GitHub API operation fails because the App cannot access the
   resource, the system SHALL retry that operation once with the PAT, including

@@ -1156,6 +1156,22 @@ class GithubClient
     end
   end
 
+  # Fetches the authoritative repository Dependabot-alert snapshot. The API
+  # does not make an absent remediation PR a failure reason, so callers retain
+  # that case as unknown. # @spec DEPENDABOT-COVERAGE-001
+  def dependabot_alerts(repo, state: "open", per_page: 100)
+    handle_errors do
+      path = "#{Octokit::Repository.path(repo)}/dependabot/alerts"
+      alerts = Array(client.paginate(path, state:, per_page:))
+      next [] if alerts.empty?
+
+      remediation_pull_requests = dependabot_remediation_pull_requests(repo, state:)
+      alerts.map do |alert|
+        dependabot_alert_payload(alert, remediation_pull_requests.fetch(alert.number, []))
+      end
+    end
+  end
+
   # Performs the smallest request that establishes whether the repository's
   # code-scanning alerts endpoint is available. Alert enrichment belongs to
   # reconciliation, not to the availability probe.
@@ -1221,6 +1237,64 @@ class GithubClient
   end
 
   private
+
+  def dependabot_alert_payload(alert, remediation_pull_requests)
+    dependency = alert.dependency
+    advisory = alert.security_advisory
+    {
+      number: alert.number, state: alert.state, dependency_name: dependency&.package&.name,
+      dependency_ecosystem: dependency&.package&.ecosystem, manifest_path: dependency&.manifest_path,
+      advisory_ghsa_id: advisory&.ghsa_id, advisory_cve_id: advisory&.cve_id,
+      first_patched_version: alert.security_vulnerability&.first_patched_version&.identifier,
+      remediation_pull_requests: remediation_pull_requests,
+      evidence: { html_url: alert.html_url, created_at: alert.created_at, updated_at: alert.updated_at }
+    }
+  end
+
+  def dependabot_remediation_pull_requests(repo, state:)
+    owner, name = repo.split("/", 2)
+    alerts = dependabot_vulnerability_alerts(owner, name, dependabot_alert_state(state))
+    alerts.each_with_object({}) do |alert, pull_requests|
+      pull_request = alert.dig("dependabotUpdate", "pullRequest")
+      pull_requests[alert["number"]] = [ dependabot_remediation_pr(pull_request) ] if pull_request
+    end
+  end
+
+  def dependabot_vulnerability_alerts(owner, name, state)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $after: String, $states: [RepositoryVulnerabilityAlertState!]) {
+        repository(owner: $owner, name: $name) {
+          vulnerabilityAlerts(first: 100, after: $after, states: $states) {
+            nodes { number dependabotUpdate { pullRequest { number url state mergedAt } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    GRAPHQL
+
+    alerts = []
+    after = nil
+    loop do
+      data = graphql_request(query, owner:, name:, after:, states: [ state ])
+      raise_graphql_errors(data, context: "fetching Dependabot updates for #{owner}/#{name}")
+      connection = data.dig("data", "repository", "vulnerabilityAlerts") || {}
+      alerts.concat(connection["nodes"] || [])
+      page_info = connection["pageInfo"] || {}
+      break unless page_info["hasNextPage"]
+
+      after = page_info.fetch("endCursor")
+      raise ApiError, "Dependabot update pagination returned no cursor" if after.blank?
+    end
+    alerts
+  end
+
+  def dependabot_alert_state(state)
+    state.to_s.upcase.tr("-", "_")
+  end
+
+  def dependabot_remediation_pr(pr)
+    { number: pr["number"], url: pr["url"], state: pr["state"].downcase, merged_at: pr["mergedAt"] }
+  end
 
   def code_scanning_analysis_payload(analysis)
     {

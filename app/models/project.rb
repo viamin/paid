@@ -232,6 +232,18 @@ class Project < ApplicationRecord
 
   TDD_MODE_OPTIONS = TDD_MODES.map { |mode| [ TDD_MODE_LABELS[mode], mode ] }.freeze
 
+  # Selectable GitHub alert sources the operator can opt in/out of per project.
+  # The array on `security_alert_types` is the operator's lever; this constant
+  # is the source of truth for which sources the UI offers. Adding a source
+  # here MUST be paired with a `ScanSecurityAlertsActivity` branch that
+  # surfaces failures from that source (DEPENDABOT-COVERAGE-001).
+  SECURITY_ALERT_TYPE_OPTIONS = [
+    [ "dependabot", "Dependabot alerts",
+      "Reconcile open Dependabot findings into durable coverage rows and surface alerts without an effective remediation PR." ],
+    [ "code_scanning", "Code scanning alerts",
+      "Fetch GitHub CodeQL alerts and create synthetic issues for open findings." ]
+  ].freeze
+
   # Human-facing select options for the project-level review_depth preset.
   # @spec REVIEW-DEPTH-008
   REVIEW_DEPTH_OPTIONS = REVIEW_DEPTHS.map { |preset| [ REVIEW_DEPTH_LABELS[preset], preset ] }.freeze
@@ -260,6 +272,8 @@ class Project < ApplicationRecord
   # Central upstream-mode capability checks and save-time gating (#4078).
   # @spec UPSTREAM-GATE-001 UPSTREAM-GATE-002
   include Project::UpstreamAutomation
+
+  has_many :dependabot_alert_coverages, dependent: :destroy
 
   belongs_to :github_token, counter_cache: true, optional: true
   belongs_to :github_installation, optional: true

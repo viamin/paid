@@ -1214,6 +1214,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
     t.index ["workflow_id", "decision_type"], name: "index_decomposition_decisions_on_workflow_id_and_decision_type"
   end
 
+  create_table "dependabot_alert_coverages", comment: "Durable alert-level Dependabot remediation coverage and escalation evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "project_id", null: false
+    t.integer "alert_number", null: false, comment: "GitHub Dependabot alert number within the repository."
+    t.string "dependency_name", null: false
+    t.string "dependency_ecosystem", null: false
+    t.string "manifest_path"
+    t.string "advisory_ghsa_id", null: false
+    t.string "advisory_cve_id"
+    t.string "alert_state", default: "open", null: false
+    t.string "coverage_state", default: "awaiting_processing", null: false
+    t.string "reason", default: "unknown", null: false
+    t.jsonb "remediation_pull_requests", default: [], null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "first_detected_at", null: false
+    t.datetime "last_detected_at", null: false
+    t.datetime "escalated_at"
+    t.bigint "accepted_by_id"
+    t.text "acceptance_reason"
+    t.datetime "acceptance_expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "uncovered_since", comment: "When the alert most recently transitioned from an effective remediation to an uncovered state; nil while the alert is covered. Drives the seven-day escalation grace check after a remediation PR closes unmerged."
+    t.index ["accepted_by_id"], name: "index_dependabot_alert_coverages_on_accepted_by_id"
+    t.index ["account_id"], name: "index_dependabot_alert_coverages_on_account_id"
+    t.index ["project_id", "alert_number"], name: "idx_on_project_id_alert_number_4aee5d2590", unique: true
+    t.index ["project_id", "alert_state", "last_detected_at"], name: "idx_dependabot_coverages_project_alert_state_detected", comment: "Supports projects#show listing of open Dependabot alerts (alert_state='open' filtered by project_id, ordered by last_detected_at desc) so the query stays a cheap index scan instead of growing linearly with backlog size."
+    t.index ["project_id", "coverage_state"], name: "idx_on_project_id_coverage_state_9626caa4b8"
+    t.index ["project_id", "dependency_ecosystem", "dependency_name", "advisory_ghsa_id", "manifest_path"], name: "index_dependabot_coverages_on_dependency_advisory_identity", unique: true
+    t.index ["project_id"], name: "index_dependabot_alert_coverages_on_project_id"
+  end
+
   create_table "design_amendment_follow_ups", comment: "Follow-up human decisions for already-merged work affected by a design revision; never auto-rolled back.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "decided_at"
@@ -1906,14 +1938,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
   end
 
   create_table "intent_conformance_decisions", comment: "Human resolutions of a material_drift/uncertain/not_evaluated intent-conformance verdict (RDR-067). A bounded_exception decision is scoped to its exact head_sha and stops applying the moment a new commit changes the PR HEAD.", force: :cascade do |t|
-    t.string "action", null: false, comment: "fix_pr, bounded_exception, or design_amendment (see IntentConformanceDecision::ACTIONS)."
-    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
-    t.datetime "created_at", null: false
-    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
     t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this decision resolves."
-    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
-    t.datetime "updated_at", null: false
     t.bigint "verdict_id", comment: "The intent-conformance verdict this decision responds to, when one exists."
+    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
+    t.string "action", null: false, comment: "fix_pr, bounded_exception, or design_amendment (see IntentConformanceDecision::ACTIONS)."
+    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
+    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
     t.index ["actor_id"], name: "index_intent_conformance_decisions_on_actor_id"
     t.index ["issue_id", "action", "head_sha"], name: "index_intent_conformance_decisions_on_issue_action_head"
     t.index ["issue_id"], name: "index_intent_conformance_decisions_on_issue_id"
@@ -1962,18 +1994,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
   end
 
   create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|
+    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
+    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
+    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
     t.string "approved_design_revision", null: false, comment: "Merged repository commit SHA of the approved RDR/LID design revision compared against."
+    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
+    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
     t.jsonb "cited_claims", default: [], null: false, comment: "Approved design claims the reviewer cited, e.g. [{design_ref:, claim_text:}]."
     t.jsonb "cited_diff_locations", default: [], null: false, comment: "PR diff locations the reviewer cited, e.g. [{file:, anchor:}]."
-    t.datetime "created_at", null: false
-    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
-    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
-    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
-    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
-    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
     t.text "reasoning_summary", comment: "Reviewer's reasoning summary, shown to a human resolving the Inbox decision."
-    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
-    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
+    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
+    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["issue_id", "pr_head_sha", "evaluated_at"], name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
     t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
@@ -2966,7 +2998,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
     t.datetime "scheduler_paused_at"
     t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
-    t.jsonb "security_alert_types", default: ["code_scanning"], null: false
+    t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
     t.string "setup_status", comment: "Blank-project bootstrap state: pending, in_progress, or completed. Null when setup is not required."
     t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
@@ -2977,6 +3009,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
     t.text "webhook_secret"
     t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
+    t.datetime "last_dependabot_scan_at", comment: "Timestamp of the most recent successful Dependabot alert scan. Uses code_scanning_interval_hours to limit polling."
+    t.datetime "dependabot_permission_error_at", comment: "Timestamp of the most recent Dependabot permissions error. Used to back off identical failures until credentials or repository settings change."
+    t.datetime "dependabot_fetch_error_at", comment: "Timestamp of the most recent transient Dependabot fetch failure. Used to back off retries without blocking code-scanning coverage."
     t.datetime "last_code_scanning_scan_attempted_at", comment: "Timestamp of the most recent request to fetch code-scanning alerts. This is distinct from the last complete successful snapshot."
     t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
     t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
@@ -4022,6 +4057,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
   add_foreign_key "decision_records", "projects", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "issues", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
+  add_foreign_key "dependabot_alert_coverages", "accounts"
+  add_foreign_key "dependabot_alert_coverages", "projects"
+  add_foreign_key "dependabot_alert_coverages", "users", column: "accepted_by_id"
   add_foreign_key "design_amendment_follow_ups", "design_amendments"
   add_foreign_key "design_amendment_follow_ups", "issues"
   add_foreign_key "design_amendment_follow_ups", "users", column: "decided_by_id"

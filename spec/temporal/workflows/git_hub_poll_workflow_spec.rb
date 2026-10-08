@@ -576,7 +576,30 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }.not_to raise_error
 
       expect(logger).to have_received(:warn).with(hash_including(
-        message: "poll.code_scanning_configuration_error",
+        message: "poll.security_alert_configuration_error",
+        project_id: 1
+      ))
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "swallows DependabotPermissionsError and continues the poll cycle" do
+      config_error = Temporalio::Error::ApplicationError.new(
+        "Token lacks Dependabot alert permission",
+        type: "DependabotPermissionsError",
+        non_retryable: true
+      )
+      activity_error = activity_error_with_cause(config_error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything, heartbeat_timeout: anything)
+        .and_raise(activity_error)
+
+      logger = instance_double(Logger, warn: nil)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+
+      expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }.not_to raise_error
+
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "poll.security_alert_configuration_error",
         project_id: 1
       ))
     end
