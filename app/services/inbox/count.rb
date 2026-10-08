@@ -95,13 +95,13 @@ module Inbox
     # A structured hold is actionable before the scanner persists a blocker
     # snapshot and does not depend on a configured owner reviewer.
     def merge_approval_candidate_conditions
-      Issue.sanitize_sql_array([ <<~SQL.squish, hold_label: Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
-        issues.labels::jsonb ? :hold_label OR (
-          issues.auto_merge_evaluated_at IS NOT NULL AND
-          issues.auto_merge_blockers IS NOT NULL AND
-          projects.owner_reviewer_login IS NOT NULL
-        )
-      SQL
+      Issue.sanitize_sql_array([
+        "issues.labels @> :hold_label::jsonb OR (" \
+          "issues.auto_merge_evaluated_at IS NOT NULL AND " \
+          "issues.auto_merge_blockers IS NOT NULL AND " \
+          "projects.owner_reviewer_login IS NOT NULL)",
+        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
+      ])
     end
 
     # A direct indexed count, unlike merge_approval_count: escalation is a

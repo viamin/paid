@@ -98,8 +98,20 @@ module Prompts
       5. **Open a docs-only PR**: Open a pull request whose diff contains only
          the new RDR file and the README update. Describe the PR so a reviewer
          can find the feature brief for context. Immediately apply the
-         structured review hold with `gh pr edit --add-label paid-hold-review`;
-         the PR needs a human decision before it can land. Do not include code
+         structured review hold through the GitHub API proxy; no `gh` CLI exists
+         in this environment. Use the repository and pull request number from
+         the PR URL:
+
+         ```bash
+         curl -X POST --connect-timeout 10 --max-time 30 \
+           "$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels" \
+           -H "Content-Type: application/json" \
+           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+           -H "X-Proxy-Token: $PROXY_TOKEN" \
+           --data-binary '{"labels":["paid-hold-review"]}'
+         ```
+
+         The PR needs a human decision before it can land. Do not include code
          changes.
       6. **Decompose into an issue tree**: Read the RDR's Implementation Plan
          and produce one epic issue, one issue per phase (or per task, for

@@ -93,7 +93,9 @@ RSpec.describe Prompts::BuildForCreateFeature do
         feature_brief: feature_brief
       )
 
-      expect(prompt).to include("gh pr edit --add-label paid-hold-review")
+      expect(prompt).to include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"')
+      expect(prompt).to include('"X-Agent-Run-Id: $AGENT_RUN_ID"')
+      expect(prompt).to include('"X-Proxy-Token: $PROXY_TOKEN"')
     end
 
     it "honours a pinned target_rdr_number when present" do

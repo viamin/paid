@@ -467,7 +467,9 @@ RSpec.describe Prompt, type: :model do
       templates = [ seed_template, fallback_template ]
 
       expect(templates).to all(include("paid-hold-review"))
-      expect(templates).to all(include("gh pr edit --add-label paid-hold-review"))
+      expect(templates).to all(include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"'))
+      expect(templates).to all(include('"X-Agent-Run-Id: $AGENT_RUN_ID"'))
+      expect(templates).to all(include('"X-Proxy-Token: $PROXY_TOKEN"'))
     end
   end
 end

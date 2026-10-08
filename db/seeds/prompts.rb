@@ -67,7 +67,19 @@ upsert_global_prompt.call(
     6. Commit your changes with a descriptive message
 
     If you open a pull request that requires human judgment before it can land,
-    apply the structured review hold with `gh pr edit --add-label paid-hold-review`.
+    apply the structured review hold through the GitHub API proxy; no `gh` CLI
+    exists in this environment. Use the repository and pull request number from
+    the PR URL:
+
+    ```bash
+    curl -X POST --connect-timeout 10 --max-time 30 \
+      "$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels" \
+      -H "Content-Type: application/json" \
+      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+      -H "X-Proxy-Token: $PROXY_TOKEN" \
+      --data-binary '{"labels":["paid-hold-review"]}'
+    ```
+
     Do not rely on prose in the pull request body: Paid auto-merge honors the
     label and surfaces the pull request in the Inbox until a human removes it.
 

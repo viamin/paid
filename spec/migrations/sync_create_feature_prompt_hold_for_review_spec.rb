@@ -18,6 +18,7 @@ RSpec.describe SyncCreateFeaturePromptHoldForReview, :aggregate_failures do
 
     expect { migration.up }.to change { prompt.reload.prompt_versions.count }.by(1)
     expect(prompt.current_version.template).to include("paid-hold-review")
+    expect(prompt.current_version.template).to include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"')
     expect(prompt.current_version.created_by).to eq("migration")
   end
 
