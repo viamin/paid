@@ -248,8 +248,13 @@
   `create_issue`/`edit_issue` tools use), SHALL refresh the local dependency
   records without waiting for the next sync, SHALL show the successful
   linkage, and SHALL explain when a full GitHub sync is still required (body
-  edits made directly on GitHub).
+  edits made directly on GitHub). When the proposed prerequisite already
+  depends on the stalled issue, the system SHALL refuse the link before
+  changing GitHub or local state; when GitHub access is unavailable, it SHALL
+  explain that the project must be configured instead of raising an error.
   *Code:* `app/controllers/projects/agent_runs_controller.rb`,
+  `app/services/issues/link_prerequisite.rb`,
+  `app/services/project_conventions/issue_dependencies.rb`,
   `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
   *Test:* `spec/requests/projects/link_prerequisite_spec.rb`.
 

@@ -31,14 +31,20 @@ module Issues
         return failure(:unknown_issue,
           "Paid has no local record of ##{number} yet — run a project sync first, then link the prerequisite.")
       end
+      if Issues::DetectCycle.call(from_issue: prerequisite, target_issue_id: issue.id)
+        return failure(:cycle, "##{number} already depends on this issue — linking it here would create a dependency cycle.")
+      end
 
-      body = current_remote_body
+      client = issue.project.client
+      return failure(:github_unavailable, "GitHub access is not configured for this project.") unless client
+
+      body = current_remote_body(client)
       updated_body = append_dependency_line(body)
       if updated_body != body
-        issue.project.client.update_issue(issue.project.full_name, issue.github_number, body: updated_body)
+        client.update_issue(issue.project.full_name, issue.github_number, body: updated_body)
       end
       issue.update!(body: updated_body)
-      Issues::ParseDependencies.call(issue: issue, body: updated_body, comments: trusted_comment_bodies)
+      Issues::ParseDependencies.call(issue: issue, body: updated_body, comments: trusted_comment_bodies(client))
 
       Audit::RecordEvent.call(
         action: "issue.prerequisite_linked",
@@ -67,38 +73,22 @@ module Issues
     # Base the rewrite on the live GitHub body, not the local copy, so human
     # edits made since the last sync survive (same pattern as
     # PartialCloseouts::Reconcile#publish_parent_dependencies!).
-    def current_remote_body
-      issue.project.client.issue(issue.project.full_name, issue.github_number).body.to_s
-    end
-
-    def dependency_line
-      "- #{ProjectConventions::IssueDependencies.depends_on_line(project: issue.project, github_number: number, resolved: nil)}"
+    def current_remote_body(client)
+      client.issue(issue.project.full_name, issue.github_number).body.to_s
     end
 
     def append_dependency_line(body)
-      return body if body.match?(/\b#{Regexp.escape(dependency_line.sub(/\A- /, ""))}\b/)
-
-      heading = ProjectConventions::IssueDependencies.heading(project: issue.project, resolved: nil)
-      return insert_under_heading(body, heading) if body.include?(heading)
-
-      [ body, heading, dependency_line ].reject(&:blank?).join("\n\n")
-    end
-
-    def insert_under_heading(body, heading)
-      heading_start = body.index(heading)
-      remainder = body[(heading_start + heading.length)..].to_s
-      section, trailing = remainder.split(/(?=\n\s*#)/, 2)
-      updated_section = [ section.rstrip, dependency_line ].reject(&:blank?).join("\n")
-      [ body[0...heading_start].rstrip, heading, updated_section, trailing.to_s.lstrip ]
-        .reject(&:blank?).join("\n\n")
+      ProjectConventions::IssueDependencies.append_dependency_lines(
+        project: issue.project, github_numbers: [ number ], body:
+      )
     end
 
     # Preserve comment-declared dependencies through the immediate re-parse:
     # the parser replaces the local set with what the body + comments imply,
     # so re-derive the same comment baseline the sync path uses (trusted
     # authors, oldest-first).
-    def trusted_comment_bodies
-      issue.project.client.recent_issue_comments(issue.project.full_name, issue.github_number)
+    def trusted_comment_bodies(client)
+      client.recent_issue_comments(issue.project.full_name, issue.github_number)
         .select { |comment| issue.project.trusted_github_user?(comment.user&.login) }
         .map { |comment| comment.body.to_s }
     end

@@ -91,6 +91,32 @@ RSpec.describe "Link prerequisite from the partial closeout pane" do # @spec PAR
     expect(github_client).not_to have_received(:update_issue)
   end
 
+  it "refuses a prerequisite that already depends on the stalled issue" do
+    sign_in user
+    IssueDependency.create!(issue: prerequisite, depends_on_issue: issue)
+
+    post link_prerequisite_project_agent_runs_path(project), params: { issue_id: issue.id, depends_on: "#41" }
+
+    expect(flash[:alert]).to include("already depends on this issue")
+    expect(issue.reload.body).to eq("Original body.")
+    expect(issue.issue_dependencies).to be_empty
+    expect(github_client).not_to have_received(:issue)
+    expect(github_client).not_to have_received(:update_issue)
+    expect(account.account_activity_events.where(action: "issue.prerequisite_linked")).not_to exist
+  end
+
+  it "explains when GitHub access is unavailable" do
+    sign_in user
+    installation = create(:github_installation, :revoked, account: account)
+    project.update_columns(github_token_id: nil, github_installation_id: installation.id)
+
+    post link_prerequisite_project_agent_runs_path(project), params: { issue_id: issue.id, depends_on: "#41" }
+
+    expect(flash[:alert]).to include("GitHub access is not configured")
+    expect(issue.reload.body).to eq("Original body.")
+    expect(issue.issue_dependencies).to be_empty
+  end
+
   it "is idempotent when the wording is already on the issue" do
     sign_in user
     remote_issue.body = "## Dependencies\n- Depends on #41"
