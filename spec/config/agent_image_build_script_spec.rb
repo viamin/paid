@@ -168,8 +168,10 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).to include('BUN_ASSET="bun-linux-x64-baseline.zip"')
     end
 
+    # @spec CONTAINER-RUNTIME-029
     it "verifies the current Kilocode SQLite seed after warming the CLI" do
-      expect(dockerfile_source).to include("test -f /home/agent/.local/share/kilo/kilo-rc.db")
+      expect(dockerfile_source).to include("test -f /home/agent/.local/share/kilo/kilo.db")
+      expect(dockerfile_source).not_to include("test -f /home/agent/.local/share/kilo/kilo-rc.db")
     end
 
     it "redirects omp install temp files into the larger shared workdir" do

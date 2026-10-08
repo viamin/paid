@@ -549,7 +549,9 @@
   SQLite state (db + WAL) and file snapshots do not exhaust it — once the
   tmpfs is full, every subsequent CLI start in that container fails at
   startup on `PRAGMA wal_checkpoint` (tmpfs ENOSPC; reproduced for both
-  CLIs against `paid-agent:latest`).
+  CLIs against `paid-agent:latest`). The image build SHALL validate and retain
+  the SQLite database file produced by its contract-owned Kilocode CLI version
+  so provisioning can seed that database into the runtime tmpfs.
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision` tmpfs configuration.
 - [x] **CONTAINER-RUNTIME-032** — The system SHALL persist a durable
