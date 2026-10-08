@@ -27,6 +27,7 @@ class DependabotAutoMergeJob < ApplicationJob
   EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
   PAID_AUTO_MERGED_LABEL = "paid-auto-merged-dependabot"
   SKIP_AUTO_MERGE_LABEL = Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+  HOLD_FOR_REVIEW_LABEL = Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL
   MERGE_PERMISSION_COMMENT_MARKER = "<!-- paid: dependabot-merge-permission-rejection -->"
 
   def perform(project_id, pr_number: nil)
@@ -55,6 +56,7 @@ class DependabotAutoMergeJob < ApplicationJob
     return unless pr_data
 
     return if skip_auto_merge_label?(project, pr_data)
+    return if hold_for_review_label?(project, pr_data)
     return if skip_merge_permission_cooldown?(project, pr_data)
     return if skip_unmergeable?(client, project, pr_data)
 
@@ -80,6 +82,7 @@ class DependabotAutoMergeJob < ApplicationJob
       next unless pr_data
 
       next if skip_auto_merge_label?(project, pr_data)
+      next if hold_for_review_label?(project, pr_data)
       next if skip_merge_permission_cooldown?(project, pr_data)
       next if skip_unmergeable?(client, project, pr_data)
 
@@ -93,29 +96,49 @@ class DependabotAutoMergeJob < ApplicationJob
   end
 
   def skip_auto_merge_label?(project, pr_data)
-    pr_labels = if pr_data.respond_to?(:labels)
-      Array(pr_data.labels).map { |l| l.respond_to?(:name) ? l.name : l[:name] }
-    else
-      Array(pr_data[:labels]).map { |l| l[:name] }
-    end
+    skip_for_label?(
+      project,
+      pr_data,
+      label: SKIP_AUTO_MERGE_LABEL,
+      reason: "skip_auto_merge_label",
+      reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL
+    )
+  end
 
-    return false unless pr_labels.include?(SKIP_AUTO_MERGE_LABEL)
+  # @spec AUTO-MERGE-009
+  def hold_for_review_label?(project, pr_data)
+    skip_for_label?(
+      project,
+      pr_data,
+      label: HOLD_FOR_REVIEW_LABEL,
+      reason: "hold_for_review_label",
+      reason_code: AutoMergeAttempts::Record::REASON_HOLD_FOR_REVIEW
+    )
+  end
+
+  def skip_for_label?(project, pr_data, label:, reason:, reason_code:)
+    return false unless pull_request_labels(pr_data).include?(label)
 
     Rails.logger.info(
       message: "dependabot_auto_merge.skipped",
       project_id: project.id,
       pr_number: pr_number_from(pr_data),
-      reason: "skip_auto_merge_label"
+      reason: reason
     )
     record_attempt(
       project,
       pr_number_from(pr_data),
       status: "skipped",
-      reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL,
-      message: "Auto-merge skipped because the PR has the #{SKIP_AUTO_MERGE_LABEL} label.",
+      reason_code: reason_code,
+      message: "Auto-merge skipped because the PR has the #{label} label.",
       credential_mode: AutoMergeAttempt.primary_credential_mode(project)
     )
     true
+  end
+
+  def pull_request_labels(pr_data)
+    labels = pr_data.respond_to?(:labels) ? pr_data.labels : pr_data[:labels]
+    Array(labels).map { |label| label.respond_to?(:name) ? label.name : label[:name] }
   end
 
   def skip_unmergeable?(client, project, pr_data)

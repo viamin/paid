@@ -38,6 +38,8 @@ module Automation
       #   current bot auto-merge executor.
       # * +skip_auto_merge+ — the +paid-skip-auto-merge+ label is present
       #   on the issue/PR, preventing automatic merging.
+      # * +hold_for_review+ — the +paid-hold-review+ label is present on the
+      #   issue/PR, requiring a human to release the PR before it can merge.
       # * +intent_conformance_ok+ — the PR HEAD has a current, within-scope
       #   intent-conformance verdict, or a matching human-approved bounded
       #   exception (RDR-067). Defaults to +true+ so projects that have not
@@ -56,6 +58,7 @@ module Automation
         :dependabot_eligible,
         :merge_executor_supported,
         :skip_auto_merge,
+        :hold_for_review,
         :intent_conformance_ok
       )
         class << self
@@ -76,6 +79,7 @@ module Automation
               dependabot_eligible: kwargs.fetch(:dependabot_eligible, false),
               merge_executor_supported: kwargs.fetch(:merge_executor_supported, false),
               skip_auto_merge: kwargs.fetch(:skip_auto_merge, false),
+              hold_for_review: kwargs.fetch(:hold_for_review, false),
               intent_conformance_ok: kwargs.fetch(:intent_conformance_ok, true)
             )
           end
@@ -92,6 +96,7 @@ module Automation
         def dependabot_eligible? = dependabot_eligible == true
         def merge_executor_supported? = merge_executor_supported == true
         def skip_auto_merge? = skip_auto_merge == true
+        def hold_for_review? = hold_for_review == true
         def intent_conformance_ok? = intent_conformance_ok == true
       end
     end

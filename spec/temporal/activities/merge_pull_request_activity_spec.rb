@@ -113,6 +113,52 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when issue has the paid-hold-review label" do
+      before do
+        issue.update!(labels: issue.labels + [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
+      end
+
+      # @spec AUTO-MERGE-009
+      it "does not merge the review-gated PR" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          issue: issue,
+          status: "skipped",
+          reason_code: AutoMergeAttempts::Record::REASON_HOLD_FOR_REVIEW
+        )
+      end
+    end
+
+    context "when GitHub has the paid-hold-review label but the local issue is stale" do
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+          created_at: Time.current, updated_at: Time.current, merged_at: nil,
+          url: "https://example.com/pr/42", raw_state: "open"
+        )
+      end
+
+      before do
+        allow(provider).to receive(:fetch_pull_request)
+          .with(repo: project.full_name, number: 42)
+          .and_return(pr_data)
+        allow(provider).to receive(:merge_pull_request)
+      end
+
+      # @spec AUTO-MERGE-009
+      it "does not merge the review-gated PR" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+    end
+
     context "when PR is not yet merged" do
       let(:pr_data) do
         Automation::Providers::Data::PullRequest.new(

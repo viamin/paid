@@ -77,3 +77,10 @@
   `Dashboard::NeedsInputQueue` spec SHALL stay green.
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
+
+- [x] **INBOX-FOUNDATION-008** — When an open ready pull request has the
+  structured `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
+  `merge_approval` entry with a human-review summary even if its ordinary
+  auto-merge blocker snapshot is absent or has other blockers.
+  *Tests:* `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/merge_approval.rb`.

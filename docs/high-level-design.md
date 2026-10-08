@@ -78,7 +78,10 @@ case qualifying PRs merge without a per-PR owner click; that delegation is
 explicit, scoped, and revocable. The Paid Review Bot (`paid-code-reviewer[bot]`)
 adds an automated review pass, but the authority over whether a change lands
 always rests with a human — exercised per-PR by default, or through the
-auto-merge configuration when the owner has enabled it.
+auto-merge configuration when the owner has enabled it. An agent can retain
+that human decision for a particular PR by applying the structured
+`paid-hold-review` label; the hold blocks auto-merge and makes the PR an
+actionable Inbox item until a human releases it.
 
 The same human review boundary applies when a completed issue is reopened:
 Paid parks the reopened issue for validation of the prior closure and current

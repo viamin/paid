@@ -455,4 +455,21 @@ RSpec.describe Prompt, type: :model do
       expect(fallback_template).to include("Do not treat closed child issues as sufficient evidence")
     end
   end
+
+  describe "coding.issue_implementation review hold guidance" do
+    let(:seed_template) do
+      described_class.global.find_by(slug: "coding.issue_implementation").current_version.template
+    end
+
+    let(:fallback_template) { PromptAssembly::Sections::IssueTask::FALLBACK_PROMPT }
+
+    it "instructs runs to structurally hold a review-gated PR" do
+      templates = [ seed_template, fallback_template ]
+
+      expect(templates).to all(include("paid-hold-review"))
+      expect(templates).to all(include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"'))
+      expect(templates).to all(include('"X-Agent-Run-Id: $AGENT_RUN_ID"'))
+      expect(templates).to all(include('"X-Proxy-Token: $PROXY_TOKEN"'))
+    end
+  end
 end

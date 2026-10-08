@@ -27,6 +27,7 @@ module Inbox
       end
 
       def summary
+        return "Human review requested before merging" if held_for_review?
         return "Waiting for owner re-approval on the current HEAD commit" if stale_approval?
 
         "Waiting for owner approval"
@@ -41,6 +42,10 @@ module Inbox
       def stale_approval?
         blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
       end
+
+      def held_for_review?
+        issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      end
     end
 
     private
@@ -48,12 +53,27 @@ module Inbox
     attr_reader :issue
 
     def candidate?
+      # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+      return false unless reviewable_pr?
+      return true if held_for_review?
+
+      approval_only_blockers?
+    end
+
+    def reviewable_pr?
       issue.is_pull_request? &&
         issue.github_state == "open" &&
         issue.pr_review_phase == "ready" &&
         issue.project.auto_merge_enabled? &&
-        issue.project.owner_reviewer_login.present? &&
-        !issue.merge_permission_rejected? &&
+        !issue.merge_permission_rejected?
+    end
+
+    def held_for_review?
+      issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+    end
+
+    def approval_only_blockers?
+      issue.project.owner_reviewer_login.present? &&
         blockers_snapshot.present? &&
         failed_blockers.any? &&
         not_evaluated_blockers.empty? &&

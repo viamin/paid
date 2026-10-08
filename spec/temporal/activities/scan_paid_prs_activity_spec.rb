@@ -6945,6 +6945,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.reload.awaiting_approval_since).to be_nil
       end
 
+      # @spec AUTO-MERGE-009
+      it "clears the wait without escalating when paid-hold-review requires human release" do
+        pr_issue.update!(
+          labels: [ "paid-generated", "paid-automation", Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+          awaiting_approval_since: 25.hours.ago
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(pr_issue.reload.awaiting_approval_since).to be_nil
+      end
+
       it "re-requests review and clears the wait when the approval is stale for the head commit" do
         pr_issue.update_columns(awaiting_approval_since: 25.hours.ago)
         stub_github_for_pr(

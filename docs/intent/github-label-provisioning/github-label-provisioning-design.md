@@ -12,7 +12,7 @@ automation, and the built-in auto-pick skip labels. Before this segment,
 `Projects::EnsureStandardLabels` provisioned only a subset of that contract
 (the four config-driven labels, `recommend_close`, `paused`, the three TDD
 labels, and priority tiers). Everything else — `paid-escalated`,
-`paid-dismiss-escalation`, `paid-skip-auto-merge`, `paid-auto-merged`,
+`paid-dismiss-escalation`, `paid-skip-auto-merge`, `paid-hold-review`, `paid-auto-merged`,
 `paid-auto-merged-dependabot`, `paid-auto-released`, `model-health`, and the
 auto-pick skip labels (`planning`/`research`/`waiting`/`tracking`/
 `needs-manual-setup`) — was assumed to already exist by the code paths that
@@ -26,7 +26,7 @@ Two separate risks follow from that gap:
   picker with no (or a stale) description doesn't communicate that applying
   or removing it changes Paid's behavior. This is most dangerous for the
   labels a human or a non-Paid bot might apply directly (`paused`, the
-  auto-pick skip labels, `paid-skip-auto-merge`), since the label name alone
+  auto-pick skip labels, `paid-skip-auto-merge`, `paid-hold-review`), since the label name alone
   doesn't say what it does.
 
 The prior service also only *reported* description drift (`divergent`) rather
@@ -41,7 +41,7 @@ contract for every GitHub label with a Paid behavioral consequence. Its
 
 - `:control` — applying or removing the label changes automation
   (`paid-automation`, `paid-paused`, `paid-escalated`,
-  `paid-skip-auto-merge`, the three TDD gate labels, the auto-pick skip
+  `paid-skip-auto-merge`, `paid-hold-review`, the three TDD gate labels, the auto-pick skip
   labels).
 - `:activation` — the label turns one feature on for one issue or pull
   request when the project-level setting is otherwise off

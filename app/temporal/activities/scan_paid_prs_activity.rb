@@ -1194,7 +1194,7 @@ module Activities
     # it can wait forever. A failed intent-conformance signal is a non-approval
     # blocker: pinging the owner for an approval that cannot clear the merge
     # would be misleading (RDR-067 Decision section).
-    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009
+    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009 @spec AUTO-MERGE-009
     def blocked_only_on_approval?(project, client, issue, signals)
       return false if project.owner_reviewer_login.blank?
       return false if signals.nil?
@@ -1206,6 +1206,7 @@ module Activities
       return false unless signals.blocking_reviews_complete?
       return false unless signals.reviews_fresh?
       return false if signals.skip_auto_merge?
+      return false if signals.hold_for_review?
 
       # Signals resolve dependencies only when every other precondition
       # passed (they gate an extra API round-trip), so compute them here for
@@ -3665,6 +3666,7 @@ module Activities
       end
 
       skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
       # @spec INTENT-CONFORMANCE-007
       intent_conformance_ok = IntentConformance::Signal.ok?(
         project: project, issue: issue, head_sha: pr_head_sha(pr_data)
@@ -3681,6 +3683,7 @@ module Activities
         reviews_fresh: reviews_fresh,
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label,
+        hold_for_review: hold_for_review,
         intent_conformance_ok: intent_conformance_ok
       )
 
@@ -3707,6 +3710,7 @@ module Activities
       end
 
       skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
@@ -3717,7 +3721,8 @@ module Activities
         checks_green: checks_green,
         mergeable: mergeable_signal,
         dependencies_resolved: dependencies_resolved,
-        skip_auto_merge: skip_label
+        skip_auto_merge: skip_label,
+        hold_for_review: hold_for_review
       )
 
       log_skip_auto_merge(project, issue) if skip_label
