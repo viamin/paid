@@ -226,8 +226,8 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       result = request_continuation
 
       expect(result.success?).to be(false)
-      expect(result.code).to eq(:ineligible)
-      expect(result.message).to include("auto-pick eligibility guard")
+      expect(result.code).to eq(:unavailable)
+      expect(result.message).to include("exact guard is unavailable")
       expect(issue.agent_runs).to be_empty
       expect(IssueContinuationRequest.count).to eq(0)
     end

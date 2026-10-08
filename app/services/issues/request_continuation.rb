@@ -67,7 +67,7 @@ module Issues
       end
 
       blocker = status.blockers.first
-      return failure(blocker.code, blocker.message) if blocker
+      return failure(blocker.code, status.reason) if blocker
       if status.admissible
         return failure(:not_stalled, "This issue is already admissible to automatic scheduling; there is nothing to continue past.")
       end

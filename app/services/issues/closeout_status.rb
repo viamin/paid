@@ -7,14 +7,15 @@ module Issues
   #
   # The status derives from {CloseoutEvidence} plus the same eligibility
   # guards auto-pick applies (`DefaultCandidateSource.eligible_scope` is the
-  # admission authority), so the Inbox shows the *actual* blocker rather than
-  # a parallel heuristic. Explicit operator states (paused flag, project
+  # admission authority). Diagnostics name evidence from the guard which
+  # denied admission; an unknown denial is deliberately marked unavailable,
+  # never guessed. Explicit operator states (paused flag, project
   # pause, skip labels, needs-input/manual-review, retry abandonment) are
   # deliberate holds with their own lanes — they surface as blockers, not as
   # stalls.
-  # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-004
+  # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-012
   class CloseoutStatus
-    Blocker = Struct.new(:code, :message, keyword_init: true)
+    Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -86,26 +87,18 @@ module Issues
         .eligible_scope(issue.project).pluck(:id)
     end
 
-    # Targeted walk over the guards that can hold an evidence-carrying issue
-    # out of admission, producing user-facing reasons. Used by the Inbox
-    # detail (the exact reason automatic continuation cannot proceed) and by
-    # {RequestContinuation} refusal mapping. The authoritative admit/deny
-    # decision remains `eligible_scope` with the scoped lift — this walk only
-    # explains it.
+    # Each diagnostic interrogates the same persisted state consumed by the
+    # candidate source. Keep this list additive: simultaneous guards must all
+    # be visible rather than having the first one conceal the rest.
     def self.admission_blockers(issue)
       prerequisite_blockers(issue) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue) + trust_blockers(issue) + feature_hold_blockers(issue) +
-        analysis_backoff_blockers(issue)
+        analysis_backoff_blockers(issue) + scanner_verification_blockers(issue)
     end
 
-    # The walk above only explains the guards with clear per-issue reasons;
-    # it can lag `eligible_scope` as new guards are added. This residual
-    # preflight settles admission with the exact scoped decision the
-    # dequeue-time recheck enforces (`eligible_for_dequeue?` carrying this
-    # issue's continuation authorization), so {RequestContinuation} refuses
-    # up front — with the reason — instead of queueing a run dequeue would
-    # cancel and supersede, and the lane explains the real blocker instead
-    # of the duplicate-work fallback (#4130 review).
+    # The scoped preflight is the admission authority. If it rejects after all
+    # known guard diagnostics, do not invent a likely cause: callers get an
+    # explicit investigation path and the exact dequeue decision remains safe.
     # @spec PARTIAL-CLOSEOUT-004
     def self.residual_eligibility_blocker(issue, continuation_eligible_issue_ids)
       admissible = if continuation_eligible_issue_ids
@@ -121,11 +114,10 @@ module Issues
       return nil if admissible
 
       Blocker.new(
-        code: :ineligible,
-        message: "Another auto-pick eligibility guard (for example open tracker references, " \
-                 "an open linked pull request, an unresolved prerequisite notification, or a model " \
-                 "tier no enabled runner can satisfy) still holds this issue out of scheduling; " \
-                 "clear that guard before requesting a continuation."
+        code: :unavailable,
+        message: "The scoped dequeue admission check rejected this issue, but its exact guard is unavailable.",
+        evidence: { "issue_id" => issue.id, "project_id" => issue.project_id },
+        recovery: "Investigate the auto-pick eligibility trace and runner configuration, then request continuation again."
       )
     end
 
@@ -135,7 +127,9 @@ module Issues
 
       [ Blocker.new(
         code: :unmet_prerequisites,
-        message: "Unresolved prerequisite work (#{labels.join(', ')}) must be resolved or linked before continuation."
+        message: "Unresolved prerequisite work (#{labels.join(', ')}) must be resolved or linked before continuation.",
+        evidence: { "prerequisites" => labels },
+        recovery: "Resolve the listed prerequisite work or update its dependency link, then request continuation again."
       ) ]
     end
 
@@ -144,19 +138,22 @@ module Issues
       if issue.paused? || issue.project.paused? || issue.project.quality_paused_at.present?
         blockers << Blocker.new(
           code: :operator_pause,
-          message: "An explicit pause is active (the issue or its project is paused), and a continuation never bypasses it."
+          message: "An explicit pause is active (the issue or its project is paused), and a continuation never bypasses it.",
+          recovery: "An authorized operator must remove the explicit pause."
         )
       end
       if issue.paid_state.in?(%w[needs_input manual_review])
         blockers << Blocker.new(
           code: :operator_pause,
-          message: "The issue is waiting for a human decision (#{issue.paid_state.tr('_', ' ')}); resolve that state first."
+          message: "The issue is waiting for a human decision (#{issue.paid_state.tr('_', ' ')}); resolve that state first.",
+          recovery: "Record the required human decision before authorizing new work."
         )
       end
       if issue.runner_retry_abandoned_at.present?
         blockers << Blocker.new(
           code: :operator_pause,
-          message: "The issue is retry-abandoned; clear the retry-cap flag from the retry-limited lane first."
+          message: "The issue is retry-abandoned; clear the retry-cap flag from the retry-limited lane first.",
+          recovery: "Resolve the retry-limited incident before requesting continuation."
         )
       end
 
@@ -164,7 +161,8 @@ module Issues
       if hit_labels.any?
         blockers << Blocker.new(
           code: :operator_pause,
-          message: "An auto-pick skip label (#{hit_labels.join(', ')}) deliberately holds this issue out of scheduling."
+          message: "An auto-pick skip label (#{hit_labels.join(', ')}) deliberately holds this issue out of scheduling.",
+          evidence: { "labels" => hit_labels }, recovery: "Remove the skip label if new automated work is authorized."
         )
       end
       blockers
@@ -173,7 +171,8 @@ module Issues
     def self.run_in_flight_blockers(issue)
       return [] unless issue.agent_runs.where(status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).exists?
 
-      [ Blocker.new(code: :run_in_flight, message: "An agent run is already queued or in flight for this issue.") ]
+      [ Blocker.new(code: :run_in_flight, message: "An agent run is already queued or in flight for this issue.",
+        recovery: "Wait for the active run to finish before requesting another continuation.") ]
     end
 
     def self.trust_blockers(issue)
@@ -183,7 +182,8 @@ module Issues
 
       [ Blocker.new(
         code: :untrusted,
-        message: "The issue creator (@#{issue.github_creator_login}) is not in the project's trusted allowlist."
+        message: "The issue creator (@#{issue.github_creator_login}) is not in the project's trusted allowlist.",
+        evidence: { "creator" => issue.github_creator_login }, recovery: "An administrator must update the trusted-author policy."
       ) ]
     end
 
@@ -191,7 +191,8 @@ module Issues
       admission = FeatureIntents::RunAdmission.call(issue: issue)
       return [] if admission.allowed?
 
-      [ Blocker.new(code: :feature_held, message: admission.reason || "A feature release gate holds this issue.") ]
+      [ Blocker.new(code: :feature_held, message: admission.reason || "A feature release gate holds this issue.",
+        recovery: "Complete the feature release or design-revision gate before continuing.") ]
     end
 
     # Mirrors the `apply_issue_analysis_backoff` eligibility filter via the
@@ -211,8 +212,56 @@ module Issues
         code: :analysis_backoff,
         message: "Automatic issue analysis is in a provider-exhaustion backoff until " \
                  "#{next_attempt_at.utc.iso8601}; wait for the window to clear (or restore a " \
-                 "capable runner to reset it) before requesting a continuation."
+                 "capable runner to reset it) before requesting a continuation.",
+        evidence: { "next_attempt_at" => next_attempt_at.utc.iso8601 },
+        recovery: "Wait until #{next_attempt_at.utc.iso8601}, or restore a capable runner."
       ) ]
+    end
+
+    # @spec PARTIAL-CLOSEOUT-012 EAGER-QUEUE-013 EAGER-QUEUE-015
+    def self.scanner_verification_blockers(issue)
+      return [] unless issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+
+      attempt = issue.code_scanning_remediation_attempts.latest_per_issue.first
+      return [] unless attempt&.status.in?(%w[awaiting_verification verification_failed verification_blocked])
+
+      [ scanner_blocker(issue, attempt) ]
+    end
+
+    def self.scanner_blocker(issue, attempt)
+      code, state, recovery = scanner_state(attempt)
+      Blocker.new(
+        code: code,
+        message: "Code-scanning alert ##{scanner_alert_number(issue)} #{state}; merge evidence is not proof it is fixed.",
+        evidence: scanner_evidence(issue, attempt),
+        recovery: recovery
+      )
+    end
+
+    def self.scanner_state(attempt)
+      case attempt.status
+      when "awaiting_verification"
+        [ :scanner_verification_pending, "awaits post-merge verification", "Wait for the next matching default-branch scan." ]
+      when "verification_blocked"
+        [ :scanner_verification_retryable, "has retryable verification evidence", "Wait for or repair scanner verification, then let the verifier retry." ]
+      else
+        [ :scanner_verification_failed, "has a scanner-confirmed recurrence after matching post-merge verification", "Review the failed verification and explicitly authorize new remediation if appropriate." ]
+      end
+    end
+
+    def self.scanner_evidence(issue, attempt)
+      {
+        "attempt_id" => attempt.id, "attempt_url" => issue.github_url,
+        "alert_number" => scanner_alert_number(issue), "recurrent" => attempt.status == "verification_failed",
+        "pull_request_number" => attempt.pull_request_number,
+        "analysis_id" => attempt.verification_analysis_id,
+        "analysis_commit_sha" => attempt.verification_commit_sha,
+        "status" => attempt.status, "blocked_reason" => attempt.blocked_reason
+      }.compact
+    end
+
+    def self.scanner_alert_number(issue)
+      issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
     end
 
     def self.prerequisite_labels(issue)
