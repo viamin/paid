@@ -260,8 +260,12 @@
   the candidate selection at the project's authoritative merged partial-PR
   links (`Issue` rows where `is_pull_request: true`, `pr_review_phase:
   "merged"`, and either `parent_issue_id` is set or an originating
-  `AgentRun` matches by `pull_request_number`/`pull_request_url`), and SHALL
-  skip a run whose latest `create_pr` attempt already persisted a terminal
+  `AgentRun` matches by `pull_request_number`/`pull_request_url`), SHALL
+  assess only each issue's latest PR-producing `create_pr` run (a
+  superseded earlier attempt is excluded from the candidate set before
+  the reconciliation-state checks, so stale evidence a later attempt
+  replaced is never assessed), and SHALL skip a run whose latest
+  `create_pr` attempt already persisted a terminal
   `reconciliation.status`. The candidate query SHALL be bounded to at most
   `batch_size` (default 200) runs ordered by `id`, so a single invocation's
   `Llm::AnalyzePartialCloseout` cost and runtime cannot grow unbounded with

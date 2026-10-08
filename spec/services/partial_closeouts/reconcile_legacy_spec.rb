@@ -291,12 +291,15 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     # progress through the backlog regardless of each page's outcomes
     # (#4191 review).
     it "caps candidates per invocation via batch_size and resumes via next_cursor" do
-      merged_pr(number: 50, parent_issue: parent)
-      first_run = legacy_run(issue: parent, pull_request_number: 50)
-      merged_pr(number: 51, parent_issue: parent)
-      second_run = legacy_run(issue: parent, pull_request_number: 51)
-      merged_pr(number: 52, parent_issue: parent)
-      third_run = legacy_run(issue: parent, pull_request_number: 52)
+      first_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 60)
+      merged_pr(number: 50, parent_issue: first_issue)
+      first_run = legacy_run(issue: first_issue, pull_request_number: 50)
+      second_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 61)
+      merged_pr(number: 51, parent_issue: second_issue)
+      second_run = legacy_run(issue: second_issue, pull_request_number: 51)
+      third_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 62)
+      merged_pr(number: 52, parent_issue: third_issue)
+      third_run = legacy_run(issue: third_issue, pull_request_number: 52)
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })
 
       first_page = described_class.call(account_id: account.id, batch_size: 2)
@@ -311,6 +314,45 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(second_page.next_cursor).to eq(third_run.id)
       expect(first_run.reload.reconciliation.fetch("status")).to eq("reconciled")
       expect(third_run.reload.reconciliation.fetch("status")).to eq("reconciled")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-015 — only an issue's latest PR-producing
+    # attempt is assessable evidence: an older merged partial closeout must
+    # not be replayed once a later `create_pr` attempt exists for the same
+    # issue, or the sweep would file dependencies and operator notifications
+    # from stale evidence the later attempt already superseded (#4191
+    # review).
+    it "skips a superseded earlier partial closeout when a later PR-producing attempt is terminal" do
+      merged_pr(number: 31, parent_issue: parent)
+      superseded_run = legacy_run(issue: parent, pull_request_number: 31)
+      merged_pr(number: 32, parent_issue: parent)
+      later_run = legacy_run(issue: parent, pull_request_number: 32,
+        reconciliation: { "status" => "reconciled", "assessment" => { "gaps" => [] } })
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.scanned).to eq(1)
+      expect(result.skipped).to eq(1)
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(superseded_run.reload.reconciliation).to eq({})
+      expect(later_run.reload.reconciliation.fetch("status")).to eq("reconciled")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-015 — a later PR-producing attempt supersedes
+    # the earlier merged partial closeout even before its own PR merges:
+    # neither run is a candidate, so the sweep files nothing while the
+    # later attempt's outcome is still pending (#4191 review).
+    it "treats a later unmerged PR-producing attempt as superseding the earlier merged partial closeout" do
+      merged_pr(number: 33, parent_issue: parent)
+      legacy_run(issue: parent, pull_request_number: 33)
+      legacy_run(issue: parent, pull_request_number: 34)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.scanned).to eq(0)
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
     # @spec PARTIAL-CLOSEOUT-015 — does not match a run whose PR number
@@ -455,14 +497,16 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     # subsequent candidate is never scanned, and the persisted assessment
     # wedges every re-invocation at the same run (#4187 review thread).
     it "does not wedge the sweep when Reconcile raises a non-GitHub StandardError" do
-      merged_pr(number: 27, parent_issue: parent)
-      wedged_run = legacy_run(issue: parent, pull_request_number: 27)
+      wedged_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 63)
+      merged_pr(number: 27, parent_issue: wedged_issue)
+      wedged_run = legacy_run(issue: wedged_issue, pull_request_number: 27)
       allow(Llm::AnalyzePartialCloseout).to receive(:call).with(agent_run: wedged_run).and_return(
         "gaps" => [ { "criterion" => "unwired probe", "kind" => "agent", "owner_issue_number" => 999 } ]
       )
 
-      merged_pr(number: 28, parent_issue: parent)
-      tail_run = legacy_run(issue: parent, pull_request_number: 28)
+      tail_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 64)
+      merged_pr(number: 28, parent_issue: tail_issue)
+      tail_run = legacy_run(issue: tail_issue, pull_request_number: 28)
       allow(Llm::AnalyzePartialCloseout).to receive(:call).with(agent_run: tail_run).and_return({ "gaps" => [] })
 
       result = nil

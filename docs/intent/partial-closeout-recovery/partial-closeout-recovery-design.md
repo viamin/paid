@@ -165,8 +165,11 @@ machinery the workflow uses:
 
 - **Selection.** Scoped to a single account (the sweep must read across
   tenant RLS to find candidates, but writes are scoped through the project
-  associations). A run is a candidate when its latest PR-producing attempt
-  produced a PR that is now authoritatively linked back to the source issue
+  associations). A run is a candidate only when it is its issue's *latest*
+  PR-producing attempt (MAX(id) per `issue_id`, the same keying the
+  auto-pick re-audit exception uses — a superseded earlier attempt's
+  evidence must never be assessed), that attempt produced a PR that is now
+  authoritatively linked back to the source issue
   (via `parent_issue_id` or the originating run's `pull_request_number`/URL
   join — the same discipline as `Issues::CloseoutEvidence`), and its
   `reconciliation` carries no terminal `status`. A run whose reconciliation

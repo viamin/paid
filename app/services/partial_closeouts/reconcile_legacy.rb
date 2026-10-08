@@ -52,6 +52,52 @@ module PartialCloseouts
     # call. This caps a single invocation's candidate window; pass the
     # previous `Result#next_cursor` as `after_id:` to resume (#4191 review).
     DEFAULT_BATCH_SIZE = 200
+    # Legacy targets: a run whose partial PR has authoritatively linked back
+    # to its source issue (via `parent_issue_id` or via the originating
+    # run's recorded `pull_request_number` URL join). Mirrors the discipline
+    # in `Issues::CloseoutEvidence` so a number-colliding upstream PR cannot
+    # fabricate a candidate.
+    MERGED_LINK_CONDITION = <<~SQL.squish
+      EXISTS (
+          SELECT 1 FROM issues merged_prs
+          WHERE merged_prs.project_id = agent_runs.project_id
+            AND merged_prs.github_number = agent_runs.pull_request_number
+            AND merged_prs.is_pull_request = TRUE
+            AND merged_prs.pr_review_phase = 'merged'
+            AND (
+              merged_prs.parent_issue_id = agent_runs.issue_id
+              OR merged_prs.github_html_url = agent_runs.pull_request_url
+              OR (
+                merged_prs.github_html_url IS NULL
+                AND agent_runs.pull_request_url = CONCAT(
+                  'https://github.com/',
+                  (SELECT owner FROM projects WHERE id = agent_runs.project_id),
+                  '/',
+                  (SELECT repo FROM projects WHERE id = agent_runs.project_id),
+                  '/pull/',
+                  agent_runs.pull_request_number
+                )
+              )
+            )
+        )
+    SQL
+    # Only an issue's latest PR-producing attempt carries the authoritative
+    # closeout state. A superseded earlier partial closeout must never be
+    # assessed — its evidence is stale once a later `create_pr` attempt
+    # exists for the same issue, or the sweep would file dependencies and
+    # operator notifications the later attempt already replaced — mirroring
+    # the MAX(id)-per-issue keying in
+    # `DefaultCandidateSource#partial_closeout_reaudit_issue_ids`
+    # (PARTIAL-CLOSEOUT-015 / #4191 review).
+    LATEST_PR_ATTEMPT_CONDITION = <<~SQL.squish
+      NOT EXISTS (
+          SELECT 1 FROM agent_runs later_attempts
+          WHERE later_attempts.issue_id = agent_runs.issue_id
+            AND later_attempts.goal = 'create_pr'
+            AND later_attempts.pull_request_number IS NOT NULL
+            AND later_attempts.id > agent_runs.id
+        )
+    SQL
 
     Result = Struct.new(
       :scanned, :reconciled, :awaiting_operator, :retryable_failure, :skipped, :next_cursor,
@@ -127,6 +173,10 @@ module PartialCloseouts
     # scanned so callers can see how many runs were skipped without
     # re-running the analyzer; the in-process
     # `legacy_reconciliation_already_done?` gate applies the actual skip.
+    # Selection DOES restrict to each issue's latest PR-producing run
+    # (`LATEST_PR_ATTEMPT_CONDITION`): a superseded earlier attempt is
+    # excluded before the reconciliation-state checks, not skipped by
+    # them, so stale evidence can never be assessed.
     #
     # `after_id` + `limit(batch_size)` bound a single invocation's LLM cost
     # and runtime to a fixed-size window instead of the account's entire
@@ -146,37 +196,8 @@ module PartialCloseouts
         .where("agent_runs.completed_at < ?", PR_SYNC_GRACE_PERIOD.ago)
         .where("agent_runs.issue_id IS NOT NULL")
         .then { |scope| after_id ? scope.where("agent_runs.id > ?", after_id) : scope }
-        .where(
-          # Legacy targets: a run whose partial PR has authoritatively
-          # linked back to its source issue (via `parent_issue_id` or via
-          # the originating run's recorded `pull_request_number` URL join).
-          # Mirrors the discipline in `Issues::CloseoutEvidence` so a
-          # number-colliding upstream PR cannot fabricate a candidate.
-          <<~SQL.squish
-              EXISTS (
-                  SELECT 1 FROM issues merged_prs
-                  WHERE merged_prs.project_id = agent_runs.project_id
-                    AND merged_prs.github_number = agent_runs.pull_request_number
-                    AND merged_prs.is_pull_request = TRUE
-                    AND merged_prs.pr_review_phase = 'merged'
-                    AND (
-                      merged_prs.parent_issue_id = agent_runs.issue_id
-                      OR merged_prs.github_html_url = agent_runs.pull_request_url
-                      OR (
-                        merged_prs.github_html_url IS NULL
-                        AND agent_runs.pull_request_url = CONCAT(
-                          'https://github.com/',
-                          (SELECT owner FROM projects WHERE id = agent_runs.project_id),
-                          '/',
-                          (SELECT repo FROM projects WHERE id = agent_runs.project_id),
-                          '/pull/',
-                          agent_runs.pull_request_number
-                        )
-                      )
-                    )
-                )
-            SQL
-        )
+        .where(MERGED_LINK_CONDITION)
+        .where(LATEST_PR_ATTEMPT_CONDITION)
         .order(:id)
         .limit(batch_size)
     end
