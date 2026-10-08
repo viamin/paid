@@ -417,5 +417,53 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(reconciliation.fetch("assessment")).to eq(dispatch_assessment)
       expect(reconciliation.dig("gaps", "0", "marker")).to start_with("<!-- paid:partial-closeout:#{run.id}:0 -->")
     end
+
+    # @spec PARTIAL-CLOSEOUT-014 — replay wedge protection (anti-wedge):
+    # an `ArgumentError` escaping `Reconcile.call` (e.g. an agent gap whose
+    # `owner_issue_number` does not resolve to an open issue and whose
+    # `title` is blank) must NOT propagate out of `process_run`. Without
+    # a `rescue StandardError`, the `find_each` loop crashes, every
+    # subsequent candidate is never scanned, and the persisted assessment
+    # wedges every re-invocation at the same run (#4187 review thread).
+    it "does not wedge the sweep when Reconcile raises a non-GitHub StandardError" do
+      merged_pr(number: 27, parent_issue: parent)
+      wedged_run = legacy_run(issue: parent, pull_request_number: 27)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).with(agent_run: wedged_run).and_return(
+        "gaps" => [ { "criterion" => "unwired probe", "kind" => "agent", "owner_issue_number" => 999 } ]
+      )
+
+      merged_pr(number: 28, parent_issue: parent)
+      tail_run = legacy_run(issue: parent, pull_request_number: 28)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).with(agent_run: tail_run).and_return({ "gaps" => [] })
+
+      result = nil
+      expect { result = described_class.call(account_id: account.id) }.not_to raise_error
+
+      expect(result.to_h).to include(scanned: 2, retryable_failure: 1, reconciled: 1)
+      expect(tail_run.reload.reconciliation.fetch("status")).to eq("reconciled")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-014 — replay wedge protection (assessment
+    # discard): the non-GitHub path treats the assessment as deterministic-bad
+    # (e.g. `Reconcile#create_owner!` raised `ArgumentError` because `title`
+    # was blank) and discards `reconciliation.assessment` so the next pass
+    # regenerates instead of replaying the same input forever. GitHub
+    # failures above still preserve the assessment for replay through the
+    # marker-based recovery path (#4187 review thread).
+    it "discards the persisted assessment on a non-GitHub StandardError so the next pass regenerates" do
+      merged_pr(number: 29, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 29)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
+        "gaps" => [ { "criterion" => "unwired probe", "kind" => "agent", "owner_issue_number" => 999 } ]
+      )
+
+      described_class.call(account_id: account.id)
+
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation.fetch("status")).to eq("retryable_failure")
+      expect(reconciliation.fetch("error")).to include("agent gap title is required")
+      expect(reconciliation.fetch("failed_at")).to be_present
+      expect(reconciliation).not_to have_key("assessment")
+    end
   end
 end

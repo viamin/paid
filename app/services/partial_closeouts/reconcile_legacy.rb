@@ -199,6 +199,29 @@ module PartialCloseouts
         error: e.message
       )
       :retryable_failure
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "partial_closeouts.legacy_reconcile_failed",
+        account_id: account_id,
+        agent_run_id: agent_run&.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      # Non-GitHub failures are deterministic (e.g. an assessment whose
+      # owner_issue_number does not resolve to an open issue and whose title
+      # is blank — `Reconcile.create_owner!` raises `ArgumentError` after the
+      # assessment already passed `Llm::AnalyzePartialCloseout#owner_resolvable?`).
+      # Discard the persisted assessment so the next pass regenerates
+      # instead of replaying the same deterministic failure forever; GitHub
+      # failures above keep it for the marker-based recovery path
+      # (PARTIAL-CLOSEOUT-014 / #4187 review).
+      if agent_run
+        agent_run.update!(
+          reconciliation: agent_run.reconciliation.except("assessment")
+            .merge("status" => "retryable_failure", "error" => e.message, "failed_at" => Time.current.iso8601)
+        )
+      end
+      :retryable_failure
     end
 
     # Two flavors of "already done":

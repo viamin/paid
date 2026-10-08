@@ -241,7 +241,14 @@
   retry. A run whose reconciliation state shows `creating` for a gap
   SHALL resume owner recovery via the existing marker-based recovery path
   in `PartialCloseouts::Reconcile#create_owner!` rather than filing a second
-  issue (#4187).
+  issue. Non-`GithubClient::Error` exceptions (e.g. an `ArgumentError`
+  raised by `Reconcile#create_owner!` on a deterministic-bad assessment)
+  SHALL be caught by `process_run`, recorded as `retryable_failure` with
+  the `error` and `failed_at` fields populated, and the persisted
+  `assessment` SHALL be discarded so the next pass regenerates instead
+  of replaying the same deterministic input forever; the surrounding
+  sweep SHALL continue scanning subsequent candidate runs rather than
+  aborting at the wedging run (#4187).
   *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
   `app/services/partial_closeouts/reconcile.rb`.
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
