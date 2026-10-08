@@ -38,9 +38,11 @@ module PartialCloseouts
   class ReconcileLegacy
     # Terminal reconciliation statuses — a run in any of these states has
     # already produced durable owner / dependency / notification records,
-    # so the sweep must skip it. `retryable_failure` is included so the
-    # next pass resumes from the last durable state instead of restarting
-    # from scratch (which would re-file owner issues from the assessment).
+    # so the sweep must skip it. `retryable_failure` is handled separately
+    # by the one-day retry gate in `legacy_reconciliation_already_done?`:
+    # a fresh failure skips this pass, a stale one resumes from the last
+    # durable state instead of restarting from scratch (which would re-file
+    # owner issues from the assessment).
     TERMINAL_STATUSES = %w[reconciled awaiting_operator].freeze
     # The merge grace window used elsewhere to disambiguate PR numbers
     # that have not yet synced as local Issue rows. We inherit it so a
@@ -206,7 +208,7 @@ module PartialCloseouts
     # (#4191 review).
     def preview
       TenantContext.with_system_access do
-        candidate_runs.pluck(:id, :issue_id).map { |id, issue_id| CandidateRun.new(id: id, issue_id: issue_id) }
+        candidate_runs.order(:id).pluck(:id, :issue_id).map { |id, issue_id| CandidateRun.new(id: id, issue_id: issue_id) }
       end
     end
 
@@ -243,13 +245,20 @@ module PartialCloseouts
     #
     # `after_id` + `limit(batch_size)` bound a single invocation's LLM cost
     # and runtime to a fixed-size window instead of the account's entire
-    # merged `create_pr` history (#4191 review). Ordering by `id` makes the
-    # cursor monotonic: each page starts strictly after the highest `id`
-    # the previous page scanned (`Result#next_cursor`), so a caller that
-    # loops `call(account_id:, after_id: result.next_cursor)` until
-    # `scanned < batch_size` is guaranteed to traverse the whole backlog
-    # exactly once, regardless of how many rows in a given page turn out to
-    # be already-terminal or otherwise ineligible.
+    # merged `create_pr` history (#4191 review). The cursor is monotonic
+    # because `#call` consumes this scope via `find_each`, which batches in
+    # ascending primary-key order by default: each page starts strictly
+    # after the highest `id` the previous page scanned (`Result#next_cursor`),
+    # so a caller that loops `call(account_id:, after_id: result.next_cursor)`
+    # until `scanned < batch_size` is guaranteed to traverse the whole
+    # backlog exactly once, regardless of how many rows in a given page turn
+    # out to be already-terminal or otherwise ineligible. Deliberately no
+    # explicit `.order(:id)` here: `find_each`/`in_batches` on Rails 8.1 warns
+    # and discards any scoped order on the relation, so an explicit order
+    # would only produce a spurious warning on every `#call` while matching
+    # the default batch order anyway. `#preview` applies `.order(:id)`
+    # itself for its deterministic dry-run listing, since it plucks directly
+    # instead of batching (#4191 review).
     def candidate_runs
       project_ids = Project.where(account_id: account_id).select(:id)
       AgentRun
@@ -261,7 +270,6 @@ module PartialCloseouts
         .then { |scope| after_id ? scope.where("agent_runs.id > ?", after_id) : scope }
         .where(MERGED_LINK_CONDITION)
         .where(LATEST_PR_ATTEMPT_CONDITION)
-        .order(:id)
         .limit(batch_size)
     end
 
