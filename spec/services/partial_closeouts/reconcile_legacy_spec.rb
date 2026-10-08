@@ -391,8 +391,9 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(result.scanned).to eq(0)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — the assessment is reused across
-    # repeated sweeps that find the run still in `reconciling` state.
+    # @spec PARTIAL-CLOSEOUT-015 — a retryable_failure with a fresh
+    # `failed_at` is inside the one-day retry gate: the sweep must skip
+    # the run instead of re-invoking the LLM.
     it "skips a run whose stale retryable_failure is within the recent window" do
       merged_pr(number: 20, parent_issue: parent)
       run = legacy_run(
