@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_003355) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -826,7 +826,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_202504) do
     t.string "merge_commit_sha", null: false, comment: "Merge commit that scanner evidence must contain."
     t.datetime "merged_at", null: false
     t.integer "pull_request_number", null: false
-    t.string "status", default: "awaiting_verification", null: false, comment: "awaiting_verification, verified_fixed, verification_failed, or verification_blocked."
+    t.string "status", default: "awaiting_verification", null: false, comment: "awaiting_verification, verified_fixed, verification_failed, verification_blocked, or upstream_resolved."
     t.string "tool_name"
     t.datetime "updated_at", null: false
     t.string "verification_analysis_id"

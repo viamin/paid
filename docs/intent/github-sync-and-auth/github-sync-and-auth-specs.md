@@ -230,7 +230,9 @@
   reason and evidence; an omitted finding with no explicit state SHALL remain
   unresolved/unknown rather than being treated as fixed. A dismissed finding
   may close the upstream work item but SHALL not be presented as a verified
-  code remediation. A later open scanner observation SHALL preserve prior
+  code remediation: its linked remediation attempt SHALL record the
+  authoritative conclusion separately as `upstream_resolved`, not
+  `verified_fixed` or retryable missing evidence. A later open scanner observation SHALL preserve prior
   attempts and record a recurrence rather than erase verification history.
   Before an agent remediates an open synthetic code-scanning issue, the system
   SHALL refresh and require authoritative open

@@ -19,6 +19,8 @@ module Notifications
         attempts = Array(scope)
         latest_blocked_ids = CodeScanningRemediationAttempt.latest_per_issue
           .where(id: attempts.map(&:id), status: "verification_blocked")
+          .joins(:issue)
+          .where(issues: { github_state: "open" })
           .pluck(:id)
 
         attempts.select { |attempt| latest_blocked_ids.include?(attempt.id) }

@@ -36,22 +36,28 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
-  it "blocks a dismissed upstream finding instead of recording a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
+  it "records a dismissed upstream conclusion separately from a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
     verify(alert: { number: 1838, state: "dismissed", dismissed_reason: "false positive" })
 
     expect(attempt.reload).to have_attributes(
-      status: "verification_blocked", blocked_reason: "finding was dismissed upstream: false positive"
+      status: "upstream_resolved", blocked_reason: nil
     )
     expect(attempt.evidence).to include("alert_state" => "dismissed", "dismissed_reason" => "false positive")
   end
 
-  it "blocks another upstream disposition instead of recording a verified fix" do # @spec EAGER-QUEUE-013
+  it "records a fixed upstream conclusion separately from a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
     verify(alert: { number: 1838, state: "fixed" })
 
     expect(attempt.reload).to have_attributes(
-      status: "verification_blocked", blocked_reason: "finding has upstream disposition: fixed"
+      status: "upstream_resolved", blocked_reason: nil
     )
     expect(attempt.evidence).to include("alert_state" => "fixed")
+  end
+
+  it "does not wait for analysis evidence after an upstream conclusion" do # @spec EAGER-QUEUE-013 EAGER-QUEUE-014
+    verify(alert: { number: 1838, state: "fixed" }, analysis: nil, contains_merge_commit: false)
+
+    expect(attempt.reload.status).to eq("upstream_resolved")
   end
 
   it "does not resolve from an aggregate result count when the alert is still open" do # @spec EAGER-QUEUE-013

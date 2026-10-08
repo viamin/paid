@@ -6,7 +6,7 @@
 # @spec EAGER-QUEUE-014
 # @spec EAGER-QUEUE-015
 class CodeScanningRemediationAttempt < ApplicationRecord
-  STATUSES = %w[awaiting_verification verified_fixed verification_failed verification_blocked].freeze
+  STATUSES = %w[awaiting_verification verified_fixed verification_failed verification_blocked upstream_resolved].freeze
   RETRYABLE_STATUSES = %w[awaiting_verification verification_blocked].freeze
 
   belongs_to :issue

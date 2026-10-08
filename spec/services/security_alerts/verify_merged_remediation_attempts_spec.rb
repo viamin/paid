@@ -48,7 +48,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
     expect(attempt.reload.status).to eq("verified_fixed")
   end
 
-  it "passes an upstream dismissal to verification rather than treating it as an absent alert" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
+  it "concludes an upstream dismissal without claiming a verified fix" do # @spec EAGER-QUEUE-013 GITHUB-SYNC-019
     stub_analyses([ analysis ])
     stub_compare("identical")
 
@@ -56,7 +56,7 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
       project:, alerts: [ { number: 1838, state: "dismissed", dismissed_reason: "false positive" } ], github_client:
     ).call
 
-    expect(attempt.reload.status).to eq("verification_blocked")
+    expect(attempt.reload.status).to eq("upstream_resolved")
   end
 
   it "does not resolve from the merge or an aggregate result count while the alert is open" do # @spec EAGER-QUEUE-013
@@ -190,6 +190,14 @@ RSpec.describe SecurityAlerts::VerifyMergedRemediationAttempts do
       described_class.new(project:, alerts: [], github_client:).call
 
       expect(attempt.reload.status).to eq("verified_fixed")
+    end
+
+    it "ends a blocked attempt's retry loop when the alert has an explicit upstream disposition" do # @spec EAGER-QUEUE-014 GITHUB-SYNC-019
+      allow(github_client).to receive(:code_scanning_analyses).with(project.full_name).and_return([])
+
+      described_class.new(project:, alerts: [ { number: 1838, state: "fixed" } ], github_client:).call
+
+      expect(attempt.reload.status).to eq("upstream_resolved")
     end
 
     it "fails a blocked attempt when a later scan still reports the finding open" do # @spec EAGER-QUEUE-014
