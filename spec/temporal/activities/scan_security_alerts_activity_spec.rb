@@ -457,6 +457,31 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       expect(Notification.active.find_by(source: "code_scanning_verification_blocked", subject: attempt)).to be_nil
     end
 
+    it "publishes a notification when this scan records and blocks a merged remediation" do # @spec EAGER-QUEUE-016
+      issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 42)
+      create(:agent_run, project: project, issue: issue, pull_request_number: 4034)
+      create(:issue, :pull_request, project: project, github_number: 4034, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged")
+      alert = {
+        number: 42, state: "open", severity: "high", rule_id: "test/rule", rule_description: "Test",
+        tool_name: "CodeQL", category: "/language:ruby", summary: "Test alert",
+        html_url: "https://github.com/o/r/security/code-scanning/42",
+        created_at: 1.day.ago.iso8601, updated_at: 1.hour.ago.iso8601
+      }
+      allow(github_client).to receive(:code_scanning_alerts).and_return([ alert ])
+      allow(github_client).to receive(:pull_request).with(project.full_name, 4034)
+        .and_return(Struct.new(:merge_commit_sha, :merged_at).new("merge", Time.current))
+      allow(github_client).to receive(:code_scanning_alert)
+        .with(project.full_name, 42, default_branch: project.default_branch).and_return(alert)
+
+      activity.execute(project_id: project.id)
+
+      attempt = issue.code_scanning_remediation_attempts.find_by!(pull_request_number: 4034)
+      expect(attempt.status).to eq("verification_blocked")
+      expect(Notification.active.find_by(source: "code_scanning_verification_blocked", subject: attempt)).to be_present
+    end
+
     it "publishes the successful scan timestamp with a verification-blocked notification" do # @spec EAGER-QUEUE-016
       project.update_column(:last_code_scanning_scan_at, nil)
       issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,

@@ -89,6 +89,7 @@ module Activities
       SecurityAlerts::RecordMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
+      retryable_attempt_ids |= retryable_remediation_attempt_ids(project)
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
         project:, alerts: all_alerts, github_client: project.client
       ).call
