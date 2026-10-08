@@ -29,14 +29,14 @@ export default class extends Controller {
     this.handleScroll()
     // Land the user on the top of the last assistant response on a forward
     // navigation so they don't have to scroll or click "Jump to input" to
-    // catch up on the latest answer. Restoration visits (back/forward) are
-    // skipped because Turbo restores the remembered scroll position itself,
-    // and clobbering it with a jump would yank the user out of where they
-    // were (#4174).
+    // catch up on the latest answer. Restoration visits recover the saved
+    // transcript position instead, because Turbo restores only document
+    // scroll and would otherwise show the oldest messages (#4174).
     this.jumpToLatestResponseOnLoad()
   }
 
   disconnect() {
+    this.rememberTranscriptScrollPosition()
     this.subscription?.unsubscribe()
     window.removeEventListener("resize", this.boundUpdateViewportHeight)
     if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
@@ -661,11 +661,14 @@ export default class extends Controller {
   // @spec CHAT-SCROLL-001 — On a forward navigation into the chat, jump
   // instantly (no animation) to the same anchor the sticky button would
   // target, so users land on the latest assistant answer without having to
-  // scroll. Restoration visits (Turbo back/forward) are skipped so a
-  // deliberately-scrolled position isn't clobbered.
+  // scroll. Turbo restores the document scroll position but not this overflow
+  // container, so restoration visits recover the saved transcript position.
   jumpToLatestResponseOnLoad() {
     if (!this.hasContainerTarget) return
-    if (this.isTurboRestorationVisit()) return
+    if (this.isTurboRestorationVisit()) {
+      if (this.restoreTranscriptScrollPosition()) this.handleScroll()
+      return
+    }
 
     const target = this.latestResponseScrollTop()
     if (target == null) return
@@ -709,15 +712,43 @@ export default class extends Controller {
   }
 
   // True when the page was re-entered through browser history (back/forward)
-  // or a Turbo restoration visit. Restoration visits must not yank the user
-  // out of their remembered scroll position; the browser/Turbo already
-  // restored it before the chat controller connected.
+  // or a Turbo restoration visit. Native browser restoration preserves an
+  // element's position; Turbo restoration instead uses the saved position.
   isTurboRestorationVisit() {
     const visit = globalThis.Turbo?.navigator?.currentVisit
     if (visit) return visit.action === "restore"
 
     const navEntry = globalThis.performance?.getEntriesByType?.("navigation")?.[0]
     return navEntry?.type === "back_forward"
+  }
+
+  // Turbo snapshots restore the document's scroll position but reset this
+  // overflow container to its initial position. Keep the position scoped to
+  // the chat session so Back/Forward returns readers to the same response.
+  rememberTranscriptScrollPosition() {
+    if (!this.hasContainerTarget) return
+
+    try {
+      globalThis.sessionStorage?.setItem(this.transcriptScrollStorageKey(), String(this.containerTarget.scrollTop))
+    } catch {
+      // sessionStorage is unavailable in some private-browsing contexts.
+    }
+  }
+
+  restoreTranscriptScrollPosition() {
+    try {
+      const position = Number(globalThis.sessionStorage?.getItem(this.transcriptScrollStorageKey()))
+      if (!Number.isFinite(position) || position < 0) return false
+
+      this.containerTarget.scrollTop = position
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  transcriptScrollStorageKey() {
+    return `paid:chat-scroll:${this.sessionIdValue}`
   }
 
   // Element.scrollTo({ behavior: "smooth" }) is unreliable on iOS Safari,

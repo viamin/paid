@@ -738,17 +738,49 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-SCROLL-001 — A Turbo restoration visit (back/forward)
-    // must not clobber the remembered scroll position. The browser/Turbo
-    // already restored it; jumping now would yank the user out of where
-    // they were.
-    function testJumpToLatestResponseOnLoadSkipsRestorationVisits() {
+    // @spec CHAT-SCROLL-001 — Leaving a chat records the overflow
+    // container's position under its session-scoped key so a later Turbo
+    // restoration can return the reader to the same place.
+    function testDisconnectRemembersTranscriptScrollPosition() {
+      const writes = [];
+      const { controller } = makeController({
+        sessionIdValue: 42,
+        containerTarget: { scrollTop: 475 },
+        subscription: { unsubscribe() {} },
+        boundUpdateViewportHeight: () => {}
+      });
+      const origWindow = globalThis.window;
+      const origSessionStorage = globalThis.sessionStorage;
+
+      try {
+        globalThis.window = { removeEventListener() {} };
+        globalThis.sessionStorage = {
+          setItem: (key, value) => writes.push({ key, value })
+        };
+        controller.disconnect();
+      } finally {
+        globalThis.window = origWindow;
+        globalThis.sessionStorage = origSessionStorage;
+      }
+
+      if (writes.length !== 1 || writes[0].key !== "paid:chat-scroll:42" || writes[0].value !== "475") {
+        throw new Error(`Expected disconnect to save scrollTop 475 for session 42, got ${JSON.stringify(writes)}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Turbo restores the document scroll position,
+    // but not this overflow container. A restoration visit must recover the
+    // saved container position rather than showing the oldest transcript
+    // messages or jumping to the latest response.
+    function testJumpToLatestResponseOnLoadRestoresTranscriptPosition() {
       const anchor = { getBoundingClientRect: () => ({ top: 300 }) };
       let scrollTopWrites = 0;
+      let lastScrollTop = null;
       const { controller } = makeController({
+        sessionIdValue: 42,
         containerTarget: {
           get scrollTop() { return 0; },
-          set scrollTop(v) { scrollTopWrites += 1; },
+          set scrollTop(v) { scrollTopWrites += 1; lastScrollTop = v; },
           scrollHeight: 1500,
           clientHeight: 400,
           getBoundingClientRect: () => ({ top: 100 })
@@ -759,16 +791,21 @@ class ChatControllerNodeHarness
         }
       });
       const origTurbo = globalThis.Turbo;
+      const origSessionStorage = globalThis.sessionStorage;
 
       try {
         globalThis.Turbo = { navigator: { currentVisit: { action: "restore" } } };
+        globalThis.sessionStorage = {
+          getItem: (key) => key === "paid:chat-scroll:42" ? "475" : null
+        };
         controller.jumpToLatestResponseOnLoad();
       } finally {
         globalThis.Turbo = origTurbo;
+        globalThis.sessionStorage = origSessionStorage;
       }
 
-      if (scrollTopWrites !== 0) {
-        throw new Error(`Expected no scrollTop write on a Turbo restoration visit, got ${scrollTopWrites}`);
+      if (scrollTopWrites !== 1 || lastScrollTop !== 475) {
+        throw new Error(`Expected Turbo restoration to recover scrollTop 475, got ${lastScrollTop}`);
       }
     }
 
@@ -1162,7 +1199,8 @@ class ChatControllerNodeHarness
       testScrollToLatestResponseSmoothScrollsToAnchor();
       testScrollToLatestResponseFallsBackToBottom();
       testJumpToLatestResponseOnLoadSetsScrollTopInstantly();
-      testJumpToLatestResponseOnLoadSkipsRestorationVisits();
+      testDisconnectRemembersTranscriptScrollPosition();
+      testJumpToLatestResponseOnLoadRestoresTranscriptPosition();
       testJumpToLatestResponseOnLoadFallsBackToBottom();
       testJumpToLatestResponseOnLoadUpdatesStickyControl();
       testHandleScrollShowsBackToTopWhenScrolled();

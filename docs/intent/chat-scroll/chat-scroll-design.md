@@ -25,8 +25,10 @@ new or user-only conversation, the shared target is the bottom of the
 transcript.
 
 On a forward page visit, the controller applies that target immediately so the
-latest answer starts in view. It does not override browser or Turbo restoration
-visits, which retain the user's remembered transcript position. Because a
-direct `scrollTop` assignment does not emit a scroll event, the controller
-recomputes its scroll controls after the on-load jump so their visibility
-matches the final position.
+latest answer starts in view. On a restoration visit, it restores the
+transcript container's saved position instead. Turbo restores the document
+scroll offset, not overflow-container offsets, so the controller stores the
+container position per chat session when disconnecting and recovers it on
+return. Because a direct `scrollTop` assignment does not emit a scroll event,
+the controller recomputes its scroll controls after either restoration or
+on-load jump so their visibility matches the final position.
