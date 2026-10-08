@@ -90,6 +90,7 @@ class PromptAssembly::BuildIssuePrompt
   def sections_for(context)
     [
       PromptAssembly::Sections::IssueTask.call(context),
+      PromptAssembly::Sections::ContinuationContext.call(context),
       PromptAssembly::Sections::TrustedComments.call(context),
       PromptAssembly::Sections::ClarifiedRequirements.call(context),
       PromptAssembly::Sections::ServiceEnvironment.call(context),
