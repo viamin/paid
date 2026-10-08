@@ -99,6 +99,72 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-009
+    # When the analyzer has already confirmed the issue is actionable via
+    # `last_analyzer_sufficient_context: true`, a stale `needs_input_questions`
+    # payload from an earlier round must not block the follow-up `create_pr`
+    # queue — the analyzer's verdict is authoritative when it has confirmed
+    # the question is answered. The paid_state: "needs_input" / needs-input
+    # label checks remain authoritative: a fresh unanswered round still
+    # gates the issue (#4196).
+    it "starts a create_pr run when the analyzer verdict confirmed sufficient context even though needs_input_questions is stored" do
+      issue.update!(
+        needs_input_questions: [ "Which users should receive the first rollout?" ],
+        last_analyzer_sufficient_context: true,
+        last_analyzed_at: 1.minute.ago
+      )
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, goal: "create_pr")
+      }.not_to raise_error
+    end
+
+    it "still rejects a create_pr run when the analyzer verdict was sufficient context but the issue is still in needs_input paid_state" do
+      issue.update!(
+        paid_state: "needs_input",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: nil,
+        last_analyzer_sufficient_context: true,
+        last_analyzed_at: 1.minute.ago
+      )
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, goal: "create_pr")
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueAwaitingInput")
+      }
+    end
+
+    it "still rejects a create_pr run when the analyzer verdict was sufficient context but the needs-input label is set" do
+      issue.update!(
+        paid_state: "new",
+        labels: [ project.enhance_issue_needs_input_label_name ],
+        needs_input_questions: nil,
+        last_analyzer_sufficient_context: true,
+        last_analyzed_at: 1.minute.ago
+      )
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, goal: "create_pr")
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueAwaitingInput")
+      }
+    end
+
+    it "still rejects a create_pr run when there is no analyzer verdict yet but needs_input_questions is stored" do
+      issue.update!(
+        needs_input_questions: [ "Which users should receive the first rollout?" ],
+        last_analyzer_sufficient_context: nil,
+        last_analyzed_at: nil
+      )
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id, goal: "create_pr")
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueAwaitingInput")
+      }
+    end
+
     it "creates an agent run for the project and issue" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
@@ -532,6 +598,24 @@ RSpec.describe Activities::CreateAgentRunActivity do
         labels: [ project.enhance_issue_needs_input_label_name ],
         needs_input_questions: [ "Which users should receive the first rollout?" ]
       )
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-009
+    # Mirror of the queued path: the resume path trips the same
+    # `clarification_pending?` check, so a stale `needs_input_questions` with
+    # a recent analyzer-confirmed verdict must not block the queued run
+    # (#4196).
+    it "resumes a queued create_pr run when the analyzer verdict confirmed sufficient context even though needs_input_questions is stored" do
+      queued_run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr")
+      issue.update!(
+        needs_input_questions: [ "Which users should receive the first rollout?" ],
+        last_analyzer_sufficient_context: true,
+        last_analyzed_at: 1.minute.ago
+      )
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.not_to raise_error
     end
 
     it "preserves the existing configuration bundle on resume when provider selection is unchanged" do

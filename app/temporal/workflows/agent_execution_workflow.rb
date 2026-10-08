@@ -117,29 +117,41 @@ module Workflows
         count_toward_draft_review_round: input[:count_toward_draft_review_round],
         expected_draft_review_count: input[:expected_draft_review_count],
         plan_docs: input[:plan_docs] }.compact
-      agent_run_result = run_activity(Activities::CreateAgentRunActivity,
-        create_input, timeout: 30)
-      agent_run_id = agent_run_result[:agent_run_id]
-      focus = agent_run_result.fetch(:focus, "general")
-      runner_attempt_count = [ agent_run_result.fetch(:runner_attempt_count, 1), 1 ].max
-      agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
-      issue_goal_timeout_seconds = agent_run_result.fetch(
-        :issue_goal_timeout_seconds,
-        Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
-      )
-      max_execution_seconds = agent_run_result[:max_execution_seconds]
-      tdd_phase = agent_run_result[:tdd_phase]
-      runner_id = agent_run_result[:runner_id]
 
-      if agent_run_result[:paused]
-        return { success: false, paused: true, agent_run_id: agent_run_id }
-      end
-
-      agent_step_succeeded = false
-      runner_step_reached = false
-      workflow_error = nil
+      agent_run_result = nil
 
       begin
+        # @spec TEMPORAL-ORCHESTRATION-010 — the startup CreateAgentRunActivity
+        # call lives inside the workflow's main `begin`/`rescue` block, so a
+        # rejection here (most commonly a non-retryable `IssueAwaitingInput`
+        # on a stale resolved clarification state — see ISSUE-ANALYSIS-017)
+        # writes a `failed` terminal status with the unwrapped application
+        # error before re-raising. Before the fix, the activity lived above
+        # this block, so Temporal's terminal failure left the AgentRun row
+        # stuck at `running` while `StaleRunDetectorJob` repeatedly requeued
+        # the same blocked work — the analyze/timeout loop observed on
+        # viamin/yupyup#9 (#4196). Cancellations short-circuit the rescue
+        # via `raise_if_canceled!`, so the run stays in `running` until
+        # Temporal cancels it (no spurious `failed` status write).
+        agent_run_result = run_activity(Activities::CreateAgentRunActivity,
+          create_input, timeout: 30)
+
+        agent_run_id = agent_run_result[:agent_run_id]
+        focus = agent_run_result.fetch(:focus, "general")
+        runner_attempt_count = [ agent_run_result.fetch(:runner_attempt_count, 1), 1 ].max
+        agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
+        issue_goal_timeout_seconds = agent_run_result.fetch(
+          :issue_goal_timeout_seconds,
+          Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
+        )
+        max_execution_seconds = agent_run_result[:max_execution_seconds]
+        tdd_phase = agent_run_result[:tdd_phase]
+        runner_id = agent_run_result[:runner_id]
+
+        if agent_run_result[:paused]
+          return { success: false, paused: true, agent_run_id: agent_run_id }
+        end
+
         gate_result = check_quality_gate(
           project_id: project_id,
           issue_id: issue_id,

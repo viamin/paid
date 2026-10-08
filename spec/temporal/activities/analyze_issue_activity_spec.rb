@@ -860,6 +860,89 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect(result[:sufficient_context]).to be false
     end
+
+    # @spec ISSUE-ANALYSIS-017
+    # The analyzer's positive verdict is authoritative: a stale
+    # `needs_input_questions` payload on the issue (typically a leftover from
+    # an earlier round whose answer the analyzer has just confirmed) MUST be
+    # cleared so the follow-up `create_pr` queue does not trip
+    # `clarification_pending?` on the stale payload (#4196). Without this
+    # reconciliation every fresh `create_pr` queue is rejected with a
+    # non-retryable `IssueAwaitingInput` even though the analyzer has just
+    # confirmed the issue is actionable, and `StaleRunDetectorJob` repeatedly
+    # requeues the same blocked work.
+    context "when the verdict is sufficient_context: true and needs_input_questions is stored" do
+      before do
+        issue.update!(
+          needs_input_questions: [ "Which scope should ship first?" ],
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ]
+        )
+      end
+
+      it "clears the stored needs_input_questions" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.needs_input_questions).to be_nil
+      end
+
+      it "removes the local needs-input label" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.labels).not_to include(project.enhance_issue_needs_input_label_name)
+      end
+
+      it "preserves the non-needs-input labels" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.labels).to include("paid-build")
+      end
+
+      it "transitions the issue to the analyzed paid_state in the same pass" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.paid_state).to eq("analyzed")
+      end
+
+      it "does not write to the GitHub-side needs-input label" do
+        expect(client).not_to receive(:remove_label_from_issue) if client.respond_to?(:remove_label_from_issue)
+        expect(client).not_to receive(:add_labels_to_issue) if client.respond_to?(:add_labels_to_issue)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-017
+    # The reconciliation MUST be scoped to the positive-verdict case: a
+    # genuinely unanswered round is never silently discarded by the analyzer
+    # pass — `sufficient_context: false` preserves `needs_input_questions`
+    # and the needs-input label exactly as `EnhanceIssueActivity` wrote them.
+    context "when the verdict is sufficient_context: false" do
+      before do
+        issue.update!(
+          needs_input_questions: [ "Which scope should ship first?" ],
+          labels: [ project.enhance_issue_needs_input_label_name, "paid-build" ]
+        )
+        allow(llm_response).to receive(:output).and_return(
+          {
+            sufficient_context: false,
+            reasoning: "Still ambiguous",
+            missing_context_areas: [ "scope" ]
+          }.to_json
+        )
+      end
+
+      it "leaves needs_input_questions intact" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.needs_input_questions).to eq([ "Which scope should ship first?" ])
+      end
+
+      it "leaves the needs-input label intact" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.labels).to include(project.enhance_issue_needs_input_label_name)
+      end
+    end
   end
 
   describe "provider fallback" do

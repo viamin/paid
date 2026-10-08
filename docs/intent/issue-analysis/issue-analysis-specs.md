@@ -327,3 +327,31 @@
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#enforce_cap_override`,
   `#reopen_enhancement_budget!`, `#fresh_human_signal_since?`,
   `#paid_marker_comment_body?`, `#build_cycle_state`.
+
+- [x] **ISSUE-ANALYSIS-017** — When a successful `analyze_issue` run returns
+  `sufficient_context: true` AND the issue carries a stale local
+  `needs_input_questions` payload (i.e. previously-asked questions the LLM has
+  since confirmed are resolved), the system SHALL reconcile the cleared state
+  on the issue as part of `#complete_run!` — clearing `needs_input_questions`
+  and removing the `enhance_issue_needs_input_label_name` label locally — so
+  the follow-up `create_pr` queue does not trip `clarification_pending?` on
+  the stale payload (#4196). The reconciliation MUST be scoped to the
+  sufficient-context case: an `sufficient_context: false` verdict preserves
+  `needs_input_questions` and the needs-input label exactly as
+  `EnhanceIssueActivity#sync_needs_input_questions` wrote them, so a genuinely
+  unanswered round is never silently discarded by the analyzer pass. The
+  removal is local-only (the GitHub-side label was already removed by
+  `ClarifyingQuestions::ClearNeedsInput` once a human answered, or the issue
+  never carried it); a GitHub write is intentionally skipped here to avoid
+  racing with the human's own label sync. The reconciliation runs in the same
+  transaction-shaped site as `paid_state: "analyzed"`, so a successful
+  analyzer pass and the cleared question pair land together.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("clears stored needs_input_questions on a sufficient-context verdict",
+  "removes the local needs-input label on a sufficient-context verdict",
+  "leaves needs_input_questions intact on a sufficient-context: false verdict",
+  "leaves the needs-input label intact on a sufficient-context: false verdict").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#complete_run!`,
+  `#reconcile_resolved_clarification_state_attrs`,
+  `app/temporal/activities/create_agent_run_activity.rb#clarification_pending?`,
+  `app/temporal/workflows/agent_execution_workflow.rb#execute`.
