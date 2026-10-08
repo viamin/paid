@@ -43,6 +43,7 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
       assistant_message
@@ -131,6 +132,40 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # A conversational reply (e.g. "yes") is not a confirmation. When a write
+    # tool still awaits explicit approval, persist a durable notice stating
+    # that this message is not an approval, naming the pending action(s), and
+    # confirming nothing has run yet — then let the loop continue over it.
+    # The notice is a system row, so the model also sees it and cannot mistake
+    # the reply for execution. Deterministic by construction: the pending row
+    # is only ever settled through ChatSessions::ResolveToolCall.
+    # @spec PARTIAL-CLOSEOUT-017
+    def persist_pending_confirmation_notice
+      pending = chat_session.messages.pending_tool_confirmations.order(:id).to_a
+      return if pending.empty?
+
+      tool_names = pending.map { |message| message.tool_name.presence || "tool" }.uniq
+      message = chat_session.messages.create!(
+        role: "system",
+        content: pending_confirmation_notice_content(tool_names),
+        metadata: {
+          "pending_confirmation_notice" => true,
+          "tool_names" => tool_names,
+          "pending_message_ids" => pending.map(&:id)
+        }
+      )
+      on_message_persisted&.call(message)
+      message
+    end
+
+    def pending_confirmation_notice_content(tool_names)
+      list = tool_names.map { |name| "`#{name}`" }.join(", ")
+      "This message was not treated as approval. #{tool_names.size == 1 ? "One action" : "#{tool_names.size} actions"} " \
+        "(#{list}) still await confirmation in this conversation. " \
+        "Use the Approve / Deny buttons on the awaiting-confirmation card to execute or refuse it. " \
+        "No action has run yet."
     end
 
     def update_session_activity

@@ -1,6 +1,13 @@
 <%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 @spec PARTIAL-CLOSEOUT-010 %>
+<%# @spec PARTIAL-CLOSEOUT-013 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 %>
 <% issue = entry.issue %>
 <% status = Issues::CloseoutStatus.call(issue) %>
+<% human_prerequisite = entry.project.account.notifications.where(
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      subject: issue,
+      resolved_at: nil,
+      dismissed_at: nil
+    ).order(created_at: :desc).first %>
 <div class="space-y-6">
   <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
     <h3 class="text-sm font-semibold text-violet-900">
@@ -8,6 +15,23 @@
     </h3>
     <p class="mt-1 text-sm text-violet-800"><%= status.reason %></p>
     <%= render "dashboard/inbox_closeout_blockers", blockers: status.blockers %>
+  </div>
+
+  <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
+    <h3 class="text-sm font-semibold text-gray-900">Deciding what to do</h3>
+    <ol class="list-decimal space-y-1 pl-5 text-sm text-gray-700">
+      <li>Review the recorded evidence against the issue's acceptance criteria before acting.</li>
+      <li>Continue agent-actionable work with a deliberate continuation below.</li>
+      <li>Link prerequisite work (or have an agent file it with <code>create_issue</code>) so the remainder is owned.</li>
+      <li>Supply human evidence yourself when the gap needs hardware, credentials, pilot results, or human adjudication.</li>
+      <li>Only attest completion when the recorded evidence justifies it — never just to clear the lane.</li>
+    </ol>
+    <p class="text-sm">
+      <%= link_to "Read the operator guide", partial_closeout_guide_path,
+            data: { turbo_frame: "_top" },
+            class: "text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+      for what completes a run, resolves an Inbox item internally, and closes the GitHub issue.
+    </p>
   </div>
 
   <div class="space-y-3">
@@ -41,17 +65,54 @@
     </ul>
   </div>
 
-  <% if status.unresolved_prerequisites.any? %>
-    <div class="space-y-2">
-      <h3 class="text-sm font-semibold text-gray-900">Unresolved prerequisites</h3>
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
+    <% if status.unresolved_prerequisites.any? %>
       <p class="text-sm text-gray-600">
         <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
         requesting continuation. To make a follow-up issue <code>#B</code> a prerequisite, add
         <code>Depends on #B</code> to this stalled issue's body, then sync. An agent can file the follow-up
         with the existing <code>create_issue</code> tool.
       </p>
-    </div>
-  <% end %>
+    <% end %>
+
+    <% if policy(entry.project).run_agent? %>
+        <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-end" do |form| %>
+          <%= form.hidden_field :issue_id, value: issue.id %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <div class="flex flex-1 flex-col gap-1">
+            <%= form.label :depends_on, "Link a prerequisite", for: "depends_on_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
+            <%= form.text_field :depends_on,
+                  id: "depends_on_#{issue.id}",
+                  required: true,
+                  placeholder: "#41",
+                  aria: { describedby: "depends_on_help_#{issue.id}" },
+                  class: "min-w-0 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+            <p id="depends_on_help_<%= issue.id %>" class="text-xs text-gray-500">
+              Appends the dependency wording on GitHub and links it here immediately. The prerequisite must
+              already be synced into Paid; a project sync is only required after body edits made directly on
+              GitHub.
+            </p>
+          </div>
+          <%= form.submit "Link prerequisite",
+                class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:self-auto" %>
+        <% end %>
+    <% end %>
+
+    <% if human_prerequisite.present? %>
+        <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
+          <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
+          <p class="text-xs text-amber-800">
+            Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
+            where the step says (usually a comment or linked artifact on the prerequisite), then link that work
+            here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
+            evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
+            what the run should do with the evidence.
+          </p>
+        </div>
+    <% end %>
+  </div>
 
   <div class="flex flex-wrap items-center gap-3">
     <%= link_to "View on GitHub",
@@ -63,40 +124,73 @@
           project_agent_runs_path(entry.project),
           data: { turbo_frame: "_top" },
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-    <% if policy(entry.project).run_agent? %>
-      <%= button_to "Resolve as complete",
-            resolve_closeout_project_agent_runs_path(entry.project),
-            method: :post,
-            params: {
-              issue_id: issue.id,
-              reason: "Operator attests the recorded closeout evidence completes ##{issue.github_number}.",
-              return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind))
-            },
-            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
-            form: { data: {
-              turbo_confirm: "Resolve ##{issue.github_number} as complete against the recorded evidence? " \
-                "The GitHub issue stays open for a human to close; newer terminal evidence would resurface it here.",
-              turbo_frame: "_top"
-            } } %>
-    <% end %>
   </div>
 
   <% if policy(entry.project).run_agent? %>
-    <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
-      <h3 class="text-sm font-semibold text-gray-900">Request a deliberate continuation</h3>
-      <p class="text-xs text-gray-500">
-        Queues exactly one run scoped to the current evidence generation. The authorization records you as the
-        actor with this reason, and the merged-PR / no-code guards re-arm once its run finishes.
-      </p>
-      <%= form_with url: request_continuation_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2" do |form| %>
+    <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Resolve as complete (internal attestation)</h3>
+      <details class="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">
+        <summary class="cursor-pointer font-medium text-gray-700">What this does — and does not — do</summary>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          <li><strong>Completing a run</strong> is evidence about one execution: a merged PR or no-code declaration.</li>
+          <li><strong>Resolving this Inbox item</strong> records your attestation, actor, and rationale against the
+            current evidence generation. The GitHub issue stays open for a human to close, and new terminal
+            evidence can resurface the item here. Any open continuation authorization is superseded.</li>
+          <li><strong>Closing the GitHub issue</strong> only happens through a final pull request a human merges.</li>
+        </ul>
+      </details>
+      <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2" do |form| %>
         <%= form.hidden_field :issue_id, value: issue.id %>
         <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
-        <%= form.label :reason, "Reason for continuation", class: "text-sm font-medium text-gray-700" %>
+        <%= form.label :reason, "Completion rationale", for: "closeout_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
         <%= form.text_area :reason,
+              id: "closeout_reason_#{issue.id}",
               required: true,
               maxlength: 2000,
               rows: 3,
-              placeholder: "What work remains, and why should Paid continue now?",
+              placeholder: "Which merged PRs or no-code declaration cover each acceptance criterion, and what evidence proves it?",
+              aria: { describedby: "closeout_reason_help_#{issue.id}" },
+              class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+        <p id="closeout_reason_help_<%= issue.id %>" class="text-xs text-gray-500">
+          Write a specific rationale that references the recorded evidence. The canned sentence alone is refused.
+        </p>
+        <%= form.submit "Resolve as complete",
+              id: "closeout_submit_#{issue.id}",
+              class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
+              data: { turbo_confirm: "Resolve ##{issue.github_number} as complete against the recorded evidence? " \
+                "This resolves the Inbox item internally; the GitHub issue stays open for a human to close, and " \
+                "newer terminal evidence would resurface it here.", turbo_frame: "_top" } %>
+      <% end %>
+    </div>
+
+    <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Request a deliberate continuation</h3>
+      <p class="text-xs text-gray-500">
+        A continuation authorizes exactly one run scoped to the current evidence generation. Other holds still apply —
+        dependencies, trust, feature gates, budgets, pauses, skip labels, needs-input, and manual review each still
+        refuse with their specific reason. The authorization records you as the actor with this reason, and the
+        merged-PR / no-code guards re-arm once its run finishes. Describe the remaining work and the expected evidence —
+        the run receives the reason as its remaining-work plan.
+      </p>
+      <details class="rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-600">
+        <summary class="cursor-pointer font-medium text-gray-700">Reason examples</summary>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          <li><strong>fresh acceptance audit:</strong> re-check the acceptance criteria against the merged PR and report which remain unmet, with evidence.</li>
+          <li><strong>implementation gap:</strong> the PR shipped part of the scope; name the missing piece and the evidence that will show it landed.</li>
+          <li><strong>scanner verification:</strong> fix the recurrence and wait for the default-branch scan to confirm.</li>
+          <li><strong>human-only evaluation:</strong> only when a human decision gates the work — the run should stop and report, not wait.</li>
+        </ul>
+      </details>
+      <%= form_with url: request_continuation_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2" do |form| %>
+        <%= form.hidden_field :issue_id, value: issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.label :reason, "Reason for continuation", for: "continuation_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
+        <%= form.text_area :reason,
+              id: "continuation_reason_#{issue.id}",
+              required: true,
+              maxlength: 2000,
+              rows: 3,
+              placeholder: "What work remains, what evidence should the run produce, and why should Paid continue now?",
               class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
         <%= form.submit "Request continuation",
               class: "inline-flex self-start items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",

@@ -69,6 +69,15 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["provider_error_notice"] == true
   end
 
+  # @spec PARTIAL-CLOSEOUT-017
+  # Server-injected system notice persisted when the user sends a
+  # conversational message while a write-tool confirmation is pending: the
+  # message is not an approval and nothing has run yet. Non-collapsed so a
+  # conversational "yes" can never read as an executed action.
+  def pending_confirmation_notice?
+    metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
+  end
+
   private
 
   def tool_result_message?

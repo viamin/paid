@@ -317,6 +317,23 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Issue resolved as complete.")
     end
 
+    # Links a prerequisite to a stalled partial-closeout issue from the Inbox
+    # pane: appends the dependency wording on GitHub and refreshes the local
+    # dependency records without waiting for the next sync (#4189).
+    # @spec PARTIAL-CLOSEOUT-016
+    def link_prerequisite
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = Issues::LinkPrerequisite.call(issue: issue, actor: current_user, depends_on: params[:depends_on])
+      redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation
@@ -780,6 +797,15 @@ module Projects
 
     def closeout_flash(result, success_message)
       result.success? ? { notice: success_message } : { alert: result.message }
+    end
+
+    def prerequisite_flash(result)
+      if result.success?
+        { notice: "Linked ##{result.prerequisite_number} as a prerequisite and refreshed local records. " \
+                  "A project sync is only required after body edits made directly on GitHub." }
+      else
+        { alert: result.message }
+      end
     end
 
     def resolve_priority_tier

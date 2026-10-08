@@ -145,6 +145,17 @@ RSpec.describe "Issue continuations" do # @spec PARTIAL-CLOSEOUT-007 @spec PARTI
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec PARTIAL-CLOSEOUT-014 — the pane no longer submits a hidden
+      # canned reason; replaying that legacy payload must be refused.
+      it "refuses the legacy canned hidden reason" do
+        post resolve_closeout_project_agent_runs_path(project),
+          params: { issue_id: issue.id, reason: "Operator attests the recorded closeout evidence completes ##{issue.github_number}." }
+
+        expect(flash[:alert]).to include("specific completion rationale")
+        expect(issue.reload.paid_state).not_to eq("completed")
+        expect(issue.closeout_resolved_at).to be_nil
+      end
+
       it "refuses resolution without closeout evidence" do
         plain = create(:issue, project: project, github_number: 33)
 

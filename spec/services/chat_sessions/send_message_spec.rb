@@ -63,6 +63,53 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
+    # treated, displayed, or replayed as approval of a pending write tool.
+    describe "with a pending write-tool confirmation" do
+      let!(:pending_confirmation) do
+        create(:chat_message, :tool_call, chat_session: chat_session,
+          tool_name: "request_issue_continuation", tool_status: "pending")
+      end
+      let(:persisted_messages) { chat_session.messages.order(:created_at).to_a }
+
+      it "persists a durable notice that the message is not an approval and nothing has run" do
+        described_class.call(chat_session: chat_session, content: "yes", llm_client: llm_client)
+
+        notice = persisted_messages.detect(&:pending_confirmation_notice?)
+        expect(notice).to be_present
+        expect(notice.role).to eq("system")
+        expect(notice.content).to include("not treated as approval")
+        expect(notice.content).to include("request_issue_continuation")
+        expect(notice.content).to include("No action has run yet")
+        expect(notice.metadata).to include("pending_confirmation_notice" => true, "tool_names" => [ "request_issue_continuation" ])
+        expect(notice.metadata).to include("pending_message_ids" => [ pending_confirmation.id ])
+      end
+
+      it "renders the notice with a link to the awaiting confirmation" do
+        described_class.call(chat_session: chat_session, content: "yes", llm_client: llm_client)
+        notice = chat_session.messages.detect(&:pending_confirmation_notice?)
+        rendered = ApplicationController.render(partial: "chat_messages/message", locals: { message: notice })
+
+        expect(rendered).to include("Conversation reply is not approval")
+        expect(rendered).to include("#chat-message-#{pending_confirmation.id}")
+      end
+
+      it "leaves the confirmation pending instead of approving it" do
+        described_class.call(chat_session: chat_session, content: "yes", llm_client: llm_client)
+
+        expect(pending_confirmation.reload.pending_confirmation?).to be true
+        expect(pending_confirmation.tool_status).to eq("pending")
+      end
+
+      it "does not persist the notice when no confirmation is pending" do
+        pending_confirmation.update!(tool_status: "approved")
+
+        described_class.call(chat_session: chat_session, content: "yes", llm_client: llm_client)
+
+        expect(chat_session.messages.detect(&:pending_confirmation_notice?)).to be_nil
+      end
+    end
+
     it "persists the assistant response" do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)

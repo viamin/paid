@@ -59,6 +59,7 @@ Rails.application.routes.draw do
   get "dashboard/pr_cycle_time", to: "dashboard#pr_cycle_time", as: :dashboard_pr_cycle_time
   get "inbox", to: "inbox#index", as: :inbox
   get "inbox/count", to: "inbox#count", as: :inbox_count
+  get "inbox/partial-closeout-guide", to: "inbox#partial_closeout_guide", as: :partial_closeout_guide
   post "inbox/:entry_id/interactive_chat", to: "inbox#open_chat", as: :inbox_interactive_chat
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
@@ -282,6 +283,7 @@ Rails.application.routes.draw do
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :request_continuation, on: :collection
       post :resolve_closeout, on: :collection
+      post :link_prerequisite, on: :collection
       post :cancel, on: :member
       post :retry, on: :member
       post :refresh_auth, on: :member

@@ -1,5 +1,6 @@
 <% renders_tool_call = message.tool_name.present? || message.role == "tool" %>
-<article class="<%= chat_message_bubble_classes(message) %>"
+<article id="chat-message-<%= message.id %>"
+         class="<%= chat_message_bubble_classes(message) %>"
          data-controller="chat-message"
          data-chat-message-role-value="<%= message.role %>"
          data-chat-message-markdown-value="<%= message.role == 'assistant' && message.content.present? %>"
