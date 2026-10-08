@@ -369,3 +369,40 @@ This is detection and surfacing only — auto-repairing a truncated body (e.g.
 reconstructing it from git history when it was agent-rewritten) is out of
 scope; the flag exists to route the issue to a human who can fix the body
 directly.
+
+## Reconciling resolved clarification state
+
+The analyzer is the single authority on whether an issue's previously-posted
+clarifying questions are still open. Once it returns
+`sufficient_context: true`, any stale `needs_input_questions` payload on the
+issue (typically a leftover from an earlier round whose answer the analyzer
+has just confirmed) MUST be cleared so the follow-up `create_pr` queue does
+not trip `CreateAgentRunActivity#clarification_pending?` on the stale
+payload — the #4196 stuck-loop on `viamin/yupyup#9`. Without this
+reconciliation, every fresh `create_pr` queue gets rejected with a
+non-retryable `IssueAwaitingInput` even though the analyzer has just
+confirmed the issue is actionable, and `StaleRunDetectorJob` repeatedly
+requeues the same blocked work.
+
+The reconciliation lives in `AnalyzeIssueActivity#complete_run!` and is
+scoped tightly to the positive-verdict case:
+
+- `sufficient_context: true` clears `needs_input_questions` and removes the
+  `enhance_issue_needs_input_label_name` label from the issue's local
+  labels list. The `paid_state: "analyzed"` transition and the clear run
+  together — a failed write on either side raises and the analyzer
+  surfaces as failed rather than leaving the issue half-reconciled.
+- `sufficient_context: false` preserves the existing
+  `needs_input_questions` payload and the needs-input label exactly as
+  `EnhanceIssueActivity#sync_needs_input_questions` wrote them, so a
+  genuinely unanswered round is never silently discarded by an analyzer
+  pass.
+
+The reconciliation is local-only — it never writes the needs-input label
+back to GitHub. The GitHub-side label was already removed by
+`ClarifyingQuestions::ClearNeedsInput` once the human answered (or the
+issue never carried it); racing with the human's own label sync would
+introduce a flapping cycle worse than the original bug. The
+`CreateAgentRunActivity#clarification_pending?` guard still rejects a
+`create_pr` run when `paid_state: "needs_input"` or the needs-input label
+is set, so a fresh unanswered round still gates the issue correctly.
