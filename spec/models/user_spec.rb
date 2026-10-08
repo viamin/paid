@@ -258,6 +258,71 @@ RSpec.describe User do
     end
   end
 
+  describe "dependabot acceptance release" do
+    let(:project) { create(:project) }
+    let(:operator) { create(:user, account: project.account) }
+
+    def accepted_coverage(owner: operator, alert_number: 1)
+      coverage = create(:dependabot_alert_coverage, project:, account: project.account,
+        alert_number:, advisory_ghsa_id: "GHSA-0000-0000-#{format("%04d", alert_number)}",
+        uncovered_since: 3.days.ago)
+      coverage.accept!(owner:, reason: "Risk accepted", expires_at: 30.days.from_now)
+      coverage
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "ends acceptances when the accepting operator is destroyed rather than leaving them ownerless" do
+      coverage = accepted_coverage
+
+      operator.destroy!
+
+      expect(coverage.reload).not_to be_accepted
+      expect(coverage).to have_attributes(
+        coverage_state: "unknown", reason: "acceptance_owner_removed",
+        accepted_by_id: nil, acceptance_reason: nil, acceptance_expires_at: nil,
+        escalated_at: nil
+      )
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "returns the released alert to the escalation path after a fresh grace period" do
+      coverage = accepted_coverage
+
+      operator.destroy!
+
+      expect(coverage.reload.escalation_due?).to be false
+      travel 8.days do
+        expect(coverage.reload.escalation_due?).to be true
+      end
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "preserves acceptances owned by other operators" do
+      other_operator = create(:user, account: project.account)
+      kept = accepted_coverage(owner: other_operator, alert_number: 11)
+      released = accepted_coverage(alert_number: 12)
+
+      operator.destroy!
+
+      expect(kept.reload).to be_accepted
+      expect(kept.acceptance_expires_at).to be > Time.current
+      expect(released.reload).not_to be_accepted
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "releases acceptances in other accounts even outside system access" do
+      other_account_project = create(:project)
+      operator.add_role(:member, other_account_project.account)
+      coverage = accepted_coverage(owner: operator, alert_number: 21)
+      coverage.update!(project: other_account_project, account: other_account_project.account)
+
+      TenantContext.with(project.account) { operator.destroy! }
+
+      expect(coverage.reload).not_to be_accepted
+      expect(coverage.reason).to eq("acceptance_owner_removed")
+    end
+  end
+
   describe "#settings" do
     it "returns existing settings inside a transaction when the association cached nil" do
       user = create(:user)

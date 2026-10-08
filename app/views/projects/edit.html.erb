@@ -923,6 +923,33 @@
               <% end %>
             </div>
 
+            <div data-testid="security-alert-types">
+              <span class="block text-sm font-medium leading-6 text-gray-900">Security Alert Sources</span>
+              <p class="mt-1 text-xs text-gray-500">
+                Choose which GitHub alert sources Paid should surface as coverage failures. Deselecting a source disables its scan; selecting it restores coverage for that source after a credentials or permission fix.
+              </p>
+              <%# A hidden "always-submitted" entry ensures the array reaches the
+                  controller even when every checkbox is unchecked; without it
+                  unchecking every box would be indistinguishable from a partial
+                  submit and the existing selection would be preserved. The
+                  controller filters the empty string out. %>
+              <%= hidden_field_tag "project[security_alert_types][]", "" %>
+              <div class="mt-2 space-y-2">
+                <% Project::SECURITY_ALERT_TYPE_OPTIONS.each do |value, label, description| %>
+                  <label class="flex items-start gap-3">
+                    <%= check_box_tag "project[security_alert_types][]", value,
+                      Array(@project.security_alert_types).include?(value),
+                      id: "project_security_alert_types_#{value}",
+                      class: "mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                    <span>
+                      <span class="block text-sm font-medium leading-6 text-gray-900"><%= label %></span>
+                      <span class="block text-xs text-gray-500"><%= description %></span>
+                    </span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+
             <div>
               <label class="flex items-center gap-2 text-sm font-medium leading-6 text-gray-900">
                 <%= hidden_field_tag "project[auto_pick_skip_labels_override]", "0" %>

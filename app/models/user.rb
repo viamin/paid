@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class User < ApplicationRecord
+  has_many :accepted_dependabot_alert_coverages,
+    class_name: "DependabotAlertCoverage", foreign_key: :accepted_by_id, dependent: :nullify
   has_logidze
   belongs_to :account
   has_many :account_memberships, dependent: :destroy
@@ -40,6 +42,7 @@ class User < ApplicationRecord
 
   after_create :assign_owner_role_if_first_user
   after_create :ensure_default_runner
+  before_destroy :release_dependabot_alert_acceptances, prepend: true
 
   # Role Management API
   # These methods provide a compatible interface with the previous Rolify implementation
@@ -236,6 +239,30 @@ class User < ApplicationRecord
     Runner.ensure_default_for(self)
   rescue ActiveRecord::StatementInvalid => e
     raise unless e.cause.is_a?(PG::UndefinedTable)
+  end
+
+  # An acceptance must retain an owner; `dependent: :nullify` clears
+  # accepted_by_id with update_all and would leave an ownerless acceptance
+  # suppressing the uncovered-alert escalation until its expiry. Destroying
+  # the operator instead ends those acceptances and returns each alert to the
+  # uncovered pool with a fresh grace window, mirroring acceptance expiry.
+  # prepend: true keeps this ahead of the association's dependent callback,
+  # which would otherwise disown the rows first.
+  # @spec DEPENDABOT-COVERAGE-001
+  def release_dependabot_alert_acceptances
+    TenantContext.with_system_access do
+      released = accepted_dependabot_alert_coverages.where(coverage_state: "accepted").update_all(
+        coverage_state: "unknown", reason: "acceptance_owner_removed",
+        accepted_by_id: nil, acceptance_reason: nil, acceptance_expires_at: nil,
+        uncovered_since: Time.current, escalated_at: nil, updated_at: Time.current
+      )
+      if released.positive?
+        Rails.logger.info(
+          message: "github_sync.dependabot_acceptances_released",
+          user_id: id, released_count: released
+        )
+      end
+    end
   end
 
   # Normalize role names between old Rolify format and new enum format
