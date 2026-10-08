@@ -88,4 +88,20 @@ namespace :issues do
       puts "Cancelled #{cancelled} now-ineligible queued run(s)."
     end
   end
+
+  desc "Reconcile legacy partial closeouts whose runs pre-date the " \
+       "partial-closeout-reconciliation-v1 patch marker. Required: ACCOUNT_ID=<id>. " \
+       "Idempotent — repeat invocations finish runs whose prior attempt recorded " \
+       "a `creating` marker, and skip runs whose reconciliation is terminal (#4187)."
+  task reconcile_legacy_partial_closeouts: :environment do # @spec PARTIAL-CLOSEOUT-015
+    account_id = Integer(ENV.fetch("ACCOUNT_ID"))
+    result = PartialCloseouts::ReconcileLegacy.call(account_id: account_id)
+
+    puts "Legacy partial closeout reconciliation for account #{account_id}:"
+    puts "  scanned:             #{result.scanned}"
+    puts "  reconciled:          #{result.reconciled}"
+    puts "  awaiting_operator:   #{result.awaiting_operator}"
+    puts "  retryable_failure:   #{result.retryable_failure}"
+    puts "  skipped:             #{result.skipped}"
+  end
 end

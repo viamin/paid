@@ -2,8 +2,9 @@
 
 require "rails_helper"
 require "rake"
+require "ostruct"
 
-# rubocop:disable RSpec/DescribeClass
+# rubocop:disable RSpec/DescribeClass, RSpec/MultipleDescribes
 RSpec.describe "issues:repair_pull_request_source_links" do
   let(:task) { Rake::Task["issues:repair_pull_request_source_links"] }
   let(:project) { create(:project) }
@@ -98,4 +99,63 @@ RSpec.describe "issues:repair_pull_request_source_links" do
     end
   end
 end
-# rubocop:enable RSpec/DescribeClass
+
+# @spec PARTIAL-CLOSEOUT-015
+RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
+  let(:task) { Rake::Task["issues:reconcile_legacy_partial_closeouts"] }
+  let(:account) { create(:account) }
+  let(:project) do
+    create(:project, account: account, owner: "acme", repo: "alpha")
+  end
+  let(:client) { instance_double(GithubClient) }
+
+  before do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("issues:reconcile_legacy_partial_closeouts")
+    task.reenable
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive(:update_issue)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: ""))
+    allow(client).to receive(:create_issue)
+    ENV["ACCOUNT_ID"] = account.id.to_s
+  end
+
+  after do
+    ENV.delete("ACCOUNT_ID")
+  end
+
+  it "raises a clear error when ACCOUNT_ID is not supplied" do
+    ENV.delete("ACCOUNT_ID")
+
+    expect { task.invoke }.to raise_error(KeyError)
+  end
+
+  it "prints a result summary for a sweep that finds zero candidates" do
+    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+      .with(account_id: account.id).and_return(
+        PartialCloseouts::ReconcileLegacy::Result.new(
+          scanned: 0, reconciled: 0, awaiting_operator: 0,
+          retryable_failure: 0, skipped: 0
+        )
+      )
+
+    expect { task.invoke }.to output(
+      /scanned:\s+0.*reconciled:\s+0.*awaiting_operator:\s+0.*retryable_failure:\s+0.*skipped:\s+0/m
+    ).to_stdout
+  end
+
+  it "invokes ReconcileLegacy exactly once with the parsed ACCOUNT_ID" do
+    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+      .and_return(
+        PartialCloseouts::ReconcileLegacy::Result.new(
+          scanned: 0, reconciled: 0, awaiting_operator: 0,
+          retryable_failure: 0, skipped: 0
+        )
+      )
+
+    task.invoke
+
+    expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(account_id: account.id).once
+  end
+end
+
+# rubocop:enable RSpec/DescribeClass, RSpec/MultipleDescribes

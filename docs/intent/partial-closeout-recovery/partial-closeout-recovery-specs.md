@@ -191,3 +191,74 @@
   *Verification:* Chromium layout checks at 320, 375, 640, 768, 1024, and
   1280px viewport widths in a 300px-wide continuation section, plus a
   rendered Inbox browser check at mobile and desktop widths.
+
+- [x] **PARTIAL-CLOSEOUT-012** — When `PartialCloseouts::ReconcileLegacy`
+  processes a `create_pr` `AgentRun` whose partial PR has been authoritatively
+  linked to its source issue (via `parent_issue_id` or the run's recorded
+  `pull_request_number` URL join) and whose `reconciliation` is empty or
+  carries no terminal `status`, the system SHALL treat the run as a legacy
+  partial closeout: replay through `Llm::AnalyzePartialCloseout` to obtain a
+  fresh assessment, route the assessment through `PartialCloseouts::Reconcile`
+  (which provides replay-safe owner creation, `IssueDependency` persistence,
+  parent-body dependency rewrite, and aggregated prerequisite notifications),
+  and SHALL persist the resulting `reconciliation` record so subsequent
+  reconciliation passes find the run already reconciled and skip it. The
+  legacy path SHALL NOT mass-reset `paid_state`, SHALL NOT infer completion
+  from closed children, and SHALL NOT auto-close the parent umbrella or any
+  open epic (#4187).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-013** — When `PartialCloseouts::ReconcileLegacy`
+  processes a legacy partial closeout, the system SHALL ground the assessment
+  in current shipped behavior and intent: a gap whose criterion is already
+  satisfied by merged work, closed prerequisites, or other current evidence
+  SHALL be omitted from the assessment; a gap without an open owner SHALL be
+  filed as a focused follow-up issue through `PartialCloseouts::Reconcile`'s
+  owner creation path; a gap that requires a human action SHALL surface as a
+  blocking Inbox prerequisite notification under
+  `PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE` with the exact
+  next-step wording. Repeated invocations against the same run SHALL NOT
+  create duplicate owners, dependencies, or notifications — the persisted
+  assessment (`reconciliation.assessment`) is reused on replay, so gap
+  indices stay stable across attempts, and a run with a terminal
+  `reconciliation.status` SHALL be skipped (#4187).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-014** — When `PartialCloseouts::ReconcileLegacy`
+  processes a legacy partial closeout and a GitHub call fails after the
+  `assessment` has been persisted but before reconciliation completes, the
+  system SHALL preserve the recorded `reconciled_at`, `status`, and `error`
+  fields on the run's `reconciliation` JSON, SHALL re-raise the
+  `GithubClient::Error` so the caller can retry, and SHALL NOT create
+  duplicate owner issues, dependencies, or operator notifications on the
+  retry. A run whose reconciliation state shows `creating` for a gap
+  SHALL resume owner recovery via the existing marker-based recovery path
+  in `PartialCloseouts::Reconcile#create_owner!` rather than filing a second
+  issue (#4187).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-015** — When the legacy reconciliation sweep is
+  invoked for an account, the system SHALL scope the run selection to that
+  account (`TenantContext.with_system_access` to read across tenant RLS,
+  with `project.account_id = <account>` to write only in scope), SHALL cap
+  the candidate selection at the project's authoritative merged partial-PR
+  links (`Issue` rows where `is_pull_request: true`, `pr_review_phase:
+  "merged"`, and either `parent_issue_id` is set or an originating
+  `AgentRun` matches by `pull_request_number`/`pull_request_url`), and SHALL
+  skip a run whose latest `create_pr` attempt already persisted a terminal
+  `reconciliation.status`. The sweep SHALL be restartable: an interrupted
+  sweep can be re-invoked, and the second pass SHALL finish any run whose
+  previous attempt left a recoverable `creating` state and SHALL skip runs
+  whose reconciliation is already terminal (#4187).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `lib/tasks/issues.rake`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
