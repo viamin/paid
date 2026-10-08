@@ -155,6 +155,7 @@
           Write a specific rationale that references the recorded evidence. The canned sentence alone is refused.
         </p>
         <%= form.submit "Resolve as complete",
+              id: "closeout_submit_#{issue.id}",
               class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
               data: { turbo_confirm: "Resolve ##{issue.github_number} as complete against the recorded evidence? " \
                 "This resolves the Inbox item internally; the GitHub issue stays open for a human to close, and " \
