@@ -43,6 +43,17 @@ RSpec.describe SecurityAlerts::ReconcileResolved do
     )
   end
 
+  it "concludes a retryable attempt from the authoritative disposition" do # @spec EAGER-QUEUE-013 EAGER-QUEUE-014 GITHUB-SYNC-019
+    attempt = create(:code_scanning_remediation_attempt, issue:, status: "verification_blocked",
+      blocked_reason: "analysis is unavailable", evidence: { "prior_evidence" => "retained" })
+    result = snapshot(alerts: [ { number: 42, state: "fixed", html_url: "https://example.test/42" } ])
+
+    described_class.new(project, snapshot: result).call
+
+    expect(attempt.reload).to have_attributes(status: "upstream_resolved", blocked_reason: nil)
+    expect(attempt.evidence).to include("prior_evidence" => "retained", "upstream_disposition" => include("state" => "fixed"))
+  end
+
   it "leaves one configuration's active finding open when another is fixed" do # @spec GITHUB-SYNC-019
     described_class.new(project, snapshot: snapshot(alerts: [
       { number: 42, state: "open", tool_name: "CodeQL", category: "/ruby" },

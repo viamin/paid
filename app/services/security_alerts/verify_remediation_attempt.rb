@@ -13,6 +13,8 @@ module SecurityAlerts
     end
 
     def call
+      return conclude_upstream! if concluded_upstream?
+
       return block!("analysis is unavailable") unless analysis
       return block!("analysis evidence is malformed") if analysis[:status] == "malformed"
       return block!("analysis is not on the target branch") unless analysis[:ref] == attempt.issue.project.default_branch
@@ -39,6 +41,10 @@ module SecurityAlerts
       analysis[:tool_name] == attempt.tool_name && analysis[:category] == attempt.category
     end
 
+    def concluded_upstream?
+      alert&.dig(:state).in?(%w[fixed dismissed])
+    end
+
     def evidence
       {
         "pull_request_number" => attempt.pull_request_number,
@@ -55,6 +61,15 @@ module SecurityAlerts
       return dismissal_reason if alert[:state] == "dismissed"
 
       "finding has upstream disposition: #{alert[:state].presence || "unknown"}"
+    end
+
+    # An explicit GitHub conclusion is authoritative for the alert lifecycle,
+    # but deliberately does not attribute the conclusion to Paid's merged PR.
+    # Keep it terminal so retry notifications do not promise that missing scan
+    # evidence will clear a disposition GitHub has already supplied.
+    def conclude_upstream!
+      attempt.update!(status: "upstream_resolved", blocked_reason: nil,
+        evidence: attempt.evidence.merge(evidence))
     end
 
     def dismissal_reason

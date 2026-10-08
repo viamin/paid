@@ -26,6 +26,8 @@ RSpec.describe CodeScanningRemediationAttempt do
         status: "verification_blocked")
       _fixed = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
         status: "verified_fixed")
+      _upstream_resolved = create(:code_scanning_remediation_attempt, issue: create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE),
+        status: "upstream_resolved")
 
       ids = described_class.blocking_automation.pluck(:id)
 
@@ -41,6 +43,8 @@ RSpec.describe CodeScanningRemediationAttempt do
       _failed = create(:code_scanning_remediation_attempt, issue: failed_issue, status: "verification_failed", pull_request_number: 13)
       fixed_issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       _fixed = create(:code_scanning_remediation_attempt, issue: fixed_issue, status: "verified_fixed", pull_request_number: 14)
+      concluded_issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+      _upstream_resolved = create(:code_scanning_remediation_attempt, issue: concluded_issue, status: "upstream_resolved", pull_request_number: 15)
 
       ids = described_class.retryable_block.pluck(:id)
 

@@ -64,6 +64,8 @@ module Activities
 
     private
 
+    # @spec EAGER-QUEUE-016
+    # @spec GITHUB-SYNC-019
     def scan_code_scanning_alerts(project)
       unless project.security_alert_types.include?("code_scanning")
         resolve_code_scanning_notifications(project)
@@ -75,6 +77,7 @@ module Activities
       project.update_columns(last_code_scanning_scan_attempted_at: Time.current)
       snapshot = fetch_code_scanning_alerts(project)
       all_alerts = snapshot.alerts
+      retryable_attempt_ids = retryable_remediation_attempt_ids(project)
 
       heartbeat("scan_security_alerts.reconcile_resolved", project_id: project.id, alert_count: all_alerts.size)
       SecurityAlerts::ReconcileResolved.new(
@@ -88,10 +91,7 @@ module Activities
       SecurityAlerts::RecordMergedRemediationAttempts.new(
         project:, alerts: open_alerts, github_client: project.client
       ).call
-      retryable_attempt_ids = CodeScanningRemediationAttempt
-        .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE))
-        .retryable_block
-        .ids
+      retryable_attempt_ids |= retryable_remediation_attempt_ids(project)
       SecurityAlerts::VerifyMergedRemediationAttempts.new(
         project:, alerts: all_alerts, github_client: project.client
       ).call
@@ -245,6 +245,13 @@ module Activities
         .where(issues: { project_id: project.id })
         .retryable_block
         .exists?
+    end
+
+    def retryable_remediation_attempt_ids(project)
+      CodeScanningRemediationAttempt
+        .where(issue: project.issues.where(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE))
+        .retryable_block
+        .ids
     end
 
     def record_successful_snapshot(project)
