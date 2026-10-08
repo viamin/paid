@@ -336,9 +336,20 @@ module PartialCloseouts
     def persist_retryable_failure!(agent_run, error)
       return unless agent_run
 
+      # Only discard the assessment when no index-keyed gap state survives:
+      # `prior_owner` and `local_owner_with_marker` key owners by gap index,
+      # so a regenerated (possibly reordered) assessment paired with surviving
+      # gaps state attaches the old gap's owner to whichever gap now sits at
+      # that index. When gap state exists, keep the assessment so the retry
+      # replays the same indices; a deterministic re-failure is bounded to
+      # this one run and visible via `retryable_failure`, unlike a silent
+      # mislink (#4191 review).
+      reconciliation = agent_run.reconciliation
+      reconciliation = reconciliation.except("assessment") if reconciliation["gaps"].blank?
       agent_run.update!(
-        reconciliation: agent_run.reconciliation.except("assessment")
-          .merge("status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601)
+        reconciliation: reconciliation.merge(
+          "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601
+        )
       )
     end
 

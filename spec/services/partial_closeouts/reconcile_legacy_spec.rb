@@ -84,13 +84,8 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
   end
 
   def stub_dispatch_assessment_with_create_issue
-    synced = create(:issue, project: project, github_number: 99, github_state: "open")
     allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(dispatch_assessment)
-    allow(client).to receive(:create_issue).and_return(OpenStruct.new(
-      number: 99, html_url: "https://github.com/acme/alpha/issues/99",
-      id: 99, title: "Wire dispatch", body: ""
-    ))
-    allow(Issues::UpsertFromGithub).to receive(:call).and_return(synced)
+    stub_dispatch_owner_create_issue
   end
 
   def stale_creating_reconciliation(marker)
@@ -106,6 +101,19 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
   def stub_github_create_issue_failure
     allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(dispatch_assessment)
     allow(client).to receive(:create_issue).and_raise(GithubClient::Error, "github unavailable")
+  end
+
+  def blank_title_followup_gap
+    { "criterion" => "followup", "kind" => "agent", "title" => "", "body" => "" }
+  end
+
+  def stub_dispatch_owner_create_issue
+    allow(client).to receive(:create_issue).and_return(OpenStruct.new(
+      number: 99, html_url: "https://github.com/acme/alpha/issues/99", id: 99, title: "Wire dispatch", body: ""
+    ))
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(
+      create(:issue, project: project, github_number: 99, github_state: "open")
+    )
   end
 
   describe "#call" do
@@ -537,6 +545,32 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(reconciliation.fetch("error")).to include("agent gap title is required")
       expect(reconciliation.fetch("failed_at")).to be_present
       expect(reconciliation).not_to have_key("assessment")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-014 — replay wedge protection (assessment
+    # preserved across partial progress): when a later gap in a multi-gap
+    # assessment fails with a non-GitHub StandardError after an earlier
+    # gap's owner was already recorded, the sweep must keep the persisted
+    # assessment instead of discarding it. `prior_owner` and
+    # `local_owner_with_marker` key owners by gap index, so discarding the
+    # assessment while the surviving index-keyed `gaps` state remains would
+    # let a regenerated (possibly reordered) assessment reattach the old
+    # gap's owner to whichever gap now sits at that index (#4191 review).
+    it "preserves the persisted assessment when gap state survives a later gap's non-GitHub failure" do
+      merged_pr(number: 35, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 35)
+      multi_gap_assessment = { "gaps" => [ dispatch_assessment["gaps"].first, blank_title_followup_gap ] }
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(multi_gap_assessment)
+      stub_dispatch_owner_create_issue
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.retryable_failure).to eq(1)
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation.fetch("status")).to eq("retryable_failure")
+      expect(reconciliation.fetch("error")).to include("agent gap title is required")
+      expect(reconciliation.fetch("assessment")).to eq(multi_gap_assessment)
+      expect(reconciliation.dig("gaps", "0", "owner_issue_number")).to eq(99)
     end
 
     # @spec PARTIAL-CLOSEOUT-014 — an `AgentHarness::Error` raised before
