@@ -14,8 +14,15 @@ module PartialCloseouts
   # activity would have produced on a fresh run.
   #
   # Idempotency is inherited from `PartialCloseouts::Reconcile`:
-  # - the assessment is persisted on the run before reconciliation begins
-  #   and reused across retries, so gap indices stay stable;
+  # - the assessment is the deterministic input for replay — it is persisted
+  #   on the run before `Reconcile` is invoked and reused across retries,
+  #   so gap indices stay stable. `Reconcile` keys `owner_marker(index)`,
+  #   `prior_owner(index)`, and `creation_was_recorded?(index, marker)` by
+  #   gap array index; a reordered assessment would otherwise attach the
+  #   owner created for the old index 0 to whichever gap now sits at index
+  #   0, producing an incorrect dependency. Mirroring
+  #   `Activities::ReconcilePartialCloseoutActivity#persisted_assessment`
+  #   keeps the legacy path replay-safe across GitHub failures;
   # - the existing `prior_owner` and `recovered_remote_owner` recovery
   #   paths resume from a `creating` marker instead of filing again;
   # - the prerequisite notification publisher uses
@@ -155,7 +162,7 @@ module PartialCloseouts
         issue_id: agent_run.issue_id
       )
 
-      assessment = Llm::AnalyzePartialCloseout.call(agent_run: agent_run)
+      assessment = persisted_assessment(agent_run)
       Reconcile.call(agent_run: agent_run, assessment: assessment)
       agent_run.reload
       status = agent_run.reconciliation.to_h.fetch("status", nil)
@@ -215,6 +222,24 @@ module PartialCloseouts
       Time.parse(failed_at) >= 1.day.ago
     rescue ArgumentError
       false
+    end
+
+    # The LLM is the only non-deterministic step in the sweep; persisting its
+    # output before invoking `Reconcile` is what keeps retries replay-safe.
+    # `Reconcile.create_owner!` keys `owner_marker(index)` and
+    # `creation_was_recorded?(index, marker)` by gap array index, so a
+    # reordered re-invocation could attach the owner created for the old
+    # index 0 to whichever gap now sits at index 0 — or overwrite an in-flight
+    # `creating` gap state with the new assessment's gap at the same key
+    # (PARTIAL-CLOSEOUT-014). Mirroring
+    # `Activities::ReconcilePartialCloseoutActivity#persisted_assessment`
+    # means a GitHub failure leaves the first assessment durable, and the
+    # next pass (after the 1-day `retryable_failure` window) replays the same
+    # gap set through the marker-based recovery path (#4187).
+    def persisted_assessment(agent_run)
+      agent_run.reconciliation["assessment"] || Llm::AnalyzePartialCloseout.call(agent_run: agent_run).tap do |result|
+        agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => result))
+      end
     end
 
     # Issues parked in deliberate operator states (`needs_input`,

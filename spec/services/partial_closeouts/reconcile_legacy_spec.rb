@@ -17,6 +17,9 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
   end
   let(:client) { instance_double(GithubClient) }
   let(:parent) { create(:issue, :in_progress, project: project, github_state: "open") }
+  let(:dispatch_synced_issue) do
+    create(:issue, project: project, github_number: 25, github_state: "open")
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(client)
@@ -60,6 +63,49 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       .with(%(repo:#{project.full_name} is:issue state:open in:body "#{marker}"), per_page: 100)
       .and_return(OpenStruct.new(items: [ remote_issue ]))
     allow(Issues::UpsertFromGithub).to receive(:call).with(project:, github_issue: remote_issue).and_return(synced)
+  end
+
+  def dispatch_assessment
+    { "gaps" => [ { "criterion" => "dispatch", "kind" => "agent",
+      "title" => "Wire dispatch", "body" => "Wire the dispatch worker." } ] }
+  end
+
+  def followup_assessment
+    { "gaps" => [ { "criterion" => "followup", "kind" => "agent",
+      "title" => "Follow-up", "body" => "Capture the follow-up work." } ] }
+  end
+
+  def dispatch_remote_issue(marker)
+    OpenStruct.new(
+      number: 25, html_url: "https://github.com/acme/alpha/issues/25",
+      id: 25, title: "Wire dispatch",
+      body: "Wire dispatch\n\n#{marker}"
+    )
+  end
+
+  def stub_dispatch_assessment_with_create_issue
+    synced = create(:issue, project: project, github_number: 99, github_state: "open")
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(dispatch_assessment)
+    allow(client).to receive(:create_issue).and_return(OpenStruct.new(
+      number: 99, html_url: "https://github.com/acme/alpha/issues/99",
+      id: 99, title: "Wire dispatch", body: ""
+    ))
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(synced)
+  end
+
+  def stale_creating_reconciliation(marker)
+    {
+      "status" => "retryable_failure",
+      "error" => "github unavailable",
+      "failed_at" => 2.days.ago.iso8601,
+      "gaps" => { "0" => { "status" => "creating", "marker" => marker } },
+      "assessment" => dispatch_assessment
+    }
+  end
+
+  def stub_github_create_issue_failure
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(dispatch_assessment)
+    allow(client).to receive(:create_issue).and_raise(GithubClient::Error, "github unavailable")
   end
 
   describe "#call" do
@@ -312,6 +358,64 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       expect(result.scanned).to eq(1)
       expect(result.skipped).to eq(1)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-014 — replay safety: the assessment is the
+    # deterministic input that anchors retries, so the sweep must persist it
+    # on the run before invoking `Reconcile` (mirrors
+    # `Activities::ReconcilePartialCloseoutActivity#persisted_assessment`).
+    it "persists the assessment on the run before invoking Reconcile" do
+      merged_pr(number: 23, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 23)
+      stub_dispatch_assessment_with_create_issue
+
+      described_class.call(account_id: account.id)
+
+      expect(run.reload.reconciliation.fetch("assessment")).to eq(dispatch_assessment)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-014 — when a GitHub failure leaves a `creating`
+    # marker and the retry window allows the next pass after one day, the
+    # sweep must reuse the assessment already on the run instead of
+    # re-invoking the LLM. A reordered re-invocation would attach the owner
+    # created for the old index 0 to whichever gap now sits at index 0
+    # (`Reconcile.create_owner!` keys `owner_marker` /
+    # `creation_was_recorded?` by array index), producing an incorrect
+    # dependency.
+    it "reuses the persisted assessment after a stale retryable_failure instead of re-invoking the LLM" do
+      merged_pr(number: 24, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 24)
+      marker = "<!-- paid:partial-closeout:#{run.id}:0 -->"
+      stub_marker_recovery(marker, dispatch_remote_issue(marker), dispatch_synced_issue)
+      run.update!(reconciliation: stale_creating_reconciliation(marker))
+
+      # If the sweep re-invokes the LLM, the reversed gap below attaches
+      # the recovered remote owner (created for `dispatch`) to `followup`
+      # instead. The persisted assessment must win.
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(followup_assessment)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.reconciled).to eq(1)
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(parent.reload.issue_dependencies.find_by(depends_on_issue: dispatch_synced_issue)).to be_present
+    end
+
+    # @spec PARTIAL-CLOSEOUT-014 — the assessment is preserved across
+    # `record_failure!` so a failed first sweep leaves the next pass with
+    # everything it needs to resume through the marker-based recovery path
+    # without re-invoking the LLM.
+    it "preserves the persisted assessment across a GitHub failure so the retry can resume without a new LLM call" do
+      merged_pr(number: 26, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 26)
+      stub_github_create_issue_failure
+
+      described_class.call(account_id: account.id)
+
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation.fetch("status")).to eq("retryable_failure")
+      expect(reconciliation.fetch("assessment")).to eq(dispatch_assessment)
+      expect(reconciliation.dig("gaps", "0", "marker")).to start_with("<!-- paid:partial-closeout:#{run.id}:0 -->")
     end
   end
 end
