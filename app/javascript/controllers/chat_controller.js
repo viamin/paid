@@ -12,6 +12,7 @@ export default class extends Controller {
     this.pendingContent = null
     this.currentAttemptToolCards = []
     this.scrollAnimationId = null
+    this.initialJumpAnimationId = null
     this.boundUpdateViewportHeight = () => this.updateViewportHeight()
 
     this.subscription = consumer.subscriptions.create(
@@ -32,7 +33,13 @@ export default class extends Controller {
     // catch up on the latest answer. Restoration visits recover the saved
     // transcript position instead, because Turbo restores only document
     // scroll and would otherwise show the oldest messages (#4174).
-    this.jumpToLatestResponseOnLoad()
+    // chat-message controllers connect after this controller in document
+    // order and synchronously render markdown, which can move the response
+    // anchor. Wait one frame to measure the final transcript layout.
+    this.initialJumpAnimationId = requestAnimationFrame(() => {
+      this.initialJumpAnimationId = null
+      this.jumpToLatestResponseOnLoad()
+    })
   }
 
   disconnect() {
@@ -40,6 +47,7 @@ export default class extends Controller {
     this.subscription?.unsubscribe()
     window.removeEventListener("resize", this.boundUpdateViewportHeight)
     if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
+    if (this.initialJumpAnimationId != null) cancelAnimationFrame(this.initialJumpAnimationId)
   }
 
   // A dropped/rejected connection mid-turn strands the streaming lock: the

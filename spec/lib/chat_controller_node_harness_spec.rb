@@ -738,6 +738,44 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-SCROLL-001 — Descendant chat-message controllers connect
+    // after chat and replace their placeholder text with rendered markdown.
+    // Defer the initial measurement one frame so layout shifts above the last
+    // response cannot leave its opening outside the viewport.
+    function testConnectDefersInitialJumpUntilAfterChildControllersRender() {
+      const { controller } = makeController({ sessionIdValue: 42 });
+      const origWindow = globalThis.window;
+      const origRAF = globalThis.requestAnimationFrame;
+      let scheduledJump = null;
+      let jumps = 0;
+
+      try {
+        globalThis.window = { addEventListener() {} };
+        globalThis.requestAnimationFrame = (callback) => {
+          scheduledJump = callback;
+          return 1;
+        };
+        controller.updateViewportHeight = () => {};
+        controller.handleScroll = () => {};
+        controller.jumpToLatestResponseOnLoad = () => { jumps += 1; };
+
+        controller.connect();
+
+        if (jumps !== 0 || !scheduledJump) {
+          throw new Error("Expected connect to defer the initial jump by one animation frame");
+        }
+
+        scheduledJump();
+      } finally {
+        globalThis.window = origWindow;
+        globalThis.requestAnimationFrame = origRAF;
+      }
+
+      if (jumps !== 1) {
+        throw new Error(`Expected the deferred frame to perform one initial jump, got ${jumps}`);
+      }
+    }
+
     // @spec CHAT-SCROLL-001 — Leaving a chat records the overflow
     // container's position under its session-scoped key so a later Turbo
     // restoration can return the reader to the same place.
@@ -1199,6 +1237,7 @@ class ChatControllerNodeHarness
       testScrollToLatestResponseSmoothScrollsToAnchor();
       testScrollToLatestResponseFallsBackToBottom();
       testJumpToLatestResponseOnLoadSetsScrollTopInstantly();
+      testConnectDefersInitialJumpUntilAfterChildControllersRender();
       testDisconnectRemembersTranscriptScrollPosition();
       testJumpToLatestResponseOnLoadRestoresTranscriptPosition();
       testJumpToLatestResponseOnLoadFallsBackToBottom();
