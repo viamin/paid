@@ -269,7 +269,11 @@
   `next_cursor` (the highest scanned `AgentRun#id`), and a caller SHALL be
   able to resume past the capped window by passing `after_id:
   next_cursor` to the next invocation, strictly advancing past every row
-  the prior invocation scanned regardless of its outcome. The sweep SHALL
+  the prior invocation scanned regardless of its outcome. A non-positive
+  `batch_size` SHALL be rejected before any candidates are scanned (the
+  service raises `ArgumentError`; the rake task aborts with a clear
+  message), because a zero or negative cap scans nothing while still
+  printing a continuation whose cursor never advances. The sweep SHALL
   be restartable: an interrupted sweep can be re-invoked, and the second
   pass SHALL finish any run whose previous attempt left a recoverable
   `creating` state and SHALL skip runs whose reconciliation is already

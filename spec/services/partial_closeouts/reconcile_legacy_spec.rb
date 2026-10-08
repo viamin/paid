@@ -494,5 +494,43 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(reconciliation.fetch("failed_at")).to be_present
       expect(reconciliation).not_to have_key("assessment")
     end
+
+    # @spec PARTIAL-CLOSEOUT-014 — an `AgentHarness::Error` raised before
+    # any assessment exists must persist `status`/`error`/`failed_at` on
+    # the run: an unpersisted failure leaves an empty reconciliation
+    # record, so the next invocation would immediately re-invoke the LLM
+    # instead of honoring the one-day retry gate in
+    # `legacy_reconciliation_already_done?` (#4191 review).
+    it "persists a retryable failure when the assessment LLM call fails" do
+      merged_pr(number: 30, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 30)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(AgentHarness::Error, "provider unavailable")
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.retryable_failure).to eq(1)
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation.fetch("status")).to eq("retryable_failure")
+      expect(reconciliation.fetch("error")).to eq("provider unavailable")
+      expect(reconciliation.fetch("failed_at")).to be_present
+      expect(reconciliation).not_to have_key("assessment")
+
+      # The persisted failure arms the one-day retry gate: an immediate
+      # second sweep must not re-invoke the LLM.
+      described_class.call(account_id: account.id)
+      expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(agent_run: run).once
+    end
+
+    # @spec PARTIAL-CLOSEOUT-015 — a non-positive batch_size breaks the
+    # bounded sweep's continuation contract (`limit(0)` scans nothing but
+    # `scanned == batch_size` still suggests a continuation whose cursor
+    # never advances), so the service rejects it before scanning (#4191
+    # review).
+    it "rejects a non-positive batch_size" do
+      expect { described_class.call(account_id: account.id, batch_size: 0) }
+        .to raise_error(ArgumentError, /positive integer/)
+      expect { described_class.call(account_id: account.id, batch_size: -1) }
+        .to raise_error(ArgumentError, /positive integer/)
+    end
   end
 end

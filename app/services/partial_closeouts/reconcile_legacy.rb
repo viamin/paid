@@ -72,6 +72,10 @@ module PartialCloseouts
     def self.call(...) = new(...).call
 
     def initialize(account_id:, batch_size: DEFAULT_BATCH_SIZE, after_id: nil)
+      unless batch_size.is_a?(Integer) && batch_size.positive?
+        raise ArgumentError, "batch_size must be a positive integer, got #{batch_size.inspect}"
+      end
+
       @account_id = account_id
       @batch_size = batch_size
       @after_id = after_id
@@ -215,6 +219,7 @@ module PartialCloseouts
         error_class: e.class.name,
         error: e.message
       )
+      persist_retryable_failure!(agent_run, e)
       :retryable_failure
     rescue GithubClient::Error => e
       Rails.logger.error(
@@ -241,13 +246,22 @@ module PartialCloseouts
       # instead of replaying the same deterministic failure forever; GitHub
       # failures above keep it for the marker-based recovery path
       # (PARTIAL-CLOSEOUT-014 / #4187 review).
-      if agent_run
-        agent_run.update!(
-          reconciliation: agent_run.reconciliation.except("assessment")
-            .merge("status" => "retryable_failure", "error" => e.message, "failed_at" => Time.current.iso8601)
-        )
-      end
+      persist_retryable_failure!(agent_run, e)
       :retryable_failure
+    end
+
+    # `Reconcile#call` records only its own `GithubClient::Error`s, so every
+    # failure rescued here must persist the failure itself: an unpersisted
+    # failure leaves an empty reconciliation record, and the next invocation
+    # would immediately re-invoke the LLM instead of honoring the one-day
+    # retry gate in `legacy_reconciliation_already_done?` (#4191 review).
+    def persist_retryable_failure!(agent_run, error)
+      return unless agent_run
+
+      agent_run.update!(
+        reconciliation: agent_run.reconciliation.except("assessment")
+          .merge("status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601)
+      )
     end
 
     # Two flavors of "already done":

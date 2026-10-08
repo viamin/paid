@@ -179,6 +179,28 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
 
     expect { task.invoke }.to output(/More candidates may remain — re-run with AFTER_ID=43/).to_stdout
   end
+
+  # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE=0 (or negative) scans nothing
+  # while `scanned == batch_size` would still print an AFTER_ID
+  # continuation whose cursor never advances, so the task rejects the
+  # value before invoking the service (#4191 review).
+  it "aborts when BATCH_SIZE is zero" do
+    ENV["BATCH_SIZE"] = "0"
+    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+
+    expect { task.invoke }.to raise_error(SystemExit)
+      .and output(/BATCH_SIZE must be a positive integer/).to_stderr
+    expect(PartialCloseouts::ReconcileLegacy).not_to have_received(:call)
+  end
+
+  it "aborts when BATCH_SIZE is negative" do
+    ENV["BATCH_SIZE"] = "-5"
+    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+
+    expect { task.invoke }.to raise_error(SystemExit)
+      .and output(/BATCH_SIZE must be a positive integer/).to_stderr
+    expect(PartialCloseouts::ReconcileLegacy).not_to have_received(:call)
+  end
 end
 
 # rubocop:enable RSpec/DescribeClass, RSpec/MultipleDescribes

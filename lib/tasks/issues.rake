@@ -100,6 +100,10 @@ namespace :issues do
   task reconcile_legacy_partial_closeouts: :environment do # @spec PARTIAL-CLOSEOUT-015
     account_id = Integer(ENV.fetch("ACCOUNT_ID"))
     batch_size = Integer(ENV.fetch("BATCH_SIZE", PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE))
+    # BATCH_SIZE=0 (or negative) scans nothing while `scanned == batch_size`
+    # would still print an AFTER_ID continuation whose cursor never advances,
+    # so reject it before invoking the service (#4191 review).
+    abort "BATCH_SIZE must be a positive integer (got #{batch_size})" unless batch_size.positive?
     after_id = ENV["AFTER_ID"] && Integer(ENV["AFTER_ID"])
     result = PartialCloseouts::ReconcileLegacy.call(account_id: account_id, batch_size: batch_size, after_id: after_id)
 

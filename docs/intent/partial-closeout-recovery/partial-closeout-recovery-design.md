@@ -177,7 +177,10 @@ machinery the workflow uses:
   `Llm::AnalyzePartialCloseout` cost/runtime against an account's entire
   historical `create_pr` volume; `Result#next_cursor` reports the highest
   scanned `id`, and passing it as `after_id:` on the next call resumes
-  strictly past that point regardless of each row's outcome.
+  strictly past that point regardless of each row's outcome. A non-positive
+  `batch_size` is rejected up front (the service raises `ArgumentError`;
+  the rake task aborts) because a zero or negative cap scans nothing while
+  still printing a continuation whose cursor never advances.
 - **Assessment.** `Llm::AnalyzePartialCloseout.call(agent_run:)` produces a
   fresh gap set grounded in current shipped code and current open issues — a
   stale gap whose child has since merged, closed, or been superseded is
