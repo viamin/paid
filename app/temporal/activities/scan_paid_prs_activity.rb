@@ -1194,7 +1194,7 @@ module Activities
     # it can wait forever. A failed intent-conformance signal is a non-approval
     # blocker: pinging the owner for an approval that cannot clear the merge
     # would be misleading (RDR-067 Decision section).
-    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009
+    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009 @spec AUTO-MERGE-009
     def blocked_only_on_approval?(project, client, issue, signals)
       return false if project.owner_reviewer_login.blank?
       return false if signals.nil?
@@ -1206,6 +1206,7 @@ module Activities
       return false unless signals.blocking_reviews_complete?
       return false unless signals.reviews_fresh?
       return false if signals.skip_auto_merge?
+      return false if signals.hold_for_review?
 
       # Signals resolve dependencies only when every other precondition
       # passed (they gate an extra API round-trip), so compute them here for
