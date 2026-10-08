@@ -99,8 +99,9 @@
   application error, not "Activity task failed".
   *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`
   ("marks the run failed when startup CreateAgentRunActivity raises a non-retryable ApplicationError",
-  "marks the run failed when startup CreateAgentRunActivity raises IssueAwaitingInput",
-  "does not write a failed status when startup CreateAgentRunActivity raises CanceledError").
+  "still runs the cleanup block when startup CreateAgentRunActivity fails",
+  "does not write a failed status when startup CreateAgentRunActivity raises CanceledError",
+  "uses the unwrapped ApplicationError message rather than 'Activity task failed'").
   *Code:* `Workflows::AgentExecutionWorkflow#execute`.
 
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a

@@ -352,6 +352,6 @@
   "leaves needs_input_questions intact on a sufficient-context: false verdict",
   "leaves the needs-input label intact on a sufficient-context: false verdict").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#complete_run!`,
-  `#reconcile_resolved_clarification_state!`,
+  `#reconcile_resolved_clarification_state_attrs`,
   `app/temporal/activities/create_agent_run_activity.rb#clarification_pending?`,
   `app/temporal/workflows/agent_execution_workflow.rb#execute`.
