@@ -129,6 +129,62 @@ RSpec.describe "Dashboard" do
         expect(link.text.strip).to eq("Exception incidents")
       end
 
+      # @spec RUNNER-LOGIN-NAV-001
+      it "includes runner logins in the desktop navigation for an account owner" do
+        owner = create(:user, :owner, account: account)
+        sign_in owner
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        desktop_nav_link = doc.at_css("#operations-menu a[href^='#{new_runner_login_flow_path}']")
+
+        expect(desktop_nav_link).to be_present
+        expect(desktop_nav_link.text.strip).to eq("Runner Logins")
+      end
+
+      # @spec RUNNER-LOGIN-NAV-001
+      it "excludes runner logins from the desktop navigation for a non-admin member" do
+        create(:user, :owner, account: account)
+        member = create(:user, :member, account: account)
+        sign_in member
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        desktop_nav_link = doc.at_css("#operations-menu a[href^='#{new_runner_login_flow_path}']")
+
+        expect(desktop_nav_link).to be_nil
+      end
+
+      # @spec RUNNER-LOGIN-NAV-001
+      it "includes runner logins in the mobile menu for an account owner" do
+        owner = create(:user, :owner, account: account)
+        sign_in owner
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        mobile_nav_link = doc.at_css("#mobile-menu a[href^='#{new_runner_login_flow_path}']")
+
+        expect(mobile_nav_link).to be_present
+        expect(mobile_nav_link.text.strip).to eq("Runner Logins")
+      end
+
+      # @spec RUNNER-LOGIN-NAV-001
+      it "excludes runner logins from the mobile menu for a non-admin member" do
+        create(:user, :owner, account: account)
+        member = create(:user, :member, account: account)
+        sign_in member
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        mobile_nav_link = doc.at_css("#mobile-menu a[href^='#{new_runner_login_flow_path}']")
+
+        expect(mobile_nav_link).to be_nil
+      end
+
       it "includes exception incidents in the desktop navigation" do
         get dashboard_path
 
