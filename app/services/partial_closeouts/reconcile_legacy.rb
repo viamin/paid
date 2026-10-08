@@ -100,9 +100,13 @@ module PartialCloseouts
     SQL
 
     Result = Struct.new(
-      :scanned, :reconciled, :awaiting_operator, :retryable_failure, :skipped, :next_cursor,
+      :scanned, :reconciled, :awaiting_operator, :retryable_failure, :skipped, :next_cursor, :lock_held,
       keyword_init: true
     ) do
+      def initialize(lock_held: false, **attributes)
+        super(**attributes, lock_held:)
+      end
+
       def to_h
         {
           scanned: scanned,
@@ -110,7 +114,8 @@ module PartialCloseouts
           awaiting_operator: awaiting_operator,
           retryable_failure: retryable_failure,
           skipped: skipped,
-          next_cursor: next_cursor
+          next_cursor: next_cursor,
+          lock_held: lock_held
         }
       end
     end
@@ -153,10 +158,10 @@ module PartialCloseouts
     # accounts sweep concurrently while serializing same-account overlap;
     # a caller that finds the lock held gets a zero-progress Result back
     # (mirrors ProcessRunQueueJob's try-lock-and-skip, #4191 review).
-    def call
+    def call # @spec PARTIAL-CLOSEOUT-015
       unless try_lock!
         Rails.logger.info(message: "partial_closeouts.legacy_reconcile_lock_held", account_id: account_id)
-        return Result.new(scanned: 0, reconciled: 0, awaiting_operator: 0, retryable_failure: 0, skipped: 0, next_cursor: after_id)
+        return Result.new(scanned: 0, reconciled: 0, awaiting_operator: 0, retryable_failure: 0, skipped: 0, next_cursor: after_id, lock_held: true)
       end
 
       begin
@@ -187,7 +192,8 @@ module PartialCloseouts
           awaiting_operator: awaiting_operator,
           retryable_failure: retryable_failure,
           skipped: skipped,
-          next_cursor: next_cursor
+          next_cursor: next_cursor,
+          lock_held: false
         )
       ensure
         unlock!

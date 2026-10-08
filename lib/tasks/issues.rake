@@ -131,6 +131,11 @@ namespace :issues do
     result = PartialCloseouts::ReconcileLegacy.call(account_id: account_id, batch_size: batch_size, after_id: after_id)
 
     puts "Legacy partial closeout reconciliation for account #{account_id}:"
+    if result.lock_held
+      puts "Another reconciliation for account #{account_id} is in progress; no work was done. Re-run later."
+      next
+    end
+
     puts "  scanned:             #{result.scanned}"
     puts "  reconciled:          #{result.reconciled}"
     puts "  awaiting_operator:   #{result.awaiting_operator}"

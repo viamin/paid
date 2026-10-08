@@ -128,6 +128,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(result.scanned).to eq(1)
       expect(result.reconciled).to eq(1)
       expect(result.skipped).to eq(0)
+      expect(result.lock_held).to be(false)
       expect(run.reload.reconciliation.fetch("status")).to eq("reconciled")
       expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(agent_run: run)
     end
@@ -643,7 +644,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
         result = described_class.call(account_id: account.id)
 
-        expect(result.scanned).to eq(0)
+        expect(result).to have_attributes(scanned: 0, lock_held: true)
         expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
         expect(run.reload.reconciliation).to eq({})
       ensure

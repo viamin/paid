@@ -180,6 +180,20 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
       ).to_stdout
     end
 
+    it "reports when another reconciliation holds the account lock" do
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+        .and_return(
+          PartialCloseouts::ReconcileLegacy::Result.new(
+            scanned: 0, reconciled: 0, awaiting_operator: 0,
+            retryable_failure: 0, skipped: 0, next_cursor: nil, lock_held: true
+          )
+        )
+
+      expect { task.invoke }.to output(
+        /Another reconciliation for account #{account.id} is in progress; no work was done\. Re-run later\./
+      ).to_stdout
+    end
+
     it "invokes ReconcileLegacy exactly once with the parsed ACCOUNT_ID and default batch_size" do
       allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
         .and_return(

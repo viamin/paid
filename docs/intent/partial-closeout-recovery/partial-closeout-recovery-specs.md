@@ -286,6 +286,10 @@
   service raises `ArgumentError`; the rake task aborts with a clear
   message), because a zero or negative cap scans nothing while still
   printing a continuation whose cursor never advances. The sweep SHALL
+  return a distinct contention result when another invocation already holds
+  the account advisory lock; the rake task SHALL report that no work was done
+  and direct the operator to re-run later rather than implying the backlog is
+  complete. The sweep SHALL
   be restartable: an interrupted sweep can be re-invoked, and the second
   pass SHALL finish any run whose previous attempt left a recoverable
   `creating` state and SHALL skip runs whose reconciliation is already

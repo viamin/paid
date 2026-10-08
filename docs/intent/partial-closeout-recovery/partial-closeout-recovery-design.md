@@ -217,7 +217,10 @@ machinery the workflow uses:
   BATCH_SIZE=<n> AFTER_ID=<cursor>`) that the operator console / MCP surface
   can call with the account scope; the task prints `next_cursor` and prompts
   a follow-up invocation when the batch filled, so working through a large
-  backlog is an explicit, operator-paced sequence of bounded calls.
+  backlog is an explicit, operator-paced sequence of bounded calls. An
+  account-scoped advisory-lock contention returns a distinct result and the
+  rake task tells the operator that no work ran and to retry later, rather
+  than presenting a zero-row sweep as a completed backlog.
 
 ## Alternatives considered
 
