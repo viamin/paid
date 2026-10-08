@@ -248,7 +248,15 @@
   `assessment` SHALL be discarded so the next pass regenerates instead
   of replaying the same deterministic input forever; the surrounding
   sweep SHALL continue scanning subsequent candidate runs rather than
-  aborting at the wedging run (#4187).
+  aborting at the wedging run (#4187). When index-keyed `gaps` state
+  survives on the run (e.g. an earlier gap's owner was already
+  recorded before a later gap raised a non-`GithubClient::Error`), the
+  persisted `assessment` SHALL be preserved instead — `prior_owner` and
+  `local_owner_with_marker` key owners by gap array index, so
+  discarding the assessment while a regenerated, possibly reordered
+  next pass would re-attach an existing owner to whichever gap now sits
+  at that index, producing a silent mislink instead of a visible
+  `retryable_failure` (#4191 review).
   *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
   `app/services/partial_closeouts/reconcile.rb`.
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.

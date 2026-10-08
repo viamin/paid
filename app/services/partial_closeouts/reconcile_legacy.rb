@@ -356,11 +356,11 @@ module PartialCloseouts
     # Two flavors of "already done":
     # 1. `reconciliation.status` is one of the TERMINAL_STATUSES (reconciled
     #    or awaiting_operator) — re-running would re-file the gap report.
-    # 2. `reconciliation.status` is `retryable_failure` but a fresh
-    #    `failed_at` is present and the run was touched within the recent
-    #    past — repeat the call instead. We treat a stale `retryable_failure`
-    #    (older than one day) as resumable so a worker that crashed before
-    #    reaching GitHub does not strand a real attempt.
+    # 2. `reconciliation.status` is `retryable_failure` with a fresh
+    #    `failed_at` (within one day) — the one-day retry gate holds and
+    #    the sweep skips the run this pass. A stale `retryable_failure`
+    #    (older than one day) is resumable, so a worker that crashed
+    #    before reaching GitHub does not strand a real attempt.
     def legacy_reconciliation_already_done?(agent_run)
       reconciliation = agent_run.reconciliation.to_h
       status = reconciliation["status"]
