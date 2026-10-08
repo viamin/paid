@@ -329,14 +329,20 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
 
       # @spec DEPENDABOT-COVERAGE-001
-      it "converts a Dependabot permission failure to a non-retryable activity error" do
+      it "publishes the permission failure and still scans CodeQL" do
         allow(github_client).to receive(:dependabot_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
-        expect { activity.execute(project_id: project.id) }
-          .to raise_error(Temporalio::Error::ApplicationError) do |error|
-            expect(error.type).to eq("DependabotPermissionsError")
-          end
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(blocking: true, severity: :error, metadata: hash_including(reason: "permission_denied"))
+        )
+        expect(github_client).to have_received(:code_scanning_alerts)
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_present
+        expect(project.dependabot_fetch_error_at).to be_nil
       end
     end
 
@@ -405,7 +411,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "resolves the blocking ingestion notification after a permission failure is repaired" do
         allow(github_client).to receive(:dependabot_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
-        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
         expect(Notification.active.find_by!(source: "dependabot_alert_coverage_ingestion", subject: project))
           .to have_attributes(severity: "error", blocking: true)
 
@@ -455,7 +461,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         allow(github_client).to receive(:dependabot_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
-        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
 
         activity.execute(project_id: project.id)
 

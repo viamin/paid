@@ -47,12 +47,6 @@ module Activities
         type: "CodeScanningPermissionsError",
         non_retryable: true
       )
-    rescue SecurityAlerts::DependabotPermissionsError => e
-      raise Temporalio::Error::ApplicationError.new(
-        e.message,
-        type: "DependabotPermissionsError",
-        non_retryable: true
-      )
     rescue SecurityAlerts::ConfigurationError => e
       sync_code_scanning_notifications(project, [])
       raise Temporalio::Error::ApplicationError.new(
@@ -154,14 +148,11 @@ module Activities
       )
       resolve_dependabot_ingestion_notification(project)
     rescue SecurityAlerts::DependabotPermissionsError => e
-      # A permission failure blocks the poll cycle on its own (the workflow's
-      # `maybe_scan_code_scanning_alerts` treats this as a configuration error
-      # and logs/swallows), so let it propagate as an ApplicationError — but
-      # only after the visible coverage failure has been published and the
-      # one-hour backoff window is armed. # @spec DEPENDABOT-COVERAGE-001
+      # Dependabot permission failures have their own one-hour backoff and
+      # visible coverage failure. Keeping them local lets the independent
+      # CodeQL scan continue in this poll cycle. # @spec DEPENDABOT-COVERAGE-001
       project.update_columns(dependabot_permission_error_at: Time.current)
       publish_dependabot_ingestion_failure(project, e.message, "permission_denied")
-      raise
     rescue GithubClient::Error => e
       # A transient fetch failure (5xx, GraphQL error, etc.) must be a visible
       # coverage failure but MUST NOT starve healthy code-scanning coverage:

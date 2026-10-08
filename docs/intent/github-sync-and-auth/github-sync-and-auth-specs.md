@@ -278,7 +278,9 @@
   security scan interval, and a permission failure SHALL back off for one hour
   before retrying or re-arming its visible coverage failure. Permission or
   ingestion failures SHALL be visible coverage failures that resolve once a
-  scan succeeds again or Dependabot scanning is disabled.
+  scan succeeds again or Dependabot scanning is disabled. A Dependabot
+  ingestion or permission failure SHALL NOT prevent the independent
+  code-scanning scan from running in the same poll cycle.
   *Code:* `app/services/github_client.rb`,
   `app/services/security_alerts/process_dependabot_alerts.rb`,
   `app/models/user.rb`,
