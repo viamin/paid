@@ -66,6 +66,11 @@ upsert_global_prompt.call(
     5. Run the test suite and fix any failures: `{{test_command}}`
     6. Commit your changes with a descriptive message
 
+    If you open a pull request that requires human judgment before it can land,
+    apply the structured review hold with `gh pr edit --add-label paid-hold-review`.
+    Do not rely on prose in the pull request body: Paid auto-merge honors the
+    label and surfaces the pull request in the Inbox until a human removes it.
+
     **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
     If the commit is rejected, read the error output carefully, fix the issues, and commit again.
     Keep iterating until the commit succeeds. Do not leave uncommitted changes.

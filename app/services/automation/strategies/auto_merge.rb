@@ -36,11 +36,13 @@ module Automation
     # @spec AUTO-MERGE-001
     # @spec AUTO-MERGE-002
     # @spec AUTO-MERGE-005
+    # @spec AUTO-MERGE-009
     class AutoMerge
       include Automation::Strategy
 
       SIGNALS_KEY = :auto_merge_signals
       SKIP_AUTO_MERGE_LABEL = "paid-skip-auto-merge"
+      HOLD_FOR_REVIEW_LABEL = "paid-hold-review"
       SIGNAL_STATUS_FAILED = "failed"
       SIGNAL_STATUS_NOT_EVALUATED = "not_evaluated"
 
@@ -106,6 +108,7 @@ module Automation
 
       def analyze(signals, owner_reviewer_login:)
         blockers = skip_auto_merge_blockers(signals, owner_reviewer_login:)
+        blockers.concat(hold_for_review_blockers(signals, owner_reviewer_login:))
         signal_definitions = signals.bot_authored? ? BOT_SIGNAL_DEFINITIONS : HUMAN_SIGNAL_DEFINITIONS
         blockers.concat(signal_blockers(signals, signal_definitions, owner_reviewer_login:))
 
@@ -133,6 +136,13 @@ module Automation
           blocker_for(:skip_auto_merge, SIGNAL_STATUS_FAILED, "skip_auto_merge",
             owner_reviewer_login:)
         ]
+      end
+
+      # @spec AUTO-MERGE-009
+      def hold_for_review_blockers(signals, owner_reviewer_login:)
+        return [] unless signals.hold_for_review?
+
+        [ blocker_for(:hold_for_review, SIGNAL_STATUS_FAILED, "hold_for_review", owner_reviewer_login:) ]
       end
 
       def signal_blockers(signals, definitions, owner_reviewer_login:)
@@ -193,6 +203,8 @@ module Automation
           "Paid does not support automatic merging for this dependency-update bot."
         when :skip_auto_merge
           "The paid-skip-auto-merge label is preventing automatic merge."
+        when :hold_for_review
+          "This pull request is held for human review."
         else
           "Auto-merge is blocked."
         end
@@ -226,6 +238,8 @@ module Automation
           "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
         when :skip_auto_merge
           "Remove the paid-skip-auto-merge label or merge this pull request manually."
+        when :hold_for_review
+          "Review the pull request, then remove the paid-hold-review label when it may be auto-merged."
         else
           "Resolve the blocker, then let Paid evaluate this pull request again."
         end

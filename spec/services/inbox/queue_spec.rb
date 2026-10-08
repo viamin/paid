@@ -57,6 +57,23 @@ RSpec.describe Inbox::Queue do
       expect_merge_approval_entry(entries, pr)
     end
 
+    # @spec AUTO-MERGE-009
+    it "returns a merge-approval Inbox entry for a review-gated PR" do
+      pr = create_merge_approval_pr(
+        github_number: 41,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .find { |candidate| candidate.issue == pr }
+
+      expect(entry).to have_attributes(
+        kind: described_class::MERGE_APPROVAL_KIND,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+    end
+
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
     it "returns typed entries for visible blocking notifications" do
       notification = create_action_required_notification
@@ -1085,13 +1102,14 @@ RSpec.describe Inbox::Queue do
     )
   end
 
-  def create_merge_approval_pr(github_number: 40, waiting_since: 2.hours.ago, blockers: nil)
+  def create_merge_approval_pr(github_number: 40, waiting_since: 2.hours.ago, blockers: nil, labels: [])
     create(
       :issue,
       :pull_request,
       project: project,
       github_number: github_number,
       github_updated_at: waiting_since,
+      labels: labels,
       awaiting_approval_since: waiting_since,
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: blockers || snapshot_hash(

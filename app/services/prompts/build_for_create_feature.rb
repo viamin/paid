@@ -97,7 +97,10 @@ module Prompts
          in the appropriate section, matching the table format already in use.
       5. **Open a docs-only PR**: Open a pull request whose diff contains only
          the new RDR file and the README update. Describe the PR so a reviewer
-         can find the feature brief for context. Do not include code changes.
+         can find the feature brief for context. Immediately apply the
+         structured review hold with `gh pr edit --add-label paid-hold-review`;
+         the PR needs a human decision before it can land. Do not include code
+         changes.
       6. **Decompose into an issue tree**: Read the RDR's Implementation Plan
          and produce one epic issue, one issue per phase (or per task, for
          small RDRs), and one final RDR closeout/validation issue. The closeout

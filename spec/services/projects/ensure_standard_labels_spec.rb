@@ -41,7 +41,7 @@ RSpec.describe Projects::EnsureStandardLabels do
   end
 
   # The full canonical set provisioned for the default project stub above:
-  # 4 configurable + recommend_close + 9 fixed control/status labels + 10
+  # 4 configurable + recommend_close + 10 fixed control/status labels + 10
   # activation labels + 3 TDD labels + 5 default auto-pick skip labels + 3
   # priority tiers. (The
   # needs_input stage mapping defaults to the same name as
@@ -51,7 +51,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       paid-generated paid-automation paid-needs-input paid-enhanced paid-recommend-close
       paid-in-full paid-enhance paid-auto-merge paid-scan paid-scan-security paid-fix-conflicts
       paid-auto-release paid-tdd-strict paid-tdd-auto
-      paid-paused paid-escalated paid-dismiss-escalation paid-skip-auto-merge
+      paid-paused paid-escalated paid-dismiss-escalation paid-skip-auto-merge paid-hold-review
       paid-auto-merged paid-auto-merged-dependabot paid-auto-released paid-ready model-health
       paid-tests-ready-for-review paid-tests-approved paid-test-changes-requested
       planning research waiting tracking needs-manual-setup
@@ -83,6 +83,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       "paid-escalated" => { color: "b60205", description: "Applied by Paid to pause automation for human review; remove to resume." },
       "paid-dismiss-escalation" => { color: "c2e0c6", description: "Alternate escalation-dismissed marker; cleared automatically by Paid." },
       "paid-skip-auto-merge" => { color: "e99695", description: "Blocks Paid from automatically merging this pull request." },
+      "paid-hold-review" => { color: "fbca04", description: "Requests human review and blocks Paid from automatically merging this pull request." },
       "paid-auto-merged" => { color: "0e8a16", description: "Applied by Paid after automatically merging this pull request." },
       "paid-auto-merged-dependabot" => { color: "0e8a16", description: "Applied by Paid after automatically merging this Dependabot pull request." },
       "paid-auto-released" => { color: "0e8a16", description: "Applied by Paid after automatically merging this release pull request." },

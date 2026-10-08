@@ -79,7 +79,10 @@ Today three kinds exist:
   shows approval-only failures (`owner_approved` and/or `reviews_fresh`) with
   no other failed or short-circuited blockers. The inbox entry uses the PR's
   approval-wait/head-activity timestamp instead of `needs_input_since`, so PRs
-  do not need to enter `paid_state: "needs_input"` just to become visible.
+  do not need to enter `paid_state: "needs_input"` just to become visible. An
+  open ready PR with `paid-hold-review` is also a `:merge_approval` entry,
+  irrespective of its ordinary blocker snapshot, because the label is an
+  explicit request for human action.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same
