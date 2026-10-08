@@ -1,0 +1,122 @@
+<%# @spec PARTIAL-CLOSEOUT-022 %>
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+  <div class="mb-6 flex items-center justify-between gap-4">
+    <h1 class="text-2xl font-semibold text-gray-900">Partial closeout operator guide</h1>
+    <%= link_to "Back to Inbox", inbox_path(kind: :partial_closeout),
+          data: { turbo_frame: "_top" },
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+  </div>
+
+  <p class="mb-6 text-sm text-gray-600">
+    A partial closeout Inbox item means Paid recorded terminal evidence for an open issue (a merged partial
+    pull request or a no-code-required declaration) and the duplicate-work guards now keep it out of automatic
+    scheduling. This guide explains what each recovery action actually does so you can pick the right one.
+  </p>
+
+  <section class="mb-8 space-y-3 rounded-xl border border-gray-200 bg-white p-5">
+    <h2 class="text-sm font-semibold text-gray-900">Deciding what to do</h2>
+    <ol class="list-decimal space-y-2 pl-5 text-sm text-gray-700">
+      <li><strong>Review the recorded criteria and evidence.</strong> Re-read the issue's acceptance criteria and
+        the merged pull requests and originating runs listed in the pane before acting.</li>
+      <li><strong>Continue agent-actionable work</strong> when the remainder is code an agent can write. Request a
+        deliberate continuation and describe the remaining work and the evidence you expect.</li>
+      <li><strong>Create or link prerequisite work</strong> when part of the scope belongs in its own issue. Link
+        the prerequisite from the pane, or have an agent file it with the <code>create_issue</code> tool using
+        dependency wording.</li>
+      <li><strong>Supply human evidence</strong> when the gap needs hardware, credentials, pilot results, or human
+        adjudication an agent cannot produce. Follow the requested steps, then link the result.</li>
+      <li><strong>Attest completion when justified.</strong> Resolve the item as complete only when the recorded
+        evidence genuinely covers every acceptance criterion, and write a rationale that references that
+        evidence.</li>
+    </ol>
+  </section>
+
+  <section class="mb-8 space-y-3 rounded-xl border border-gray-200 bg-white p-5">
+    <h2 class="text-sm font-semibold text-gray-900">Three different "completions"</h2>
+    <dl class="space-y-4 text-sm text-gray-700">
+      <div>
+        <dt class="font-medium text-gray-900">What completes a run</dt>
+        <dd>the run's container reaching a terminal status and Paid recording the outcome — a merged pull request or a
+          no-code-required declaration stamped on the issue. A completed run is evidence about one execution; it
+          says nothing about the issue's whole scope.</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-gray-900">What resolves an Inbox item internally</dt>
+        <dd>your attestation that the recorded evidence completes the issue. Paid records your identity, your rationale,
+          and the evidence generation you resolved against, marks the issue <code>completed</code> internally, and
+          suppresses this Inbox item. The GitHub issue stays open for a human to close, and new terminal evidence can resurface the item here
+          (a newly merged pull request or a new no-code declaration starts a new generation). Resolving also supersedes any open continuation authorization and cancels its queued run, so
+          nothing dispatches after your attestation.</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-gray-900">A final pull request closes the GitHub issue or epic</dt>
+        <dd>only when a human merges it (or a human closes the issue directly). Paid never closes
+          the upstream issue for you; an epic additionally stays open until every child scope is genuinely
+          accepted.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="mb-8 space-y-3 rounded-xl border border-gray-200 bg-white p-5">
+    <h2 class="text-sm font-semibold text-gray-900">Requesting a continuation</h2>
+    <p class="text-sm text-gray-700">
+      A continuation request authorizes exactly one run, scoped to the evidence generation current when you
+      submit it. Other holds still apply: dependencies, creator trust, feature release and design-revision
+      gates, budgets, project and issue pauses, skip labels, needs-input, and manual review each still refuse the
+      request with their specific reason. When the run finishes, the guards re-arm — continuing again requires a
+      new request against the new evidence.
+    </p>
+    <p class="text-sm text-gray-700">
+      Describe the remaining work and the expected evidence in the reason; the run receives it as its
+      remaining-work plan. For example:
+    </p>
+    <ul class="list-disc space-y-1 pl-5 text-sm text-gray-700">
+      <li><strong>fresh acceptance audit:</strong> "Re-check the acceptance criteria against merged PR #31 and
+        report which criteria remain unmet, with evidence for each."</li>
+      <li><strong>implementation gap:</strong> "PR #31 shipped the API but not the CLI flags; implement the flags
+        and link the passing command output."</li>
+      <li><strong>scanner verification:</strong> "The alert recurrence needs new remediation; fix the finding and
+        wait for the default-branch scan to confirm."</li>
+      <li><strong>human-only evaluation:</strong> only when a human decision genuinely gates the work — the run
+        should stop and report rather than wait for input that is not coming.</li>
+    </ul>
+  </section>
+
+  <section class="mb-8 space-y-3 rounded-xl border border-gray-200 bg-white p-5">
+    <h2 class="text-sm font-semibold text-gray-900">Human prerequisites and evidence</h2>
+    <p class="text-sm text-gray-700">
+      A human prerequisite names the requested evidence, who must supply it, and the exact next step. Supply the
+      evidence the step describes (usually by attaching or commenting the measured result, credential grant, or
+      adjudication on the prerequisite), then link that follow-up work to this issue so the dependency is
+      recorded.
+    </p>
+    <p class="text-sm text-gray-700">
+      What resumes automatically: when an agent-owned prerequisite closes, ordinary scheduling picks the parent
+      back up. What requires a deliberate continuation: Paid never retries an agent for unavailable human evidence — after the evidence exists, request the continuation yourself and say what the
+      run should do with it.
+    </p>
+  </section>
+
+  <section class="mb-8 space-y-3 rounded-xl border border-gray-200 bg-white p-5">
+    <h2 class="text-sm font-semibold text-gray-900">Linking prerequisites</h2>
+    <p class="text-sm text-gray-700">
+      The pane's link action appends <code>Depends on #N</code> wording to the stalled issue on GitHub and
+      refreshes Paid's dependency records immediately, showing the successful linkage. Paid must already know the
+      prerequisite issue — if it was just created on GitHub, sync the project first. A sync is likewise required
+      to pick up dependency wording edited directly in a body on GitHub.
+    </p>
+  </section>
+
+  <section class="mb-8 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-5">
+    <h2 class="text-sm font-semibold text-amber-900">Audits, gap transfer, and epic acceptance are different things</h2>
+    <ul class="list-disc space-y-1 pl-5 text-sm text-amber-900">
+      <li>An audit closes only when its measured results are recorded against its criteria.</li>
+      <li>Transferring a gap to a follow-up owner moves the work. A follow-up owner is not completed acceptance evidence — the parent stays open and blocked until the follow-up itself closes with evidence.</li>
+      <li>An epic is accepted only when every child scope carries its own evidence. Closed child issues alone are
+        not sufficient evidence.</li>
+      <li>If the scope itself was wrong, an explicitly authorized scope revision can retire a requirement — but it
+        preserves ownership of the outstanding requirement and must be recorded by someone authorized to change
+        it. Filing a follow-up is not a scope revision.</li>
+    </ul>
+  </section>
+</div>

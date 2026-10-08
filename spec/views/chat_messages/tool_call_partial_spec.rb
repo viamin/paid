@@ -47,8 +47,53 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
 
     expect(rendered).to include("grep_repo")
     expect(rendered).to include("3 matches")
-    expect(rendered).to include("result")
+    expect(rendered).to include("completed")
     expect(rendered).not_to match(/<details[^>]*open/)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-017 — executed write tools that queued a run are
+  # distinguished from ordinary completed results.
+  it "labels a queued run result distinctly" do
+    render partial: "chat_messages/tool_call", locals: {
+      message: tool_message(
+        tool_name: "request_issue_continuation",
+        tool_result: { "request_id" => 7, "agent_run_id" => 55, "status" => "queued" }
+      )
+    }
+
+    expect(rendered).to include("queued")
+    expect(rendered).not_to include(">completed<")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-017
+  it "labels a refused confirmation as refused" do
+    render partial: "chat_messages/tool_call", locals: {
+      message: tool_message(
+        role: "assistant",
+        tool_status: "denied",
+        tool_name: "trigger_agent_run",
+        tool_arguments: { "issue_id" => 42 },
+        tool_result: nil
+      )
+    }
+
+    expect(rendered).to include("refused")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-017 — proposed read-only calls are visibly
+  # distinct from executed ones.
+  it "labels an unanswered proposed call as proposed" do
+    render partial: "chat_messages/tool_call", locals: {
+      message: tool_message(
+        role: "assistant",
+        tool_status: nil,
+        tool_name: "search_code",
+        tool_arguments: { "query" => "paid" },
+        tool_result: nil
+      )
+    }
+
+    expect(rendered).to include("proposed")
   end
 
   # @spec CHAT-API-020
@@ -91,6 +136,22 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).to include("border-gray-200 bg-white/80 shadow-sm shadow-gray-100/60 ring-2 ring-amber-300")
     expect(rendered).not_to include("border-l-4")
     expect(rendered).to include("Assistant wants to run this action")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-017
+  it "states on the pending card that the action has not run" do
+    render partial: "chat_messages/tool_call", locals: {
+      message: tool_message(
+        role: "assistant",
+        tool_status: "pending",
+        tool_name: "request_issue_continuation",
+        tool_arguments: { "project_id" => 1, "issue_id" => 42 },
+        tool_result: nil
+      )
+    }
+
+    expect(rendered).to include("awaiting confirmation")
+    expect(rendered).to include("No action has run yet")
   end
 
   it "renders field from/to diffs for configuration profile plans" do

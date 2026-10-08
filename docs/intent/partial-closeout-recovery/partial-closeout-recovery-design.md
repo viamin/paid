@@ -223,6 +223,49 @@ machinery the workflow uses:
   account-scoped advisory-lock contention returns a distinct result and the
   rake task tells the operator that no work ran and to retry later, rather
   than presenting a zero-row sweep as a completed backlog.
+### Human closeout guidance (#4189)
+
+The lane's recovery actions assume the operator already knows which action
+fits. The pane therefore carries task-oriented decision guidance (five paths:
+review the recorded criteria/evidence; continue agent-actionable work;
+create/link prerequisite work; supply human evidence; attest completion only
+when justified) and links to an in-app operator guide
+(`InboxController#partial_closeout_guide`) that explains, separately, what
+completes a run, what resolves an Inbox item internally, and what closes a
+GitHub issue or epic through a final PR — including that internal resolution
+leaves GitHub open and that new terminal evidence can resurface the item, and
+that audit completion, gap transfer, and epic acceptance are distinct
+outcomes (a follow-up owner is not completed acceptance evidence; an explicit
+scope revision preserves ownership of the outstanding requirement).
+
+The resolve-complete attestation is editable: the pane collects a specific
+completion rationale referencing evidence instead of posting a hidden canned
+reason, and `Issues::ResolveCloseout` refuses the legacy canned sentence
+structurally (no semantic approval heuristic). Actor and evidence-generation
+digest recording is unchanged.
+
+The continuation offer explains its authorization semantics: one run, other
+holds still apply, and the reason should describe remaining work plus the
+expected evidence (with short examples for fresh acceptance audits,
+implementation gaps, scanner verification, and human-only evaluation). Human
+prerequisites identify the requested evidence, who must supply it, how to
+submit or link it, and what resumes automatically versus what requires a
+deliberate continuation; agents are never retried for unavailable human
+evidence.
+
+Prerequisite linking is available from the pane (`link_prerequisite` on
+`projects/agent_runs`): it appends `Depends on #N` wording to the stalled
+issue via the project GitHub client and reuses `Issues::ParseDependencies` to
+refresh local records immediately, showing the successful linkage and when a
+full sync is still required — the same services the agent `create_issue` /
+`edit_issue` tools use.
+
+Pending chat write-tool confirmations visibly distinguish proposed/awaiting
+confirmation, queued, refused, and completed actions, link a completed action
+to the run it created, and a conversational message sent while a confirmation
+is pending persists a durable notice stating it is not an approval and
+nothing has run yet — a conversational "yes" is never displayed or recorded
+as an executed action.
 
 ## Alternatives considered
 

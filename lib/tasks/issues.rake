@@ -98,7 +98,7 @@ namespace :issues do
        "recorded a `creating` marker, and skip runs whose reconciliation is terminal. " \
        "Re-invoke with AFTER_ID=<next_cursor> while next_cursor is present and " \
        "scanned == BATCH_SIZE to work through the full backlog (#4187, #4191)."
-  task reconcile_legacy_partial_closeouts: :environment do # @spec PARTIAL-CLOSEOUT-017
+  task reconcile_legacy_partial_closeouts: :environment do # @spec PARTIAL-CLOSEOUT-021
     account_id = Integer(ENV.fetch("ACCOUNT_ID"))
     batch_size = Integer(ENV.fetch("BATCH_SIZE", PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE))
     # BATCH_SIZE=0 (or negative) scans nothing while `scanned == batch_size`

@@ -33,8 +33,8 @@ module PartialCloseouts
   # stays open for its final audit even after every legacy gap is
   # reconciled. Closing the umbrella is the owner's intentional decision, not
   # the sweep's (#4187).
-  # @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015
-  # @spec PARTIAL-CLOSEOUT-016 @spec PARTIAL-CLOSEOUT-017
+  # @spec PARTIAL-CLOSEOUT-018 @spec PARTIAL-CLOSEOUT-019
+  # @spec PARTIAL-CLOSEOUT-020 @spec PARTIAL-CLOSEOUT-021
   class ReconcileLegacy
     # Terminal reconciliation statuses — a run in any of these states has
     # already produced durable owner / dependency / notification records,
@@ -90,7 +90,7 @@ module PartialCloseouts
     # operator notifications the later attempt already replaced — mirroring
     # the MAX(id)-per-issue keying in
     # `DefaultCandidateSource#partial_closeout_reaudit_issue_ids`
-    # (PARTIAL-CLOSEOUT-017 / #4191 review).
+    # (PARTIAL-CLOSEOUT-021 / #4191 review).
     LATEST_PR_ATTEMPT_CONDITION = <<~SQL.squish
       NOT EXISTS (
           SELECT 1 FROM agent_runs later_attempts
@@ -160,7 +160,7 @@ module PartialCloseouts
     # accounts sweep concurrently while serializing same-account overlap;
     # a caller that finds the lock held gets a zero-progress Result back
     # (mirrors ProcessRunQueueJob's try-lock-and-skip, #4191 review).
-    def call # @spec PARTIAL-CLOSEOUT-017
+    def call # @spec PARTIAL-CLOSEOUT-021
       unless try_lock!
         Rails.logger.info(message: "partial_closeouts.legacy_reconcile_lock_held", account_id: account_id)
         return Result.new(scanned: 0, reconciled: 0, awaiting_operator: 0, retryable_failure: 0, skipped: 0, next_cursor: after_id, lock_held: true)
@@ -337,7 +337,7 @@ module PartialCloseouts
       # Discard the persisted assessment so the next pass regenerates
       # instead of replaying the same deterministic failure forever; GitHub
       # failures above keep it for the marker-based recovery path
-      # (PARTIAL-CLOSEOUT-016 / #4187 review).
+      # (PARTIAL-CLOSEOUT-020 / #4187 review).
       persist_retryable_failure!(agent_run, e)
       :retryable_failure
     end
@@ -397,7 +397,7 @@ module PartialCloseouts
     # reordered re-invocation could attach the owner created for the old
     # index 0 to whichever gap now sits at index 0 — or overwrite an in-flight
     # `creating` gap state with the new assessment's gap at the same key
-    # (PARTIAL-CLOSEOUT-016). Mirroring
+    # (PARTIAL-CLOSEOUT-020). Mirroring
     # `Activities::ReconcilePartialCloseoutActivity#persisted_assessment`
     # means a GitHub failure leaves the first assessment durable, and the
     # next pass (after the 1-day `retryable_failure` window) replays the same
