@@ -57,7 +57,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
 
       expect(textarea[:id]).to eq(form.find("label", text: "Completion rationale")[:for])
       expect(textarea[:"aria-describedby"]).to be_present
-      expect(element_geometry(textarea)[:bottom]).to be <= element_geometry(submit)[:top]
+      expect(element_geometry(textarea).fetch("bottom")).to be <= element_geometry(submit).fetch("top")
     end
   end
 
@@ -77,7 +77,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
 
       expect(input[:id]).to eq(label[:for])
       expect(input[:"aria-describedby"]).to be_present
-      expect(element_geometry(input)[:width]).to be > 0
+      expect(element_geometry(input).fetch("width")).to be > 0
     end
   end
 
