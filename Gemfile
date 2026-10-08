@@ -37,7 +37,7 @@ gem "avo", "4.2.11"
 # ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25) and
 # any code that calls JSON.parse(json, hash) positionally. Lift the pin
 # once Rails 8.2+ adopts the keyword-only signature throughout.
-gem "json", "~> 2.3", "< 3.0"
+gem "json", "~> 3.0"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -87,7 +87,7 @@ gem "agent-harness", "0.44.8"
 # 2.0.x line is currently only released as release-candidates; 2.0.0 stable is
 # not yet published, so the lower bound uses the rc1 that contains the fix
 # and the upper bound tracks the 2.0.x line as new rcs ship.
-gem "ruby_llm", ">= 2.0.0.rc1", "< 2.1"
+gem "ruby_llm", ">= 2.0.0.rc1", "< 2.2"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.
