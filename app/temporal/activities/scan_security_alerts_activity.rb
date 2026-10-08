@@ -30,10 +30,12 @@ module Activities
       return { alerts_to_fix: [], project_missing: true } unless project
       unless Automation::FeatureActivation.any_pull_request_feature_enabled?(project:, feature: "auto_scan_security")
         resolve_code_scanning_notifications(project)
+        resolve_dependabot_ingestion_notification(project)
         return { alerts_to_fix: [] }
       end
 
       with_periodic_heartbeat("scan_security_alerts", project_id: project_id) do
+        scan_dependabot_alerts(project)
         scan_code_scanning_alerts(project)
       end
 
@@ -129,6 +131,46 @@ module Activities
       raise
     end
 
+    # @spec DEPENDABOT-COVERAGE-001
+    def scan_dependabot_alerts(project)
+      unless project.security_alert_types.include?("dependabot")
+        resolve_dependabot_ingestion_notification(project)
+        return
+      end
+      return unless should_scan_dependabot?(project)
+
+      heartbeat("scan_security_alerts.fetch_dependabot_alerts", project_id: project.id)
+      SecurityAlerts::ProcessDependabotAlerts.new(project).call(fetch_dependabot_alerts(project))
+      project.update_columns(
+        last_dependabot_scan_at: Time.current,
+        dependabot_permission_error_at: nil,
+        dependabot_fetch_error_at: nil
+      )
+      resolve_dependabot_ingestion_notification(project)
+    rescue SecurityAlerts::DependabotPermissionsError => e
+      # Dependabot permission failures have their own one-hour backoff and
+      # visible coverage failure. Keeping them local lets the independent
+      # CodeQL scan continue in this poll cycle. # @spec DEPENDABOT-COVERAGE-001
+      project.update_columns(dependabot_permission_error_at: Time.current)
+      publish_dependabot_ingestion_failure(project, e.message, "permission_denied")
+    rescue GithubClient::Error => e
+      # A transient fetch failure (5xx, GraphQL error, etc.) must be a visible
+      # coverage failure but MUST NOT starve healthy code-scanning coverage:
+      # publish the failure, arm the one-hour fetch-failure backoff, and let
+      # scan_code_scanning_alerts proceed. Re-raising here would couple an
+      # independent Dependabot outage to the whole poll cycle and skip
+      # `last_code_scanning_scan_at` until the Dependabot endpoint recovered.
+      # Use dependabot_fetch_error_at (not dependabot_permission_error_at):
+      # the two failure classes are diagnosed differently — fetch errors are
+      # transient infra and will usually recover without operator action,
+      # permission errors are misconfigurations that need a credential or App
+      # permission change. Sharing the same column would make the schema
+      # ambiguous and prevent operators from telling them apart in the DB.
+      # # @spec DEPENDABOT-COVERAGE-001
+      project.update_columns(dependabot_fetch_error_at: Time.current)
+      publish_dependabot_ingestion_failure(project, e.message, "fetch_failed")
+    end
+
     # Surface retryable verification blockers as blocking inbox notifications
     # and auto-resolve notifications for attempts that have moved to a terminal
     # state on this scan (EAGER-QUEUE-016). Idempotent on (source, subject):
@@ -166,6 +208,14 @@ module Activities
       project.last_code_scanning_scan_at <= project.code_scanning_interval_hours.hours.ago
     end
 
+    def should_scan_dependabot?(project)
+      return false if recent_dependabot_permission_error?(project)
+      return false if recent_dependabot_fetch_error?(project)
+      return true if project.last_dependabot_scan_at.nil?
+
+      project.last_dependabot_scan_at <= project.code_scanning_interval_hours.hours.ago
+    end
+
     def retry_scheduled?(project)
       project.next_code_scanning_scan_at&.future? || recent_legacy_permission_error?(project)
     end
@@ -173,6 +223,16 @@ module Activities
     def recent_legacy_permission_error?(project)
       project.code_scanning_permission_error_at.present? &&
         project.code_scanning_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
+    end
+
+    def recent_dependabot_permission_error?(project)
+      project.dependabot_permission_error_at.present? &&
+        project.dependabot_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
+    end
+
+    def recent_dependabot_fetch_error?(project)
+      project.dependabot_fetch_error_at.present? &&
+        project.dependabot_fetch_error_at > PERMISSION_ERROR_BACKOFF.ago
     end
 
     def verification_due?(project)
@@ -241,6 +301,52 @@ module Activities
       else
         raise
       end
+    end
+
+    def fetch_dependabot_alerts(project)
+      project.client.dependabot_alerts(project.full_name)
+    rescue GithubClient::ApiError => e
+      raise unless e.status == 403
+
+      raise SecurityAlerts::DependabotPermissionsError,
+        "GitHub token lacks permission to read Dependabot alerts for #{project.full_name}."
+    rescue GithubClient::NotFoundError => e
+      raise SecurityAlerts::DependabotPermissionsError,
+        "GitHub Dependabot alert ingestion is unavailable for #{project.full_name}: #{e.message}"
+    rescue Faraday::Error => e
+      # GithubClient#handle_errors records a health failure for transport-level
+      # errors but re-raises raw `Faraday::Error` rather than wrapping it in a
+      # `GithubClient::Error`. Without this rescue a timeout or connection
+      # failure would abort the activity before `scan_code_scanning_alerts`
+      # could run, and the activity would not publish the required ingestion
+      # failure or arm the fetch-failure backoff (DEPENDABOT-COVERAGE-001).
+      # Re-wrap as `GithubClient::ApiError` so the caller's rescue publishes
+      # the failure notification and proceeds to the code-scanning scan.
+      raise GithubClient::ApiError.new(
+        "Dependabot alert fetch failed: #{e.message}",
+        status: nil
+      )
+    end
+
+    def publish_dependabot_ingestion_failure(project, message, reason)
+      Notifications::Publish.call(
+        account: project.account, source: "dependabot_alert_coverage_ingestion", subject: project,
+        severity: :error, blocking: true, nav_section: "projects",
+        title: "Dependabot alert coverage is unavailable", description: message,
+        metadata: { project_id: project.id, reason: reason }
+      )
+    end
+
+    # A recovered scan (or disabling Dependabot scanning) ends the ingestion
+    # failure: Publish leaves the blocking notification active until Resolve
+    # runs, so without this a recovered project keeps a stale Inbox blocker.
+    # @spec DEPENDABOT-COVERAGE-001
+    def resolve_dependabot_ingestion_notification(project)
+      Notifications::Resolve.call(
+        account: project.account,
+        source: "dependabot_alert_coverage_ingestion",
+        subject: project
+      )
     end
   end
 end

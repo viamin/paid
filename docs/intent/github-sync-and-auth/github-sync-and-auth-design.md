@@ -49,6 +49,18 @@ prior run/PR outcomes into the final agent prompt. Agents must compare a
 historical location to their checkout, investigate false-positive status, and
 must not claim scanner resolution without supporting verification.
 
+Dependabot alerts use a separate alert-level coverage ledger rather than the
+retired synthetic-issue remediation loop. Each open alert is reconciled by its
+repository alert number and dependency/advisory identity, retaining
+authoritative advisory evidence and only remediation PRs explicitly supplied
+by GitHub. An absent PR is never inferred to be a provider failure: it remains
+`unknown` unless GitHub supplies a verified reason. New uncovered alerts have a
+seven-day grace period before a blocking operator escalation. An unfixable
+alert can be accepted only with an owner, reason, and expiry; deleting the
+owner ends the acceptance and returns the alert to the uncovered escalation
+path with a fresh grace window. Permission and
+ingestion failures are themselves blocking coverage failures.
+
 ## Code-scanning coverage
 
 Code-scanning discovery has a default 24-hour cadence (configurable per

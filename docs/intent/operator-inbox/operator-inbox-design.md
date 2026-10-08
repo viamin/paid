@@ -111,6 +111,12 @@ Backed by `NotificationPolicy::Scope.new(user, Notification).resolve
 has halted and cannot self-resolve, so the persisted notification itself is
 the source of truth for both bell badging and inbox derivation.
 
+Status/history notifications that are non-blocking remain inspectable through
+the notification surface but do not become Action Required work or contribute
+to its badge. In particular, automatic code-scanning verification waits are
+evidence status, while code-scanning credential and configuration failures
+remain blocking because an operator must correct them.
+
 The entry payload carries the source notification, the related
 project/issue/run context when it can be derived from the subject, and
 remediation guidance from notification metadata (`recommended_action`, plus

@@ -904,6 +904,53 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      # @spec DEPENDABOT-COVERAGE-001
+      it "shows every open Dependabot alert coverage record up to the page cap" do
+        project = create(:project, account: account, github_token: github_token)
+        21.times do |index|
+          create(
+            :dependabot_alert_coverage,
+            project: project,
+            account: account,
+            alert_number: index + 1,
+            dependency_name: "dependency-#{index + 1}",
+            advisory_ghsa_id: "GHSA-#{format('%012d', index + 1)}"
+          )
+        end
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("dependency-1", "dependency-21")
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "bounds the open Dependabot alert coverage list to 50 entries so a large backlog does not blow up the projects#show render path" do
+        project = create(:project, account: account, github_token: github_token)
+        base_time = Time.current
+        75.times do |index|
+          create(
+            :dependabot_alert_coverage,
+            project: project,
+            account: account,
+            alert_number: index + 1,
+            dependency_name: "dependency-#{index + 1}",
+            advisory_ghsa_id: "GHSA-#{format('%012d', index + 1)}",
+            first_detected_at: base_time - 1.day,
+            last_detected_at: base_time + index.seconds
+          )
+        end
+
+        get project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        # The 50 most recently detected alerts must be present; the rest are
+        # bounded out so a project with hundreds of open alerts doesn't blow
+        # up the projects#show render path.
+        expect(response.body).to include("dependency-75", "dependency-26")
+        expect(response.body).not_to include("dependency-25")
+      end
+
       it "shows each open issue's actual internal Paid state" do # @spec AUTO-PICK-QUEUE-008
         project = create(:project, account: account, github_token: github_token)
         create(:issue, project: project, paid_state: "recommend_close")
@@ -2744,6 +2791,83 @@ RSpec.describe "Projects" do
 
         expect(response).to redirect_to(edit_project_path(project))
         expect(flash[:alert]).to include("Could not refresh code-scanning availability")
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "lets operators opt Dependabot back in for projects left by #619 with only code scanning" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "code_scanning" ])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "dependabot", "code_scanning" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to contain_exactly("dependabot", "code_scanning")
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "lets operators opt out of Dependabot without touching code scanning" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: %w[dependabot code_scanning])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "code_scanning" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "code_scanning" ])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "lets operators disable every alert source by unchecking every checkbox" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: %w[dependabot code_scanning])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "preserves the existing selection when the form omits security_alert_types entirely" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "code_scanning" ])
+
+        patch project_path(project), params: { project: { generated_label_name: "ai-gen" } }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "code_scanning" ])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "drops unknown security_alert_types values submitted via tampering" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: [ "code_scanning" ])
+
+        patch project_path(project), params: {
+          project: { security_alert_types: [ "code_scanning", "bogus_source" ] }
+        }
+
+        expect(response).to redirect_to(project)
+        expect(project.reload.security_alert_types).to eq([ "code_scanning" ])
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "renders security alert source checkboxes in the edit form" do
+        project = create(:project, account: account, github_token: github_token,
+          security_alert_types: %w[dependabot code_scanning])
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Dependabot alerts")
+        expect(response.body).to include("Code scanning alerts")
+        expect(response.body).to include('name="project[security_alert_types][]"')
+        expect(response.body).to include('value="dependabot"')
+        expect(response.body).to include('value="code_scanning"')
       end
 
       it "allows updating the TDD mode" do # @spec TDD-MODE-002

@@ -1424,6 +1424,71 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#dependabot_alerts" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+        .with(query: { state: "open", per_page: 100 })
+        .to_return(
+          status: 200,
+          body: [
+            {
+              number: 41, state: "open",
+              dependency: { package: { name: "brace-expansion", ecosystem: "npm" }, manifest_path: "package-lock.json" },
+              security_advisory: { ghsa_id: "GHSA-test", cve_id: "CVE-2026-1" },
+              security_vulnerability: { first_patched_version: { identifier: "5.0.6" } }
+            }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          status: 200,
+          body: {
+            data: {
+              repository: {
+                vulnerabilityAlerts: {
+                  nodes: [
+                    {
+                      number: 41,
+                      dependabotUpdate: {
+                        pullRequest: {
+                          number: 42, url: "https://github.com/#{repo}/pull/42", state: "OPEN", mergedAt: nil
+                        }
+                      }
+                    }
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: nil }
+                }
+              }
+            }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "uses the GraphQL Dependabot update as remediation PR evidence" do
+      result = client.dependabot_alerts(repo)
+
+      expect(result).to include(hash_including(
+        number: 41,
+        remediation_pull_requests: [ { number: 42, url: "https://github.com/#{repo}/pull/42", state: "open", merged_at: nil } ]
+      ))
+    end
+
+    # @spec DEPENDABOT-COVERAGE-001
+    it "does not fetch remediation PR evidence when there are no open alerts" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+        .with(query: { state: "open", per_page: 100 })
+        .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+
+      expect(client.dependabot_alerts(repo)).to eq([])
+      expect(a_request(:post, "#{api_base}/graphql")).not_to have_been_requested
+    end
+  end
+
   describe "#review_threads" do
     let(:repo) { "owner/repo" }
 

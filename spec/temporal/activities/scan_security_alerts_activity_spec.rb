@@ -7,7 +7,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
   let(:project) do
     create(:project,
       auto_scan_security: true,
-      security_alert_types: %w[code_scanning],
+      security_alert_types: %w[dependabot code_scanning],
       code_scanning_interval_hours: 72)
   end
   let(:github_client) { instance_double(GithubClient) }
@@ -16,7 +16,8 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
       code_scanning_analyses: [],
-      code_scanning_alert_dispositions: []
+      code_scanning_alert_dispositions: [],
+      dependabot_alerts: []
     )
   end
 
@@ -38,6 +39,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(result).to eq(alerts_to_fix: [])
         expect(project.code_scanning_coverage_status).to eq("disabled")
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the dependabot ingestion notification" do
+        publish_dependabot_ingestion_notification
+
+        activity.execute(project_id: project.id)
+
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
       end
     end
 
@@ -163,7 +173,8 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(reason).not_to include(token)
       end
 
-      it "keeps an ambiguous 403 as a permission error without advancing last_code_scanning_scan_at" do
+      # @spec DEPENDABOT-COVERAGE-001 GITHUB-SYNC-018
+      it "reconciles Dependabot and retains an ambiguous 403 as a permission error" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
 
@@ -175,6 +186,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         project.reload
         expect(project.last_code_scanning_scan_at).to be_nil
+        expect(github_client).to have_received(:dependabot_alerts)
         expect(project.code_scanning_scan_error_kind).to eq("permission")
         expect(project.next_code_scanning_scan_at).to be_within(1.second).of(1.hour.from_now)
       end
@@ -279,6 +291,210 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when Dependabot alert ingestion fails" do
+      before do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Server error", status: 500))
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "surfaces the failed fetch as a blocking coverage failure" do
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(blocking: true, severity: :error, metadata: hash_including(reason: "fetch_failed"))
+        )
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "still scans CodeQL even when the Dependabot fetch fails" do
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(github_client).to have_received(:code_scanning_alerts)
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.dependabot_fetch_error_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_nil
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "arms the one-hour fetch-failure backoff so subsequent polls skip Dependabot" do
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:dependabot_alerts).once
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "publishes the permission failure and still scans CodeQL" do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(blocking: true, severity: :error, metadata: hash_including(reason: "permission_denied"))
+        )
+        expect(github_client).to have_received(:code_scanning_alerts)
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_present
+        expect(project.dependabot_fetch_error_at).to be_nil
+      end
+    end
+
+    context "when the Dependabot transport layer raises Faraday::Error" do
+      # @spec DEPENDABOT-COVERAGE-001
+      it "surfaces the timeout as a transient fetch failure and still runs CodeQL" do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(Faraday::TimeoutError.new("execution expired"))
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(
+            blocking: true,
+            severity: :error,
+            metadata: hash_including(reason: "fetch_failed")
+          )
+        )
+        expect(github_client).to have_received(:code_scanning_alerts)
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_present
+        expect(project.dependabot_fetch_error_at).to be_present
+        expect(project.dependabot_permission_error_at).to be_nil
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "treats a connection failure the same as a server-side fetch error" do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(Faraday::ConnectionFailed.new("connect refused"))
+
+        activity.execute(project_id: project.id)
+
+        expect(Notifications::Publish).to have_received(:call).with(
+          hash_including(metadata: hash_including(reason: "fetch_failed"))
+        )
+        project.reload
+        expect(project.dependabot_fetch_error_at).to be_present
+      end
+    end
+
+    context "when a Dependabot ingestion failure recovers" do
+      before { allow(github_client).to receive(:code_scanning_alerts).and_return([]) }
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the blocking ingestion notification after a successful scan" do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Server error", status: 500))
+        activity.execute(project_id: project.id)
+        notification = Notification.active.find_by!(source: "dependabot_alert_coverage_ingestion", subject: project)
+        expect(notification).to have_attributes(severity: "error", blocking: true)
+
+        allow(github_client).to receive(:dependabot_alerts).and_return([])
+        travel 2.hours do
+          activity.execute(project_id: project.id)
+        end
+
+        expect(notification.reload.resolved_at).to be_present
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the blocking ingestion notification after a permission failure is repaired" do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+        expect(Notification.active.find_by!(source: "dependabot_alert_coverage_ingestion", subject: project))
+          .to have_attributes(severity: "error", blocking: true)
+
+        allow(github_client).to receive(:dependabot_alerts).and_return([])
+        travel 2.hours do
+          activity.execute(project_id: project.id)
+        end
+
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
+      end
+    end
+
+    context "with Dependabot interval and permission-error backoff" do
+      before { project.update_columns(last_code_scanning_scan_at: Time.current, last_dependabot_scan_at: nil) }
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "does not scan Dependabot when the alert type is disabled" do
+        project.update_column(:security_alert_types, %w[code_scanning])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "resolves the ingestion notification when the Dependabot alert type is disabled" do
+        publish_dependabot_ingestion_notification
+        project.update_column(:security_alert_types, %w[code_scanning])
+
+        activity.execute(project_id: project.id)
+
+        expect(Notification.active.find_by(source: "dependabot_alert_coverage_ingestion", subject: project)).to be_nil
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "skips Dependabot scans until the configured interval has elapsed" do
+        project.update_column(:last_dependabot_scan_at, 1.hour.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "backs off permission failures without re-arming the blocking notification" do
+        allow(Notifications::Publish).to receive(:call)
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:dependabot_alerts).once
+        expect(Notifications::Publish).to have_received(:call).once
+        expect(project.reload.dependabot_permission_error_at).to be_present
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "clears the permission backoff after a successful Dependabot scan" do
+        project.update_column(:dependabot_permission_error_at, 2.hours.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload).to have_attributes(
+          last_dependabot_scan_at: be_present,
+          dependabot_permission_error_at: nil
+        )
+      end
+
+      # @spec DEPENDABOT-COVERAGE-001
+      it "clears the fetch-failure backoff after a successful Dependabot scan" do
+        project.update_column(:dependabot_fetch_error_at, 2.hours.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload).to have_attributes(
+          last_dependabot_scan_at: be_present,
+          dependabot_fetch_error_at: nil
+        )
+      end
+    end
+
     context "with a recorded permission error" do
       before { project.update_column(:last_code_scanning_scan_at, nil) }
 
@@ -327,6 +543,28 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_attempted_at).to be_present
         expect(project.code_scanning_scan_error_kind).to be_nil
         expect(project.next_code_scanning_scan_at).to be_nil
+      end
+    end
+
+    context "with a recorded fetch failure" do
+      before { project.update_columns(last_code_scanning_scan_at: nil, last_dependabot_scan_at: nil) }
+
+      it "skips the Dependabot scan while within the fetch-failure backoff window" do
+        project.update_column(:dependabot_fetch_error_at, 5.minutes.ago)
+        allow(github_client).to receive_messages(code_scanning_alerts: [], dependabot_alerts: [])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:dependabot_alerts)
+      end
+
+      it "retries Dependabot once the fetch-failure backoff window has elapsed" do
+        project.update_column(:dependabot_fetch_error_at, 2.hours.ago)
+        allow(github_client).to receive_messages(code_scanning_alerts: [], dependabot_alerts: [])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:dependabot_alerts)
       end
     end
 
@@ -509,6 +747,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     project.update_columns(code_scanning_permission_error_at: Time.current, allowed_github_usernames: [])
     Notifications::Rules::CodeScanningPermissionsError.call(scope: [ project ])
     Notifications::Rules::CodeScanningConfigurationError.call(scope: [ project ])
+  end
+
+  def publish_dependabot_ingestion_notification
+    Notifications::Publish.call(
+      account: project.account, source: "dependabot_alert_coverage_ingestion", subject: project,
+      severity: :error, blocking: true, nav_section: "projects",
+      title: "Dependabot alert coverage is unavailable", description: "Server error",
+      metadata: { project_id: project.id, reason: "fetch_failed" }
+    )
   end
 
   def active_code_scanning_blocker_notifications

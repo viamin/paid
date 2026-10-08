@@ -99,16 +99,25 @@ RSpec.describe Inbox::Queue do
       expect(action_required_entry.tasks).to eq([ "Open Runner Settings", "Reconnect the managed credential" ])
     end
 
-    it "projects code-scanning verification blockers through their synthetic issue" do # @spec EAGER-QUEUE-016
+    it "excludes passive code-scanning verification waits from action_required" do # @spec EAGER-QUEUE-016 OPERATOR-INBOX-002B
       issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       attempt = create(:code_scanning_remediation_attempt, issue: issue, status: "verification_blocked")
-      notification = create(:notification, :error, account: account, subject: attempt,
-        source: "code_scanning_verification_blocked", blocking: true)
+      notification = create(:notification, :info, account: account, subject: attempt,
+        source: "code_scanning_verification_blocked", blocking: false)
+
+      entries = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+
+      expect(entries.map(&:record)).not_to include(notification)
+    end
+
+    it "keeps code-scanning permission errors in action_required" do # @spec EAGER-QUEUE-016 OPERATOR-INBOX-002B
+      notification = create(:notification, :error, account: account, subject: project,
+        source: "code_scanning_permissions_error", blocking: true)
 
       entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
         .find { |candidate| candidate.record == notification }
 
-      expect(entry).to have_attributes(project: project, issue: issue)
+      expect(entry).to have_attributes(project: project, record: notification)
     end
 
     it "exposes waiting_since from needs_input_since so a future inbox UI can show waiting age" do

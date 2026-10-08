@@ -212,10 +212,15 @@
 - [x] **EAGER-QUEUE-016** — When a project's latest attempt against a synthetic
   code-scanning issue is `verification_blocked` and the issue is not already
   in the manual_review lane (i.e. retryable evidence has not yet escalated),
-  the system SHALL publish a blocking `code_scanning_verification_blocked`
-  notification carrying the alert URL, linked PRs, blocked reason, the
-  attempt's age, the project's last successful scan timestamp, and a next
-  action. The notification SHALL be re-issued (idempotent on
+  the system SHALL publish a non-blocking informational
+  `code_scanning_verification_blocked` notification carrying the alert URL,
+  linked PRs, blocked reason, the attempt's age, and the project's last
+  successful scan timestamp so users can inspect verification status and
+  evidence outside Action Required. Its recommendation SHALL describe only
+  the recorded verification condition and automatic re-evaluation; it SHALL
+  NOT recommend merging another fix or assert that a future scan will clear a
+  fixed or dismissed upstream finding. The notification SHALL be re-issued
+  (idempotent on
   `(source, subject)`) on every relevant scan so repeated polls and worker
   restarts keep the surfaced state current, and SHALL be auto-resolved when
   the attempt transitions to `verified_fixed`, `verification_failed`, or
