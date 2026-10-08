@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # @spec AUTO-MERGE-009
 class SyncIssueImplementationPromptHoldForReview < ActiveRecord::Migration[8.1]
   CHANGE_NOTES = "Tell issue implementation runs to use the structured paid-hold-review label (#4181)"

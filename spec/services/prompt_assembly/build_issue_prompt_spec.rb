@@ -281,6 +281,89 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  describe "continuation context" do # @spec PARTIAL-CLOSEOUT-012
+    def continuation_run(reason: "Finish the RDR-067 audit; epic status claims are overstated.", evidence: nil)
+      real_issue = create(:issue)
+      continuation_request = create(
+        :issue_continuation_request,
+        issue: real_issue,
+        reason: reason,
+        evidence: evidence || {
+          "merged_prs" => [ { "number" => 101, "url" => "https://github.com/acme/widgets/pull/101" } ],
+          "no_code_required_at" => nil
+        },
+        evidence_digest: "a" * 64
+      )
+      create(:agent_run, goal: "create_pr", project: real_issue.project, issue: real_issue, continuation_request: continuation_request)
+    end
+
+    it "includes the operator's reason and evidence snapshot in the final prompt" do
+      agent_run = continuation_run
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("# Continuation Context")
+      expect(result.text).to include("Finish the RDR-067 audit; epic status claims are overstated.")
+      expect(result.text).to include("Merged pull request #101")
+      expect(result.text).to include("https://github.com/acme/widgets/pull/101")
+      expect(result.text).to include("continuation request ##{agent_run.continuation_request.id}")
+    end
+
+    it "preserves actor, request id, and evidence generation in section provenance" do
+      agent_run = continuation_run
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      section = result.sections.find { |s| s.key == :continuation_context }
+      expect(section.metadata).to include(
+        request_id: agent_run.continuation_request.id,
+        actor_id: agent_run.continuation_request.requested_by_id,
+        evidence_digest: "a" * 64
+      )
+    end
+
+    it "cannot be suppressed by a profile that disables it" do
+      agent_run = continuation_run
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :continuation_context ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("# Continuation Context")
+      expect(result.sections.find { |s| s.key == :continuation_context }).to have_attributes(
+        required?: true,
+        trust_level: :trusted
+      )
+    end
+
+    it "does not duplicate the section when the prompt is rebuilt (activity replay)" do
+      agent_run = continuation_run
+
+      first = described_class.call(issue: issue, project: project, agent_run: agent_run)
+      second = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(first.text.scan("# Continuation Context").length).to eq(1)
+      expect(second.text.scan("# Continuation Context").length).to eq(1)
+    end
+
+    it "omits the section for ordinary (non-continuation) runs" do
+      agent_run = create(:agent_run, goal: "create_pr")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).not_to include("Continuation Context")
+      expect(result.sections.map(&:key)).not_to include(:continuation_context)
+      skipped = result.skipped.find { |s| s[:key] == :continuation_context }
+      expect(skipped[:reason]).to eq("no_continuation_request")
+    end
+
+    it "omits the section when there is no agent_run at all" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).not_to include("Continuation Context")
+    end
+  end
+
   describe "untrusted issue" do
     let(:untrusted_issue) do
       OpenStruct.new(

@@ -826,7 +826,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.string "merge_commit_sha", null: false, comment: "Merge commit that scanner evidence must contain."
     t.datetime "merged_at", null: false
     t.integer "pull_request_number", null: false
-    t.string "status", default: "awaiting_verification", null: false, comment: "awaiting_verification, verified_fixed, verification_failed, or verification_blocked."
+    t.string "status", default: "awaiting_verification", null: false, comment: "awaiting_verification, verified_fixed, verification_failed, verification_blocked, or upstream_resolved."
     t.string "tool_name"
     t.datetime "updated_at", null: false
     t.string "verification_analysis_id"

@@ -22,7 +22,10 @@ trigram indexes, full-text search, row-level security, and database-backed job
 infrastructure. Rails remains on `db/schema.rb`, which is the canonical schema
 artifact. PostgreSQL functions and triggers are handled through versioned `fx`
 definitions, and CI rejects migration paths that dump a different `schema.rb`
-than the checked-in canonical copy.
+than the checked-in canonical copy. Schema dumps sort columns alphabetically
+by name in every environment, independent of their physical PostgreSQL order.
+A dump-only connection wrapper supplies sorted columns to Rails while preserving
+its rendering of definitions, constraints, and the existing `fx` integration.
 
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also

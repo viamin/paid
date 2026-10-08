@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # @spec AUTO-MERGE-009
 class SyncCreateFeaturePromptHoldForReview < ActiveRecord::Migration[8.1]
   CHANGE_NOTES = "Tell create-feature runs to apply the structured paid-hold-review label (#4181)"

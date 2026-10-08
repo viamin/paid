@@ -206,7 +206,8 @@
   operator enables or refreshes code-scanning, the system SHALL query the
   repository's code-scanning alerts with the project's resolved GitHub
   credential. When GitHub explicitly states that code scanning is unsupported,
-  unavailable, or not enabled, the system SHALL remove only `code_scanning`
+  unavailable, not enabled, or requires Advanced Security to be enabled for the
+  repository, the system SHALL remove only `code_scanning`
   from the project's selected security alert types, preserve other selections,
   findings, remediation evidence, and the last successful scan watermark, and
   show the sanitized reason beside the setting. The operator SHALL be able to
@@ -229,7 +230,9 @@
   reason and evidence; an omitted finding with no explicit state SHALL remain
   unresolved/unknown rather than being treated as fixed. A dismissed finding
   may close the upstream work item but SHALL not be presented as a verified
-  code remediation. A later open scanner observation SHALL preserve prior
+  code remediation: its linked remediation attempt SHALL record the
+  authoritative conclusion separately as `upstream_resolved`, not
+  `verified_fixed` or retryable missing evidence. A later open scanner observation SHALL preserve prior
   attempts and record a recurrence rather than erase verification history.
   Before an agent remediates an open synthetic code-scanning issue, the system
   SHALL refresh and require authoritative open
