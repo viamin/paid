@@ -158,17 +158,75 @@ module ChatSessionsHelper
     "denied" => "bg-red-100 text-red-700"
   }.freeze
 
+  # @spec PARTIAL-CLOSEOUT-017 — the badge distinguishes the full action
+  # lifecycle: proposed (the model suggested it, nothing more), awaiting
+  # confirmation (pending human decision), queued (executed and a run is
+  # waiting), refused (denied), and completed (executed with a result).
   def chat_tool_status_label(message)
     case message.tool_status
-    when "pending" then "pending approval"
+    when "pending" then "awaiting confirmation"
     when "approved" then "approved"
-    when "denied" then "denied"
-    else message.role == "tool" ? "result" : "args"
+    when "denied" then "refused"
+    else
+      message.role == "tool" ? (queued_tool_result?(message) ? "queued" : "completed") : "proposed"
     end
   end
 
   def chat_tool_status_classes(message)
     CHAT_TOOL_STATUS_BADGES.fetch(message.tool_status, "bg-gray-100 text-gray-600")
+  end
+
+  # A completed action that queued an agent run (continuation, triggered run).
+  def queued_tool_result?(message)
+    payload = chat_tool_payload(message.tool_result)
+    chat_tool_result_run_id(message).present? && payload.is_a?(Hash) && chat_tool_result_value(payload, "status") == "queued"
+  end
+
+  # Links a completed tool result to the agent run it created, when the result
+  # carries a run reference (agent_run_id, or the id of a run-creating result
+  # that also reports a request/goal). Purely structural extraction — no
+  # semantic inference over tool payloads.
+  # @spec PARTIAL-CLOSEOUT-017
+  def chat_tool_result_run_link(message)
+    run_id = chat_tool_result_run_id(message)
+    return if run_id.blank?
+
+    project = chat_tool_result_project(message)
+    return if project.nil?
+
+    link_to "View run", project_agent_run_path(project, run_id),
+      data: { turbo_frame: "_top" },
+      class: "text-xs font-medium text-indigo-600 hover:text-indigo-900"
+  end
+
+  def chat_tool_result_run_id(message)
+    result = chat_tool_payload(message.tool_result)
+    return unless result.is_a?(Hash)
+
+    id = chat_tool_result_value(result, "agent_run_id")
+    return id if id.present?
+
+    # Run-creating tools report the run under "id" next to a goal or request id.
+    id = chat_tool_result_value(result, "id")
+    id if id.present? && (chat_tool_result_value(result, "goal").present? || chat_tool_result_value(result, "request_id").present?)
+  end
+
+  def chat_tool_result_project(message)
+    result = chat_tool_payload(message.tool_result)
+    project_id = result.is_a?(Hash) ? chat_tool_result_value(result, "project_id") : nil
+
+    if project_id.blank? && message.tool_arguments.is_a?(Hash)
+      project_id = message.tool_arguments["project_id"] || message.tool_arguments[:project_id]
+    end
+    return if project_id.blank?
+
+    Project.find_by(id: project_id)
+  end
+
+  def chat_tool_result_value(payload, key)
+    return nil unless payload.is_a?(Hash)
+
+    payload[key] || payload[key.to_sym]
   end
 
   def chat_tool_payload_excerpt(message)

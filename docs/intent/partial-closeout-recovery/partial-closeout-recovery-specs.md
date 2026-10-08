@@ -192,6 +192,91 @@
   1280px viewport widths in a 300px-wide continuation section, plus a
   rendered Inbox browser check at mobile and desktop widths.
 
+- [x] **PARTIAL-CLOSEOUT-013** — When the partial-closeout Inbox pane renders,
+  the system SHALL show task-oriented decision guidance covering the five
+  operator paths (review the recorded criteria/evidence; continue
+  agent-actionable work; create/link prerequisite work; supply human evidence;
+  attest completion only when justified) and SHALL link to an in-app operator
+  guide page that explains, separately, what completes a run, what resolves an
+  Inbox item internally, and what closes a GitHub issue or epic through a
+  final PR. Both the pane and the guide SHALL state that internal resolution
+  records an attestation and leaves the GitHub issue open, and that new
+  terminal evidence can resurface the item. The guide SHALL also explain that
+  audit completion, gap transfer to a follow-up owner, and epic acceptance are
+  distinct outcomes — a follow-up owner is not completed acceptance evidence —
+  and that an explicit scope revision preserves ownership of the outstanding
+  requirement and requires appropriate authorization.
+  *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/controllers/inbox_controller.rb`,
+  `app/views/inbox/partial_closeout_guide.html.erb`.
+  *Test:* `spec/requests/inbox_partial_closeout_guide_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-014** — When an operator resolves a stalled issue as
+  complete, the system SHALL present an editable completion-rationale input
+  (never a hidden pre-filled reason) whose guidance asks for a specific
+  rationale referencing the recorded evidence, and the service SHALL refuse a
+  rationale that is exactly the legacy canned attestation sentence. The
+  resolution SHALL continue to record the actor and the evidence-generation
+  digest it resolves against, and SHALL NOT apply any semantic approval
+  heuristic beyond that structural check.
+  *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/services/issues/resolve_closeout.rb`.
+  *Test:* `spec/services/issues/resolve_closeout_spec.rb`,
+  `spec/requests/projects/issue_continuations_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-015** — When the pane offers a continuation request,
+  it SHALL explain that the request authorizes exactly one run, that every
+  other hold still applies, and that the operator should describe the
+  remaining work and the evidence they expect it to produce, with short
+  examples covering fresh acceptance audits, implementation gaps, scanner
+  verification, and human-only evaluation. When a prerequisite is human work,
+  the pane SHALL identify the requested evidence, who must supply it, how to
+  submit or link it, and what to do after submission, and SHALL state what
+  resumes automatically (an agent-owned prerequisite resolves and its owner
+  issue closes) versus what requires a deliberate continuation (supplying
+  human evidence never retries an agent for unavailable human input).
+  *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/services/issues/closeout_status.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/services/issues/closeout_status_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-016** — When an authorized operator links a
+  prerequisite from the partial-closeout pane, the system SHALL append the
+  dependency wording to the stalled issue on GitHub (reusing the project
+  GitHub client and `Issues::ParseDependencies`, the same services the agent
+  `create_issue`/`edit_issue` tools use), SHALL refresh the local dependency
+  records without waiting for the next sync, SHALL show the successful
+  linkage, and SHALL explain when a full GitHub sync is still required (body
+  edits made directly on GitHub). When the proposed prerequisite already
+  depends on the stalled issue, the system SHALL refuse the link before
+  changing GitHub or local state; when GitHub access is unavailable, it SHALL
+  explain that the project must be configured instead of raising an error.
+  *Code:* `app/controllers/projects/agent_runs_controller.rb`,
+  `app/services/issues/link_prerequisite.rb`,
+  `app/services/project_conventions/issue_dependencies.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/requests/projects/link_prerequisite_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-017** — When a chat write-tool confirmation renders,
+  the system SHALL visibly distinguish a proposed action awaiting confirmation
+  from a queued, refused, or completed one, SHALL state on the pending card
+  that no action has run yet, and SHALL link a completed action to the run it
+  created when the tool result carries an agent run id. When the user sends a
+  conversational message while a write-tool confirmation is pending, the
+  system SHALL persist a durable notice stating that the message is not an
+  approval, naming the pending action(s), and confirming that nothing has run
+  yet — a conversational "yes" SHALL NOT be displayed, recorded, or fed to the
+  model as an executed action.
+  *Code:* `app/services/chat_sessions/send_message.rb`,
+  `app/models/chat_message.rb`,
+  `app/helpers/chat_sessions_helper.rb`,
+  `app/views/chat_messages/_tool_call.html.erb`,
+  `app/views/chat_messages/_pending_confirmation_notice.html.erb`.
+  *Test:* `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/views/chat_messages/tool_call_partial_spec.rb`,
+  `spec/helpers/chat_sessions_helper_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-012** — When continuation admission is denied, the
   system SHALL return every material structured blocker from the current guard
   evidence, with a recovery action or wait condition. For synthetic

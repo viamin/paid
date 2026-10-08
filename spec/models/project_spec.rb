@@ -79,7 +79,7 @@ RSpec.describe Project do
     end
 
     it "reports the time of a current complete snapshot" do
-      timestamp = Time.zone.parse("2026-10-07 10:00:00")
+      timestamp = 1.hour.ago
       project = build(:project, auto_scan_security: true, security_alert_types: [ "code_scanning" ],
         last_code_scanning_scan_at: timestamp)
 

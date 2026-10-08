@@ -6,6 +6,12 @@ module Issues
       def success? = code.nil?
     end
 
+    # The legacy pane submitted this canned sentence as a hidden field. The
+    # rationale is now operator-authored, so an unchanged canned payload is
+    # refused structurally — no semantic judgment is made about the reason's
+    # content (#4189).
+    LEGACY_CANNED_REASON = /\AOperator attests the recorded closeout evidence completes #\d+\.\z/
+
     def self.call(...) = new(...).call
 
     def initialize(issue:, actor:, reason:)
@@ -16,6 +22,8 @@ module Issues
 
     def call # @spec PARTIAL-CLOSEOUT-006
       return failure(:invalid_reason, "A closeout reason is required.") if reason.blank?
+      return failure(:generic_reason, "Enter a specific completion rationale that references the recorded evidence " \
+        "(for example which merged PRs or no-code declaration cover each acceptance criterion).") if canned_reason?
 
       result = issue.with_lock { resolve }
       return result unless result.success?
@@ -28,6 +36,10 @@ module Issues
     private
 
     attr_reader :actor, :issue, :reason
+
+    def canned_reason?
+      reason.match?(LEGACY_CANNED_REASON)
+    end
 
     def resolve
       evidence = CloseoutEvidence.call(issue)

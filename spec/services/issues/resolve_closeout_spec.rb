@@ -53,6 +53,32 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(result.code).to eq(:invalid_reason)
   end
 
+  # @spec PARTIAL-CLOSEOUT-014 — the legacy hidden form reason is not a
+  # specific rationale; submitting it unchanged must be refused so the
+  # operator writes evidence-referencing text instead.
+  it "refuses the legacy canned hidden reason" do
+    merged_partial_pr(number: 12)
+
+    result = described_class.call(issue: issue, actor: user, reason: "Operator attests the recorded closeout evidence completes ##{issue.github_number}.")
+
+    expect(result.success?).to be(false)
+    expect(result.code).to eq(:generic_reason)
+    expect(result.message).to include("specific completion rationale")
+    expect(issue.reload.paid_state).to eq("in_progress")
+  end
+
+  it "accepts an evidence-referencing rationale that is not the canned sentence" do
+    merged_partial_pr(number: 12)
+
+    result = described_class.call(
+      issue: issue,
+      actor: user,
+      reason: "Merged PR #12 plus the recorded no-code declaration cover every acceptance criterion in the issue body."
+    )
+
+    expect(result.success?).to be(true)
+  end
+
   it "records an audit event" do
     merged_partial_pr(number: 12)
 

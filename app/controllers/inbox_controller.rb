@@ -10,6 +10,11 @@ class InboxController < ApplicationController
     @detail_view = false
   end
 
+  # Task-oriented operator guide linked from the partial-closeout pane (#4189).
+  # @spec PARTIAL-CLOSEOUT-013
+  def partial_closeout_guide
+  end
+
   # @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-009
   def show
     @selected_entry = resolve_selected_entry(@inbox_entries)

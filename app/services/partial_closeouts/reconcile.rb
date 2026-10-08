@@ -205,38 +205,13 @@ module PartialCloseouts
       # human edits made since the last sync survive (same pattern as
       # CreateMultipleIssuesActivity#update_parent_issue).
       body = agent_run.project.client.issue(agent_run.project.full_name, agent_run.issue.github_number).body.to_s
-      lines = new_dependency_lines(numbers, body)
-      return if lines.empty?
+      updated_body = ProjectConventions::IssueDependencies.append_dependency_lines(
+        project: agent_run.project, github_numbers: numbers, body:, resolved: dependency_conventions
+      )
+      return if updated_body == body
 
-      updated_body = append_dependency_lines(lines, body)
       agent_run.project.client.update_issue(agent_run.project.full_name, agent_run.issue.github_number, body: updated_body)
       agent_run.issue.update!(body: updated_body)
-    end
-
-    def new_dependency_lines(numbers, body)
-      numbers.filter_map do |number|
-        line = ProjectConventions::IssueDependencies.depends_on_line(project: agent_run.project, github_number: number, resolved: dependency_conventions)
-        "- #{line}" unless body.match?(/\b#{Regexp.escape(line)}\b/)
-      end
-    end
-
-    def append_dependency_lines(lines, body)
-      heading = ProjectConventions::IssueDependencies.heading(project: agent_run.project, resolved: dependency_conventions)
-      return insert_under_heading(lines, body, heading) if body.include?(heading)
-
-      [ body, heading, lines.join("\n") ].reject(&:blank?).join("\n\n")
-    end
-
-    # The heading may sit mid-body with sections after it; insert the new
-    # lines at the end of the heading's own section rather than at the very
-    # end of the body, outside the section they belong to.
-    def insert_under_heading(lines, body, heading)
-      heading_start = body.index(heading)
-      remainder = body[(heading_start + heading.length)..].to_s
-      section, trailing = remainder.split(/(?=\n\s*#)/, 2)
-      updated_section = [ section.rstrip, lines.join("\n") ].reject(&:blank?).join("\n")
-      [ body[0...heading_start].rstrip, heading, updated_section, trailing.to_s.lstrip ]
-        .reject(&:blank?).join("\n\n")
     end
 
     def dependency_conventions

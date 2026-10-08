@@ -6,7 +6,12 @@ module Tools
 
     def self.tool_name = "request_issue_continuation"
     def self.write_operation? = true
-    def self.description = "Request one evidence-scoped continuation for a stalled partial closeout. Requires confirmation."
+    def self.description
+      "Request one evidence-scoped continuation for a stalled partial closeout. " \
+        "Authorizes exactly one run; dependencies, trust, feature gates, budgets, pauses, and review holds still apply. " \
+        "The reason must describe the remaining work and the expected evidence (for example a fresh acceptance audit, " \
+        "an implementation gap, scanner verification, or human-only evaluation). Requires confirmation."
+    end
     def self.available_to?(user:) = run_agent_available_to?(user:)
 
     def self.input_schema
