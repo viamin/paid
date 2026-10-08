@@ -212,6 +212,21 @@ RSpec.describe "Inbox" do
       expect(response.body).to include(link_prerequisite_project_agent_runs_path(project))
       expect(response.body).to include("sync")
     end
+
+    it "offers the link-prerequisite action before any prerequisite exists" do
+      issue = create(:issue, project: project, github_number: 512, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 513, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: issue)
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response.body).to include("Link a prerequisite")
+      expect(response.body).to include(link_prerequisite_project_agent_runs_path(project))
+    end
   end
 
   # @spec CHANGE-INTENT-INBOX-001

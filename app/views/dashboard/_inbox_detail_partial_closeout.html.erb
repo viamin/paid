@@ -65,19 +65,18 @@
     </ul>
   </div>
 
-  <% if status.unresolved_prerequisites.any? || human_prerequisite.present? %>
-    <div class="space-y-3">
-      <h3 class="text-sm font-semibold text-gray-900">Unresolved prerequisites</h3>
-      <% if status.unresolved_prerequisites.any? %>
-        <p class="text-sm text-gray-600">
-          <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
-          requesting continuation. To make a follow-up issue <code>#B</code> a prerequisite, add
-          <code>Depends on #B</code> to this stalled issue's body, then sync. An agent can file the follow-up
-          with the existing <code>create_issue</code> tool.
-        </p>
-      <% end %>
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
+    <% if status.unresolved_prerequisites.any? %>
+      <p class="text-sm text-gray-600">
+        <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
+        requesting continuation. To make a follow-up issue <code>#B</code> a prerequisite, add
+        <code>Depends on #B</code> to this stalled issue's body, then sync. An agent can file the follow-up
+        with the existing <code>create_issue</code> tool.
+      </p>
+    <% end %>
 
-      <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? %>
         <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-end" do |form| %>
           <%= form.hidden_field :issue_id, value: issue.id %>
           <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
@@ -98,9 +97,9 @@
           <%= form.submit "Link prerequisite",
                 class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:self-auto" %>
         <% end %>
-      <% end %>
+    <% end %>
 
-      <% if human_prerequisite.present? %>
+    <% if human_prerequisite.present? %>
         <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
           <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
@@ -112,9 +111,8 @@
             what the run should do with the evidence.
           </p>
         </div>
-      <% end %>
-    </div>
-  <% end %>
+    <% end %>
+  </div>
 
   <div class="flex flex-wrap items-center gap-3">
     <%= link_to "View on GitHub",
