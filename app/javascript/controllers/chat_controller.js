@@ -670,11 +670,12 @@ export default class extends Controller {
   // instantly (no animation) to the same anchor the sticky button would
   // target, so users land on the latest assistant answer without having to
   // scroll. Turbo restores the document scroll position but not this overflow
-  // container, so restoration visits recover the saved transcript position.
+  // container, so restoration visits recover the saved transcript position
+  // when it is available and otherwise use the forward-visit target.
   jumpToLatestResponseOnLoad() {
     if (!this.hasContainerTarget) return
-    if (this.isTurboRestorationVisit()) {
-      if (this.restoreTranscriptScrollPosition()) this.handleScroll()
+    if (this.isTurboRestorationVisit() && this.restoreTranscriptScrollPosition()) {
+      this.handleScroll()
       return
     }
 
@@ -745,7 +746,10 @@ export default class extends Controller {
 
   restoreTranscriptScrollPosition() {
     try {
-      const position = Number(globalThis.sessionStorage?.getItem(this.transcriptScrollStorageKey()))
+      const saved = globalThis.sessionStorage?.getItem(this.transcriptScrollStorageKey())
+      if (saved == null || saved.trim() === "") return false
+
+      const position = Number(saved)
       if (!Number.isFinite(position) || position < 0) return false
 
       this.containerTarget.scrollTop = position

@@ -847,6 +847,44 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-SCROLL-001 — A restoration in another tab (or after storage
+    // fails) has no session-scoped position to restore. Treat the absent value
+    // as absent rather than Number(null) = 0, then use the ordinary latest
+    // response target so the user does not land at the oldest messages.
+    function testJumpToLatestResponseOnLoadFallsBackWhenTranscriptPositionIsMissing() {
+      const anchor = { getBoundingClientRect: () => ({ top: 300 }) };
+      let lastScrollTop = null;
+      const { controller } = makeController({
+        sessionIdValue: 42,
+        containerTarget: {
+          get scrollTop() { return 0; },
+          set scrollTop(v) { lastScrollTop = v; },
+          scrollHeight: 1500,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 100 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        }
+      });
+      const origTurbo = globalThis.Turbo;
+      const origSessionStorage = globalThis.sessionStorage;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "restore" } } };
+        globalThis.sessionStorage = { getItem: () => null };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+        globalThis.sessionStorage = origSessionStorage;
+      }
+
+      if (lastScrollTop !== 200) {
+        throw new Error(`Expected a missing restoration position to jump to latest response at 200, got ${lastScrollTop}`);
+      }
+    }
+
     // @spec CHAT-SCROLL-001 — A chat with no assistant text yet (new chat,
     // or one ending in a user message) jumps to the bottom on load, same
     // as the button-click fallback.
@@ -1240,6 +1278,7 @@ class ChatControllerNodeHarness
       testConnectDefersInitialJumpUntilAfterChildControllersRender();
       testDisconnectRemembersTranscriptScrollPosition();
       testJumpToLatestResponseOnLoadRestoresTranscriptPosition();
+      testJumpToLatestResponseOnLoadFallsBackWhenTranscriptPositionIsMissing();
       testJumpToLatestResponseOnLoadFallsBackToBottom();
       testJumpToLatestResponseOnLoadUpdatesStickyControl();
       testHandleScrollShowsBackToTopWhenScrolled();
