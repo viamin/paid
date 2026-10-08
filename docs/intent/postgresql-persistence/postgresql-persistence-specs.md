@@ -62,3 +62,11 @@
   `spec/migrations/canonicalize_schema_dump_metadata_spec.rb`.
   *Code:* `CanonicalizeSchemaDumpMetadata`, `db/functions/paid_current_account_id_v01.sql`,
   `db/functions/paid_tenant_bypass_v01.sql`.
+
+- [x] **POSTGRESQL-PERSISTENCE-009** — When Rails dumps the schema in any
+  environment, it SHALL emit non-primary-key columns alphabetically by name
+  regardless of physical database column order, preserving column definitions,
+  indexes, constraints, and `fx` functions and triggers. Repeated dumps of the
+  same database SHALL be identical.
+  *Tests:* `spec/config/schema_column_order_spec.rb`.
+  *Code:* `config/initializers/schema_column_order.rb`.
