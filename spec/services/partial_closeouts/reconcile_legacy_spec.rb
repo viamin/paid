@@ -576,5 +576,88 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect { described_class.call(account_id: account.id, batch_size: -1) }
         .to raise_error(ArgumentError, /positive integer/)
     end
+
+    # @spec PARTIAL-CLOSEOUT-015 — concurrency: the operator console / MCP
+    # surface and the rake task can both invoke this sweep for the same
+    # account. Without serialization both would observe a blank
+    # reconciliation, both call the LLM, and `Reconcile#create_owner!`
+    # would see `creation_was_recorded?` as false in both, filing two owner
+    # issues with the same marker (#4191 review).
+    it "skips the sweep and makes no progress when another invocation holds the account's advisory lock" do
+      merged_pr(number: 40, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 40)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      # A genuinely separate PG session is required here: RSpec's
+      # transactional fixtures pin every connection *checked out on this
+      # thread* — including `ActiveRecord::Base.connection_pool.checkout` —
+      # to the same backend/session, so advisory locks taken that way would
+      # just re-enter the lock this example's own thread already holds.
+      # Session-scoped `pg_try_advisory_lock` only contends across distinct
+      # backends, so simulate the "other process" with a raw `pg` connection.
+      db_config = ActiveRecord::Base.connection_db_config.configuration_hash
+      other_session = PG.connect(
+        host: db_config[:host], port: db_config[:port], dbname: db_config[:database],
+        user: db_config[:username], password: db_config[:password]
+      )
+      begin
+        other_session.exec_params(
+          "SELECT pg_try_advisory_lock($1, $2)",
+          [ PartialCloseouts::ReconcileLegacy::ADVISORY_LOCK_NAMESPACE, account.id ]
+        )
+
+        result = described_class.call(account_id: account.id)
+
+        expect(result.scanned).to eq(0)
+        expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+        expect(run.reload.reconciliation).to eq({})
+      ensure
+        other_session.close
+      end
+    end
+
+    it "releases the advisory lock after the sweep so a later invocation can proceed" do
+      merged_pr(number: 41, parent_issue: parent)
+      legacy_run(issue: parent, pull_request_number: 41)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })
+
+      described_class.call(account_id: account.id)
+      second_result = described_class.call(account_id: account.id)
+
+      expect(second_result.scanned).to eq(1)
+    end
+  end
+
+  describe "#preview" do
+    # @spec PARTIAL-CLOSEOUT-015 — the dry-run path the rake task uses to
+    # show candidates before an operator opts into a sweep that files
+    # GitHub issues and rewrites issue bodies (#4191 review).
+    it "lists the candidate runs without invoking the LLM, Reconcile, or GitHub" do
+      merged_pr(number: 42, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 42)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      candidates = described_class.new(account_id: account.id).preview
+
+      expect(candidates).to contain_exactly(
+        PartialCloseouts::ReconcileLegacy::CandidateRun.new(id: run.id, issue_id: parent.id)
+      )
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(client).not_to have_received(:create_issue)
+      expect(run.reload.reconciliation).to eq({})
+    end
+
+    it "respects batch_size and after_id the same way #call does" do
+      first_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 70)
+      merged_pr(number: 60, parent_issue: first_issue)
+      first_run = legacy_run(issue: first_issue, pull_request_number: 60)
+      second_issue = create(:issue, :in_progress, project: project, github_state: "open", github_number: 71)
+      merged_pr(number: 61, parent_issue: second_issue)
+      legacy_run(issue: second_issue, pull_request_number: 61)
+
+      candidates = described_class.new(account_id: account.id, batch_size: 1).preview
+
+      expect(candidates.map(&:id)).to eq([ first_run.id ])
+    end
   end
 end

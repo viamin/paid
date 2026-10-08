@@ -123,6 +123,7 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
     ENV.delete("ACCOUNT_ID")
     ENV.delete("BATCH_SIZE")
     ENV.delete("AFTER_ID")
+    ENV.delete("DRY_RUN")
   end
 
   it "raises a clear error when ACCOUNT_ID is not supplied" do
@@ -131,53 +132,87 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
     expect { task.invoke }.to raise_error(KeyError)
   end
 
-  it "prints a result summary for a sweep that finds zero candidates" do
-    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
-      .with(account_id: account.id, batch_size: PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE, after_id: nil)
-      .and_return(
-        PartialCloseouts::ReconcileLegacy::Result.new(
-          scanned: 0, reconciled: 0, awaiting_operator: 0,
-          retryable_failure: 0, skipped: 0, next_cursor: nil
-        )
-      )
+  # @spec PARTIAL-CLOSEOUT-015 — mirrors reset_false_positive_recommend_close
+  # and repair_pull_request_source_links: default to a dry run that only
+  # lists candidates, so a misscoped ACCOUNT_ID can't mutate a live repo
+  # before an operator sees what would be touched (#4191 review).
+  it "defaults to DRY_RUN and previews candidates without invoking the LLM or GitHub" do
+    issue = create(:issue, :in_progress, project: project, github_state: "open")
+    pull_request = create(:issue, :pull_request, project: project, github_number: 99,
+      github_state: "closed", pr_review_phase: "merged", parent_issue: issue,
+      github_html_url: "https://github.com/acme/alpha/pull/99")
+    run = create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+      pull_request_number: 99, pull_request_url: pull_request.github_html_url, completed_at: 2.hours.ago)
+    allow(Llm::AnalyzePartialCloseout).to receive(:call)
 
     expect { task.invoke }.to output(
-      /scanned:\s+0.*reconciled:\s+0.*awaiting_operator:\s+0.*retryable_failure:\s+0.*skipped:\s+0.*next_cursor:\s*$/m
+      /DRY_RUN=true.*scanned:\s+1.*run=#{run.id} issue_id=#{issue.id}.*Dry run only/m
     ).to_stdout
+
+    expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+    expect(client).not_to have_received(:create_issue)
+    expect(run.reload.reconciliation).to eq({})
   end
 
-  it "invokes ReconcileLegacy exactly once with the parsed ACCOUNT_ID and default batch_size" do
+  it "does not invoke ReconcileLegacy.call while DRY_RUN is true" do
     allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
-      .and_return(
-        PartialCloseouts::ReconcileLegacy::Result.new(
-          scanned: 0, reconciled: 0, awaiting_operator: 0,
-          retryable_failure: 0, skipped: 0, next_cursor: nil
-        )
-      )
 
     task.invoke
 
-    expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(
-      account_id: account.id, batch_size: PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE, after_id: nil
-    ).once
+    expect(PartialCloseouts::ReconcileLegacy).not_to have_received(:call)
   end
 
-  # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE/AFTER_ID let an operator bound
-  # a single invocation and resume a capped sweep across invocations
-  # (#4191 review).
-  it "passes BATCH_SIZE and AFTER_ID through to ReconcileLegacy and prompts to continue when the batch filled" do
-    ENV["BATCH_SIZE"] = "2"
-    ENV["AFTER_ID"] = "41"
-    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
-      .with(account_id: account.id, batch_size: 2, after_id: 41)
-      .and_return(
-        PartialCloseouts::ReconcileLegacy::Result.new(
-          scanned: 2, reconciled: 2, awaiting_operator: 0,
-          retryable_failure: 0, skipped: 0, next_cursor: 43
-        )
-      )
+  context "with DRY_RUN=false" do
+    before { ENV["DRY_RUN"] = "false" }
 
-    expect { task.invoke }.to output(/More candidates may remain — re-run with AFTER_ID=43/).to_stdout
+    it "prints a result summary for a sweep that finds zero candidates" do
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+        .with(account_id: account.id, batch_size: PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE, after_id: nil)
+        .and_return(
+          PartialCloseouts::ReconcileLegacy::Result.new(
+            scanned: 0, reconciled: 0, awaiting_operator: 0,
+            retryable_failure: 0, skipped: 0, next_cursor: nil
+          )
+        )
+
+      expect { task.invoke }.to output(
+        /scanned:\s+0.*reconciled:\s+0.*awaiting_operator:\s+0.*retryable_failure:\s+0.*skipped:\s+0.*next_cursor:\s*$/m
+      ).to_stdout
+    end
+
+    it "invokes ReconcileLegacy exactly once with the parsed ACCOUNT_ID and default batch_size" do
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+        .and_return(
+          PartialCloseouts::ReconcileLegacy::Result.new(
+            scanned: 0, reconciled: 0, awaiting_operator: 0,
+            retryable_failure: 0, skipped: 0, next_cursor: nil
+          )
+        )
+
+      task.invoke
+
+      expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(
+        account_id: account.id, batch_size: PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE, after_id: nil
+      ).once
+    end
+
+    # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE/AFTER_ID let an operator bound
+    # a single invocation and resume a capped sweep across invocations
+    # (#4191 review).
+    it "passes BATCH_SIZE and AFTER_ID through to ReconcileLegacy and prompts to continue when the batch filled" do
+      ENV["BATCH_SIZE"] = "2"
+      ENV["AFTER_ID"] = "41"
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+        .with(account_id: account.id, batch_size: 2, after_id: 41)
+        .and_return(
+          PartialCloseouts::ReconcileLegacy::Result.new(
+            scanned: 2, reconciled: 2, awaiting_operator: 0,
+            retryable_failure: 0, skipped: 0, next_cursor: 43
+          )
+        )
+
+      expect { task.invoke }.to output(/More candidates may remain — re-run with AFTER_ID=43/).to_stdout
+    end
   end
 
   # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE=0 (or negative) scans nothing

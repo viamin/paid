@@ -92,11 +92,12 @@ namespace :issues do
   desc "Reconcile legacy partial closeouts whose runs pre-date the " \
        "partial-closeout-reconciliation-v1 patch marker. Required: ACCOUNT_ID=<id>. " \
        "Optional: BATCH_SIZE=<n> (default 200) caps candidates per invocation; " \
-       "AFTER_ID=<id> resumes from a prior run's next_cursor. " \
-       "Idempotent — repeat invocations finish runs whose prior attempt recorded " \
-       "a `creating` marker, and skip runs whose reconciliation is terminal. Re-invoke " \
-       "with AFTER_ID=<next_cursor> while next_cursor is present and scanned == BATCH_SIZE " \
-       "to work through the full backlog (#4187, #4191)."
+       "AFTER_ID=<id> resumes from a prior run's next_cursor. Defaults to DRY_RUN=true, " \
+       "which only scans and prints the candidate runs — no LLM call, no GitHub write. " \
+       "Idempotent — repeat invocations with DRY_RUN=false finish runs whose prior attempt " \
+       "recorded a `creating` marker, and skip runs whose reconciliation is terminal. " \
+       "Re-invoke with AFTER_ID=<next_cursor> while next_cursor is present and " \
+       "scanned == BATCH_SIZE to work through the full backlog (#4187, #4191)."
   task reconcile_legacy_partial_closeouts: :environment do # @spec PARTIAL-CLOSEOUT-015
     account_id = Integer(ENV.fetch("ACCOUNT_ID"))
     batch_size = Integer(ENV.fetch("BATCH_SIZE", PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE))
@@ -105,6 +106,28 @@ namespace :issues do
     # so reject it before invoking the service (#4191 review).
     abort "BATCH_SIZE must be a positive integer (got #{batch_size})" unless batch_size.positive?
     after_id = ENV["AFTER_ID"] && Integer(ENV["AFTER_ID"])
+    dry_run = ENV.fetch("DRY_RUN", "true") != "false"
+
+    # Every candidate that reaches `Reconcile` spends an
+    # `Llm::AnalyzePartialCloseout` call and can file a real GitHub issue or
+    # rewrite the parent issue's body. Unlike the sibling tasks above, this
+    # sweep has no idempotent no-op mode of its own, so a misscoped
+    # ACCOUNT_ID or an underestimated legacy backlog would otherwise mutate
+    # a live repo before an operator sees the candidate set. Mirror
+    # reset_false_positive_recommend_close / repair_pull_request_source_links:
+    # default to a dry run that only lists candidates (#4191 review).
+    if dry_run
+      candidates = PartialCloseouts::ReconcileLegacy.preview(account_id: account_id, batch_size: batch_size, after_id: after_id)
+      puts "Legacy partial closeout reconciliation for account #{account_id} (DRY_RUN=true):"
+      puts "  scanned:     #{candidates.size}"
+      candidates.each { |candidate| puts "    run=#{candidate.id} issue_id=#{candidate.issue_id}" }
+      next_cursor = candidates.last&.id
+      puts "  next_cursor: #{next_cursor}"
+      puts "  More candidates may remain — re-run with AFTER_ID=#{next_cursor} to continue." if candidates.size == batch_size
+      puts "Dry run only — no LLM calls or GitHub writes were made. Re-run with DRY_RUN=false to apply."
+      next
+    end
+
     result = PartialCloseouts::ReconcileLegacy.call(account_id: account_id, batch_size: batch_size, after_id: after_id)
 
     puts "Legacy partial closeout reconciliation for account #{account_id}:"

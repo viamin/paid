@@ -115,7 +115,21 @@ module PartialCloseouts
       end
     end
 
+    # Read-only preview row: no LLM or GitHub call has happened yet, so
+    # there is nothing to report beyond which run/issue a real `call`
+    # would pick up.
+    CandidateRun = Struct.new(:id, :issue_id, keyword_init: true)
+
+    # Namespaces this sweep's advisory locks apart from the other
+    # pg_advisory_lock callers in app/services (each picks its own
+    # constant; see Containers::PoolManager, Previews::Lifecycle, etc.).
+    ADVISORY_LOCK_NAMESPACE = 1_357_180_006
+    ADVISORY_TRY_LOCK_SQL = "SELECT pg_try_advisory_lock(?, ?)".freeze
+    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock(?, ?)".freeze
+
     def self.call(...) = new(...).call
+
+    def self.preview(...) = new(...).preview
 
     def initialize(account_id:, batch_size: DEFAULT_BATCH_SIZE, after_id: nil)
       unless batch_size.is_a?(Integer) && batch_size.positive?
@@ -127,39 +141,82 @@ module PartialCloseouts
       @after_id = after_id
     end
 
+    # The design doc blesses invoking this sweep from both the operator
+    # console / MCP surface and the rake task, so two overlapping calls for
+    # the same account are an expected operational shape, not a misuse.
+    # Without serialization both processes would see the same blank
+    # `legacy_reconciliation_already_done?` state, both invoke the LLM, and
+    # `Reconcile#create_owner!` would observe `creation_was_recorded?` as
+    # false in both — the marker machinery dedupes sequential retries, not
+    # concurrent ones, so two owner issues with the same marker would land
+    # on GitHub. `pg_try_advisory_lock` keyed on account_id lets independent
+    # accounts sweep concurrently while serializing same-account overlap;
+    # a caller that finds the lock held gets a zero-progress Result back
+    # (mirrors ProcessRunQueueJob's try-lock-and-skip, #4191 review).
     def call
-      scanned = 0
-      reconciled = 0
-      awaiting_operator = 0
-      retryable_failure = 0
-      skipped = 0
-      next_cursor = nil
-
-      TenantContext.with_system_access do
-        candidate_runs.find_each do |agent_run|
-          scanned += 1
-          next_cursor = agent_run.id
-          outcome = process_run(agent_run)
-          case outcome
-          when :reconciled then reconciled += 1
-          when :awaiting_operator then awaiting_operator += 1
-          when :retryable_failure then retryable_failure += 1
-          when :skipped then skipped += 1
-          end
-        end
+      unless try_lock!
+        Rails.logger.info(message: "partial_closeouts.legacy_reconcile_lock_held", account_id: account_id)
+        return Result.new(scanned: 0, reconciled: 0, awaiting_operator: 0, retryable_failure: 0, skipped: 0, next_cursor: after_id)
       end
 
-      Result.new(
-        scanned: scanned,
-        reconciled: reconciled,
-        awaiting_operator: awaiting_operator,
-        retryable_failure: retryable_failure,
-        skipped: skipped,
-        next_cursor: next_cursor
-      )
+      begin
+        scanned = 0
+        reconciled = 0
+        awaiting_operator = 0
+        retryable_failure = 0
+        skipped = 0
+        next_cursor = nil
+
+        TenantContext.with_system_access do
+          candidate_runs.find_each do |agent_run|
+            scanned += 1
+            next_cursor = agent_run.id
+            outcome = process_run(agent_run)
+            case outcome
+            when :reconciled then reconciled += 1
+            when :awaiting_operator then awaiting_operator += 1
+            when :retryable_failure then retryable_failure += 1
+            when :skipped then skipped += 1
+            end
+          end
+        end
+
+        Result.new(
+          scanned: scanned,
+          reconciled: reconciled,
+          awaiting_operator: awaiting_operator,
+          retryable_failure: retryable_failure,
+          skipped: skipped,
+          next_cursor: next_cursor
+        )
+      ensure
+        unlock!
+      end
+    end
+
+    # Read-only scan — no LLM call, no `Reconcile`, no GitHub writes. Lets
+    # an operator see exactly which runs `call` would process before opting
+    # into a sweep that files owner issues and rewrites issue bodies
+    # (#4191 review).
+    def preview
+      TenantContext.with_system_access do
+        candidate_runs.pluck(:id, :issue_id).map { |id, issue_id| CandidateRun.new(id: id, issue_id: issue_id) }
+      end
     end
 
     private
+
+    def try_lock!
+      ActiveRecord::Base.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array([ ADVISORY_TRY_LOCK_SQL, ADVISORY_LOCK_NAMESPACE, account_id ])
+      )
+    end
+
+    def unlock!
+      ActiveRecord::Base.connection.execute(
+        ActiveRecord::Base.sanitize_sql_array([ ADVISORY_UNLOCK_SQL, ADVISORY_LOCK_NAMESPACE, account_id ])
+      )
+    end
 
     attr_reader :account_id, :batch_size, :after_id
 
