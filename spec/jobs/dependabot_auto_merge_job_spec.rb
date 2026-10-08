@@ -181,6 +181,36 @@ RSpec.describe DependabotAutoMergeJob do
       )
     end
 
+    # @spec AUTO-MERGE-009
+    it "does not merge a review-held Dependabot PR from the bulk executor" do
+      issue
+      labeled_pr = dependabot_pr_with_label(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      allow(client).to receive_messages(pull_requests: [ labeled_pr ], pull_request: labeled_pr)
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_HOLD_FOR_REVIEW
+      )
+    end
+
+    # @spec AUTO-MERGE-009
+    it "does not merge a review-held Dependabot PR from the webhook executor" do
+      issue
+      labeled_pr = dependabot_pr_with_label(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      allow(client).to receive(:pull_request).and_return(labeled_pr)
+
+      described_class.perform_now(project.id, pr_number: 42)
+
+      expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_HOLD_FOR_REVIEW
+      )
+    end
+
     it "skips when PR is not authored by Dependabot" do
       human_pr = OpenStruct.new(
         number: 43,
@@ -786,5 +816,17 @@ RSpec.describe DependabotAutoMergeJob do
 
       expect { described_class.perform_now(project.id) }.to raise_error(GithubClient::ApiError)
     end
+  end
+
+  def dependabot_pr_with_label(label)
+    OpenStruct.new(
+      number: 42,
+      title: "Bump rails from 7.0.0 to 7.1.0",
+      user: OpenStruct.new(login: "dependabot[bot]"),
+      head: OpenStruct.new(sha: "def456"),
+      merged_at: nil,
+      mergeable: true,
+      labels: [ OpenStruct.new(name: label) ]
+    )
   end
 end

@@ -365,6 +365,21 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(0)
     end
 
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+    it "counts a review-held PR before its auto-merge blocker snapshot exists" do
+      project.update!(owner_reviewer_login: nil)
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     it "excludes ready PRs on projects with auto-merge disabled" do
       disabled_project = create(
         :project,

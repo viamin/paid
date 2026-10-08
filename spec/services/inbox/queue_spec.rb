@@ -58,10 +58,16 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec AUTO-MERGE-009
-    it "returns a merge-approval Inbox entry for a review-gated PR" do
-      pr = create_merge_approval_pr(
+    it "returns a merge-approval Inbox entry for an unevaluated review-gated PR" do
+      project.update!(owner_reviewer_login: nil)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
         github_number: 41,
-        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
       )
 
       entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
