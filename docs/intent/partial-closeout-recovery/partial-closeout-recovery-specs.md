@@ -262,10 +262,18 @@
   "merged"`, and either `parent_issue_id` is set or an originating
   `AgentRun` matches by `pull_request_number`/`pull_request_url`), and SHALL
   skip a run whose latest `create_pr` attempt already persisted a terminal
-  `reconciliation.status`. The sweep SHALL be restartable: an interrupted
-  sweep can be re-invoked, and the second pass SHALL finish any run whose
-  previous attempt left a recoverable `creating` state and SHALL skip runs
-  whose reconciliation is already terminal (#4187).
+  `reconciliation.status`. The candidate query SHALL be bounded to at most
+  `batch_size` (default 200) runs ordered by `id`, so a single invocation's
+  `Llm::AnalyzePartialCloseout` cost and runtime cannot grow unbounded with
+  an account's total historical `create_pr` volume; the result SHALL report
+  `next_cursor` (the highest scanned `AgentRun#id`), and a caller SHALL be
+  able to resume past the capped window by passing `after_id:
+  next_cursor` to the next invocation, strictly advancing past every row
+  the prior invocation scanned regardless of its outcome. The sweep SHALL
+  be restartable: an interrupted sweep can be re-invoked, and the second
+  pass SHALL finish any run whose previous attempt left a recoverable
+  `creating` state and SHALL skip runs whose reconciliation is already
+  terminal (#4187, #4191).
   *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
   `lib/tasks/issues.rake`.
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.

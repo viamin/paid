@@ -121,6 +121,8 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
 
   after do
     ENV.delete("ACCOUNT_ID")
+    ENV.delete("BATCH_SIZE")
+    ENV.delete("AFTER_ID")
   end
 
   it "raises a clear error when ACCOUNT_ID is not supplied" do
@@ -131,30 +133,51 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
 
   it "prints a result summary for a sweep that finds zero candidates" do
     allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
-      .with(account_id: account.id).and_return(
+      .with(account_id: account.id, batch_size: PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE, after_id: nil)
+      .and_return(
         PartialCloseouts::ReconcileLegacy::Result.new(
           scanned: 0, reconciled: 0, awaiting_operator: 0,
-          retryable_failure: 0, skipped: 0
+          retryable_failure: 0, skipped: 0, next_cursor: nil
         )
       )
 
     expect { task.invoke }.to output(
-      /scanned:\s+0.*reconciled:\s+0.*awaiting_operator:\s+0.*retryable_failure:\s+0.*skipped:\s+0/m
+      /scanned:\s+0.*reconciled:\s+0.*awaiting_operator:\s+0.*retryable_failure:\s+0.*skipped:\s+0.*next_cursor:\s*$/m
     ).to_stdout
   end
 
-  it "invokes ReconcileLegacy exactly once with the parsed ACCOUNT_ID" do
+  it "invokes ReconcileLegacy exactly once with the parsed ACCOUNT_ID and default batch_size" do
     allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
       .and_return(
         PartialCloseouts::ReconcileLegacy::Result.new(
           scanned: 0, reconciled: 0, awaiting_operator: 0,
-          retryable_failure: 0, skipped: 0
+          retryable_failure: 0, skipped: 0, next_cursor: nil
         )
       )
 
     task.invoke
 
-    expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(account_id: account.id).once
+    expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(
+      account_id: account.id, batch_size: PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE, after_id: nil
+    ).once
+  end
+
+  # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE/AFTER_ID let an operator bound
+  # a single invocation and resume a capped sweep across invocations
+  # (#4191 review).
+  it "passes BATCH_SIZE and AFTER_ID through to ReconcileLegacy and prompts to continue when the batch filled" do
+    ENV["BATCH_SIZE"] = "2"
+    ENV["AFTER_ID"] = "41"
+    allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+      .with(account_id: account.id, batch_size: 2, after_id: 41)
+      .and_return(
+        PartialCloseouts::ReconcileLegacy::Result.new(
+          scanned: 2, reconciled: 2, awaiting_operator: 0,
+          retryable_failure: 0, skipped: 0, next_cursor: 43
+        )
+      )
+
+    expect { task.invoke }.to output(/More candidates may remain — re-run with AFTER_ID=43/).to_stdout
   end
 end
 

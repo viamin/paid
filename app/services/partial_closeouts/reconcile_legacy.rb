@@ -47,23 +47,34 @@ module PartialCloseouts
     # legacy sweep that runs an hour after a slug-deployed merge still
     # finds the originating run.
     PR_SYNC_GRACE_PERIOD = 1.hour
+    # An account's merged `create_pr` history is unbounded, and every
+    # candidate that reaches `process_run` costs an `Llm::AnalyzePartialCloseout`
+    # call. This caps a single invocation's candidate window; pass the
+    # previous `Result#next_cursor` as `after_id:` to resume (#4191 review).
+    DEFAULT_BATCH_SIZE = 200
 
-    Result = Struct.new(:scanned, :reconciled, :awaiting_operator, :retryable_failure, :skipped, keyword_init: true) do
+    Result = Struct.new(
+      :scanned, :reconciled, :awaiting_operator, :retryable_failure, :skipped, :next_cursor,
+      keyword_init: true
+    ) do
       def to_h
         {
           scanned: scanned,
           reconciled: reconciled,
           awaiting_operator: awaiting_operator,
           retryable_failure: retryable_failure,
-          skipped: skipped
+          skipped: skipped,
+          next_cursor: next_cursor
         }
       end
     end
 
     def self.call(...) = new(...).call
 
-    def initialize(account_id:)
+    def initialize(account_id:, batch_size: DEFAULT_BATCH_SIZE, after_id: nil)
       @account_id = account_id
+      @batch_size = batch_size
+      @after_id = after_id
     end
 
     def call
@@ -72,10 +83,12 @@ module PartialCloseouts
       awaiting_operator = 0
       retryable_failure = 0
       skipped = 0
+      next_cursor = nil
 
       TenantContext.with_system_access do
         candidate_runs.find_each do |agent_run|
           scanned += 1
+          next_cursor = agent_run.id
           outcome = process_run(agent_run)
           case outcome
           when :reconciled then reconciled += 1
@@ -91,13 +104,14 @@ module PartialCloseouts
         reconciled: reconciled,
         awaiting_operator: awaiting_operator,
         retryable_failure: retryable_failure,
-        skipped: skipped
+        skipped: skipped,
+        next_cursor: next_cursor
       )
     end
 
     private
 
-    attr_reader :account_id
+    attr_reader :account_id, :batch_size, :after_id
 
     # Reads across tenant boundaries (`TenantContext.with_system_access`
     # wraps the caller) so the sweep can find candidates regardless of the
@@ -109,6 +123,16 @@ module PartialCloseouts
     # scanned so callers can see how many runs were skipped without
     # re-running the analyzer; the in-process
     # `legacy_reconciliation_already_done?` gate applies the actual skip.
+    #
+    # `after_id` + `limit(batch_size)` bound a single invocation's LLM cost
+    # and runtime to a fixed-size window instead of the account's entire
+    # merged `create_pr` history (#4191 review). Ordering by `id` makes the
+    # cursor monotonic: each page starts strictly after the highest `id`
+    # the previous page scanned (`Result#next_cursor`), so a caller that
+    # loops `call(account_id:, after_id: result.next_cursor)` until
+    # `scanned < batch_size` is guaranteed to traverse the whole backlog
+    # exactly once, regardless of how many rows in a given page turn out to
+    # be already-terminal or otherwise ineligible.
     def candidate_runs
       project_ids = Project.where(account_id: account_id).select(:id)
       AgentRun
@@ -117,6 +141,7 @@ module PartialCloseouts
         .where("agent_runs.completed_at IS NOT NULL")
         .where("agent_runs.completed_at < ?", PR_SYNC_GRACE_PERIOD.ago)
         .where("agent_runs.issue_id IS NOT NULL")
+        .then { |scope| after_id ? scope.where("agent_runs.id > ?", after_id) : scope }
         .where(
           # Legacy targets: a run whose partial PR has authoritatively
           # linked back to its source issue (via `parent_issue_id` or via
@@ -149,6 +174,7 @@ module PartialCloseouts
             SQL
         )
         .order(:id)
+        .limit(batch_size)
     end
 
     def process_run(agent_run)

@@ -91,11 +91,17 @@ namespace :issues do
 
   desc "Reconcile legacy partial closeouts whose runs pre-date the " \
        "partial-closeout-reconciliation-v1 patch marker. Required: ACCOUNT_ID=<id>. " \
+       "Optional: BATCH_SIZE=<n> (default 200) caps candidates per invocation; " \
+       "AFTER_ID=<id> resumes from a prior run's next_cursor. " \
        "Idempotent — repeat invocations finish runs whose prior attempt recorded " \
-       "a `creating` marker, and skip runs whose reconciliation is terminal (#4187)."
+       "a `creating` marker, and skip runs whose reconciliation is terminal. Re-invoke " \
+       "with AFTER_ID=<next_cursor> while next_cursor is present and scanned == BATCH_SIZE " \
+       "to work through the full backlog (#4187, #4191)."
   task reconcile_legacy_partial_closeouts: :environment do # @spec PARTIAL-CLOSEOUT-015
     account_id = Integer(ENV.fetch("ACCOUNT_ID"))
-    result = PartialCloseouts::ReconcileLegacy.call(account_id: account_id)
+    batch_size = Integer(ENV.fetch("BATCH_SIZE", PartialCloseouts::ReconcileLegacy::DEFAULT_BATCH_SIZE))
+    after_id = ENV["AFTER_ID"] && Integer(ENV["AFTER_ID"])
+    result = PartialCloseouts::ReconcileLegacy.call(account_id: account_id, batch_size: batch_size, after_id: after_id)
 
     puts "Legacy partial closeout reconciliation for account #{account_id}:"
     puts "  scanned:             #{result.scanned}"
@@ -103,5 +109,9 @@ namespace :issues do
     puts "  awaiting_operator:   #{result.awaiting_operator}"
     puts "  retryable_failure:   #{result.retryable_failure}"
     puts "  skipped:             #{result.skipped}"
+    puts "  next_cursor:         #{result.next_cursor}"
+    if result.scanned == batch_size
+      puts "  More candidates may remain — re-run with AFTER_ID=#{result.next_cursor} to continue."
+    end
   end
 end

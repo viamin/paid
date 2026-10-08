@@ -284,6 +284,35 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
+    # @spec PARTIAL-CLOSEOUT-015 — bounds a single invocation's candidate
+    # window so an account with many legacy runs cannot drive unbounded
+    # `Llm::AnalyzePartialCloseout` cost/runtime in one call; `next_cursor`
+    # lets a caller resume past the capped window and make forward
+    # progress through the backlog regardless of each page's outcomes
+    # (#4191 review).
+    it "caps candidates per invocation via batch_size and resumes via next_cursor" do
+      merged_pr(number: 50, parent_issue: parent)
+      first_run = legacy_run(issue: parent, pull_request_number: 50)
+      merged_pr(number: 51, parent_issue: parent)
+      second_run = legacy_run(issue: parent, pull_request_number: 51)
+      merged_pr(number: 52, parent_issue: parent)
+      third_run = legacy_run(issue: parent, pull_request_number: 52)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })
+
+      first_page = described_class.call(account_id: account.id, batch_size: 2)
+
+      expect(first_page.scanned).to eq(2)
+      expect(first_page.next_cursor).to eq(second_run.id)
+      expect(third_run.reload.reconciliation).to eq({})
+
+      second_page = described_class.call(account_id: account.id, batch_size: 2, after_id: first_page.next_cursor)
+
+      expect(second_page.scanned).to eq(1)
+      expect(second_page.next_cursor).to eq(third_run.id)
+      expect(first_run.reload.reconciliation.fetch("status")).to eq("reconciled")
+      expect(third_run.reload.reconciliation.fetch("status")).to eq("reconciled")
+    end
+
     # @spec PARTIAL-CLOSEOUT-015 — does not match a run whose PR number
     # only collides with an upstream-synced PR (no parent_issue_id and
     # a different URL).

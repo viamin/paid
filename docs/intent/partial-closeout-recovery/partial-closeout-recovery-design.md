@@ -172,7 +172,12 @@ machinery the workflow uses:
   `reconciliation` carries no terminal `status`. A run whose reconciliation
   is already terminal (`reconciled`, `awaiting_operator`, `retryable_failure`
   with a fresh `failed_at`) is skipped, so repeated sweeps do not duplicate
-  work.
+  work. Candidates are ordered by `id` and capped at `batch_size` (default
+  200) per invocation, so one call cannot drive unbounded
+  `Llm::AnalyzePartialCloseout` cost/runtime against an account's entire
+  historical `create_pr` volume; `Result#next_cursor` reports the highest
+  scanned `id`, and passing it as `after_id:` on the next call resumes
+  strictly past that point regardless of each row's outcome.
 - **Assessment.** `Llm::AnalyzePartialCloseout.call(agent_run:)` produces a
   fresh gap set grounded in current shipped code and current open issues — a
   stale gap whose child has since merged, closed, or been superseded is
@@ -202,8 +207,11 @@ machinery the workflow uses:
   (`OPERATOR-INBOX-002H`), so a successful sweep immediately surfaces the
   focus work and the blocking prerequisite for the operator without any new
   UI surface. The sweep itself is invokable through an authorized rake task
-  (`bin/rake issues:reconcile_legacy_partial_closeouts ACCOUNT_ID=<id>`)
-  that the operator console / MCP surface can call with the account scope.
+  (`bin/rake issues:reconcile_legacy_partial_closeouts ACCOUNT_ID=<id>
+  BATCH_SIZE=<n> AFTER_ID=<cursor>`) that the operator console / MCP surface
+  can call with the account scope; the task prints `next_cursor` and prompts
+  a follow-up invocation when the batch filled, so working through a large
+  backlog is an explicit, operator-paced sequence of bounded calls.
 
 ## Alternatives considered
 
