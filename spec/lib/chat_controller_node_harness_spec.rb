@@ -22,6 +22,7 @@ class ChatControllerNodeHarness
 
       controller.messagesTarget = {
         querySelector: (sel) => null,
+        querySelectorAll: (sel) => [],
         append: (el) => appended.push(el)
       };
       controller.hasStatusTarget = true;
@@ -47,6 +48,13 @@ class ChatControllerNodeHarness
       // path whenever a containerTarget is provided.
       if ("containerTarget" in controller) {
         controller.hasContainerTarget = true;
+      }
+
+      // Same for messagesTarget — lastAssistantTextResponse guards on
+      // hasMessagesTarget before walking the transcript, and the jump-to-
+      // latest tests need that guard lifted to exercise the anchor path.
+      if ("messagesTarget" in controller) {
+        controller.hasMessagesTarget = true;
       }
 
       return { controller, appended, statusMessages };
@@ -636,6 +644,404 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-SCROLL-001 — The top-bar "Jump to latest" button and the
+    // sticky jump-to-last-response button both smooth-scroll to the top of
+    // the last assistant text message. The target is the container-relative
+    // scrollTop of the anchor (not offsetTop, which is unreliable through
+    // nested wrappers, and not scrollHeight, which would jump past tool
+    // calls appended after the response).
+    function testScrollToLatestResponseSmoothScrollsToAnchor() {
+      const anchor = { getBoundingClientRect: () => ({ top: 250 }) };
+      let scrolledTo = null;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return 100; },
+          set scrollTop(v) {},
+          scrollHeight: 1500,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 50 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        }
+      });
+      controller.smoothScrollTo = (target) => { scrolledTo = target; };
+
+      controller.scrollToLatestResponse();
+
+      // scrollTop (100) + (anchorRect.top 250 - containerRect.top 50) = 300
+      if (scrolledTo !== 300) {
+        throw new Error(`Expected scrollToLatestResponse to target 300 (container-relative anchor offset), got ${scrolledTo}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — A new chat or one whose last turn is a user
+    // message has no assistant text yet; the click still does something
+    // useful by landing on the bottom of the transcript (same target as
+    // "Jump to input").
+    function testScrollToLatestResponseFallsBackToBottom() {
+      let scrolledTo = null;
+      const { controller } = makeController({
+        containerTarget: { scrollTop: 0, scrollHeight: 800, clientHeight: 200 },
+        messagesTarget: {
+          querySelectorAll: () => [],
+          append: () => {}
+        }
+      });
+      controller.smoothScrollTo = (target) => { scrolledTo = target; };
+
+      controller.scrollToLatestResponse();
+
+      if (scrolledTo !== 800) {
+        throw new Error(`Expected scrollToLatestResponse to fall back to scrollHeight (800), got ${scrolledTo}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — The on-load jump is instant: it assigns
+    // containerTarget.scrollTop directly so the user lands on the latest
+    // response without seeing an animated scroll on every chat load.
+    function testJumpToLatestResponseOnLoadSetsScrollTopInstantly() {
+      const anchor = { getBoundingClientRect: () => ({ top: 300 }) };
+      let scrollTopWrites = 0;
+      let lastScrollTop = null;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return 0; },
+          set scrollTop(v) { scrollTopWrites += 1; lastScrollTop = v; },
+          scrollHeight: 1500,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 100 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        }
+      });
+      // Pin Turbo to an advance action so we exercise the forward-nav path
+      // without polluting other tests in this run.
+      const origTurbo = globalThis.Turbo;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "advance" } } };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+      }
+
+      if (scrollTopWrites !== 1) {
+        throw new Error(`Expected exactly one scrollTop write for the on-load jump, got ${scrollTopWrites}`);
+      }
+      // 0 + (300 - 100) = 200
+      if (lastScrollTop !== 200) {
+        throw new Error(`Expected on-load jump to set scrollTop to 200, got ${lastScrollTop}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Descendant chat-message controllers connect
+    // after chat and replace their placeholder text with rendered markdown.
+    // Defer the initial measurement one frame so layout shifts above the last
+    // response cannot leave its opening outside the viewport.
+    function testConnectDefersInitialJumpUntilAfterChildControllersRender() {
+      const { controller } = makeController({ sessionIdValue: 42 });
+      const origWindow = globalThis.window;
+      const origRAF = globalThis.requestAnimationFrame;
+      let scheduledJump = null;
+      let jumps = 0;
+
+      try {
+        globalThis.window = { addEventListener() {} };
+        globalThis.requestAnimationFrame = (callback) => {
+          scheduledJump = callback;
+          return 1;
+        };
+        controller.updateViewportHeight = () => {};
+        controller.handleScroll = () => {};
+        controller.jumpToLatestResponseOnLoad = () => { jumps += 1; };
+
+        controller.connect();
+
+        if (jumps !== 0 || !scheduledJump) {
+          throw new Error("Expected connect to defer the initial jump by one animation frame");
+        }
+
+        scheduledJump();
+      } finally {
+        globalThis.window = origWindow;
+        globalThis.requestAnimationFrame = origRAF;
+      }
+
+      if (jumps !== 1) {
+        throw new Error(`Expected the deferred frame to perform one initial jump, got ${jumps}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Leaving a chat records the overflow
+    // container's position under its session-scoped key so a later Turbo
+    // restoration can return the reader to the same place.
+    function testDisconnectRemembersTranscriptScrollPosition() {
+      const writes = [];
+      const { controller } = makeController({
+        sessionIdValue: 42,
+        containerTarget: { scrollTop: 475 },
+        subscription: { unsubscribe() {} },
+        boundUpdateViewportHeight: () => {}
+      });
+      const origWindow = globalThis.window;
+      const origSessionStorage = globalThis.sessionStorage;
+
+      try {
+        globalThis.window = { removeEventListener() {} };
+        globalThis.sessionStorage = {
+          setItem: (key, value) => writes.push({ key, value })
+        };
+        controller.disconnect();
+      } finally {
+        globalThis.window = origWindow;
+        globalThis.sessionStorage = origSessionStorage;
+      }
+
+      if (writes.length !== 1 || writes[0].key !== "paid:chat-scroll:42" || writes[0].value !== "475") {
+        throw new Error(`Expected disconnect to save scrollTop 475 for session 42, got ${JSON.stringify(writes)}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Turbo restores the document scroll position,
+    // but not this overflow container. A restoration visit must recover the
+    // saved container position rather than showing the oldest transcript
+    // messages or jumping to the latest response.
+    function testJumpToLatestResponseOnLoadRestoresTranscriptPosition() {
+      const anchor = { getBoundingClientRect: () => ({ top: 300 }) };
+      let scrollTopWrites = 0;
+      let lastScrollTop = null;
+      const { controller } = makeController({
+        sessionIdValue: 42,
+        containerTarget: {
+          get scrollTop() { return 0; },
+          set scrollTop(v) { scrollTopWrites += 1; lastScrollTop = v; },
+          scrollHeight: 1500,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 100 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        }
+      });
+      const origTurbo = globalThis.Turbo;
+      const origSessionStorage = globalThis.sessionStorage;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "restore" } } };
+        globalThis.sessionStorage = {
+          getItem: (key) => key === "paid:chat-scroll:42" ? "475" : null
+        };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+        globalThis.sessionStorage = origSessionStorage;
+      }
+
+      if (scrollTopWrites !== 1 || lastScrollTop !== 475) {
+        throw new Error(`Expected Turbo restoration to recover scrollTop 475, got ${lastScrollTop}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — A restoration in another tab (or after storage
+    // fails) has no session-scoped position to restore. Treat the absent value
+    // as absent rather than Number(null) = 0, then use the ordinary latest
+    // response target so the user does not land at the oldest messages.
+    function testJumpToLatestResponseOnLoadFallsBackWhenTranscriptPositionIsMissing() {
+      const anchor = { getBoundingClientRect: () => ({ top: 300 }) };
+      let lastScrollTop = null;
+      const { controller } = makeController({
+        sessionIdValue: 42,
+        containerTarget: {
+          get scrollTop() { return 0; },
+          set scrollTop(v) { lastScrollTop = v; },
+          scrollHeight: 1500,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 100 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        }
+      });
+      const origTurbo = globalThis.Turbo;
+      const origSessionStorage = globalThis.sessionStorage;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "restore" } } };
+        globalThis.sessionStorage = { getItem: () => null };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+        globalThis.sessionStorage = origSessionStorage;
+      }
+
+      if (lastScrollTop !== 200) {
+        throw new Error(`Expected a missing restoration position to jump to latest response at 200, got ${lastScrollTop}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — A chat with no assistant text yet (new chat,
+    // or one ending in a user message) jumps to the bottom on load, same
+    // as the button-click fallback.
+    function testJumpToLatestResponseOnLoadFallsBackToBottom() {
+      let lastScrollTop = null;
+      const { controller } = makeController({
+        containerTarget: {
+          get scrollTop() { return 0; },
+          set scrollTop(v) { lastScrollTop = v; },
+          scrollHeight: 800,
+          clientHeight: 200,
+          getBoundingClientRect: () => ({ top: 0 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [],
+          append: () => {}
+        }
+      });
+      const origTurbo = globalThis.Turbo;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "advance" } } };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+      }
+
+      if (lastScrollTop !== 800) {
+        throw new Error(`Expected on-load jump to fall back to scrollHeight (800), got ${lastScrollTop}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — A direct scrollTop assignment does not emit a
+    // scroll event. The on-load fallback must therefore recalculate the
+    // sticky control after arriving at the bottom, rather than leaving a
+    // visible button whose action is a no-op.
+    function testJumpToLatestResponseOnLoadUpdatesStickyControl() {
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: {
+          scrollTop: 0,
+          scrollHeight: 800,
+          clientHeight: 200,
+          getBoundingClientRect: () => ({ top: 0 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        hasStickyJumpToLatestTarget: true,
+        stickyJumpToLatestTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+      const origTurbo = globalThis.Turbo;
+
+      try {
+        globalThis.Turbo = { navigator: { currentVisit: { action: "advance" } } };
+        controller.jumpToLatestResponseOnLoad();
+      } finally {
+        globalThis.Turbo = origTurbo;
+      }
+
+      const hidden = toggles.find((t) => t.cls === "opacity-0");
+      if (!hidden || hidden.cond !== true) {
+        throw new Error("Expected on-load fallback to hide sticky jump-to-latest at the bottom");
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Show the sticky jump-to-latest button when
+    // the user has scrolled past the start of the last assistant response
+    // (anchor's top is above the container's top — viewport-relative).
+    function testHandleScrollShowsStickyJumpToLatestWhenAnchorAboveViewport() {
+      const anchor = { getBoundingClientRect: () => ({ top: -50 }) };
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: {
+          scrollTop: 800,
+          scrollHeight: 2000,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 0 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        },
+        hasStickyJumpToLatestTarget: true,
+        stickyJumpToLatestTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+
+      controller.handleScroll();
+
+      const visible = toggles.find((t) => t.cls === "opacity-100");
+      if (!visible || visible.cond !== true) {
+        throw new Error("Expected sticky jump-to-latest to become visible when the anchor is above the viewport top");
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Hide the sticky button when the anchor is in
+    // view, so a click would be a no-op (a fixed pixel threshold would
+    // show it even when there's nothing to jump to).
+    function testHandleScrollHidesStickyJumpToLatestWhenAnchorInView() {
+      const anchor = { getBoundingClientRect: () => ({ top: 200 }) };
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: {
+          scrollTop: 100,
+          scrollHeight: 2000,
+          clientHeight: 400,
+          getBoundingClientRect: () => ({ top: 0 })
+        },
+        messagesTarget: {
+          querySelectorAll: () => [ anchor ],
+          append: () => {}
+        },
+        hasStickyJumpToLatestTarget: true,
+        stickyJumpToLatestTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+
+      controller.handleScroll();
+
+      const hidden = toggles.find((t) => t.cls === "opacity-0");
+      if (!hidden || hidden.cond !== true) {
+        throw new Error("Expected sticky jump-to-latest to stay hidden when the anchor is already in view");
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Without an assistant anchor, the sticky
+    // button uses the bottom-distance fallback (same rule the auto-scroll
+    // uses), so it tracks "is the bottom visible?" rather than guessing a
+    // pixel threshold.
+    function testHandleScrollStickyJumpToLatestFallsBackToBottomDistance() {
+      const toggles = [];
+      const { controller } = makeController({
+        containerTarget: { scrollTop: 0, scrollHeight: 1000, clientHeight: 200 },
+        messagesTarget: {
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        hasStickyJumpToLatestTarget: true,
+        stickyJumpToLatestTarget: {
+          classList: { toggle: (cls, cond) => toggles.push({ cls, cond }) }
+        }
+      });
+
+      controller.handleScroll();
+
+      const visible = toggles.find((t) => t.cls === "opacity-100");
+      if (!visible || visible.cond !== true) {
+        throw new Error("Expected sticky jump-to-latest to be visible when the bottom is far away and no anchor exists");
+      }
+    }
+
     function testHandleScrollShowsBackToTopWhenScrolled() {
       const toggles = [];
       const { controller } = makeController({
@@ -866,8 +1272,20 @@ class ChatControllerNodeHarness
       testSmoothScrollToJumpsInstantlyWhenReducedMotionPreferred();
       testScrollToInputScrollsToBottom();
       testScrollToTopScrollsToZero();
+      testScrollToLatestResponseSmoothScrollsToAnchor();
+      testScrollToLatestResponseFallsBackToBottom();
+      testJumpToLatestResponseOnLoadSetsScrollTopInstantly();
+      testConnectDefersInitialJumpUntilAfterChildControllersRender();
+      testDisconnectRemembersTranscriptScrollPosition();
+      testJumpToLatestResponseOnLoadRestoresTranscriptPosition();
+      testJumpToLatestResponseOnLoadFallsBackWhenTranscriptPositionIsMissing();
+      testJumpToLatestResponseOnLoadFallsBackToBottom();
+      testJumpToLatestResponseOnLoadUpdatesStickyControl();
       testHandleScrollShowsBackToTopWhenScrolled();
       testHandleScrollHidesBackToTopAtTop();
+      testHandleScrollShowsStickyJumpToLatestWhenAnchorAboveViewport();
+      testHandleScrollHidesStickyJumpToLatestWhenAnchorInView();
+      testHandleScrollStickyJumpToLatestFallsBackToBottomDistance();
       testUpdateViewportHeightTracksPanelOffset();
       testUpdateViewportHeightClampsNegativeOffset();
       testUpdateViewportHeightIsScrollInvariant();

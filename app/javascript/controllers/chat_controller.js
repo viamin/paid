@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["backToTop", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
+  static targets = ["backToTop", "stickyJumpToLatest", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
   static values = { sessionId: Number }
 
   connect() {
@@ -12,6 +12,7 @@ export default class extends Controller {
     this.pendingContent = null
     this.currentAttemptToolCards = []
     this.scrollAnimationId = null
+    this.initialJumpAnimationId = null
     this.boundUpdateViewportHeight = () => this.updateViewportHeight()
 
     this.subscription = consumer.subscriptions.create(
@@ -27,12 +28,26 @@ export default class extends Controller {
     window.addEventListener("resize", this.boundUpdateViewportHeight)
     this.updateViewportHeight()
     this.handleScroll()
+    // Land the user on the top of the last assistant response on a forward
+    // navigation so they don't have to scroll or click "Jump to input" to
+    // catch up on the latest answer. Restoration visits recover the saved
+    // transcript position instead, because Turbo restores only document
+    // scroll and would otherwise show the oldest messages (#4174).
+    // chat-message controllers connect after this controller in document
+    // order and synchronously render markdown, which can move the response
+    // anchor. Wait one frame to measure the final transcript layout.
+    this.initialJumpAnimationId = requestAnimationFrame(() => {
+      this.initialJumpAnimationId = null
+      this.jumpToLatestResponseOnLoad()
+    })
   }
 
   disconnect() {
+    this.rememberTranscriptScrollPosition()
     this.subscription?.unsubscribe()
     window.removeEventListener("resize", this.boundUpdateViewportHeight)
     if (this.scrollAnimationId) cancelAnimationFrame(this.scrollAnimationId)
+    if (this.initialJumpAnimationId != null) cancelAnimationFrame(this.initialJumpAnimationId)
   }
 
   // A dropped/rejected connection mid-turn strands the streaming lock: the
@@ -131,6 +146,23 @@ export default class extends Controller {
       this.backToTopTarget.classList.toggle("pointer-events-auto", show)
       this.backToTopTarget.classList.toggle("opacity-0", !show)
       this.backToTopTarget.classList.toggle("pointer-events-none", !show)
+    }
+
+    if (this.hasStickyJumpToLatestTarget) {
+      const anchor = this.lastAssistantTextResponse()
+      const showJump = anchor
+        // Anchor-relative: show only when the user has scrolled past the
+        // start of the last response. A fixed pixel threshold would surface
+        // the button even when a click would be a no-op (#4174).
+        ? anchor.getBoundingClientRect().top < this.containerTarget.getBoundingClientRect().top
+        // No anchor means the fallback target is the bottom of the transcript.
+        // Reuse the auto-scroll threshold so the button mirrors the bottom-
+        // visibility rule used elsewhere.
+        : distanceFromBottom > threshold
+      this.stickyJumpToLatestTarget.classList.toggle("opacity-100", showJump)
+      this.stickyJumpToLatestTarget.classList.toggle("pointer-events-auto", showJump)
+      this.stickyJumpToLatestTarget.classList.toggle("opacity-0", !showJump)
+      this.stickyJumpToLatestTarget.classList.toggle("pointer-events-none", !showJump)
     }
   }
 
@@ -623,6 +655,112 @@ export default class extends Controller {
   scrollToInput() {
     if (!this.hasContainerTarget) return
     this.smoothScrollTo(this.containerTarget.scrollHeight)
+  }
+
+  // @spec CHAT-SCROLL-001 — Jump to the top of the last assistant text
+  // response (smoothly). Falls back to the bottom of the container when the
+  // chat has no assistant text message yet — a new chat, or one whose last
+  // turn is a user message — so the click still does something useful.
+  scrollToLatestResponse() {
+    if (!this.hasContainerTarget) return
+    this.smoothScrollTo(this.latestResponseScrollTop())
+  }
+
+  // @spec CHAT-SCROLL-001 — On a forward navigation into the chat, jump
+  // instantly (no animation) to the same anchor the sticky button would
+  // target, so users land on the latest assistant answer without having to
+  // scroll. Turbo restores the document scroll position but not this overflow
+  // container, so restoration visits recover the saved transcript position
+  // when it is available and otherwise use the forward-visit target.
+  jumpToLatestResponseOnLoad() {
+    if (!this.hasContainerTarget) return
+    if (this.isTurboRestorationVisit() && this.restoreTranscriptScrollPosition()) {
+      this.handleScroll()
+      return
+    }
+
+    const target = this.latestResponseScrollTop()
+    if (target == null) return
+    this.containerTarget.scrollTop = target
+    this.handleScroll()
+  }
+
+  latestResponseScrollTop() {
+    if (!this.hasContainerTarget) return null
+
+    const anchor = this.lastAssistantTextResponse()
+    if (anchor) return this.anchorScrollTopWithinContainer(anchor)
+
+    return this.containerTarget.scrollHeight
+  }
+
+  // The last assistant text message inside the transcript — tool calls render
+  // without that flag and are skipped, while streaming bubbles from
+  // ensureAssistantMessage set it so the selector works mid-stream too.
+  // Falls back to null when there is no assistant text yet (new chat or one
+  // whose final turn is a user message).
+  lastAssistantTextResponse() {
+    if (!this.hasMessagesTarget) return null
+    const articles = this.messagesTarget.querySelectorAll(
+      'article[data-chat-message-role-value="assistant"][data-chat-message-markdown-value="true"]'
+    )
+    return articles[articles.length - 1] || null
+  }
+
+  // Container-relative scrollTop of an anchor inside `messagesTarget`.
+  // offsetTop would be cheaper but is unreliable: the messages wrapper can
+  // nest flex/justify items (system-prompt disclosure, tool-call cards,
+  // streaming bubbles), so the anchor's offsetTop is measured against the
+  // nearest positioned ancestor, not the scroll container. Walking the rect
+  // gives the real container-relative offset (#4174).
+  anchorScrollTopWithinContainer(anchor) {
+    if (!this.hasContainerTarget) return null
+    const containerRect = this.containerTarget.getBoundingClientRect()
+    const anchorRect = anchor.getBoundingClientRect()
+    return this.containerTarget.scrollTop + (anchorRect.top - containerRect.top)
+  }
+
+  // True when the page was re-entered through browser history (back/forward)
+  // or a Turbo restoration visit. Native browser restoration preserves an
+  // element's position; Turbo restoration instead uses the saved position.
+  isTurboRestorationVisit() {
+    const visit = globalThis.Turbo?.navigator?.currentVisit
+    if (visit) return visit.action === "restore"
+
+    const navEntry = globalThis.performance?.getEntriesByType?.("navigation")?.[0]
+    return navEntry?.type === "back_forward"
+  }
+
+  // Turbo snapshots restore the document's scroll position but reset this
+  // overflow container to its initial position. Keep the position scoped to
+  // the chat session so Back/Forward returns readers to the same response.
+  rememberTranscriptScrollPosition() {
+    if (!this.hasContainerTarget) return
+
+    try {
+      globalThis.sessionStorage?.setItem(this.transcriptScrollStorageKey(), String(this.containerTarget.scrollTop))
+    } catch {
+      // sessionStorage is unavailable in some private-browsing contexts.
+    }
+  }
+
+  restoreTranscriptScrollPosition() {
+    try {
+      const saved = globalThis.sessionStorage?.getItem(this.transcriptScrollStorageKey())
+      if (saved == null || saved.trim() === "") return false
+
+      const position = Number(saved)
+      if (!Number.isFinite(position) || position < 0) return false
+
+      this.containerTarget.scrollTop = position
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  transcriptScrollStorageKey() {
+    return `paid:chat-scroll:${this.sessionIdValue}`
   }
 
   // Element.scrollTo({ behavior: "smooth" }) is unreliable on iOS Safari,

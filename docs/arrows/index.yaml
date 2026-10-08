@@ -232,6 +232,14 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-04
+  chat-scroll:
+    title: Chat Transcript Navigation
+    path: docs/intent/chat-scroll/chat-scroll-design.md
+    specs: docs/intent/chat-scroll/chat-scroll-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-07
   api-conversation-delegation:
     title: API Conversation Transport Delegation
     path: docs/intent/api-conversation-delegation/api-conversation-delegation-design.md
