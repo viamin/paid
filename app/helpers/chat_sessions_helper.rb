@@ -178,7 +178,8 @@ module ChatSessionsHelper
 
   # A completed action that queued an agent run (continuation, triggered run).
   def queued_tool_result?(message)
-    chat_tool_result_run_id(message).present? && chat_tool_result_value(message.tool_result, "status") == "queued"
+    payload = chat_tool_payload(message.tool_result)
+    chat_tool_result_run_id(message).present? && payload.is_a?(Hash) && chat_tool_result_value(payload, "status") == "queued"
   end
 
   # Links a completed tool result to the agent run it created, when the result

@@ -134,12 +134,15 @@ RSpec.describe ChatSessionsHelper do
       completed = build(:chat_message, :tool, tool_result: { "ok" => true })
       queued = build(:chat_message, :tool,
         tool_result: { "request_id" => 7, "agent_run_id" => 55, "status" => "queued" })
+      serialized_queued = build(:chat_message, :tool,
+        tool_result: { "request_id" => 7, "agent_run_id" => 55, "status" => "queued" }.to_json)
 
       expect(helper.chat_tool_status_label(proposed)).to eq("proposed")
       expect(helper.chat_tool_status_label(awaiting)).to eq("awaiting confirmation")
       expect(helper.chat_tool_status_label(refused)).to eq("refused")
       expect(helper.chat_tool_status_label(completed)).to eq("completed")
       expect(helper.chat_tool_status_label(queued)).to eq("queued")
+      expect(helper.chat_tool_status_label(serialized_queued)).to eq("queued")
     end
   end
 
