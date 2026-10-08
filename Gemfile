@@ -38,6 +38,10 @@ gem "avo", "4.2.11"
 # this constraint just keeps the major version bump deliberate.
 gem "json", "~> 3.0"
 
+# Docker API's transitive MultiJson dependency is selected by Sawyer/Octokit.
+# 1.21.2 forwards parser options as keywords, as required by json 3.x.
+gem "multi_json", ">= 1.21.2"
+
 # Soft-delete for low-volume reference records
 gem "discard"
 
