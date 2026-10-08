@@ -57,7 +57,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
 
       expect(textarea[:id]).to eq(form.find("label", text: "Completion rationale")[:for])
       expect(textarea[:"aria-describedby"]).to be_present
-      expect(textarea.bounds.bottom).to be <= submit.bounds.top
+      expect(element_geometry(textarea)[:bottom]).to be <= element_geometry(submit)[:top]
     end
   end
 
@@ -77,7 +77,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
 
       expect(input[:id]).to eq(label[:for])
       expect(input[:"aria-describedby"]).to be_present
-      expect(input.bounds.width).to be > 0
+      expect(element_geometry(input)[:width]).to be > 0
     end
   end
 
@@ -99,6 +99,16 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
           contained: within(reason) && within(submit) &&
             reason.getBoundingClientRect().bottom <= submit.getBoundingClientRect().top
         };
+      })()
+    JS
+  end
+
+  def element_geometry(element)
+    page.evaluate_script(<<~JS)
+      (() => {
+        const element = document.getElementById(#{element[:id].to_json});
+        const bounds = element.getBoundingClientRect();
+        return { bottom: bounds.bottom, top: bounds.top, width: bounds.width };
       })()
     JS
   end
