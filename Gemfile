@@ -32,11 +32,10 @@ gem "devise"
 gem "pundit"
 gem "avo", "4.2.11"
 
-# Pin json to 2.x. json 3.0.0 changed JSON.parse/json options to
-# keyword-only arguments, which is incompatible with Rails 8.1.x's
-# ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25) and
-# any code that calls JSON.parse(json, hash) positionally. Lift the pin
-# once Rails 8.2+ adopts the keyword-only signature throughout.
+# json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
+# Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
+# already calls JSON.parse(json, **options), so the 3.x line is safe here;
+# this constraint just keeps the major version bump deliberate.
 gem "json", "~> 3.0"
 
 # Soft-delete for low-volume reference records
@@ -82,11 +81,10 @@ gem "agent-harness", "0.44.8"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
-# Pinned to 2.0.x to pick up the GHSA-42r3-x6vx-x49x / CVE-2026-67991 ReDoS fix
-# (Polynomial-Time ReDoS in Bedrock video output prefix normalization). The
-# 2.0.x line is currently only released as release-candidates; 2.0.0 stable is
-# not yet published, so the lower bound uses the rc1 that contains the fix
-# and the upper bound tracks the 2.0.x line as new rcs ship.
+# Lower bound keeps the GHSA-42r3-x6vx-x49x / CVE-2026-67991 ReDoS fix
+# (Polynomial-Time ReDoS in Bedrock video output prefix normalization), which
+# landed in 2.0.0.rc1 and carries forward through later releases. Upper bound
+# tracks the latest minor line reviewed for compatibility; bump deliberately.
 gem "ruby_llm", ">= 2.0.0.rc1", "< 2.2"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
