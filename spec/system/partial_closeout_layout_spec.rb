@@ -56,7 +56,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
       submit = form.find("input[type='submit']")
 
       expect(textarea[:id]).to eq(form.find("label", text: "Completion rationale")[:for])
-      expect(textarea.native.attribute("aria-describedby")).to be_present
+      expect(textarea[:"aria-describedby"]).to be_present
       expect(textarea.bounds.bottom).to be <= submit.bounds.top
     end
   end
@@ -76,7 +76,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
       label = form.find("label", text: "Link a prerequisite")
 
       expect(input[:id]).to eq(label[:for])
-      expect(input.native.attribute("aria-describedby")).to be_present
+      expect(input[:"aria-describedby"]).to be_present
       expect(input.bounds.width).to be > 0
     end
   end
