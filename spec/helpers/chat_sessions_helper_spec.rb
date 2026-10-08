@@ -75,7 +75,7 @@ RSpec.describe ChatSessionsHelper do
         tool_name: "grep_repo",
         tool_result: { "total_count" => 81, "matches" => [ { "path" => "app.rb" } ] })
 
-      expect(helper.chat_tool_summary(message)).to eq("grep_repo · result · 81 matches")
+      expect(helper.chat_tool_summary(message)).to eq("grep_repo · completed · 81 matches")
     end
 
     it "summarizes workspace grep payloads that report total_matches" do
@@ -83,7 +83,7 @@ RSpec.describe ChatSessionsHelper do
         tool_name: "grep_workspace",
         tool_result: { "total_matches" => 3, "matches" => [ { "path" => "README.md" } ] })
 
-      expect(helper.chat_tool_summary(message)).to eq("grep_workspace · result · 3 matches")
+      expect(helper.chat_tool_summary(message)).to eq("grep_workspace · completed · 3 matches")
     end
 
     it "summarizes list-style result arrays" do
@@ -91,7 +91,7 @@ RSpec.describe ChatSessionsHelper do
         tool_name: "list_projects",
         tool_result: [ { "name" => "paid" }, { "name" => "mutant" } ])
 
-      expect(helper.chat_tool_summary(message)).to eq("list_projects · result · 2 items")
+      expect(helper.chat_tool_summary(message)).to eq("list_projects · completed · 2 items")
     end
 
     it "summarizes tool errors without expanding the full payload" do
@@ -99,7 +99,7 @@ RSpec.describe ChatSessionsHelper do
         tool_name: "search_code",
         tool_result: { error: "internal_error", message: "key not found: :project_id" })
 
-      expect(helper.chat_tool_summary(message)).to eq("search_code · result · error: key not found: :project_id")
+      expect(helper.chat_tool_summary(message)).to eq("search_code · completed · error: key not found: :project_id")
     end
 
     it "summarizes configuration profile plans by change count" do
@@ -114,7 +114,7 @@ RSpec.describe ChatSessionsHelper do
           ]
         })
 
-      expect(helper.chat_tool_summary(message)).to eq("plan_configuration_profile · result · 2 changes")
+      expect(helper.chat_tool_summary(message)).to eq("plan_configuration_profile · completed · 2 changes")
     end
 
     it "expands only pending tool confirmations by default" do
@@ -123,6 +123,48 @@ RSpec.describe ChatSessionsHelper do
 
       expect(helper.chat_tool_expanded_by_default?(completed)).to be(false)
       expect(helper.chat_tool_expanded_by_default?(pending)).to be(true)
+    end
+  end
+
+  describe "#chat_tool_status_label" do # @spec PARTIAL-CLOSEOUT-017
+    it "distinguishes proposed, awaiting confirmation, refused, queued, and completed" do
+      proposed = build(:chat_message, :tool_call, tool_status: nil)
+      awaiting = build(:chat_message, :tool_call, tool_status: "pending")
+      refused = build(:chat_message, :tool_call, tool_status: "denied")
+      completed = build(:chat_message, :tool, tool_result: { "ok" => true })
+      queued = build(:chat_message, :tool,
+        tool_result: { "request_id" => 7, "agent_run_id" => 55, "status" => "queued" })
+
+      expect(helper.chat_tool_status_label(proposed)).to eq("proposed")
+      expect(helper.chat_tool_status_label(awaiting)).to eq("awaiting confirmation")
+      expect(helper.chat_tool_status_label(refused)).to eq("refused")
+      expect(helper.chat_tool_status_label(completed)).to eq("completed")
+      expect(helper.chat_tool_status_label(queued)).to eq("queued")
+    end
+  end
+
+  describe "#chat_tool_result_run_link" do # @spec PARTIAL-CLOSEOUT-017
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user) }
+    let(:run) { create(:agent_run, project: project, goal: "create_pr") }
+
+    it "links a continuation result to the run it created" do
+      message = build(:chat_message, :tool,
+        tool_name: "request_issue_continuation",
+        tool_arguments: { "project_id" => project.id, "issue_id" => 5 },
+        tool_result: { "request_id" => 7, "agent_run_id" => run.id, "status" => "queued" })
+
+      link = helper.chat_tool_result_run_link(message)
+
+      expect(link).to include(project_agent_run_path(project, run))
+      expect(link).to include("View run")
+    end
+
+    it "returns nil for results without a run reference" do
+      message = build(:chat_message, :tool, tool_result: { "total_count" => 3 })
+
+      expect(helper.chat_tool_result_run_link(message)).to be_nil
     end
   end
 

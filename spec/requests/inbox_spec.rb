@@ -135,6 +135,85 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Depends on #500")
   end
 
+  # @spec PARTIAL-CLOSEOUT-013 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016
+  describe "partial closeout pane guidance" do
+    let(:guided_issue) { create(:issue, project: project, github_number: 510, paid_state: "in_progress") }
+    let(:guided_evidence) do
+      create(:issue, :pull_request, project: project, github_number: 511, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: guided_issue, created_at: 2.days.ago)
+    end
+
+    before do
+      guided_evidence
+      create(:notification, :error, account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        title: "Pilot results need operator action",
+        description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here")
+    end
+
+    def render_guided_pane
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, guided_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "lists the decision paths and links the operator guide" do
+      render_guided_pane
+
+      expect(response.body).to include("Deciding what to do")
+      expect(response.body).to include("Review the recorded evidence")
+      expect(response.body).to include("Continue agent-actionable work")
+      expect(response.body).to include("Link prerequisite work")
+      expect(response.body).to include("Supply human evidence")
+      expect(response.body).to include("attest completion")
+      expect(response.body).to include(partial_closeout_guide_path)
+    end
+
+    it "collects an editable rationale and separates the three completions" do
+      render_guided_pane
+
+      expect(response.body).to include("Completion rationale")
+      expect(response.body).to include("Completing a run")
+      expect(response.body).to include("Resolving this Inbox item")
+      expect(response.body).to include("Closing the GitHub issue")
+      expect(response.body).to include("The GitHub issue stays open")
+      expect(response.body).not_to match(/type="hidden"[^>]*name="reason"/)
+    end
+
+    it "explains the continuation authorization semantics with examples" do
+      render_guided_pane
+
+      expect(response.body).to include("authorizes exactly one run")
+      expect(response.body).to include("Other holds still apply")
+      expect(response.body).to include("expected evidence")
+      expect(response.body).to include("acceptance audit")
+      expect(response.body).to include("implementation gap")
+      expect(response.body).to include("scanner verification")
+      expect(response.body).to include("human-only evaluation")
+    end
+
+    it "surfaces the requested human evidence and resumption rules" do
+      render_guided_pane
+
+      expect(response.body).to include("Pilot latency results")
+      expect(response.body).to include("who must supply it")
+      expect(response.body).to include("resumes automatically")
+      expect(response.body).to include("deliberate continuation")
+    end
+
+    it "offers the link-prerequisite action with its sync explanation" do
+      render_guided_pane
+
+      expect(response.body).to include("Link a prerequisite")
+      expect(response.body).to include(link_prerequisite_project_agent_runs_path(project))
+      expect(response.body).to include("sync")
+    end
+  end
+
   # @spec CHANGE-INTENT-INBOX-001
   it "renders change_intent_draft entries with approve, request changes, discard, and chat actions" do
     change_intent = create(
