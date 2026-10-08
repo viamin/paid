@@ -227,9 +227,10 @@
   `code_scanning_alerts:read` scope) SHALL each publish a distinct blocking
   notification scoped to the project so the operator can resolve them; both
   SHALL be auto-resolved on the next successful scan. An explicit GitHub
-  statement that repository code scanning is unavailable or disabled SHALL
-  disable only the code-scanning selection and resolve any stale permission
-  notification; it SHALL NOT publish a token-permission notification.
+  statement that repository code scanning is unavailable, disabled, or requires
+  Advanced Security to be enabled SHALL disable only the code-scanning selection
+  and resolve any stale permission notification; it SHALL NOT publish a
+  token-permission notification.
   *Code:* `Notifications::Rules::CodeScanningVerificationBlocked`,
   `Notifications::Rules::CodeScanningConfigurationError`,
   `Notifications::Rules::CodeScanningPermissionsError`,

@@ -192,18 +192,24 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
 
       # @spec GITHUB-SYNC-020 EAGER-QUEUE-016
-      it "disables only code scanning and resolves stale permission notifications when GitHub says scanning is disabled" do
+      it "disables only code scanning and resolves stale permission notifications for an Advanced Security prerequisite" do
         project.update!(security_alert_types: %w[dependabot code_scanning])
         publish_code_scanning_blocker_notifications
         project.update_columns(code_scanning_permission_error_at: 2.hours.ago)
         allow(github_client).to receive(:code_scanning_alerts).and_raise(
-          GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403)
+          GithubClient::ApiError.new(
+            "Advanced Security must be enabled for this repository to use code scanning.", status: 403
+          )
         )
 
         expect { activity.execute(project_id: project.id) }.not_to raise_error
 
         expect(project.reload.security_alert_types).to eq([ "dependabot" ])
         expect(project.code_scanning_scan_error_kind).to eq("unavailable")
+        expect(project.code_scanning_scan_error_reason)
+          .to eq("Advanced Security must be enabled for this repository to use code scanning.")
+        expect(project.code_scanning_permission_error_at).to be_nil
+        expect(project.next_code_scanning_scan_at).to be_nil
         expect(active_code_scanning_blocker_notifications).to be_empty
       end
 

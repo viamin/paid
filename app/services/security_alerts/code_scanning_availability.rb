@@ -6,7 +6,8 @@ module SecurityAlerts
       "code scanning is not enabled",
       "code scanning is unavailable",
       "code scanning is not available",
-      "code scanning is not supported"
+      "code scanning is not supported",
+      "advanced security must be enabled for this repository to use code scanning"
     ].freeze
 
     Result = Data.define(:status) do
@@ -17,6 +18,7 @@ module SecurityAlerts
 
     def self.call(...) = new(...).call
 
+    # @spec GITHUB-SYNC-020
     def self.unavailable_response?(error)
       explicit_unavailable_message?(error) &&
         (error.is_a?(GithubClient::NotFoundError) || error.status == 403)
