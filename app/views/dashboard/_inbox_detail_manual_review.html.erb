@@ -18,6 +18,18 @@
     </p>
   </div>
 
+  <%# A scanner-confirmed recurrence routes through manual_review, not the
+      partial_closeout lane (SecurityAlerts::VerifyRemediationAttempt#fail!
+      moves the issue here) — surface the same alert/evidence/recovery here
+      so that path is not reduced to the generic reason text alone (#4188). %>
+  <% scanner_blockers = Issues::CloseoutStatus.scanner_verification_blockers(entry.issue) %>
+  <% if scanner_blockers.any? %>
+    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <h3 class="text-sm font-semibold text-violet-900">Scanner verification evidence</h3>
+      <%= render "dashboard/inbox_closeout_blockers", blockers: scanner_blockers %>
+    </div>
+  <% end %>
+
   <%# @spec ISSUE-ENHANCEMENT-011
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the

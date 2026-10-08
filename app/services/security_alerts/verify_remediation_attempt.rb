@@ -108,11 +108,18 @@ module SecurityAlerts
     # finding is already-open leaves the issue where it was — moving it would
     # override any operator annotations on `manual_review_reason` since the
     # earlier transition.
+    #
+    # `manual_review_reason` is set to the same scanner-specific explanation
+    # `Issues::CloseoutStatus` would surface on the partial_closeout lane
+    # (#4188): without it, this route's Inbox pane falls back to the generic
+    # "Manual review required." text and loses the alert, evidence, and
+    # recovery action a scanner-confirmed recurrence needs.
     def move_issue_to_manual_review
       issue = attempt.issue
       return if issue.paid_state == "manual_review"
 
-      issue.update!(paid_state: "manual_review")
+      reason = Issues::CloseoutStatus.scanner_blocker(issue, attempt).message
+      issue.update!(paid_state: "manual_review", manual_review_reason: reason)
     end
   end
 end

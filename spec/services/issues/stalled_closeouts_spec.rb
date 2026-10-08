@@ -46,7 +46,7 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
   end
 
   describe ".pairs_for" do
-    it "keeps a stall held by a non-walked eligibility guard in the lane with that guard as its reason" do
+    it "keeps a stall held by a non-walked eligibility guard in the lane with an unavailable-guard reason" do # @spec PARTIAL-CLOSEOUT-012
       merged_pr_row(number: 12, parent_issue_id: issue.id)
       create(
         :issue,
@@ -60,7 +60,8 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
       pairs = described_class.pairs_for(project)
 
       expect(pairs.map { |pair| pair.issue.id }).to contain_exactly(issue.id)
-      expect(pairs.first.status.reason).to include("auto-pick eligibility guard")
+      expect(pairs.first.status.reason).to include("exact guard is unavailable")
+      expect(pairs.first.status.blockers.first.recovery).to include("Investigate")
     end
   end
 

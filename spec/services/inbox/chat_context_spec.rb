@@ -126,6 +126,25 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
+  it "uses the same structured scanner blocker as the partial-closeout Inbox detail" do
+    # @spec PARTIAL-CLOSEOUT-012 EAGER-QUEUE-013
+    issue.update!(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+      github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 1838,
+      github_number: 200_001_838)
+    create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
+    attempt = create(:code_scanning_remediation_attempt, issue:, status: "awaiting_verification")
+    chat_session.update!(
+      inbox_item_key: "partial_closeout:#{issue.id}",
+      inbox_item_metadata: { "kind" => "partial_closeout", "issue_id" => issue.id }
+    )
+
+    context = described_class.call(chat_session:, user:, sections: [ :partial_closeout ])
+
+    expect(context.fetch("partial_closeout").fetch(:scheduling_blockers)).to include(
+      hash_including(code: :scanner_verification_pending, evidence: hash_including("attempt_id" => attempt.id))
+    )
+  end
+
   def github_comment(id:, login:, body:)
     user = Struct.new(:login).new(login)
     Struct.new(:id, :user, :body, :created_at).new(id, user, body, Time.current)

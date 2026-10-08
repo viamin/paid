@@ -20,6 +20,12 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     )
   end
 
+  def synthetic_scanner_issue
+    create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+      github_number: 200_001_838, github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 1838,
+      github_state: "open", paid_state: "in_progress")
+  end
+
   it "marks an issue with merged partial evidence stalled and explains the exact reason" do
     merged_partial_pr(number: 12)
 
@@ -78,9 +84,48 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     status = described_class.call(issue)
 
     expect(status.stalled?).to be(true)
-    expect(status.blocker_codes).to contain_exactly(:ineligible)
-    expect(status.reason).to include("auto-pick eligibility guard")
-    expect(status.reason).not_to include("duplicate-work")
+    expect(status.blocker_codes).to contain_exactly(:unavailable)
+    expect(status.reason).to include("unavailable")
+    expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
+  it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do
+    # @spec PARTIAL-CLOSEOUT-012 EAGER-QUEUE-013
+    synthetic_issue = synthetic_scanner_issue
+    create(:issue, :pull_request, project: project, github_number: 4034,
+      github_state: "closed", pr_review_phase: "merged", parent_issue: synthetic_issue)
+    attempt = create(:code_scanning_remediation_attempt, issue: synthetic_issue,
+      status: "verification_blocked", verification_analysis_id: "1842809913",
+      blocked_reason: "analysis is unavailable")
+    dependency = create(:issue, project: project, github_number: 44, github_state: "open")
+    create(:issue_dependency, issue: synthetic_issue, depends_on_issue: dependency)
+
+    status = described_class.call(synthetic_issue)
+
+    expect(status.blocker_codes).to include(:unmet_prerequisites, :scanner_verification_retryable)
+    scanner = status.blockers.find { |blocker| blocker.code == :scanner_verification_retryable }
+    expect(scanner.evidence).to include("attempt_id" => attempt.id, "analysis_id" => "1842809913")
+    expect(scanner.message).to include("not proof it is fixed")
+    expect(scanner.recovery.downcase).to include("wait")
+  end
+
+  it "labels scanner-confirmed alert 1838 evidence as a recurrence, rather than a merge fix" do
+    # @spec PARTIAL-CLOSEOUT-012 EAGER-QUEUE-013
+    synthetic_issue = synthetic_scanner_issue
+    merged_partial_pr = create(:issue, :pull_request, project: project, github_number: 4034,
+      github_state: "closed", pr_review_phase: "merged", parent_issue: synthetic_issue)
+    attempt = create(:code_scanning_remediation_attempt, issue: synthetic_issue,
+      status: "verification_failed", pull_request_number: merged_partial_pr.github_number,
+      verification_analysis_id: "1842809913", verification_commit_sha: "post-merge-sha")
+
+    status = described_class.call(synthetic_issue)
+
+    recurrence = status.blockers.find { |blocker| blocker.code == :scanner_verification_failed }
+    expect(recurrence.message).to include("scanner-confirmed recurrence")
+    expect(recurrence.evidence).to include(
+      "attempt_id" => attempt.id, "alert_number" => 1838, "recurrent" => true,
+      "analysis_id" => "1842809913", "analysis_commit_sha" => "post-merge-sha"
+    )
   end
 
   it "is not stalled without closeout evidence" do

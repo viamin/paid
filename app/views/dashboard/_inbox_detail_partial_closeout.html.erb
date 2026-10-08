@@ -7,6 +7,7 @@
       A prior terminal outcome keeps this open issue out of automatic scheduling
     </h3>
     <p class="mt-1 text-sm text-violet-800"><%= status.reason %></p>
+    <%= render "dashboard/inbox_closeout_blockers", blockers: status.blockers %>
   </div>
 
   <div class="space-y-3">
