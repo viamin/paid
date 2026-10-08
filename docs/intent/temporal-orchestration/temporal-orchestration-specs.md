@@ -69,11 +69,39 @@
   questions), Paid SHALL reject a `create_pr` run before it can change the
   issue state. Other run goals SHALL leave that state unchanged. A queued
   `create_feature` run resumed after answers clear the pending data MAY
-  transition the issue to `in_progress`.
-  *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
-  `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
+  transition the issue to `in_progress`. A positive
+  `last_analyzer_sufficient_context` from a recent analyzer pass SHALL
+  bypass the stale `needs_input_questions` check (the analyzer's verdict is
+  authoritative when it has confirmed the question is answered) while
+  preserving the rejection for an unresolved `paid_state: "needs_input"` or
+  needs-input label (#4196).
+  *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`
+  ("rejects a create_pr run for an issue awaiting clarification without changing its state",
+  "rejects a resumed create_pr run for an issue awaiting clarification without changing its state",
+  "starts a create_pr run when the analyzer verdict confirmed sufficient context
+  even though needs_input_questions is stored").
   *Code:* `Activities::CreateAgentRunActivity`,
   `ClarifyingQuestions::ClearNeedsInput`.
+
+- [x] **TEMPORAL-ORCHESTRATION-010** — When the startup
+  `CreateAgentRunActivity` call at the top of `AgentExecutionWorkflow#execute`
+  raises (most commonly a non-retryable `IssueAwaitingInput` from
+  `reject_create_pr_awaiting_input!`), the workflow SHALL mark the underlying
+  `AgentRun` as failed with the actual rejection message before re-raising, so
+  Temporal's terminal failure no longer leaves the row stuck at `running` while
+  `StaleRunDetectorJob` repeatedly requeues it for the same blocked work
+  (#4196). The startup booking runs from the same rescue block that handles
+  later workflow failures; a successful startup unwinds into the regular
+  `begin` / `rescue` block. Cancellations are re-raised unwrapped (no failed
+  status write), and the workflow's existing cleanup path continues to run via
+  `ensure`. The unwrap uses the same `unwrap_error_message` helper already in
+  use for later failures so the recorded message is the actionable
+  application error, not "Activity task failed".
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`
+  ("marks the run failed when startup CreateAgentRunActivity raises a non-retryable ApplicationError",
+  "marks the run failed when startup CreateAgentRunActivity raises IssueAwaitingInput",
+  "does not write a failed status when startup CreateAgentRunActivity raises CanceledError").
+  *Code:* `Workflows::AgentExecutionWorkflow#execute`.
 
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to

@@ -1763,14 +1763,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, paused: true }
         else
-          raise "unexpected activity #{activity_class.name}"
+          {}
         end
       end
 
       result = workflow.execute(input)
 
       expect(result).to include(success: false, paused: true, agent_run_id: 42)
-      expect(called_activities).to eq([ Activities::CreateAgentRunActivity ])
+      # The startup CreateAgentRunActivity runs first; the workflow returns
+      # before the quality gate / run-agent body, but the ensure block still
+      # runs cleanup. Cleanup is safe even when nothing was provisioned:
+      # CleanupContainerActivity / CleanupWorktreeActivity / CleanupServices
+      # are idempotent no-ops on rows with no resources to release, and
+      # EnqueueJanitorActivity is a no-op when there's nothing to clean.
+      expect(called_activities.first).to eq(Activities::CreateAgentRunActivity)
+      expect(called_activities).not_to include(Activities::MarkAgentRunCompleteActivity)
+      expect(called_activities).not_to include(Activities::MarkAgentRunFailedActivity)
+      expect(called_activities).not_to include(Activities::RunAgentActivity)
     end
 
     it "falls back to cleanup when RetainContainerActivity fails" do
@@ -2264,6 +2273,135 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     it "returns false for errors without a cause" do
       error = RuntimeError.new("something went wrong")
       expect(workflow.send(:stale_pull_request_error?, error)).to be false
+    end
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-010
+  # Reproduces the viamin/yupyup#9 failure mode (#4196): the startup
+  # `CreateAgentRunActivity` rejects a queued `create_pr` run with a
+  # non-retryable `IssueAwaitingInput`, Temporal fails the workflow, but
+  # the AgentRun row stays `running` because the failure happened before
+  # the workflow's main `begin`/`rescue` block. `StaleRunDetectorJob` then
+  # repeatedly requeues the same blocked work, producing the
+  # analyze/timeout loop.
+  describe "startup activity failure bookkeeping" do
+    let(:input) { { project_id: 1, issue_id: 1, agent_run_id: 42 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    def stub_startup_create_agent_run_failure(error)
+      allow(workflow).to receive(:run_activity) do |activity_class, input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then raise error
+        when "Activities::MarkAgentRunFailedActivity"
+          { recorded_input: input, agent_run_id: input[:agent_run_id] }
+        when "Activities::RetainContainerActivity"
+          { retained: false }
+        when "Activities::CleanupContainerActivity",
+          "Activities::CleanupServicesActivity",
+          "Activities::CleanupWorktreeActivity",
+          "Activities::CleanupMcpServersActivity",
+          "Activities::EnqueueJanitorActivity"
+          {}
+        else
+          raise "unexpected activity #{activity_class.name}"
+        end
+      end
+    end
+
+    # Mirror how Temporal wraps a raised ApplicationError when an activity
+    # returns its failure to the workflow. The workflow test then asserts
+    # the rescue block unwraps the ActivityError to surface the actionable
+    # application message instead of the generic "Activity task failed".
+    def build_activity_error_wrapping_application_error(message, type, cause_message)
+      cause = Temporalio::Error::ApplicationError.new(cause_message, type: type, non_retryable: true)
+      activity_err = Temporalio::Error::ActivityError.new(
+        message,
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "",
+        activity_type: "CreateAgentRun",
+        activity_id: "1",
+        retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+      )
+      begin
+        begin
+          raise cause
+        rescue
+          raise activity_err
+        end
+      rescue Temporalio::Error
+      end
+      activity_err
+    end
+
+    it "marks the run failed when startup CreateAgentRunActivity raises a non-retryable ApplicationError" do
+      stub_startup_create_agent_run_failure(
+        Temporalio::Error::ApplicationError.new(
+          "Cannot start create_pr for issue #9 while it awaits clarifying answers",
+          type: "IssueAwaitingInput",
+          non_retryable: true
+        )
+      )
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("IssueAwaitingInput")
+      }
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity,
+          hash_including(
+            agent_run_id: 42,
+            error: "Cannot start create_pr for issue #9 while it awaits clarifying answers"
+          ),
+          timeout: 30)
+    end
+
+    it "still runs the cleanup block when startup CreateAgentRunActivity fails" do
+      stub_startup_create_agent_run_failure(
+        Temporalio::Error::ApplicationError.new(
+          "Cannot start create_pr for issue #9 while it awaits clarifying answers",
+          type: "IssueAwaitingInput",
+          non_retryable: true
+        )
+      )
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EnqueueJanitorActivity, hash_including(agent_run_id: 42), any_args)
+    end
+
+    it "does not write a failed status when startup CreateAgentRunActivity raises CanceledError" do
+      stub_startup_create_agent_run_failure(
+        Temporalio::Error::CanceledError.new("workflow canceled")
+      )
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity, any_args)
+    end
+
+    it "uses the unwrapped ApplicationError message rather than 'Activity task failed'" do
+      activity_err = build_activity_error_wrapping_application_error(
+        "Activity task failed", "IssueAwaitingInput",
+        "Cannot start create_pr for issue #9 while it awaits clarifying answers"
+      )
+      stub_startup_create_agent_run_failure(activity_err)
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ActivityError)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity,
+          hash_including(
+            agent_run_id: 42,
+            error: "Cannot start create_pr for issue #9 while it awaits clarifying answers"
+          ),
+          any_args)
     end
   end
 end

@@ -62,6 +62,25 @@ goals may start, but leave that clarification-owned state unchanged. The
 resumed `create_feature` run proceeds only after answer handling clears the
 pending label and stored questions.
 
+A successful `analyze_issue` pass that returns `sufficient_context: true`
+also reconciles a stale `needs_input_questions` payload on the issue: the
+analyzer's verdict is authoritative, and an old question that the human has
+already answered should not block the follow-up `create_pr` queue. The
+reconciliation in `AnalyzeIssueActivity#complete_run!` clears the stored
+questions and the local needs-input label only when the verdict is positive,
+so a genuinely unanswered `needs_input` round still trips
+`CreateAgentRunActivity#clarification_pending?` and is rejected at queue
+time (#4196).
+
+The workflow's startup `CreateAgentRunActivity` call runs through the same
+rescue path as later failures: a non-retryable application error (most
+commonly `IssueAwaitingInput`) now writes a `failed` terminal status with
+the actual rejection message before re-raising, so Temporal's terminal
+failure no longer leaves the row stuck at `running` while
+`StaleRunDetectorJob` repeatedly requeues the same blocked work. Cancellations
+are re-raised unwrapped (no failed status write), and the existing cleanup
+path continues to run via `ensure` (#4196).
+
 ## Worker Capacity Model
 
 Temporal worker configuration derives the minimum Active Record pool size from

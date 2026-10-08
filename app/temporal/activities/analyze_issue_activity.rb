@@ -103,7 +103,7 @@ module Activities
 
       track_tokens(agent_run, response)
       agent_run.log!("stdout", parsed.to_json)
-      complete_run!(agent_run, "analyzed")
+      complete_run!(agent_run, parsed, "analyzed")
       ProcessRunQueueJob.perform_later
 
       logger.info(
@@ -127,9 +127,43 @@ module Activities
       }
     end
 
-    def complete_run!(agent_run, paid_state = "analyzed")
+    # @spec ISSUE-ANALYSIS-017
+    def complete_run!(agent_run, parsed = nil, paid_state = "analyzed")
       agent_run.complete!
-      agent_run.issue.update!(paid_state: paid_state) if agent_run.issue
+      return unless agent_run.issue
+
+      issue = agent_run.issue
+      attrs = { paid_state: paid_state }
+      if parsed.present? && parsed[:sufficient_context] == true
+        attrs.merge!(reconcile_resolved_clarification_state_attrs(issue))
+      end
+      issue.update!(attrs)
+    end
+
+    # When the analyzer returns `sufficient_context: true`, a stale
+    # `needs_input_questions` payload (typically a leftover from an earlier
+    # round whose answer the analyzer has just confirmed) MUST be cleared so
+    # the follow-up `create_pr` queue does not trip
+    # `CreateAgentRunActivity#clarification_pending?` on the stale payload
+    # (#4196). The reconciliation is local-only — the GitHub-side
+    # needs-input label was already removed by
+    # `ClarifyingQuestions::ClearNeedsInput` once the human answered (or the
+    # issue never carried it); racing with the human's own label sync would
+    # introduce a flapping cycle worse than the original bug. The guard for
+    # genuinely unanswered rounds lives in
+    # `CreateAgentRunActivity#clarification_pending?` — when
+    # `paid_state: "needs_input"` or the needs-input label is still set, the
+    # `create_pr` run is still rejected even though this pass cleared the
+    # stale questions.
+    def reconcile_resolved_clarification_state_attrs(issue)
+      attrs = {}
+      label = issue.project.enhance_issue_needs_input_label_name
+      current_labels = Array(issue.labels)
+      if label && current_labels.include?(label)
+        attrs[:labels] = current_labels - [ label ]
+      end
+      attrs[:needs_input_questions] = nil if issue.needs_input_questions.present?
+      attrs
     end
 
     def build_context(agent_run, project, issue)
