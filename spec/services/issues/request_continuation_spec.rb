@@ -250,6 +250,38 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
     end
   end
 
+  describe "prompt delivery" do # @spec PARTIAL-CLOSEOUT-012
+    before do
+      stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
+        .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+    end
+
+    it "delivers the operator's reason and evidence snapshot into the final assembled agent prompt" do
+      merged_partial_pr(number: 12)
+
+      result = request_continuation
+
+      prompt = result.agent_run.prompt_for_issue
+
+      expect(prompt).to include("# Continuation Context")
+      expect(prompt).to include(reason)
+      expect(prompt).to include("Merged pull request #12")
+      expect(prompt).to include("continuation request ##{result.request.id}")
+      # Standard issue, policy, and style context is preserved alongside it.
+      expect(prompt).to include(issue.title)
+      expect(prompt).to include("MUST pass before every commit")
+    end
+
+    it "does not alter the prompt for an ordinary (non-continuation) run on the same issue" do
+      other_issue = create(:issue, project: project, github_state: "open")
+      ordinary_run = create(:agent_run, project: project, issue: other_issue, goal: "create_pr")
+
+      prompt = ordinary_run.prompt_for_issue
+
+      expect(prompt).not_to include("Continuation Context")
+    end
+  end
+
   describe "re-arming after a consumed request" do
     it "allows a fresh deliberate continuation once the prior run finished" do
       merged_partial_pr(number: 12)

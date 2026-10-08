@@ -89,6 +89,24 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+### Prompt delivery
+
+The authorization is useless to the executing agent if it never reaches the
+prompt: `PromptAssembly::Sections::ContinuationContext` reads
+`agent_run.continuation_request` and, when present, contributes a required
+"Continuation Context" section carrying the operator's reason, the evidence
+snapshot the request was authorized against, the evidence-generation digest,
+and guidance (treat the reason as the remaining-work plan; do not re-verify
+already-evidenced work; do not treat closed child issues as sufficient
+evidence for an epic; leave the issue/epic open if the named scope is not
+fully resolved). Both the Inbox action and the `request_issue_continuation`
+MCP tool create the run through the same `Issues::RequestContinuation`
+transaction, so this section covers both uniformly without branching on
+request origin. The section is required (never suppressed by profile
+customization) but contributes nothing for ordinary runs, and rebuilding the
+prompt (Temporal activity replay) is idempotent — it does not duplicate the
+section.
+
 ### Consistency at dequeue and run start
 
 `AgentRuns::RecheckIssueEligibility` gains a continuation branch (continuation

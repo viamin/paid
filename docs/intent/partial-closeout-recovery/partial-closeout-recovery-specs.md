@@ -159,6 +159,27 @@
   *Code:* `app/services/inbox/chat_context.rb`.
   *Test:* `spec/services/inbox/chat_context_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-012** — When a queued continuation run (created by
+  either the Inbox `request_continuation` action or the
+  `request_issue_continuation` MCP tool — both call
+  `Issues::RequestContinuation` and so are covered uniformly) builds its
+  create_pr prompt, the system SHALL include a required, non-suppressible
+  "Continuation Context" section carrying the operator's stated reason, the
+  closeout evidence snapshot the request was authorized against (merged PRs,
+  no-code-required timestamp), the evidence-generation digest, and guidance on
+  treating the reason as the remaining-work plan, not re-verifying already
+  -evidenced work, not treating closed child issues as sufficient epic
+  evidence, and leaving the issue or epic open when the full scope named in
+  the reason is not resolved — alongside, never instead of, the standard
+  issue/policy/style sections. The section's provenance metadata SHALL record
+  the request id, requesting actor id, and evidence digest. An ordinary
+  (non-continuation) run's prompt SHALL be unaffected, and rebuilding the
+  prompt (activity replay) SHALL NOT duplicate the section.
+  *Code:* `app/services/prompt_assembly/sections/continuation_context.rb`,
+  `app/services/prompt_assembly/build_issue_prompt.rb`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-011** — When a partial-closeout detail pane renders
   at any supported viewport width, the system SHALL keep the continuation
   reason input and submit button within the available pane width, with a
