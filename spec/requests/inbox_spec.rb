@@ -835,6 +835,31 @@ RSpec.describe "Inbox" do
     expect(comment_link.text).to eq("View enhancement comment")
   end
 
+  # @spec OPERATOR-INBOX-002D @spec PARTIAL-CLOSEOUT-012
+  it "surfaces the scanner alert, evidence, and recovery action when a code-scanning recurrence moved the issue to manual_review" do
+    scanner_issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+      github_number: 200_001_838, github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 1838,
+      github_state: "open")
+    merged_pr = create(:issue, :pull_request, project: project, github_number: 4034,
+      github_state: "closed", pr_review_phase: "merged", parent_issue: scanner_issue)
+    attempt = create(:code_scanning_remediation_attempt, issue: scanner_issue,
+      status: "awaiting_verification", pull_request_number: merged_pr.github_number)
+    SecurityAlerts::VerifyRemediationAttempt.new(
+      attempt: attempt, alert: { number: 1838, state: "open" },
+      analysis: { id: "1842809913", status: "succeeded", ref: scanner_issue.project.default_branch,
+        commit_sha: "descendant", tool_name: attempt.tool_name, category: attempt.category, error: "", warning: "" },
+      contains_merge_commit: true
+    ).call
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, scanner_issue.reload),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("scanner-confirmed recurrence", "Next step:", "Evidence:")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)

@@ -7,22 +7,7 @@
       A prior terminal outcome keeps this open issue out of automatic scheduling
     </h3>
     <p class="mt-1 text-sm text-violet-800"><%= status.reason %></p>
-    <% if status.blockers.any? %>
-      <ul class="mt-3 space-y-2 text-sm text-violet-800">
-        <% status.blockers.each do |blocker| %>
-          <li>
-            <p><%= blocker.message %></p>
-            <% if blocker.evidence.present? %>
-              <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url").to_json %></p>
-              <% if blocker.evidence["attempt_url"].present? %>
-                <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
-              <% end %>
-            <% end %>
-            <% if blocker.recovery.present? %><p class="text-xs text-violet-700">Next step: <%= blocker.recovery %></p><% end %>
-          </li>
-        <% end %>
-      </ul>
-    <% end %>
+    <%= render "dashboard/inbox_closeout_blockers", blockers: status.blockers %>
   </div>
 
   <div class="space-y-3">

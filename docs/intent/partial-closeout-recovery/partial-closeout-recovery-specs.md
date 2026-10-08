@@ -199,10 +199,20 @@
   verification and include the latest remediation attempt and scan evidence;
   a merged PR alone SHALL never be represented as proof that an alert is fixed.
   Inbox, chat context, and continuation refusal SHALL use the same explanation.
-  If the scoped dequeue verdict cannot be attributed to an available guard, the
-  system SHALL report it as unavailable and direct the operator to investigate.
+  A scanner-confirmed failed verification moves the issue to `manual_review`
+  (out of the `partial_closeout` lane), so the manual_review Inbox pane SHALL
+  also surface the same scanner blocker, evidence, and recovery action, and
+  `manual_review_reason` SHALL carry the same message rather than a generic
+  fallback. If the scoped dequeue verdict cannot be attributed to an available
+  guard, the system SHALL report it as unavailable and direct the operator to
+  investigate.
   *Code:* `app/services/issues/closeout_status.rb`,
   `app/services/inbox/chat_context.rb`,
-  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  `app/services/security_alerts/verify_remediation_attempt.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
   *Test:* `spec/services/issues/closeout_status_spec.rb`,
-  `spec/services/inbox/chat_context_spec.rb`.
+  `spec/services/inbox/chat_context_spec.rb`,
+  `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

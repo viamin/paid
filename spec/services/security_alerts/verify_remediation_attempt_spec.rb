@@ -30,6 +30,15 @@ RSpec.describe SecurityAlerts::VerifyRemediationAttempt do
     expect(issue.reload.paid_state).to eq("manual_review")
   end
 
+  it "records the scanner-specific closeout explanation as the manual_review reason" do # @spec EAGER-QUEUE-013 PARTIAL-CLOSEOUT-012
+    verify(alert: { number: 1838, state: "open" })
+
+    expect(issue.reload.manual_review_reason).to eq(
+      Issues::CloseoutStatus.scanner_blocker(issue, attempt.reload).message
+    )
+    expect(issue.manual_review_reason).to include("scanner-confirmed recurrence")
+  end
+
   it "records scanner-confirmed resolution only from matching post-merge evidence" do # @spec EAGER-QUEUE-013
     verify
 
