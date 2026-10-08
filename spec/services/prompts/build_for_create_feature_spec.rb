@@ -85,6 +85,19 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("Part of RDR-0XX")
     end
 
+    # @spec AUTO-MERGE-009
+    it "instructs the agent to hold the docs-only PR for human review" do
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: feature_brief
+      )
+
+      expect(prompt).to include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"')
+      expect(prompt).to include('"X-Agent-Run-Id: $AGENT_RUN_ID"')
+      expect(prompt).to include('"X-Proxy-Token: $PROXY_TOKEN"')
+    end
+
     it "honours a pinned target_rdr_number when present" do
       brief = feature_brief.merge("target_rdr_number" => 99)
 

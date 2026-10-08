@@ -60,6 +60,8 @@ module Activities
         return { merged: false, skipped: true, pr_number: pr_number }
       end
 
+      return held_for_review_result(project, issue, pr_number) if held_for_review?(issue.labels)
+
       provider = Automation::Providers::Resolver.repository_for(project)
       repo = project.full_name
 
@@ -80,6 +82,8 @@ module Activities
         )
         return { merged: false, error: e.message, pr_number: pr_number }
       end
+
+      return held_for_review_result(project, issue, pr_number) if held_for_review?(pr_data.labels)
 
       merged = if pr_data.merged
         logger.info(
@@ -204,6 +208,29 @@ module Activities
         error: e.message
       )
       handle_merge_failure(project, issue, repo, pr_number, config, e.message)
+    end
+
+    # @spec AUTO-MERGE-009
+    def held_for_review?(labels)
+      Array(labels).include?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+    end
+
+    def held_for_review_result(project, issue, pr_number)
+      logger.info(
+        message: "pr_review.auto_merge_held_for_review",
+        project_id: project.id,
+        pr_number: pr_number,
+        label: Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL
+      )
+      record_attempt(
+        project,
+        issue,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_HOLD_FOR_REVIEW,
+        message: "Auto-merge skipped because the PR is held for human review.",
+        credential_mode: AutoMergeAttempt.primary_credential_mode(project)
+      )
+      { merged: false, skipped: true, pr_number: pr_number }
     end
 
     def handle_merge_failure(project, issue, repo, pr_number, config, message)

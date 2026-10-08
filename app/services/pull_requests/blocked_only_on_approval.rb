@@ -20,6 +20,7 @@ module PullRequests
   # @spec PR-ESCALATION-025
   class BlockedOnlyOnApproval
     SKIP_AUTO_MERGE_LABEL = Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+    HOLD_FOR_REVIEW_LABEL = Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL
 
     def self.call(project:, client:, issue:, logger: Rails.logger)
       new(project:, client:, issue:, logger:).call
@@ -140,6 +141,7 @@ module PullRequests
         reviews_fresh: reviews_fresh,
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_auto_merge_label?(pr_data),
+        hold_for_review: hold_for_review_label?(pr_data),
         intent_conformance_ok: IntentConformance::Signal.ok?(
           project: @project, issue: @issue, head_sha: pr_data.head_sha
         )
@@ -155,6 +157,13 @@ module PullRequests
       Array(pr_data.labels).include?(SKIP_AUTO_MERGE_LABEL)
     end
 
+    # Reads the hold-for-review label from the freshly fetched PR data for
+    # the same race-window protection as the skip-auto-merge label.
+    # @spec AUTO-MERGE-009
+    def hold_for_review_label?(pr_data)
+      Array(pr_data.labels).include?(HOLD_FOR_REVIEW_LABEL)
+    end
+
     # Mirrors the scan's blocked_only_on_approval? gate signal-for-signal:
     # the PR must still be green, mergeable, free of outstanding review
     # feedback and unresolved dependencies, past every blocking review
@@ -163,7 +172,7 @@ module PullRequests
     # HEAD — not the Signals fail-open default — so a material-drift PR
     # cannot escalate as if owner approval alone would clear the merge
     # (INTENT-CONFORMANCE-009).
-    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009
+    # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009 @spec AUTO-MERGE-009
     def blocked_only_on_approval?(signals)
       !signals.owner_approved? &&
         signals.checks_green? &&
@@ -173,7 +182,8 @@ module PullRequests
         signals.reviews_fresh? &&
         signals.dependencies_resolved? &&
         signals.intent_conformance_ok? &&
-        !signals.skip_auto_merge?
+        !signals.skip_auto_merge? &&
+        !signals.hold_for_review?
     end
 
     # Mirrors the scan's review_stale_for_head?: the head commit must not

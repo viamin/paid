@@ -143,3 +143,18 @@
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`,
   `spec/temporal/activities/evaluate_dependabot_auto_merge_activity_spec.rb`,
   `spec/jobs/dependabot_auto_merge_job_spec.rb`.
+
+- [x] **AUTO-MERGE-009** — When an agent-created pull request needs human
+  judgment before merging, the run-facing prompt SHALL instruct the agent to
+  apply the structured `paid-hold-review` label. The label SHALL block
+  scan-time auto-merge eligibility and the last-mile merge activity, SHALL
+  create an actionable `merge_approval` Inbox entry with a human-review
+  summary, and SHALL require a human to remove it before automatic merging can
+  resume. PR prose SHALL NOT be parsed as a merge-control signal.
+  *Code:* `app/services/automation/strategies/auto_merge.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`,
+  `app/services/inbox/merge_approval.rb`,
+  `app/services/prompt_assembly/sections/issue_task.rb`.
+  *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`,
+  `spec/temporal/activities/merge_pull_request_activity_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/db/prompt_seeds_spec.rb`.

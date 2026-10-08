@@ -216,6 +216,19 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
     end
 
+    # @spec AUTO-MERGE-009
+    it "returns false when the paid-hold-review label was added on GitHub but not yet synced locally" do
+      sha = "abc123"
+      stub_pr_data(green_pr_data(sha: sha, labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([])
+      stub_head_commit(sha: sha)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
     it "returns false when the PR lost mergeability since the scan (race-window merge conflicts)" do
       sha = "abc123"
       stub_pr_data(green_pr_data(sha: sha, mergeable: false))

@@ -10,7 +10,7 @@
   built-in control labels: the four project-configurable labels,
   `recommend_close`, the `needs_input` stage mapping (when it diverges from
   `enhance_issue_needs_input_label_name`), `paused`, `escalated`,
-  `dismiss_escalation`, `skip_auto_merge`, `auto_merged`,
+  `dismiss_escalation`, `skip_auto_merge`, `hold_review`, `auto_merged`,
   `auto_merged_dependabot`, `auto_released`, `paid_ready`, `model_health`,
   the three TDD gate labels, the priority tiers, and the project's effective
   auto-pick skip labels — creating any that are missing. Runtime write paths

@@ -200,6 +200,14 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
       end
     end
 
+    context "when the PR is held for human review" do
+      it "returns noop for a fully eligible human-authored PR" do
+        result = strategy.evaluate(build_context(signals: human_signals(hold_for_review: true)))
+
+        expect(result.decisions.map(&:type)).to eq([ "noop" ])
+      end
+    end
+
     context "with a human-authored PR" do
       it "returns a merge decision when all preconditions are met" do
         result = strategy.evaluate(build_context(signals: human_signals))
