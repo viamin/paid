@@ -358,7 +358,11 @@ USER agent
 RUN mkdir -p /home/agent/.local/share/kilo \
     && timeout -k 10s 120s kilo run "OK" > /dev/null 2>&1 || true
 USER root
-RUN test -f /home/agent/.local/share/kilo/kilo-rc.db \
+# @spec CONTAINER-RUNTIME-029
+# @kilocode/cli renamed its SQLite database file from kilo-rc.db to kilo.db
+# (observed going from 7.7.12 to 7.8.3); this check must track whatever
+# filename the pinned CLI version actually produces.
+RUN test -f /home/agent/.local/share/kilo/kilo.db \
     && mkdir -p /opt/kilo-seed \
     && cp -a /home/agent/.local/share/kilo/. /opt/kilo-seed/ \
     && chown -R agent:agent /opt/kilo-seed
