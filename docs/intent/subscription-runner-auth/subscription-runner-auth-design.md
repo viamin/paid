@@ -43,6 +43,19 @@ This lets Claude-browser login capture credentials for both `claude` and `omp`,
 and lets the OpenAI device-code flow capture credentials for both `codex` and
 `opencode`, while preserving the legacy routes.
 
+That picker is now the single nav-level entry point. The Operations menu
+(desktop and mobile) links to it as "Runner Logins," replacing the
+Codex-only "Codex Login" item; visibility is gated the same way the picker
+itself authorizes (`RunnerCredential` — owner/admin), so the nav item never
+promises a flow the viewer can't start. The Runners page no longer has a
+standalone "Connect Runner" header button — that verb collided with "Add
+Runner," which creates a `Runner` record rather than a credential.
+Discoverability for subscription auth is preserved at the two points users
+actually need it: the Runners page empty state (when no more runner types
+can be added) and the Add Runner form's runner-key field, both of which
+link to the same picker. The legacy `new_codex_login_session_path` route
+stays mounted for deep links; it just lost its dedicated nav entry.
+
 The Connect Codex and Claude Browser Login pages surface the account's active
 managed credential (name, status, expiry — never token material) before a new
 login is started, mirroring the one-active-credential guard the runner

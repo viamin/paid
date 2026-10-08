@@ -58,3 +58,19 @@
   *Code:* `RunnerLoginFlows::Registry`, `ClaudeLoginSessionsController`,
   `CodexLoginSessionsController`, `Runners::SubscriptionAuthProviders`,
   `Runners::SubscriptionAuthMaterializers`, `Containers::Provision`.
+
+- [x] **RUNNER-LOGIN-NAV-001** — The application-wide Operations menu
+  (desktop and mobile) SHALL expose a single provider-neutral "Runner
+  Logins" entry point to the login-flow picker (`new_runner_login_flow_path`)
+  in place of the Codex-only "Codex Login" item, gated on the same
+  owner/admin authorization the picker itself enforces (`RunnerCredential`
+  policy). The Runners page header SHALL NOT duplicate that entry point with
+  its own "Connect Runner" button; discoverability SHALL instead be
+  preserved via a login-flow-picker link in the Runners page empty state and
+  the Add Runner form. The deep-linked Codex-specific route
+  (`new_codex_login_session_path`) SHALL remain routed and functional
+  without a dedicated nav entry.
+  *Tests:* `spec/requests/dashboard_spec.rb`, `spec/requests/runners_spec.rb`,
+  `spec/requests/codex_login_sessions_spec.rb`.
+  *Code:* `app/views/layouts/application.html.erb`,
+  `app/views/runners/index.html.erb`, `app/views/runners/_form.html.erb`.

@@ -314,6 +314,25 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Add Runner")
       end
 
+      # @spec RUNNER-LOGIN-NAV-001
+      it "does not show a Connect Runner header button" do
+        get runners_path
+
+        expect(response.body).not_to include("Connect Runner")
+      end
+
+      # @spec RUNNER-LOGIN-NAV-001
+      it "links to the runner login flow picker from the empty state" do
+        allow(RunnerSupport).to receive(:addable_runner_keys).and_return([ "claude" ])
+
+        get runners_path
+
+        picker_link = runners_index_document.at_css("a[href^='#{new_runner_login_flow_path}']")
+
+        expect(picker_link).to be_present
+        expect(picker_link.text.strip).to eq("Runner Logins")
+      end
+
       # @spec RUNNERS-INDEX-009
       it "renders the Test All header control wired to the row test controllers" do
         get runners_path
