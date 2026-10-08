@@ -100,7 +100,7 @@ RSpec.describe "issues:repair_pull_request_source_links" do
   end
 end
 
-# @spec PARTIAL-CLOSEOUT-015
+# @spec PARTIAL-CLOSEOUT-017
 RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
   let(:task) { Rake::Task["issues:reconcile_legacy_partial_closeouts"] }
   let(:account) { create(:account) }
@@ -132,7 +132,7 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
     expect { task.invoke }.to raise_error(KeyError)
   end
 
-  # @spec PARTIAL-CLOSEOUT-015 — mirrors reset_false_positive_recommend_close
+  # @spec PARTIAL-CLOSEOUT-017 — mirrors reset_false_positive_recommend_close
   # and repair_pull_request_source_links: default to a dry run that only
   # lists candidates, so a misscoped ACCOUNT_ID can't mutate a live repo
   # before an operator sees what would be touched (#4191 review).
@@ -210,7 +210,7 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
       ).once
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE/AFTER_ID let an operator bound
+    # @spec PARTIAL-CLOSEOUT-017 — BATCH_SIZE/AFTER_ID let an operator bound
     # a single invocation and resume a capped sweep across invocations
     # (#4191 review).
     it "passes BATCH_SIZE and AFTER_ID through to ReconcileLegacy and prompts to continue when the batch filled" do
@@ -229,7 +229,7 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
     end
   end
 
-  # @spec PARTIAL-CLOSEOUT-015 — BATCH_SIZE=0 (or negative) scans nothing
+  # @spec PARTIAL-CLOSEOUT-017 — BATCH_SIZE=0 (or negative) scans nothing
   # while `scanned == batch_size` would still print an AFTER_ID
   # continuation whose cursor never advances, so the task rejects the
   # value before invoking the service (#4191 review).

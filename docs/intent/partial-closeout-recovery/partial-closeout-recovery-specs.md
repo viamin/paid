@@ -159,7 +159,7 @@
   *Code:* `app/services/inbox/chat_context.rb`.
   *Test:* `spec/services/inbox/chat_context_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-012** — When a queued continuation run (created by
+- [x] **PARTIAL-CLOSEOUT-013** — When a queued continuation run (created by
   either the Inbox `request_continuation` action or the
   `request_issue_continuation` MCP tool — both call
   `Issues::RequestContinuation` and so are covered uniformly) builds its
@@ -192,7 +192,7 @@
   1280px viewport widths in a 300px-wide continuation section, plus a
   rendered Inbox browser check at mobile and desktop widths.
 
-- [x] **PARTIAL-CLOSEOUT-012** — When `PartialCloseouts::ReconcileLegacy`
+- [x] **PARTIAL-CLOSEOUT-014** — When `PartialCloseouts::ReconcileLegacy`
   processes a `create_pr` `AgentRun` whose partial PR has been authoritatively
   linked to its source issue (via `parent_issue_id` or the run's recorded
   `pull_request_number` URL join) and whose `reconciliation` is empty or
@@ -212,7 +212,7 @@
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/reconcile_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-013** — When `PartialCloseouts::ReconcileLegacy`
+- [x] **PARTIAL-CLOSEOUT-015** — When `PartialCloseouts::ReconcileLegacy`
   processes a legacy partial closeout, the system SHALL ground the assessment
   in current shipped behavior and intent: a gap whose criterion is already
   satisfied by merged work, closed prerequisites, or other current evidence
@@ -231,7 +231,7 @@
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/reconcile_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-014** — When `PartialCloseouts::ReconcileLegacy`
+- [x] **PARTIAL-CLOSEOUT-016** — When `PartialCloseouts::ReconcileLegacy`
   processes a legacy partial closeout and a GitHub call fails after the
   `assessment` has been persisted but before reconciliation completes, the
   system SHALL preserve the recorded `reconciled_at`, `status`, and `error`
@@ -261,7 +261,7 @@
   `app/services/partial_closeouts/reconcile.rb`.
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-015** — When the legacy reconciliation sweep is
+- [x] **PARTIAL-CLOSEOUT-017** — When the legacy reconciliation sweep is
   invoked for an account, the system SHALL scope the run selection to that
   account (`TenantContext.with_system_access` to read across tenant RLS,
   with `project.account_id = <account>` to write only in scope), SHALL cap
@@ -297,3 +297,27 @@
   *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
   `lib/tasks/issues.rake`.
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
+- [x] **PARTIAL-CLOSEOUT-012** — When continuation admission is denied, the
+  system SHALL return every material structured blocker from the current guard
+  evidence, with a recovery action or wait condition. For synthetic
+  code-scanning issues it SHALL distinguish pending, retryable, and failed
+  verification and include the latest remediation attempt and scan evidence;
+  a merged PR alone SHALL never be represented as proof that an alert is fixed.
+  Inbox, chat context, and continuation refusal SHALL use the same explanation.
+  A scanner-confirmed failed verification moves the issue to `manual_review`
+  (out of the `partial_closeout` lane), so the manual_review Inbox pane SHALL
+  also surface the same scanner blocker, evidence, and recovery action, and
+  `manual_review_reason` SHALL carry the same message rather than a generic
+  fallback. If the scoped dequeue verdict cannot be attributed to an available
+  guard, the system SHALL report it as unavailable and direct the operator to
+  investigate.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/services/inbox/chat_context.rb`,
+  `app/services/security_alerts/verify_remediation_attempt.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`,
+  `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

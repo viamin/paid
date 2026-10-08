@@ -127,6 +127,9 @@ module Inbox
         acceptance_criteria: issue.body,
         recorded_outcome: status.outcome,
         scheduling_blocker: status.reason,
+        scheduling_blockers: status.blockers.map { |blocker|
+          { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
+        },
         merged_pull_requests: status.evidence.merged_prs.map { |pull_request|
           { number: pull_request.number, url: pull_request.url, run_id: pull_request.run_id, terminal_at: pull_request.terminal_at }
         },

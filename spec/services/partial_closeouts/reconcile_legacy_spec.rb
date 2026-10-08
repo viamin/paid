@@ -117,7 +117,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
   end
 
   describe "#call" do
-    # @spec PARTIAL-CLOSEOUT-012
+    # @spec PARTIAL-CLOSEOUT-014
     it "replays a legacy partial closeout with an empty reconciliation through Reconcile" do
       merged_pr(number: 10, parent_issue: parent)
       run = legacy_run(issue: parent, pull_request_number: 10)
@@ -133,7 +133,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(agent_run: run)
     end
 
-    # @spec PARTIAL-CLOSEOUT-013 — stale gaps now completed: the assessment
+    # @spec PARTIAL-CLOSEOUT-015 — stale gaps now completed: the assessment
     # returns zero gaps because the LLM grounds its decision in current
     # evidence, and the sweep records status=reconciled with no new owners.
     it "records zero-gap legacy reconciliation without creating owners" do
@@ -148,7 +148,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(IssueDependency.where(issue: parent)).to be_empty
     end
 
-    # @spec PARTIAL-CLOSEOUT-013 — unowned implementation work: the
+    # @spec PARTIAL-CLOSEOUT-015 — unowned implementation work: the
     # assessment includes a gap with no `owner_issue_number`, and the
     # sweep files a focused follow-up through the existing owner-creation
     # path.
@@ -176,7 +176,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
     end
 
-    # @spec PARTIAL-CLOSEOUT-013 — human-only evidence: the assessment
+    # @spec PARTIAL-CLOSEOUT-015 — human-only evidence: the assessment
     # carries a `human` gap with its exact `next_step`, and the sweep
     # publishes one aggregated blocking Inbox notification under
     # PREREQUISITE_NOTIFICATION_SOURCE.
@@ -196,7 +196,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(notification.title).to eq("macOS acceptance needs operator action")
     end
 
-    # @spec PARTIAL-CLOSEOUT-013 / @spec PARTIAL-CLOSEOUT-014 — replay
+    # @spec PARTIAL-CLOSEOUT-015 / @spec PARTIAL-CLOSEOUT-016 — replay
     # recovery: re-running the sweep on a run already marked terminal must
     # NOT re-invoke the analyzer, must NOT re-file owners, must NOT publish
     # duplicate notifications.
@@ -215,7 +215,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — replay recovery for an interrupted
+    # @spec PARTIAL-CLOSEOUT-016 — replay recovery for an interrupted
     # attempt: a prior pass left a `creating` marker for a gap, and the
     # second pass resumes owner recovery through the existing
     # `recovered_remote_owner` path instead of filing a second issue.
@@ -243,7 +243,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: synced)).to be_present
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — GitHub failure mid-reconciliation:
+    # @spec PARTIAL-CLOSEOUT-016 — GitHub failure mid-reconciliation:
     # a `GithubClient::Error` after a partial create leaves the run's
     # `reconciliation.status` as `retryable_failure` and the `error` /
     # `failed_at` fields populated, so the next sweep can retry without
@@ -263,7 +263,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(run.reconciliation.fetch("error")).to eq("github unavailable")
     end
 
-    # @spec PARTIAL-CLOSEOUT-012 — preserves terminal evidence: a run
+    # @spec PARTIAL-CLOSEOUT-014 — preserves terminal evidence: a run
     # whose partial PR already linked to a no-code-required outcome on
     # the issue must NOT mass-reset paid_state or auto-close the issue.
     it "does not reset paid_state or close the umbrella while reconciling a legacy partial closeout" do
@@ -280,7 +280,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(parent.github_state).to eq(original_state)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — scoped by account: a run from another
+    # @spec PARTIAL-CLOSEOUT-017 — scoped by account: a run from another
     # account is not touched by the sweep.
     it "scopes the candidate selection to the supplied account_id" do
       merged_pr(number: 18, parent_issue: parent)
@@ -293,7 +293,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — bounds a single invocation's candidate
+    # @spec PARTIAL-CLOSEOUT-017 — bounds a single invocation's candidate
     # window so an account with many legacy runs cannot drive unbounded
     # `Llm::AnalyzePartialCloseout` cost/runtime in one call; `next_cursor`
     # lets a caller resume past the capped window and make forward
@@ -325,7 +325,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(third_run.reload.reconciliation.fetch("status")).to eq("reconciled")
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — only an issue's latest PR-producing
+    # @spec PARTIAL-CLOSEOUT-017 — only an issue's latest PR-producing
     # attempt is assessable evidence: an older merged partial closeout must
     # not be replayed once a later `create_pr` attempt exists for the same
     # issue, or the sweep would file dependencies and operator notifications
@@ -348,7 +348,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(later_run.reload.reconciliation.fetch("status")).to eq("reconciled")
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — a later PR-producing attempt supersedes
+    # @spec PARTIAL-CLOSEOUT-017 — a later PR-producing attempt supersedes
     # the earlier merged partial closeout even before its own PR merges:
     # neither run is a candidate, so the sweep files nothing while the
     # later attempt's outcome is still pending (#4191 review).
@@ -364,7 +364,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — does not match a run whose PR number
+    # @spec PARTIAL-CLOSEOUT-017 — does not match a run whose PR number
     # only collides with an upstream-synced PR (no parent_issue_id and
     # a different URL).
     it "does not treat a number-colliding upstream PR as terminal evidence for a legacy run" do
@@ -392,7 +392,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(result.scanned).to eq(0)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — a retryable_failure with a fresh
+    # @spec PARTIAL-CLOSEOUT-017 — a retryable_failure with a fresh
     # `failed_at` is inside the one-day retry gate: the sweep must skip
     # the run instead of re-invoking the LLM.
     it "skips a run whose stale retryable_failure is within the recent window" do
@@ -411,7 +411,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(run.reload.reconciliation.fetch("status")).to eq("retryable_failure")
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — an explicit operator pause is a
+    # @spec PARTIAL-CLOSEOUT-017 — an explicit operator pause is a
     # deliberate hold, not a stall: the sweep must NOT touch the run's
     # reconciliation when its issue is paused.
     it "skips a legacy run whose issue is paused" do
@@ -427,7 +427,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — needs_input is its own lane and
+    # @spec PARTIAL-CLOSEOUT-017 — needs_input is its own lane and
     # should not be touched by legacy reconciliation.
     it "skips a legacy run whose issue is in needs_input" do
       merged_pr(number: 22, parent_issue: parent)
@@ -441,7 +441,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(result.skipped).to eq(1)
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — replay safety: the assessment is the
+    # @spec PARTIAL-CLOSEOUT-016 — replay safety: the assessment is the
     # deterministic input that anchors retries, so the sweep must persist it
     # on the run before invoking `Reconcile` (mirrors
     # `Activities::ReconcilePartialCloseoutActivity#persisted_assessment`).
@@ -455,7 +455,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(run.reload.reconciliation.fetch("assessment")).to eq(dispatch_assessment)
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — when a GitHub failure leaves a `creating`
+    # @spec PARTIAL-CLOSEOUT-016 — when a GitHub failure leaves a `creating`
     # marker and the retry window allows the next pass after one day, the
     # sweep must reuse the assessment already on the run instead of
     # re-invoking the LLM. A reordered re-invocation would attach the owner
@@ -482,7 +482,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: dispatch_synced_issue)).to be_present
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — the assessment is preserved across
+    # @spec PARTIAL-CLOSEOUT-016 — the assessment is preserved across
     # `record_failure!` so a failed first sweep leaves the next pass with
     # everything it needs to resume through the marker-based recovery path
     # without re-invoking the LLM.
@@ -499,7 +499,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(reconciliation.dig("gaps", "0", "marker")).to start_with("<!-- paid:partial-closeout:#{run.id}:0 -->")
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — replay wedge protection (anti-wedge):
+    # @spec PARTIAL-CLOSEOUT-016 — replay wedge protection (anti-wedge):
     # an `ArgumentError` escaping `Reconcile.call` (e.g. an agent gap whose
     # `owner_issue_number` does not resolve to an open issue and whose
     # `title` is blank) must NOT propagate out of `process_run`. Without
@@ -526,7 +526,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(tail_run.reload.reconciliation.fetch("status")).to eq("reconciled")
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — replay wedge protection (assessment
+    # @spec PARTIAL-CLOSEOUT-016 — replay wedge protection (assessment
     # discard): the non-GitHub path treats the assessment as deterministic-bad
     # (e.g. `Reconcile#create_owner!` raised `ArgumentError` because `title`
     # was blank) and discards `reconciliation.assessment` so the next pass
@@ -549,7 +549,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(reconciliation).not_to have_key("assessment")
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — replay wedge protection (assessment
+    # @spec PARTIAL-CLOSEOUT-016 — replay wedge protection (assessment
     # preserved across partial progress): when a later gap in a multi-gap
     # assessment fails with a non-GitHub StandardError after an earlier
     # gap's owner was already recorded, the sweep must keep the persisted
@@ -575,7 +575,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(reconciliation.dig("gaps", "0", "owner_issue_number")).to eq(99)
     end
 
-    # @spec PARTIAL-CLOSEOUT-014 — an `AgentHarness::Error` raised before
+    # @spec PARTIAL-CLOSEOUT-016 — an `AgentHarness::Error` raised before
     # any assessment exists must persist `status`/`error`/`failed_at` on
     # the run: an unpersisted failure leaves an empty reconciliation
     # record, so the next invocation would immediately re-invoke the LLM
@@ -601,7 +601,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(agent_run: run).once
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — a non-positive batch_size breaks the
+    # @spec PARTIAL-CLOSEOUT-017 — a non-positive batch_size breaks the
     # bounded sweep's continuation contract (`limit(0)` scans nothing but
     # `scanned == batch_size` still suggests a continuation whose cursor
     # never advances), so the service rejects it before scanning (#4191
@@ -613,7 +613,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
         .to raise_error(ArgumentError, /positive integer/)
     end
 
-    # @spec PARTIAL-CLOSEOUT-015 — concurrency: the operator console / MCP
+    # @spec PARTIAL-CLOSEOUT-017 — concurrency: the operator console / MCP
     # surface and the rake task can both invoke this sweep for the same
     # account. Without serialization both would observe a blank
     # reconciliation, both call the LLM, and `Reconcile#create_owner!`
@@ -665,7 +665,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
   end
 
   describe "#preview" do
-    # @spec PARTIAL-CLOSEOUT-015 — the dry-run path the rake task uses to
+    # @spec PARTIAL-CLOSEOUT-017 — the dry-run path the rake task uses to
     # show candidates before an operator opts into a sweep that files
     # GitHub issues and rewrites issue bodies (#4191 review).
     it "lists the candidate runs without invoking the LLM, Reconcile, or GitHub" do

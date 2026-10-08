@@ -179,10 +179,44 @@ module Activities
       raise_issue_awaiting_input!(issue, agent_run.goal)
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-009
     def clarification_pending?(issue)
+      # @spec ISSUE-ANALYSIS-017 — the analyzer's positive verdict is
+      # authoritative when it confirms the previously-asked question is
+      # answered. The `AnalyzeIssueActivity#complete_run!` reconciliation
+      # clears `needs_input_questions` and the local needs-input label on a
+      # `sufficient_context: true` verdict, but a `create_pr` queue can
+      # still race the next analyzer pass on the same issue: the stored
+      # `needs_input_questions` payload may be a leftover from an earlier
+      # round whose answer the analyzer has since confirmed. Treat the
+      # leftover as resolved rather than re-running the rejection loop, so
+      # the follow-up `create_pr` run can start (#4196). The
+      # `paid_state: "needs_input"` and needs-input label checks remain
+      # authoritative on their own — a fresh unanswered round still gates
+      # the issue correctly even with a positive analyzer verdict, because
+      # those two signals are only set by an active clarifying-question
+      # round that has not been answered.
+      return false if stale_clarification_resolved_by_analyzer?(issue)
+
       issue.paid_state == "needs_input" ||
         issue.has_label?(issue.project.enhance_issue_needs_input_label_name) ||
         issue.needs_input_questions.present?
+    end
+
+    # The issue still carries a leftover `needs_input_questions` payload,
+    # but the analyzer has confirmed (`sufficient_context: true`) that the
+    # answers resolve it. None of the active-clarification signals
+    # (`paid_state: "needs_input"`, the needs-input label) are set, so the
+    # stored payload is a stale artifact of an already-answered round —
+    # let the follow-up `create_pr` run start.
+    def stale_clarification_resolved_by_analyzer?(issue)
+      return false unless issue.needs_input_questions.present?
+      return false if issue.paid_state == "needs_input"
+      return false if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+      return false unless issue.last_analyzer_sufficient_context == true
+      return false unless issue.last_analyzed_at.present?
+
+      true
     end
 
     def answered_create_feature_resume?(agent_run, issue)
