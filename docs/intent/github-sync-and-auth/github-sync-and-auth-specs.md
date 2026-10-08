@@ -206,7 +206,8 @@
   operator enables or refreshes code-scanning, the system SHALL query the
   repository's code-scanning alerts with the project's resolved GitHub
   credential. When GitHub explicitly states that code scanning is unsupported,
-  unavailable, or not enabled, the system SHALL remove only `code_scanning`
+  unavailable, not enabled, or requires Advanced Security to be enabled for the
+  repository, the system SHALL remove only `code_scanning`
   from the project's selected security alert types, preserve other selections,
   findings, remediation evidence, and the last successful scan watermark, and
   show the sanitized reason beside the setting. The operator SHALL be able to

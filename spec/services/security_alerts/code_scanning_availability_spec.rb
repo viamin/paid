@@ -12,10 +12,23 @@ RSpec.describe SecurityAlerts::CodeScanningAvailability do
   before { allow(project).to receive(:client).and_return(client) }
 
   # @spec GITHUB-SYNC-020
-  it "removes only code scanning when GitHub explicitly says it is not enabled" do
+  it "classifies GitHub's Advanced Security prerequisite response as unavailable" do
+    error = GithubClient::ApiError.new(
+      "Advanced Security must be enabled for this repository to use code scanning.", status: 403
+    )
+
+    expect(described_class.unavailable_response?(error)).to be(true)
+  end
+
+  # @spec GITHUB-SYNC-020
+  it "removes only code scanning and resolves the permission notification for an Advanced Security prerequisite" do
     watermark = project.last_code_scanning_scan_at
+    project.update!(code_scanning_permission_error_at: 5.minutes.ago)
+    Notifications::Rules::CodeScanningPermissionsError.call(scope: [ project ])
     allow(client).to receive(:code_scanning_available?).and_raise(
-      GithubClient::ApiError.new("Code scanning is not enabled for this repository.", status: 403)
+      GithubClient::ApiError.new(
+        "Advanced Security must be enabled for this repository to use code scanning.", status: 403
+      )
     )
 
     result = described_class.call(project:, enable: false)
@@ -24,8 +37,12 @@ RSpec.describe SecurityAlerts::CodeScanningAvailability do
     expect(project.reload).to have_attributes(
       security_alert_types: [ "dependabot" ],
       code_scanning_scan_error_kind: "unavailable",
+      code_scanning_scan_error_reason: "Advanced Security must be enabled for this repository to use code scanning.",
+      code_scanning_permission_error_at: nil,
+      next_code_scanning_scan_at: nil,
       last_code_scanning_scan_at: watermark
     )
+    expect(Notification.active.find_by(source: "code_scanning_permissions_error", subject: project)).to be_nil
   end
 
   # @spec GITHUB-SYNC-020
