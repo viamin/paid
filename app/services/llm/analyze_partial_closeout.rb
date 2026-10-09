@@ -109,7 +109,26 @@ module Llm
     # cannot be rendered or merged, so reject the whole assessment rather
     # than persist a partial shape that crashes `present_criterion`.
     def valid_criteria?(criteria)
-      criteria.nil? || (criteria.is_a?(Array) && criteria.all? { |criterion| criterion.is_a?(Hash) && criterion["criterion"].present? })
+      criteria.nil? || (criteria.is_a?(Array) && criteria.size <= MAX_GAPS && criteria.all? { |criterion| valid_criterion?(criterion) })
+    end
+
+    def valid_criterion?(criterion)
+      criterion.is_a?(Hash) &&
+        criterion["criterion"].is_a?(String) &&
+        criterion["criterion"].present? &&
+        VALID_STATES.include?(criterion["state"]) &&
+        valid_evidence?(criterion["evidence"])
+    end
+
+    def valid_evidence?(evidence)
+      evidence.nil? || (evidence.is_a?(Array) && evidence.all? { |item| valid_evidence_item?(item) })
+    end
+
+    def valid_evidence_item?(item)
+      item.is_a?(Hash) &&
+        item["label"].is_a?(String) &&
+        item["label"].present? &&
+        (item["url"].nil? || item["url"].is_a?(String))
     end
 
     # `next_action` is what the Inbox pane and `inferred_next_action` both

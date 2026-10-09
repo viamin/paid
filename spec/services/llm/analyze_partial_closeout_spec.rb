@@ -263,6 +263,15 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
       end
 
+      it "raises when an evidence entry is not an object" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], criteria: [ { criterion: "Latency", state: "satisfied", evidence: [ 1 ] } ] }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+
       it "accepts a well-shaped criteria and next_action on the legacy path" do
         stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
         allow(legacy_response).to receive(:output).and_return(
