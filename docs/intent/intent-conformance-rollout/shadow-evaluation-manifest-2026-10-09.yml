@@ -1,7 +1,17 @@
 # @spec INTENT-CONFORMANCE-ROLLOUT-002
-# Frozen after blinded adjudication; the referenced commit pairs are retained
-# repository evidence, while reviewer output remains separate from the operator packets.
+# INVALIDATED — do not use this file as shadow-evaluation evidence.
+#
+# This attempted corpus was retained for auditability after its review found
+# two defects: the design revision did not exist when the adjudications were
+# recorded, and the drifted/uncertain strata were assigned from contiguous
+# history blocks instead of independently content-adjudicating the cases.
+# The referenced commit pairs remain repository evidence, but they are not a
+# valid frozen corpus. A replacement must use case identities available before
+# adjudication and content-adjudicated strata as required by
+# intent-conformance-rollout-design.md.
 evaluation_id: rdr-067-shadow-2026-10-09
+evaluation_status: invalidated
+invalidation_reason: "The recorded design-revision timeline is impossible and the stratum labels are not independently content-adjudicated."
 repository: viamin/paid
 frozen_at: "2026-10-09T18:00:00Z"
 reviewer:

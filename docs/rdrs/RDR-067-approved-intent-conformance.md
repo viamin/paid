@@ -185,11 +185,12 @@ The evidence is recorded in
 
 ## 2026-10-09 Shadow-Evaluation Audit
 
-Issue #4205 completed the blinded shadow evaluation and updated the closeout
+Issue #4205 attempted a blinded shadow evaluation and updated the closeout
 evidence in [audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
-The frozen 30-case corpus and aggregate worksheet satisfy the measurement
-evidence requirement, but one intentionally drifted case was missed. The
-promotion rule therefore was not met: RDR-067 remains **Partially
-Implemented**, `intent_conformance_shadow_review` remains the only permissible
-flag for this evaluation path, and no enforcement or merge-time guard is
-authorized by this result.
+The retained 30-case corpus and aggregate worksheet are invalidated: the
+recorded design revision postdates adjudication and the strata were not
+independently content-adjudicated. They do not satisfy the measurement evidence
+requirement. RDR-067 remains **Partially Implemented**,
+`intent_conformance_shadow_review` remains the only permissible flag for this
+evaluation path, and no enforcement or merge-time guard is authorized until a
+valid replacement evaluation meets the documented rule.
