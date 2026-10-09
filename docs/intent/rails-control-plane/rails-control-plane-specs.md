@@ -18,7 +18,7 @@
   complete shutdown without deadlocking, preserve the broadcast, and support
   broadcasts after restart.
   *Tests:* `spec/integration/action_cable/subscription_adapter/solid_cable_reload_spec.rb`.
-  *Code:* `Gemfile`, `Gemfile.lock`.
+  *Code:* `Gemfile`, `Gemfile.lock`, `lib/solid_cable/reload_safe_shutdown.rb`.
 
 - [x] **RAILS-CONTROL-PLANE-001** — When an authenticated Rails request runs,
   the control plane SHALL apply tenant context for the current user's account
