@@ -52,6 +52,14 @@ runs. The assigned prompt version is stored on `agent_run.prompt_version` so
 subsequent metrics and outcome analysis trace back to the concrete variant that
 actually ran.
 
+## Recovery Outcome Recording
+
+When an evolved variant wins a prompt A/B test, the test records the winner on
+each executing prompt-evolution recovery action without completing that action;
+promotion remains the operation that completes it. Recovery results use
+string-keyed JSON so an existing association value and the newly recorded
+outcome cannot represent the same field twice.
+
 ## Accepted Divergence
 
 The runtime assignment path is currently strongest for goal-wrapper prompts in

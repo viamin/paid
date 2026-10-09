@@ -70,7 +70,7 @@ RSpec.describe Reviews::Verification::Pipeline do
       llm_double({ candidates: [ candidate_payload ] }),                # find (attempt 1)
       llm_double(confirmed_verdict),                                     # verify (attempt 1)
       llm_double(synthesized_comment(line: 3, body: "Stale anchor.")),   # synthesize (attempt 1)
-      llm_double({ candidates: [ candidate_payload.merge("summary" => "Updated candidate") ] }), # find (attempt 2)
+      llm_double({ candidates: [ candidate_payload.merge(summary: "Updated candidate") ] }), # find (attempt 2)
       llm_double(confirmed_verdict),                                     # verify (attempt 2)
       llm_double(synthesized_comment(line: 7, body: "Fresh anchor."))    # synthesize (attempt 2)
     ]
@@ -230,7 +230,7 @@ RSpec.describe Reviews::Verification::Pipeline do
     it "collapses duplicate confirmed claims into one comment" do
       duplicate_candidates = [
         candidate_payload,
-        candidate_payload.merge("summary" => "Nil guard missing (duplicate)")
+        candidate_payload.merge(summary: "Nil guard missing (duplicate)")
       ]
       stub_llm_sequence(
         find_output: llm_double({ candidates: duplicate_candidates }),

@@ -20,9 +20,11 @@ module Paid
       @temporal_mutex.synchronize do
         unless defined?(@temporal_client)
           suppress_circular_require_warnings { require "temporalio/client" }
+          require "paid/temporal_data_converter"
           @temporal_client = Temporalio::Client.connect(
             temporal_address,
-            temporal_namespace
+            temporal_namespace,
+            data_converter: TemporalDataConverter.new
           )
         end
         @temporal_client
@@ -36,10 +38,12 @@ module Paid
             require "temporalio/client"
             require "temporalio/contrib/open_telemetry"
           end
+          require "paid/temporal_data_converter"
 
           @temporal_worker_client = Temporalio::Client.connect(
             temporal_address,
             temporal_namespace,
+            data_converter: TemporalDataConverter.new,
             runtime: TemporalObservability.worker_runtime,
             interceptors: TemporalObservability.client_interceptors
           )

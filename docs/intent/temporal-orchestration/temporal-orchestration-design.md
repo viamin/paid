@@ -26,6 +26,11 @@ Workflow and activity code lives under `app/temporal/workflows` and
 replacing the earlier illustrative `app/workflows` and `app/activities`
 examples in the RDR.
 
+Temporal payloads use a Paid-owned `json/plain` converter. It calls JSON with
+keyword options and does not enable object additions, matching the JSON 3 API
+and preserving safe, deterministic serialization for clients, workers, and
+checked-in workflow replay histories.
+
 Paid runs separate Temporal task queues for polling and agent workloads. Poll
 work is isolated from long-running agent execution so time-sensitive repository
 polling does not compete with broader execution throughput.

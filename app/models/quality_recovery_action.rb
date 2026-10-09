@@ -56,7 +56,8 @@ class QualityRecoveryAction < ApplicationRecord
     update!(status: "failed", result: result.merge(error: error_data))
   end
 
+  # @spec PROMPT-EVOLUTION-005
   def merge_result!(result_data)
-    update!(result: result.merge(result_data))
+    update!(result: result.merge(result_data.stringify_keys))
   end
 end
