@@ -24,7 +24,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 
 ## Implementation Status
 
-Partially implemented as of September 26, 2026. The verdict/reviewer (#3866),
+Partially implemented as of October 9, 2026. The verdict/reviewer (#3866),
 PR-scanner signal and Inbox escalation (#3867), final-merge guard (#3868), and
 design-amendment/impact-mapping (#3869) slices have shipped. In particular,
 `IntentConformance::VerifyAtMerge`, called by
@@ -35,11 +35,11 @@ evidence and resolution path.
 
 The production PR scanner now schedules a durable, de-duplicated independent
 review for each eligible `(PR, HEAD, approved-design revision)` identity; a
-new head or design revision schedules a fresh review. Issue #3870 now defines
-the read-only shadow-review flag, representative corpus, telemetry baseline,
-promotion criteria, and operator rollback protocol in
-`docs/intent/intent-conformance-rollout/`; measured results remain required
-before an Implemented status. The RDR-066
+new head or design revision schedules a fresh review. Issue #3870 shipped the
+read-only shadow-review flag and rollout design in
+`docs/intent/intent-conformance-rollout/`; issue #4205 owns the still-required
+blinded corpus adjudication and measured worksheet. An Implemented status
+requires those recorded results. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -179,3 +179,21 @@ The evidence is recorded in
   this status and the matching README row, but not an Implemented closeout.
 - **Epic #3861 remains open.** This PR must use tracking language only and
   must not claim to close the epic.
+
+## 2026-10-09 Re-audit
+
+Closeout issue [#3871](https://github.com/viamin/paid/issues/3871) re-audited
+the current head after the review-scheduling and rollout-mechanism merges. The
+evidence is recorded in
+[audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
+
+- **Current-head/current-design protection and Inbox escalation remain shipped
+  with executable test evidence.**
+- **The evaluation criterion remains unmet.** The mechanism schedules shadow
+  reviews, but no blinded, adjudicated corpus or aggregate false-alarm and
+  missed-drift worksheet is recorded. Open issue [#4205](https://github.com/viamin/paid/issues/4205)
+  owns that focused run.
+- **Status remains Partially Implemented.** The README row remains aligned;
+  this re-audit does not claim Implemented status.
+- **Epic #3861 remains open.** This closeout uses `Tracks #3861` and does not
+  use closing language.
