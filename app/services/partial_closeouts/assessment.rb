@@ -71,7 +71,7 @@ module PartialCloseouts
     end
 
     def valid_state(state)
-      %w[satisfied unmet unknown].include?(state) ? state : "unknown"
+      Llm::AnalyzePartialCloseout::VALID_STATES.include?(state) ? state : "unknown"
     end
 
     def owner_for(criterion)

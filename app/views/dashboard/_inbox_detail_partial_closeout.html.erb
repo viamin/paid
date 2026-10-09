@@ -87,7 +87,7 @@
           <li class="rounded-lg border border-gray-200 p-3 text-sm">
             <p class="font-medium text-gray-900"><%= criterion["criterion"] %> <span class="ml-1 text-xs uppercase text-gray-500"><%= criterion["state"] %></span></p>
             <% Array(criterion["evidence"]).each do |evidence| %>
-              <% if evidence["url"].present? %>
+              <% if evidence["url"].to_s.match?(%r{\Ahttps?://}) %>
                 <%= link_to evidence["label"], evidence["url"], target: "_blank", rel: "noopener noreferrer", class: "mr-2 text-xs text-indigo-600 hover:text-indigo-900" %>
               <% else %>
                 <span class="mr-2 text-xs text-gray-500"><%= evidence["label"] %></span>
