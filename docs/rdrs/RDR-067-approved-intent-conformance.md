@@ -38,8 +38,11 @@ review for each eligible `(PR, HEAD, approved-design revision)` identity; a
 new head or design revision schedules a fresh review. Issue #3870 now defines
 the read-only shadow-review flag, representative corpus, telemetry baseline,
 promotion criteria, and operator rollback protocol in
-`docs/intent/intent-conformance-rollout/`; measured results remain required
-before an Implemented status. The RDR-066
+`docs/intent/intent-conformance-rollout/`. The completed 2026-10-09 shadow
+evaluation recorded one missed intentionally drifted case, so promotion was
+not met and enforcement remains off; see
+`docs/intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md`.
+The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -179,3 +182,14 @@ The evidence is recorded in
   this status and the matching README row, but not an Implemented closeout.
 - **Epic #3861 remains open.** This PR must use tracking language only and
   must not claim to close the epic.
+
+## 2026-10-09 Shadow-Evaluation Audit
+
+Issue #4205 completed the blinded shadow evaluation and updated the closeout
+evidence in [audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
+The frozen 30-case corpus and aggregate worksheet satisfy the measurement
+evidence requirement, but one intentionally drifted case was missed. The
+promotion rule therefore was not met: RDR-067 remains **Partially
+Implemented**, `intent_conformance_shadow_review` remains the only permissible
+flag for this evaluation path, and no enforcement or merge-time guard is
+authorized by this result.
