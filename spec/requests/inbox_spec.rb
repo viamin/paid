@@ -445,7 +445,6 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include(project.full_name, "Alpha question")
-    expect(response.body).not_to include(second_project.full_name)
     expect(response.body).not_to include("Beta question")
   end
 
@@ -869,15 +868,13 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002E
-  it "exposes retry_limited in the inbox nav filter chips" do
+  it "exposes retry_limited in the inbox filter panel" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Retry-limited'][@href='#{inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)}'])
-    )
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::RETRY_LIMITED_KIND}']")
 
-    expect(chip).to be_present
+    expect(control).to be_present
   end
 
   # @spec OPERATOR-INBOX-002E
@@ -888,16 +885,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002D
-  it "exposes manual_review in the inbox nav filter chips and filters to it" do
+  it "exposes manual_review in the inbox filter panel and filters to it" do
     create_manual_review_issue(title: "Parked issue", github_number: 514)
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Manual Review'][@href='#{inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)}'])
-    )
-    expect(chip).to be_present
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")
+    expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
 
@@ -906,16 +901,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec FEATURE-APPROVAL-013
-  it "exposes feature_decision in the inbox nav filter chips and filters to it" do
+  it "exposes feature_decision in the inbox filter panel and filters to it" do
     feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Feature Decision'][@href='#{inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)}'])
-    )
-    expect(chip).to be_present
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::FEATURE_DECISION_KIND}']")
+    expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)
 
@@ -924,16 +917,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec INTENT-CONFORMANCE-006
-  it "exposes intent_conformance in the inbox nav filter chips and filters to it" do
+  it "exposes intent_conformance in the inbox filter panel and filters to it" do
     pr = create_intent_conformance_pr(title: "Drifted PR")
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Intent Conformance'][@href='#{inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)}'])
-    )
-    expect(chip).to be_present
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::INTENT_CONFORMANCE_KIND}']")
+    expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)
 

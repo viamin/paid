@@ -32,7 +32,10 @@ module Inbox
       PARTIAL_CLOSEOUT_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
-      CHANGE_INTENT_DRAFT_KIND => "CIR Drafts"
+      ESCALATED_PR_KIND => "Blocked PRs",
+      RETRY_LIMITED_KIND => "Retry-limited",
+      CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
+      PARTIAL_CLOSEOUT_KIND => "Partial closeouts"
     ).freeze
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
