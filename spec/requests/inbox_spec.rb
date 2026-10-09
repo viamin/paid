@@ -205,6 +205,46 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("deliberate continuation")
     end
 
+    # @spec PARTIAL-CLOSEOUT-023
+    it "shows stale criterion evidence and prevents a duplicate run on an open owner on narrow layouts" do
+      owner = create(:issue, project:, github_state: "open", github_number: 512)
+      run = create(:agent_run, :completed, project:, issue: guided_issue, pull_request_number: guided_evidence.github_number)
+      run.update!(reconciliation: {
+        "assessment" => {
+          "source_revision" => "superseded", "intent_revision" => "superseded", "assessed_at" => 2.days.ago.iso8601,
+          "classification" => "blocked_implementation",
+          "criteria" => [ { "criterion" => "Pilot p95", "state" => "unknown", "owner_issue_number" => owner.github_number,
+            "prerequisite_kind" => "human", "prerequisite" => "Attach the production p95." } ],
+          "next_action" => { "kind" => "wait_for_owner", "explanation" => "Open work already owns this." }
+        }
+      })
+
+      render_guided_pane
+
+      expect(response.body).to include("Acceptance assessment", "This assessment is stale", "Pilot p95", "unknown")
+      expect(response.body).to include("Owner: #512 (open)", "Human prerequisite", "request a bounded acceptance audit")
+      expect(response.body).to include("flex-col", "sm:flex-row")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-023 — legacy gaps-only assessments never had
+    # `source_revision` / `intent_revision` recorded, so every legacy row
+    # is stale on the digest mismatch alone — but nothing actually changed.
+    # The pane must distinguish that "nothing recorded" state from a real
+    # revision change so operators get actionable copy instead of the
+    # contradictory "is stale because the approved intent or closeout
+    # evidence changed" message right after deploy (#4208 review).
+    it "calls out stale-without-revision-metadata separately from a real revision change" do
+      run = create(:agent_run, :completed, project:, issue: guided_issue, pull_request_number: guided_evidence.github_number)
+      run.update!(reconciliation: {
+        "assessment" => { "gaps" => [ { "criterion" => "Legacy gap", "kind" => "agent", "title" => "Ship it" } ] }
+      })
+
+      render_guided_pane
+
+      expect(response.body).to include("No criterion-level assessment with revision metadata is recorded")
+      expect(response.body).not_to include("This assessment is stale because the approved intent or closeout evidence changed")
+    end
+
     it "offers the link-prerequisite action with its sync explanation" do
       render_guided_pane
 

@@ -4,6 +4,23 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-023** — When a partial-closeout Inbox pane or its
+  authorized chat context renders, the system SHALL expose the persisted
+  criterion-level assessment with satisfied, unmet, or unknown states, cited
+  evidence, current owner state, and human/external prerequisites. It SHALL
+  show the assessment's source-evidence revision, approved-intent revision,
+  age, classification, and next action. A change to either revision SHALL mark
+  the assessment stale without treating a closed child or absent evidence as
+  completion. Rendering SHALL reuse the persisted assessment and deterministic
+  current evidence checks; a fresh semantic assessment is an explicit bounded
+  agent-harness operation, not a per-render LLM call.
+  *Code:* `app/services/partial_closeouts/assessment.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/partial_closeouts/assessment_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/services/inbox/chat_context_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-001** — When `Issues::CloseoutEvidence` evaluates an
   issue, the system SHALL assemble the closeout evidence set from (a) merged
   PR rows linked to the issue via `parent_issue_id`, (b) merged PR rows matched

@@ -41,8 +41,10 @@ module Activities
     # indices (the replay keys) stay stable across attempts instead of
     # re-invoking the LLM, which may return a different gap set or order.
     def persisted_assessment(agent_run)
-      agent_run.reconciliation["assessment"] || Llm::AnalyzePartialCloseout.call(agent_run: agent_run).tap do |result|
-        agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => result))
+      agent_run.reconciliation["assessment"] || Llm::AnalyzePartialCloseout.call(agent_run: agent_run).then do |result|
+        PartialCloseouts::Assessment.snapshot(agent_run, result).tap do |assessment|
+          agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))
+        end
       end
     end
   end

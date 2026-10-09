@@ -268,6 +268,20 @@ is pending persists a durable notice stating it is not an approval and
 nothing has run yet — a conversational "yes" is never displayed or recorded
 as an executed action.
 
+### Acceptance assessment evidence (#4186)
+
+Each semantic partial-closeout assessment persists criterion states and its
+source-evidence and approved-intent revisions on the originating run. The Inbox
+and authorized chat context read that record and compare its revisions with
+current deterministic evidence; they never call an LLM during rendering. A
+revision mismatch is visibly stale, and missing evidence remains unknown.
+Current owner state is resolved from the project-scoped issue record, so a
+closed child cannot silently satisfy an unmet criterion. The assessment also
+records a classification (`awaiting_final_audit`, `blocked_implementation`,
+`missing_measured_results`, or `coordination_epic`) and a supported next action
+that explains when open ownership makes another run duplicate work. A fresh
+semantic assessment remains a bounded explicit `agent_harness` operation.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

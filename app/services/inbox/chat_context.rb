@@ -122,6 +122,7 @@ module Inbox
       return {} unless inbox_kind == Queue::PARTIAL_CLOSEOUT_KIND && issue
 
       status = Issues::CloseoutStatus.call(issue)
+      assessment = PartialCloseouts::Assessment.call(issue)
       {
         issue: work_item,
         acceptance_criteria: issue.body,
@@ -134,6 +135,15 @@ module Inbox
           { number: pull_request.number, url: pull_request.url, run_id: pull_request.run_id, terminal_at: pull_request.terminal_at }
         },
         unresolved_prerequisites: status.unresolved_prerequisites,
+        acceptance_assessment: {
+          criteria: assessment.criteria,
+          classification: assessment.assessment["classification"],
+          source_revision: assessment.source_revision,
+          intent_revision: assessment.intent_revision,
+          assessed_at: assessment.assessed_at,
+          stale: assessment.stale?,
+          next_action: assessment.next_action
+        },
         continuation_requests: IssueContinuationRequest.where(issue:).order(created_at: :desc).limit(5).map { |request|
           request.attributes.slice("id", "status", "reason", "created_at", "updated_at")
         },

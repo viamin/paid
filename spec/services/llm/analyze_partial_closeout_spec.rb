@@ -205,5 +205,88 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
       end
     end
+
+    # @spec NO-OUTPUT-ISSUE-007 — the legacy (text) parser path does not get
+    # the schema transport's structural enforcement, so `valid_assessment?`
+    # must mirror the schema constraints here. A bare-string `next_action`
+    # would otherwise be persisted via `to_h` into `reconciliation.assessment`
+    # and crash `PartialCloseouts::Assessment#next_action` on Inbox render.
+    context "when a legacy text response violates the next_action contract" do
+      it "raises when next_action is a plain string instead of a Hash" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], next_action: "request a bounded audit" }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+
+      it "raises when next_action is a Hash but missing its explanation" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], next_action: { kind: "fresh_audit" } }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+
+      it "raises when next_action is a Hash but missing its kind" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], next_action: { explanation: "no kind" } }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-023 — the `criteria` array (criterion-level
+    # assessment) must reject non-Hash entries on the legacy path so a stray
+    # bare-string item never reaches `reconciliation.assessment`, where
+    # `Present_criterion#merge` would raise NoMethodError on render.
+    context "when a legacy text response violates the criteria contract" do
+      it "raises when a criteria entry is not a Hash" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], criteria: [ "wire dispatch" ] }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+
+      it "raises when a criteria Hash omits its criterion text" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], criteria: [ { state: "satisfied" } ] }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+
+      it "raises when an evidence entry is not an object" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          { gaps: [], criteria: [ { criterion: "Latency", state: "satisfied", evidence: [ 1 ] } ] }.to_json
+        )
+
+        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      end
+
+      it "accepts a well-shaped criteria and next_action on the legacy path" do
+        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+        allow(legacy_response).to receive(:output).and_return(
+          {
+            gaps: [],
+            criteria: [ { "criterion" => "ship measure latency", "state" => "satisfied" } ],
+            next_action: { "kind" => "fresh_audit", "explanation" => "Recheck the operator guide." }
+          }.to_json
+        )
+
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result["criteria"].first["criterion"]).to eq("ship measure latency")
+        expect(result.dig("next_action", "kind")).to eq("fresh_audit")
+      end
+    end
   end
 end

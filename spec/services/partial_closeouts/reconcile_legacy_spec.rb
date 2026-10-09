@@ -445,6 +445,10 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     # deterministic input that anchors retries, so the sweep must persist it
     # on the run before invoking `Reconcile` (mirrors
     # `Activities::ReconcilePartialCloseoutActivity#persisted_assessment`).
+    # The persisted shape is the snapshot envelope (LLM result + revision
+    # metadata); `include` tolerates the added `assessed_at` /
+    # `source_revision` / `intent_revision` keys while still verifying the
+    # underlying gap set is what the LLM produced.
     it "persists the assessment on the run before invoking Reconcile" do
       merged_pr(number: 23, parent_issue: parent)
       run = legacy_run(issue: parent, pull_request_number: 23)
@@ -452,7 +456,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       described_class.call(account_id: account.id)
 
-      expect(run.reload.reconciliation.fetch("assessment")).to eq(dispatch_assessment)
+      expect(run.reload.reconciliation.fetch("assessment")).to include(dispatch_assessment)
     end
 
     # @spec PARTIAL-CLOSEOUT-020 — when a GitHub failure leaves a `creating`
@@ -485,7 +489,9 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     # @spec PARTIAL-CLOSEOUT-020 — the assessment is preserved across
     # `record_failure!` so a failed first sweep leaves the next pass with
     # everything it needs to resume through the marker-based recovery path
-    # without re-invoking the LLM.
+    # without re-invoking the LLM. Asserted via `include` against the
+    # snapshot envelope so the persisted shape's revision metadata
+    # (`assessed_at` / `source_revision` / `intent_revision`) is tolerated.
     it "preserves the persisted assessment across a GitHub failure so the retry can resume without a new LLM call" do
       merged_pr(number: 26, parent_issue: parent)
       run = legacy_run(issue: parent, pull_request_number: 26)
@@ -495,7 +501,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       reconciliation = run.reload.reconciliation
       expect(reconciliation.fetch("status")).to eq("retryable_failure")
-      expect(reconciliation.fetch("assessment")).to eq(dispatch_assessment)
+      expect(reconciliation.fetch("assessment")).to include(dispatch_assessment)
       expect(reconciliation.dig("gaps", "0", "marker")).to start_with("<!-- paid:partial-closeout:#{run.id}:0 -->")
     end
 
@@ -558,6 +564,10 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     # assessment while the surviving index-keyed `gaps` state remains would
     # let a regenerated (possibly reordered) assessment reattach the old
     # gap's owner to whichever gap now sits at that index (#4191 review).
+    # Asserted via `include` against the snapshot envelope so the persisted
+    # shape's revision metadata (`assessed_at` / `source_revision` /
+    # `intent_revision`) is tolerated while still verifying the LLM gap
+    # set is preserved.
     it "preserves the persisted assessment when gap state survives a later gap's non-GitHub failure" do
       merged_pr(number: 35, parent_issue: parent)
       run = legacy_run(issue: parent, pull_request_number: 35)
@@ -571,7 +581,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       reconciliation = run.reload.reconciliation
       expect(reconciliation.fetch("status")).to eq("retryable_failure")
       expect(reconciliation.fetch("error")).to include("agent gap title is required")
-      expect(reconciliation.fetch("assessment")).to eq(multi_gap_assessment)
+      expect(reconciliation.fetch("assessment")).to include(multi_gap_assessment)
       expect(reconciliation.dig("gaps", "0", "owner_issue_number")).to eq(99)
     end
 

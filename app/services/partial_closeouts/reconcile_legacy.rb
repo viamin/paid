@@ -403,8 +403,10 @@ module PartialCloseouts
     # next pass (after the 1-day `retryable_failure` window) replays the same
     # gap set through the marker-based recovery path (#4187).
     def persisted_assessment(agent_run)
-      agent_run.reconciliation["assessment"] || Llm::AnalyzePartialCloseout.call(agent_run: agent_run).tap do |result|
-        agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => result))
+      agent_run.reconciliation["assessment"] || Llm::AnalyzePartialCloseout.call(agent_run: agent_run).then do |result|
+        Assessment.snapshot(agent_run, result).tap do |assessment|
+          agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))
+        end
       end
     end
 
