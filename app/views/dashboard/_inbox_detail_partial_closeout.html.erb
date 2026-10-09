@@ -71,9 +71,13 @@
       <h3 class="text-sm font-semibold text-gray-900">Acceptance assessment</h3>
       <span class="text-xs text-gray-500"><%= assessment.assessed_at ? "assessed #{time_ago_in_words(Time.iso8601(assessment.assessed_at))} ago" : "no criterion-level assessment recorded" %></span>
     </div>
-    <% if assessment.stale? %>
+    <% if assessment.stale? && assessment.source_revision.present? %>
       <p class="rounded-md bg-amber-50 p-2 text-sm text-amber-900">
         This assessment is stale because the approved intent or closeout evidence changed. Closed children are not acceptance proof; request a fresh bounded audit.
+      </p>
+    <% elsif assessment.stale? %>
+      <p class="rounded-md bg-amber-50 p-2 text-sm text-amber-900">
+        No criterion-level assessment with revision metadata is recorded; treat the recorded gaps as unverified and request a bounded acceptance audit before treating work as complete.
       </p>
     <% end %>
     <p class="text-sm text-gray-600">

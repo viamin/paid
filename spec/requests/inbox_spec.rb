@@ -226,6 +226,25 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("flex-col", "sm:flex-row")
     end
 
+    # @spec PARTIAL-CLOSEOUT-023 — legacy gaps-only assessments never had
+    # `source_revision` / `intent_revision` recorded, so every legacy row
+    # is stale on the digest mismatch alone — but nothing actually changed.
+    # The pane must distinguish that "nothing recorded" state from a real
+    # revision change so operators get actionable copy instead of the
+    # contradictory "is stale because the approved intent or closeout
+    # evidence changed" message right after deploy (#4208 review).
+    it "calls out stale-without-revision-metadata separately from a real revision change" do
+      run = create(:agent_run, :completed, project:, issue: guided_issue, pull_request_number: guided_evidence.github_number)
+      run.update!(reconciliation: {
+        "assessment" => { "gaps" => [ { "criterion" => "Legacy gap", "kind" => "agent", "title" => "Ship it" } ] }
+      })
+
+      render_guided_pane
+
+      expect(response.body).to include("No criterion-level assessment with revision metadata is recorded")
+      expect(response.body).not_to include("This assessment is stale because the approved intent or closeout evidence changed")
+    end
+
     it "offers the link-prerequisite action with its sync explanation" do
       render_guided_pane
 

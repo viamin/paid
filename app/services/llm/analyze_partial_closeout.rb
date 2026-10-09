@@ -71,9 +71,19 @@ module Llm
     # assessment that parses but violates the reconciler's per-gap rules is
     # rejected here — before the activity persists it — letting retries get a
     # fresh assessment instead of replaying the same deterministic failure.
+    # The full RESPONSE_SCHEMA is constrained here too: on the legacy text
+    # path the parser has no schema enforcement, so a bare-string `next_action`
+    # or a non-Hash `criteria` entry would otherwise be persisted into
+    # `reconciliation.assessment` and crash render-side consumers
+    # (`PartialCloseouts::Assessment#next_action` calls
+    # `assessment["next_action"].to_h` and `Present_criterion#merge` would
+    # raise NoMethodError on render).
     def valid_assessment?(parsed)
-      gaps = parsed.is_a?(Hash) ? parsed["gaps"] : nil
-      gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) }
+      return false unless parsed.is_a?(Hash)
+
+      gaps = parsed["gaps"]
+      gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
+        valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
     end
 
     def valid_gap?(gap)
@@ -93,6 +103,22 @@ module Llm
       else
         gap["title"].to_s.strip.present? || gap["owner_issue_number"].to_i.positive?
       end
+    end
+
+    # A criteria entry that is not a Hash (or one that omits `criterion`)
+    # cannot be rendered or merged, so reject the whole assessment rather
+    # than persist a partial shape that crashes `present_criterion`.
+    def valid_criteria?(criteria)
+      criteria.nil? || (criteria.is_a?(Array) && criteria.all? { |criterion| criterion.is_a?(Hash) && criterion["criterion"].present? })
+    end
+
+    # `next_action` is what the Inbox pane and `inferred_next_action` both
+    # read via `assessment["next_action"].to_h`. A String here would
+    # NoMethodError on `.to_h`, and a Hash missing `kind`/`explanation`
+    # would silently drop actionability.
+    def valid_next_action?(next_action)
+      next_action.nil? ||
+        (next_action.is_a?(Hash) && next_action["kind"].present? && next_action["explanation"].present?)
     end
 
     # Schema-constrained responses require API-key authentication because

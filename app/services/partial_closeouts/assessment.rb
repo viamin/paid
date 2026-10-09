@@ -56,14 +56,21 @@ module PartialCloseouts
     end
 
     def criteria
-      @criteria ||= raw_criteria.map { |criterion| present_criterion(criterion) }
+      # Defense-in-depth: a non-Hash entry that slipped past the
+      # Llm::AnalyzePartialCloseout validator (e.g. a legacy / pre-PR row
+      # persisted before validation ran) would NoMethodError on
+      # `String#merge`. Drop those entries instead of crashing the render
+      # (#4208 review).
+      @criteria ||= raw_criteria.filter_map do |criterion|
+        present_criterion(criterion) if criterion.is_a?(Hash)
+      end
     end
 
     def raw_criteria
       criteria = assessment["criteria"]
       return criteria if criteria.is_a?(Array)
 
-      Array(assessment["gaps"]).map { |gap| gap.merge("state" => "unmet") }
+      Array(assessment["gaps"]).filter_map { |gap| gap.is_a?(Hash) ? gap.merge("state" => "unmet") : nil }
     end
 
     def present_criterion(criterion)
@@ -101,7 +108,14 @@ module PartialCloseouts
     def next_action
       return { "kind" => "fresh_audit", "explanation" => "The recorded assessment is stale; request a bounded acceptance audit before treating work as complete." } if stale?
 
-      persisted = assessment["next_action"].to_h.deep_stringify_keys
+      # Defense-in-depth: a non-Hash `next_action` value would NoMethodError
+      # on `String#to_h` and crash every Inbox render that touches the
+      # issue. Treat it as absent and fall back to the inferred action
+      # (#4208 review).
+      persisted = assessment["next_action"]
+      return inferred_next_action unless persisted.is_a?(Hash)
+
+      persisted = persisted.deep_stringify_keys
       return persisted if persisted["kind"].present? && persisted["explanation"].present?
 
       inferred_next_action
