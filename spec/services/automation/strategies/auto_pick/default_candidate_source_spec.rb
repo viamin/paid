@@ -80,6 +80,32 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(eligible.id)
     end
 
+    it "keeps tracker-like implementation issues with contextual open and unknown references eligible" do # @spec AUTO-PICK-QUEUE-013
+      implementation = create(:issue, project: project, github_number: 1,
+        title: "feat(inbox): show acceptance evidence and remaining work for partial closeouts",
+        body: "## Completion criteria\n\nShow #2 and #999 as contextual examples.")
+      create(:issue, project: project, github_number: 2, github_state: "open")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope).to include(implementation)
+
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: implementation,
+        goal: "create_pr", auto_pick: true)
+      expect(described_class.eligible_for_dequeue?(project, implementation.id, excluding_run_id: queued_run.id)).to be(true)
+    end
+
+    it "excludes configured skip labels while preserving title and body neutrality" do # @spec AUTO-PICK-QUEUE-013
+      project.update!(auto_pick_skip_labels: [ "category-hold" ])
+      skipped = create(:issue, project: project, labels: [ "category-hold" ],
+        title: "Remaining work tracker", body: "## Meta issue\n\nSee #999")
+      eligible = create(:issue, project: project,
+        title: "Completion criteria", body: "## Tracker\n\nSee #998")
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(eligible)
+      expect(described_class.eligible_scope(project)).not_to include(skipped)
+    end
+
     it "allows an epic under the built-in defaults" do # @spec AUTO-PICK-QUEUE-009
       epic = create(:issue, project: project, labels: [ "epic" ])
 
@@ -1482,73 +1508,6 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
     it "returns an empty set when given an empty collection" do
       expect(described_class.eligible_issue_ids([])).to eq(Set.new)
-    end
-  end
-
-  describe ".tracker_ids_blocked_by_open_references" do
-    it "enqueues DependencyBackfillJob for referenced issues not in the database" do
-      tracker = create(:issue, project: project, github_number: 1, title: "Tracker",
-        body: "## Completion Criteria\n- [ ] #99\n- [ ] #100")
-      _closed_ref = create(:issue, project: project, github_number: 100,
-        github_state: "closed", is_pull_request: false)
-
-      scope = Issue.where(id: tracker.id)
-
-      allow(DependencyBackfillJob).to receive(:perform_later)
-
-      described_class.tracker_ids_blocked_by_open_references(scope, project)
-
-      expect(DependencyBackfillJob).to have_received(:perform_later).with(project.id, [ 99 ])
-    end
-
-    it "does not enqueue backfill when all referenced issues exist in the database" do
-      tracker = create(:issue, project: project, github_number: 1, title: "Tracker",
-        body: "## Completion Criteria\n- [ ] #100")
-      _closed_ref = create(:issue, project: project, github_number: 100,
-        github_state: "closed", is_pull_request: false)
-
-      scope = Issue.where(id: tracker.id)
-
-      allow(DependencyBackfillJob).to receive(:perform_later)
-
-      described_class.tracker_ids_blocked_by_open_references(scope, project)
-
-      expect(DependencyBackfillJob).not_to have_received(:perform_later)
-    end
-
-    it "blocks a title-matched tracker with no body references" do
-      tracker = create(:issue, project: project, github_number: 1, title: "Phase 2 tracker",
-        body: "Some notes without issue references")
-
-      scope = Issue.where(id: tracker.id)
-
-      blocked = described_class.tracker_ids_blocked_by_open_references(scope, project)
-
-      expect(blocked).to include(tracker.id)
-    end
-
-    it "does not block a body-heading-matched tracker with no body references" do
-      issue = create(:issue, project: project, github_number: 1,
-        title: "Implement feature X",
-        body: "## Completion criteria\n- Add tests\n- Add docs")
-
-      scope = Issue.where(id: issue.id)
-
-      blocked = described_class.tracker_ids_blocked_by_open_references(scope, project)
-
-      expect(blocked).not_to include(issue.id)
-    end
-
-    it "blocks a strong body-heading-matched tracker with no body references" do
-      issue = create(:issue, project: project, github_number: 1,
-        title: "Implement feature X",
-        body: "## Meta issue\nTracks all items")
-
-      scope = Issue.where(id: issue.id)
-
-      blocked = described_class.tracker_ids_blocked_by_open_references(scope, project)
-
-      expect(blocked).to include(issue.id)
     end
   end
 

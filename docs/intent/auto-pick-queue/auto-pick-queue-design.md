@@ -52,6 +52,12 @@ A needs-input label is an independent, always-on eligibility exclusion. It
 applies regardless of `paid_state`, so a stale local state cannot schedule work
 while a user clarification remains pending.
 
+Category exclusion is label-based: the effective project, owner, or tenant
+Auto-Pick skip-label configuration is authoritative. Titles, body headings,
+and incidental issue references never create a scheduling hold. Readiness
+dependencies come only from declared dependency records and authoritative
+child relationships.
+
 ## Tier-infeasibility gating
 
 Issues whose most recent model selection pins a tier no enabled runner can
@@ -85,13 +91,10 @@ itself. An open umbrella becomes runnable only when the existing authoritative
 child and dependency relationships are resolved. GitHub sub-issue links and
 explicitly declared child/dependency relationships are authoritative; Markdown
 checkboxes, titles, and incidental issue references are not readiness signals.
-Two mechanical rules keep the lifecycle reachable: an `epic`-labeled umbrella
-is exempt from tracker body-reference blocking (its readiness comes from the
-authoritative relationships, so an open incidental reference cannot strand
-it), and a dependency edge from a child to its own parent is a contextual
-parent reference rather than a prerequisite — the umbrella's sub-issue
-machinery already governs that work in the other direction, so treating the
-edge as blocking would deadlock the pair.
+A dependency edge from a child to its own parent is a contextual parent
+reference rather than a prerequisite — the umbrella's sub-issue machinery
+already governs that work in the other direction, so treating the edge as
+blocking would deadlock the pair.
 
 When it becomes runnable, the agent performs a final acceptance audit against
 the approved RDR/HLD/LLD/EARS and the issue's acceptance criteria. Closed
