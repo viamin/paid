@@ -13,7 +13,7 @@
 # continuation request is present — the operator's remaining-work plan must
 # reach the agent's instructions, not just the audit trail
 # (IssueContinuationRequest / Audit::RecordEvent).
-# @spec PARTIAL-CLOSEOUT-012
+# @spec PARTIAL-CLOSEOUT-013
 class PromptAssembly::Sections::ContinuationContext
   include PromptAssembly::Sections::Base
 

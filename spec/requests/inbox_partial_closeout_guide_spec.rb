@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Partial closeout operator guide" do # @spec PARTIAL-CLOSEOUT-013
+RSpec.describe "Partial closeout operator guide" do # @spec PARTIAL-CLOSEOUT-022
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
 

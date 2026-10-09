@@ -152,6 +152,78 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
+
+The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
+workflows. Pre-patch runs — including the 2026-09-17 / 2026-09-22 /
+2026-10-01 closeouts against #3860, #3861, #3871, #3930, and #4013 — left
+the parent umbrella with no `reconciliation` state, no focused follow-up
+issues, and no operator prerequisites surfaced. Audit found empty
+`reconciliation` records on the latest epic runs for those umbrellas.
+
+`PartialCloseouts::ReconcileLegacy` is a bounded, restartable sweep that
+finds those legacy runs and routes them through the same deterministic
+machinery the workflow uses:
+
+- **Selection.** Scoped to a single account (the sweep must read across
+  tenant RLS to find candidates, but writes are scoped through the project
+  associations). A run is a candidate only when it is its issue's *latest*
+  PR-producing attempt (MAX(id) per `issue_id`, the same keying the
+  auto-pick re-audit exception uses — a superseded earlier attempt's
+  evidence must never be assessed), that attempt produced a PR that is now
+  authoritatively linked back to the source issue
+  (via `parent_issue_id` or the originating run's `pull_request_number`/URL
+  join — the same discipline as `Issues::CloseoutEvidence`), and its
+  `reconciliation` carries no terminal `status`. A run whose reconciliation
+  is already terminal (`reconciled`, `awaiting_operator`, `retryable_failure`
+  with a fresh `failed_at`) is skipped, so repeated sweeps do not duplicate
+  work. Candidates are ordered by `id` and capped at `batch_size` (default
+  200) per invocation, so one call cannot drive unbounded
+  `Llm::AnalyzePartialCloseout` cost/runtime against an account's entire
+  historical `create_pr` volume; `Result#next_cursor` reports the highest
+  scanned `id`, and passing it as `after_id:` on the next call resumes
+  strictly past that point regardless of each row's outcome. A non-positive
+  `batch_size` is rejected up front (the service raises `ArgumentError`;
+  the rake task aborts) because a zero or negative cap scans nothing while
+  still printing a continuation whose cursor never advances.
+- **Assessment.** `Llm::AnalyzePartialCloseout.call(agent_run:)` produces a
+  fresh gap set grounded in current shipped code and current open issues — a
+  stale gap whose child has since merged, closed, or been superseded is
+  omitted. The assessment is persisted on the run, so retries reuse the
+  same gap indices instead of re-invoking the LLM and getting a different
+  gap set.
+- **Application.** `PartialCloseouts::Reconcile.call(agent_run:,
+  assessment:)` does the durable work — opens owners through the existing
+  marker-based recovery path (idempotent across retries), records
+  `IssueDependency` edges, rewrites the parent body to publish the
+  dependency wording, and aggregates human prerequisites into one blocking
+  Inbox notification under
+  `PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE`. The legacy path
+  reuses every replay-safety primitive the workflow uses; it does not
+  introduce a parallel code path.
+- **No mass-mutation.** ReconcileLegacy does not touch `paid_state`, does
+  not infer completion from closed children, and does not auto-close the
+  umbrella. The umbrella remains open for its final audit; legacy
+  reconciliation only restores the focused follow-up issues and the
+  operator prerequisite notifications that the partial-closeout workflow
+  would have produced on a fresh run. The `partial_closeout` Inbox lane
+  continues to derive from evidence (`Issues::CloseoutEvidence`); the
+  legacy sweep only fills in the recorded gaps and notifications.
+- **Visibility.** The sweep is restartable; an interrupted pass leaves the
+  `creating` markers in place, and the next pass resumes via the existing
+  `Reconcile#create_owner!` recovery. The Inbox already exposes the lane
+  (`OPERATOR-INBOX-002H`), so a successful sweep immediately surfaces the
+  focus work and the blocking prerequisite for the operator without any new
+  UI surface. The sweep itself is invokable through an authorized rake task
+  (`bin/rake issues:reconcile_legacy_partial_closeouts ACCOUNT_ID=<id>
+  BATCH_SIZE=<n> AFTER_ID=<cursor>`) that the operator console / MCP surface
+  can call with the account scope; the task prints `next_cursor` and prompts
+  a follow-up invocation when the batch filled, so working through a large
+  backlog is an explicit, operator-paced sequence of bounded calls. An
+  account-scoped advisory-lock contention returns a distinct result and the
+  rake task tells the operator that no work ran and to retry later, rather
+  than presenting a zero-row sweep as a completed backlog.
+
 ### Human closeout guidance (#4189)
 
 The lane's recovery actions assume the operator already knows which action

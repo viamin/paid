@@ -250,7 +250,7 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
     end
   end
 
-  describe "prompt delivery" do # @spec PARTIAL-CLOSEOUT-012
+  describe "prompt delivery" do # @spec PARTIAL-CLOSEOUT-013
     before do
       stub_request(:get, %r{api\.github\.com/repos/.*/issues/.*/comments})
         .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })

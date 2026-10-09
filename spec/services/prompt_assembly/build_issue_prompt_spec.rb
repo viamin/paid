@@ -281,7 +281,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
-  describe "continuation context" do # @spec PARTIAL-CLOSEOUT-012
+  describe "continuation context" do # @spec PARTIAL-CLOSEOUT-013
     def continuation_run(reason: "Finish the RDR-067 audit; epic status claims are overstated.", evidence: nil)
       real_issue = create(:issue)
       continuation_request = create(
