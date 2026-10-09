@@ -80,6 +80,17 @@
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
 
+- [x] **AUTO-PICK-QUEUE-013** — Auto-Pick category exclusion SHALL use only
+  the effective configured skip labels and needs-input label controls. Titles,
+  body headings, and incidental open or unknown issue references SHALL NOT
+  create a readiness dependency; explicitly declared dependencies and
+  authoritative child relationships remain blocking. This shared rule SHALL
+  apply to candidate selection, eager queue seeding, dequeue eligibility
+  rechecks, and displayed eligibility.
+  *Tests:* `spec/services/issues/auto_pick_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label
@@ -87,11 +98,9 @@
   select it for a final acceptance audit under the built-in defaults. An
   explicit project, effective-owner, or tenant skip-label override containing
   `epic` SHALL still exclude it. Markdown checkboxes, titles, and incidental
-  issue references SHALL NOT create readiness dependencies, and open
-  incidental body references or tracker heuristics SHALL NOT block an
-  otherwise-resolved umbrella. A dependency edge from a child to its own
-  parent SHALL be treated as a contextual parent reference, not a
-  prerequisite, so umbrella/child pairs cannot deadlock.
+  issue references SHALL NOT create readiness dependencies. A dependency edge
+  from a child to its own parent SHALL be treated as a contextual parent
+  reference, not a prerequisite, so umbrella/child pairs cannot deadlock.
   *Tests:* `spec/services/issues/auto_pick_spec.rb`,
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
   `spec/models/issue_spec.rb`.
