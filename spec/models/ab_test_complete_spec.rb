@@ -18,6 +18,7 @@ RSpec.describe AbTest, "#complete!" do
     test
   end
 
+  # @spec PROMPT-EVOLUTION-005
   it "keeps prompt evolution executing until the winning prompt is actually promoted" do
     action = create(:quality_recovery_action, :prompt_evolution, :executing,
       executed_at: nil, result: { ab_test_id: ab_test.id })

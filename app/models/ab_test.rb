@@ -146,6 +146,7 @@ class AbTest < ApplicationRecord
     errors.add(:winner_variant, "must belong to this A/B test")
   end
 
+  # @spec PROMPT-EVOLUTION-005
   def record_quality_recovery_outcome!
     recovery_actions.find_each do |action|
       if evolved_winner?

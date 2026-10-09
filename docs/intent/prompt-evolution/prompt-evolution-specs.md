@@ -23,3 +23,10 @@
   candidates or produces no mutations, the system SHALL stop before creating
   variants or A/B tests and SHALL return the corresponding terminal status.
   *Code:* `Workflows::PromptEvolutionWorkflow`.
+
+- [x] **PROMPT-EVOLUTION-005** — When an evolved variant wins a prompt A/B
+  test, the system SHALL merge the winner outcome into the executing recovery
+  action using one string-keyed value for each field, so the JSON result remains
+  valid and the recovery action stays executing until promotion.
+  *Tests:* `spec/models/ab_test_complete_spec.rb`.
+  *Code:* `AbTest`, `QualityRecoveryAction`.
