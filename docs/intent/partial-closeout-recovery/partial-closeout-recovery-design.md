@@ -223,6 +223,7 @@ machinery the workflow uses:
   account-scoped advisory-lock contention returns a distinct result and the
   rake task tells the operator that no work ran and to retry later, rather
   than presenting a zero-row sweep as a completed backlog.
+
 ### Human closeout guidance (#4189)
 
 The lane's recovery actions assume the operator already knows which action
