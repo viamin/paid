@@ -159,7 +159,7 @@
   *Code:* `app/services/inbox/chat_context.rb`.
   *Test:* `spec/services/inbox/chat_context_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-012** — When a queued continuation run (created by
+- [x] **PARTIAL-CLOSEOUT-013** — When a queued continuation run (created by
   either the Inbox `request_continuation` action or the
   `request_issue_continuation` MCP tool — both call
   `Issues::RequestContinuation` and so are covered uniformly) builds its
@@ -192,7 +192,112 @@
   1280px viewport widths in a 300px-wide continuation section, plus a
   rendered Inbox browser check at mobile and desktop widths.
 
-- [x] **PARTIAL-CLOSEOUT-013** — When the partial-closeout Inbox pane renders,
+- [x] **PARTIAL-CLOSEOUT-018** — When `PartialCloseouts::ReconcileLegacy`
+  processes a `create_pr` `AgentRun` whose partial PR has been authoritatively
+  linked to its source issue (via `parent_issue_id` or the run's recorded
+  `pull_request_number` URL join) and whose `reconciliation` is empty or
+  carries no terminal `status`, the system SHALL treat the run as a legacy
+  partial closeout: replay through `Llm::AnalyzePartialCloseout` to obtain a
+  fresh assessment, route the assessment through `PartialCloseouts::Reconcile`
+  (which provides replay-safe owner creation, `IssueDependency` persistence,
+  parent-body dependency rewrite, and aggregated prerequisite notifications),
+  and SHALL persist the resulting `reconciliation` record so subsequent
+  reconciliation passes find the run already reconciled and skip it. The
+  legacy path SHALL NOT mass-reset `paid_state`, SHALL NOT infer completion
+  from closed children, and SHALL NOT auto-close the parent umbrella or any
+  open epic (#4187).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-019** — When `PartialCloseouts::ReconcileLegacy`
+  processes a legacy partial closeout, the system SHALL ground the assessment
+  in current shipped behavior and intent: a gap whose criterion is already
+  satisfied by merged work, closed prerequisites, or other current evidence
+  SHALL be omitted from the assessment; a gap without an open owner SHALL be
+  filed as a focused follow-up issue through `PartialCloseouts::Reconcile`'s
+  owner creation path; a gap that requires a human action SHALL surface as a
+  blocking Inbox prerequisite notification under
+  `PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE` with the exact
+  next-step wording. Repeated invocations against the same run SHALL NOT
+  create duplicate owners, dependencies, or notifications — the persisted
+  assessment (`reconciliation.assessment`) is reused on replay, so gap
+  indices stay stable across attempts, and a run with a terminal
+  `reconciliation.status` SHALL be skipped (#4187).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-020** — When `PartialCloseouts::ReconcileLegacy`
+  processes a legacy partial closeout and a GitHub call fails after the
+  `assessment` has been persisted but before reconciliation completes, the
+  system SHALL preserve the recorded `reconciled_at`, `status`, and `error`
+  fields on the run's `reconciliation` JSON, SHALL re-raise the
+  `GithubClient::Error` so the caller can retry, and SHALL NOT create
+  duplicate owner issues, dependencies, or operator notifications on the
+  retry. A run whose reconciliation state shows `creating` for a gap
+  SHALL resume owner recovery via the existing marker-based recovery path
+  in `PartialCloseouts::Reconcile#create_owner!` rather than filing a second
+  issue. Non-`GithubClient::Error` exceptions (e.g. an `ArgumentError`
+  raised by `Reconcile#create_owner!` on a deterministic-bad assessment)
+  SHALL be caught by `process_run`, recorded as `retryable_failure` with
+  the `error` and `failed_at` fields populated, and the persisted
+  `assessment` SHALL be discarded so the next pass regenerates instead
+  of replaying the same deterministic input forever; the surrounding
+  sweep SHALL continue scanning subsequent candidate runs rather than
+  aborting at the wedging run (#4187). When index-keyed `gaps` state
+  survives on the run (e.g. an earlier gap's owner was already
+  recorded before a later gap raised a non-`GithubClient::Error`), the
+  persisted `assessment` SHALL be preserved instead — `prior_owner` and
+  `local_owner_with_marker` key owners by gap array index, so
+  discarding the assessment while a regenerated, possibly reordered
+  next pass would re-attach an existing owner to whichever gap now sits
+  at that index, producing a silent mislink instead of a visible
+  `retryable_failure` (#4191 review).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-021** — When the legacy reconciliation sweep is
+  invoked for an account, the system SHALL scope the run selection to that
+  account (`TenantContext.with_system_access` to read across tenant RLS,
+  with `project.account_id = <account>` to write only in scope), SHALL cap
+  the candidate selection at the project's authoritative merged partial-PR
+  links (`Issue` rows where `is_pull_request: true`, `pr_review_phase:
+  "merged"`, and either `parent_issue_id` is set or an originating
+  `AgentRun` matches by `pull_request_number`/`pull_request_url`), SHALL
+  assess only each issue's latest PR-producing `create_pr` run (a
+  superseded earlier attempt is excluded from the candidate set before
+  the reconciliation-state checks, so stale evidence a later attempt
+  replaced is never assessed), and SHALL skip a run whose latest
+  `create_pr` attempt already persisted a terminal
+  `reconciliation.status`. The candidate query SHALL be bounded to at most
+  `batch_size` (default 200) runs ordered by `id`, so a single invocation's
+  `Llm::AnalyzePartialCloseout` cost and runtime cannot grow unbounded with
+  an account's total historical `create_pr` volume; the result SHALL report
+  `next_cursor` (the highest scanned `AgentRun#id`), and a caller SHALL be
+  able to resume past the capped window by passing `after_id:
+  next_cursor` to the next invocation, strictly advancing past every row
+  the prior invocation scanned regardless of its outcome. A non-positive
+  `batch_size` SHALL be rejected before any candidates are scanned (the
+  service raises `ArgumentError`; the rake task aborts with a clear
+  message), because a zero or negative cap scans nothing while still
+  printing a continuation whose cursor never advances. The sweep SHALL
+  return a distinct contention result when another invocation already holds
+  the account advisory lock; the rake task SHALL report that no work was done
+  and direct the operator to re-run later rather than implying the backlog is
+  complete. The sweep SHALL
+  be restartable: an interrupted sweep can be re-invoked, and the second
+  pass SHALL finish any run whose previous attempt left a recoverable
+  `creating` state and SHALL skip runs whose reconciliation is already
+  terminal (#4187, #4191).
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `lib/tasks/issues.rake`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
+- [x] **PARTIAL-CLOSEOUT-022** — When the partial-closeout Inbox pane renders,
   the system SHALL show task-oriented decision guidance covering the five
   operator paths (review the recorded criteria/evidence; continue
   agent-actionable work; create/link prerequisite work; supply human evidence;

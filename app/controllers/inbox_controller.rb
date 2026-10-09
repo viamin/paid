@@ -11,7 +11,7 @@ class InboxController < ApplicationController
   end
 
   # Task-oriented operator guide linked from the partial-closeout pane (#4189).
-  # @spec PARTIAL-CLOSEOUT-013
+  # @spec PARTIAL-CLOSEOUT-022
   def partial_closeout_guide
   end
 

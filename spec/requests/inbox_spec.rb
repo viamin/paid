@@ -135,7 +135,7 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Depends on #500")
   end
 
-  # @spec PARTIAL-CLOSEOUT-013 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016
+  # @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016
   describe "partial closeout pane guidance" do
     let(:guided_issue) { create(:issue, project: project, github_number: 510, paid_state: "in_progress") }
     let(:guided_evidence) do
