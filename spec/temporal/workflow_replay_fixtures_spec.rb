@@ -47,6 +47,7 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
 
       result = Temporalio::Worker::WorkflowReplayer.new(
         workflows: [ workflow_class ],
+        data_converter: Paid::TemporalDataConverter.new,
         logger: Logger.new(nil),
         workflow_failure_exception_types: [ Exception ]
       ).replay_workflow(history, raise_on_replay_failure: false)

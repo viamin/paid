@@ -13,6 +13,16 @@
   *Tests:* `spec/jobs/knowledge_evolution_job_spec.rb`, `spec/jobs/poll_workflow_health_check_job_spec.rb`.
   *Code:* `Paid.temporal_client`, `Paid.poll_task_queue`, `Paid.agent_task_queue`.
 
+- [x] **TEMPORAL-ORCHESTRATION-011** — When the application's JSON dependency
+  requires keyword options, Temporal clients, workers, and replay verification
+  SHALL serialize and deserialize `json/plain` payloads with keyword arguments
+  and without insecure object additions, so recorded workflow histories remain
+  replayable.
+  *Tests:* `spec/lib/paid/temporal_data_converter_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_client`,
+  `Paid.temporal_worker_client`.
+
 ## Worker Resource Sizing
 
 - [x] **TEMPORAL-ORCHESTRATION-002** — The orchestration layer SHALL derive the
