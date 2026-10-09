@@ -15,6 +15,7 @@ RSpec.describe ActionCable::SubscriptionAdapter::SolidCable, :no_db do
 
   before do
     reload_interlock = interlock
+    allow(ActiveSupport::Dependencies).to receive(:interlock).and_return(interlock)
     executor = Class.new(ActiveSupport::Executor)
     hook = Object.new
     hook.define_singleton_method(:run) { reload_interlock.start_running }
