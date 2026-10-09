@@ -14,8 +14,7 @@ module Automation
       # - No unfinished agent run already attached to the issue
       # - No open PR linked back to the issue via +parent_issue_id+
       # - Not labeled with any configured auto-pick skip labels
-      # - Not a parent issue with still-open sub-issues, and not a tracker /
-      #   meta issue whose body still references open work items
+      # - Not a parent issue with still-open sub-issues
       # - Issue creator is in the project's trusted allowlist when one is
       #   configured
       #
@@ -30,23 +29,6 @@ module Automation
       #   get starved by newer issues)
       module DefaultCandidateSource
         extend CandidateSource
-
-        # SQL ILIKE patterns used to pre-filter potential tracker issues
-        # before applying the full Ruby-level +Issue#tracker_issue?+
-        # check. The Ruby check matches tracker vocabulary in the title
-        # OR inside a markdown heading in the body; each SQL pattern here
-        # must be a *superset* of both branches so that no tracker
-        # escapes the prefilter (e.g. +%remaining%work%+ covers any
-        # whitespace variant that +remaining\s+work+ would match, and
-        # +%tracker%+ covers both "## Tracker" headings and bare-word
-        # title matches).
-        TRACKER_SQL_PATTERNS = [
-          "%tracker%",
-          "%remaining%work%",
-          "%completion%criteria%",
-          "%phase%tracker%",
-          "%meta%issue%"
-        ].freeze
 
         # Bounds how long a +create_pr+ run without a locally synced
         # resolution keeps its source issue out of auto-pick.
@@ -109,7 +91,7 @@ module Automation
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 @spec PARTIAL-CLOSEOUT-004
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
             epic_ids = epic_issue_ids(project)
             base = without_open_non_pr_subissues(
               base_scope(
@@ -119,18 +101,7 @@ module Automation
                 continuation_authorized_issue_ids: continuation_authorized_issue_ids
               )
             )
-            scope = Issue.auto_pick_eligible_paid_state_scope(base)
-
-            blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
-            unless blocked_ids.empty?
-              # An epic umbrella's readiness is governed by its authoritative
-              # child/dependency relationships, so incidental open body
-              # references must not strand it behind tracker heuristics.
-              blocked_ids -= epic_ids
-              scope = scope.where.not(id: blocked_ids) unless blocked_ids.empty?
-            end
-
-            scope = apply_issue_analysis_backoff(scope, project)
+            scope = apply_issue_analysis_backoff(Issue.auto_pick_eligible_paid_state_scope(base), project)
 
             # @spec INTENT-AMENDMENT-009 — branches held by a design
             # amendment stay out of selection while the hold is active.
@@ -172,85 +143,6 @@ module Automation
 
           def next_candidate(project)
             ordered_scope(project).first
-          end
-
-          # Identifies tracker issues whose body references other issues
-          # that are still open. Uses a SQL pre-filter (ILIKE) to narrow
-          # candidates, then applies the full Ruby-side
-          # +Issue#tracker_issue?+ check and reference parsing. Only
-          # queries open/closed state for issue numbers actually
-          # referenced by tracker candidates (not all project issues).
-          #
-          # +candidate_scope+ is the already-filtered eligible-issue scope
-          # so the ILIKE scan runs only against issues that passed earlier
-          # filters (labels, dependencies, active runs, etc.) rather than
-          # all open project issues. If this still becomes expensive on
-          # repos with thousands of eligible issues, consider a trigram
-          # GIN index on (title, body) or a persisted +tracker_issue+
-          # boolean column.
-          #
-          # Blocking policy:
-          # - Trackers with body references are blocked when ANY reference
-          #   is open or unknown (not yet synced). Only direct references
-          #   are checked — not transitive dependencies of those
-          #   references. Transitive checking is deferred because the
-          #   IssueDependency graph may be incomplete for body-referenced
-          #   issues, and the direct-reference check already catches the
-          #   motivating scenario (#615).
-          # - Trackers with NO body references are conservatively blocked
-          #   ONLY when the title itself matches tracker vocabulary. A
-          #   body-heading match alone (e.g. "## Completion criteria") is
-          #   a weaker signal — common in regular implementation issues —
-          #   so those are allowed through unless they have open refs.
-          def tracker_ids_blocked_by_open_references(candidate_scope, project)
-            ilike_conditions = TRACKER_SQL_PATTERNS.each_with_index.flat_map do |_, i|
-              [ "title ILIKE :t#{i}", "body ILIKE :t#{i}" ]
-            end
-            params = TRACKER_SQL_PATTERNS.each_with_index.to_h do |pattern, i|
-              [ :"t#{i}", pattern ]
-            end
-
-            candidates = candidate_scope.where(ilike_conditions.join(" OR "), **params)
-              .select(:id, :github_number, :title, :body)
-            return [] if candidates.empty?
-
-            refs_by_issue = candidates.filter_map do |issue|
-              next unless issue.tracker_issue?
-
-              refs = issue.body_referenced_issue_numbers - [ issue.github_number ]
-              [ issue.id, refs, Issue::TRACKER_PATTERN.match?(issue.title.to_s), issue.strong_tracker_body_heading? ]
-            end
-            return [] if refs_by_issue.empty?
-
-            no_ref_ids = refs_by_issue.filter_map do |id, refs, title_match, strong_body_match|
-              id if refs.empty? && (title_match || strong_body_match)
-            end
-            with_refs = refs_by_issue.filter_map { |id, refs, _, _| [ id, refs ] if refs.present? }
-            return no_ref_ids if with_refs.empty?
-
-            all_referenced_numbers = with_refs.flat_map(&:last).uniq
-
-            # Fetch referenced issues (any state) to distinguish open,
-            # closed, and unknown. Unknown (missing) references are
-            # treated as blocking to avoid auto-picking trackers when
-            # sync is incomplete.
-            referenced_states = Issue.where(
-              project: project,
-              is_pull_request: false,
-              github_number: all_referenced_numbers
-            ).pluck(:github_number, :github_state).to_h
-
-            unknown_numbers = all_referenced_numbers.reject { |num| referenced_states.key?(num) }
-            DependencyBackfillJob.perform_later(project.id, unknown_numbers) if unknown_numbers.any?
-
-            blocked_with_refs = with_refs.filter_map do |issue_id, refs|
-              issue_id if refs.any? do |num|
-                state = referenced_states[num]
-                state.nil? || state == "open"
-              end
-            end
-
-            no_ref_ids + blocked_with_refs
           end
 
           private
