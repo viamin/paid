@@ -21,7 +21,7 @@ closed child issues.
 | Pushes and design revisions invalidate verdicts and bounded exceptions | `app/models/intent_conformance_verdict.rb`, `app/services/intent_conformance/verify_at_merge.rb`; `spec/services/intent_conformance/verify_at_merge_spec.rb` | Satisfied |
 | Product-contract changes require amendments; exceptions are head-scoped | `app/models/intent_conformance_resolution.rb`, `app/services/intent_resolutions/record.rb`; `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb` | Satisfied |
 | Design-revision impact holds affected work while independent work remains runnable | `app/services/design_amendments/impact_review.rb`, `app/services/design_amendments/evaluate_impact.rb`; `spec/services/design_amendments/*_spec.rb` | Satisfied |
-| Rollout reports reviewer accuracy, cost, human time, rework, delivery time, and baseline | [frozen manifest](../intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-09.yml), [aggregate worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md), `spec/docs/intent_conformance_shadow_evaluation_manifest_spec.rb` | Satisfied |
+| Rollout reports reviewer accuracy, cost, human time, rework, delivery time, and baseline | [frozen manifest](../intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-09.yml), [aggregate worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md), `spec/services/intent_conformance/review_run_shadow_evaluation_manifest_spec.rb` | Satisfied |
 | RDR-067 can promote enforcement safely | Aggregate worksheet records one missed intentionally drifted case; promotion rule requires zero. | **Not satisfied** |
 
 ## Shadow evaluation result
