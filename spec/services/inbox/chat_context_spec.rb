@@ -145,6 +145,23 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
+  # @spec PARTIAL-CLOSEOUT-023
+  it "exposes persisted criterion evidence and freshness through authorized chat context" do
+    pull_request = create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
+    run = create(:agent_run, :completed, project:, issue:, pull_request_number: pull_request.github_number)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => [ { "criterion" => "Measured result", "state" => "unknown", "prerequisite_kind" => "external", "prerequisite" => "Pilot report" } ],
+      "classification" => "missing_measured_results"
+    }) })
+    chat_session.update!(inbox_item_key: "partial_closeout:#{issue.id}", inbox_item_metadata: { "kind" => "partial_closeout", "issue_id" => issue.id })
+
+    context = described_class.call(chat_session:, user:, sections: [ :partial_closeout ])
+
+    assessment = context.fetch("partial_closeout").fetch(:acceptance_assessment)
+    expect(assessment).to include(classification: "missing_measured_results", stale: false)
+    expect(assessment.fetch(:criteria)).to include(hash_including("state" => "unknown", "prerequisite" => "Pilot report"))
+  end
+
   def github_comment(id:, login:, body:)
     user = Struct.new(:login).new(login)
     Struct.new(:id, :user, :body, :created_at).new(id, user, body, Time.current)

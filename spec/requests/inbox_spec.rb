@@ -205,6 +205,27 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("deliberate continuation")
     end
 
+    # @spec PARTIAL-CLOSEOUT-023
+    it "shows stale criterion evidence and prevents a duplicate run on an open owner on narrow layouts" do
+      owner = create(:issue, project:, github_state: "open", github_number: 512)
+      run = create(:agent_run, :completed, project:, issue: guided_issue, pull_request_number: guided_evidence.github_number)
+      run.update!(reconciliation: {
+        "assessment" => {
+          "source_revision" => "superseded", "intent_revision" => "superseded", "assessed_at" => 2.days.ago.iso8601,
+          "classification" => "blocked_implementation",
+          "criteria" => [ { "criterion" => "Pilot p95", "state" => "unknown", "owner_issue_number" => owner.github_number,
+            "prerequisite_kind" => "human", "prerequisite" => "Attach the production p95." } ],
+          "next_action" => { "kind" => "wait_for_owner", "explanation" => "Open work already owns this." }
+        }
+      })
+
+      render_guided_pane
+
+      expect(response.body).to include("Acceptance assessment", "This assessment is stale", "Pilot p95", "unknown")
+      expect(response.body).to include("Owner: #512 (open)", "Human prerequisite", "request a bounded acceptance audit")
+      expect(response.body).to include("flex-col", "sm:flex-row")
+    end
+
     it "offers the link-prerequisite action with its sync explanation" do
       render_guided_pane
 
