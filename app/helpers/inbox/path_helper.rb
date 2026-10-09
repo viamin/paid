@@ -2,10 +2,12 @@
 
 module Inbox
   module PathHelper
-    def inbox_query_params(project: nil, kind: nil, **overrides)
+    # @spec INBOX-FOUNDATION-009
+    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], **overrides)
       {
         project_id: project&.id,
-        kind: kind
+        kind: kind,
+        sort: sort
       }.compact.merge(overrides)
     end
 

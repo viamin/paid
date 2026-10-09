@@ -37,9 +37,20 @@ RSpec.describe Inbox::Queue do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
 
-  # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004
+  # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    it "orders entries newest-waiting-first when requested" do
+      older = create_needs_input(body: questions_body)
+      newer = create_needs_input(body: questions_body)
+      older.update_columns(needs_input_since: 2.days.ago)
+      newer.update_columns(needs_input_since: 1.day.ago)
+
+      entries = described_class.call(user: user, sort: "newest")
+
+      expect(entries.map(&:record)).to start_with(newer, older)
+    end
+
     it "returns typed entries for clarifying questions, plan reviews, and merge approvals" do
       issue = create_needs_input(body: questions_body)
       review = create_plan_review(project: project, workflow_id: "planning-workflow-1")

@@ -88,7 +88,7 @@ RSpec.describe "Inbox" do
     )
   end
 
-  # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
+  # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003 @spec INBOX-FOUNDATION-009
   it "lists clarifying-question and plan-review entries across auto-pick projects" do
     review = create_inbox_entries
 
@@ -99,6 +99,21 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Alpha question", "Beta question", "PR question", "Approval blocked PR", "Review me", "Quality pause requires manual review")
     expect(response.body).to include("Visible task", "What is the expected behavior?")
     expect(response.body).not_to include("Closed question")
+  end
+
+  it "renders compact URL-driven filters with the selected project, kind, and sort" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, sort: "newest")
+
+    document = Nokogiri::HTML(response.body)
+    filter = document.at_css("[data-controller~='inbox-filters']")
+
+    expect(filter).to be_present
+    expect(document.at_css("[data-inbox-filters-target='trigger']").text).to include("Filters", project.full_name, "Clarifying Questions", "Newest first")
+    expect(document.at_css("input[name='kind'][value='clarifying_questions']")["checked"]).to be_present
+    expect(document.at_css("input[name='project_id'][value='#{project.id}']")["checked"]).to be_present
+    expect(document.at_css("input[name='sort'][value='newest']")["checked"]).to be_present
   end
 
   # @spec NOTIFICATION-SEVERITY-009
@@ -380,11 +395,12 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(
       "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:999999",
       project_id: project.id,
-      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+      sort: "newest"
     )
 
     expect(response).to redirect_to(
-      inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+      inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, sort: "newest")
     )
     expect(response).to have_http_status(:see_other)
   end

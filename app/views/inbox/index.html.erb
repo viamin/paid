@@ -1,6 +1,6 @@
 <% content_for(:title) { "Inbox - Paid" } %>
 
-<%# @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 %>
+<%# @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 @spec INBOX-FOUNDATION-009 %>
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
      data-controller="inbox-master-detail"
      data-inbox-master-detail-detail-open-value="<%= @detail_view %>">
@@ -16,29 +16,64 @@
       </p>
     </div>
 
-    <div class="flex flex-wrap gap-2">
-      <% [
-        [ "All", nil ],
-        [ "Clarifying Questions", Inbox::Queue::CLARIFYING_QUESTIONS_KIND ],
-        [ "Plan Reviews", Inbox::Queue::PLAN_REVIEW_KIND ],
-        [ "Merge Approvals", Inbox::Queue::MERGE_APPROVAL_KIND ],
-        [ "Action Required", Inbox::Queue::ACTION_REQUIRED_KIND ],
-        [ "Blocked PRs", Inbox::Queue::ESCALATED_PR_KIND ],
-        [ "Manual Review", Inbox::Queue::MANUAL_REVIEW_KIND ],
-        [ "Intent Conformance", Inbox::Queue::INTENT_CONFORMANCE_KIND ],
-        [ "Feature Decision", Inbox::Queue::FEATURE_DECISION_KIND ],
-        [ "Retry-limited", Inbox::Queue::RETRY_LIMITED_KIND ],
-        [ "CIR Drafts", Inbox::Queue::CHANGE_INTENT_DRAFT_KIND ],
-        [ "Partial closeouts", Inbox::Queue::PARTIAL_CLOSEOUT_KIND ]
-      ].each do |label, kind| %>
-        <% active = @selected_kind == kind || (@selected_kind.nil? && kind.nil?) %>
-        <%= link_to label,
-              inbox_path(**inbox_query_params(project: @scoped_project, kind: kind)),
-              class: [
-                "rounded-full px-3 py-1.5 text-sm font-medium",
-                active ? "bg-indigo-600 text-white" : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-              ].join(" ") %>
-      <% end %>
+    <div class="relative shrink-0" data-controller="inbox-filters">
+      <button type="button"
+              class="flex max-w-[55vw] items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              data-inbox-filters-target="trigger"
+              data-action="inbox-filters#open"
+              aria-haspopup="dialog">
+        <span>Filters</span>
+        <% if @selected_kind %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::KIND_LABELS.fetch(@selected_kind) %></span><% end %>
+        <% if @scoped_project %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= @scoped_project.full_name %></span><% end %>
+        <% if @selected_sort != Inbox::Queue::DEFAULT_SORT %><span class="whitespace-nowrap rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::SORTS.fetch(@selected_sort) %></span><% end %>
+      </button>
+
+      <dialog class="m-0 h-dvh w-full max-w-none border-0 bg-transparent p-0 backdrop:bg-gray-900/50 lg:absolute lg:right-0 lg:top-0 lg:h-auto lg:w-[28rem] lg:max-w-[calc(100vw-2rem)]"
+              aria-label="Inbox filters"
+              data-inbox-filters-target="dialog"
+              data-action="close->inbox-filters#closed cancel->inbox-filters#cancel">
+        <div class="flex h-full flex-col bg-white p-6 shadow-2xl lg:h-auto lg:rounded-xl" data-action="keydown.esc->inbox-filters#close">
+          <div class="mb-6 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900">Filters and sort</h2>
+            <button type="button" class="rounded p-2 text-gray-500 hover:bg-gray-100" data-action="inbox-filters#close" aria-label="Close filters">×</button>
+          </div>
+          <%= form_with url: inbox_path, method: :get, class: "flex flex-1 flex-col gap-6", data: { action: "submit->inbox-filters#apply" } do %>
+            <fieldset>
+              <legend class="text-sm font-semibold text-gray-900">Type</legend>
+              <div class="mt-2 grid gap-2" role="radiogroup">
+                <label class="flex items-center gap-2 text-sm text-gray-700"><%= radio_button_tag :kind, "", @selected_kind.nil? %> All types</label>
+                <% Inbox::Queue::KINDS.each do |kind| %>
+                  <% label = Inbox::Queue::KIND_LABELS.fetch(kind) %>
+                  <label class="flex items-center gap-2 text-sm text-gray-700"><%= radio_button_tag :kind, kind, @selected_kind == kind %> <%= label %></label>
+                <% end %>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend class="text-sm font-semibold text-gray-900">Project</legend>
+              <label class="sr-only" for="inbox-project-search">Search projects</label>
+              <input id="inbox-project-search" type="search" placeholder="Search projects" class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" data-inbox-filters-target="projectSearch" data-action="input->inbox-filters#filterProjects">
+              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" role="radiogroup">
+                <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="projectOption"><%= radio_button_tag :project_id, "", @scoped_project.nil? %> All projects</label>
+                <% @inbox_projects.each do |project| %>
+                  <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="projectOption" data-project-name="<%= project.full_name.downcase %>"><%= radio_button_tag :project_id, project.id, @scoped_project == project %> <%= project.full_name %></label>
+                <% end %>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend class="text-sm font-semibold text-gray-900">Sort</legend>
+              <div class="mt-2 grid gap-2" role="radiogroup">
+                <% Inbox::Queue::SORTS.each do |sort, label| %>
+                  <label class="flex items-center gap-2 text-sm text-gray-700"><%= radio_button_tag :sort, sort, @selected_sort == sort %> <%= label %></label>
+                <% end %>
+              </div>
+            </fieldset>
+            <div class="mt-auto flex items-center justify-between gap-4">
+              <%= link_to "Clear all", inbox_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= submit_tag "Apply filters", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500" %>
+            </div>
+          <% end %>
+        </div>
+      </dialog>
     </div>
   </div>
 
