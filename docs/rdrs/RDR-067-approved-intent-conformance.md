@@ -38,10 +38,14 @@ review for each eligible `(PR, HEAD, approved-design revision)` identity; a
 new head or design revision schedules a fresh review. Issue #3870 now defines
 the read-only shadow-review flag, representative corpus, telemetry baseline,
 promotion criteria, and operator rollback protocol in
-`docs/intent/intent-conformance-rollout/`. The completed 2026-10-09 shadow
-evaluation recorded one missed intentionally drifted case, so promotion was
-not met and enforcement remains off; see
-`docs/intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md`.
+`docs/intent/intent-conformance-rollout/`. The 2026-10-09 shadow-evaluation
+attempt was invalidated: the recorded design revision postdates the
+adjudications and the strata were not independently content-adjudicated, so
+the recorded reviewer-vs-adjudicator count of one missed drift case is not
+evidence of the reviewer's accuracy and the promotion rule was not met.
+Enforcement remains off; see
+`docs/intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md`
+and [audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
 The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are

@@ -2,9 +2,14 @@
 
 require "rails_helper"
 
+module IntentConformance
+  module ShadowEvaluationManifest
+  end
+end
+
 # @spec INTENT-CONFORMANCE-ROLLOUT-002
 # @spec INTENT-CONFORMANCE-ROLLOUT-003
-RSpec.describe IntentConformance::ReviewRun do
+RSpec.describe IntentConformance::ShadowEvaluationManifest, :no_db do
   subject(:manifest) do
     YAML.safe_load_file(
       Rails.root.join("docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-09.yml")
