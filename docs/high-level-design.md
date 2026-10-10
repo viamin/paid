@@ -275,6 +275,17 @@ guest network, and results-and-artifacts contracts those attempts follow. The
 lifecycle API is provider-neutral; its first implementation maps to Tart and
 Softnet. See RDR-068.
 
+A native client API layer extends the control plane for the iOS companion
+app: a versioned `/api/v1` namespace of thin controllers over the same
+services, Pundit policies, and tenant context the web UI uses, authenticated
+by revocable personal access tokens (`Authorization: Bearer`) rather than
+Devise browser sessions. The OpenAPI document (`docs/api/openapi.yaml`) is
+the contract source of truth — request/response validation, provider
+verification, fuzzing, and the independently developed iOS client all derive
+from that one schema. Native surfaces are inbox and chat only; everything
+else stays web-only, and refresh is polling with `ETag`/`304` support rather
+than push. See `docs/intent/mobile-api/`.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
