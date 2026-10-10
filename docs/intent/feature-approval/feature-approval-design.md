@@ -118,16 +118,16 @@ In scope (#3864):
   `Inbox::FeatureDecisionSummary`'s held/cleared explanation, and the detail
   view with the Mark approved action.
 
-Out of scope (owned by sibling issues under #3860): attaching `create_feature`
-/`lid_planning` output (design PRs, proposed issue tree, generated
-questions/evidence) to a `FeatureIntent` (#3863); enforcing the release hold
-at auto-pick, eager queue, dequeue, and manual `create_pr` entry points, and
-reconciling direct GitHub human merges, bot merges, and abandoned design PRs
-against this same readiness/authorization contract (#3865).
-Until #3863 lands, no code path creates `FeatureIntentDecision` or
-`FeatureIntentDesignPr` rows outside tests, so this segment's behavior is
-present but dormant for existing projects — no rollout flag is needed for
-that reason alone (see Rollout guard below).
+The attachment and admission slices originally owned by #3863 and #3865
+shipped in #4113 and #4114. `AttachFromAgentRun` creates and links Feature
+Intents, design PRs, and proposed issue trees; `RunAdmission` enforces the
+hold at selection, creation, dequeue, and dispatch; and design-PR
+reconciliation uses the same `MarkApproved` authorization/readiness contract.
+
+FEATURE-APPROVAL-019 remains open: attachment records repository/API facts
+today, but does not turn an agent run's explicitly emitted questions or
+`[inferred]` decisions into `FeatureIntentDecision` rows. The Inbox therefore
+shows the truthful empty decision state rather than fabricating one.
 
 ## Approval revisions and release
 
@@ -144,8 +144,8 @@ feature, requires `approved_waiting_for_merge`, a current approval snapshot,
 and every `required` design PR to be merged. It then records the supplied merged
 repository revision and moves the feature to `released`. A new PR head after
 approval means the snapshot is no longer current, so release fails closed until
-a fresh authorized human approval is recorded. The later #3865 admission wiring
-uses this release state; it does not bypass this transition contract.
+a fresh authorized human approval is recorded. The #4114 admission wiring uses
+this release state; it does not bypass this transition contract.
 
 ## Inbox decision flow and Mark approved
 
