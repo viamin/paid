@@ -46,7 +46,8 @@
   once repaired — instead of leaving the pull request at a stale priority
   until the issue's priority labels change again (the issue's new labels are
   persisted before the reconciliation runs, so no later sync of the unchanged
-  issue re-triggers the flow).
+  issue re-triggers the flow). When that bounded retry is exhausted, the
+  system SHALL report the terminal failure to the issue's owning account.
   *Code:* `Issues::SyncPriorityLabelsToPullRequest.call`,
   `Issues::SyncPriorityLabelsToPullRequestJob`.
   *Test:* `spec/services/issues/sync_priority_labels_to_pull_request_spec.rb`,

@@ -40,11 +40,20 @@ module Issues
     )
 
     def notification_project_id
-      Issue.where(id: arguments.first).pick(:project_id)
+      TenantContext.with_system_access { Issue.where(id: arguments.first).pick(:project_id) }
     end
 
     def perform(issue_id) # @spec PRIORITY-LABEL-SYNC-005
       Issues::SyncPriorityLabelsToPullRequest.call!(issue: Issue.find(issue_id))
+    end
+
+    private
+
+    # This job receives an issue ID rather than a project or agent-run ID. Both
+    # the tenant wrapper and terminal retry notification run this lookup under
+    # system access through ApplicationJob.
+    def tenant_account
+      Issue.includes(project: :account).find_by(id: arguments.first)&.project&.account
     end
   end
 end

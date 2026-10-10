@@ -28,4 +28,25 @@ RSpec.describe Issues::SyncPriorityLabelsToPullRequestJob do
     expect { described_class.perform_now(issue.id) }
       .to have_enqueued_job(described_class).with(issue.id)
   end
+
+  # retry_on handles GithubClient::Error before ApplicationJob's rescue_from
+  # callback. The exhausted retry handler must therefore retain the issue's
+  # account and project while reporting the terminal failure.
+  # @spec PRIORITY-LABEL-SYNC-005
+  it "reports an exhausted retry to the issue account" do
+    notifier = instance_double(Paid::ExceptionNotifier)
+    allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+    allow(notifier).to receive(:call)
+    allow(Issues::SyncPriorityLabelsToPullRequest).to receive(:call!)
+      .and_raise(GithubClient::ApiError.new("boom", status: 502))
+
+    job = described_class.new(issue.id)
+    job.exception_executions = { "[GithubClient::Error]" => 7 }
+
+    expect { job.perform_now }.to raise_error(GithubClient::ApiError, "boom")
+    expect(notifier).to have_received(:call).with(
+      an_instance_of(GithubClient::ApiError),
+      data: hash_including(account: project.account, project_id: project.id)
+    )
+  end
 end

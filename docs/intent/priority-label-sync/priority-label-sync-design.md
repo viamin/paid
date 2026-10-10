@@ -63,6 +63,12 @@ hours — so the inline rescue also enqueues
 reconciliation (same guards, same label diff — it no-ops once repaired)
 until it applies or the retry policy is exhausted.
 
+When that retry policy is exhausted, the job reports the terminal GitHub
+failure to the issue's owning account. Its argument is an issue ID (rather
+than the project or agent-run IDs handled by `ApplicationJob`'s default
+resolver), so it resolves the issue's project and account under system access
+for both the job tenant context and the post-callback exception notification.
+
 `GithubClient#remove_labels_from_issue` attempts each removal independently
 and reports failures rather than raising. The reconciliation treats a
 non-empty `failed` result as a failed write: it first persists the subset of
@@ -80,7 +86,8 @@ path; this sync is the only place that removes a stale priority label.
 ## Code
 
 - `app/services/issues/sync_priority_labels_to_pull_request.rb`
-- `app/jobs/issues/sync_priority_labels_to_pull_request_job.rb` (bounded retry)
+- `app/jobs/issues/sync_priority_labels_to_pull_request_job.rb` (bounded retry
+  and terminal failure notification)
 - `app/services/issues/upsert_from_github.rb` (trigger)
 
 Test: `spec/services/issues/sync_priority_labels_to_pull_request_spec.rb`,
