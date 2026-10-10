@@ -46,6 +46,23 @@ RSpec.describe RetryFailedManualRunJob do
       expect(new_run.external_metadata["feature_brief"]).to eq({ "summary" => "Add dark mode" })
     end
 
+    it "preserves plan_doc_source when a lid_planning run failed before its prompt was persisted" do
+      # Pre-prompt failure shape: ProjectsController#start_lid queues a
+      # lid_planning run with plan_doc_source and a blank custom_prompt; the
+      # prompt is only persisted later by CreateAgentRunActivity's
+      # ensure_lid_planning_prompt!. If the workflow fails before that point
+      # (e.g. runner validation), the retry must still carry the
+      # operator-selected design document so it plans the same work.
+      original = create(:agent_run, :failed, :manual, :lid_planning_goal, project: project, issue: nil,
+        plan_doc_source: "docs/rdrs/RDR-051-lid-aware-agent-runs.md", custom_prompt: nil)
+
+      described_class.new.perform(original.id, 1)
+
+      new_run = AgentRun.order(:id).last
+      expect(new_run.plan_doc_source).to eq("docs/rdrs/RDR-051-lid-aware-agent-runs.md")
+      expect(new_run.custom_prompt).to be_nil
+    end
+
     it "does nothing when the run no longer exists" do
       expect {
         described_class.new.perform(-1, 1)

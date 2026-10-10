@@ -63,12 +63,17 @@
   SHALL mark the original run `"retried"` (the same terminal status
   review-goal bookkeeping already uses for a superseded run) and create a
   new queued `AgentRun` carrying the original's `project`,
-  `initiating_user`, `runner`, `agent_type`, `custom_prompt`, `goal`, and
-  `external_metadata` (merged with retry-chain bookkeeping keys) — in that
-  order, so the new row never collides with
-  `idx_agent_runs_unique_active_lid_planning`. `external_metadata` SHALL be
-  carried forward (not reset) because `create_feature` derives its prompt
-  from `external_metadata["feature_brief"]`.
+  `initiating_user`, `runner`, `agent_type`, `custom_prompt`,
+  `plan_doc_source`, `goal`, and `external_metadata` (merged with
+  retry-chain bookkeeping keys) — in that order, so the new row never
+  collides with `idx_agent_runs_unique_active_lid_planning`.
+  `external_metadata` SHALL be carried forward (not reset) because
+  `create_feature` derives its prompt from
+  `external_metadata["feature_brief"]`. `plan_doc_source` SHALL be carried
+  forward because a manually-started `lid_planning` run may fail before
+  `ensure_lid_planning_prompt!` persists `custom_prompt`, leaving
+  `plan_doc_source` as the only record of the operator-selected design
+  document (LID-RUNS-005).
   *Code:* `RetryFailedManualRunJob#perform`, `RetryFailedManualRunJob#create_retry_run`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 

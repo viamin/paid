@@ -131,16 +131,21 @@ clear within minutes, not hours.
    dashboards and queries that already understand `"retried"` do not need a
    new status to special-case.
 3. Mints a new `AgentRun` by whitelisting the fields that define "what to
-   run" from the original — `project`, `initiating_user`, `runner`,
-   `agent_type`, `custom_prompt`, `goal` — plus `external_metadata` merged
-   with the retry-bookkeeping keys above. This mirrors
-   `RetryTimedOutIssueGoalJob#perform`'s `AgentRun.create!` call, with one
-   addition: `external_metadata` must be carried forward because
-   `create_feature` derives its prompt from `external_metadata["feature_brief"]`
-   (`AgentRun#has_prompt_source`) — a fresh empty hash would silently strip
-   it. Execution-state columns (container, temporal workflow, PR/issue
-   artifacts, timestamps) are intentionally not copied; they belong to the
-   old run's attempt, not the new one.
+    run" from the original — `project`, `initiating_user`, `runner`,
+    `agent_type`, `custom_prompt`, `plan_doc_source`, `goal` — plus
+    `external_metadata` merged with the retry-bookkeeping keys above. This
+    mirrors `RetryTimedOutIssueGoalJob#perform`'s `AgentRun.create!` call,
+    with two additions: `external_metadata` must be carried forward because
+    `create_feature` derives its prompt from
+    `external_metadata["feature_brief"]`
+    (`AgentRun#has_prompt_source`) — a fresh empty hash would silently strip
+    it — and `plan_doc_source` must be carried forward because a manually
+    started `lid_planning` run can fail before
+    `ensure_lid_planning_prompt!` persists `custom_prompt`, leaving
+    `plan_doc_source` as the only record of the operator-selected design
+    document. Execution-state columns (container, temporal workflow, PR/issue
+    artifacts, timestamps) are intentionally not copied; they belong to the
+    old run's attempt, not the new one.
 4. Marking "retried" happens *before* the insert, in the same transaction,
    so the new row never collides with
    `idx_agent_runs_unique_active_lid_planning` (the partial unique index

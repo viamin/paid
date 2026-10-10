@@ -82,6 +82,7 @@ class RetryFailedManualRunJob < ApplicationJob
       runner: original.runner,
       agent_type: original.agent_type,
       custom_prompt: original.custom_prompt,
+      plan_doc_source: original.plan_doc_source,
       goal: original.goal,
       trigger_type: "manual",
       status: "queued",
