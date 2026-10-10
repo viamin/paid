@@ -233,6 +233,25 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-022 — A fallback notice can remove the transient bubble
+    // before completion, but the terminal event must still release the composer.
+    function testMessageCompleteReleasesFallbackWithoutActiveStreamId() {
+      const { controller } = makeController({
+        currentStreamId: null,
+        incrementTokenUsage: () => {},
+        scrollToBottom: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        setBusy: function(busy) { this.streaming = busy; }
+      });
+
+      controller.handleMessageComplete({ message_id: "stream-1", tokens: {} });
+
+      if (controller.streaming) {
+        throw new Error("Expected fallback completion to release streaming when no active stream ID remains");
+      }
+    }
+
     // @spec CHAT-API-022 — Duplicate chunks and gaps are not safe to append:
     // an incomplete transient bubble is preferable to corrupting transcript text.
     function testMessageChunksRequireContiguousSequence() {
@@ -478,6 +497,32 @@ class ChatControllerNodeHarness
 
       if ((controller.currentAttemptToolCards || []).length !== 0) {
         throw new Error("Expected tracked tool cards to be cleared after fallback notice");
+      }
+    }
+
+    // @spec CHAT-API-022 — The fallback attempt uses the same stream ID and
+    // sequence, so it must continue rendering after stale artifacts are removed.
+    function testFallbackNoticeKeepsStreamActiveForReplacementChunks() {
+      const appended = [];
+      const message = {};
+      const { controller } = makeController({
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
+        ensureAssistantMessage: () => message,
+        messageControllerFor: () => ({ appendContent: (content) => appended.push(content) }),
+        removeStreamingMessage: () => {},
+        scrollToBottom: () => {},
+        setStatus: () => {}
+      });
+
+      controller.removeCurrentAttemptArtifacts();
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 1, content: "Fallback answer" });
+
+      if (controller.currentStreamId !== "test-id") {
+        throw new Error("Expected fallback cleanup to retain the active stream ID");
+      }
+      if (appended.join("") !== "Fallback answer") {
+        throw new Error(`Expected fallback chunk to render, got ${appended.join("")}`);
       }
     }
 
@@ -1327,6 +1372,7 @@ class ChatControllerNodeHarness
       testToolResultWithMissingHtmlDoesNotAppend();
       testMessageCompleteResetsStreamingState();
       testMessageCompleteRemovesStreamingBubble();
+      testMessageCompleteReleasesFallbackWithoutActiveStreamId();
       testMessageChunksRequireContiguousSequence();
       testSendMessageTracksPendingContentForRestoration();
       testHandleErrorRestoresPendingContentIntoInput();
@@ -1337,6 +1383,7 @@ class ChatControllerNodeHarness
       testToolEventsDoNotResetStreamingBeforeComplete();
       testHandleEventDispatchesToolCall();
       testFallbackNoticeRemovesStaleToolCards();
+      testFallbackNoticeKeepsStreamActiveForReplacementChunks();
       testRegularMessageCreatedKeepsAttemptToolCards();
       testCapabilityChangedUpdatesPanelIconAndActions();
       testSystemNoticeReplacementTargetsTopLevelElement();

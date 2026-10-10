@@ -243,7 +243,7 @@ export default class extends Controller {
     this.removeStreamingMessage(streamId)
     this.ignoredStreamIds ||= new Set()
     this.ignoredStreamIds.delete(streamId)
-    if (data.message_id && data.message_id !== this.currentStreamId) return
+    if (data.message_id && this.currentStreamId && data.message_id !== this.currentStreamId) return
 
     this.streaming = false
     this.currentStreamId = null
@@ -542,9 +542,8 @@ export default class extends Controller {
   // runner produces a fresh turn. The in-flight assistant bubble is removed and
   // the tool cards this attempt appended (tracked in currentAttemptToolCards)
   // are torn down, so the UI never lingers on tool activity that no longer
-  // exists. currentStreamId is cleared so a late chunk for the old stream
-  // cannot resurrect the removed bubble before the next message_start reassigns
-  // it.
+  // exists. The stream ID stays active: fallback chunks share its contiguous
+  // sequence and render into a fresh bubble after the stale one is removed.
   removeCurrentAttemptArtifacts() {
     this.removeCurrentAssistantMessage()
     this.removeCurrentAttemptToolCards()
@@ -565,14 +564,13 @@ export default class extends Controller {
 
   // On a runner fallback the partial answer from the failed runner is discarded
   // unconditionally: the fallback runner produces a fresh answer, so any
-  // partial text from the failed attempt is stale. currentStreamId is cleared
-  // so late chunks cannot resurrect the removed bubble.
+  // partial text from the failed attempt is stale. Keeping currentStreamId
+  // lets the fallback attempt continue streaming into a fresh bubble.
   removeCurrentAssistantMessage() {
     if (!this.currentStreamId) return
 
     const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
     pendingMessage?.closest("div")?.remove()
-    this.currentStreamId = null
   }
 
   messageElementById(messageId) {
