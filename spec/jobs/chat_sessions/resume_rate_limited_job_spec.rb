@@ -36,6 +36,22 @@ RSpec.describe ChatSessions::ResumeRateLimitedJob, type: :job do
       .with(hash_including(type: "message_complete", tokens: { input: 8, output: 4 }))
   end
 
+  it "numbers streamed chunks within the resumed stream" do
+    # @spec CHAT-API-020
+    allow(ChatSessions::ResumeRateLimited).to receive(:call) do |**args|
+      args[:on_chunk].call("Still ")
+      args[:on_chunk].call("here.")
+      nil
+    end
+
+    expect {
+      described_class.perform_now(chat_session_id: chat_session.id)
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_chunk", content: "Still ", sequence: 1))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_chunk", content: "here.", sequence: 2))
+  end
+
   it "clears the pause so the session is no longer rate limited" do
     allow(ChatSessions::ResumeRateLimited).to receive(:call) do
       chat_session.clear_rate_limit!

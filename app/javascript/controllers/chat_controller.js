@@ -9,6 +9,8 @@ export default class extends Controller {
     this.autoScroll = true
     this.streaming = false
     this.currentStreamId = null
+    this.expectedStreamSequence = 1
+    this.ignoredStreamIds = new Set()
     this.pendingContent = null
     this.currentAttemptToolCards = []
     this.scrollAnimationId = null
@@ -205,21 +207,44 @@ export default class extends Controller {
   }
 
   handleMessageStart(data) {
+    if (!data.message_id || data.message_id === this.currentStreamId) return
+
+    this.ignoredStreamIds ||= new Set()
+    this.removePendingAssistantMessage()
     this.currentStreamId = data.message_id
+    this.expectedStreamSequence = 1
+    this.ignoredStreamIds.delete(data.message_id)
     this.streaming = true
     this.currentAttemptToolCards = []
     this.setStatus(`Streaming ${data.model || "assistant"} response…`)
     this.toggleTyping(true)
   }
 
+  // @spec CHAT-API-020
   handleMessageChunk(data) {
+    if (data.message_id !== this.currentStreamId || this.ignoredStreamIds.has(data.message_id)) return
+
+    const sequence = Number(data.sequence)
+    if (!Number.isInteger(sequence) || sequence !== this.expectedStreamSequence) {
+      this.invalidateStream(data.message_id)
+      return
+    }
+
     const message = this.ensureAssistantMessage(data.message_id)
     const controller = this.messageControllerFor(message)
     controller?.appendContent(data.content || "")
+    this.expectedStreamSequence += 1
     this.scrollToBottom()
   }
 
+  // @spec CHAT-API-020
   handleMessageComplete(data) {
+    const streamId = data.message_id || this.currentStreamId
+    this.removeStreamingMessage(streamId)
+    this.ignoredStreamIds ||= new Set()
+    this.ignoredStreamIds.delete(streamId)
+    if (data.message_id && data.message_id !== this.currentStreamId) return
+
     this.streaming = false
     this.currentStreamId = null
     this.pendingContent = null
@@ -285,7 +310,12 @@ export default class extends Controller {
   }
 
   handleError(data) {
-    this.removePendingAssistantMessage()
+    const streamId = data.message_id || this.currentStreamId
+    this.removeStreamingMessage(streamId)
+    this.ignoredStreamIds ||= new Set()
+    this.ignoredStreamIds.delete(streamId)
+    if (data.message_id && this.currentStreamId && data.message_id !== this.currentStreamId) return
+
     this.streaming = false
     this.currentStreamId = null
     this.setBusy(false)
@@ -490,15 +520,20 @@ export default class extends Controller {
   }
 
   removePendingAssistantMessage() {
-    if (!this.currentStreamId) return
+    this.removeStreamingMessage(this.currentStreamId)
+  }
 
-    const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
-    if (!pendingMessage) return
+  removeStreamingMessage(streamId) {
+    if (!streamId) return
 
-    const contentTarget = pendingMessage.querySelector("[data-chat-message-target='content']")
-    if (contentTarget?.dataset.rawContent) return
+    const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${streamId}"]`)
+    pendingMessage?.closest("div")?.remove()
+  }
 
-    pendingMessage.closest("div")?.remove()
+  invalidateStream(streamId) {
+    this.ignoredStreamIds.add(streamId)
+    this.removeStreamingMessage(streamId)
+    this.setStatus("Waiting for saved response…")
   }
 
   // On a runner fallback the partial answer AND any tool_call / tool_result
@@ -529,11 +564,9 @@ export default class extends Controller {
   }
 
   // On a runner fallback the partial answer from the failed runner is discarded
-  // unconditionally (unlike removePendingAssistantMessage, which preserves a
-  // bubble that already streamed content): the fallback runner produces a fresh
-  // answer, so any partial text from the failed attempt is stale. currentStreamId
-  // is cleared so a late chunk for the old stream cannot resurrect the removed
-  // bubble before the next message_start assigns a new id.
+  // unconditionally: the fallback runner produces a fresh answer, so any
+  // partial text from the failed attempt is stale. currentStreamId is cleared
+  // so late chunks cannot resurrect the removed bubble.
   removeCurrentAssistantMessage() {
     if (!this.currentStreamId) return
 
@@ -694,15 +727,14 @@ export default class extends Controller {
     return this.containerTarget.scrollHeight
   }
 
-  // The last assistant text message inside the transcript — tool calls render
-  // without that flag and are skipped, while streaming bubbles from
-  // ensureAssistantMessage set it so the selector works mid-stream too.
+  // The last persisted assistant text message inside the transcript — tool
+  // calls and temporary streaming bubbles are skipped.
   // Falls back to null when there is no assistant text yet (new chat or one
   // whose final turn is a user message).
   lastAssistantTextResponse() {
     if (!this.hasMessagesTarget) return null
     const articles = this.messagesTarget.querySelectorAll(
-      'article[data-chat-message-role-value="assistant"][data-chat-message-markdown-value="true"]'
+      'article[data-message-id][data-chat-message-role-value="assistant"][data-chat-message-markdown-value="true"]'
     )
     return articles[articles.length - 1] || null
   }

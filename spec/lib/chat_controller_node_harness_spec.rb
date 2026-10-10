@@ -213,6 +213,55 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-020 — A terminal event must never leave an unpersisted
+    // streaming bubble at the end of the transcript.
+    function testMessageCompleteRemovesStreamingBubble() {
+      let removedStreamId = null;
+      const { controller } = makeController({
+        incrementTokenUsage: () => {},
+        scrollToBottom: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        setBusy: function(busy) { this.streaming = busy; },
+        removeStreamingMessage: (streamId) => { removedStreamId = streamId; }
+      });
+
+      controller.handleMessageComplete({ message_id: "test-id", tokens: {} });
+
+      if (removedStreamId !== "test-id") {
+        throw new Error(`Expected message_complete to remove stream test-id, got ${removedStreamId}`);
+      }
+    }
+
+    // @spec CHAT-API-020 — Duplicate chunks and gaps are not safe to append:
+    // an incomplete transient bubble is preferable to corrupting transcript text.
+    function testMessageChunksRequireContiguousSequence() {
+      const appended = [];
+      let removedStreamId = null;
+      const message = {};
+      const { controller } = makeController({
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
+        ensureAssistantMessage: () => message,
+        messageControllerFor: () => ({ appendContent: (content) => appended.push(content) }),
+        removeStreamingMessage: (streamId) => { removedStreamId = streamId; },
+        scrollToBottom: () => {},
+        setStatus: () => {}
+      });
+
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 1, content: "first" });
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 1, content: "duplicate" });
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 3, content: "gap" });
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 2, content: "late" });
+
+      if (appended.join("") !== "first") {
+        throw new Error(`Expected only the contiguous chunk to append, got ${appended.join("")}`);
+      }
+      if (removedStreamId !== "test-id") {
+        throw new Error("Expected a sequence gap to remove the transient bubble");
+      }
+    }
+
     // A send is tracked before the server has confirmed anything (message_start
     // travels over the same socket) so a later rejection — e.g. a token-limit
     // error — can restore what the user typed.
@@ -673,6 +722,29 @@ class ChatControllerNodeHarness
       // scrollTop (100) + (anchorRect.top 250 - containerRect.top 50) = 300
       if (scrolledTo !== 300) {
         throw new Error(`Expected scrollToLatestResponse to target 300 (container-relative anchor offset), got ${scrolledTo}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Temporary streaming bubbles have no persisted
+    // message id and must never become the Jump to latest anchor.
+    function testLastAssistantTextResponseExcludesStreamingBubbles() {
+      const persisted = { id: "persisted" };
+      let selector = null;
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (value) => {
+            selector = value;
+            return [ persisted ];
+          },
+          append: () => {}
+        }
+      });
+
+      if (controller.lastAssistantTextResponse() !== persisted) {
+        throw new Error("Expected the persisted assistant response to be the anchor");
+      }
+      if (!selector.includes("[data-message-id]")) {
+        throw new Error(`Expected persisted-message selector, got ${selector}`);
       }
     }
 
@@ -1254,6 +1326,8 @@ class ChatControllerNodeHarness
       testToolResultAppendsCard();
       testToolResultWithMissingHtmlDoesNotAppend();
       testMessageCompleteResetsStreamingState();
+      testMessageCompleteRemovesStreamingBubble();
+      testMessageChunksRequireContiguousSequence();
       testSendMessageTracksPendingContentForRestoration();
       testHandleErrorRestoresPendingContentIntoInput();
       testHandleErrorNoOpsWithoutPendingContent();
@@ -1273,6 +1347,7 @@ class ChatControllerNodeHarness
       testScrollToInputScrollsToBottom();
       testScrollToTopScrollsToZero();
       testScrollToLatestResponseSmoothScrollsToAnchor();
+      testLastAssistantTextResponseExcludesStreamingBubbles();
       testScrollToLatestResponseFallsBackToBottom();
       testJumpToLatestResponseOnLoadSetsScrollTopInstantly();
       testConnectDefersInitialJumpUntilAfterChildControllersRender();

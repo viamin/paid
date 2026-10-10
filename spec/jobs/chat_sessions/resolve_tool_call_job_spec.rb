@@ -32,6 +32,27 @@ RSpec.describe ChatSessions::ResolveToolCallJob, type: :job do
       .with(hash_including(type: "message_complete", tokens: { input: 5, output: 3 }))
   end
 
+  it "numbers streamed chunks within the resolution stream" do
+    # @spec CHAT-API-020
+    allow(ChatSessions::ResolveToolCall).to receive(:call) do |**args|
+      args[:on_chunk].call("Done ")
+      args[:on_chunk].call("now.")
+      nil
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        message_id: tool_call_message.id,
+        decision: "approve",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "Done ", sequence: 1))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "now.", sequence: 2))
+  end
+
   # @spec QUESTION-EXPLORATION-007
   it "passes the confirming collaborator to ResolveToolCall" do
     collaborator = create(:user, account: account)

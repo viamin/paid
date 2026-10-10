@@ -88,6 +88,7 @@ class ChatMessagesController < ApplicationController
       response.headers["X-Accel-Buffering"] = "no"
 
       message_id = SecureRandom.uuid
+      chunk_sequence = 0
 
       write_sse_event("message_start", { message_id: message_id, model: @chat_session.model })
 
@@ -95,7 +96,10 @@ class ChatMessagesController < ApplicationController
         chat_session: @chat_session,
         actor: current_user,
         content: params[:content],
-        on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
+        on_chunk: ->(chunk) {
+          chunk_sequence += 1
+          write_sse_event("message_chunk", { message_id: message_id, content: chunk, sequence: chunk_sequence })
+        },
         on_message_persisted: ->(message, stream_message_id: nil) { write_sse_tool_event(message, stream_message_id: stream_message_id) }
       )
 
@@ -209,6 +213,7 @@ class ChatMessagesController < ApplicationController
       response.headers["X-Accel-Buffering"] = "no"
 
       message_id = SecureRandom.uuid
+      chunk_sequence = 0
 
       write_sse_event("message_start", { message_id: message_id })
 
@@ -217,7 +222,10 @@ class ChatMessagesController < ApplicationController
         actor: current_user,
         tool_call_message: tool_call_message,
         decision: decision,
-        on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
+        on_chunk: ->(chunk) {
+          chunk_sequence += 1
+          write_sse_event("message_chunk", { message_id: message_id, content: chunk, sequence: chunk_sequence })
+        },
         on_tool_call_resolved: ->(message) {
           write_sse_event("message_tool_resolved", {
             message_id: message.id,
