@@ -47,4 +47,18 @@ RSpec.describe Configuration::Profiles::HumanLedFeatureFactory do
     expect(plan).not_to be_blocked
     expect(plan.changes.map(&:key)).to include("operating_mode", "tdd_mode")
   end
+
+  # @spec FEATURE-APPROVAL-002
+  it "does not plan or apply a tenant-wide auto-continue change" do
+    project = create(:project)
+    actor = create(:user, :owner, account: project.account)
+    project.account.tenant_setting!.update!(agent_settings: { "auto_continue" => true })
+
+    plan = Configuration::Profiles::Planner.call(profile: described_class, project:, actor:)
+    result = Configuration::Profiles::Applier.call(plan:, project:, actor:)
+
+    expect(plan.changes).not_to include(have_attributes(key: "agent_auto_continue", level: :tenant))
+    expect(result.fetch(:applied_changes)).not_to include(include(key: "agent_auto_continue", level: "tenant"))
+    expect(project.account.tenant_setting.reload.auto_continue?).to be(true)
+  end
 end

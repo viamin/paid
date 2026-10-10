@@ -21,7 +21,8 @@
   configuration profile is applied, the project SHALL enter the human-led
   feature operating mode with `non_strict` TDD as the suggested
   test-review posture, and `auto_merge_mode` SHALL remain `off` unless the
-  operator explicitly selects otherwise.
+  operator explicitly selects otherwise. The project-scoped profile SHALL
+  NOT change the tenant-level `agent_settings.auto_continue` setting.
 
 - [x] **FEATURE-APPROVAL-003** — When an operator adopts the profile with
   explicit auto-merge or TDD selections, the system SHALL apply those

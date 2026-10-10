@@ -50,7 +50,7 @@ RSpec.describe Configuration::Profiles::Settings do
       expect(described_class.profile_target_keys).to include(
         "auto_pick_enabled", "auto_merge_mode", "adoption_mode", "review_paid_agent", "review_manual", "quality_gate_enabled"
       )
-      expect(described_class.profile_target_keys).not_to include("active", "owner_reviewer_login")
+      expect(described_class.profile_target_keys).not_to include("active", "owner_reviewer_login", "agent_auto_continue")
     end
   end
 

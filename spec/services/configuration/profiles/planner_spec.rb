@@ -37,12 +37,13 @@ RSpec.describe Configuration::Profiles::Planner do
       expect(plan.profile_name).to eq("solo_automated")
     end
 
-    it "includes user and tenant scoped changes in mixed-scope profiles" do
+    it "includes user-scoped changes without changing tenant settings" do
       actor.settings.update!(run_concurrency_mode: "auto")
       plan = described_class.call(profile: Configuration::Profiles::ObserveOnly, project:, actor:)
 
       expect(plan.changes).to include(have_attributes(key: "run_concurrency_mode", level: :user, from: "auto", to: "manual"))
-      expect(plan.changes.map(&:level)).to include(:project, :tenant, :user)
+      expect(plan.changes.map(&:level)).to include(:project, :user)
+      expect(plan.changes.map(&:level)).not_to include(:tenant)
     end
 
     context "when the project already matches every target" do
@@ -164,8 +165,7 @@ RSpec.describe Configuration::Profiles::Planner do
       plan = described_class.call(profile: Configuration::Profiles::ObserveOnly, project:, actor: member)
 
       expect(plan.skipped_levels).to contain_exactly(
-        include("level" => "project", "reason" => "Not authorized to update project settings"),
-        include("level" => "tenant", "reason" => "Not authorized to update tenant settings")
+        include("level" => "project", "reason" => "Not authorized to update project settings")
       )
     end
 

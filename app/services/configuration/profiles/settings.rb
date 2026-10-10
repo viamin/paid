@@ -245,13 +245,17 @@ module Configuration
           read: ->(user_setting) { user_setting&.run_concurrency_mode },
           write: ->(user_setting, value) { user_setting.run_concurrency_mode = value.to_s }
         ),
+        # @spec FEATURE-APPROVAL-002
+        # Tenant-wide iteration mechanics are configured explicitly, never by
+        # applying a posture to one project.
         "agent_auto_continue" => Descriptor.new(
           key: "agent_auto_continue", attribute: "agent_settings", level: :tenant,
           label: "Agent auto-continue",
           record: ->(context) { context.tenant_setting },
           read: ->(tenant_setting) { tenant_setting&.effective_agent_settings&.dig("auto_continue") },
           write: ->(tenant_setting, value) { merge_jsonb(tenant_setting, :agent_settings, "auto_continue", value) },
-          coerce: BOOLEAN
+          coerce: BOOLEAN,
+          target: false
         )
       }.freeze
 
