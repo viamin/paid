@@ -121,12 +121,20 @@
   applied) plus "All projects". Each offered option SHALL display its item
   count. Availability SHALL be computed from the same per-kind lane scopes the
   `Inbox::Count` badge uses (so displayed counts agree with the unfiltered
-  badge total), not from `Inbox::Queue`'s heavier per-entry build. The dialog
+  badge total), not from `Inbox::Queue`'s heavier per-entry build, and the
+  per-user matrix SHALL be cached behind the same dashboard cache version and
+  short TTL the badge uses — every inbox render (`index`, `show`, and
+  `open_chat` all build availability in `load_inbox`) pays one cache read
+  instead of re-running every lane per request. The dialog
   SHALL embed the kind↔project availability matrix in the DOM so selecting a
   type dynamically narrows the project options (and vice versa) without an
-  extra round-trip, resetting a now-invalid selection to "All".
+  extra round-trip, resetting a now-invalid selection to "All". The
+  project-name search SHALL compose with that narrowing rather than
+  clobbering it: an option stays visible only while it both matches the
+  search query and is compatible with the other group's selection, and
+  hiding through the search alone never resets a selection.
   *Tests:* `spec/services/inbox/availability_spec.rb`,
-  `spec/requests/inbox_spec.rb`.
+  `spec/requests/inbox_spec.rb`, `spec/system/inbox_filters_dialog_spec.rb`.
   *Code:* `app/services/inbox/availability.rb`,
   `app/controllers/inbox_controller.rb#load_inbox`,
   `app/views/inbox/index.html.erb`,

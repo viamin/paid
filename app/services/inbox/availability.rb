@@ -6,12 +6,16 @@ module Inbox
   #
   # Mirrors Inbox::Count's per-kind scopes (cheap SQL counts/signal checks on
   # the same visibility rules every inbox lane uses) rather than
-  # Inbox::Queue's full entry build, so computing availability on every /inbox
-  # render costs about what the nav badge already costs, not the heavier
-  # per-entry lane work (Issues::StalledCloseouts, GitHub-ish lazy loaders)
-  # Inbox::Queue pays to build actual entries.
+  # Inbox::Queue's full entry build, and caches the per-user matrix behind
+  # the same Dashboard::CacheVersion key + short TTL the nav badge uses — so
+  # every /inbox render (index, show, open_chat all build availability in
+  # load_inbox) pays one cache read instead of re-running all twelve lanes,
+  # and the dialog counts stay inside the badge's cache window so the two
+  # cannot drift apart mid-window.
   # @spec INBOX-FOUNDATION-010
   class Availability
+    CACHE_TTL = 90.seconds
+
     def self.call(...)
       new(...).call
     end
@@ -89,8 +93,13 @@ module Inbox
       end
     end
 
+    # One unfiltered per-user matrix feeds every reader (kind_counts,
+    # project_counts, total_count, project_ids_for, kinds_for), so it is the
+    # single thing worth caching.
     def matrix
-      @matrix ||= Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
+      @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
+        Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
+      end
     end
 
     def count_by_project(entry_kind)
@@ -226,6 +235,10 @@ module Inbox
       owner_ids = [ user.id ]
       owner_ids << nil if AgentRun.orphaned_project_owner?(user)
       owner_ids
+    end
+
+    def cache_key
+      "inbox/availability/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}"
     end
   end
 end

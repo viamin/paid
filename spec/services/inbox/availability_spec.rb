@@ -142,4 +142,59 @@ RSpec.describe Inbox::Availability do
 
     expect(availability.total_count).to eq(0)
   end
+
+  # Every /inbox render reads the matrix (available_projects is built in
+  # load_inbox), so like the Inbox::Count badge it must be cached behind the
+  # dashboard cache version instead of re-running all twelve lanes per
+  # request.
+  describe "matrix caching" do
+    around do |example|
+      original_store = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      example.run
+    ensure
+      Rails.cache = original_store
+    end
+
+    # @spec INBOX-FOUNDATION-010
+    it "caches the per-user matrix for the TTL so repeated renders skip the lane work" do
+      issue = create(:issue, :needs_input, project: project_a)
+      # Capture the counts eagerly — the Availability readers are lazy, so
+      # deferring them to assertion time would re-read the (now mutated)
+      # cache instead of the value the first call produced.
+      first = described_class.call(user: user).kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]
+
+      # update_column bypasses the model callbacks that bump the inbox cache
+      # version, isolating the TTL behavior (the same trick Count's spec
+      # uses).
+      issue.update_column(:github_state, "closed")
+      cached = described_class.call(user: user).kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]
+
+      expect(first).to eq(1)
+      expect(cached).to eq(1)
+    end
+
+    # @spec INBOX-FOUNDATION-010
+    it "refreshes the matrix after the inbox cache version bumps" do
+      issue = create(:issue, :needs_input, project: project_a)
+      described_class.call(user: user).kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]
+
+      issue.update_column(:github_state, "closed")
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+      refreshed = described_class.call(user: user)
+
+      expect(refreshed.kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]).to eq(0)
+      expect(refreshed.total_count).to eq(0)
+    end
+
+    # @spec INBOX-FOUNDATION-006
+    it "keeps each operator's matrix in a separate cache entry" do
+      create(:issue, :needs_input, project: project_a)
+      described_class.call(user: user)
+
+      other_user = create(:user, account: account)
+
+      expect(described_class.call(user: other_user).total_count).to eq(0)
+    end
+  end
 end
