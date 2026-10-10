@@ -32,7 +32,21 @@
 
 - [x] **PRIORITY-LABEL-SYNC-004** — A `GithubClient::Error` raised while
   applying the label changes SHALL be caught and logged
-  (`github_sync.priority_labels_reconcile_failed`), not raised, so a
-  transient GitHub failure does not fail the surrounding issue sync.
+  (`github_sync.priority_labels_reconcile_failed`), not raised, so a transient
+  GitHub failure does not fail the surrounding issue sync.
   *Code:* `Issues::SyncPriorityLabelsToPullRequest.reconcile_labels`.
   *Test:* `spec/services/issues/sync_priority_labels_to_pull_request_spec.rb`.
+
+- [x] **PRIORITY-LABEL-SYNC-005** — When a reconciliation fails with a
+  `GithubClient::Error`, the system SHALL enqueue
+  `Issues::SyncPriorityLabelsToPullRequestJob`, a bounded retry (polynomial
+  backoff) that re-runs the same idempotent reconciliation — re-resolving the
+  open Paid-created pull request and recomputing the label diff, so it no-ops
+  once repaired — instead of leaving the pull request at a stale priority
+  until the issue's priority labels change again (the issue's new labels are
+  persisted before the reconciliation runs, so no later sync of the unchanged
+  issue re-triggers the flow).
+  *Code:* `Issues::SyncPriorityLabelsToPullRequest.call`,
+  `Issues::SyncPriorityLabelsToPullRequestJob`.
+  *Test:* `spec/services/issues/sync_priority_labels_to_pull_request_spec.rb`,
+  `spec/jobs/issues/sync_priority_labels_to_pull_request_job_spec.rb`.

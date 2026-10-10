@@ -144,5 +144,34 @@ RSpec.describe Issues::SyncPriorityLabelsToPullRequest do
       ))
       expect(pull_request.reload.labels).to eq([ "P2" ])
     end
+
+    # @spec PRIORITY-LABEL-SYNC-005
+    it "enqueues a bounded retry job when the GitHub write fails" do
+      issue = create(:issue, project: project, labels: [ "P1" ])
+      create_linked_pull_request(issue, pr_labels: [ "P2" ])
+      allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::ApiError.new("boom", status: 500))
+
+      expect { described_class.call(issue: issue, project: project) }
+        .to have_enqueued_job(Issues::SyncPriorityLabelsToPullRequestJob).with(issue.id)
+    end
+
+    # @spec PRIORITY-LABEL-SYNC-005
+    it "does not enqueue a retry when reconciliation succeeds" do
+      issue = create(:issue, project: project, labels: [ "P1" ])
+      create_linked_pull_request(issue, pr_labels: [ "P2" ])
+
+      expect { described_class.call(issue: issue, project: project) }
+        .not_to have_enqueued_job(Issues::SyncPriorityLabelsToPullRequestJob)
+    end
+
+    # @spec PRIORITY-LABEL-SYNC-005
+    it "re-raises the GithubClient error from call! without enqueueing a retry" do
+      issue = create(:issue, project: project, labels: [ "P1" ])
+      create_linked_pull_request(issue, pr_labels: [ "P2" ])
+      allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::ApiError.new("boom", status: 500))
+
+      expect { described_class.call!(issue: issue) }.to raise_error(GithubClient::ApiError)
+      expect(Issues::SyncPriorityLabelsToPullRequestJob).not_to have_been_enqueued
+    end
   end
 end

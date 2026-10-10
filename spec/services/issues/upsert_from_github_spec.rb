@@ -363,6 +363,32 @@ RSpec.describe Issues::UpsertFromGithub do
         expect(pull_request.reload.labels).to contain_exactly("paid-generated", "P1")
       end
 
+      # @spec PRIORITY-LABEL-SYNC-005
+      it "eventually repairs the pull request when the inline reconciliation fails transiently" do
+        issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, labels: [ "P2", "bug" ])
+        pull_request = link_pull_request(issue)
+        allow(github_client).to receive(:add_labels_to_issue)
+          .and_raise(GithubClient::ApiError.new("boom", status: 500))
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.to have_enqueued_job(Issues::SyncPriorityLabelsToPullRequestJob).with(issue.id)
+
+        # The failed upsert already persisted the issue's new labels, so a
+        # later sync of the unchanged issue never re-triggers the
+        # reconciliation inline — without the enqueued retry, the pull
+        # request stays at its stale priority forever.
+        described_class.call(project: project, github_issue: github_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+
+        allow(github_client).to receive(:add_labels_to_issue)
+        Issues::SyncPriorityLabelsToPullRequestJob.perform_now(issue.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue).with("viamin/paid", 416, [ "P1" ])
+        expect(github_client).to have_received(:remove_labels_from_issue).with("viamin/paid", 416, [ "P2" ])
+        expect(pull_request.reload.labels).to contain_exactly("paid-generated", "P1")
+      end
+
       it "does not touch the linked pull request when the priority label is unchanged" do
         issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, labels: [ "P1", "other" ])
         link_pull_request(issue)

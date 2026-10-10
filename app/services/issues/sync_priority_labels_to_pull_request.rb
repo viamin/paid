@@ -8,9 +8,28 @@ module Issues
   # life of the PR by adding newly-set priority labels and removing ones the
   # issue no longer carries. Only labels in project.priority_label_names are
   # ever touched — human-added non-priority labels are untouched.
-  # @spec PRIORITY-LABEL-SYNC-001 PRIORITY-LABEL-SYNC-002 PRIORITY-LABEL-SYNC-003 PRIORITY-LABEL-SYNC-004
+  # @spec PRIORITY-LABEL-SYNC-001 PRIORITY-LABEL-SYNC-002 PRIORITY-LABEL-SYNC-003 PRIORITY-LABEL-SYNC-004 PRIORITY-LABEL-SYNC-005
   class SyncPriorityLabelsToPullRequest
+    # Inline entry point (Issues::UpsertFromGithub sync path): a transient
+    # GithubClient::Error is logged (PRIORITY-LABEL-SYNC-004) and retried
+    # asynchronously (PRIORITY-LABEL-SYNC-005) rather than raised — the
+    # issue's new labels are already persisted at this point, so a later
+    # sync of the unchanged issue will not re-trigger the reconciliation.
     def self.call(issue:, project:)
+      reconcile(issue: issue, project: project)
+    rescue GithubClient::Error
+      SyncPriorityLabelsToPullRequestJob.perform_later(issue.id)
+    end
+
+    # Raised-error entry point for the retry job: same reconciliation, but a
+    # GithubClient::Error propagates so the job's retry_on policy drives
+    # bounded backoff instead of enqueueing another job here.
+    # @spec PRIORITY-LABEL-SYNC-005
+    def self.call!(issue:)
+      reconcile(issue: issue, project: issue.project)
+    end
+
+    def self.reconcile(issue:, project:)
       return unless project.inherit_priority_labels?
 
       pull_request = issue.associated_paid_pull_request
@@ -21,6 +40,7 @@ module Issues
 
       reconcile_labels(project, pull_request, to_add: to_add, to_remove: to_remove)
     end
+    private_class_method :reconcile
 
     def self.label_diff(project, issue, pull_request)
       desired = project.priority_labels_among(issue.labels)
@@ -38,6 +58,7 @@ module Issues
       log_reconciled(project, pull_request, added: to_add, removed: removed)
     rescue GithubClient::Error => e
       log_reconcile_failed(project, pull_request, e)
+      raise
     end
     private_class_method :reconcile_labels
 

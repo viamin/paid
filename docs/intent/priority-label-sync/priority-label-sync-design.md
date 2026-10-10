@@ -51,11 +51,17 @@ guard covers both "feature disabled" and "PRs target the upstream repo"
 creation time, keeping the two paths symmetric.
 
 **Failure handling**: a `GithubClient::Error` during reconciliation is
-logged and swallowed, not raised — this runs inline inside the
+logged and swallowed inline, not raised — this runs inside the
 `FetchIssuesActivity` sync path and a transient GitHub failure here must not
-fail the whole issue sync. Because the triggering condition is "the issue's
-priority labels changed since last sync," a dropped reconciliation is not
-retried until the issue's priority labels change again.
+fail the whole issue sync. Because `UpsertFromGithub` persists the issue's
+new labels *before* reconciling, a later sync of the unchanged issue sees no
+priority diff and never re-triggers the flow, and
+`RecoverMissingPullRequestLabelsJob` only covers newly created PRs within 24
+hours — so the inline rescue also enqueues
+`Issues::SyncPriorityLabelsToPullRequestJob`, a bounded GoodJob retry
+(`retry_on` with polynomial backoff) that re-runs the same idempotent
+reconciliation (same guards, same label diff — it no-ops once repaired)
+until it applies or the retry policy is exhausted.
 
 ## Interplay with PR Label Recovery
 
@@ -67,9 +73,11 @@ path; this sync is the only place that removes a stale priority label.
 ## Code
 
 - `app/services/issues/sync_priority_labels_to_pull_request.rb`
+- `app/jobs/issues/sync_priority_labels_to_pull_request_job.rb` (bounded retry)
 - `app/services/issues/upsert_from_github.rb` (trigger)
 
 Test: `spec/services/issues/sync_priority_labels_to_pull_request_spec.rb`,
+`spec/jobs/issues/sync_priority_labels_to_pull_request_job_spec.rb`,
 `spec/services/issues/upsert_from_github_spec.rb`
 
 ## Decisions & Alternatives
