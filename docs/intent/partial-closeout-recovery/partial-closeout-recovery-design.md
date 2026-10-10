@@ -230,10 +230,13 @@ After the shared reconciler persists a current assessment, `PartialCloseouts::Ad
 uses the existing scoped continuation authorization to schedule one fresh acceptance
 audit when the assessment has no remaining gaps. This handles stale historical gap
 reports whose implementation shipped after the previous audit without asking an
-operator to bypass the merged-PR duplicate-work guard. The advancement path runs for
-both patched workflows and bounded legacy reconciliation, records the normal
-continuation evidence and audit event, and is idempotent through the existing open
-request and active-run constraints.
+operator to bypass the merged-PR duplicate-work guard. Patched workflows invoke the
+advance activity only after PR creation returns with the source run terminal;
+`PartialCloseouts::Advance` also refuses a non-terminal source run. This preserves
+the continuation admission guard against every other in-flight run on the issue.
+Bounded legacy reconciliation already operates on terminal runs. The advancement path
+records the normal continuation evidence and audit event, and is idempotent through
+the existing open request and active-run constraints.
 
 It only operates while `Issues::AutoPickProjectGate` is open and delegates all
 remaining admission to `Issues::RequestContinuation` / `CloseoutStatus`; explicit

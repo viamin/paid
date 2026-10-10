@@ -19,8 +19,12 @@
   *Code:* `app/services/partial_closeouts/advance.rb`,
   `app/services/partial_closeouts/reconcile_legacy.rb`,
   `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/temporal/activities/advance_partial_closeout_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/services/issues/request_continuation.rb`.
-  *Test:* `spec/services/partial_closeouts/advance_spec.rb`.
+  *Test:* `spec/services/partial_closeouts/advance_spec.rb`,
+  `spec/temporal/activities/advance_partial_closeout_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-023** — When a partial-closeout Inbox pane or its
   authorized chat context renders, the system SHALL expose the persisted

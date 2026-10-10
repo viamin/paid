@@ -18,6 +18,7 @@ module PartialCloseouts
     end
 
     def call
+      return record(Result.new(agent_run: nil, code: :source_run_in_flight)) unless agent_run.finished?
       return record(Result.new(agent_run: nil, code: :remaining_work)) if gaps.present?
       return record(Result.new(agent_run: nil, code: :automation_disabled)) unless project_gate_open?
 

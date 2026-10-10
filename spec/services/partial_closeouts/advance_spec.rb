@@ -37,6 +37,16 @@ RSpec.describe PartialCloseouts::Advance do
   end
 
   # @spec PARTIAL-CLOSEOUT-024
+  it "waits until the source run is terminal before requesting an audit" do
+    run.update!(status: "running", completed_at: nil)
+
+    result = described_class.call(agent_run: run, assessment: { "gaps" => [] })
+
+    expect(result.code).to eq(:source_run_in_flight)
+    expect(IssueContinuationRequest.where(issue: issue)).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-024
   it "respects disabled automation and leaves the issue for normal visibility" do
     project.update!(auto_pick_enabled: false)
 
