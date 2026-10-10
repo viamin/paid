@@ -1,0 +1,52 @@
+<% content_for(:title) { "New Personal Access Token - Paid" } %>
+
+<div class="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">New Personal Access Token</h1>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        The token's secret is shown exactly once after creation. Store it in your device's secure storage immediately — it cannot be retrieved again.
+      </p>
+
+      <%= form_with model: @personal_access_token, url: personal_access_tokens_path, method: :post, class: "mt-6 space-y-6" do |form| %>
+        <% if @personal_access_token.errors.any? %>
+          <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/50">
+            <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+              <%= pluralize(@personal_access_token.errors.count, "error") %> prevented the token from being created:
+            </h3>
+            <div class="mt-2 text-sm text-red-700 dark:text-red-300">
+              <ul class="list-disc space-y-1 pl-5">
+                <% @personal_access_token.errors.full_messages.each do |message| %>
+                  <li><%= message %></li>
+                <% end %>
+              </ul>
+            </div>
+          </div>
+        <% end %>
+
+        <div>
+          <%= form.label :name, "Name", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+          <div class="mt-2">
+            <%= form.text_field :name, placeholder: "e.g. Maya's iPhone", required: true,
+              class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:bg-gray-700 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+          </div>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">A label to recognize this token later. Must be unique among your tokens.</p>
+        </div>
+
+        <div>
+          <%= form.label :expires_at, "Expires at (optional)", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+          <div class="mt-2">
+            <%= form.datetime_field :expires_at,
+              class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:bg-gray-700 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+          </div>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave blank for a token that does not expire.</p>
+        </div>
+
+        <div class="flex gap-3">
+          <%= form.submit "Create Token", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
+          <%= link_to "Cancel", personal_access_tokens_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600 dark:hover:bg-gray-600" %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

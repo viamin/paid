@@ -116,6 +116,8 @@ module Screenshots
       provider_api_key_new: Target.new(slug: "provider_api_key_new", path_builder: "/provider_api_keys/new", requires_auth: true),
       provider_api_key_show: Target.new(slug: "provider_api_key_show", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}" }, requires_auth: true),
       provider_api_key_edit: Target.new(slug: "provider_api_key_edit", path_builder: ->(seed_data) { "/provider_api_keys/#{seed_data.fetch(:provider_api_key).id}/edit" }, requires_auth: true),
+      personal_access_tokens: Target.new(slug: "personal_access_tokens", path_builder: "/personal_access_tokens", requires_auth: true),
+      personal_access_token_new: Target.new(slug: "personal_access_token_new", path_builder: "/personal_access_tokens/new", requires_auth: true),
       user_settings: Target.new(slug: "user_settings", path_builder: "/user_settings/edit", requires_auth: true),
       account: Target.new(slug: "account", path_builder: "/account", requires_auth: true),
       account_roi_dashboard: Target.new(slug: "account_roi_dashboard", path_builder: "/account_roi_dashboard", requires_auth: true),
@@ -300,6 +302,7 @@ module Screenshots
       "notifications_controller.rb" => [ :notifications ],
       "exception_incidents_controller.rb" => [ :exception_incidents ],
       "onboarding_controller.rb" => [ :onboarding ],
+      "personal_access_tokens_controller.rb" => %i[personal_access_tokens personal_access_token_new],
       "user_settings_controller.rb" => [ :user_settings ],
       "accounts_controller.rb" => [ :account ],
       "account_audit_logs_controller.rb" => [ :account_audit_logs ],
@@ -574,6 +577,7 @@ module Screenshots
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
+      when /\Apersonal_access_tokens\// then personal_access_token_targets(relative_path.delete_prefix("personal_access_tokens/"))
       when /\Auser_settings\// then [ :user_settings ]
       when /\Aaccounts\/compliance_dashboards\// then [ :account_compliance_dashboard ]
       when /\Aaccounts\/operations_dashboards\// then [ :account_operations_dashboard ]
@@ -742,6 +746,17 @@ module Screenshots
         end
       else
         [ :project_show ]
+      end
+    end
+
+    # "created.html.erb" is a one-time response rendered from the create
+    # action's POST — there's no GET route to navigate to it directly, so it
+    # falls back to the index page as the nearest representative capture.
+    def personal_access_token_targets(leaf)
+      case leaf
+      when "new.html.erb" then [ :personal_access_token_new ]
+      else
+        [ :personal_access_tokens ]
       end
     end
 

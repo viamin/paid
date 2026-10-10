@@ -13,7 +13,7 @@
 
 ## PAT authentication
 
-- [ ] **MOBILE-API-001** — When a user creates a personal access token
+- [x] **MOBILE-API-001** — When a user creates a personal access token
   through the web settings UI, the system SHALL generate a
   `paid_pat_`-prefixed secret, return its plaintext exactly once in the
   creation response, and persist only a SHA-256 digest of the secret on a
@@ -23,7 +23,7 @@
   `spec/requests/personal_access_tokens_spec.rb`.
   *Code:* `PersonalAccessToken`, `PersonalAccessTokensController`.
 
-- [ ] **MOBILE-API-002** — When a request presents a bearer token that is
+- [x] **MOBILE-API-002** — When a request presents a bearer token that is
   missing, malformed, unknown, revoked, or expired, the system SHALL reject
   it with `401` and the unified error envelope carrying code `unauthorized`,
   with one generic message that does not disclose which failure case
@@ -31,7 +31,7 @@
   *Tests:* `spec/requests/api/v1/authentication_spec.rb`.
   *Code:* `Api::V1::BaseController#authenticate_bearer!`.
 
-- [ ] **MOBILE-API-003** — When a request authenticates successfully, the
+- [x] **MOBILE-API-003** — When a request authenticates successfully, the
   system SHALL stamp the token's `last_used_at` at most once every five
   minutes per token, so polling traffic does not produce a write per
   request; the stamp SHALL feed the revocation UI only and SHALL NOT gate
@@ -39,7 +39,7 @@
   *Tests:* `spec/models/personal_access_token_spec.rb`.
   *Code:* `PersonalAccessToken#touch_last_used!` (throttled).
 
-- [ ] **MOBILE-API-004** — When a token exceeds its per-token request
+- [x] **MOBILE-API-004** — When a token exceeds its per-token request
   budget, the system SHALL respond `429` with error code `rate_limited`, a
   `Retry-After` header, and SHALL count an SSE stream once at stream start
   rather than once per event. The budget SHALL be keyed by token id, not by
@@ -47,7 +47,7 @@
   *Tests:* `spec/requests/api/v1/rate_limit_spec.rb`.
   *Code:* `Api::V1::BaseController` rate limiting.
 
-- [ ] **MOBILE-API-005** — When any `/api/v1` request arrives — including
+- [x] **MOBILE-API-005** — When any `/api/v1` request arrives — including
   SSE requests negotiated with `Accept: text/event-stream` — the system
   SHALL authenticate it from the `Authorization: Bearer` header, establish
   `Current.user` and `TenantContext` from the token's user and account

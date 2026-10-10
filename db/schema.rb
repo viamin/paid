@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2693,6 +2693,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
     t.index ["github_installation_id"], name: "index_pending_install_claims_on_github_installation_id"
   end
 
+  create_table "personal_access_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, comment: "Personal access tokens for /api/v1 mobile API bearer auth. Only the SHA-256 digest of the paid_pat_ secret is persisted.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Bearer tenant (the user's account; drives tenant context on bearer resolution)."
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", comment: "Optional expiry; blank means no expiry."
+    t.datetime "last_used_at", comment: "Throttled usage stamp (written at most once per 5 minutes); feeds the revocation UI only."
+    t.jsonb "log_data"
+    t.string "name", null: false, comment: "User-assigned label for the revocation UI; unique per user."
+    t.datetime "revoked_at", comment: "Soft revocation timestamp; blank means active."
+    t.jsonb "scopes", default: ["inbox", "chat"], null: false, comment: "Token scopes; v1 ships the full default set."
+    t.string "token_digest", null: false, comment: "SHA-256 base64digest of the full paid_pat_ secret; unique."
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false, comment: "Bearer subject (the user the token authenticates)."
+    t.index ["account_id"], name: "index_personal_access_tokens_on_account_id"
+    t.index ["revoked_at"], name: "index_personal_access_tokens_on_revoked_at"
+    t.index ["token_digest"], name: "index_personal_access_tokens_on_token_digest", unique: true
+    t.index ["user_id", "name"], name: "index_personal_access_tokens_on_user_id_and_name", unique: true
+    t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -4188,6 +4207,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
   add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
   add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
   add_foreign_key "pending_install_claims", "accounts"
+  add_foreign_key "personal_access_tokens", "accounts"
+  add_foreign_key "personal_access_tokens", "users"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
@@ -5251,5 +5272,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_used_at}')
   SQL
 end
