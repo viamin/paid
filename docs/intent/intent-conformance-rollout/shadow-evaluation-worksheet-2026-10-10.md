@@ -2,7 +2,7 @@
 
 <!-- @spec INTENT-CONFORMANCE-ROLLOUT-002 @spec INTENT-CONFORMANCE-ROLLOUT-003 -->
 
-This is the completed replacement for the invalidated October 9 attempt. Its case-level source of truth is the frozen [manifest](shadow-evaluation-manifest-2026-10-10.yml); the prior artifacts remain invalidated audit records and are not included in these calculations.
+This is the completed replacement for the invalidated October 9 attempt. Its case-level source of truth is the frozen [manifest](shadow-evaluation-manifest-2026-10-10.yml); the prior artifacts remain invalidated audit records and are not included in these calculations. Before re-freezing, D-03 was replaced with an independently adjudicated change to the `INBOX-FOUNDATION-006` human-review visibility behavior; the dependency-only action-pin update previously recorded for that case was removed. Recalculation preserves the reported aggregate because the replacement also received a `material_drift` reviewer verdict.
 
 ## Shadow-only flag snapshot
 

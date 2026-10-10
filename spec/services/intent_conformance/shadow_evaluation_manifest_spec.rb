@@ -59,6 +59,16 @@ RSpec.describe IntentConformance::ShadowEvaluationManifest, :no_db do
       )
     end
 
+    it "uses a behavior-changing case for the third drift adjudication" do
+      drift_case = manifest.fetch("cases").find { |evaluation_case| evaluation_case.fetch("id") == "D-03" }
+
+      expect(drift_case).to include(
+        "base_sha" => "24e4ee6d6cbcfa42b1d760e50272bf4579278886",
+        "head_sha" => "3f65c8de20e20099c26d1f59ecfd0dd268c25dac"
+      )
+      expect(drift_case.fetch("operator_adjudications").pluck("cited_design_claim")).to all(eq("INBOX-FOUNDATION-006"))
+    end
+
     it "records blinded independent adjudications after the design revision" do
       cases = manifest.fetch("cases")
       cases.each do |evaluation_case|
