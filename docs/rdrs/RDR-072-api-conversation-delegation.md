@@ -7,7 +7,7 @@
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
-- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) is the remaining completion dependency before this RDR can close; #4126 implemented API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery.
+- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) shipped in viamin/paid#4131; #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) shipped in viamin/paid#4133. The 2026-10-10 acceptance audit ([`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)) verified the retained scope against live code, but #4013 remains open until the required rebuilt-agent-image verification record is available.
 
 ## Problem Statement
 
@@ -209,18 +209,21 @@ no transport-owned persistence is introduced. This gate is removed when all
 chat runner authentication modes have separately verified public harness
 contracts and a successor RDR closes the remaining unsupported paths.
 
-The authorized host dependency is `agent-harness` 0.44.3, resolved from the
-application bundle and published on RubyGems on 2026-09-27. RubyGems provenance
-identifies source commit `85c4bc3`; the release and RubyGems records are
-<https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3> and
-<https://rubygems.org/gems/agent-harness/versions/0.44.3> respectively. It is an
-installable, non-prerelease release containing the public API chat contract and
-the recovery-compatible Codex support verified for Paid #3995. This migration
-runs in the Rails host process, so no agent-image rebuild is required for the
-API-mode chat path. Before deployment, verify `bundle exec ruby -e
-'puts Gem.loaded_specs.fetch("agent-harness").version'` on the host and verify
-that a rebuilt agent image does not route API-mode chat through a container or
-the secrets proxy; retain that image verification record with the release.
+The authorized host dependency is `agent-harness` 0.44.9, pinned exactly in
+`Gemfile`/`Gemfile.lock` and resolved from the application bundle. It is an
+installable, non-prerelease release that contains the public API chat contract
+(`AgentHarness::Api::ChatTransport`), preserves classified provider errors for
+Paid's rate-limit pause/recovery path (viamin/agent-harness#472), and retains
+the recovery-compatible Codex support protected by Paid #3995. Release
+provenance: [RubyGems](https://rubygems.org/gems/agent-harness/versions/0.44.9)
+and the [upstream
+release](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.9).
+This migration runs in the Rails host process, so no agent-image rebuild is
+required for the API-mode chat path. Before each deployment, verify
+`bundle exec ruby -e 'puts Gem.loaded_specs.fetch("agent-harness").version'`
+on the host and verify that a rebuilt agent image does not route API-mode chat
+through a container or the secrets proxy; retain that image verification record
+with the release.
 
 Embedding, schema and transport adoption should ship as complete, tested
 replacements within each migrated operation/provider scope. Other supported
@@ -258,36 +261,40 @@ Any other scope reduction requires an explicit recommendation and issue update.
 
 ## Implementation Status
 
-**Partially Implemented (2026-10-05).** The closeout evidence is recorded in
-[`audit-report-2026-10-05-rdr-072.md`](audit-report-2026-10-05-rdr-072.md).
+**Partially Implemented (2026-10-10).** The acceptance-audit evidence is recorded in
+[`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)
+(earlier partial closeout: [`audit-report-2026-10-05-rdr-072.md`](audit-report-2026-10-05-rdr-072.md)).
 The API-key chat transport, embedding transport, selected schema operations,
-and retained-loop outcome are shipped. The retained loop is the accepted final
-outcome: it preserves Paid authority and recovery behavior without introducing
-the upstream persistence and recovery adapters that failed the delegation
-evaluation.
+durable attempt-report persistence, request identity/bounds/recovery, and the
+retained-loop outcome are all shipped and verified. The retained loop is the
+accepted final outcome: it preserves Paid authority and recovery behavior
+without the upstream persistence and recovery adapters that failed the
+delegation evaluation (viamin/agent-harness#448).
 
-The RDR cannot be marked Implemented or close viamin/paid#4013 yet. The
-migrated API-key transport now receives a Paid-owned request identity, retry
-bound, deadline, and cancellation signal through `HarnessTransport`, but it
-still drops harness attempt reports. viamin/paid#4125 owns attempt-report persistence
-(API-CONVERSATION-DELEGATION-002); viamin/paid#4126 implemented stable request
-identity, cancellation/deadline propagation, and restart recovery
-(API-CONVERSATION-DELEGATION-003); both are sub-issues of #4013, but only
-issue #4125 remains a completion dependency for closing #4013, so this
-closeout uses `Tracks #4013` rather than closing language.
+The migrated API-key transport receives a Paid-owned request identity, retry
+bound, read and request deadlines, and a monotonic cancellation signal through
+`HarnessTransport`, and persists every harness attempt report exactly once
+through `ChatSessions::RecordTransportAttempt` before translating the result.
+viamin/paid#4125 shipped that persistence in viamin/paid#4131;
+viamin/paid#4126 shipped the request identity, cancellation/deadline
+propagation, and restart recovery in viamin/paid#4133. The rebuilt-agent-image
+verification required by the rollout guard was not available in the audit
+environment, so viamin/paid#4013 remains open until its verification record is
+retained with the release.
 
-## 2026-10-05 Closeout
+## Closeout (2026-10-10)
 
-This closeout follows the
-[RDR Closeout Checklist](closeout-checklist.md). It reconciles the RDR status
-to the shipped code rather than treating closed child issues as evidence. The
-host resolves the protected `agent-harness` 0.44.3 pin. Docker is unavailable
-in the audit environment, so agent-image verification remains a deployment
-release requirement; API chat itself executes in the Rails host and needs no
-image rebuild. The audit found no temporary rollout flag to remove: the
-existing API-key runner-selection boundary remains necessary while the
-unimplemented attempt/recovery contract and other authentication modes remain
-outside the verified scope.
+This closeout follows the [RDR Closeout
+Checklist](closeout-checklist.md) and reconciles the RDR status to the shipped
+code rather than treating closed child issues as evidence. The host resolves
+the protected `agent-harness` 0.44.9 pin. Docker is unavailable in the audit
+environment, so agent-image verification remains an unmet release gate; API
+chat itself executes in the Rails host and needs no image rebuild. The release
+must retain a verification record that a rebuilt agent image does not route
+API-mode chat through a container or the secrets proxy before #4013 can close.
+No temporary rollout flag remains to remove: the existing API-key
+runner-selection boundary stays while CLI/subscription authentication modes
+remain outside the verified scope; a successor RDR owns those paths.
 
 ## Technical Investigation
 
@@ -314,10 +321,10 @@ claim that unverified library capabilities already exist.
 
 [`api-conversation-delegation`](../intent/api-conversation-delegation/api-conversation-delegation-design.md)
 maps these investigations into implementation-ready ownership, persistence,
-attempt/recovery, and loop-evaluation contracts. Its EARS claims deliberately
-remain gaps until a verified `agent-harness` release containing #431 and the
-protected Paid #3995 Codex subscription discovery/recovery compatibility are
-installed and tested.
+attempt/recovery, and loop-evaluation contracts. Its EARS claims are
+implemented against the verified `agent-harness` release (0.44.9), which
+contains the public API chat contract and retains the protected Paid #3995
+Codex subscription discovery/recovery compatibility.
 
 The mapping retains Paid's `ChatSession`/`ChatMessage` transcript IDs,
 approval claims, actor/tenant authority, and durable accounting; optional

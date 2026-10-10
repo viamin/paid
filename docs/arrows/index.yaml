@@ -247,9 +247,9 @@ arrows:
     parent: PAID
     taxonomy: chat
     status: PARTIAL
-    sampled: 2026-10-05
+    audited: 2026-10-10
     blockedBy: [api-mode-chat]
-    next: "File and reference a focused follow-up for API-CONVERSATION-DELEGATION-002/003 attempt-report persistence and recovery wiring; only then re-audit RDR-072 via viamin/paid#4020 for a possible #4013 closure."
+    next: "Tracks RDR-072 (see docs/rdrs/audit-report-2026-10-10-rdr-072.md). The retained loop over normalized transport is the final outcome, but #4013 remains open until a rebuilt-agent-image verification record confirms API-mode chat does not route through a container or secrets proxy. CLI/subscription chat authentication modes remain a successor-RDR scope."
   context-intake:
     title: Knowledge Context Intake
     path: docs/intent/context-intake/context-intake-design.md
