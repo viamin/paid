@@ -496,7 +496,11 @@ module ChatSessions
       )
 
       track_created_message(tool_call_message)
-      on_message_persisted&.call(tool_call_message)
+      # @spec CHAT-API-023
+      # The browser uses this ID to associate a confirmation pause with its
+      # transient streaming bubble. Without it, a confirmation after streamed
+      # narration cannot safely clear that bubble.
+      on_message_persisted&.call(tool_call_message, stream_message_id: stream_message_id)
       tool_call_message
     end
 

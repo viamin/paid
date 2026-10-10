@@ -438,3 +438,44 @@
   `app/javascript/controllers/chat_message_controller.js#writeToClipboard`,
   `app/javascript/controllers/chat_message_controller.js#legacyCopy`,
   `app/javascript/controllers/chat_message_controller.js#decorateCodeBlocks`.
+
+- [x] **CHAT-API-023** — When a streaming assistant turn ends without a
+  persisted `message_created` replacing its in-flight bubble — a provider
+  error, a rate-limit pause, a write-tool confirmation pause whose streamed
+  text was narration rather than the final answer, or an ActionCable
+  disconnect — the client SHALL remove that bubble rather than leave it as a
+  frozen, never-persisted partial at the transcript tail. On reconnecting
+  after a disconnect that interrupted an in-flight turn, the client SHALL
+  fetch every chat message persisted after the last one it rendered and
+  replay each through the same rendering path a live broadcast uses, so the
+  transcript converges on the persisted rows instead of silently missing a
+  turn that completed or progressed during the gap. The "Jump to latest"
+  anchor (CHAT-SCROLL-001) SHALL exclude any such in-flight streaming bubble,
+  since it is not yet persisted and can vanish or be rewritten out from under
+  the user; it SHALL fall back to the last persisted assistant response, or
+  to the bottom of the transcript if none exists yet.
+  A write-tool confirmation broadcast SHALL include its originating stream ID,
+  so the client can associate the pause with — and remove — only that turn's
+  in-flight bubble.
+  *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`
+  (`testDisconnectMidStreamRemovesOrphanedBubbleWithContent`,
+  `testErrorMidStreamRemovesOrphanedBubbleWithContent`,
+  `testToolConfirmationRemovesOrphanedBubbleWithContent`,
+  `testAnchorSelectionExcludesTrailingStreamingBubble`,
+  `testAnchorSelectionReturnsNullWithOnlyAStreamingBubble`,
+  `testHandleConnectedTriggersResyncWhenResumingATurn`,
+  `testHandleConnectedSkipsResyncOnStableConnection`,
+  `testResyncTranscriptReplaysMessagesSinceLastRenderedId`,
+  `testResyncTranscriptReplaysEveryPage`,
+  `testResyncTranscriptNoOpsWithNothingRenderedYet`,
+  `testLastRenderedMessageIdReturnsHighestId`,
+  `testMessageChunkRearmsTrackingForAnUntrackedStream`,
+  `testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged`),
+  `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/recent_messages`),
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`
+  (`broadcasts message_complete with nil tokens when a write tool pauses`).
+  *Code:* `app/javascript/controllers/chat_controller.js#removePendingAssistantMessage`,
+  `#handleMessageComplete`, `#handleMessageToolConfirmation`, `#handleError`,
+  `#handleConnected`, `#resyncTranscript`, `#fetchRecentMessages`,
+  `#lastRenderedMessageId`, `#lastAssistantTextResponse`, `#handleMessageChunk`,
+  `ChatSessionsController#recent_messages`.
