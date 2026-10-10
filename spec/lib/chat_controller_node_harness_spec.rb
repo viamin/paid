@@ -1688,6 +1688,27 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-023 — A malformed broadcast without a stream id cannot
+    // belong to an in-flight assistant turn, so it must not create an
+    // `undefined` transient bubble at the transcript tail.
+    function testMessageChunkWithoutStreamIdIsIgnored() {
+      const { controller } = makeController({
+        streaming: false,
+        currentStreamId: null,
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
+        ensureAssistantMessage: () => {
+          throw new Error("Expected a chunk without a stream id not to render a bubble");
+        }
+      });
+
+      controller.handleMessageChunk({ sequence: 1, content: "partial" });
+
+      if (controller.currentStreamId !== null || controller.streaming) {
+        throw new Error("Expected a chunk without a stream id to leave stream tracking idle");
+      }
+    }
+
     // The ordinary path (message_start already armed tracking) must not be
     // disturbed by this guard — a chunk for the already-tracked stream is a
     // no-op on currentStreamId/streaming.
@@ -1852,6 +1873,7 @@ class ChatControllerNodeHarness
       testResyncTranscriptReplaysEveryPage();
       testResyncTranscriptNoOpsWithNothingRenderedYet();
       testMessageChunkRearmsTrackingForAnUntrackedStream();
+      testMessageChunkWithoutStreamIdIsIgnored();
       testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged();
       testLateStreamEventsDoNotReplaceOrTerminateTheActiveStream();
       testLastRenderedMessageIdReturnsHighestId();

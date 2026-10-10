@@ -299,6 +299,8 @@ export default class extends Controller {
   // however, late chunks from the disconnected stream must not take ownership
   // or a later terminal event could tear down the new stream's bubble (#4225).
   handleMessageChunk(data) {
+    if (data.message_id == null) return
+
     if (!this.currentStreamId) {
       if (this.ignoredStreamIds.has(data.message_id)) return
       this.currentStreamId = data.message_id
