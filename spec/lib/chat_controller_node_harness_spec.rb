@@ -206,7 +206,7 @@ class ChatControllerNodeHarness
         setBusy: function(busy) { this.streaming = busy; }
       });
 
-      controller.handleMessageComplete({ tokens: { input: 10, output: 5 } });
+      controller.handleMessageComplete({ message_id: "test-id", tokens: { input: 10, output: 5 } });
 
       if (controller.streaming) {
         throw new Error("Expected streaming to be false after message_complete");
@@ -258,6 +258,7 @@ class ChatControllerNodeHarness
         });
 
         controller.handleError({
+          message_id: "test-id",
           message: "Chat token limit reached (session): 5000000 tokens",
           limit_type: "session"
         });
@@ -291,7 +292,7 @@ class ChatControllerNodeHarness
           removePendingAssistantMessage: () => {}
         });
 
-        controller.handleError({ message: "boom", limit_type: "session" });
+        controller.handleError({ message_id: "test-id", message: "boom", limit_type: "session" });
 
         if (restoredValue !== "unchanged") {
           throw new Error("Expected no restoration when there is no pending content");
@@ -320,7 +321,7 @@ class ChatControllerNodeHarness
           removePendingAssistantMessage: () => {}
         });
 
-        controller.handleError({ message: "Provider unavailable" });
+        controller.handleError({ message_id: "test-id", message: "Provider unavailable" });
 
         if (restoredValue !== "unchanged") {
           throw new Error("Expected no restoration for an error without limit_type");
@@ -345,7 +346,7 @@ class ChatControllerNodeHarness
         setBusy: function(busy) { this.streaming = busy; }
       });
 
-      controller.handleMessageComplete({ tokens: { input: 10, output: 5 } });
+      controller.handleMessageComplete({ message_id: "test-id", tokens: { input: 10, output: 5 } });
 
       if (controller.pendingContent !== null) {
         throw new Error("Expected pendingContent to be cleared after message_complete");
@@ -361,7 +362,7 @@ class ChatControllerNodeHarness
         scrollToBottom: () => {}
       });
 
-      controller.handleMessageToolConfirmation({ tool_name: "trigger_agent_run" });
+      controller.handleMessageToolConfirmation({ stream_message_id: "test-id", tool_name: "trigger_agent_run" });
 
       if (controller.pendingContent !== null) {
         throw new Error("Expected pendingContent to be cleared after a tool confirmation pause");
@@ -1300,7 +1301,7 @@ class ChatControllerNodeHarness
         setStatus: () => {}
       });
 
-      controller.handleError({ message: "Provider unavailable" });
+      controller.handleError({ message_id: "stream-1", message: "Provider unavailable" });
 
       if (!wrapper.removed) {
         throw new Error("Expected a provider error mid-stream to remove the orphaned bubble even though it already streamed content");
@@ -1330,7 +1331,7 @@ class ChatControllerNodeHarness
         scrollToBottom: () => {}
       });
 
-      controller.handleMessageToolConfirmation({ tool_name: "trigger_agent_run" });
+      controller.handleMessageToolConfirmation({ stream_message_id: "stream-1", tool_name: "trigger_agent_run" });
 
       if (!wrapper.removed) {
         throw new Error("Expected a tool-confirmation pause to remove an orphaned bubble that streamed narration text");
@@ -1594,6 +1595,55 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-022 — After reconnecting, a user can start stream B while
+    // stream A still emits server-side. Late A events must not take ownership
+    // from B or terminate B's in-flight UI.
+    function testLateStreamEventsDoNotReplaceOrTerminateTheActiveStream() {
+      const appendedContent = [];
+      let removedBubbles = 0;
+      const { controller } = makeController({
+        currentStreamId: "stream-a",
+        ensureAssistantMessage: () => {
+          throw new Error("Expected a late chunk for stream A not to render a bubble");
+        },
+        removePendingAssistantMessage: () => { removedBubbles += 1; },
+        resyncTranscript: () => {},
+        scrollToBottom: () => {},
+        toggleTyping: () => {},
+        dispatchChatState: () => {},
+        setBusy: () => {},
+        incrementTokenUsage: () => {}
+      });
+
+      controller.handleDisconnected();
+      controller.handleConnected();
+      controller.handleMessageStart({ message_id: "stream-b", model: "assistant" });
+      controller.handleMessageChunk({ message_id: "stream-a", content: "late A" });
+      controller.handleMessageComplete({ message_id: "stream-a" });
+
+      if (controller.currentStreamId !== "stream-b" || !controller.streaming) {
+        throw new Error("Expected late stream A events to leave stream B active");
+      }
+      if (removedBubbles !== 1) {
+        throw new Error(`Expected only disconnect cleanup to remove a bubble, got ${removedBubbles}`);
+      }
+
+      controller.ensureAssistantMessage = () => ({});
+      controller.messageControllerFor = () => ({ appendContent: (content) => appendedContent.push(content) });
+      controller.handleMessageChunk({ message_id: "stream-b", content: "B continues" });
+      controller.handleMessageComplete({ message_id: "stream-b" });
+
+      if (appendedContent.join("") !== "B continues") {
+        throw new Error(`Expected stream B to keep receiving chunks, got ${appendedContent.join("")}`);
+      }
+      if (controller.currentStreamId !== null || controller.streaming) {
+        throw new Error("Expected stream B's matching completion to release the streaming state");
+      }
+      if (removedBubbles !== 2) {
+        throw new Error(`Expected stream B completion to remove its own bubble, got ${removedBubbles}`);
+      }
+    }
+
     function testLastRenderedMessageIdReturnsHighestId() {
       const { controller } = makeController({
         messagesTarget: {
@@ -1672,6 +1722,7 @@ class ChatControllerNodeHarness
       testResyncTranscriptNoOpsWithNothingRenderedYet();
       testMessageChunkRearmsTrackingForAnUntrackedStream();
       testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged();
+      testLateStreamEventsDoNotReplaceOrTerminateTheActiveStream();
       testLastRenderedMessageIdReturnsHighestId();
     }
 

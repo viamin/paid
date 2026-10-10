@@ -287,15 +287,15 @@ export default class extends Controller {
   // broadcasts message_start once, so reconnecting resumes receiving chunks
   // for that same stream id with no new message_start to re-arm tracking.
   // ensureAssistantMessage recreates the bubble regardless of tracking state,
-  // so without re-arming here the client would track no stream while a
-  // bubble is visibly filling, and a later error/pause/tool-only completion
-  // would bail out of removePendingAssistantMessage on its `!currentStreamId`
-  // guard, orphaning the recreated bubble (#4225).
+  // so an unowned chunk re-arms that stream. Once another stream is active,
+  // however, late chunks from the disconnected stream must not take ownership
+  // or a later terminal event could tear down the new stream's bubble (#4225).
   handleMessageChunk(data) {
-    if (this.currentStreamId !== data.message_id) {
+    if (!this.currentStreamId) {
       this.currentStreamId = data.message_id
       this.streaming = true
     }
+    if (!this.streamEventMatches(data)) return
 
     const message = this.ensureAssistantMessage(data.message_id)
     const controller = this.messageControllerFor(message)
@@ -304,6 +304,8 @@ export default class extends Controller {
   }
 
   handleMessageComplete(data) {
+    if (!this.streamEventMatches(data)) return
+
     // @spec CHAT-API-022
     // A no-op on the normal path, where the preceding message_created already
     // replaced the bubble. Defensive here (and not just in handleError) for
@@ -375,6 +377,8 @@ export default class extends Controller {
   }
 
   handleError(data) {
+    if (!this.streamEventMatches(data)) return
+
     this.removePendingAssistantMessage()
     this.streaming = false
     this.currentStreamId = null
@@ -486,6 +490,8 @@ export default class extends Controller {
   }
 
   handleMessageToolConfirmation(data) {
+    if (!this.streamEventMatches(data)) return
+
     // @spec CHAT-API-022
     // A write-tool pause can follow reasoning/narration text that already
     // streamed into the bubble but was never persisted as its own message
@@ -507,6 +513,10 @@ export default class extends Controller {
     this.setBusy(false)
     this.toggleTyping(false)
     this.setStatus(`Waiting for approval to run ${data.tool_name || "tool"}…`)
+  }
+
+  streamEventMatches(data) {
+    return this.currentStreamId === (data.stream_message_id || data.message_id)
   }
 
   handleMessageToolResolved(data) {
