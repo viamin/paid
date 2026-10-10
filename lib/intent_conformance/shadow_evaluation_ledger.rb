@@ -22,11 +22,12 @@ module IntentConformance
       raise InvalidLedger, "invalid corpus manifest: expected a mapping with a cases list" unless document.is_a?(Hash) && document["cases"].is_a?(Array)
 
       cases = document.fetch("cases")
+      raise InvalidLedger, "invalid corpus manifest: cases list must not be empty" if cases.empty?
       raise InvalidLedger, "invalid corpus manifest: every case needs an id" unless cases.all? { |entry| entry.is_a?(Hash) && entry["id"].to_s.strip != "" }
       raise InvalidLedger, "invalid corpus manifest: case ids must be unique" unless cases.map { |entry| entry.fetch("id") }.uniq.length == cases.length
 
       cases
-    rescue Psych::Exception => error
+    rescue Psych::Exception, Errno::ENOENT => error
       raise InvalidLedger, "invalid corpus manifest: #{error.message}"
     end
 

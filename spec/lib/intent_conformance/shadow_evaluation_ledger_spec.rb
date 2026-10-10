@@ -176,6 +176,23 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /expected a mapping with a cases list/)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects an empty corpus manifest" do
+    File.write(manifest, { "cases" => [] }.to_yaml)
+
+    expect { described_class.load_manifest(manifest) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /cases list must not be empty/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "reports a missing corpus manifest as invalid input" do
+    missing_manifest = Rails.root.join("tmp/missing-shadow-manifest.yml")
+    File.delete(missing_manifest) if File.exist?(missing_manifest)
+
+    expect { described_class.load_manifest(missing_manifest) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /invalid corpus manifest/)
+  end
+
   it "rejects a corpus manifest case that is missing an id" do
     File.write(manifest, { "cases" => [ { "stratum" => "accepted" } ] }.to_yaml)
     expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /every case needs an id/)
