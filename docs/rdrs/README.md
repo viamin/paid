@@ -118,6 +118,7 @@ cycles.
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-020](RDR-020-service-container-architecture.md) | Service Container Architecture | Implemented | High |
+| [RDR-073](RDR-073-marketplace-tool-sidecars.md) | Marketplace Tool Sidecars — Per-Run Hardened Tool Provisioning | Draft | P1 |
 
 ### Interactive Chat
 
