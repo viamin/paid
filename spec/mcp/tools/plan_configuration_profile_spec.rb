@@ -58,7 +58,7 @@ RSpec.describe Tools::PlanConfigurationProfile do
     }.to raise_error(ArgumentError, /Invalid boolean override/)
   end
 
-  it "reports skipped levels for callers who cannot update every target" do
+  it "reports project-level skips without inventing tenant-level changes" do
     member = create(:user, :member, account:)
     member.settings.update!(run_concurrency_mode: "auto")
     member_session = create(:chat_session, account:, created_by: member, project:)
@@ -66,8 +66,7 @@ RSpec.describe Tools::PlanConfigurationProfile do
     result = described_class.new(user: member, session: member_session).call(profile_id: "observe_only", project_id: project.id, overrides: {})
 
     expect(result[:skipped_levels]).to contain_exactly(
-      include("level" => "project", "reason" => "Not authorized to update project settings"),
-      include("level" => "tenant", "reason" => "Not authorized to update tenant settings")
+      include("level" => "project", "reason" => "Not authorized to update project settings")
     )
   end
 end

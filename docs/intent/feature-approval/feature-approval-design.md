@@ -50,6 +50,9 @@ the workflow.
   set (`operating_mode` and `tdd_mode` descriptors), so the drift guards
   require every profile to declare an explicit value and existing profiles
   declare `standard` (opt-in only).
+- Configuration profiles do not target tenant-level agent auto-continue.
+  It is core iteration mechanics controlled explicitly at the tenant level,
+  not a feature-approval or project-operating-mode choice.
 - Every pre-existing profile targets `tdd_mode: "off"` for the same reason
   it targets `operating_mode: "standard"` — the field-set drift guard
   (`described_class.targets.keys` must match `profile_target_keys` exactly)
