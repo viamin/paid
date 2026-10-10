@@ -246,10 +246,10 @@ arrows:
     specs: docs/intent/api-conversation-delegation/api-conversation-delegation-specs.md
     parent: PAID
     taxonomy: chat
-    status: PARTIAL
-    sampled: 2026-10-05
+    status: OK
+    audited: 2026-10-10
     blockedBy: [api-mode-chat]
-    next: "File and reference a focused follow-up for API-CONVERSATION-DELEGATION-002/003 attempt-report persistence and recovery wiring; only then re-audit RDR-072 via viamin/paid#4020 for a possible #4013 closure."
+    next: "Completed with RDR-072 (see docs/rdrs/audit-report-2026-10-10-rdr-072.md). The retained loop over normalized transport is the final outcome; CLI/subscription chat authentication modes remain a successor-RDR scope."
   context-intake:
     title: Knowledge Context Intake
     path: docs/intent/context-intake/context-intake-design.md
