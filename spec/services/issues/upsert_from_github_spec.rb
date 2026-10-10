@@ -384,7 +384,8 @@ RSpec.describe Issues::UpsertFromGithub do
         allow(github_client).to receive(:add_labels_to_issue)
         Issues::SyncPriorityLabelsToPullRequestJob.perform_now(issue.id)
 
-        expect(github_client).to have_received(:add_labels_to_issue).with("viamin/paid", 416, [ "P1" ])
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with("viamin/paid", 416, [ "P1" ]).twice
         expect(github_client).to have_received(:remove_labels_from_issue).with("viamin/paid", 416, [ "P2" ])
         expect(pull_request.reload.labels).to contain_exactly("paid-generated", "P1")
       end
