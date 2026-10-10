@@ -246,6 +246,43 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/requests/projects/issue_continuations_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002J** — When an open pull request carries the
+  `paid-tests-ready-for-review` label (the TDD red-phase gate applied by
+  test-writing runs per
+  [`tdd-test-review-prs`](../tdd-test-review-prs/tdd-test-review-prs-design.md))
+  while its `pr_review_phase` is `draft` or `restarted`, and its project is in
+  the operator's auto-pick-gated scope (`INBOX-FOUNDATION-006`, the same gate
+  every other inbox kind uses), the system SHALL expose that pull request as a
+  `test_review_pending` inbox entry explaining that the proposed tests wait on
+  a human test-review verdict before implementation may begin (strict-TDD
+  projects wait for that human by design; `ScanPaidPrsActivity#scan_tdd_draft_pr`
+  returns nil while the label waits), with a direct action link to the pull
+  request — the review surface itself; there is no implementation diff yet
+  (#4212). The lane SHALL derive from the label via jsonb containment on
+  `labels`, independent of `paid_state` (the same state-agnostic derivation
+  shape `retry_limited` uses), so the entry SHALL clear the moment a verdict
+  label (`paid-tests-approved` / `paid-test-changes-requested`) replaces the
+  ready-for-review label via
+  `ScanPaidPrsActivity#sync_tdd_test_review_verdict!` or
+  `Tdd::ReturnToTestReview`, when the pull request leaves `draft`/`restarted`,
+  or when it closes on GitHub. `waiting_since` SHALL approximate the wait with
+  the pull request's `github_updated_at` (GitHub bumps it when the label
+  lands, so it post-dates the true gate start at worst by being newer); queue
+  listing SHALL NOT make per-entry GitHub API calls to resolve the exact label
+  timestamp. `Inbox::Count`'s cached badge SHALL include the lane, and
+  `Issue#inbox_count_cache_invalidation_needed?` SHALL include a
+  `saved_change_to_labels?` condition for pull requests — this is the first
+  label-derived lane, so unlike the column-derived lanes it needs its own
+  condition (`merge_approval_candidate_state_changed?` already covers the
+  phase and github_state transitions). The Inbox nav filter and empty-state
+  copy SHALL name the lane.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/models/issue.rb`,
+  `app/views/dashboard/_inbox_detail_test_review_pending.html.erb`,
+  `app/views/inbox/index.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
   SHALL show the queue list and the selected entry detail at the same time; on
   mobile, the system SHALL support a master-detail flow where the member route

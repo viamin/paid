@@ -575,6 +575,80 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:issue)).to include(parked)
     end
 
+    # @spec OPERATOR-INBOX-002J
+    it "returns a test_review_pending entry for a TDD test-review-gated draft PR" do
+      pr = create_tdd_test_review_pr(github_number: 110, github_updated_at: 2.hours.ago)
+
+      entry = described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND).sole
+
+      expect(entry).to have_attributes(
+        id: "#{described_class::TEST_REVIEW_PENDING_KIND}:#{pr.id}",
+        kind: described_class::TEST_REVIEW_PENDING_KIND,
+        project: project,
+        issue: pr,
+        record: pr,
+        waiting_since: pr.github_updated_at,
+        questions: [],
+        tasks: [],
+        action_url: pr.github_url
+      )
+      expect(entry.summary).to be_present
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "includes restarted-phase test-review PRs but not ready, merged, closed, or unlabeled ones" do
+      waiting_draft = create_tdd_test_review_pr(github_number: 111)
+      waiting_restarted = create_tdd_test_review_pr(github_number: 112, pr_review_phase: "restarted")
+      create_tdd_test_review_pr(github_number: 113, pr_review_phase: "ready")
+      create_tdd_test_review_pr(github_number: 114, pr_review_phase: "merged")
+      create_tdd_test_review_pr(github_number: 115, github_state: "closed")
+      create(:issue, :pull_request, project: project, github_number: 116, pr_review_phase: "draft")
+
+      entries = described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)
+
+      expect(entries.map(&:issue)).to contain_exactly(waiting_draft, waiting_restarted)
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "clears the entry when a verdict label replaces paid-tests-ready-for-review" do
+      pr = create_tdd_test_review_pr(github_number: 117)
+      expect(described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)).to be_present
+
+      pr.update!(labels: pr.labels - [ described_class::TDD_TESTS_READY_FOR_REVIEW_LABEL ] + [ "paid-tests-approved" ])
+
+      expect(described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)).to be_empty
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "excludes test-review PRs on non-gated projects" do
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "foxtrot")
+      create_tdd_test_review_pr(github_number: 118, project: other_project)
+
+      entries = described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "orders test_review_pending entries oldest-waiting-first" do
+      newer = create_tdd_test_review_pr(github_number: 119, github_updated_at: 1.hour.ago)
+      older = create_tdd_test_review_pr(github_number: 120, github_updated_at: 1.day.ago)
+
+      entries = described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)
+
+      expect(entries.map(&:issue)).to eq([ older, newer ])
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "includes test_review_pending entries in the unscoped call alongside the other kinds" do
+      pr = create_tdd_test_review_pr(github_number: 121)
+
+      entries = described_class.call(user: user)
+
+      expect(entries.map(&:kind)).to include(described_class::TEST_REVIEW_PENDING_KIND)
+      expect(entries.map(&:issue)).to include(pr)
+    end
+
     # @spec CHANGE-INTENT-INBOX-001
     it "returns change_intent_draft entries for draft and requested_changes Change Intents" do
       draft = create(:change_intent, :draft, project: project, title: "Sliding window over token bucket")
@@ -1173,6 +1247,20 @@ RSpec.describe Inbox::Queue do
       github_number: github_number,
       runner_retry_abandoned_at: abandoned_at,
       runner_retry_abandon_reason: reason,
+      **attrs
+    )
+  end
+
+  # A draft PR parked at the TDD red-phase gate: open, draft/restarted, and
+  # carrying paid-tests-ready-for-review (OPERATOR-INBOX-002J).
+  def create_tdd_test_review_pr(github_number:, pr_review_phase: "draft", **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      pr_review_phase: pr_review_phase,
+      labels: [ "paid-generated", "paid-automation", described_class::TDD_TESTS_READY_FOR_REVIEW_LABEL ],
       **attrs
     )
   end

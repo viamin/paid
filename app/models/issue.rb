@@ -157,13 +157,15 @@ class Issue < ApplicationRecord
   # Invalidates the cached inbox nav badge count whenever an issue enters or
   # leaves the needs_input queue, enters or leaves manual_review, enters or
   # leaves the retry_limited queue (runner-retry-cap or push-permission
-  # abandonment, cleared by a successful manual run), or when a waiting issue
-  # is closed/reopened on GitHub, so the async badge endpoint recomputes
+  # abandonment, cleared by a successful manual run), when a waiting issue
+  # is closed/reopened on GitHub, or when a pull request's labels change
+  # (the test_review_pending lane is label-derived — see
+  # test_review_label_state_changed?), so the async badge endpoint recomputes
   # instead of serving a stale number for the rest of its TTL. Also covers a
   # pull request entering or leaving the escalated_pr inbox lane, since
   # merge_approval_candidate_state_changed? already watches
   # saved_change_to_pr_review_phase? for every pull request.
-  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -834,7 +836,8 @@ class Issue < ApplicationRecord
       saved_change_to_closeout_resolved_at? ||
       waiting_issue_github_state_changed? ||
       retry_limited_issue_github_state_changed? ||
-      merge_approval_candidate_state_changed?
+      merge_approval_candidate_state_changed? ||
+      test_review_label_state_changed?
   end
 
   def bump_inbox_cache_version
@@ -862,6 +865,18 @@ class Issue < ApplicationRecord
       saved_change_to_pr_review_phase? ||
       saved_change_to_github_state?
     )
+  end
+
+  # Mirror of the column-derived conditions for the first label-derived lane:
+  # the test_review_pending Inbox query matches on the
+  # paid-tests-ready-for-review label (jsonb containment on `labels`), so a
+  # label write on a pull request — the gate label being applied, or a verdict
+  # label replacing it via ScanPaidPrsActivity#sync_tdd_test_review_verdict! /
+  # Tdd::ReturnToTestReview — must also bump the cached badge count. Phase and
+  # github_state transitions already bump through
+  # merge_approval_candidate_state_changed? (OPERATOR-INBOX-002J).
+  def test_review_label_state_changed?
+    is_pull_request? && saved_change_to_labels?
   end
 
   # Every counter an escalation accumulated, plus the markers that tell
