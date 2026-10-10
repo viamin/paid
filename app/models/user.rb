@@ -30,6 +30,7 @@ class User < ApplicationRecord
   has_many :initiated_agent_runs, class_name: "AgentRun", foreign_key: :initiating_user_id, dependent: :nullify, inverse_of: :initiating_user
   has_one :tracker_configuration, as: :configurable, dependent: :destroy
   has_many :created_chat_sessions, class_name: "ChatSession", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
+  has_many :personal_access_tokens, dependent: :destroy
   has_many :api_usage_attempts, foreign_key: :actor_id, dependent: :nullify
   has_many :pr_templates, dependent: :destroy
 

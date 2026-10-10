@@ -58,10 +58,10 @@ arrows:
     specs: docs/intent/mobile-api/mobile-api-specs.md
     parent: PAID
     taxonomy: operations
-    status: MAPPED
-    sampled: 2026-10-10
+    status: PARTIAL
+    audited: 2026-10-10
     blockedBy: [api-mode-chat]
-    next: "Implement PAT bearer auth, /api/v1 inbox and chat endpoints, unified error envelope, and ETag polling (#4238-#4241 against #4237 design)"
+    next: "PAT bearer auth shipped (#4238): PersonalAccessToken model, /api/v1 bearer resolution with unified 401 envelope, per-token rate limits, settings UI, and the stub probe route. Remaining: inbox endpoints (#4239), chat endpoints (#4240), and OpenAPI contract infrastructure (#4241)."
   upstream-pull-requests:
     title: Upstream Pull Requests
     path: docs/intent/upstream-pull-requests/upstream-pull-requests-design.md

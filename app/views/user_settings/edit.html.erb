@@ -494,6 +494,17 @@
           <%= form.submit "Save Settings", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
         </div>
       <% end %>
+
+      <hr class="my-8 border-gray-200 dark:border-gray-600">
+
+      <%# === Mobile App Access === %>
+      <fieldset class="space-y-4">
+        <legend class="text-base font-semibold leading-7 text-gray-900 dark:text-gray-100">Mobile App Access</legend>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Manage the personal access tokens the mobile app uses to reach your inbox and chats.</p>
+        <div>
+          <%= link_to "Manage personal access tokens", personal_access_tokens_path, class: "text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300" %>
+        </div>
+      </fieldset>
     </div>
   </div>
 </div>
