@@ -13,6 +13,11 @@ module Inbox
     RETRY_LIMITED_KIND = "retry_limited"
     CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
     PARTIAL_CLOSEOUT_KIND = "partial_closeout"
+    DEFAULT_SORT = "oldest"
+    SORTS = {
+      DEFAULT_SORT => "Oldest first",
+      "newest" => "Newest first"
+    }.freeze
     KINDS = [
       CLARIFYING_QUESTIONS_KIND,
       PLAN_REVIEW_KIND,
@@ -26,6 +31,12 @@ module Inbox
       CHANGE_INTENT_DRAFT_KIND,
       PARTIAL_CLOSEOUT_KIND
     ].freeze
+    KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
+      ESCALATED_PR_KIND => "Blocked PRs",
+      RETRY_LIMITED_KIND => "Retry-limited",
+      CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
+      PARTIAL_CLOSEOUT_KIND => "Partial closeouts"
+    ).freeze
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
     # abandoned. Included even while `approved_waiting_for_merge`, since a
@@ -157,13 +168,14 @@ module Inbox
       new(...).call
     end
 
-    def initialize(user:, project: nil, kind: nil)
+    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT)
       @user = user
       @project = project
       @kind = kind.to_s.presence
+      @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
     end
 
-    # @spec INBOX-FOUNDATION-003 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E
+    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E
     def call
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
@@ -182,7 +194,7 @@ module Inbox
 
     private
 
-    attr_reader :kind, :project, :user
+    attr_reader :kind, :project, :sort, :user
 
     def include_kind?(entry_kind)
       kind.blank? || kind == entry_kind
@@ -192,13 +204,18 @@ module Inbox
       entries.sort_by do |entry|
         [
           entry.waiting_since.nil? ? 1 : 0,
-          entry.waiting_since,
+          waiting_since_sort_value(entry),
           entry.project&.owner.to_s,
           entry.project&.repo.to_s,
           entry.issue&.github_number || 0,
           entry.id
         ]
       end
+    end
+
+    def waiting_since_sort_value(entry)
+      timestamp = entry.waiting_since&.to_f || 0
+      sort == "newest" ? -timestamp : timestamp
     end
 
     def clarifying_question_entries

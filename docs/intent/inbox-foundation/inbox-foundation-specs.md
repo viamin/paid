@@ -84,3 +84,17 @@
   auto-merge blocker snapshot is absent or has other blockers.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
+
+- [x] **INBOX-FOUNDATION-009** — When an operator opens the Inbox, the system
+  SHALL render a compact collapsed filter control. On expansion it SHALL offer
+  a single type selector, a searchable selector scoped to projects accessible
+  through `policy_scope(Project)`, an All reset for each, oldest/newest waiting
+  order, and a clear-all action. The controls SHALL derive their selected state
+  solely from `kind`, `project_id`, and `sort` URL parameters; the queue SHALL
+  preserve oldest-waiting-first when `sort` is absent and SHALL support
+  `sort=newest`. The expanded control SHALL be focus-trapped, close on Escape,
+  submit on Enter, and render as a full-screen dialog below the `lg` breakpoint.
+  *Tests:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/controllers/inbox_controller.rb`, `app/services/inbox/queue.rb`,
+  `app/helpers/inbox/path_helper.rb`, `app/views/inbox/index.html.erb`,
+  `app/javascript/controllers/inbox_filters_controller.js`.
