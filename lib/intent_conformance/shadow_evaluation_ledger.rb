@@ -72,9 +72,13 @@ module IntentConformance
     end
 
     def ensure_operators_frozen!(entries)
-      frozen = entries.select { |entry| entry["type"] == "operators_frozen" }.first
-      return if entries.none? { |entry| entry["type"] == "adjudication" }
-      raise InvalidLedger, "operators_frozen event must precede adjudications" unless frozen
+      frozen_events = entries.each_with_index.select { |entry, _index| entry["type"] == "operators_frozen" }
+      adjudication_indices = entries.each_index.select { |index| entries[index]["type"] == "adjudication" }
+      return if adjudication_indices.empty?
+      raise InvalidLedger, "operators_frozen event must precede adjudications" unless frozen_events.one?
+
+      frozen, frozen_index = frozen_events.first
+      raise InvalidLedger, "operators_frozen event must precede adjudications" unless frozen_index < adjudication_indices.min
 
       frozen_at = Time.iso8601(frozen.fetch("recorded_at"))
       entries.select { |entry| entry["type"] == "adjudication" }.each do |entry|
@@ -104,6 +108,8 @@ module IntentConformance
       raise InvalidLedger, "#{case_id} first two adjudications must be independent" if entries.first(2).map { |entry| entry["operator"] }.uniq.length != 2
       return if entries.length == 2 && entries[0]["verdict"] == entries[1]["verdict"]
       raise PendingHumanInput, "pending human input: #{case_id} needs a third-operator tie-break" if entries.length == 2
+      raise InvalidLedger, "#{case_id} must not have a tie-break after agreement" if entries[0]["verdict"] == entries[1]["verdict"]
+
       raise InvalidLedger, "#{case_id} tie-break operator must be independent" if entries.map { |entry| entry["operator"] }.uniq.length != 3
     end
 
