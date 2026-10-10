@@ -69,6 +69,42 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(2)
     end
 
+    # @spec OPERATOR-INBOX-002J
+    it "counts draft and restarted TDD test-review PRs but not ready, merged, closed, or unlabeled ones" do
+      create_tdd_test_review_pr(github_number: 92)
+      create_tdd_test_review_pr(github_number: 93, pr_review_phase: "restarted")
+      create_tdd_test_review_pr(github_number: 94, pr_review_phase: "ready")
+      create_tdd_test_review_pr(github_number: 95, pr_review_phase: "merged")
+      create_tdd_test_review_pr(github_number: 96, github_state: "closed")
+      create(:issue, :pull_request, project: project, github_number: 97, pr_review_phase: "draft")
+
+      expect(described_class.call(user: user)).to eq(2)
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "excludes TDD test-review PRs on non-gated projects" do
+      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
+      create_tdd_test_review_pr(github_number: 98, project: other_project)
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
+    # @spec OPERATOR-INBOX-002J
+    it "bumps the cache automatically when the test-review label is applied or replaced by a verdict" do
+      pr = create(:issue, :pull_request, project: project, github_number: 99, pr_review_phase: "draft", labels: [ "paid-generated" ])
+      first = described_class.call(user: user)
+
+      pr.update!(labels: [ "paid-generated", Inbox::Queue::TDD_TESTS_READY_FOR_REVIEW_LABEL ])
+      after_label = described_class.call(user: user)
+
+      pr.update!(labels: [ "paid-generated", "paid-tests-approved" ])
+      after_verdict = described_class.call(user: user)
+
+      expect(first).to eq(0)
+      expect(after_label).to eq(1)
+      expect(after_verdict).to eq(0)
+    end
+
     # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009
     it "counts stalled partial-closeout issues but not paused or resolved ones" do
       create_partial_closeout_issue(github_number: 300)
@@ -478,6 +514,19 @@ RSpec.describe Inbox::Count do
       github_number: github_number,
       pr_review_phase: "escalated",
       pr_escalation_reason: reason,
+      **attrs
+    )
+  end
+
+  # A draft PR parked at the TDD red-phase gate (OPERATOR-INBOX-002J).
+  def create_tdd_test_review_pr(github_number:, pr_review_phase: "draft", **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: github_number,
+      pr_review_phase: pr_review_phase,
+      labels: [ "paid-generated", "paid-automation", Inbox::Queue::TDD_TESTS_READY_FOR_REVIEW_LABEL ],
       **attrs
     )
   end

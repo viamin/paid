@@ -328,6 +328,48 @@ divergence-recording rationale as `escalated_pr` (`OPERATOR-INBOX-002C`).
 account-wide breakdown panel and the scoped inbox lane agree on what the
 state means, even though their scopes differ.
 
+### `test_review_pending`
+
+Backed by the `paid-tests-ready-for-review` label itself, via jsonb
+containment on `labels` — the same containment convention
+`Inbox::Count#merge_approval_candidate_conditions` already uses for
+`paid-hold-review`. The gate *is* the label: per
+[`tdd-test-review-prs`](../tdd-test-review-prs/tdd-test-review-prs-design.md),
+the label "marks the PR as waiting at the red-phase gate regardless of whether
+the project uses strict or non-strict TDD," and strict-TDD projects
+deliberately wait for a human verdict
+(`ScanPaidPrsActivity#scan_tdd_draft_pr` returns nil while the label waits).
+Before this kind existed, that wait had no operator surface anywhere — the
+`merge_approval` lane requires `pr_review_phase: "ready"` and a TDD
+test-review PR is `draft`, so a PR parked solely on the human verdict was
+invisible in the Inbox (#4212).
+
+The query filters open pull requests in `draft`/`restarted` phases whose
+labels contain `paid-tests-ready-for-review`, independent of `paid_state`
+(the gate is the label, not the state — the same state-agnostic shape
+`retry_limited` uses), scoped through the standard auto-pick gate. Because
+the lane is label-derived, it clears naturally the moment a verdict label
+replaces the ready-for-review label (`sync_tdd_test_review_verdict!` /
+`Tdd::ReturnToTestReview`), without waiting for the follow-up
+phase transition — the answer to the "verdict label vs draft exit" question
+is the label, since that is what the gate reads.
+
+`waiting_since` approximates the wait with `github_updated_at`: GitHub bumps
+a PR's `updated_at` when the label lands, so the value post-dates the true
+gate start at worst by being newer; resolving the exact label timestamp
+(`latest_label_applied_at`) costs a per-entry issue-events API call, which
+queue listing must not make (the same no-API-call principle
+`OPERATOR-INBOX-002D` records for `question_summary_for`). The entry's action
+link goes to the pull request — the review surface itself, since there is no
+implementation diff yet.
+
+This is the first label-derived lane, so cache invalidation needs a new
+condition: `saved_change_to_labels?` on pull requests joins
+`Issue#inbox_count_cache_invalidation_needed?` (phase and github_state
+transitions already bump via `merge_approval_candidate_state_changed?`).
+A label-only write is cheap to bump on — the cache version is an integer
+bump, and PR label writes are rare relative to issue traffic.
+
 ## Navigation
 
 The inbox is a top-level nav item (desktop and mobile), placed immediately
