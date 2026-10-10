@@ -3,7 +3,8 @@
 module Api
   module V1
     class InboxController < BaseController
-      before_action -> { require_scope!(:inbox) }
+      before_action -> { require_scope!(:inbox) }, only: %i[index count show]
+      before_action -> { require_scope!(:chat) }, only: :chat
 
       # @spec MOBILE-API-006 MOBILE-API-010
       def index

@@ -92,10 +92,14 @@
   *Code:* `Inbox::FindEntry`, `Api::V1::InboxController#show`.
 
 - [x] **MOBILE-API-009** — When a client posts
-  `POST /api/v1/inbox/entries/:entry_id/chat`, the system SHALL delegate to
+  `POST /api/v1/inbox/entries/:entry_id/chat`, the system SHALL require the
+  bearer token to carry the `chat` scope (distinct from the `inbox` scope
+  the read endpoints require) before delegating to
   `Inbox::OpenInteractiveChat` (same `InteractiveChatAccess` gate and
-  per-user per-entry chat resolution as the web action) and return the
-  resulting session's `chat_session_id`, without returning a web URL.
+  per-user per-entry chat resolution as the web action), and return the
+  resulting session's `chat_session_id`, without returning a web URL. A
+  token scoped to `inbox` only SHALL receive `403` without creating or
+  resuming a chat session.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Api::V1::InboxController#chat`.
 

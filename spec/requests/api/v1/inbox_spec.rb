@@ -67,6 +67,26 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
   end
 
+  # @spec MOBILE-API-009
+  it "forbids opening chat for a token scoped to inbox only" do
+    issue
+    entry_id = "clarifying_questions:#{issue.id}"
+    inbox_only_plaintext = "paid_pat_#{SecureRandom.urlsafe_base64(32)}"
+    PersonalAccessToken.create!(
+      user:,
+      account:,
+      name: "Inbox-only",
+      scopes: %w[inbox],
+      token_digest: PersonalAccessToken.digest(inbox_only_plaintext)
+    )
+
+    post "/api/v1/inbox/entries/#{entry_id}/chat",
+      headers: { "Authorization" => "Bearer #{inbox_only_plaintext}" }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body.dig("error", "code")).to eq("forbidden")
+  end
+
   # @spec MOBILE-API-008
   it "does not expose entries outside the bearer tenant" do
     foreign_account = create(:account)
