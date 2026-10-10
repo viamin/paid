@@ -12,7 +12,7 @@ module PullRequests
     TEST_OUTLINE_HEADING = "## Test Outline"
     SPEC_TAG = "@ spec".delete(" ")
     SPEC_ID_PATTERN = /([A-Z0-9-]+-\d+)/
-    TEST_FILE_PATTERN = /\A(spec|test|\.ephemeral-tests)\//.freeze
+    TEST_FILE_PATTERN = /\A(spec|test|tests|\.ephemeral-tests)\//.freeze
     LID_DOC_PATTERN = %r{\A(?:docs/high-level-design\.md|docs/arrows/index\.yaml|docs/intent/|AGENTS\.md|CLAUDE\.md|\.github/copilot-instructions\.md)}.freeze
 
     def self.call(...)
