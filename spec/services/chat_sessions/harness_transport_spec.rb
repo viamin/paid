@@ -43,7 +43,8 @@ RSpec.describe ChatSessions::HarnessTransport, type: :service do
     ])
   end
 
-  it "cancels when the request deadline expires" do
+  it "does not cancel a request that is still streaming past the read deadline" do
+    # 61 seconds elapsed: past READ_DEADLINE (60s), but far under REQUEST_DEADLINE (10m).
     times = [ 100.0, 161.0 ]
     clock = ->(_) { times.shift || 161.0 }
     allow(transport).to receive(:call).and_return(status: :succeeded)
@@ -51,7 +52,24 @@ RSpec.describe ChatSessions::HarnessTransport, type: :service do
     described_class.new(chat_session: chat_session, transport: transport, clock: clock).call(request)
 
     expect(transport).to have_received(:call) do |outbound_request|
+      expect(outbound_request).to include(timeout: { read_seconds: 60 })
+      expect(outbound_request[:cancellation]).not_to be_cancelled
+    end
+  end
+
+  it "cancels only once the request deadline itself expires" do
+    times = [ 100.0, 100.0 + 10.minutes.in_seconds + 1 ]
+    clock = ->(_) { times.shift || (100.0 + 10.minutes.in_seconds + 1) }
+    allow(transport).to receive(:call).and_return(status: :succeeded)
+
+    described_class.new(chat_session: chat_session, transport: transport, clock: clock).call(request)
+
+    expect(transport).to have_received(:call) do |outbound_request|
       expect(outbound_request[:cancellation]).to be_cancelled
     end
+  end
+
+  it "uses a request deadline that is independent of, and longer than, the read deadline" do
+    expect(described_class::REQUEST_DEADLINE).to be > described_class::READ_DEADLINE
   end
 end

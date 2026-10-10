@@ -49,15 +49,27 @@
   harness SHALL honor the supplied request bound and cancellation signal, and
   Paid SHALL either accept a matching durable attempt report or allocate a new
   outbound attempt. Neither recovery path SHALL replay a completed tool or
-  multiply request retry loops.
+  multiply request retry loops. Paid SHALL supply two independent bounds, not
+  one constant reused for both: a **read deadline**, the maximum time with no
+  data on the stream, passed as `timeout: { read_seconds: ... }`; and a
+  **request deadline**, a generous wall-clock cap on the whole outbound
+  attempt that only terminates a request that is stuck in a way the read
+  deadline cannot observe, passed as a monotonic cancellation signal. The
+  request deadline SHALL be strictly longer than the read deadline, so a
+  response still actively streaming data past the read deadline's duration
+  SHALL NOT be cancelled by the request deadline.
   `ChatSessions::HarnessTransport` allocates a monotonic request sequence in
   Paid-owned session metadata and supplies that stable request identity, a
-  single effective request-attempt limit, read deadline, and monotonic
-  cancellation signal to the public harness request contract. A restarted
-  delivery or runner fallback allocates a new request identity; persisted
-  transcript rows, including completed tool results, are retained as the loop
-  rebuilds its conversation, so the harness never executes a tool and Paid
-  does not introduce a second request-retry loop.
+  single effective request-attempt limit, a `READ_DEADLINE`-based
+  `read_seconds` inactivity timeout, and a separate `REQUEST_DEADLINE`-based
+  monotonic cancellation signal to the public harness request contract.
+  `REQUEST_DEADLINE` (10 minutes) is independent of, and longer than,
+  `READ_DEADLINE` (60 seconds), so a model that is still streaming past 60
+  seconds is not cancelled. A restarted delivery or runner fallback allocates
+  a new request identity; persisted transcript rows, including completed tool
+  results, are retained as the loop rebuilds its conversation, so the harness
+  never executes a tool and Paid does not introduce a second request-retry
+  loop.
   *Tests:* `spec/services/chat_sessions/harness_transport_spec.rb`,
   `spec/services/chat_sessions/fallback_loop_spec.rb`,
   `spec/jobs/chat_sessions/process_message_job_spec.rb`.
