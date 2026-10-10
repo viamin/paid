@@ -4,7 +4,7 @@
 
 This final umbrella audit follows the [RDR Closeout
 Checklist](closeout-checklist.md) for viamin/paid#4013 (continuation request
-#3, generation 981706336efd). The prior closeout
+\#3, generation 981706336efd). The prior closeout
 ([2026-10-05](audit-report-2026-10-05-rdr-072.md)) kept the epic open on two
 completion dependencies: viamin/paid#4125 (API-CONVERSATION-DELEGATION-002
 attempt-report persistence) and viamin/paid#4126
@@ -12,10 +12,11 @@ attempt-report persistence) and viamin/paid#4126
 Both have since shipped — #4125 in PR viamin/paid#4131 and #4126 in PR
 viamin/paid#4133.
 
-RDR-072 is **Implemented**. Every acceptance criterion in the retained scope
-has shipped code and passing test evidence; no required gaps remain. The
-retained loop over normalized harness transport is the accepted final outcome,
-and viamin/paid#4013 closes on this evidence.
+RDR-072 is **Partially Implemented**. Every code acceptance criterion in the
+retained scope has shipped code and passing test evidence, but the required
+rebuilt-agent-image verification record is absent. The retained loop over
+normalized harness transport is the accepted final outcome; viamin/paid#4013
+remains open until that release-gate evidence is retained.
 
 ## Verified behavior (code and test evidence)
 
@@ -34,27 +35,28 @@ All six claims in
 [`docs/intent/api-conversation-delegation/api-conversation-delegation-specs.md`](../intent/api-conversation-delegation/api-conversation-delegation-specs.md)
 are reconciled: 001–004 and 006 `[x]` implemented; 005 `[D]` deferred by the
 retained-loop outcome (no supporting tables adopted, so Paid's own records
-remain the only conversation persistence). No `[ ]` gap markers remain in the
-segment; `bin/coherence-check.mjs` reports valid arrow references and full
-`@spec` coverage for the segment's claims.
+remain the only conversation persistence). The separate RDR rollout gate
+remains open until the rebuilt-agent-image verification record is retained;
+`bin/coherence-check.mjs` reports valid arrow references and full `@spec`
+coverage for the segment's claims.
 
 ## Stale status reconciled by this audit
 
-- `docs/rdrs/RDR-072-api-conversation-delegation.md`: status
-  Partially Implemented → Implemented; rollout-guard dependency evidence
-  updated 0.44.3 → 0.44.9; Implementation Status and closeout rewritten.
-- `docs/rdrs/README.md`: RDR-072 row → Implemented.
+- `docs/rdrs/RDR-072-api-conversation-delegation.md`: status remains Partially
+  Implemented because the rollout guard's rebuilt-agent-image verification
+  record is absent; dependency evidence is updated 0.44.3 → 0.44.9.
+- `docs/rdrs/README.md`: RDR-072 row remains Partially Implemented.
 - `docs/intent/api-conversation-delegation/api-conversation-delegation-design.md`:
   operation/provider matrix row for durable attempt-report persistence →
-  `migrated`; epic-audit rows for #4018/#4020 updated; the 2026-10-05
-  "remaining gaps" and closeout sections reconciled to the completed state.
-- `docs/arrows/index.yaml`: segment status PARTIAL → OK, audited 2026-10-10.
+  `migrated`; #4018 is complete while #4020 remains blocked on the verification
+  record.
+- `docs/arrows/index.yaml`: segment status remains PARTIAL pending the
+  verification record, audited 2026-10-10.
 
 ## Remaining work and deployment prerequisites
 
-No remaining code work in the retained scope. Two deployment-time
-prerequisites (already mandated by the RDR rollout guard, restated here as
-the exact release steps):
+No remaining code work exists in the retained scope. The following release
+prerequisites remain; the second is an unmet gate, so #4013 remains open:
 
 1. On the release host, verify `bundle exec ruby -e 'puts
    Gem.loaded_specs.fetch("agent-harness").version'` prints `0.44.9`.

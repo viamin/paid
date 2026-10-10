@@ -3,11 +3,11 @@
 ## Metadata
 
 - **Date**: 2026-09-24
-- **Status**: Implemented
+- **Status**: Partially Implemented
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
-- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) shipped in viamin/paid#4131; #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) shipped in viamin/paid#4133. The 2026-10-10 acceptance audit ([`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)) verified the retained scope against live code and closed the epic.
+- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) shipped in viamin/paid#4131; #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) shipped in viamin/paid#4133. The 2026-10-10 acceptance audit ([`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)) verified the retained scope against live code, but #4013 remains open until the required rebuilt-agent-image verification record is available.
 
 ## Problem Statement
 
@@ -261,7 +261,7 @@ Any other scope reduction requires an explicit recommendation and issue update.
 
 ## Implementation Status
 
-**Implemented (2026-10-10).** The acceptance-audit evidence is recorded in
+**Partially Implemented (2026-10-10).** The acceptance-audit evidence is recorded in
 [`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)
 (earlier partial closeout: [`audit-report-2026-10-05-rdr-072.md`](audit-report-2026-10-05-rdr-072.md)).
 The API-key chat transport, embedding transport, selected schema operations,
@@ -277,8 +277,10 @@ bound, read and request deadlines, and a monotonic cancellation signal through
 through `ChatSessions::RecordTransportAttempt` before translating the result.
 viamin/paid#4125 shipped that persistence in viamin/paid#4131;
 viamin/paid#4126 shipped the request identity, cancellation/deadline
-propagation, and restart recovery in viamin/paid#4133. With both verified
-against live code, viamin/paid#4013 closes on this evidence.
+propagation, and restart recovery in viamin/paid#4133. The rebuilt-agent-image
+verification required by the rollout guard was not available in the audit
+environment, so viamin/paid#4013 remains open until its verification record is
+retained with the release.
 
 ## Closeout (2026-10-10)
 
@@ -286,9 +288,11 @@ This closeout follows the [RDR Closeout
 Checklist](closeout-checklist.md) and reconciles the RDR status to the shipped
 code rather than treating closed child issues as evidence. The host resolves
 the protected `agent-harness` 0.44.9 pin. Docker is unavailable in the audit
-environment, so agent-image verification remains a deployment release
-requirement; API chat itself executes in the Rails host and needs no image
-rebuild. No temporary rollout flag remains to remove: the existing API-key
+environment, so agent-image verification remains an unmet release gate; API
+chat itself executes in the Rails host and needs no image rebuild. The release
+must retain a verification record that a rebuilt agent image does not route
+API-mode chat through a container or the secrets proxy before #4013 can close.
+No temporary rollout flag remains to remove: the existing API-key
 runner-selection boundary stays while CLI/subscription authentication modes
 remain outside the verified scope; a successor RDR owns those paths.
 
