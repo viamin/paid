@@ -61,7 +61,7 @@
 
 ## Inbox endpoints
 
-- [ ] **MOBILE-API-006** — When a client calls `GET /api/v1/inbox`, the
+- [x] **MOBILE-API-006** — When a client calls `GET /api/v1/inbox`, the
   system SHALL return inbox entries from `Inbox::Queue` for the
   authenticated user, honoring the `kind`, `sort` (`oldest` default,
   `newest`), and `project_id` filter parameters with the same URL contract
@@ -73,15 +73,15 @@
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Api::V1::InboxController#index`.
 
-- [ ] **MOBILE-API-007** — When a client calls `GET /api/v1/inbox/count`,
+- [x] **MOBILE-API-007** — When a client calls `GET /api/v1/inbox/count`,
   the system SHALL return the `Inbox::Count` value for the authenticated
   user, reusing its existing per-user cache so the mobile badge and the web
   nav badge derive from one computation.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Api::V1::InboxController#count`.
 
-- [ ] **MOBILE-API-008** — When a client requests
-  `GET /api/v1/inbox/:entry_id`, the system SHALL resolve the entry by
+- [x] **MOBILE-API-008** — When a client requests
+  `GET /api/v1/inbox/entries/:entry_id`, the system SHALL resolve the entry by
   re-running `Inbox::Queue` scoped to the kind parsed from the entry id
   prefix and matching the id — queue re-resolution, not a parallel
   per-lane lookup — so resolution doubles as the authorization check the
@@ -91,15 +91,15 @@
   `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Inbox::FindEntry`, `Api::V1::InboxController#show`.
 
-- [ ] **MOBILE-API-009** — When a client posts
-  `POST /api/v1/inbox/:entry_id/open_chat`, the system SHALL delegate to
+- [x] **MOBILE-API-009** — When a client posts
+  `POST /api/v1/inbox/entries/:entry_id/chat`, the system SHALL delegate to
   `Inbox::OpenInteractiveChat` (same `InteractiveChatAccess` gate and
   per-user per-entry chat resolution as the web action) and return the
   resulting session's `chat_session_id`, without returning a web URL.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Api::V1::InboxController#open_chat`.
 
-- [ ] **MOBILE-API-010** — When a client sends `GET /api/v1/inbox` or
+- [x] **MOBILE-API-010** — When a client sends `GET /api/v1/inbox` or
   `GET /api/v1/inbox/count` with an `If-None-Match` header matching the
   current strong ETag, the system SHALL respond `304` with an empty body
   without building the inbox queue. The ETag SHALL be a digest of the

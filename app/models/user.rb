@@ -6,6 +6,7 @@ class User < ApplicationRecord
   has_logidze
   belongs_to :account
   has_many :account_memberships, dependent: :destroy
+  has_many :personal_access_tokens, dependent: :destroy
   has_many :member_accounts, through: :account_memberships, source: :account
   has_many :project_memberships, dependent: :destroy
   has_many :member_projects, through: :project_memberships, source: :project

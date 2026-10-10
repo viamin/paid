@@ -374,6 +374,13 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
+    namespace :v1 do
+      get "inbox", to: "inbox#index"
+      get "inbox/count", to: "inbox#count"
+      get "inbox/entries/:entry_id", to: "inbox#show"
+      post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+    end
+
     resources :projects, only: [] do
       resource :external_agent_contract, only: [ :show ], controller: "projects/external_agent_contracts"
       resources :external_agent_runs, only: [ :create ], controller: "projects/external_agent_runs"

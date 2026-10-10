@@ -186,8 +186,8 @@ yielding `/api/v1/...` paths and `Api::V1::*` controllers.
 |---|---|---|
 | `GET /api/v1/inbox` | `Inbox::Queue` | Filters `kind`, `sort` (`oldest` default / `newest`), `project_id` — the same URL contract the web inbox restores (INBOX-FOUNDATION-009). |
 | `GET /api/v1/inbox/count` | `Inbox::Count` | Already cached 90 s per user; the badge is the cheapest poll target. |
-| `GET /api/v1/inbox/:entry_id` | `Inbox::FindEntry` (new, thin) | Entry detail. Stale/absent id → `404` envelope (the API analog of the web stale-member redirect). |
-| `POST /api/v1/inbox/:entry_id/open_chat` | `Inbox::OpenInteractiveChat` | Returns `{ "chat_session_id": … }`; the client routes itself natively instead of consuming a URL. |
+| `GET /api/v1/inbox/entries/:entry_id` | `Inbox::FindEntry` (new, thin) | Entry detail. Stale/absent id → `404` envelope (the API analog of the web stale-member redirect). |
+| `POST /api/v1/inbox/entries/:entry_id/chat` | `Inbox::OpenInteractiveChat` | Returns `{ "chat_session_id": … }`; the client routes itself natively instead of consuming a URL. |
 
 **Polymorphic entry envelope.** Every entry carries the common fields
 (`id`, `kind`, `waiting_since`, `project` `{ id, owner, repo, name }`,

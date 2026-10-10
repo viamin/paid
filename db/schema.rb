@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_132412) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2693,6 +2693,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
     t.index ["github_installation_id"], name: "index_pending_install_claims_on_github_installation_id"
   end
 
+  create_table "personal_access_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, comment: "Bearer tokens for the versioned mobile API.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at"
+    t.datetime "last_used_at"
+    t.string "name", null: false
+    t.datetime "revoked_at"
+    t.jsonb "scopes", default: [], null: false
+    t.string "token_digest", null: false, comment: "SHA-256 digest; plaintext is never persisted."
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["account_id"], name: "index_personal_access_tokens_on_account_id"
+    t.index ["token_digest"], name: "index_personal_access_tokens_on_token_digest", unique: true
+    t.index ["user_id", "name"], name: "index_personal_access_tokens_on_user_id_and_name", unique: true
+    t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -4188,6 +4205,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
   add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
   add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
   add_foreign_key "pending_install_claims", "accounts"
+  add_foreign_key "personal_access_tokens", "accounts"
+  add_foreign_key "personal_access_tokens", "users"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
