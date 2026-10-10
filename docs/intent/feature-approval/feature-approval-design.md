@@ -189,8 +189,8 @@ is:
 - `FeatureIntents::EvaluateCriteriaClarityJob` is the background entry
   point. `FeatureIntentDecision#resolve!` enqueues it — resolving a question
   or confirming an inferred decision is the one control-flow event this
-  segment owns that could change the verdict. `#3863` is expected to
-  enqueue it too, whenever it changes a feature's brief or linked issues.
+  segment owns that could change the verdict. Initial attachment leaves the
+  verdict `pending`, so it must be evaluated out of band before approval.
 - `ApprovalReadiness` reads only the cached column. A feature intent that
   has never been evaluated (`pending`) blocks, same as an explicit `vague`
   verdict — "do not equate a structurally complete RDR with a
@@ -232,8 +232,8 @@ same-account user broader access to one project, not a cross-account guest
 grant (there is no such grant anywhere in this codebase to mirror).
 
 `FeatureIntents::MarkApproved` re-checks authorization itself rather than
-trusting the caller, specifically so a future direct-GitHub-merge
-reconciliation path (#3865) inherits the identical rule without
+trusting the caller, so the direct-GitHub-merge reconciliation path (#4114)
+inherits the identical rule without
 re-implementing it — "GitHub merge permission alone must not silently widen
 who can approve a Paid feature" (RDR-066). `FeatureIntentsController#approve`
 also calls Pundit's `authorize` up front (repository convention, and what
@@ -270,14 +270,13 @@ operational, high-churn-during-discovery tables.
 
 ## Create-feature and LID-planning attachment (#3863)
 
-The Inbox + Mark-approved slice above is structurally inert for any project
-until a `create_feature` (or chained `lid_planning`) run actually creates the
-`FeatureIntent` it later renders. This section owns that wiring: the agent
-run that opens the RDR PR is also the agent run that registers the design
-PR, links the issue tree, and records the discovery evidence and unresolved
-decisions on the FeatureIntent — so the Inbox decision entry the human sees
-is populated with the real design PR (not a placeholder), the real issue
-tree (not a label guess), and evidence that traces to the repository.
+The attachment slice connects a `create_feature` (or chained `lid_planning`)
+run to the `FeatureIntent` it creates and later renders. The agent run that
+opens the RDR PR also registers the design PR, links the issue tree, and
+records discovery evidence on the FeatureIntent — so the Inbox decision entry
+the human sees is populated with the real design PR (not a placeholder), the
+real issue tree (not a label guess), and evidence that traces to the
+repository.
 
 ### What "attach" means
 
@@ -324,7 +323,8 @@ own output, never invented human answers. Two grounded sources:
   a question that the run did not raise. This behavior is tracked by the
   open spec FEATURE-APPROVAL-019 and is not yet implemented: today
   `AttachFromAgentRun` does not parse the run summary, and the Inbox
-  decision-listing sections render empty for every project.
+  decision-listing sections render empty when no decisions were separately
+  recorded.
 
 ### Branching by run goal
 
@@ -380,9 +380,8 @@ The service does not invent transitions the lifecycle guard rejects:
 The same service is called from the `create_feature` run, the chained
 `lid_planning` run, and (for closed-unmerged reconciliation) from the
 `pull_request` webhook handler. Putting the wiring in one place means the
-two paths cannot disagree about what a FeatureIntent records, and any
-follow-up issue (#3865 reconciliation) inherits the same attachment logic
-by calling the same service.
+paths cannot disagree about what a FeatureIntent records; the #4114
+reconciliation path calls the same service.
 
 ## Rollout guard
 
@@ -391,7 +390,7 @@ default `standard`, so no existing project is silently enrolled. The
 `FeatureIntents::AttachFromAgentRun` service attaches runs to a
 `FeatureIntent` for every project that runs `create_feature` (the
 `operating_mode` setting governs whether a project's issues are *held*
-until approval — #3865 — not whether a feature-intent record exists for a
+until approval — enforced by #4114 — not whether a feature-intent record exists for a
 discovered feature). Per the RDR-066 rollout guard, do not release held
 issues or bypass readiness/authorization on any rollback — those checks live
 in code (`ApprovalReadiness`, `FeatureIntentPolicy`), not behind a flag that
@@ -402,7 +401,7 @@ could be flipped off.
 - **Not an auto-merge or TDD policy change.** The profile suggests a
   posture; the owner's explicit choices win, and other profiles keep
   `standard` mode with their existing automation posture.
-- **Not the issue-tree hold/release.** Enforcing the release hold and
-  reconciling direct GitHub merges against the readiness/authorization
-  contract are the epic's remaining wiring issues (#3865); until they land,
-  an approval is recorded but not yet enforced at execution entry points.
+- **Not an approval bypass.** The issue-tree hold/release and direct GitHub
+  merge reconciliation enforce the same readiness and authorization contract
+  through `FeatureIntents::RunAdmission` and `MarkApproved`; an approval does
+  not independently make work runnable before the design is released.

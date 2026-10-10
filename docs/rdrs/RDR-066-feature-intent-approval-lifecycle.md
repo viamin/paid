@@ -46,7 +46,7 @@ for the 2026-10-01 evidence trail this status has been updated against.
 |-----------|--------|----------|
 | Feature Intent record, lifecycle, and approval-revision binding | Shipped (#3862) | `app/models/feature_intent.rb` (`STATUSES`, `APPROVABLE_STATUSES`, `record_approval!`, `record_criteria_clarity!`), `app/models/feature_intent_decision.rb`, `app/models/feature_intent_design_pr.rb`, migrations `20260917025955_create_feature_intents_and_issue_links.rb`, `20260917072612_add_approval_fields_to_feature_intents.rb`, `20260917072615_create_feature_intent_decisions.rb`, `20260917072616_create_feature_intent_design_prs.rb`, `20260917072653_validate_feature_intents_approved_by_foreign_key.rb`, `20260917073211_add_criteria_clarity_to_feature_intents.rb`, `20260917093601_add_design_document_paths_to_feature_intents.rb`. Approved-by, approved-at, approved-pr-heads jsonb snapshot, and approved-design-revision fields are persisted. Tests: `spec/models/feature_intent_spec.rb` (`FEATURE-APPROVAL-009`/`010`), `spec/models/feature_intent_decision_spec.rb` (`006`/`007`), `spec/models/feature_intent_design_pr_spec.rb` (`008`). |
 | `create_feature`/`lid_planning` attach design PRs and issue tree to a Feature Intent | Shipped (#4113) | `FeatureIntents::AttachFromAgentRun`, `Projects::AgentRunsController#create_feature_run_and_redirect`, and `CreatePullRequestActivity` create/link the feature, design PRs, and issue tree. Tests: `spec/services/feature_intents/attach_from_agent_run_spec.rb`, `spec/requests/projects/agent_runs_create_feature_spec.rb`, `spec/temporal/activities/create_pull_request_activity_spec.rb`. |
-| Inbox feature-question, design-review, and "Mark approved" entries | Shipped (#3864) | `app/services/inbox/queue.rb#feature_decision_entries` (`app/services/inbox/queue.rb:461-490`), `app/services/inbox/feature_decision_summary.rb`, `app/services/inbox/count.rb:49-51`, `app/services/feature_intents/approval_readiness.rb`, `app/services/feature_intents/criteria_clarity_review.rb`, `app/services/feature_intents/evaluate_criteria_clarity.rb`, `app/jobs/feature_intents/evaluate_criteria_clarity_job.rb`, `app/services/feature_intents/mark_approved.rb`, `app/policies/feature_intent_policy.rb`, `app/controllers/feature_intents_controller.rb`, `app/views/dashboard/_inbox_detail_feature_decision.html.erb`, `app/views/inbox/index.html.erb` nav filter. Tests: `spec/services/inbox/queue_spec.rb` (4 examples tagged `FEATURE-APPROVAL-013`), `spec/services/inbox/feature_decision_summary_spec.rb`, `spec/services/inbox/count_spec.rb`, `spec/requests/inbox_spec.rb` (`FEATURE-APPROVAL-013`), `spec/services/feature_intents/approval_readiness_spec.rb`, `spec/services/feature_intents/criteria_clarity_review_spec.rb`, `spec/services/feature_intents/evaluate_criteria_clarity_spec.rb`, `spec/services/feature_intents/mark_approved_spec.rb`, `spec/policies/feature_intent_policy_spec.rb`, `spec/requests/feature_intents_spec.rb`. Dormant until #3863 attaches `create_feature`/`lid_planning` output to a `FeatureIntent` |
+| Inbox feature-question, design-review, and "Mark approved" entries | Shipped (#3864) | `app/services/inbox/queue.rb#feature_decision_entries` (`app/services/inbox/queue.rb:534-557`), `app/services/inbox/feature_decision_summary.rb`, `app/services/inbox/count.rb:49-51`, `app/services/feature_intents/approval_readiness.rb`, `app/services/feature_intents/criteria_clarity_review.rb`, `app/services/feature_intents/evaluate_criteria_clarity.rb`, `app/jobs/feature_intents/evaluate_criteria_clarity_job.rb`, `app/services/feature_intents/mark_approved.rb`, `app/policies/feature_intent_policy.rb`, `app/controllers/feature_intents_controller.rb`, `app/views/dashboard/_inbox_detail_feature_decision.html.erb`, `app/views/inbox/index.html.erb` nav filter. Tests: `spec/services/inbox/queue_spec.rb` (4 examples tagged `FEATURE-APPROVAL-013`), `spec/services/inbox/feature_decision_summary_spec.rb`, `spec/services/inbox/count_spec.rb`, `spec/requests/inbox_spec.rb` (`FEATURE-APPROVAL-013`), `spec/services/feature_intents/approval_readiness_spec.rb`, `spec/services/feature_intents/criteria_clarity_review_spec.rb`, `spec/services/feature_intents/evaluate_criteria_clarity_spec.rb`, `spec/services/feature_intents/mark_approved_spec.rb`, `spec/policies/feature_intent_policy_spec.rb`, `spec/requests/feature_intents_spec.rb`. #4113 attaches `create_feature`/`lid_planning` output to a `FeatureIntent`; #4114 admission gates enforce the resulting hold. |
 | Release hold enforced at every run entry point (auto-pick, eager queue, dequeue, manual `create_pr`) | Shipped (#4114) | `FeatureIntents::RunAdmission` is enforced in automatic selection, model validation/manual creation, dequeue recheck, and immediately before dispatch; held queued runs are cancelled. Tests: `spec/services/feature_intents/run_admission_spec.rb`, `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`, `spec/jobs/process_run_queue_job_spec.rb`, `spec/models/agent_run_spec.rb`. |
 | Direct human merge / Inbox approval / stale head / incomplete design / bot merge / abandoned PR reconciliation | Shipped (#4114) | `FeatureIntents::ReconcileDesignPullRequest` delegates direct merge approval to `MarkApproved`, verifies a human merger against provider-authenticated account credentials, releases only current complete designs, and fails closed for bots, incomplete designs, stale heads, and closed-unmerged designs. Tests: `spec/services/feature_intents/reconcile_design_pull_request_spec.rb`, `spec/services/feature_intents/release_spec.rb`, `spec/requests/api/github_webhooks_spec.rb`. |
 | Named `human_led_feature_factory` operating mode with independent merge/TDD controls | Shipped (#3872) | `Project::OPERATING_MODES` (`app/models/project.rb:51`), `app/services/configuration/profiles/human_led_feature_factory.rb` (profile targets with `operating_mode: "human_led_feature_factory"`, `tdd_mode: "non_strict"`, `auto_merge_mode: "off"` plus clarifying questions for `auto_merge_mode` and `tdd_mode`), `app/services/onboarding/apply_default_posture.rb`, `app/services/onboarding/default_posture.rb`. Tests: `spec/services/configuration/profiles/human_led_feature_factory_spec.rb` (`FEATURE-APPROVAL-002`/`003`), `spec/services/onboarding/apply_default_posture_spec.rb` (`003`/`004`), `spec/system/onboarding_configure_defaults_form_spec.rb` (`003`/`004`), `spec/requests/onboarding_spec.rb` (`003`/`004`). |
@@ -68,8 +68,7 @@ evidence.
 
 This umbrella audit ([#3873](https://github.com/viamin/paid/issues/3873)
 closeout scope, reopened under the same issue per the umbrella audit
-contract) re-verifies the working tree against RDR-066's acceptance criteria
-and the implementation plan's six steps. Since 2026-09-17:
+contract) recorded the working tree's state on 2026-10-01. At that time:
 
 - Step 1 (Feature Intent model, relationships, approval-revision record,
   transition services, authorization, audit events) — **shipped**. The
@@ -88,31 +87,30 @@ and the implementation plan's six steps. Since 2026-09-17:
 - Step 5 (named configuration profile and onboarding default) — **shipped**,
   see the table above.
 
-Steps 2, 4, and 6 remain open:
+Steps 2, 4, and 6 were open:
 
 - Step 2 (`create_feature`/`lid_planning` attach design PRs and the proposed
   issue tree to a `FeatureIntent`; generate evidence and unresolved-decision
-  records) — **open**, tracked by #3863.
+  records) — **open**, tracked by #3863 at the time.
 - Step 4 (enforce the hold at every issue selection and run-start boundary;
   reconcile direct GitHub human merges, bot merges, abandoned PRs) —
-  **open**, tracked by #3865.
+  **open**, tracked by #3865 at the time.
 - Step 6 (RDR closeout audit, status and intent-doc reconciliation) —
-  **open until #3863 and #3865 land**. The 2026-09-17 and 2026-10-01 audits
-  reconcile the partial state and leave umbrella #3860 open per the
+  **open until #3863 and #3865 landed**. The 2026-09-17 and 2026-10-01
+  audits reconciled the partial state and left umbrella #3860 open per the
   checklist's `Tracks` rule.
 
 The RDR's `## Rollout Guard` requirement — "a named project operating-mode
 setting, default off for existing projects; the first implementation issue
 adds the setting and gates feature-specific issue release and run admission;
 no issue may depend only on UI visibility or a label to enforce the hold" —
-is partially met: the `operating_mode` setting ships default `standard` so no
-existing project is silently enrolled, and disabling the mode is settings-only
-(`FEATURE-APPROVAL-005` test). The run-admission gating portion of that
-requirement remains in #3865. No new gap issues were filed; the remaining
-work is already tracked by #3863 and #3865. Per the closeout checklist,
-umbrella issue [#3860](https://github.com/viamin/paid/issues/3860) stays
-open; the PR body uses `Tracks #3860` so the umbrella's own final audit
-remains reachable. See
+was partially met: the `operating_mode` setting shipped default `standard` so
+no existing project was silently enrolled, and disabling the mode was
+settings-only (`FEATURE-APPROVAL-005` test). The run-admission gating portion
+was tracked in #3865. No new gap issues were filed; the remaining work was
+tracked by #3863 and #3865. Per the closeout checklist, umbrella issue
+[#3860](https://github.com/viamin/paid/issues/3860) stayed open; the PR body
+used `Tracks #3860` so the umbrella's own final audit remained reachable. See
 [`audit-report-2026-10-01-rdr-066.md`](audit-report-2026-10-01-rdr-066.md)
 for the full evidence trail.
 
