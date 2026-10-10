@@ -7,6 +7,7 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
   let(:client) { instance_double(GithubClient) }
   let(:logger) { instance_double(Logger, info: nil, warn: nil) }
   let(:marker) { "<!-- paid: dependabot-merge-permission-rejection -->" }
+  let(:title) { "auto-merge blocked" }
 
   before do
     allow(project).to receive_messages(client: client, github_author_login: nil)
@@ -19,7 +20,7 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
       project: project,
       pr_number: 42,
       marker: marker,
-      title: "auto-merge blocked",
+      title: title,
       intro: "The App could not merge this PR.",
       fallback_attempted: false,
       logger: logger,
@@ -52,6 +53,17 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
         severity: "error"
       )
       expect(client).not_to have_received(:add_comment)
+    end
+
+    context "with a Markdown comment title" do
+      let(:title) { "**Auto-merge blocked: missing GitHub App permission**" }
+
+      it "renders a plain-text notification title" do
+        # @spec QUIET-MODE-005
+        call
+
+        expect(Notification.last.title).to eq("Auto-merge blocked: missing GitHub App permission")
+      end
     end
   end
 

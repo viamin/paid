@@ -21,3 +21,7 @@ prefix: QUIET-MODE
 - [x] **QUIET-MODE-005** — While quiet mode is enabled, when auto-merge is
   blocked by missing App permissions, the system SHALL publish a blocking
   action-required Inbox notification instead of a GitHub comment.
+- [x] **QUIET-MODE-006** — While quiet mode is enabled and clarifying-question
+  answers can only be persisted in a GitHub comment, when an operator submits
+  answers, the system SHALL reject the submission before clearing the issue's
+  needs-input state or reporting a successful post.

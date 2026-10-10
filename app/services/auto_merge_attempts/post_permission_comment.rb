@@ -56,7 +56,7 @@ module AutoMergeAttempts
         source: QUIET_MODE_NOTIFICATION_SOURCE,
         subject: project,
         severity: :error,
-        title: title,
+        title: title.delete("*"),
         description: [ intro, next_step ].join("\n\n"),
         metadata: { "pr_number" => pr_number, "recommended_action" => next_step },
         blocking: true
