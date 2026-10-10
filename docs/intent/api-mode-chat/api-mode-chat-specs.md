@@ -100,6 +100,7 @@
   chat runner selectors SHALL only offer runners that can build an API chat
   client.
   *Tests:* `spec/services/chat_sessions/fallback_runners_spec.rb`,
+  `spec/services/chat_sessions/fallback_loop_spec.rb`,
   `spec/jobs/chat_sessions/process_message_job_spec.rb`,
   `spec/requests/chat_sessions_spec.rb`.
   *Code:* `ChatSessions::FallbackLoop#run_with_fallbacks`,
@@ -382,6 +383,7 @@
   `spec/models/chat_message_spec.rb`,
   `spec/models/tenant_setting_spec.rb`,
   `spec/services/chat_sessions/mark_rate_limited_spec.rb`,
+  `spec/services/chat_sessions/fallback_loop_spec.rb`,
   `spec/services/chat_sessions/provider_error_notice_spec.rb`,
   `spec/services/chat_sessions/record_provider_error_spec.rb`,
   `spec/services/chat_sessions/resume_rate_limited_spec.rb`,

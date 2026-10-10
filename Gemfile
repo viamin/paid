@@ -81,7 +81,10 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-gem "agent-harness", "0.44.8"
+# 0.44.9 includes viamin/agent-harness#472, which preserves a provider's
+# classified error when ChatTransport fails. Paid relies on this for the
+# rate-limit pause/recovery path (fixes #4217).
+gem "agent-harness", "0.44.9"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.

@@ -74,6 +74,8 @@ module ChatSessions
     # runner switch (the session never ends up silently on a new runner with no
     # explanation). The broadcast fires only after the transaction commits.
     def switch_to_fallback_runner(runner, error)
+      log_fallback_switch(runner, error)
+
       message = chat_session.transaction do
         ChatSessions::FallbackRunners.switch!(chat_session: chat_session, runner: runner)
         chat_session.messages.create!(
@@ -86,6 +88,22 @@ module ChatSessions
       @llm_client = nil
       on_message_persisted&.call(message)
       message
+    end
+
+    # The classified category/code is embedded in `error.message` (see
+    # BuildLlmClient::HttpClient#raise_classified_error ->
+    # AgentHarness::Api::ErrorClassifier#safe_message), so logging it here
+    # surfaces the real failure even when the only durable record otherwise is
+    # the notice text and `api_usage_attempts.metadata`.
+    def log_fallback_switch(runner, error)
+      Rails.logger.warn(
+        message: "chat_fallback_loop.runner_switched",
+        chat_session_id: chat_session.id,
+        from_runner_id: chat_session.runner_id,
+        to_runner_id: runner.id,
+        error_class: error.class.name,
+        error: error.message
+      )
     end
   end
 end
