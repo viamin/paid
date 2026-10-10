@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class PersonalAccessToken < ApplicationRecord
+  has_logidze
   PREFIX = "paid_pat_"
   LAST_USED_INTERVAL = 5.minutes
 

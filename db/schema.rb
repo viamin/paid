@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_132412) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_154741) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2698,6 +2698,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_132412) do
     t.datetime "created_at", null: false
     t.datetime "expires_at"
     t.datetime "last_used_at"
+    t.jsonb "log_data"
     t.string "name", null: false
     t.datetime "revoked_at"
     t.jsonb "scopes", default: [], null: false
@@ -5270,5 +5271,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_132412) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 end

@@ -97,7 +97,7 @@
   per-user per-entry chat resolution as the web action) and return the
   resulting session's `chat_session_id`, without returning a web URL.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
-  *Code:* `Api::V1::InboxController#open_chat`.
+  *Code:* `Api::V1::InboxController#chat`.
 
 - [x] **MOBILE-API-010** — When a client sends `GET /api/v1/inbox` or
   `GET /api/v1/inbox/count` with an `If-None-Match` header matching the
