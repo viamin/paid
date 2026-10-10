@@ -19,16 +19,18 @@
   independently adjudicated corpus containing accepted, intentionally drifted,
   and uncertain PR cases, and SHALL evaluate the reviewer in shadow mode.
   *Design:* `intent-conformance-rollout-design.md`.
-  *Gap:* #4205 owns the blinded operator adjudication and completed corpus
-  manifest; the shipped scheduler and shadow flag do not constitute a run.
+  *Gap:* The 2026-10-10 manifest is invalidated because it predates its
+  purported adjudications and lacks verifiable event evidence. #4205 remains
+  open until operators repeat the run with a post-event frozen record.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-003** — The rollout record SHALL measure
   false alarms, missed material drift, escaped changes, reviewer cost, human
   resolution time, rework, and delivery time against a predeclared same-project
   baseline and promotion rule.
   *Design:* `intent-conformance-rollout-design.md`.
-  *Gap:* #4205 owns the completed, repository-visible aggregate worksheet and
-  promotion decision; no adjudicated measurement results are recorded yet.
+  *Gap:* The 2026-10-10 worksheet is invalidated; its measures are not
+  reproducible from the manifest. A replacement must retain the per-case
+  inputs required by `intent-conformance-rollout-design.md`.
 
 - [x] **INTENT-CONFORMANCE-ROLLOUT-004** — Operators SHALL not release
   feature work into the mode until scanner enforcement and the final merge

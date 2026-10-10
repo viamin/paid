@@ -24,7 +24,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 
 ## Implementation Status
 
-Partially implemented as of October 9, 2026. The verdict/reviewer (#3866),
+Partially implemented as of October 10, 2026. The verdict/reviewer (#3866),
 PR-scanner signal and Inbox escalation (#3867), final-merge guard (#3868), and
 design-amendment/impact-mapping (#3869) slices have shipped. In particular,
 `IntentConformance::VerifyAtMerge`, called by
@@ -37,13 +37,15 @@ The production PR scanner now schedules a durable, de-duplicated independent
 review for each eligible `(PR, HEAD, approved-design revision)` identity; a
 new head or design revision schedules a fresh review. Issue #3870 shipped the
 read-only shadow-review flag and rollout design in
-`docs/intent/intent-conformance-rollout/`; issue #4205 owns the still-required
+`docs/intent/intent-conformance-rollout/`; issue #4205 still owns the required
 blinded corpus adjudication and measured worksheet. The attempted 2026-10-09
 evaluation is retained only as an invalidated audit trail: its recorded design
 revision postdates the adjudications, and its strata were not independently
 content-adjudicated. Its recorded one missed drift count is not reviewer-
 accuracy evidence, and it did not evaluate the promotion rule. An Implemented
-status requires a valid replacement evaluation. The RDR-066
+status requires a valid replacement evaluation. The attempted 2026-10-10
+replacement is also invalidated because it was committed before its purported
+events and lacks auditable per-case inputs. Enforcement remains disabled. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -201,3 +203,14 @@ evidence is recorded in
   this re-audit does not claim Implemented status.
 - **Epic #3861 remains open.** This closeout uses `Tracks #3861` and does not
   use closing language.
+
+## 2026-10-10 Shadow Evaluation Invalidation
+
+Issue [#4205](https://github.com/viamin/paid/issues/4205) has not completed a
+valid replacement run. The rejected record is retained in
+[`audit-report-2026-10-10-rdr-067.md`](audit-report-2026-10-10-rdr-067.md).
+Its purported adjudications and freeze postdate the commit that introduced
+them, and its cost, human-time, rework, and resolution figures have no
+repository-visible inputs. It is not evidence of reviewer quality, blinded
+adjudication, or a promotion outcome. The RDR remains **Partially Implemented**;
+operators must repeat the run with an event-backed, post-event frozen corpus.
