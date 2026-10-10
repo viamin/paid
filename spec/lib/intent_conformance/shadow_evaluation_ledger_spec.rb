@@ -63,6 +63,20 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
       .to raise_error(/must not have a tie-break after agreement/)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-003
+  it "rejects a tie-break verdict that matches neither primary verdict" do
+    events = [
+      base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[one two three]),
+      base_event.merge("type" => "adjudication", "event_id" => "one", "case_id" => "A-01", "operator" => "one", "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y"),
+      base_event.merge("type" => "adjudication", "event_id" => "two", "case_id" => "A-01", "operator" => "two", "verdict" => "material_drift", "cited_design_claim" => "X", "reason" => "Y"),
+      base_event.merge("type" => "adjudication", "event_id" => "three", "case_id" => "A-01", "operator" => "three", "verdict" => "uncertain", "cited_design_claim" => "X", "reason" => "Y")
+    ]
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(/tie-break verdict must agree with one of the primary verdicts/)
+  end
+
   it "rejects a requested manifest identity that differs from ledger events" do
     File.write(ledger, JSON.generate(base_event.merge("type" => "adjudication", "event_id" => "one")))
     expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "b" * 40) }.to raise_error(/every ledger event/)

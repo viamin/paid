@@ -117,6 +117,7 @@ module IntentConformance
       raise InvalidLedger, "#{case_id} must not have a tie-break after agreement" if entries[0]["verdict"] == entries[1]["verdict"]
 
       raise InvalidLedger, "#{case_id} tie-break operator must be independent" if entries.map { |entry| entry["operator"] }.uniq.length != 3
+      raise InvalidLedger, "#{case_id} tie-break verdict must agree with one of the primary verdicts" unless [ entries[0]["verdict"], entries[1]["verdict"] ].include?(entries[2]["verdict"])
     end
 
     def ensure_shadow_runs_follow_adjudications!(cases, entries)

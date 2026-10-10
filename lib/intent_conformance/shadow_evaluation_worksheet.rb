@@ -39,8 +39,18 @@ module IntentConformance
       adjudications = entries.select { |entry| entry["type"] == "adjudication" }
       cases.to_h do |item|
         decisions = adjudications.select { |entry| entry["case_id"] == item["id"] }
-        [ item["id"], decisions.last.fetch("verdict") ]
+        [ item["id"], majority_verdict(decisions) ]
       end
+    end
+
+    # @spec INTENT-CONFORMANCE-ROLLOUT-003
+    # Ledger validation guarantees either the two primary verdicts agree, or a
+    # third tie-break verdict matches one of them — so the majority verdict
+    # (by count) is always the human-adjudicated outcome, never a lone
+    # tie-break verdict that corroborates neither primary adjudicator.
+    def majority_verdict(decisions)
+      tally = decisions.map { |entry| entry.fetch("verdict") }.tally
+      tally.max_by { |_verdict, count| count }.first
     end
 
     def rate(human, runs, expected)
