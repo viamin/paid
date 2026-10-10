@@ -54,9 +54,15 @@
   before dispatch, and enforce the same Pundit policies and policy scopes
   the web controllers enforce. The namespace SHALL NOT accept tokens via
   query parameters, cookies, or any non-header channel, and SHALL NOT
-  require a Devise session.
+  require a Devise session. It SHALL also enforce the control plane's
+  account-lifecycle rule (RAILS-CONTROL-PLANE-006): a deactivated account's
+  token SHALL be rejected with the same generic `401 unauthorized` envelope
+  as an invalid token (so the response does not disclose account status),
+  and a suspended account SHALL keep read access but have write requests
+  rejected `403`.
   *Tests:* `spec/requests/api/v1/authentication_spec.rb`,
-  `spec/requests/api/v1/chat_messages_spec.rb`.
+  `spec/requests/api/v1/chat_messages_spec.rb`,
+  `spec/requests/api/v1/tenant_enforcement_spec.rb`.
   *Code:* `Api::V1::BaseController`.
 
 ## Inbox endpoints

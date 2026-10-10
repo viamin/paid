@@ -6,6 +6,7 @@ module Api
       include Pundit::Authorization
 
       around_action :with_bearer_context
+      before_action :enforce_account_status!
       rescue_from Pundit::NotAuthorizedError, with: :render_forbidden
       rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
 
@@ -15,6 +16,10 @@ module Api
 
       def current_user
         Current.user
+      end
+
+      def current_account
+        Current.account
       end
 
       def with_bearer_context
@@ -29,6 +34,26 @@ module Api
         ensure
           Current.reset
         end
+      end
+
+      # API-safe equivalent of TenantEnforcement#enforce_tenant_status
+      # (app/controllers/concerns/tenant_enforcement.rb), which this
+      # ActionController::API subclass does not inherit: a deactivated
+      # account's token is rejected outright, and a suspended account
+      # keeps read access but loses write access.
+      # @spec RAILS-CONTROL-PLANE-006
+      def enforce_account_status!
+        return unless current_account
+
+        if current_account.deactivated?
+          render_unauthorized
+        elsif current_account.suspended? && mutating_request?
+          render_error("forbidden", "This account is suspended. Write operations are disabled.", :forbidden)
+        end
+      end
+
+      def mutating_request?
+        !request.get? && !request.head?
       end
 
       def require_scope!(scope)
