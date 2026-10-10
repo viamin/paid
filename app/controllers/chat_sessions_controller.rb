@@ -59,7 +59,7 @@ class ChatSessionsController < ApplicationController
       locals: { messages: messages, chat_session: @chat_session, has_more: has_more, frame_id: frame_id }
   end
 
-  # @spec CHAT-API-022 — Recovers messages the client missed during an
+  # @spec CHAT-API-023 — Recovers messages the client missed during an
   # ActionCable gap (dropped connection mid-turn): a broadcast emitted while
   # disconnected is gone for good, so on reconnect the client replays
   # everything persisted after the last message it rendered. Responses remain
@@ -67,7 +67,9 @@ class ChatSessionsController < ApplicationController
   # from the final returned id until its transcript converges.
   def recent_messages
     authorize @chat_session, :show?
-    since_id = params.require(:since)
+    since_id = Integer(params.require(:since), exception: false)
+    return head :bad_request unless since_id&.nonnegative?
+
     messages = @chat_session.messages.chronological
       .where("chat_messages.id > ?", since_id)
       .limit(MESSAGE_PAGE_SIZE)

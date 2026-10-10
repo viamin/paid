@@ -1029,7 +1029,7 @@ RSpec.describe "ChatSessions" do
     end
   end
 
-  # @spec CHAT-API-022
+  # @spec CHAT-API-023
   describe "GET /chat/:id/recent_messages" do
     let!(:chat_session) { create(:chat_session, account: account, created_by: user) }
 
@@ -1083,6 +1083,12 @@ RSpec.describe "ChatSessions" do
 
       it "requires a since cursor" do
         get recent_messages_chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:bad_request)
+      end
+
+      it "rejects a non-numeric since cursor" do
+        get recent_messages_chat_session_path(chat_session), params: { since: "not-a-message-id" }
 
         expect(response).to have_http_status(:bad_request)
       end

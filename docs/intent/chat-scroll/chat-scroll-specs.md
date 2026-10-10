@@ -6,7 +6,7 @@
 - [x] **CHAT-SCROLL-001** — When a user selects either "Jump to latest"
   control, the chat transcript SHALL smoothly scroll to the container-relative
   top of the last assistant text response, excluding tool-call cards and any
-  non-persisted in-flight streaming bubble (CHAT-API-022) — a streaming bubble
+  non-persisted in-flight streaming bubble (CHAT-API-023) — a streaming bubble
   is not yet persisted and can vanish (error, disconnect) or be rewritten
   (final markdown render) out from under the user, so it must never anchor
   either control. On a forward visit, it SHALL place that same response top in

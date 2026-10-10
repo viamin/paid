@@ -213,6 +213,74 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-022 — A terminal event must never leave an unpersisted
+    // streaming bubble at the end of the transcript.
+    function testMessageCompleteRemovesStreamingBubble() {
+      let removedStreamId = null;
+      const { controller } = makeController({
+        incrementTokenUsage: () => {},
+        scrollToBottom: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        setBusy: function(busy) { this.streaming = busy; },
+        removeStreamingMessage: (streamId) => { removedStreamId = streamId; }
+      });
+
+      controller.handleMessageComplete({ message_id: "test-id", tokens: {} });
+
+      if (removedStreamId !== "test-id") {
+        throw new Error(`Expected message_complete to remove stream test-id, got ${removedStreamId}`);
+      }
+    }
+
+    // @spec CHAT-API-022 — A fallback notice can remove the transient bubble
+    // before completion, but the terminal event must still release the composer.
+    function testMessageCompleteReleasesFallbackWithoutActiveStreamId() {
+      const { controller } = makeController({
+        currentStreamId: null,
+        incrementTokenUsage: () => {},
+        scrollToBottom: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        setBusy: function(busy) { this.streaming = busy; }
+      });
+
+      controller.handleMessageComplete({ message_id: "stream-1", tokens: {} });
+
+      if (controller.streaming) {
+        throw new Error("Expected fallback completion to release streaming when no active stream ID remains");
+      }
+    }
+
+    // @spec CHAT-API-022 — Duplicate chunks and gaps are not safe to append:
+    // an incomplete transient bubble is preferable to corrupting transcript text.
+    function testMessageChunksRequireContiguousSequence() {
+      const appended = [];
+      let removedStreamId = null;
+      const message = {};
+      const { controller } = makeController({
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
+        ensureAssistantMessage: () => message,
+        messageControllerFor: () => ({ appendContent: (content) => appended.push(content) }),
+        removeStreamingMessage: (streamId) => { removedStreamId = streamId; },
+        scrollToBottom: () => {},
+        setStatus: () => {}
+      });
+
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 1, content: "first" });
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 1, content: "duplicate" });
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 3, content: "gap" });
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 2, content: "late" });
+
+      if (appended.join("") !== "first") {
+        throw new Error(`Expected only the contiguous chunk to append, got ${appended.join("")}`);
+      }
+      if (removedStreamId !== "test-id") {
+        throw new Error("Expected a sequence gap to remove the transient bubble");
+      }
+    }
+
     // A send is tracked before the server has confirmed anything (message_start
     // travels over the same socket) so a later rejection — e.g. a token-limit
     // error — can restore what the user typed.
@@ -430,6 +498,32 @@ class ChatControllerNodeHarness
 
       if ((controller.currentAttemptToolCards || []).length !== 0) {
         throw new Error("Expected tracked tool cards to be cleared after fallback notice");
+      }
+    }
+
+    // @spec CHAT-API-022 — The fallback attempt uses the same stream ID and
+    // sequence, so it must continue rendering after stale artifacts are removed.
+    function testFallbackNoticeKeepsStreamActiveForReplacementChunks() {
+      const appended = [];
+      const message = {};
+      const { controller } = makeController({
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
+        ensureAssistantMessage: () => message,
+        messageControllerFor: () => ({ appendContent: (content) => appended.push(content) }),
+        removeStreamingMessage: () => {},
+        scrollToBottom: () => {},
+        setStatus: () => {}
+      });
+
+      controller.removeCurrentAttemptArtifacts();
+      controller.handleMessageChunk({ message_id: "test-id", sequence: 1, content: "Fallback answer" });
+
+      if (controller.currentStreamId !== "test-id") {
+        throw new Error("Expected fallback cleanup to retain the active stream ID");
+      }
+      if (appended.join("") !== "Fallback answer") {
+        throw new Error(`Expected fallback chunk to render, got ${appended.join("")}`);
       }
     }
 
@@ -674,6 +768,29 @@ class ChatControllerNodeHarness
       // scrollTop (100) + (anchorRect.top 250 - containerRect.top 50) = 300
       if (scrolledTo !== 300) {
         throw new Error(`Expected scrollToLatestResponse to target 300 (container-relative anchor offset), got ${scrolledTo}`);
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — Temporary streaming bubbles have no persisted
+    // message id and must never become the Jump to latest anchor.
+    function testLastAssistantTextResponseExcludesStreamingBubbles() {
+      const persisted = { id: "persisted" };
+      let selector = null;
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (value) => {
+            selector = value;
+            return [ persisted ];
+          },
+          append: () => {}
+        }
+      });
+
+      if (controller.lastAssistantTextResponse() !== persisted) {
+        throw new Error("Expected the persisted assistant response to be the anchor");
+      }
+      if (!selector.includes("[data-message-id]")) {
+        throw new Error(`Expected persisted-message selector, got ${selector}`);
       }
     }
 
@@ -1247,7 +1364,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — A dropped connection mid-turn must not leave the
+    // @spec CHAT-API-023 — A dropped connection mid-turn must not leave the
     // in-flight bubble stranded just because it already streamed text: the
     // server never persisted that text (no message_created ever arrived to
     // replace it), so it is stale and must be torn down on disconnect (#4225).
@@ -1338,7 +1455,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-SCROLL-001 — A non-persisted streaming bubble at the
+    // @spec CHAT-SCROLL-001 @spec CHAT-API-023 — A non-persisted streaming bubble at the
     // transcript tail must never become the "Jump to latest" anchor: it can
     // vanish (error, disconnect) or get rewritten (final markdown render)
     // under the user. The anchor must fall back to the last persisted
@@ -1349,7 +1466,7 @@ class ChatControllerNodeHarness
       const { controller } = makeController({
         messagesTarget: {
           querySelectorAll: (selector) => (
-            selector.includes(":not([data-stream-message-id])") ? [ persistedAnchor ] : [ persistedAnchor, streamingBubble ]
+            selector.includes("[data-message-id]") ? [ persistedAnchor ] : [ persistedAnchor, streamingBubble ]
           ),
           append: () => {}
         }
@@ -1362,13 +1479,13 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-SCROLL-001 — With no persisted assistant response yet (only
+    // @spec CHAT-SCROLL-001 @spec CHAT-API-023 — With no persisted assistant response yet (only
     // a live streaming bubble), the anchor must fall back to null rather than
     // ever returning the bubble.
     function testAnchorSelectionReturnsNullWithOnlyAStreamingBubble() {
       const { controller } = makeController({
         messagesTarget: {
-          querySelectorAll: (selector) => (selector.includes(":not([data-stream-message-id])") ? [] : [ { dataset: { streamMessageId: "stream-1" } } ]),
+          querySelectorAll: (selector) => (selector.includes("[data-message-id]") ? [] : [ { dataset: { streamMessageId: "stream-1" } } ]),
           append: () => {}
         }
       });
@@ -1380,7 +1497,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — Reconnecting mid-turn must trigger a resync so any
+    // @spec CHAT-API-023 — Reconnecting mid-turn must trigger a resync so any
     // broadcast lost during the gap (message_created / message_complete /
     // error) is recovered; a stable initial connect must not. ActionCable
     // always runs disconnected() before the reconnect's connected() fires, and
@@ -1421,7 +1538,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — A disconnect that happens while no turn is in
+    // @spec CHAT-API-023 — A disconnect that happens while no turn is in
     // flight (the common case: idle between turns, or the very first
     // connect) must not trigger a resync on the next reconnect, since there
     // is nothing lost to recover.
@@ -1452,7 +1569,7 @@ class ChatControllerNodeHarness
       };
     }
 
-    // @spec CHAT-API-022 — resyncTranscript fetches every page persisted
+    // @spec CHAT-API-023 — resyncTranscript fetches every page persisted
     // after the last message the client actually rendered, and replays each
     // one through the same handleMessageCreated path a live broadcast uses.
     function testResyncTranscriptReplaysMessagesSinceLastRenderedId() {
@@ -1485,7 +1602,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — A reconnect may span more than one bounded server
+    // @spec CHAT-API-023 — A reconnect may span more than one bounded server
     // page. Follow each returned cursor so the transcript converges without a
     // manual reload.
     function testResyncTranscriptReplaysEveryPage() {
@@ -1542,7 +1659,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — A mid-stream disconnect clears currentStreamId,
+    // @spec CHAT-API-023 — A mid-stream disconnect clears currentStreamId,
     // but the turn can still be in flight server-side: ProcessMessageJob only
     // broadcasts message_start once, so reconnecting resumes chunks for the
     // same stream id with nothing to re-arm tracking. ensureAssistantMessage
@@ -1555,11 +1672,13 @@ class ChatControllerNodeHarness
       const { controller } = makeController({
         streaming: false,
         currentStreamId: null,
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
         scrollToBottom: () => {},
         ensureAssistantMessage: () => bubble
       });
 
-      controller.handleMessageChunk({ message_id: "stream-1", content: "partial" });
+      controller.handleMessageChunk({ message_id: "stream-1", sequence: 1, content: "partial" });
 
       if (controller.currentStreamId !== "stream-1") {
         throw new Error(`Expected currentStreamId to re-arm to 'stream-1', got '${controller.currentStreamId}'`);
@@ -1577,6 +1696,8 @@ class ChatControllerNodeHarness
       const bubble = { streamMessageId: "stream-1" };
       const { controller } = makeController({
         currentStreamId: "stream-1",
+        expectedStreamSequence: 1,
+        ignoredStreamIds: new Set(),
         scrollToBottom: () => {},
         ensureAssistantMessage: () => bubble
       });
@@ -1585,7 +1706,7 @@ class ChatControllerNodeHarness
         set() { streamingWrites += 1; }
       });
 
-      controller.handleMessageChunk({ message_id: "stream-1", content: "more" });
+      controller.handleMessageChunk({ message_id: "stream-1", sequence: 1, content: "more" });
 
       if (controller.currentStreamId !== "stream-1") {
         throw new Error(`Expected currentStreamId to remain 'stream-1', got '${controller.currentStreamId}'`);
@@ -1595,18 +1716,20 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — After reconnecting, a user can start stream B while
+    // @spec CHAT-API-023 — After reconnecting, a user can start stream B while
     // stream A still emits server-side. Late A events must not take ownership
     // from B or terminate B's in-flight UI.
     function testLateStreamEventsDoNotReplaceOrTerminateTheActiveStream() {
       const appendedContent = [];
       let removedBubbles = 0;
+      const removedStreamBubbles = [];
       const { controller } = makeController({
         currentStreamId: "stream-a",
         ensureAssistantMessage: () => {
           throw new Error("Expected a late chunk for stream A not to render a bubble");
         },
         removePendingAssistantMessage: () => { removedBubbles += 1; },
+        removeStreamingMessage: (streamId) => { removedStreamBubbles.push(streamId); },
         resyncTranscript: () => {},
         scrollToBottom: () => {},
         toggleTyping: () => {},
@@ -1618,19 +1741,22 @@ class ChatControllerNodeHarness
       controller.handleDisconnected();
       controller.handleConnected();
       controller.handleMessageStart({ message_id: "stream-b", model: "assistant" });
-      controller.handleMessageChunk({ message_id: "stream-a", content: "late A" });
+      controller.handleMessageChunk({ message_id: "stream-a", sequence: 1, content: "late A" });
       controller.handleMessageComplete({ message_id: "stream-a" });
 
       if (controller.currentStreamId !== "stream-b" || !controller.streaming) {
         throw new Error("Expected late stream A events to leave stream B active");
       }
-      if (removedBubbles !== 1) {
-        throw new Error(`Expected only disconnect cleanup to remove a bubble, got ${removedBubbles}`);
+      if (removedBubbles !== 2) {
+        throw new Error(`Expected disconnect and stream B startup cleanup, got ${removedBubbles}`);
+      }
+      if (removedStreamBubbles.join(",") !== "stream-a") {
+        throw new Error(`Expected only stale stream A cleanup, got ${removedStreamBubbles.join(",")}`);
       }
 
       controller.ensureAssistantMessage = () => ({});
       controller.messageControllerFor = () => ({ appendContent: (content) => appendedContent.push(content) });
-      controller.handleMessageChunk({ message_id: "stream-b", content: "B continues" });
+      controller.handleMessageChunk({ message_id: "stream-b", sequence: 1, content: "B continues" });
       controller.handleMessageComplete({ message_id: "stream-b" });
 
       if (appendedContent.join("") !== "B continues") {
@@ -1639,8 +1765,8 @@ class ChatControllerNodeHarness
       if (controller.currentStreamId !== null || controller.streaming) {
         throw new Error("Expected stream B's matching completion to release the streaming state");
       }
-      if (removedBubbles !== 2) {
-        throw new Error(`Expected stream B completion to remove its own bubble, got ${removedBubbles}`);
+      if (removedStreamBubbles.join(",") !== "stream-a,stream-b") {
+        throw new Error(`Expected both stream cleanups, got ${removedStreamBubbles.join(",")}`);
       }
     }
 
@@ -1671,6 +1797,9 @@ class ChatControllerNodeHarness
       testToolResultAppendsCard();
       testToolResultWithMissingHtmlDoesNotAppend();
       testMessageCompleteResetsStreamingState();
+      testMessageCompleteRemovesStreamingBubble();
+      testMessageCompleteReleasesFallbackWithoutActiveStreamId();
+      testMessageChunksRequireContiguousSequence();
       testSendMessageTracksPendingContentForRestoration();
       testHandleErrorRestoresPendingContentIntoInput();
       testHandleErrorNoOpsWithoutPendingContent();
@@ -1680,6 +1809,7 @@ class ChatControllerNodeHarness
       testToolEventsDoNotResetStreamingBeforeComplete();
       testHandleEventDispatchesToolCall();
       testFallbackNoticeRemovesStaleToolCards();
+      testFallbackNoticeKeepsStreamActiveForReplacementChunks();
       testRegularMessageCreatedKeepsAttemptToolCards();
       testCapabilityChangedUpdatesPanelIconAndActions();
       testSystemNoticeReplacementTargetsTopLevelElement();
@@ -1690,6 +1820,7 @@ class ChatControllerNodeHarness
       testScrollToInputScrollsToBottom();
       testScrollToTopScrollsToZero();
       testScrollToLatestResponseSmoothScrollsToAnchor();
+      testLastAssistantTextResponseExcludesStreamingBubbles();
       testScrollToLatestResponseFallsBackToBottom();
       testJumpToLatestResponseOnLoadSetsScrollTopInstantly();
       testConnectDefersInitialJumpUntilAfterChildControllersRender();
