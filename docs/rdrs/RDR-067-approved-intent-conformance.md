@@ -24,7 +24,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 
 ## Implementation Status
 
-Partially implemented as of September 26, 2026. The verdict/reviewer (#3866),
+Partially implemented as of October 9, 2026. The verdict/reviewer (#3866),
 PR-scanner signal and Inbox escalation (#3867), final-merge guard (#3868), and
 design-amendment/impact-mapping (#3869) slices have shipped. In particular,
 `IntentConformance::VerifyAtMerge`, called by
@@ -35,18 +35,15 @@ evidence and resolution path.
 
 The production PR scanner now schedules a durable, de-duplicated independent
 review for each eligible `(PR, HEAD, approved-design revision)` identity; a
-new head or design revision schedules a fresh review. Issue #3870 now defines
-the read-only shadow-review flag, representative corpus, telemetry baseline,
-promotion criteria, and operator rollback protocol in
-`docs/intent/intent-conformance-rollout/`. The 2026-10-09 shadow-evaluation
-attempt was invalidated: the recorded design revision postdates the
-adjudications and the strata were not independently content-adjudicated, so
-the recorded reviewer-vs-adjudicator count of one missed drift case is not
-evidence of the reviewer's accuracy and the promotion rule was not met.
-Enforcement remains off; see
-`docs/intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md`
-and [audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
-The RDR-066
+new head or design revision schedules a fresh review. Issue #3870 shipped the
+read-only shadow-review flag and rollout design in
+`docs/intent/intent-conformance-rollout/`; issue #4205 owns the still-required
+blinded corpus adjudication and measured worksheet. The attempted 2026-10-09
+evaluation is retained only as an invalidated audit trail: its recorded design
+revision postdates the adjudications, and its strata were not independently
+content-adjudicated. Its recorded one missed drift count is not reviewer-
+accuracy evidence, and it did not evaluate the promotion rule. An Implemented
+status requires a valid replacement evaluation. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -187,14 +184,20 @@ The evidence is recorded in
 - **Epic #3861 remains open.** This PR must use tracking language only and
   must not claim to close the epic.
 
-## 2026-10-09 Shadow-Evaluation Audit
+## 2026-10-09 Re-audit
 
-Issue #4205 attempted a blinded shadow evaluation and updated the closeout
-evidence in [audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
-The retained 30-case corpus and aggregate worksheet are invalidated: the
-recorded design revision postdates adjudication and the strata were not
-independently content-adjudicated. They do not satisfy the measurement evidence
-requirement. RDR-067 remains **Partially Implemented**,
-`intent_conformance_shadow_review` remains the only permissible flag for this
-evaluation path, and no enforcement or merge-time guard is authorized until a
-valid replacement evaluation meets the documented rule.
+Closeout issue [#3871](https://github.com/viamin/paid/issues/3871) re-audited
+the current head after the review-scheduling and rollout-mechanism merges. The
+evidence is recorded in
+[audit-report-2026-10-09-rdr-067.md](audit-report-2026-10-09-rdr-067.md).
+
+- **Current-head/current-design protection and Inbox escalation remain shipped
+  with executable test evidence.**
+- **The evaluation criterion remains unmet.** The retained manifest and
+  worksheet are invalidated audit artifacts, not blinded, independently
+  adjudicated rollout evidence. Open issue [#4205](https://github.com/viamin/paid/issues/4205)
+  owns a replacement run.
+- **Status remains Partially Implemented.** The README row remains aligned;
+  this re-audit does not claim Implemented status.
+- **Epic #3861 remains open.** This closeout uses `Tracks #3861` and does not
+  use closing language.

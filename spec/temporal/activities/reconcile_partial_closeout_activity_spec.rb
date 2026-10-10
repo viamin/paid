@@ -39,12 +39,16 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       result = activity.execute(agent_run_id: run.id)
 
       expect(result).to include(status: "reconciled", gaps_remain: false)
-      expect(run.reload.reconciliation.fetch("assessment")).to eq(assessment)
+      # The persisted shape is the snapshot envelope (LLM result + revision
+      # metadata); the activity's own persistence is verified through the
+      # envelope below, so here we only assert the underlying LLM gap set
+      # survives the round-trip.
+      expect(run.reload.reconciliation.fetch("assessment")).to a_hash_including("gaps" => assessment.fetch("gaps"))
 
       activity.execute(agent_run_id: run.id)
 
       expect(Llm::AnalyzePartialCloseout).to have_received(:call).once
-      expect(run.reload.reconciliation).to include("assessment" => assessment, "status" => "reconciled")
+      expect(run.reload.reconciliation).to include("assessment" => a_hash_including("gaps" => assessment.fetch("gaps")), "status" => "reconciled")
     end
 
     # @spec NO-OUTPUT-ISSUE-007

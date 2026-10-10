@@ -1,32 +1,33 @@
-# RDR-067 Audit Report — 2026-10-09
+# RDR-067 Audit Report — 2026-10-09 Re-audit
 
 - **RDR**: [RDR-067: Approved Intent Conformance for Feature PRs](RDR-067-approved-intent-conformance.md)
-- **Closeout issue**: #3871
-- **Evaluation issue**: #4205
-- **Status**: Partially Implemented
+- **Audit date**: 2026-10-09
+- **Closeout issue**: [#3871](https://github.com/viamin/paid/issues/3871)
+- **Epic**: Tracks [#3861](https://github.com/viamin/paid/issues/3861)
+- **Conclusion**: **Partially Implemented.** Current-head/current-design
+  enforcement and the distinct Inbox escalation are shipped and tested. The
+  shadow-mode mechanism is shipped, but no valid blinded corpus adjudication
+  or measured false-alarm/missed-drift worksheet exists.
 
-## Method
+Follows the [RDR Closeout Checklist](closeout-checklist.md). This is a fresh
+current-head audit: it verifies the named remaining gap after the October
+review-scheduling, enforcement, and measured-rollout mechanism merges. It does
+not infer completion from closed issues or from the existence of a mechanism.
 
-This audit follows the [RDR Closeout Checklist](closeout-checklist.md). It
-compares the RDR's validation claims with current code, executable specs, and
-the retained (invalidated) shadow-evaluation record. It does not infer
-completion from closed child issues.
+## Acceptance Criteria vs. Shipped Implementation
 
-## Evidence
+| Issue #3871 criterion | Status | Evidence |
+|---|---|---|
+| Current-head/current-design merge protection and Inbox escalation are proven by tests. | Satisfied | `IntentConformance::VerifyAtMerge` structurally binds the current PR head and approved design revision, and `MergePullRequestActivity` invokes it immediately before merge. The merge-guard EARS claims `INTENT-MERGE-GUARD-003`, `004`, and `008` identify the push, design-revision, and scan-to-merge race coverage in [`spec/services/intent_conformance/verify_at_merge_spec.rb`](../../spec/services/intent_conformance/verify_at_merge_spec.rb) and [`spec/temporal/activities/merge_pull_request_activity_spec.rb`](../../spec/temporal/activities/merge_pull_request_activity_spec.rb). The scanner/Inbox EARS claims `INTENT-CONFORMANCE-006`, `007`, `010`, and `011` identify current-HEAD persistence, distinct Inbox presentation, and scheduled independent review coverage in [`spec/services/inbox/intent_conformance_spec.rb`](../../spec/services/inbox/intent_conformance_spec.rb), [`spec/temporal/activities/scan_paid_prs_activity_spec.rb`](../../spec/temporal/activities/scan_paid_prs_activity_spec.rb), and [`spec/services/intent_conformance/schedule_review_spec.rb`](../../spec/services/intent_conformance/schedule_review_spec.rb). |
+| False-alarm and missed-drift evaluation results are recorded. | Not satisfied | [`docs/intent/intent-conformance-rollout/intent-conformance-rollout-design.md`](../intent/intent-conformance-rollout/intent-conformance-rollout-design.md) predeclares the corpus, blinded adjudication, measures, baseline, and promotion criteria, and `INTENT-CONFORMANCE-ROLLOUT-001` proves the shadow scheduler. The retained [manifest](../intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-09.yml) and [worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md) are invalidated audit artifacts: the recorded design revision postdates adjudication and strata were not independently content-adjudicated. Their one missed drift count is not accuracy evidence and cannot evaluate promotion. Issue [#4205](https://github.com/viamin/paid/issues/4205) owns the replacement run. |
+| The audit updates RDR-067 and its README row only when evidence supports the status. | Satisfied | This report, the RDR implementation status, and [`docs/rdrs/README.md`](README.md) all retain **Partially Implemented**. `INTENT-CONFORMANCE-ROLLOUT-002` and `003` are now active gaps rather than being inaccurately marked implemented merely because their design and scheduling mechanism shipped. |
+| The closeout PR visibly closes epic #3861 only if fully implemented. | Satisfied | This is a partial closeout: the report and RDR use `Tracks #3861`; neither claims to close the epic. #3861 remains open until the focused evaluation gap and every other required criterion have evidence. |
 
-| RDR validation claim | Evidence | Result |
-| --- | --- | --- |
-| Current `within_scope` verdicts proceed only with other controls | `INTENT-MERGE-GUARD-001`, `INTENT-MERGE-GUARD-006` — `app/services/intent_conformance/verify_at_merge.rb`; `spec/services/intent_conformance/verify_at_merge_spec.rb` | Satisfied |
-| Drift, uncertainty, missing, failed, or stale verdicts fail closed and reach a human decision path | `INTENT-MERGE-GUARD-002`, `INTENT-MERGE-GUARD-007`; `INTENT-CONFORMANCE-003`, `INTENT-CONFORMANCE-006` — `app/services/intent_conformance/verify_at_merge.rb`, `app/services/inbox/intent_conformance.rb`; `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/services/intent_conformance/signal_spec.rb`, `spec/services/inbox/intent_conformance_spec.rb` | Satisfied |
-| Pushes and design revisions invalidate verdicts and bounded exceptions | `INTENT-MERGE-GUARD-003`, `INTENT-MERGE-GUARD-004`, `INTENT-MERGE-GUARD-008`; `INTENT-CONFORMANCE-001`, `INTENT-CONFORMANCE-005` — `app/models/intent_conformance_verdict.rb`, `app/services/intent_conformance/verify_at_merge.rb`; `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb` | Satisfied |
-| Product-contract changes require amendments; exceptions are head-scoped | `INTENT-AMENDMENT-001`, `INTENT-AMENDMENT-002` — `app/models/intent_conformance_resolution.rb`, `app/services/intent_resolutions/record.rb`; `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb` | Satisfied |
-| Design-revision impact holds affected work while independent work remains runnable | `INTENT-AMENDMENT-005`, `INTENT-AMENDMENT-006`, `INTENT-AMENDMENT-009` — `app/services/design_amendments/impact_review.rb`, `app/services/design_amendments/evaluate_impact.rb`, `app/services/design_amendments/pause_set.rb`; `spec/services/design_amendments/*_spec.rb` | Satisfied |
-| Rollout reports reviewer accuracy, cost, human time, rework, delivery time, and baseline | `INTENT-CONFORMANCE-ROLLOUT-002`, `INTENT-CONFORMANCE-ROLLOUT-003` — [invalidated manifest](../intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-09.yml) and [invalidated worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-09.md) are retained as an audit trail; `spec/services/intent_conformance/shadow_evaluation_manifest_spec.rb` proves the invalidation markers stay frozen; no valid replacement corpus exists yet. | **Not satisfied** |
-| RDR-067 can promote enforcement safely | The invalidated corpus's recorded count of one missed intentionally drifted case is not evidence of reviewer accuracy; the promotion rule requires a valid evaluation with zero missed drift. | **Not satisfied** |
+## Verification Evidence
 
-## Test Evidence
-
-The following focused suite passed during this audit:
+The re-audit runs the focused conformance suites and the full project suite
+before commit. The focused suite covers the merge precondition, scanner signal,
+Inbox lane, durable schedule, review job, and invalidated-artifact guard:
 
 ```text
 bundle exec rspec \
@@ -34,31 +35,35 @@ bundle exec rspec \
   spec/temporal/activities/merge_pull_request_activity_spec.rb \
   spec/services/intent_conformance/signal_spec.rb \
   spec/services/inbox/intent_conformance_spec.rb \
+  spec/temporal/activities/scan_paid_prs_activity_spec.rb \
   spec/services/intent_conformance/schedule_review_spec.rb \
-  spec/services/intent_conformance/shadow_evaluation_manifest_spec.rb \
-  spec/models/intent_conformance_verdict_spec.rb \
-  spec/models/intent_conformance_resolution_spec.rb \
-  spec/services/intent_resolutions/record_spec.rb \
-  spec/services/design_amendments/*_spec.rb
+  spec/jobs/intent_conformance/review_job_spec.rb \
+  spec/services/intent_conformance/shadow_evaluation_manifest_spec.rb
 ```
 
-## Shadow evaluation result
+`bin/coherence-check.mjs` verifies the LID structural links after the EARS
+status reconciliation.
 
-The attempted 30-case corpus is invalidated. Its approved-design revision
-postdates the recorded adjudications, and its strata were assigned from
-contiguous repository-history blocks rather than independently
-content-adjudicating each case. It therefore cannot establish reviewer
-accuracy, cost, human time, rework, delivery time, or baseline measurements.
+## Remaining Gap and Status Decision
 
-A replacement evaluation must construct or content-adjudicate every case
-against an approved design revision that existed before adjudication, preserve
-the blinded records, and freeze a new manifest before any metrics are used.
+Issue [#4205](https://github.com/viamin/paid/issues/4205) owns a replacement
+frozen representative corpus, blinded two-operator adjudication with
+third-operator tie resolution, shadow-only execution, and a repository-visible
+aggregate worksheet. The previous 30-case artifacts are retained only for
+audit: their recorded design revision postdates their adjudications and their
+strata arose from contiguous history blocks rather than independent content
+adjudication. The gap maps directly to `INTENT-CONFORMANCE-ROLLOUT-002` and
+`INTENT-CONFORMANCE-ROLLOUT-003`.
 
-## Conclusion
+**Partially Implemented** remains the only evidence-supported status. The
+mechanism and safeguards are not a substitute for the adjudicated results that
+RDR-067 requires before promotion. No runtime behavior changes in this audit;
+the RDR rollout guard remains intact.
 
-RDR-067 remains **Partially Implemented**. Runtime and test evidence covers
-the conformance path, but #4205 does not close the missing measurement
-evidence: the retained measurement artifact is invalid. There is no evidence
-that broad enforcement is safe. Keep the RDR's enforcement-related flags off
-and retain the shadow-only rollout until a subsequent valid evaluation meets
-the documented rule.
+## Epic Closure
+
+Do **not** close [#3861](https://github.com/viamin/paid/issues/3861). The PR
+description must use `Tracks #3861` and `Closes #3871`; it must not use
+`Closes #3861`. Closing the closeout issue is appropriate because this audit
+has reconciled the remaining gap to focused issue #4205, while the epic remains
+open for that implementation evidence.
