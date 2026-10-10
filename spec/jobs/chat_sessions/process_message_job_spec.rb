@@ -77,7 +77,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       tool_arguments: { "project_id" => 1 }, tool_status: "pending")
 
     allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
-      kwargs[:on_message_persisted]&.call(pending_msg)
+      kwargs[:on_message_persisted]&.call(pending_msg, stream_message_id: stream_message_id)
       nil
     end
 

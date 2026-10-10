@@ -68,7 +68,7 @@ class ChatSessionsController < ApplicationController
   def recent_messages
     authorize @chat_session, :show?
     since_id = Integer(params.require(:since), exception: false)
-    return head :bad_request unless since_id&.nonnegative?
+    return head :bad_request if since_id.nil? || since_id.negative?
 
     messages = @chat_session.messages.chronological
       .where("chat_messages.id > ?", since_id)
