@@ -125,6 +125,31 @@ closes it and Enter submits its GET form. Type deliberately remains
 single-select: that preserves the established `kind` URL contract while the
 team gathers evidence that combined kinds are needed.
 
+### Filter availability and empty-combination fallback (#4276)
+
+The dialog only offers options that cannot yield an empty list. An
+`Inbox::Availability` service computes, per kind and per project, how many
+items are waiting — from the same lane scopes the `Inbox::Count` badge uses
+(shared candidate scopes on `Inbox::MergeApproval` and
+`Inbox::IntentConformance`; the exact SQL of the other lanes), never from
+`Inbox::Queue`'s per-entry build, so an ordinary `/inbox` render pays about
+what the nav badge already pays. The Type selector lists only kinds with ≥1
+item scoped to the active project filter; the Project selector lists only
+projects with ≥1 item scoped to the active kind filter; both show counts and
+keep their "All" reset.
+
+The kind↔project availability matrix is embedded in the dialog's DOM
+(`data-project-ids` on kind options, `data-kind-ids` on project options), so
+the Stimulus controller narrows the opposite group live as the operator
+selects — no extra round-trip — and resets a now-invalid selection to "All".
+
+Server-side, a filtered URL matching zero entries while ≥1 item waits
+elsewhere (stale bookmark, deep link, item resolved since the list rendered)
+must not land on the "Inbox clear" empty state: the controller redirects to
+the unfiltered view (keeping only `sort`) with a notice that the filter was
+cleared. That empty state therefore means exactly "nothing is waiting
+anywhere", not "this combination matches nothing".
+
 Ordering differs in the one way the inbox page cares about:
 
 - **Oldest-waiting-first** by `needs_input_since ASC NULLS LAST`, with a stable

@@ -98,14 +98,49 @@
 
 - [x] **INBOX-FOUNDATION-009** — When an operator opens the Inbox, the system
   SHALL render a compact collapsed filter control. On expansion it SHALL offer
-  a single type selector, a searchable selector scoped to projects accessible
-  through `policy_scope(Project)`, an All reset for each, oldest/newest waiting
-  order, and a clear-all action. The controls SHALL derive their selected state
-  solely from `kind`, `project_id`, and `sort` URL parameters; the queue SHALL
-  preserve oldest-waiting-first when `sort` is absent and SHALL support
-  `sort=newest`. The expanded control SHALL be focus-trapped, close on Escape,
-  submit on Enter, and render as a full-screen dialog below the `lg` breakpoint.
+  a single type selector, a searchable selector scoped to projects currently
+  surfacing at least one inbox item (`INBOX-FOUNDATION-010`), an All reset for
+  each, oldest/newest waiting order, and a clear-all action. The controls
+  SHALL derive their selected state solely from `kind`, `project_id`, and
+  `sort` URL parameters; the queue SHALL preserve oldest-waiting-first when
+  `sort` is absent and SHALL support `sort=newest`. The expanded control SHALL
+  be focus-trapped, close on Escape, submit on Enter, and render as a
+  full-screen dialog below the `lg` breakpoint.
   *Tests:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/controllers/inbox_controller.rb`, `app/services/inbox/queue.rb`,
   `app/helpers/inbox/path_helper.rb`, `app/views/inbox/index.html.erb`,
   `app/javascript/controllers/inbox_filters_controller.js`.
+
+## Filter availability (`Inbox::Availability`)
+
+- [x] **INBOX-FOUNDATION-010** — The Inbox filter dialog SHALL only offer
+  filter options that cannot yield an empty list: the Type selector SHALL list
+  only kinds with ≥1 waiting item (scoped to the active project filter when
+  one is applied) plus "All types", and the Project selector SHALL list only
+  projects with ≥1 waiting item (scoped to the active kind filter when one is
+  applied) plus "All projects". Each offered option SHALL display its item
+  count. Availability SHALL be computed from the same per-kind lane scopes the
+  `Inbox::Count` badge uses (so displayed counts agree with the unfiltered
+  badge total), not from `Inbox::Queue`'s heavier per-entry build. The dialog
+  SHALL embed the kind↔project availability matrix in the DOM so selecting a
+  type dynamically narrows the project options (and vice versa) without an
+  extra round-trip, resetting a now-invalid selection to "All".
+  *Tests:* `spec/services/inbox/availability_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+  *Code:* `app/services/inbox/availability.rb`,
+  `app/controllers/inbox_controller.rb#load_inbox`,
+  `app/views/inbox/index.html.erb`,
+  `app/javascript/controllers/inbox_filters_controller.js`.
+
+- [x] **INBOX-FOUNDATION-011** — When a filtered Inbox URL (a `kind` and/or
+  `project_id` parameter) matches zero entries while at least one item is
+  waiting under a different combination, the system SHALL NOT render the
+  "Inbox clear" empty state; it SHALL redirect to the unfiltered view
+  (preserving only `sort`) with a notice explaining that the filter was
+  cleared. The "Inbox clear" empty state SHALL render only when no
+  human-actionable work is waiting anywhere in the operator's accessible
+  projects. The check runs inside the shared `load_inbox` before_action, so
+  `index`, `show`, and `open_chat` all degrade the same way on a stale deep
+  link instead of only `index` handling it.
+  *Tests:* `spec/requests/inbox_spec.rb`.
+  *Code:* `app/controllers/inbox_controller.rb#redirect_for_empty_filtered_combination`.
