@@ -36,13 +36,16 @@ module IntentConformance
         parser.on("--manifest-commit SHA") { |value| options[:manifest_commit] = value }
         parser.on("--event JSON") { |value| options[:event] = JSON.parse(value) }
       end.parse!(argv)
-      %i[manifest ledger manifest_commit].each { |key| raise ShadowEvaluationLedger::InvalidLedger, "--#{key.to_s.tr('_', '-')} is required" unless options[key] }
+      %i[manifest ledger manifest_commit].each do |key|
+        raise ShadowEvaluationLedger::InvalidLedger, "--#{key.to_s.tr('_', '-')} is required" if options[key].to_s.strip.empty?
+      end
       options
     end
 
     def append(options)
       raise ShadowEvaluationLedger::InvalidLedger, "--event is required" unless options[:event]
-      ShadowEvaluationLedger.append!(path: options[:ledger], event: options[:event])
+      event = options[:event].merge("manifest_commit" => options[:manifest_commit])
+      ShadowEvaluationLedger.append!(path: options[:ledger], event: event)
     end
 
     def validate(options)

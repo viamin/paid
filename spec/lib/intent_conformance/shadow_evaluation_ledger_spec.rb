@@ -83,6 +83,17 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects an adjudication that references a case outside the frozen manifest" do
+    events = complete_adjudication_events + [
+      base_event.merge("type" => "adjudication", "event_id" => "typo", "case_id" => "TYPO-CASE", "operator" => "three", "verdict" => "bogus_verdict", "cited_design_claim" => "X", "reason" => "Y")
+    ]
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /adjudication references a case outside the frozen manifest/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "rejects any event whose manifest commit differs from the frozen manifest" do
     events = complete_adjudication_events + [
       base_event.merge("type" => "shadow_run", "event_id" => "run", "case_id" => "A-01", "reviewer_run_id" => "run-1", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "manifest_commit" => "b" * 40)
@@ -134,6 +145,27 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     expect(described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40)).to be(true)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-003
+  it "rejects a shadow run with hollow reviewer evidence" do
+    events = complete_adjudication_events + [
+      base_event.merge("type" => "shadow_run", "event_id" => "run", "case_id" => "A-01", "reviewer_run_id" => "", "reviewer_model" => "", "prompt_digest" => "", "verdict" => "within_scope", "cost_cents" => nil, "recorded_at" => "2026-10-10T12:01:00Z")
+    ]
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /shadow run lacks reviewer identity/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects duplicate event IDs already present in the ledger" do
+    events = complete_adjudication_events
+    events.last["event_id"] = "one"
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /event_id already exists/)
+  end
+
   it "rejects an empty corpus manifest file" do
     File.write(manifest, "")
     expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /expected a mapping with a cases list/)
@@ -147,6 +179,11 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
   it "rejects a corpus manifest case that is missing an id" do
     File.write(manifest, { "cases" => [ { "stratum" => "accepted" } ] }.to_yaml)
     expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /every case needs an id/)
+  end
+
+  it "rejects duplicate corpus manifest case IDs" do
+    File.write(manifest, { "cases" => [ { "id" => "A-01" }, { "id" => "A-01" } ] }.to_yaml)
+    expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /case ids must be unique/)
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-003
