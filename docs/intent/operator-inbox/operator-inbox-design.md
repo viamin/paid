@@ -137,10 +137,11 @@ the entry.
 
 Backed by `Dashboard::BlockedPullRequests`, the same query the dashboard's
 Blocked PRs panel uses — `Inbox::Queue` calls it and filters the result to the
-operator's auto-pick-gated projects rather than reimplementing the escalated-PR
-query. This is a deliberate scoping divergence: every other inbox kind is
-auto-pick + owner scoped (`INBOX-FOUNDATION-006`), while the dashboard panel is
-account-wide, so the two surfaces will not agree on counts. That is intentional
+operator's authorized Inbox projects rather than reimplementing the
+escalated-PR query. This is a deliberate scoping divergence: every other
+inbox kind is account+owner scoped, independent of auto-pick eligibility
+(`INBOX-FOUNDATION-006`), while the dashboard panel is account-wide, so the
+two surfaces will not agree on counts. That is intentional
 — the Inbox stays consistent with itself rather than adopting the dashboard's
 broader scope for one kind — and is recorded here so the divergence reads as a
 decision, not drift.
@@ -187,10 +188,11 @@ the same way it surfaces `manual_review`; this kind closes that gap (#3902).
 The query is `paid_state`-agnostic (the abandonment gate is independent of
 `paid_state`, and the dashboard card deliberately surfaces both issues and PRs
 that hit the cap), so it filters on `runner_retry_abandoned_at IS NOT NULL` and
-`github_state = "open"` only. It reuses the same auto-pick + owner scoping
-(`INBOX-FOUNDATION-006`) every other kind uses, the same divergence from the
-dashboard's account-wide scope that `escalated_pr` and `manual_review` already
-record (`OPERATOR-INBOX-002C`, `OPERATOR-INBOX-002D`).
+`github_state = "open"` only. It reuses the same account+owner visibility
+(`INBOX-FOUNDATION-006`), independent of auto-pick eligibility, every other
+kind uses, the same divergence from the dashboard's account-wide scope that
+`escalated_pr` and `manual_review` already record (`OPERATOR-INBOX-002C`,
+`OPERATOR-INBOX-002D`).
 
 The entry payload carries `runner_retry_abandon_reason` as the summary and
 distinguishes `push_permission_abandoned?` (prefixed `Push rejected:` — the
@@ -319,9 +321,10 @@ recovery as the backstop. The same queue-time flip covers a `manual_review`
 issue queued through the bulk enhance form, which is equally
 operator-triggered.
 
-Scoping follows `INBOX-FOUNDATION-006` like every other kind (auto-pick +
-owner gated), not the dashboard's broader account-wide scope — the same
-divergence-recording rationale as `escalated_pr` (`OPERATOR-INBOX-002C`).
+Scoping follows `INBOX-FOUNDATION-006` like every other kind (account+owner
+visibility, independent of auto-pick eligibility), not the dashboard's
+broader account-wide scope — the same divergence-recording rationale as
+`escalated_pr` (`OPERATOR-INBOX-002C`).
 
 `Dashboard::EligibilityBreakdown` names `manual_review` as its own bucket
 (previously it fell into the unnamed `other_excluded` remainder), so the
@@ -347,8 +350,12 @@ invisible in the Inbox (#4212).
 The query filters open pull requests in `draft`/`restarted` phases whose
 labels contain `paid-tests-ready-for-review`, independent of `paid_state`
 (the gate is the label, not the state — the same state-agnostic shape
-`retry_limited` uses), scoped through the standard auto-pick gate. Because
-the lane is label-derived, it clears naturally the moment a verdict label
+`retry_limited` uses), scoped through the standard account+owner Inbox
+visibility (`INBOX-FOUNDATION-006`) — deliberately *not* gated on
+`auto_pick_enabled`: a project parked with automatic picking off can still
+have a draft PR waiting on a human test-review verdict, and the operator
+needs to see that regardless of the project's automation setting (#4221).
+Because the lane is label-derived, it clears naturally the moment a verdict label
 replaces the ready-for-review label (`sync_tdd_test_review_verdict!` /
 `Tdd::ReturnToTestReview`), without waiting for the follow-up
 phase transition — the answer to the "verdict label vs draft exit" question
@@ -377,8 +384,8 @@ after Dashboard and before Projects, with an unread-style count badge — the
 same first-class placement as the notifications bell.
 
 A full `Inbox::Queue.call` per page render is too heavy for the nav: it loads
-issue bodies to parse clarifying questions, runs the auto-pick project gate,
-and queries open plan reviews. So the badge is async, not inline:
+issue bodies to parse clarifying questions, resolves the operator's visible
+projects, and queries open plan reviews. So the badge is async, not inline:
 
 1. The nav renders a lazy Turbo Frame (`inbox_nav_badge_desktop` /
    `inbox_nav_badge_mobile`) pointing at `GET /inbox/count` — the same lazy-frame
@@ -422,6 +429,17 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 
 - **One queue service, not per-page queries**: the inbox page and any future
   queue consumers should share one typed discovery path.
+- **Authorized visibility is independent of auto-pick eligibility (#4221)**:
+  every inbox kind that used to filter projects through `auto_pick_enabled` +
+  `Issues::AutoPickProjectGate` (`INBOX-FOUNDATION-006`) now filters only on
+  account isolation and owner visibility. A project with automatic picking
+  disabled can still have human-review work waiting — a draft PR parked at
+  the TDD test-review gate, an escalated PR, a `manual_review` issue — and an
+  operator must be able to see and resolve it. Automatic work-selection
+  eligibility (`Issues::AutoPickProjectGate`, `auto_pick_enabled`) remains the
+  correct gate for `Dashboard::EligibilityBreakdown` and the auto-pick
+  scheduler itself; it is simply not a visibility filter for human-action
+  Inbox entries.
 - **Legacy routes remain as aliases**: `/dashboard/needs_input` and
   `/plan_reviews` redirect to the inbox instead of rendering parallel surfaces.
 - **Selection is route-based**: `/inbox` renders the first actionable entry
@@ -485,7 +503,7 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 - `spec/services/inbox/queue_spec.rb` and `spec/services/inbox/count_spec.rb`
   cover `retry_limited` discovery (including the
   `push_permission_abandoned?` Push Blocked vs Retry Cap distinction), the
-  same auto-pick + owner scoping the other gated kinds use, and cache
+  same account+owner visibility the other inbox kinds use, and cache
   invalidation on `runner_retry_abandoned_at` transitions into and out of
   the lane via `clear_runner_retry_abandonment!` and the
   runner-retry-cap / push-permission abandonment producers.

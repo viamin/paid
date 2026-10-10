@@ -234,8 +234,10 @@ The panel reads issue state directly, like the other dashboard panels. It is a
 entry in the operator inbox (`docs/intent/operator-inbox/`), which owns that
 spec (`OPERATOR-INBOX-002C`). The inbox reuses `Dashboard::BlockedPullRequests`
 for the same reason/counter data rather than duplicating this panel's query,
-but scopes results to the operator's auto-pick-gated projects instead of this
-panel's account-wide scope — the two surfaces intentionally do not agree on
+but scopes results to the operator's authorized Inbox projects (account
+isolation plus owner visibility, independent of automatic work-selection
+eligibility) instead of this panel's account-wide scope — the two surfaces
+intentionally do not agree on
 counts. This segment and `Dashboard::BlockedPullRequests` are otherwise
 unchanged by that work.
 

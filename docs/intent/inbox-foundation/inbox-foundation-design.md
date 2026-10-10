@@ -90,12 +90,30 @@ ordering. The struct shape is fixed so the UI binds to it without churn.
 
 ### Visibility, filters, and ordering
 
-`Inbox::Queue` keeps the exact scoping semantics of `Dashboard::NeedsInputQueue`:
+`Inbox::Queue` scopes visibility to the operator's *authorized* projects —
+account isolation plus per-owner visibility — independent of whether those
+projects are eligible for automatic work selection (#4221):
 
-- Auto-pick projects only, filtered by `Issues::AutoPickProjectGate`.
-- Per-owner visibility: the user's own projects plus orphaned-project visibility
-  via `AgentRun.orphaned_project_owner?(user)`.
+- Account-isolated, per-owner visibility: the user's own projects plus
+  orphaned-project visibility via `AgentRun.orphaned_project_owner?(user)`,
+  restricted to `active: true` projects in the user's account.
+- No automatic work-selection eligibility filter: `auto_pick_enabled` and
+  `Issues::AutoPickProjectGate` (quality-paused, scheduler-paused, missing
+  owner) are deliberately NOT applied here. Turning a project's auto-pick off
+  stops it from being picked *automatically*; it must not stop an operator
+  from seeing and resolving work the project already surfaced for human
+  review. `Dashboard::EligibilityBreakdown` keeps its own
+  `Issues::AutoPickProjectGate`-filtered query for auto-pick-eligibility
+  reporting — that gate is specific to automatic work selection, not to inbox
+  visibility.
 - Optional project filter (the dashboard's `?project_id=`).
+
+Individual lanes may still consult per-issue auto-pick eligibility as part of
+their own business rule (e.g. `partial_closeout`'s stall detection calls
+`Automation::Strategies::AutoPick::DefaultCandidateSource` to decide whether
+an issue *would* have been picked). That is a lane-specific signal about one
+issue, not a project-visibility filter, so it does not reintroduce the
+project-level `auto_pick_enabled` gate this section removes.
 
 The Inbox header keeps filtering controls compact as the number of entry kinds
 grows. A single collapsed trigger opens a filter panel with a single type

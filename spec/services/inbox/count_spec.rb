@@ -81,10 +81,19 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(2)
     end
 
+    # @spec OPERATOR-INBOX-002J @spec INBOX-FOUNDATION-006
+    it "counts TDD test-review PRs even when the project's auto-pick is off" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
+      create_tdd_test_review_pr(github_number: 98, project: auto_pick_off_project)
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002J
-    it "excludes TDD test-review PRs on non-gated projects" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
-      create_tdd_test_review_pr(github_number: 98, project: other_project)
+    it "excludes TDD test-review PRs on projects from other accounts" do
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true, owner: "acme", repo: "zeta")
+      create_tdd_test_review_pr(github_number: 98, project: other_account_project)
 
       expect(described_class.call(user: user)).to eq(0)
     end
@@ -133,10 +142,19 @@ RSpec.describe Inbox::Count do
       expect(after_request).to eq(0)
     end
 
+    # @spec OPERATOR-INBOX-002E @spec INBOX-FOUNDATION-006
+    it "counts retry-limited issues even when the project's auto-pick is off" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
+      create(:issue, project: auto_pick_off_project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "capped")
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002E
-    it "excludes retry-limited issues on non-gated projects" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "zeta")
-      create(:issue, project: other_project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "capped")
+    it "excludes retry-limited issues on projects from other accounts" do
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true, owner: "acme", repo: "zeta")
+      create(:issue, project: other_account_project, runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "capped")
 
       expect(described_class.call(user: user)).to eq(0)
     end
@@ -244,13 +262,23 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(0)
     end
 
-    it "excludes closed issues and issues on non-gated projects" do
+    it "excludes closed needs_input issues" do
       create(:issue, :needs_input, project: project)
       create(:issue, :closed, :needs_input, project: project)
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "beta")
-      create(:issue, :needs_input, project: other_project)
 
       expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec INBOX-FOUNDATION-006
+    it "counts needs_input issues even when the project's auto-pick is off, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "beta")
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true, owner: "acme", repo: "gamma")
+      create(:issue, :needs_input, project: project)
+      create(:issue, :needs_input, project: auto_pick_off_project)
+      create(:issue, :needs_input, project: other_account_project)
+
+      expect(described_class.call(user: user)).to eq(2)
     end
 
     it "returns zero when nothing is waiting" do
@@ -467,9 +495,9 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
-    # @spec OPERATOR-INBOX-002C
-    it "excludes escalated pull requests on non-gated projects" do
-      other_project = create(
+    # @spec OPERATOR-INBOX-002C @spec INBOX-FOUNDATION-006
+    it "counts escalated pull requests even when the project's auto-pick is off" do
+      auto_pick_off_project = create(
         :project,
         account: account,
         created_by: user,
@@ -481,7 +509,29 @@ RSpec.describe Inbox::Count do
       create(
         :issue,
         :pull_request,
-        project: other_project,
+        project: auto_pick_off_project,
+        pr_review_phase: "escalated",
+        pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK
+      )
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec OPERATOR-INBOX-002C
+    it "excludes escalated pull requests on projects from other accounts" do
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(
+        :project,
+        account: other_user.account,
+        created_by: other_user,
+        active: true,
+        owner: "acme",
+        repo: "delta"
+      )
+      create(
+        :issue,
+        :pull_request,
+        project: other_account_project,
         pr_review_phase: "escalated",
         pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK
       )

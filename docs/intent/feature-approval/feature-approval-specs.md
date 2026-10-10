@@ -150,10 +150,13 @@
   since a stale head after approval reopens the hold). Unlike every other
   Inbox kind, these entries SHALL use project-membership visibility
   (`FeatureIntentPolicy::Scope`, the same pattern as `plan_review_entries`)
-  rather than the auto-pick-gated `scoped_projects` used by
+  rather than the account+owner-scoped `scoped_projects` used by
   `INBOX-FOUNDATION-006`, so a feature-design decision stays visible and
-  actionable to any project member with Inbox access even on a planning
-  project with auto-pick off. `Inbox::FeatureDecisionSummary` SHALL state
+  actionable to any project member with Inbox access — not just the
+  project's owner — even on a planning project with auto-pick off (every
+  other Inbox kind is also visible regardless of auto-pick, per
+  `INBOX-FOUNDATION-006`; this entry's distinguishing trait is the broader
+  membership-based visibility, not the auto-pick independence). `Inbox::FeatureDecisionSummary` SHALL state
   either "Ready for approval.", the held blockers' messages (prefixed
   "Held:"), or, once approved, who approved it and that it is waiting to
   merge — so the Inbox always explains what keeps a feature held and what

@@ -57,24 +57,35 @@
   *Code:* `app/services/inbox/queue.rb`,
   `app/services/inbox/merge_approval.rb`.
 
-- [x] **INBOX-FOUNDATION-006** — `Inbox::Queue` SHALL keep the same scoping
-  and visibility semantics as `Dashboard::NeedsInputQueue`: auto-pick
-  projects only (`Project.where(auto_pick_enabled: true, active: true)`),
-  gated by `Issues::AutoPickProjectGate.call`, restricted to the user's own
-  projects (plus orphaned-project visibility via
+- [x] **INBOX-FOUNDATION-006** — `Inbox::Queue` SHALL scope visibility to the
+  operator's *authorized* projects, independent of automatic work-selection
+  eligibility: `Project.where(account_id: user.account_id, active: true)`,
+  restricted to the user's own projects (plus orphaned-project visibility via
   `AgentRun.orphaned_project_owner?(user)`), and optionally narrowed to a
-  single project via `project:`.
+  single project via `project:`. This scope SHALL NOT filter on
+  `auto_pick_enabled` and SHALL NOT apply `Issues::AutoPickProjectGate` (or
+  any other automatic-work-selection gate): disabling a project's auto-pick
+  SHALL NOT remove its human-review Inbox entries, because authorized
+  visibility and automatic work-selection eligibility are independent
+  concerns (#4221). A lane MAY still consult per-issue auto-pick eligibility
+  as its own business rule (e.g. `partial_closeout`'s stall detection via
+  `Automation::Strategies::AutoPick::DefaultCandidateSource`) without
+  reintroducing a project-level eligibility filter.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/queue.rb#scoped_projects`,
-  `app/services/inbox/queue.rb#auto_pick_projects`,
+  `app/services/inbox/queue.rb#visible_projects`,
   `app/services/inbox/queue.rb#visible_owner_ids`.
 
 - [x] **INBOX-FOUNDATION-007** — `Dashboard::NeedsInputQueue` SHALL continue
   to expose its existing `.call`, `.next_issue`, and `Entry` API (with
   `project`/`issue`/`questions`), SHALL delegate to `Inbox::Queue` for the
-  queue body, and SHALL apply the `is_pull_request: false` filter on top so
-  the `/dashboard/needs_input` page is unchanged during rollout. The existing
-  `Dashboard::NeedsInputQueue` spec SHALL stay green.
+  queue body, and SHALL apply the `is_pull_request: false` filter AND the
+  `Issues::AutoPickProjectGate` filter on top so the `/dashboard/needs_input`
+  page is unchanged during rollout. The auto-pick filter is re-applied here
+  because `Inbox::Queue` (`INBOX-FOUNDATION-006`) deliberately stops gating
+  visibility on auto-pick eligibility (#4221) — this legacy page must not
+  inherit that broader visibility. The existing `Dashboard::NeedsInputQueue`
+  spec SHALL stay green.
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 

@@ -555,15 +555,27 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec OPERATOR-INBOX-002E
-    it "excludes closed retry-limited issues and issues on non-gated projects" do
+    it "excludes closed retry-limited issues" do
       gated = create_retry_limited_issue(github_number: 103)
       create_retry_limited_issue(github_number: 104, github_state: "closed")
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "echo")
-      create_retry_limited_issue(github_number: 105, project: other_project)
 
       entries = described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)
 
       expect(entries.map(&:issue)).to eq([ gated ])
+    end
+
+    # @spec OPERATOR-INBOX-002E @spec INBOX-FOUNDATION-006
+    it "includes retry_limited entries even when the project's auto-pick is off, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
+      visible_despite_auto_pick_off = create_retry_limited_issue(github_number: 105, project: auto_pick_off_project)
+      out_of_scope = create_retry_limited_issue(github_number: 106, project: other_account_project)
+
+      entries = described_class.call(user: user, kind: described_class::RETRY_LIMITED_KIND)
+
+      expect(entries.map(&:issue)).to include(visible_despite_auto_pick_off)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
     end
 
     # @spec OPERATOR-INBOX-002E
@@ -630,10 +642,24 @@ RSpec.describe Inbox::Queue do
       expect(described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)).to be_empty
     end
 
+    # @spec OPERATOR-INBOX-002J @spec INBOX-FOUNDATION-006
+    # Reproduces #4221: viamin/Forager-iOS (auto_pick_enabled: false) has
+    # draft PRs waiting on a human test-review verdict; disabling auto-pick
+    # must not hide them from the operator.
+    it "includes test_review_pending entries even when the project's auto-pick is off" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      pr = create_tdd_test_review_pr(github_number: 118, project: auto_pick_off_project)
+
+      entries = described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)
+
+      expect(entries.map(&:issue)).to eq([ pr ])
+    end
+
     # @spec OPERATOR-INBOX-002J
-    it "excludes test-review PRs on non-gated projects" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "foxtrot")
-      create_tdd_test_review_pr(github_number: 118, project: other_project)
+    it "excludes test-review PRs on projects from other accounts" do
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
+      create_tdd_test_review_pr(github_number: 119, project: other_account_project)
 
       entries = described_class.call(user: user, kind: described_class::TEST_REVIEW_PENDING_KIND)
 
@@ -848,16 +874,28 @@ RSpec.describe Inbox::Queue do
       expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND).map(&:issue)).to eq([ issue ])
     end
 
-    # @spec PARTIAL-CLOSEOUT-002 — closed issues and non-gated projects stay out
-    it "excludes closed issues, pull requests, and issues on non-gated projects" do
+    # @spec PARTIAL-CLOSEOUT-002 — closed issues stay out
+    it "excludes closed issues and pull requests" do
       stalled = create_partial_closeout_issue(github_number: 212)
       create_partial_closeout_issue(github_number: 213, github_state: "closed", closed_at: Time.current)
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "echo")
-      create_partial_closeout_issue(github_number: 214, project: other_project)
 
       entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
 
       expect(entries.map(&:issue)).to eq([ stalled ])
+    end
+
+    # @spec PARTIAL-CLOSEOUT-002 @spec INBOX-FOUNDATION-006
+    it "includes partial_closeout entries even when the project's auto-pick is off, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
+      visible_despite_auto_pick_off = create_partial_closeout_issue(github_number: 214, project: auto_pick_off_project)
+      out_of_scope = create_partial_closeout_issue(github_number: 215, project: other_account_project)
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).to include(visible_despite_auto_pick_off)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
     end
 
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
@@ -1073,14 +1111,17 @@ RSpec.describe Inbox::Queue do
 
   describe "scoping" do
     # @spec INBOX-FOUNDATION-006
-    it "only returns clarifying-question entries from auto-pick projects" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    it "returns clarifying-question entries regardless of auto-pick enablement, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
       in_scope = create_needs_input(github_number: 10, body: questions_body)
-      out_of_scope = create_needs_input(github_number: 20, project: other_project, body: questions_body)
+      visible_despite_auto_pick_off = create_needs_input(github_number: 20, project: auto_pick_off_project, body: questions_body)
+      out_of_scope = create_needs_input(github_number: 21, project: other_account_project, body: questions_body)
 
       entries = described_class.call(user: user, kind: described_class::CLARIFYING_QUESTIONS_KIND)
 
-      expect(entries.map(&:issue)).to include(in_scope)
+      expect(entries.map(&:issue)).to include(in_scope, visible_despite_auto_pick_off)
       expect(entries.map(&:issue)).not_to include(out_of_scope)
     end
 
@@ -1108,26 +1149,60 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec OPERATOR-INBOX-002C
-    it "only returns escalated-pr entries from auto-pick projects" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    it "returns escalated-pr entries regardless of auto-pick enablement, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
       in_scope = create_escalated_pr(github_number: 50)
-      out_of_scope = create_escalated_pr(github_number: 51, project: other_project)
+      visible_despite_auto_pick_off = create_escalated_pr(github_number: 51, project: auto_pick_off_project)
+      out_of_scope = create_escalated_pr(github_number: 52, project: other_account_project)
 
       entries = described_class.call(user: user, kind: described_class::ESCALATED_PR_KIND)
 
-      expect(entries.map(&:issue)).to include(in_scope)
+      expect(entries.map(&:issue)).to include(in_scope, visible_despite_auto_pick_off)
       expect(entries.map(&:issue)).not_to include(out_of_scope)
     end
 
     # @spec OPERATOR-INBOX-002D
-    it "only returns manual_review entries from auto-pick projects" do
-      other_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    it "returns manual_review entries regardless of auto-pick enablement, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
       in_scope = create_manual_review_issue(github_number: 97)
-      out_of_scope = create_manual_review_issue(github_number: 98, project: other_project)
+      visible_despite_auto_pick_off = create_manual_review_issue(github_number: 98, project: auto_pick_off_project)
+      out_of_scope = create_manual_review_issue(github_number: 99, project: other_account_project)
 
       entries = described_class.call(user: user, kind: described_class::MANUAL_REVIEW_KIND)
 
-      expect(entries.map(&:issue)).to include(in_scope)
+      expect(entries.map(&:issue)).to include(in_scope, visible_despite_auto_pick_off)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
+    end
+
+    # @spec INBOX-FOUNDATION-006
+    it "returns merge_approval entries regardless of auto-pick enablement, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, auto_merge_mode: "all", owner_reviewer_login: "viamin")
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true, auto_merge_mode: "all", owner_reviewer_login: "viamin")
+      visible_despite_auto_pick_off = create_merge_approval_pr(github_number: 60).tap { |pr| pr.update!(project: auto_pick_off_project) }
+      out_of_scope = create_merge_approval_pr(github_number: 61).tap { |pr| pr.update!(project: other_account_project) }
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).to include(visible_despite_auto_pick_off)
+      expect(entries.map(&:issue)).not_to include(out_of_scope)
+    end
+
+    # @spec INTENT-CONFORMANCE-006 @spec INBOX-FOUNDATION-006
+    it "returns intent_conformance entries regardless of auto-pick enablement, excluding other accounts' projects" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, auto_merge_mode: "all")
+      other_user = create(:user, account: create(:account))
+      other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true, auto_merge_mode: "all")
+      visible_despite_auto_pick_off = create_intent_conformance_pr(github_number: 62).tap { |pr| pr.update!(project: auto_pick_off_project) }
+      out_of_scope = create_intent_conformance_pr(github_number: 63).tap { |pr| pr.update!(project: other_account_project) }
+
+      entries = described_class.call(user: user, kind: described_class::INTENT_CONFORMANCE_KIND)
+
+      expect(entries.map(&:issue)).to include(visible_despite_auto_pick_off)
       expect(entries.map(&:issue)).not_to include(out_of_scope)
     end
 

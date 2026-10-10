@@ -3,8 +3,9 @@
 module Inbox
   # Cheap, approximate count of the current user's inbox entries for the nav
   # badge. Unlike Inbox::Queue, this never loads issue bodies or parses
-  # clarifying questions per candidate — it counts needs_input rows on gated
-  # projects plus open plan reviews, cached for a short TTL per user.
+  # clarifying questions per candidate — it counts needs_input rows on the
+  # operator's visible projects plus open plan reviews, cached for a short
+  # TTL per user.
   # Questionless needs_input rows are invalid and repaired during sync, so
   # counting them here (without a question-presence check) is a deliberate,
   # bounded approximation rather than a rendering bug.
@@ -37,7 +38,7 @@ module Inbox
     end
 
     def needs_input_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       Issue.where(project_id: project_ids, paid_state: "needs_input", github_state: "open").count
@@ -55,7 +56,7 @@ module Inbox
     end
 
     def merge_approval_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
@@ -63,7 +64,7 @@ module Inbox
 
     # Excludes notifications whose subject cannot be projected into a visible
     # inbox project. Runner-scoped blocking notifications borrow the owner's
-    # first visible auto-pick project so they can render in the queue without a
+    # first visible project so they can render in the queue without a
     # runner-specific inbox lane.
     def action_required_count
       notifications = NotificationPolicy::Scope.new(user, Notification).resolve.active.blocking
@@ -109,7 +110,7 @@ module Inbox
     # column value, not a signal snapshot that needs a Ruby-side check.
     # @spec OPERATOR-INBOX-002C
     def escalated_pr_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       Issue.where(project_id: project_ids, is_pull_request: true, github_state: "open", pr_review_phase: "escalated").count
@@ -119,7 +120,7 @@ module Inbox
     # paid_state value, not a signal snapshot that needs a Ruby-side check.
     # @spec OPERATOR-INBOX-002D
     def manual_review_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       Issue.where(project_id: project_ids, paid_state: "manual_review", github_state: "open").count
@@ -130,7 +131,7 @@ module Inbox
     # falling back to Ruby for the full Inbox::IntentConformance check.
     # @spec INTENT-CONFORMANCE-006
     def intent_conformance_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       intent_conformance_candidates(project_ids).count { |issue| Inbox::IntentConformance.call(issue).present? }
@@ -159,7 +160,7 @@ module Inbox
     # surface.
     # @spec OPERATOR-INBOX-002E
     def retry_limited_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       Issue.where(project_id: project_ids, github_state: "open")
@@ -169,7 +170,7 @@ module Inbox
 
     # @spec CHANGE-INTENT-INBOX-001
     # Change Intent Records follow project membership visibility, independent
-    # of the auto-pick gate used by issue-backed inbox lanes.
+    # of the account+owner visibility used by issue-backed inbox lanes.
     def change_intent_draft_count
       ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review.count
     end
@@ -179,7 +180,7 @@ module Inbox
     # disagree with the list, the same sharing partial_closeout_count does.
     # @spec OPERATOR-INBOX-002J
     def test_review_pending_count
-      project_ids = gated_project_ids
+      project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
       Inbox::Queue.test_review_pending_issues(project_ids).count
@@ -192,24 +193,25 @@ module Inbox
     # operator hold and no work in flight).
     # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009
     def partial_closeout_count
-      projects = Project.where(id: gated_project_ids)
+      projects = Project.where(id: visible_project_ids)
         .includes(account: :tenant_setting, created_by: :user_setting).to_a
       return 0 if projects.empty?
 
       Issues::StalledCloseouts.call(projects).size
     end
 
-    def gated_project_ids
-      @gated_project_ids ||= Project
-        .includes(account: :tenant_setting, created_by: :user_setting)
+    # Authorized Inbox visibility: account isolation plus per-owner
+    # visibility, independent of automatic work-selection eligibility. See
+    # `Inbox::Queue#visible_projects` — deliberately does NOT filter on
+    # `auto_pick_enabled` or apply `Issues::AutoPickProjectGate` (#4221).
+    def visible_project_ids
+      @visible_project_ids ||= Project
         .where(
           account_id: user.account_id,
           created_by_id: visible_owner_ids,
-          auto_pick_enabled: true,
           active: true
         )
-        .select { |candidate| Issues::AutoPickProjectGate.call(candidate) }
-        .map(&:id)
+        .pluck(:id)
     end
 
     def visible_owner_ids
@@ -230,18 +232,13 @@ module Inbox
     end
 
     def runner_projects_by_user_id
-      @runner_projects_by_user_id ||= begin
-        Project
-          .includes(account: :tenant_setting, created_by: :user_setting)
-          .where(
-            account_id: user.account_id,
-            created_by_id: visible_owner_ids,
-            auto_pick_enabled: true,
-            active: true
-          )
-          .select { |candidate| Issues::AutoPickProjectGate.call(candidate) }
-          .group_by(&:created_by_id)
-      end
+      @runner_projects_by_user_id ||= Project
+        .where(
+          account_id: user.account_id,
+          created_by_id: visible_owner_ids,
+          active: true
+        )
+        .group_by(&:created_by_id)
     end
 
     def cache_key
