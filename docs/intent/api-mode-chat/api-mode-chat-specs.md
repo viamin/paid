@@ -447,10 +447,12 @@
   `testHandleConnectedSkipsResyncOnStableConnection`,
   `testResyncTranscriptReplaysMessagesSinceLastRenderedId`,
   `testResyncTranscriptNoOpsWithNothingRenderedYet`,
-  `testLastRenderedMessageIdReturnsHighestId`),
+  `testLastRenderedMessageIdReturnsHighestId`,
+  `testMessageChunkRearmsTrackingForAnUntrackedStream`,
+  `testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged`),
   `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/recent_messages`).
   *Code:* `app/javascript/controllers/chat_controller.js#removePendingAssistantMessage`,
   `#handleMessageComplete`, `#handleMessageToolConfirmation`, `#handleError`,
   `#handleConnected`, `#resyncTranscript`, `#fetchRecentMessages`,
-  `#lastRenderedMessageId`, `#lastAssistantTextResponse`,
+  `#lastRenderedMessageId`, `#lastAssistantTextResponse`, `#handleMessageChunk`,
   `ChatSessionsController#recent_messages`.

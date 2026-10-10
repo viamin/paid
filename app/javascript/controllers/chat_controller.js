@@ -274,7 +274,22 @@ export default class extends Controller {
     this.toggleTyping(true)
   }
 
+  // @spec CHAT-API-022
+  // A mid-stream disconnect clears currentStreamId (resetStreamingState), but
+  // the turn is still in flight server-side — ProcessMessageJob only ever
+  // broadcasts message_start once, so reconnecting resumes receiving chunks
+  // for that same stream id with no new message_start to re-arm tracking.
+  // ensureAssistantMessage recreates the bubble regardless of tracking state,
+  // so without re-arming here the client would track no stream while a
+  // bubble is visibly filling, and a later error/pause/tool-only completion
+  // would bail out of removePendingAssistantMessage on its `!currentStreamId`
+  // guard, orphaning the recreated bubble (#4225).
   handleMessageChunk(data) {
+    if (this.currentStreamId !== data.message_id) {
+      this.currentStreamId = data.message_id
+      this.streaming = true
+    }
+
     const message = this.ensureAssistantMessage(data.message_id)
     const controller = this.messageControllerFor(message)
     controller?.appendContent(data.content || "")

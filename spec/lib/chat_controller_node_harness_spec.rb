@@ -1498,6 +1498,59 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-022 — A mid-stream disconnect clears currentStreamId,
+    // but the turn can still be in flight server-side: ProcessMessageJob only
+    // broadcasts message_start once, so reconnecting resumes chunks for the
+    // same stream id with nothing to re-arm tracking. ensureAssistantMessage
+    // recreates the bubble either way, so a chunk for an untracked stream id
+    // must re-arm currentStreamId/streaming — otherwise a later error/pause/
+    // tool-only completion bails out of removePendingAssistantMessage and the
+    // recreated bubble is orphaned (#4225).
+    function testMessageChunkRearmsTrackingForAnUntrackedStream() {
+      const bubble = { streamMessageId: "stream-1" };
+      const { controller } = makeController({
+        streaming: false,
+        currentStreamId: null,
+        scrollToBottom: () => {},
+        ensureAssistantMessage: () => bubble
+      });
+
+      controller.handleMessageChunk({ message_id: "stream-1", content: "partial" });
+
+      if (controller.currentStreamId !== "stream-1") {
+        throw new Error(`Expected currentStreamId to re-arm to 'stream-1', got '${controller.currentStreamId}'`);
+      }
+      if (!controller.streaming) {
+        throw new Error("Expected streaming to re-arm to true for an untracked chunk");
+      }
+    }
+
+    // The ordinary path (message_start already armed tracking) must not be
+    // disturbed by this guard — a chunk for the already-tracked stream is a
+    // no-op on currentStreamId/streaming.
+    function testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged() {
+      let streamingWrites = 0;
+      const bubble = { streamMessageId: "stream-1" };
+      const { controller } = makeController({
+        currentStreamId: "stream-1",
+        scrollToBottom: () => {},
+        ensureAssistantMessage: () => bubble
+      });
+      Object.defineProperty(controller, "streaming", {
+        get() { return true; },
+        set() { streamingWrites += 1; }
+      });
+
+      controller.handleMessageChunk({ message_id: "stream-1", content: "more" });
+
+      if (controller.currentStreamId !== "stream-1") {
+        throw new Error(`Expected currentStreamId to remain 'stream-1', got '${controller.currentStreamId}'`);
+      }
+      if (streamingWrites !== 0) {
+        throw new Error(`Expected no redundant write to streaming for an already-tracked stream, got ${streamingWrites}`);
+      }
+    }
+
     function testLastRenderedMessageIdReturnsHighestId() {
       const { controller } = makeController({
         messagesTarget: {
@@ -1573,6 +1626,8 @@ class ChatControllerNodeHarness
       testHandleConnectedSkipsResyncAfterIdleDisconnect();
       testResyncTranscriptReplaysMessagesSinceLastRenderedId();
       testResyncTranscriptNoOpsWithNothingRenderedYet();
+      testMessageChunkRearmsTrackingForAnUntrackedStream();
+      testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged();
       testLastRenderedMessageIdReturnsHighestId();
     }
 
