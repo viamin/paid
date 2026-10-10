@@ -46,6 +46,10 @@ behavior.
   transport (viamin/paid#4016) now carries API-key chat requests for this
   segment, while the RDR-028 loop and confirmation authority described here
   remain retained and unchanged.
+- The `/api/v1` mobile surface (`docs/intent/mobile-api/`) reuses this
+  segment's JSON payload shapes and SSE event catalog verbatim; this
+  segment remains the normative owner of both, and the mobile specs extend
+  rather than replace the CHAT-API-* claims.
 
 The API-mode chat loop may still accept legacy `mode=workspace` inputs for
 backward compatibility, but that compatibility shim is not evidence that the
