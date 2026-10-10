@@ -1937,6 +1937,42 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "comment suppression" do
+    let(:quiet_client) { GithubClient::CommentSuppressing.new(client) }
+
+    it "does not post issue comments" do
+      # @spec QUIET-MODE-002
+      quiet_client.add_comment("owner/repo", 42, "Quietly recorded")
+
+      expect(a_request(:post, "#{api_base}/repos/owner/repo/issues/42/comments")).not_to have_been_made
+    end
+
+    it "does not reply to pull request comments" do
+      # @spec QUIET-MODE-002
+      quiet_client.create_pull_request_comment_reply("owner/repo", 42, 100, "Quietly recorded")
+
+      expect(a_request(:post, "#{api_base}/repos/owner/repo/pulls/42/comments")).not_to have_been_made
+    end
+
+    it "does not update issue or pull request comments" do
+      # @spec QUIET-MODE-002
+      quiet_client.update_comment("owner/repo", 100, "Quietly recorded")
+
+      expect(a_request(:patch, "#{api_base}/repos/owner/repo/issues/comments/100")).not_to have_been_made
+    end
+
+    it "continues to update PR descriptions" do
+      # @spec QUIET-MODE-002
+      stub_request(:patch, "#{api_base}/repos/owner/repo/pulls/42")
+        .with(body: { body: "Updated description" }.to_json)
+        .to_return(status: 200, body: { number: 42, body: "Updated description" }.to_json)
+
+      quiet_client.update_pull_request("owner/repo", 42, body: "Updated description")
+
+      expect(a_request(:patch, "#{api_base}/repos/owner/repo/pulls/42")).to have_been_made.once
+    end
+  end
+
   describe "#dismiss_pull_request_review", :no_db do
     let(:repo) { "owner/repo" }
     let(:dismiss_url) { "#{api_base}/repos/#{repo}/pulls/42/reviews/100/dismissals" }

@@ -12,6 +12,8 @@ module IssueTrackers
       end
 
       def add_comment(external_id:, body:)
+        return if comments_suppressed?
+
         raise NotImplementedError, "#{self.class}#add_comment — Jira REST API integration pending"
       end
 

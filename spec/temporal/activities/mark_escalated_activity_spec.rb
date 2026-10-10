@@ -147,6 +147,16 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
+      it "preserves the escalation hold without posting a comment in quiet mode" do
+        # @spec QUIET-MODE-002
+        issue.project.update!(quiet_mode: true)
+
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.pr_review_phase).to eq("escalated")
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
       # @spec PR-ESCALATION-002
       it "does not set the operator's auto-continue pause" do
         activity.execute(issue_id: issue.id)

@@ -33,6 +33,10 @@ module ClarifyingQuestions
 
     def validate_answers!
       raise ArgumentError, "No clarifying questions found for this issue." if questions_and_answers.empty?
+      # Answers currently persist in a marker-tagged GitHub comment. Do not
+      # clear the needs-input state unless that comment can be written.
+      # @spec QUIET-MODE-006
+      raise ArgumentError, "Clarifying answers cannot be submitted while quiet mode is enabled." if project.quiet_mode?
       raise ArgumentError, "GitHub access is not configured for this project." unless github_client
 
       missing_questions = questions_and_answers.select { |qa| qa[:question].blank? }

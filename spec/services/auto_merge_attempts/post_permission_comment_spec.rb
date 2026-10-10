@@ -7,6 +7,7 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
   let(:client) { instance_double(GithubClient) }
   let(:logger) { instance_double(Logger, info: nil, warn: nil) }
   let(:marker) { "<!-- paid: dependabot-merge-permission-rejection -->" }
+  let(:title) { "auto-merge blocked" }
 
   before do
     allow(project).to receive_messages(client: client, github_author_login: nil)
@@ -19,7 +20,7 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
       project: project,
       pr_number: 42,
       marker: marker,
-      title: "auto-merge blocked",
+      title: title,
       intro: "The App could not merge this PR.",
       fallback_attempted: false,
       logger: logger,
@@ -34,6 +35,35 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
       call
 
       expect(client).to have_received(:add_comment)
+    end
+  end
+
+  context "when quiet mode is enabled" do
+    before { project.update!(quiet_mode: true) }
+
+    it "creates an actionable inbox notification instead of posting a comment" do
+      # @spec QUIET-MODE-005
+      expect { call }.to change(Notification, :count).by(1)
+
+      notification = Notification.last
+      expect(notification).to have_attributes(
+        source: AutoMergeAttempts::PostPermissionComment::QUIET_MODE_NOTIFICATION_SOURCE,
+        subject: project,
+        blocking: true,
+        severity: "error"
+      )
+      expect(client).not_to have_received(:add_comment)
+    end
+
+    context "with a Markdown comment title" do
+      let(:title) { "**Auto-merge blocked: missing GitHub App permission**" }
+
+      it "renders a plain-text notification title" do
+        # @spec QUIET-MODE-005
+        call
+
+        expect(Notification.last.title).to eq("Auto-merge blocked: missing GitHub App permission")
+      end
     end
   end
 

@@ -23,7 +23,9 @@ module Models
       @drift = drift
       @broken = broken
       @contract_drift = contract_drift || Models::DetectContractDrift::Result.new(findings: [], runner_count: 0)
-      @client = client || project.client
+      resolved_client = client || project.client
+      @client = GithubClient::CommentSuppressing.new(resolved_client) if project.respond_to?(:quiet_mode?) && project.quiet_mode? && resolved_client
+      @client ||= resolved_client
     end
 
     def call

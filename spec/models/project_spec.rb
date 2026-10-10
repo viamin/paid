@@ -2383,6 +2383,28 @@ RSpec.describe Project do
         expect(project.automation_configuration).to equal(project.automation_configuration)
       end
 
+      it "wraps its GitHub client to suppress commentary when quiet mode is enabled" do
+        # @spec QUIET-MODE-001
+        project = build(:project, quiet_mode: true)
+        github_client = instance_double(GithubClient)
+        allow(project).to receive(:build_github_client).and_return(github_client)
+
+        expect(project.client).to be_a(GithubClient::CommentSuppressing)
+      end
+
+      it "applies quiet mode after the GitHub client was already resolved" do
+        # @spec QUIET-MODE-001
+        project = build(:project)
+        github_client = instance_double(GithubClient)
+        allow(project).to receive(:build_github_client).and_return(github_client)
+
+        expect(project.client).to eq(github_client)
+
+        project.quiet_mode = true
+
+        expect(project.client).to be_a(GithubClient::CommentSuppressing)
+      end
+
       it "invalidates the memoized configuration when review_settings= is assigned" do
         project = build(:project, review_settings: { "enabled" => false })
         original = project.automation_configuration

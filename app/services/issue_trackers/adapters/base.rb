@@ -35,6 +35,11 @@ module IssueTrackers
 
       private
 
+      # @spec QUIET-MODE-004
+      def comments_suppressed?
+        tracker_configuration.configurable.is_a?(Project) && tracker_configuration.configurable.quiet_mode?
+      end
+
       def base_url
         tracker_configuration.base_url
       end

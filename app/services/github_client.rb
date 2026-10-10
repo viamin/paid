@@ -65,6 +65,21 @@ class GithubClient
     end
   end
 
+  # Project credentials can be backed by a shared token client, so comment
+  # policy belongs in a project-scoped decorator rather than on that shared
+  # instance. All other GitHub operations, including PR body updates, pass
+  # through unchanged.
+  class CommentSuppressing < SimpleDelegator
+    # @spec QUIET-MODE-002
+    def add_comment(...) = nil
+
+    # @spec QUIET-MODE-002
+    def update_comment(...) = nil
+
+    # @spec QUIET-MODE-002
+    def create_pull_request_comment_reply(...) = nil
+  end
+
   # @spec GITHUB-SYNC-011
   PASS_THROUGH_METHODS = %i[
     repository
@@ -73,8 +88,6 @@ class GithubClient
     search_issues
     pull_request
     issue
-    add_comment
-    update_comment
     ref
     commit
     create_ref
@@ -138,8 +151,17 @@ class GithubClient
     @client_options = options
     @client = build_client(token)
     @health_endpoint = health_endpoint
-
     configure_middleware
+  end
+
+  # @spec QUIET-MODE-002
+  def add_comment(...)
+    handle_errors { client.add_comment(...) }
+  end
+
+  # @spec QUIET-MODE-002
+  def update_comment(...)
+    handle_errors { client.update_comment(...) }
   end
 
   # Validates the token and returns user information.

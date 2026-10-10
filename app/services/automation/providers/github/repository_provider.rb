@@ -84,6 +84,8 @@ module Automation
         end
 
         def add_comment(repo:, number:, body:)
+          return if comments_suppressed?
+
           comment = with_errors { client.add_comment(repo, number, body.to_s) }
           build_comment(comment)
         end

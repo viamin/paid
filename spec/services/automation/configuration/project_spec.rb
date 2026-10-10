@@ -7,6 +7,7 @@ RSpec.describe Automation::Configuration::Project do
     it "aggregates every sub-config from a project record" do
       project = build(:project,
         auto_pick_enabled: true,
+        quiet_mode: true,
         auto_merge_mode: "all",
         auto_fix_merge_conflicts: true,
         merge_method: "squash",
@@ -18,6 +19,7 @@ RSpec.describe Automation::Configuration::Project do
       config = described_class.from(project)
 
       expect(config.auto_pick.enabled?).to be true
+      expect(config.quiet_mode.enabled?).to be true
       expect(config.auto_merge.enabled?).to be true
       expect(config.auto_merge.fix_merge_conflicts?).to be true
       expect(config.auto_merge.merge_method).to eq("squash")
@@ -28,6 +30,10 @@ RSpec.describe Automation::Configuration::Project do
     it "defaults auto_continue to enabled when auto_scan_prs is on" do
       project = build(:project)
       expect(described_class.from(project).auto_continue.enabled?).to be true
+    end
+
+    it "defaults quiet mode to disabled" do
+      expect(described_class.from(build(:project)).quiet_mode.enabled?).to be false
     end
 
     it "disables auto_continue when the tenant setting disables it" do
