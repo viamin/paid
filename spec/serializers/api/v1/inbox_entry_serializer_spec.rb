@@ -194,4 +194,16 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect { described_class.render(entry) }.to raise_error(ArgumentError, /unknown_kind/)
     end
   end
+
+  describe "#render_list" do
+    it "serializes manual_review list entries without resolving the comment url" do
+      entry = build_entry(Inbox::Queue::MANUAL_REVIEW_KIND, questions: [ "Still open?" ])
+      expect(entry).not_to receive(:manual_review_comment_url)
+
+      payload = described_class.render_list(entry)
+
+      expect(payload).to include(questions: [ "Still open?" ])
+      expect(payload).not_to have_key(:comment_url)
+    end
+  end
 end

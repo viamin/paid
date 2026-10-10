@@ -65,9 +65,13 @@
   system SHALL return inbox entries from `Inbox::Queue` for the
   authenticated user, honoring the `kind`, `sort` (`oldest` default,
   `newest`), and `project_id` filter parameters with the same URL contract
-  the web inbox restores (INBOX-FOUNDATION-009). Each entry SHALL carry the
+  the web inbox restores (INBOX-FOUNDATION-009). The list SHALL page with an
+  opaque entry-id `cursor`, a `limit` default of 50 and maximum of 100, and a
+  `next_cursor` only when another page exists. Each entry SHALL carry the
   common envelope fields (`id`, `kind`, `waiting_since`, `project`, title,
-  summary, `action_url`) plus its kind-specific payload, and the OpenAPI
+  summary, `action_url`) plus its list-safe kind-specific payload: a
+  `manual_review` list entry SHALL NOT resolve its lazy GitHub comment URL;
+  that URL is available from the single-entry detail endpoint. The OpenAPI
   schema SHALL express the entry as `oneOf` across one branch per
   `Inbox::Queue::KINDS` kind.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`,

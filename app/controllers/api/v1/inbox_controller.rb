@@ -3,6 +3,9 @@
 module Api
   module V1
     class InboxController < BaseController
+      DEFAULT_LIMIT = 50
+      MAX_LIMIT = 100
+
       before_action -> { require_scope!(:inbox) }, only: %i[index count show]
       before_action -> { require_scope!(:chat) }, only: :chat
 
@@ -11,8 +14,13 @@ module Api
         filters = inbox_filters
         return if conditional_response?(filters)
 
-        entries = Inbox::Queue.call(user: current_user, **filters)
-        render json: { entries: entries.map { |entry| InboxEntrySerializer.render(entry) } }
+        entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort))
+        page = paginated_entries(entries)
+        listed_entries = page.first(inbox_limit)
+        payload = { entries: listed_entries.map { |entry| InboxEntrySerializer.render_list(entry) } }
+        payload[:next_cursor] = listed_entries.last.id if page.size > inbox_limit
+
+        render json: payload
       end
 
       # @spec MOBILE-API-007 MOBILE-API-010
@@ -42,7 +50,13 @@ module Api
       private
 
       def inbox_filters
-        { project: scoped_project, kind: valid_kind, sort: valid_sort }.compact
+        {
+          project: scoped_project,
+          kind: valid_kind,
+          sort: valid_sort,
+          limit: inbox_limit,
+          cursor: params[:cursor].presence
+        }.compact
       end
 
       def scoped_project
@@ -73,8 +87,27 @@ module Api
       end
 
       def inbox_etag(filters)
-        payload = [ current_user.id, filters.slice(:kind, :sort).merge(project_id: filters[:project]&.id), inbox_version ]
+        payload = [ current_user.id, filters.slice(:kind, :sort, :limit, :cursor).merge(project_id: filters[:project]&.id), inbox_version ]
         %Q("#{Digest::SHA256.hexdigest(payload.to_json)}")
+      end
+
+      def paginated_entries(entries)
+        entries_after_cursor(entries).first(inbox_limit + 1)
+      end
+
+      def entries_after_cursor(entries)
+        return entries if params[:cursor].blank?
+
+        cursor_index = entries.index { |entry| entry.id == params[:cursor] }
+        return [] unless cursor_index
+
+        entries.drop(cursor_index + 1)
+      end
+
+      def inbox_limit
+        return DEFAULT_LIMIT if params[:limit].blank?
+
+        params[:limit].to_i.clamp(1, MAX_LIMIT)
       end
 
       def inbox_version

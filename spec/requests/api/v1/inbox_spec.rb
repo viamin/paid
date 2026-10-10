@@ -38,6 +38,26 @@ RSpec.describe "Mobile inbox API" do
     expect(response.body).to be_empty
   end
 
+  # @spec MOBILE-API-006 MOBILE-API-010
+  it "paginates the inbox before serializing entries" do
+    issues = create_list(:issue, 3, :needs_input, project:, needs_input_questions: [ "What should happen?" ])
+
+    get "/api/v1/inbox", params: { kind: "clarifying_questions", limit: 2 }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    first_page = response.parsed_body
+    expect(first_page.fetch("entries").size).to eq(2)
+    expect(first_page.fetch("next_cursor")).to eq(first_page.fetch("entries").last.fetch("id"))
+
+    get "/api/v1/inbox", params: { kind: "clarifying_questions", limit: 2, cursor: first_page.fetch("next_cursor") }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("entries").map { |entry| entry.fetch("id") }).to eq(
+      issues.map { |issue| "clarifying_questions:#{issue.id}" } - first_page.fetch("entries").map { |entry| entry.fetch("id") }
+    )
+    expect(response.parsed_body).not_to have_key("next_cursor")
+  end
+
   # @spec MOBILE-API-007 MOBILE-API-010
   it "returns a cached badge count with a conditional response" do
     issue

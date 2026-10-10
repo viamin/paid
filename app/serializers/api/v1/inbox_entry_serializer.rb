@@ -12,12 +12,20 @@ module Api
         new(entry).render
       end
 
+      def self.render_list(entry)
+        new(entry).render_list
+      end
+
       def initialize(entry)
         @entry = entry
       end
 
       def render
         common_fields.merge(kind_payload)
+      end
+
+      def render_list
+        common_fields.merge(list_kind_payload)
       end
 
       private
@@ -66,6 +74,12 @@ module Api
         end
       end
 
+      def list_kind_payload
+        return manual_review_list_payload if entry.manual_review?
+
+        kind_payload
+      end
+
       # entry.record is the Issue for merge_approval (not the transient
       # Inbox::MergeApproval::Snapshot), same object the web detail partial
       # reads `auto_merge_blockers` from directly.
@@ -89,6 +103,10 @@ module Api
 
       def manual_review_payload
         { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+      end
+
+      def manual_review_list_payload
+        { questions: entry.questions }
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying
