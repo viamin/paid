@@ -384,6 +384,119 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-002 MANUAL-RUN-RETRY-003 MANUAL-RUN-RETRY-004
+    context "with a failed manual run that has no issue/PR attachment (#4222)" do
+      it "schedules a retry for a failed manual run with no issue/PR attachment and no observable work" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.to have_enqueued_job(RetryFailedManualRunJob)
+          .with(agent_run.id, 1)
+          .at(a_value_within(1.second).of(RetryFailedManualRunJob.retry_delay(1).from_now))
+
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "does not schedule a retry when the run is attached to an issue" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, :manual, project: project, issue: issue)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry when the run is attached to a source PR" do
+        agent_run = create(:agent_run, :running, :manual, :existing_pr, project: project, issue: nil, goal: "create_pr")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry for automatic (non-manual) runs" do
+        agent_run = create(:agent_run, :running, :automatic, :with_custom_prompt, project: project, goal: "create_pr")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry when the project toggle is disabled" do
+        project.update!(retry_failed_manual_runs: false)
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry when the run already produced a pull request" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
+          pull_request_number: 7)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Post-publish verification failed")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry when the run already produced an issue" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_issue",
+          created_issue_number: 9)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Post-publish verification failed")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry when the run already performed iterations" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
+          iterations: 3)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Container crashed mid-run")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "does not schedule a retry for a recoverable rate-limited run (StaleRunDetectorJob owns that recovery)" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+        agent_run.rate_limit!(error: "All runners exhausted (will retry)", reset_at: 2.minutes.from_now)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted (will retry)")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "stops scheduling once the retry cap is reached" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
+          external_metadata: { AgentRun::MANUAL_RETRY_ATTEMPT_METADATA_KEY => AgentRun::MAX_MANUAL_RETRY_ATTEMPTS })
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
+      it "schedules the next attempt number for a run already partway through a retry chain" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
+          external_metadata: { AgentRun::MANUAL_RETRY_ATTEMPT_METADATA_KEY => 1 })
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.to have_enqueued_job(RetryFailedManualRunJob).with(agent_run.id, 2)
+      end
+
+      it "schedules a retry for issue-less create_feature, create_issue, and lid_planning goals" do
+        %w[create_feature create_issue lid_planning].each do |goal|
+          agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: goal)
+
+          expect {
+            activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+          }.to have_enqueued_job(RetryFailedManualRunJob).with(agent_run.id, 1)
+        end
+      end
+    end
+
     context "with a GitHub App push-permission rejection" do
       let(:client) { instance_double(GithubClient) }
 
