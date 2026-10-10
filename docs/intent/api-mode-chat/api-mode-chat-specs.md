@@ -54,6 +54,23 @@
   `ChatSessions::ProcessMessageJob#perform`,
   `ChatSessions::SendMessage#call`.
 
+- [x] **CHAT-API-022** — When a streamed ActionCable or SSE chat response
+  emits text chunks, each chunk SHALL carry a positive, stream-local sequence
+  number. The browser SHALL append only contiguous chunks for its active
+  stream, discard a temporary bubble after a duplicate or gap, and never
+  retain a temporary bubble after completion or error. The persisted assistant
+  render remains the transcript authority, and temporary bubbles SHALL NOT be
+  eligible as transcript-navigation response anchors.
+  *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`,
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`.
+  *Code:* `ChatSessions::ProcessMessageJob#perform`,
+  `ChatSessions::ResolveToolCallJob#perform`,
+  `ChatSessions::ResumeRateLimitedJob#resume`,
+  `ChatMessagesController#stream_sse_response`,
+  `ChatMessagesController#stream_resolve_response`,
+  `chat_controller.js#handleMessageChunk`, `#handleMessageComplete`,
+  `#lastAssistantTextResponse`.
+
 - [x] **CHAT-API-003** — When the API-mode chat loop receives tool calls, the
   system SHALL execute authorized read-only tools inline, advertise write tools
   without model-supplied confirmation, persist pending write-tool confirmation
