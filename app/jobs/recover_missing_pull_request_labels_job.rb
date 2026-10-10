@@ -174,7 +174,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     issue = agent_run.issue
     return [] if issue.blank? || issue.labels.blank?
 
-    project.priority_label_names & Array(issue.labels)
+    project.priority_labels_among(issue.labels)
   end
 
   def recover_label(agent_run, synced_pr, labels)

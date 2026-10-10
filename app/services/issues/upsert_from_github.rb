@@ -35,8 +35,26 @@ module Issues
       require_reopen_review(issue, was_closed: was_closed)
       maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
+      sync_priority_labels_to_pull_request(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
     end
+
+    # Issue priority labels are copied onto a pull request once, at PR
+    # creation (CreatePullRequestActivity#inherited_priority_labels). This
+    # keeps them in sync afterward: when a non-PR issue's priority label set
+    # changes, reconcile its linked open pull request's priority labels to
+    # match (#4249). Skips the lookup entirely unless the priority label set
+    # actually changed, so a bulk sync does not add a per-issue query for
+    # every unaffected issue.
+    # @spec PRIORITY-LABEL-SYNC-001
+    def self.sync_priority_labels_to_pull_request(issue, project:, previous_labels:, new_labels:)
+      return if issue.is_pull_request?
+
+      return if project.priority_labels_among(previous_labels) == project.priority_labels_among(new_labels)
+
+      SyncPriorityLabelsToPullRequest.call(issue: issue, project: project)
+    end
+    private_class_method :sync_priority_labels_to_pull_request
 
     def self.reconcile_design_pull_request(project, github_issue, github_pull_request)
       FeatureIntents::ReconcileDesignPullRequest.call(
