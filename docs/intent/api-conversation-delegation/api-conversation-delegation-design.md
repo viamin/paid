@@ -175,16 +175,18 @@ image digest, capability matrix, and rollback route.
 
 ## Implementation record (viamin/paid#4016)
 
-**Release evidence:** `agent-harness` 0.44.3, pinned in `Gemfile`/`Gemfile.lock`
-(exact, non-yanked, non-prerelease; [RubyGems](https://rubygems.org/gems/agent-harness/versions/0.44.3),
-[release](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.3)).
+**Release evidence:** `agent-harness` 0.44.9, pinned in `Gemfile`/`Gemfile.lock`
+(exact, non-yanked, non-prerelease; [RubyGems](https://rubygems.org/gems/agent-harness/versions/0.44.9),
+[release](https://github.com/viamin/agent-harness/releases/tag/agent-harness/v0.44.9)).
 It supersedes 0.41.0, the release that delivered the `AgentHarness::Api::ChatTransport`
 contract (viamin/agent-harness#433 / PR viamin/agent-harness#441, "Normalize
 API Chat Transport, Tools and Streaming"), and 0.44.0, which Paid #3995
 verified as the first release retaining the Codex subscription
-discovery/recovery fixes after reconciling the durable-pin removal. No agent
-image rebuild was required for this change: the chat path runs in the Rails
-host process, not inside agent containers.
+discovery/recovery fixes after reconciling the durable-pin removal. It also
+includes viamin/agent-harness#472, so `ChatTransport` preserves classified
+provider errors such as MiniMax 429 responses for Paid's rate-limit
+pause/recovery path. No agent image rebuild was required for this change: the
+chat path runs in the Rails host process, not inside agent containers.
 
 **Scope shipped — operation/provider matrix:**
 
@@ -218,7 +220,7 @@ arrow. Evidence per child:
 | --- | --- | --- |
 | #4014 contracts | Verified | This design + EARS segment defines the ownership, persistence, attempt/recovery, and loop-evaluation contracts; indexed in `docs/arrows/index.yaml`. |
 | #4015 embedding patches | Verified | Host path `Knowledge::Embeddings::Generate#request_embeddings` and the containerized script in `Knowledge::EmbeddingRunner` both call `AgentHarness.embed`; no RubyLLM transport patch remains in `config/initializers/` (RubyLLM stays model-catalog-only per `config/application.rb`). |
-| #4016 chat translation | Verified | `ChatSessions::BuildLlmClient::HttpClient` builds `AgentHarness::Api::ChatTransport` requests and translates normalized results/classified errors; `agent-harness` 0.44.3 pinned in `Gemfile`/`Gemfile.lock` per the rollout guard; matrix above. |
+| #4016 chat translation | Verified | `ChatSessions::BuildLlmClient::HttpClient` builds `AgentHarness::Api::ChatTransport` requests and translates normalized results/classified errors; `agent-harness` 0.44.9 is pinned in `Gemfile`/`Gemfile.lock` per the rollout guard; matrix above. |
 | #4017 structured results | Verified | `Llm::GenerateSessionSummary` and `Knowledge::ContextIntake::GenerateQuestions` use `operation: :schema` with `Llm::TextMode.enabled?` capability routing; CLI/subscription callers keep the text path (no silent auth-mode switch). |
 | #4018 attempt accounting | **Active gap** | Mechanics verified in isolation only: `ApiUsageAttempt` (forced RLS, unique `attempt_id`, unknown-usage validations) + idempotent `ChatSessions::RecordTransportAttempt` + `Billing::AggregateTenantUsage` integration, with `record_transport_attempt_spec.rb` and `aggregate_tenant_usage_spec.rb` covering exactly-once, redelivery, unknown-vs-zero, and non-USD provenance. The migrated request path is not wired to them: `HttpClient#call` discards the harness's `result[:attempts]` reports and `RecordTransportAttempt` has no production caller, so real API-key chat attempt reports cannot yet receive that handling. API-CONVERSATION-DELEGATION-002 stays `[ ]` until the transport reports are wired through (gap 1 below). |
 | #4019 loop outcome | Verified | Loop retained per the agent-harness #448 evaluation (EARS 006); `FallbackLoop#discard_partial_attempt` rolls back only the failed attempt's rows by id so a runner fallback cannot replay stale partial work. |
@@ -266,7 +268,7 @@ only in isolation because the migrated request path discards
 RDR-072 is **Partially Implemented**, not Implemented. The closeout audit at
 [`docs/rdrs/audit-report-2026-10-05-rdr-072.md`](../../rdrs/audit-report-2026-10-05-rdr-072.md)
 re-ran the affected chat, approval, fallback, billing, generator, request, and
-channel suites against the installed 0.44.3 host dependency. It also verified
+channel suites against the installed 0.44.9 host dependency. It also verified
 that the environment has no Docker CLI, so an agent-image check cannot be
 claimed from this audit; the RDR's existing release procedure still requires
 that check before deployment.
