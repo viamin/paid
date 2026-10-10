@@ -68,7 +68,7 @@ RSpec.describe Tools::ApplyConfigurationProfile do
     expect(project.owner_reviewer_login).to eq("octocat")
   end
 
-  it "applies only authorized levels and returns skipped-level details" do
+  it "applies authorized user changes without inventing tenant-level skips" do
     member = create(:user, :member, account:)
     member.settings.update!(run_concurrency_mode: "auto")
     member_session = create(:chat_session, account:, created_by: member, project:)
@@ -84,8 +84,7 @@ RSpec.describe Tools::ApplyConfigurationProfile do
       include(key: "run_concurrency_mode", from: "auto", to: "manual", level: "user", applied: true)
     )
     expect(result[:skipped_levels]).to contain_exactly(
-      include("level" => "project", "reason" => "Not authorized to update project settings"),
-      include("level" => "tenant", "reason" => "Not authorized to update tenant settings")
+      include("level" => "project", "reason" => "Not authorized to update project settings")
     )
     expect(member.settings.reload.run_concurrency_mode).to eq("manual")
     expect(project.reload.auto_pick_enabled).to be false
