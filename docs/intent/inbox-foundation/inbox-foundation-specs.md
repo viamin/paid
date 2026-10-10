@@ -79,9 +79,13 @@
 - [x] **INBOX-FOUNDATION-007** — `Dashboard::NeedsInputQueue` SHALL continue
   to expose its existing `.call`, `.next_issue`, and `Entry` API (with
   `project`/`issue`/`questions`), SHALL delegate to `Inbox::Queue` for the
-  queue body, and SHALL apply the `is_pull_request: false` filter on top so
-  the `/dashboard/needs_input` page is unchanged during rollout. The existing
-  `Dashboard::NeedsInputQueue` spec SHALL stay green.
+  queue body, and SHALL apply the `is_pull_request: false` filter AND the
+  `Issues::AutoPickProjectGate` filter on top so the `/dashboard/needs_input`
+  page is unchanged during rollout. The auto-pick filter is re-applied here
+  because `Inbox::Queue` (`INBOX-FOUNDATION-006`) deliberately stops gating
+  visibility on auto-pick eligibility (#4221) — this legacy page must not
+  inherit that broader visibility. The existing `Dashboard::NeedsInputQueue`
+  spec SHALL stay green.
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 
