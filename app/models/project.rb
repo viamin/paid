@@ -214,6 +214,8 @@ class Project < ApplicationRecord
      description: "Automatically create agent runs when the automation label is detected on issues or PRs." }.freeze,
     { label: "Auto-Pick Issues", attribute: :auto_pick_enabled,
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
+    { label: "Quiet Mode", attribute: :quiet_mode,
+     description: "Suppress Paid comments on issues and pull requests while keeping PR description updates and inbox alerts." }.freeze,
     { label: "Auto-Fix Merge Conflicts", attribute: :auto_fix_merge_conflicts,
      description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts; upstream-mode fixes push only to the fork head branch." }.freeze,
     { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
@@ -1581,8 +1583,12 @@ class Project < ApplicationRecord
   # retries permission-shaped failures (403, 404-disambiguated-by-PAT) with
   # the fallback PAT. The wrapper mirrors +GithubClient+'s public interface so
   # every existing call site benefits without per-site rescue blocks.
+  # @spec QUIET-MODE-002
   def client
-    @client ||= build_github_client
+    github_client = @client ||= build_github_client
+    return github_client unless quiet_mode? && github_client
+
+    GithubClient::CommentSuppressing.new(github_client)
   end
 
   # @spec GITHUB-SYNC-018

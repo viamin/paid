@@ -37,6 +37,24 @@ RSpec.describe AutoMergeAttempts::PostPermissionComment do
     end
   end
 
+  context "when quiet mode is enabled" do
+    before { project.update!(quiet_mode: true) }
+
+    it "creates an actionable inbox notification instead of posting a comment" do
+      # @spec QUIET-MODE-005
+      expect { call }.to change(Notification, :count).by(1)
+
+      notification = Notification.last
+      expect(notification).to have_attributes(
+        source: AutoMergeAttempts::PostPermissionComment::QUIET_MODE_NOTIFICATION_SOURCE,
+        subject: project,
+        blocking: true,
+        severity: "error"
+      )
+      expect(client).not_to have_received(:add_comment)
+    end
+  end
+
   context "when the marker is only present on an older page" do
     let(:older_page_url) { "https://api.github.com/repos/acme/web/issues/42/comments?page=1" }
     let(:recent_comments) do

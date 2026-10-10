@@ -18,7 +18,7 @@ module ExceptionHandler
     end
 
     def call
-      client = @project&.github_token&.client
+      client = @project&.client
       return unless client
 
       case action

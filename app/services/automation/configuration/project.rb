@@ -15,14 +15,16 @@ module Automation
       :auto_pick,
       :auto_continue,
       :auto_review,
-      :auto_merge
+      :auto_merge,
+      :quiet_mode
     )
       def self.from(project)
         new(
           auto_pick: AutoPick.from_project(project),
           auto_continue: AutoContinue.from_project(project),
           auto_review: AutoReview.from_project(project),
-          auto_merge: AutoMerge.from_project(project)
+          auto_merge: AutoMerge.from_project(project),
+          quiet_mode: QuietMode.from_project(project)
         )
       end
 

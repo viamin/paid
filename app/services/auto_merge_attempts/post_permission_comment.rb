@@ -6,6 +6,7 @@ module AutoMergeAttempts
   # MergePullRequestActivity and DependabotAutoMergeJob so the marker/dedup
   # logic can't drift between the two auto-merge flows.
   class PostPermissionComment
+    QUIET_MODE_NOTIFICATION_SOURCE = "auto_merge_permission_blocked_quiet_mode"
     def self.call(...)
       new(...).call
     end
@@ -22,6 +23,8 @@ module AutoMergeAttempts
     end
 
     def call
+      return publish_quiet_mode_notification if project.quiet_mode?
+
       client = project.client
       return unless client
       return if comment_present?(client)
@@ -45,6 +48,20 @@ module AutoMergeAttempts
     private
 
     attr_reader :project, :pr_number, :marker, :title, :intro, :fallback_attempted, :logger, :log_component
+
+    # @spec QUIET-MODE-005
+    def publish_quiet_mode_notification
+      Notifications::Publish.call(
+        account: project.account,
+        source: QUIET_MODE_NOTIFICATION_SOURCE,
+        subject: project,
+        severity: :error,
+        title: title,
+        description: [ intro, next_step ].join("\n\n"),
+        metadata: { "pr_number" => pr_number, "recommended_action" => next_step },
+        blocking: true
+      )
+    end
 
     # Match only Paid-authored marker comments when we know the current
     # authenticated login. That prevents third-party comments containing the

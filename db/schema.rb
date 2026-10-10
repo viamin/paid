@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_120051) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2999,6 +2999,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
+    t.boolean "quiet_mode", default: false, null: false, comment: "When true, Paid suppresses all issue/PR comment posting for this project (PR description writes are unaffected)."
     t.string "repo", null: false
     t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
     t.boolean "retry_failed_manual_runs", default: true, null: false, comment: "When true, a failed manual agent run with no issue/PR attachment and no observable work is automatically re-queued with backoff, up to AgentRun::MAX_MANUAL_RETRY_ATTEMPTS."

@@ -43,6 +43,11 @@ module Automation
           @client ||= resolve_client
         end
 
+        # @spec QUIET-MODE-003
+        def comments_suppressed?
+          project.respond_to?(:quiet_mode?) && project.quiet_mode?
+        end
+
         private
 
         def resolve_client
