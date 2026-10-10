@@ -454,6 +454,9 @@
   since it is not yet persisted and can vanish or be rewritten out from under
   the user; it SHALL fall back to the last persisted assistant response, or
   to the bottom of the transcript if none exists yet.
+  A write-tool confirmation broadcast SHALL include its originating stream ID,
+  so the client can associate the pause with — and remove — only that turn's
+  in-flight bubble.
   *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`
   (`testDisconnectMidStreamRemovesOrphanedBubbleWithContent`,
   `testErrorMidStreamRemovesOrphanedBubbleWithContent`,
@@ -468,7 +471,9 @@
   `testLastRenderedMessageIdReturnsHighestId`,
   `testMessageChunkRearmsTrackingForAnUntrackedStream`,
   `testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged`),
-  `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/recent_messages`).
+  `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/recent_messages`),
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`
+  (`broadcasts message_complete with nil tokens when a write tool pauses`).
   *Code:* `app/javascript/controllers/chat_controller.js#removePendingAssistantMessage`,
   `#handleMessageComplete`, `#handleMessageToolConfirmation`, `#handleError`,
   `#handleConnected`, `#resyncTranscript`, `#fetchRecentMessages`,
