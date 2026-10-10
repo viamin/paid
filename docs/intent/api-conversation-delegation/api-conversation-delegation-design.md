@@ -199,7 +199,7 @@ chat path runs in the Rails host process, not inside agent containers.
 | CLI/subscription chat runners | `retained` (unsupported path, unchanged) | Chat still requires an API-key runner (`BuildLlmClient.usable_runner?`); this was true before this migration and is not a new restriction. |
 | Chat loop sequencing, tool dispatch, approval resumption (`ChatSessions::AgentLoop`, `ResolveToolCall`, `Tools::Registry`) | `retained` | Out of scope per the Loop Delegation Decision; `HttpClient`'s public `#call(conversation, tools:, on_chunk:)` contract is unchanged so `AgentLoop`'s reflection-based kwarg detection and streaming replay keep working unmodified. |
 | Request attempt identity, retry-limit/deadline/cancellation plumbing (API-CONVERSATION-DELEGATION-003) | `migrated` | `HarnessTransport` persists a per-session request sequence, supplies its Paid-owned request identity, one-attempt bound, a `read_seconds` inactivity timeout, and a separate, longer monotonic request-deadline cancellation signal to every harness call. `FallbackLoop` retains runner changes and receives a new identity for each new outbound request. |
-| Durable attempt-report persistence (API-CONVERSATION-DELEGATION-002) | `unsupported` (tracked gap) | `HttpClient#call` still does not persist per-attempt harness reports. Tracked by viamin/paid#4125. |
+| Durable attempt-report persistence (API-CONVERSATION-DELEGATION-002) | `migrated` | `HttpClient#call` persists every `result[:attempts]` report through `ChatSessions::RecordTransportAttempt` before translating the result (viamin/paid#4131); all chat hosts (`SendMessage`, `ResolveToolCall`, `ResumeRateLimited`) supply the originating message through `FallbackLoop` so live attribution, exactly-once redelivery handling, and account-level projectless sessions are covered. |
 
 **Tests:** `spec/services/chat_sessions/build_llm_client_spec.rb` (black-box
 against `AgentHarness::Api::ChatTransport`, including normalized request,
@@ -222,9 +222,9 @@ arrow. Evidence per child:
 | #4015 embedding patches | Verified | Host path `Knowledge::Embeddings::Generate#request_embeddings` and the containerized script in `Knowledge::EmbeddingRunner` both call `AgentHarness.embed`; no RubyLLM transport patch remains in `config/initializers/` (RubyLLM stays model-catalog-only per `config/application.rb`). |
 | #4016 chat translation | Verified | `ChatSessions::BuildLlmClient::HttpClient` builds `AgentHarness::Api::ChatTransport` requests and translates normalized results/classified errors; `agent-harness` 0.44.9 is pinned in `Gemfile`/`Gemfile.lock` per the rollout guard; matrix above. |
 | #4017 structured results | Verified | `Llm::GenerateSessionSummary` and `Knowledge::ContextIntake::GenerateQuestions` use `operation: :schema` with `Llm::TextMode.enabled?` capability routing; CLI/subscription callers keep the text path (no silent auth-mode switch). |
-| #4018 attempt accounting | **Active gap** | Mechanics verified in isolation only: `ApiUsageAttempt` (forced RLS, unique `attempt_id`, unknown-usage validations) + idempotent `ChatSessions::RecordTransportAttempt` + `Billing::AggregateTenantUsage` integration, with `record_transport_attempt_spec.rb` and `aggregate_tenant_usage_spec.rb` covering exactly-once, redelivery, unknown-vs-zero, and non-USD provenance. The migrated request path is not wired to them: `HttpClient#call` discards the harness's `result[:attempts]` reports and `RecordTransportAttempt` has no production caller, so real API-key chat attempt reports cannot yet receive that handling. API-CONVERSATION-DELEGATION-002 stays `[ ]` until the transport reports are wired through (gap 1 below). |
+| #4018 attempt accounting | Verified | `ApiUsageAttempt` (forced RLS, unique `attempt_id`, unknown-usage validations) + idempotent `ChatSessions::RecordTransportAttempt` + `Billing::AggregateTenantUsage` integration, wired into the migrated request path: `HttpClient#call` persists every harness `result[:attempts]` report before translating the result (viamin/paid#4131), and all chat hosts supply the originating message for attribution. `record_transport_attempt_spec.rb` and `aggregate_tenant_usage_spec.rb` cover exactly-once, redelivery, unknown-vs-zero, and non-USD provenance. API-CONVERSATION-DELEGATION-002 is `[x]`. |
 | #4019 loop outcome | Verified | Loop retained per the agent-harness #448 evaluation (EARS 006); `FallbackLoop#discard_partial_attempt` rolls back only the failed attempt's rows by id so a runner fallback cannot replay stale partial work. |
-| #4020 close RDR-072 | **Partially Implemented** | The 2026-10-05 closeout records the verified retained-loop outcome and the remaining attempt-report/recovery completion dependency; it must not close #4013. |
+| #4020 close RDR-072 | Blocked | The 2026-10-05 closeout recorded the verified retained-loop outcome with #4125/#4126 as completion dependencies; both shipped (#4131, #4133). The 2026-10-10 acceptance audit ([`docs/rdrs/audit-report-2026-10-10-rdr-072.md`](../../rdrs/audit-report-2026-10-10-rdr-072.md)) verified the live code and tests, but Docker was unavailable for the required rebuilt-agent-image check. viamin/paid#4013 remains open until that verification record is retained. |
 
 Test evidence (this audit): 464 examples ran across `spec/services/chat_sessions/`,
 `spec/services/billing/aggregate_tenant_usage_spec.rb`,
@@ -235,49 +235,39 @@ passed. The single failure (`build_system_prompt_spec.rb:477`) is an audit
 environment artifact, not a regression: it appears only when the test database
 is seeded with global style guides (the two rejected lines are verbatim from
 `db/seeds/style_guides.rb`), while CI prepares the test database with
-`db:create db:schema:load` and no seeds. `bin/coherence-check.mjs` reports
-this segment's only uncovered `[ ]` spec (a gap marker with no `@spec`
-reference) as API-CONVERSATION-DELEGATION-003; API-CONVERSATION-DELEGATION-002
-is annotated but reconciled back to an open gap, since its mechanics have no
-production caller yet.
+`db:create db:schema:load` and no seeds. At that time the segment still
+reported API-CONVERSATION-DELEGATION-002/-003 as uncovered gaps (no
+production caller of the attempt recorder yet); both were reconciled to
+implemented by the 2026-10-10 audit below.
 
-**Remaining gaps that block closing RDR-072 (via #4020):**
+**Completion (2026-10-10):** the gaps recorded by the earlier audits are
+closed. API-CONVERSATION-DELEGATION-002 shipped in viamin/paid#4131: the
+migrated request path persists every `result[:attempts]` report through
+`ChatSessions::RecordTransportAttempt` with live attribution, exactly-once
+redelivery handling, and account-level projectless coverage.
+API-CONVERSATION-DELEGATION-003 shipped in viamin/paid#4133: `HarnessTransport`
+supplies a durable request sequence, bounds, cancellation, restart allocation,
+and the fallback transcript preserves completed tool results. The RDR-072
+status remains Partially Implemented (this document, the RDR, and
+`docs/rdrs/README.md`) until the final acceptance audit's unmet image
+verification gate is satisfied. The acceptance audit
+([`docs/rdrs/audit-report-2026-10-10-rdr-072.md`](../../rdrs/audit-report-2026-10-10-rdr-072.md))
+consumed this table. No runtime code changes were required by that audit;
+EARS 004 is implemented (retained loop, tests annotated), EARS 005 is deferred
+(retained-loop outcome), and EARS 002/003 are implemented, matching the
+evaluated outcome in EARS 006.
 
-1. API-CONVERSATION-DELEGATION-002 remains an active gap: the migrated request
-   path still discards `result[:attempts]` (no production caller of
-   `ChatSessions::RecordTransportAttempt` yet), so durable attempt-report
-   persistence is not wired into the migrated path. viamin/paid#4125 owns this
-   remaining completion dependency for closing the RDR. API-CONVERSATION-
-   DELEGATION-003 is implemented: `HarnessTransport` supplies a durable
-   request sequence, bounds, cancellation, restart allocation, and the
-   fallback transcript preserves completed tool results.
-2. The RDR-072 closeout itself (status flip to Implemented in the RDR and
-   `docs/rdrs/README.md`, plus the delegated/retained-responsibility record)
-   has not been written; it should consume this audit table.
+## Closeout reconciliation (viamin/paid#4020, 2026-10-10)
 
-No runtime code changes are required by this audit; EARS 004 was reconciled
-to implemented (retained loop, tests annotated) and EARS 005 to deferred
-(retained-loop outcome), matching the evaluated outcome in EARS 006. EARS 002
-was reconciled back to an active gap: its persistence mechanics are verified
-only in isolation because the migrated request path discards
-`result[:attempts]` and never calls `ChatSessions::RecordTransportAttempt`
-(#4018 above, gap 1 below).
-
-## Closeout reconciliation (viamin/paid#4020, 2026-10-05)
-
-RDR-072 is **Partially Implemented**, not Implemented. The closeout audit at
-[`docs/rdrs/audit-report-2026-10-05-rdr-072.md`](../../rdrs/audit-report-2026-10-05-rdr-072.md)
-re-ran the affected chat, approval, fallback, billing, generator, request, and
-channel suites against the installed 0.44.9 host dependency. It also verified
-that the environment has no Docker CLI, so an agent-image check cannot be
-claimed from this audit; the RDR's existing release procedure still requires
-that check before deployment.
-
-The precise completion dependencies are viamin/paid#4125
-(API-CONVERSATION-DELEGATION-002: harness attempt-report persistence) and
-viamin/paid#4126 (API-CONVERSATION-DELEGATION-003: stable Paid request
-identity, Paid-supplied retry/deadline/cancellation context, and restart-safe
-runner recovery), filed as sub-issues of #4013. Until they complete, the
-umbrella remains open and uses non-closing `Tracks #4013` language.
-This is explicit tracking, not a claim that #4018's isolated mechanics
-completed live API-chat accounting.
+RDR-072 is **Partially Implemented**. The 2026-10-05 closeout identified
+viamin/paid#4125 (harness attempt-report persistence) and viamin/paid#4126
+(stable Paid request identity, Paid-supplied retry/deadline/cancellation
+context, and restart-safe runner recovery) as the completion dependencies;
+both shipped (PRs #4131 and #4133). The final acceptance audit re-ran the
+affected chat, approval, fallback, transport, accounting, billing, generator,
+request, and channel suites (588 examples, 0 failures) against the installed
+0.44.9 host dependency and verified the production wiring directly in code.
+It also verified that the environment has no Docker CLI, so an agent-image
+check cannot be claimed from the audit; the RDR's release procedure still
+requires that check before deployment. viamin/paid#4013 remains open until the
+release retains that verification record.

@@ -10,12 +10,11 @@
   translate its normalized result/classified error back to Paid's existing
   return and raise contract; it SHALL NOT call RubyLLM or a provider API
   directly, and a harness result SHALL NOT be granted authority to execute or
-  approve an application tool. Paid-supplied attempt identity, retry-limit,
-  deadline, and cancellation context are **not yet wired through** this call
-  (implemented by API-CONVERSATION-DELEGATION-003 below); each turn receives a
-  Paid-owned durable request identity and one effective retry owner, while
-  runner switching and workflow recovery remain owned entirely by
-  `ChatSessions::FallbackLoop` at the Paid layer.
+  approve an application tool. Each turn receives a Paid-owned durable request
+  identity and one effective retry owner wired through by
+  API-CONVERSATION-DELEGATION-003 below, while runner switching and workflow
+  recovery remain owned entirely by `ChatSessions::FallbackLoop` at the Paid
+  layer.
   *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
   *Code:* `ChatSessions::BuildLlmClient::HttpClient#call`,
   `ChatSessions::BuildLlmClient::HttpClient#build_request`,
