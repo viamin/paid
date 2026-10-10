@@ -120,6 +120,44 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     expect(described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40)).to be(true)
   end
 
+  it "rejects an empty corpus manifest file" do
+    File.write(manifest, "")
+    expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /expected a mapping with a cases list/)
+  end
+
+  it "rejects a corpus manifest that is a YAML sequence instead of a mapping" do
+    File.write(manifest, [ "foo", "bar" ].to_yaml)
+    expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /expected a mapping with a cases list/)
+  end
+
+  it "rejects a corpus manifest case that is missing an id" do
+    File.write(manifest, { "cases" => [ { "stratum" => "accepted" } ] }.to_yaml)
+    expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /every case needs an id/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-003
+  it "rejects a shadow run referencing a case outside the frozen manifest" do
+    events = complete_adjudication_events + [
+      base_event.merge("type" => "shadow_run", "event_id" => "run", "case_id" => "TYPO-CASE", "reviewer_run_id" => "run-1", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 9999, "recorded_at" => "2026-10-10T12:01:00Z")
+    ]
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /outside the frozen manifest/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-003
+  it "rejects more than one shadow run for the same case" do
+    events = complete_adjudication_events + [
+      base_event.merge("type" => "shadow_run", "event_id" => "run-1", "case_id" => "A-01", "reviewer_run_id" => "run-1", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:01:00Z"),
+      base_event.merge("type" => "shadow_run", "event_id" => "run-2", "case_id" => "A-01", "reviewer_run_id" => "run-2", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "material_drift", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:02:00Z")
+    ]
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /at most one shadow run/)
+  end
+
   it "refuses worksheet compilation until human input and reviewer events exist" do
     require Rails.root.join("lib/intent_conformance/shadow_evaluation_worksheet")
     expect {

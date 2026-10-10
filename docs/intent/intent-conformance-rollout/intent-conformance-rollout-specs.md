@@ -30,6 +30,8 @@
   resolution time, rework, and delivery time against a predeclared same-project
   baseline and promotion rule.
   *Design:* `intent-conformance-rollout-design.md`.
+  *Tooling:* `lib/intent_conformance/shadow_evaluation_worksheet.rb` computes
+  the aggregate measures from ledger evidence once shadow runs exist.
   *Gap:* The 2026-10-10 worksheet is invalidated; no replacement values or
   promotion outcome are produced by this tooling-only change.
 

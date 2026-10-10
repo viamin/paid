@@ -19,8 +19,14 @@ module IntentConformance
     module_function
 
     def load_manifest(path)
-      YAML.safe_load_file(path).fetch("cases")
-    rescue KeyError, Psych::Exception => error
+      document = YAML.safe_load_file(path)
+      raise InvalidLedger, "invalid corpus manifest: expected a mapping with a cases list" unless document.is_a?(Hash) && document["cases"].is_a?(Array)
+
+      cases = document.fetch("cases")
+      raise InvalidLedger, "invalid corpus manifest: every case needs an id" unless cases.all? { |entry| entry.is_a?(Hash) && entry["id"].to_s != "" }
+
+      cases
+    rescue Psych::Exception => error
       raise InvalidLedger, "invalid corpus manifest: #{error.message}"
     end
 
@@ -120,14 +126,24 @@ module IntentConformance
       ensure_adjudications!(cases, entries)
       completion_index = entries.rindex { |entry| entry["type"] == "adjudication" }
       completion_time = entries.select { |entry| entry["type"] == "adjudication" }.map { |entry| Time.iso8601(entry.fetch("recorded_at")) }.max
-      runs.each do |entry, index|
-        raise InvalidLedger, "shadow run lacks reviewer identity" unless %w[case_id reviewer_run_id reviewer_model prompt_digest verdict recorded_at cost_cents].all? { |key| entry.key?(key) }
-        raise InvalidLedger, "invalid reviewer verdict" unless REVIEWER_VERDICTS.include?(entry["verdict"])
-        raise InvalidLedger, "shadow run was recorded before adjudications completed" if index <= completion_index
-        raise InvalidLedger, "shadow run was timestamped before adjudications completed" if Time.iso8601(entry.fetch("recorded_at")) < completion_time
-      end
+      runs.each { |entry, index| validate_shadow_run!(entry, cases, index, completion_index, completion_time) }
+      ensure_one_shadow_run_per_case!(runs.map { |entry, _index| entry })
     rescue ArgumentError, KeyError => error
       raise InvalidLedger, "invalid shadow run event: #{error.message}"
+    end
+
+    def validate_shadow_run!(entry, cases, index, completion_index, completion_time)
+      required = %w[case_id reviewer_run_id reviewer_model prompt_digest verdict recorded_at cost_cents]
+      raise InvalidLedger, "shadow run lacks reviewer identity" unless required.all? { |key| entry.key?(key) }
+      raise InvalidLedger, "shadow run references a case outside the frozen manifest" unless cases.any? { |corpus_case| corpus_case.fetch("id") == entry["case_id"] }
+      raise InvalidLedger, "invalid reviewer verdict" unless REVIEWER_VERDICTS.include?(entry["verdict"])
+      raise InvalidLedger, "shadow run was recorded before adjudications completed" if index <= completion_index
+      raise InvalidLedger, "shadow run was timestamped before adjudications completed" if Time.iso8601(entry.fetch("recorded_at")) < completion_time
+    end
+
+    def ensure_one_shadow_run_per_case!(runs)
+      duplicated = runs.group_by { |entry| entry["case_id"] }.any? { |_case_id, group| group.length > 1 }
+      raise InvalidLedger, "each case may have at most one shadow run" if duplicated
     end
   end
 end

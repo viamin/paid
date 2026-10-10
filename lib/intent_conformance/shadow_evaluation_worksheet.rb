@@ -3,6 +3,8 @@
 require_relative "shadow_evaluation_ledger"
 
 module IntentConformance
+  # Computes the RDR-067 aggregate measures required by the rollout record.
+  # @spec INTENT-CONFORMANCE-ROLLOUT-003
   module ShadowEvaluationWorksheet
     module_function
 
@@ -10,7 +12,7 @@ module IntentConformance
       ShadowEvaluationLedger.validate!(manifest_path:, ledger_path:, manifest_commit:)
       cases = ShadowEvaluationLedger.load_manifest(manifest_path)
       entries = ShadowEvaluationLedger.events(ledger_path)
-      runs = entries.select { |entry| entry["type"] == "shadow_run" }.index_by { |entry| entry["case_id"] }
+      runs = entries.select { |entry| entry["type"] == "shadow_run" }.to_h { |entry| [ entry["case_id"], entry ] }
       raise ShadowEvaluationLedger::PendingHumanInput, "pending human input: every adjudicated case needs a shadow-run event" unless cases.all? { |item| runs.key?(item["id"]) }
 
       human = effective_human_verdicts(cases, entries)
