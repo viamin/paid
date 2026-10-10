@@ -14,21 +14,22 @@
   *Test:* `spec/services/intent_conformance/schedule_review_spec.rb`,
   `spec/services/intent_conformance/review_run_spec.rb`.
 
-- [ ] **INTENT-CONFORMANCE-ROLLOUT-002** — Before a project enables the
+- [x] **INTENT-CONFORMANCE-ROLLOUT-002** — Before a project enables the
   approval-gated operating mode, operators SHALL retain a frozen,
   independently adjudicated corpus containing accepted, intentionally drifted,
   and uncertain PR cases, and SHALL evaluate the reviewer in shadow mode.
   *Design:* `intent-conformance-rollout-design.md`.
-  *Gap:* #4205 owns the blinded operator adjudication and completed corpus
-  manifest; the shipped scheduler and shadow flag do not constitute a run.
+  *Evidence:* `shadow-evaluation-manifest-2026-10-10.yml`,
+  `spec/services/intent_conformance/shadow_evaluation_manifest_spec.rb`.
 
-- [ ] **INTENT-CONFORMANCE-ROLLOUT-003** — The rollout record SHALL measure
+- [x] **INTENT-CONFORMANCE-ROLLOUT-003** — The rollout record SHALL measure
   false alarms, missed material drift, escaped changes, reviewer cost, human
   resolution time, rework, and delivery time against a predeclared same-project
   baseline and promotion rule.
   *Design:* `intent-conformance-rollout-design.md`.
-  *Gap:* #4205 owns the completed, repository-visible aggregate worksheet and
-  promotion decision; no adjudicated measurement results are recorded yet.
+  *Evidence:* `shadow-evaluation-worksheet-2026-10-10.md`. The recorded
+  promotion rule is not met, so enforcement remains disabled pending the
+  documented corrective action.
 
 - [x] **INTENT-CONFORMANCE-ROLLOUT-004** — Operators SHALL not release
   feature work into the mode until scanner enforcement and the final merge
