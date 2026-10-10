@@ -11,6 +11,8 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
   # @spec CHAT-API-006
   # @spec CHAT-API-017
   it "raises AgentHarness::RateLimitError and pauses the session for a classified 429 provider rate limit" do
+    expect(Gem.loaded_specs.fetch("agent-harness").version).to be >= Gem::Version.new("0.44.9")
+
     configure_minimax_runner_with_429_response
 
     error = capture_send_message_error(chat_session)

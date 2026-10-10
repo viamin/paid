@@ -81,14 +81,10 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-# KNOWN BUG in 0.44.8 (fixes #4217, tracks viamin/agent-harness#472): a lambda
-# in ChatTransport#perform_attempt references `streamed_usage` before the
-# local variable assignment that defines it is lexically visible, so every
-# failed chat request raises NameError inside the rescue path and gets
-# reported as unclassified_provider_error — hiding real causes like MiniMax
-# 429 rate limits. Bump to the first release containing the fix once
-# viamin/agent-harness#472 ships, and delete this paragraph.
-gem "agent-harness", "0.44.8"
+# 0.44.9 includes viamin/agent-harness#472, which preserves a provider's
+# classified error when ChatTransport fails. Paid relies on this for the
+# rate-limit pause/recovery path (fixes #4217).
+gem "agent-harness", "0.44.9"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
