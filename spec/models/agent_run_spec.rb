@@ -1885,6 +1885,47 @@ RSpec.describe AgentRun do
       end
     end
 
+    # @spec MANUAL-RUN-RETRY-003
+    describe "#no_observable_work?" do
+      it "is true when there are no iterations and no produced PR or issue" do
+        agent_run = build(:agent_run, :failed, iterations: 0, pull_request_number: nil, created_issue_number: nil)
+
+        expect(agent_run.no_observable_work?).to be true
+      end
+
+      it "is false when the run performed at least one iteration" do
+        agent_run = build(:agent_run, :failed, iterations: 1)
+
+        expect(agent_run.no_observable_work?).to be false
+      end
+
+      it "is false when the run already produced a pull request" do
+        agent_run = build(:agent_run, :failed, iterations: 0, pull_request_number: 7)
+
+        expect(agent_run.no_observable_work?).to be false
+      end
+
+      it "is false when the run already produced an issue" do
+        agent_run = build(:agent_run, :failed, iterations: 0, created_issue_number: 9)
+
+        expect(agent_run.no_observable_work?).to be false
+      end
+    end
+
+    describe "#manual_retry_attempt" do
+      it "is zero when no retry metadata is present" do
+        agent_run = build(:agent_run, external_metadata: {})
+
+        expect(agent_run.manual_retry_attempt).to eq(0)
+      end
+
+      it "reads the attempt recorded in external_metadata" do
+        agent_run = build(:agent_run, external_metadata: { AgentRun::MANUAL_RETRY_ATTEMPT_METADATA_KEY => 2 })
+
+        expect(agent_run.manual_retry_attempt).to eq(2)
+      end
+    end
+
     describe "#container_retained?" do
       it "returns true when retention TTL is in the future" do
         agent_run = build(:agent_run, container_retained_until: 2.hours.from_now)

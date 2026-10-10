@@ -221,7 +221,10 @@ class Project < ApplicationRecord
     { label: "Auto-enhance before PR", attribute: :auto_enhance_enabled,
      description: "Analyze issue context readiness before auto-pick creates a PR run" }.freeze,
     { label: "Knowledge evolution", attribute: :knowledge_evolution_enabled,
-     description: "Weekly analysis of knowledge gaps and collector effectiveness" }.freeze
+     description: "Weekly analysis of knowledge gaps and collector effectiveness" }.freeze,
+    { label: "Retry Failed Manual Runs", attribute: :retry_failed_manual_runs,
+     description: "Automatically re-queue a failed manual run with no issue/PR attachment " \
+       "and no observable work, with backoff, up to a small retry cap." }.freeze
   ].freeze
 
   AUTO_MERGE_MODE_OPTIONS = [

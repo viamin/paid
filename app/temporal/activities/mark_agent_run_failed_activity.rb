@@ -87,6 +87,9 @@ module Activities
         end
       end
 
+      # @spec MANUAL-RUN-RETRY-001
+      schedule_manual_run_retry_if_eligible(agent_run)
+
       logger.info(
         message: "agent_execution.failed",
         agent_run_id: agent_run_id,
@@ -114,6 +117,36 @@ module Activities
         agent_run.analyze_issue_goal? &&
         agent_run.status == "failed" &&
         agent_run.provider_unavailable?
+    end
+
+    # Failed manual runs with no issue/PR attachment (create_feature,
+    # create_issue, lid_planning, issue-less create_pr) get no retry-arming
+    # from the `agent_run.issue && ...` branch above, so without this they
+    # are only discoverable by browsing the agent runs page (#4222). Mirrors
+    # that branch's issue-driven backoff re-enqueue, but mints a fresh
+    # AgentRun (RetryFailedManualRunJob) since there is no issue to carry
+    # the retry state.
+    # @spec MANUAL-RUN-RETRY-001
+    def schedule_manual_run_retry_if_eligible(agent_run)
+      return unless manual_run_retry_eligible?(agent_run)
+
+      attempt = agent_run.manual_retry_attempt + 1
+      return if attempt > AgentRun::MAX_MANUAL_RETRY_ATTEMPTS
+
+      RetryFailedManualRunJob
+        .set(wait: RetryFailedManualRunJob.retry_delay(attempt))
+        .perform_later(agent_run.id, attempt)
+    end
+
+    # @spec MANUAL-RUN-RETRY-002 MANUAL-RUN-RETRY-003 MANUAL-RUN-RETRY-004
+    def manual_run_retry_eligible?(agent_run)
+      agent_run.manual? &&
+        agent_run.issue.nil? &&
+        agent_run.source_pull_request_number.nil? &&
+        agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&
+        !agent_run.recoverable_rate_limited? &&
+        agent_run.project&.retry_failed_manual_runs? &&
+        agent_run.no_observable_work?
     end
 
     def check_auth_failure(agent_run, error_message)

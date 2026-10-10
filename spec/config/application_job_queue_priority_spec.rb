@@ -22,6 +22,7 @@ RSpec.describe ApplicationJob, :no_db do
         ProcessRunQueueJob
         ProjectHealthCheckJob
         QdrantCollectionCleanupJob
+        RetryFailedManualRunJob
         RetryTimedOutIssueGoalJob
       ],
       maintenance: %w[
