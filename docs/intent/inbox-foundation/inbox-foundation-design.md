@@ -88,7 +88,7 @@ Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same
 ordering. The struct shape is fixed so the UI binds to it without churn.
 
-### Visibility and ordering
+### Visibility, filters, and ordering
 
 `Inbox::Queue` keeps the exact scoping semantics of `Dashboard::NeedsInputQueue`:
 
@@ -97,11 +97,23 @@ ordering. The struct shape is fixed so the UI binds to it without churn.
   via `AgentRun.orphaned_project_owner?(user)`.
 - Optional project filter (the dashboard's `?project_id=`).
 
+The Inbox header keeps filtering controls compact as the number of entry kinds
+grows. A single collapsed trigger opens a filter panel with a single type
+selector, a searchable accessible-project selector, and an ordering selector.
+The URL remains the source of truth: `kind`, `project_id`, and `sort` restore
+the panel state and survive selection/action links. The panel is a focus-trapped
+popover on desktop and a native full-screen dialog on narrow screens; Escape
+closes it and Enter submits its GET form. Type deliberately remains
+single-select: that preserves the established `kind` URL contract while the
+team gathers evidence that combined kinds are needed.
+
 Ordering differs in the one way the inbox page cares about:
 
 - **Oldest-waiting-first** by `needs_input_since ASC NULLS LAST`, with a stable
   tiebreak (`projects.owner`, `projects.repo`, `issues.github_number`,
-  `issues.id`) so the list is deterministic.
+  `issues.id`) so the list is deterministic. This is the default, preserving
+  the original queue behavior. The `sort=newest` URL option instead orders by
+  most recently waiting first while retaining the deterministic tiebreak.
 
 ### Including PRs
 

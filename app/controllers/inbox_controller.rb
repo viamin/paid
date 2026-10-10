@@ -18,7 +18,7 @@ class InboxController < ApplicationController
   # @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-009
   def show
     @selected_entry = resolve_selected_entry(@inbox_entries)
-    return redirect_to(inbox_path(project_id: @scoped_project&.id, kind: @selected_kind), status: :see_other) unless @selected_entry
+    return redirect_to(inbox_path(**inbox_redirect_params), status: :see_other) unless @selected_entry
 
     @detail_view = true
     render :index
@@ -45,10 +45,13 @@ class InboxController < ApplicationController
 
   private
 
+  # @spec INBOX-FOUNDATION-009
   def load_inbox
     @scoped_project = scoped_needs_input_project
     @selected_kind = valid_inbox_kind
-    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+    @selected_sort = valid_inbox_sort
+    @inbox_projects = policy_scope(Project).order(:owner, :repo)
+    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind, sort: @selected_sort)
   end
 
   def scoped_needs_input_project
@@ -62,6 +65,15 @@ class InboxController < ApplicationController
   def valid_inbox_kind
     kind = params[:kind].to_s
     Inbox::Queue::KINDS.include?(kind) ? kind : nil
+  end
+
+  def valid_inbox_sort
+    sort = params[:sort].to_s
+    Inbox::Queue::SORTS.key?(sort) ? sort : Inbox::Queue::DEFAULT_SORT
+  end
+
+  def inbox_redirect_params
+    { project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence }.compact
   end
 
   def resolve_selected_entry(entries)
