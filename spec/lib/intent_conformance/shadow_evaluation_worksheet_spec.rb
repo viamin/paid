@@ -27,6 +27,16 @@ RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
     expect(worksheet).to include("| Review cost | 150 cents | shadow_run |")
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-003
+  it "resolves the majority verdict regardless of adjudication order" do
+    agreement = [ { "verdict" => "accepted" }, { "verdict" => "accepted" } ]
+    tie_break = [ { "verdict" => "accepted" }, { "verdict" => "material_drift" }, { "verdict" => "accepted" } ]
+
+    expect(described_class.majority_verdict(agreement)).to eq("accepted")
+    expect(described_class.majority_verdict(tie_break)).to eq("accepted")
+    expect(described_class.majority_verdict(tie_break.reverse)).to eq("accepted")
+  end
+
   def events
     [
       base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b op-c], "recorded_at" => "2026-10-10T08:00:00Z"),
