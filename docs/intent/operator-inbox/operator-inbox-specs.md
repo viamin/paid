@@ -40,10 +40,12 @@
   `spec/services/inbox/count_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
-  `escalated` and its project is in the operator's auto-pick-gated scope
-  (`INBOX-FOUNDATION-006`, the same gate every other inbox kind uses — this is
-  a deliberate divergence from the dashboard's account-wide Blocked PRs panel,
-  so the two surfaces are not expected to agree on counts), the system SHALL
+  `escalated` and its project is within the operator's authorized Inbox
+  visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
+  visibility, independent of automatic work-selection eligibility; the same
+  scope every other inbox kind uses — this is a deliberate divergence from
+  the dashboard's account-wide Blocked PRs panel, so the two surfaces are not
+  expected to agree on counts), the system SHALL
   expose that pull request as an `escalated_pr` inbox entry showing the
   escalation reason, how long it has been stopped (`pr_escalation_started_at`,
   falling back to `updated_at`), and the tripped counters computed by
@@ -65,9 +67,11 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002D** — When an open issue's `paid_state` is
-  `manual_review` and its project is in the operator's auto-pick-gated scope
-  (`INBOX-FOUNDATION-006`, the same gate every other inbox kind uses), the
-  system SHALL expose that issue as a `manual_review` inbox entry showing why
+  `manual_review` and its project is within the operator's authorized Inbox
+  visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
+  visibility, independent of automatic work-selection eligibility; the same
+  scope every other inbox kind uses), the system SHALL expose that issue as
+  a `manual_review` inbox entry showing why
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
@@ -130,11 +134,13 @@
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit
   the per-issue retry cap, or by
   `Issue#abandon_due_to_push_permission_rejection!` when the GitHub App
-  installation token lacks a required permission) and its project is in the
-  operator's auto-pick-gated scope (`INBOX-FOUNDATION-006`, the same gate
-  every other inbox kind uses — a deliberate divergence from the dashboard's
-  account-wide Retry-Limited card, the same divergence `escalated_pr` and
-  `manual_review` already record, `OPERATOR-INBOX-002C` / `002D`), the system
+  installation token lacks a required permission) and its project is within
+  the operator's authorized Inbox visibility (`INBOX-FOUNDATION-006` —
+  account isolation plus owner visibility, independent of automatic
+  work-selection eligibility; the same scope every other inbox kind uses — a
+  deliberate divergence from the dashboard's account-wide Retry-Limited card,
+  the same divergence `escalated_pr` and `manual_review` already record,
+  `OPERATOR-INBOX-002C` / `002D`), the system
   SHALL expose that record as a `retry_limited` inbox entry showing why
   automation stopped (`runner_retry_abandon_reason`) and how long it has
   been stopped (`runner_retry_abandoned_at`). The entry SHALL distinguish
@@ -227,8 +233,10 @@
   closeout evidence (an authoritatively linked merged PR, or an agent-declared
   no-code-required outcome) that keeps it out of auto-pick regardless of
   `paid_state` (`EAGER-QUEUE-011` / `AUTO-PICK-QUEUE-004`), and its project is
-  in the operator's auto-pick-gated scope (`INBOX-FOUNDATION-006`, the same
-  gate every other inbox kind uses), and the issue holds no explicit operator
+  within the operator's authorized Inbox visibility (`INBOX-FOUNDATION-006` —
+  account isolation plus owner visibility, independent of automatic
+  work-selection eligibility; the same scope every other inbox kind uses),
+  and the issue holds no explicit operator
   state of its own (not paused, not skip/needs-input labeled, not in
   `needs_input`/`manual_review`, not retry-abandoned, no work in flight, not
   already resolved-complete against the current evidence generation), the
@@ -250,9 +258,12 @@
   `paid-tests-ready-for-review` label (the TDD red-phase gate applied by
   test-writing runs per
   [`tdd-test-review-prs`](../tdd-test-review-prs/tdd-test-review-prs-design.md))
-  while its `pr_review_phase` is `draft` or `restarted`, and its project is in
-  the operator's auto-pick-gated scope (`INBOX-FOUNDATION-006`, the same gate
-  every other inbox kind uses), the system SHALL expose that pull request as a
+  while its `pr_review_phase` is `draft` or `restarted`, and its project is
+  within the operator's authorized Inbox visibility (`INBOX-FOUNDATION-006` —
+  account isolation plus owner visibility, independent of automatic
+  work-selection eligibility; the same scope every other inbox kind uses —
+  this entry is deliberately visible even when the project's `auto_pick_enabled`
+  is `false`, #4221), the system SHALL expose that pull request as a
   `test_review_pending` inbox entry explaining that the proposed tests wait on
   a human test-review verdict before implementation may begin (strict-TDD
   projects wait for that human by design; `ScanPaidPrsActivity#scan_tdd_draft_pr`

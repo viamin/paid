@@ -298,23 +298,28 @@ module Inbox
 
     # @spec INBOX-FOUNDATION-006
     def scoped_projects
-      projects = auto_pick_projects
+      projects = visible_projects
       return projects unless project
 
       projects.select { |candidate| candidate.id == project.id }
     end
 
+    # Authorized Inbox visibility: account isolation plus per-owner
+    # visibility, independent of automatic work-selection eligibility.
+    # Deliberately does NOT filter on `auto_pick_enabled` or apply
+    # `Issues::AutoPickProjectGate` — those gate whether a project's issues
+    # get picked automatically, not whether an operator may see and resolve
+    # work the project already surfaced for human review (#4221).
     # @spec INBOX-FOUNDATION-006
-    def auto_pick_projects
-      @auto_pick_projects ||= Project
+    def visible_projects
+      @visible_projects ||= Project
         .includes(account: :tenant_setting, created_by: :user_setting)
         .where(
           account_id: user.account_id,
           created_by_id: visible_owner_ids,
-          auto_pick_enabled: true,
           active: true
         )
-        .select { |candidate| Issues::AutoPickProjectGate.call(candidate) }
+        .to_a
     end
 
     def visible_owner_ids
@@ -448,7 +453,7 @@ module Inbox
 
     # Reuses Dashboard::BlockedPullRequests (PR-ESCALATION-011/012/013) rather
     # than reimplementing the escalated-PR query, then narrows the account-wide
-    # result to the operator's auto-pick-gated projects, the same scope every
+    # result to the operator's authorized Inbox projects, the same scope every
     # other inbox kind uses. That is a deliberate divergence from the
     # dashboard panel's account-wide scope (see operator-inbox-design.md).
     # @spec OPERATOR-INBOX-002C
@@ -527,9 +532,9 @@ module Inbox
 
     # Feature-decision entries deliberately use project-membership visibility
     # (`FeatureIntentPolicy::Scope`, same as `plan_review_entries`) instead of
-    # `scoped_projects`'s auto-pick gate: RDR-066 requires these entries stay
-    # visible to any project member with Inbox access, including planning
-    # projects with auto-pick off.
+    # `scoped_projects`'s owner-scoped visibility: RDR-066 requires these
+    # entries stay visible to any project member with Inbox access, not just
+    # the project's owner.
     # @spec FEATURE-APPROVAL-013
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
@@ -602,8 +607,9 @@ module Inbox
     end
 
     # @spec CHANGE-INTENT-INBOX-001
-    # Change Intent Records use their policy scope, rather than the auto-pick
-    # gate, because they are project-level knowledge artifacts.
+    # Change Intent Records use their policy scope, rather than
+    # `scoped_projects`'s account+owner visibility, because they are
+    # project-level knowledge artifacts.
     def change_intent_draft_entries
       scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
       scope = scope.where(project: project) if project
