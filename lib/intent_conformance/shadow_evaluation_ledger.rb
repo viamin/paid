@@ -66,10 +66,9 @@ module IntentConformance
       return if entries.empty?
       raise InvalidLedger, "manifest_commit is required before adjudication" if manifest_commit.to_s.empty?
 
-      first_event_commit = entries.map { |entry| entry["manifest_commit"] }.compact.first
-      return if first_event_commit == manifest_commit
+      return if entries.all? { |entry| entry["manifest_commit"] == manifest_commit }
 
-      raise InvalidLedger, "corpus manifest must be committed before every adjudication event"
+      raise InvalidLedger, "every ledger event must use the frozen corpus manifest commit"
     end
 
     def ensure_operators_frozen!(entries)
@@ -109,13 +108,20 @@ module IntentConformance
     end
 
     def ensure_shadow_runs_follow_adjudications!(cases, entries)
-      runs = entries.select { |entry| entry["type"] == "shadow_run" }
+      runs = entries.each_with_index.select { |entry, _index| entry["type"] == "shadow_run" }
       return if runs.empty?
+
       ensure_adjudications!(cases, entries)
-      runs.each do |entry|
+      completion_index = entries.rindex { |entry| entry["type"] == "adjudication" }
+      completion_time = entries.select { |entry| entry["type"] == "adjudication" }.map { |entry| Time.iso8601(entry.fetch("recorded_at")) }.max
+      runs.each do |entry, index|
         raise InvalidLedger, "shadow run lacks reviewer identity" unless %w[case_id reviewer_run_id reviewer_model prompt_digest verdict recorded_at cost_cents].all? { |key| entry.key?(key) }
         raise InvalidLedger, "invalid reviewer verdict" unless REVIEWER_VERDICTS.include?(entry["verdict"])
+        raise InvalidLedger, "shadow run was recorded before adjudications completed" if index <= completion_index
+        raise InvalidLedger, "shadow run was timestamped before adjudications completed" if Time.iso8601(entry.fetch("recorded_at")) < completion_time
       end
+    rescue ArgumentError, KeyError => error
+      raise InvalidLedger, "invalid shadow run event: #{error.message}"
     end
   end
 end
