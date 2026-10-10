@@ -56,6 +56,53 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
     end
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "prints usage for a bare invocation before validating flags" do
+    _stdout, stderr, status = run_cli
+
+    expect(status.exitstatus).to eq(1)
+    expect(stderr).to include("usage:")
+    expect(stderr).not_to include("--manifest is required")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "reports malformed append JSON without a backtrace" do
+    Dir.mktmpdir do |dir|
+      manifest = File.join(dir, "manifest.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+      File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
+
+      _stdout, stderr, status = run_cli("append", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit, "--event", "{bad json")
+
+      expect(status.exitstatus).to eq(1)
+      expect(stderr).to include("invalid shadow-evaluation ledger: --event is not valid JSON")
+      expect(stderr).not_to include("bin/intent-conformance-shadow-evaluation:")
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "reports malformed options without a backtrace" do
+    _stdout, stderr, status = run_cli("validate", "--unknown")
+
+    expect(status.exitstatus).to eq(1)
+    expect(stderr).to include("invalid shadow-evaluation ledger: invalid option: --unknown")
+    expect(stderr).not_to include("bin/intent-conformance-shadow-evaluation:")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "reports a missing manifest without a backtrace" do
+    Dir.mktmpdir do |dir|
+      missing_manifest = File.join(dir, "missing.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+
+      _stdout, stderr, status = run_cli("validate", "--manifest", missing_manifest, "--ledger", ledger, "--manifest-commit", commit)
+
+      expect(status.exitstatus).to eq(1)
+      expect(stderr).to include("invalid shadow-evaluation ledger: invalid corpus manifest:")
+      expect(stderr).not_to include("bin/intent-conformance-shadow-evaluation:")
+    end
+  end
+
   def complete_ledger_events
     base = { "manifest_commit" => commit }
     [
