@@ -53,9 +53,10 @@ module Issues
       client = project.client
       return unless client
 
-      removed = apply_label_changes(client, project, pull_request, to_add: to_add, to_remove: to_remove)
-      persist_local_labels(pull_request, to_add: to_add, removed: removed)
-      log_reconciled(project, pull_request, added: to_add, removed: removed)
+      removal_result = apply_label_changes(client, project, pull_request, to_add: to_add, to_remove: to_remove)
+      persist_local_labels(pull_request, to_add: to_add, removed: removal_result[:removed])
+      raise_removal_failure(removal_result[:failed])
+      log_reconciled(project, pull_request, added: to_add, removed: removal_result[:removed])
     rescue GithubClient::Error => e
       log_reconcile_failed(project, pull_request, e)
       raise
@@ -64,11 +65,18 @@ module Issues
 
     def self.apply_label_changes(client, project, pull_request, to_add:, to_remove:)
       client.add_labels_to_issue(project.full_name, pull_request.github_number, to_add) if to_add.any?
-      return [] if to_remove.empty?
+      return { removed: [], failed: [] } if to_remove.empty?
 
-      client.remove_labels_from_issue(project.full_name, pull_request.github_number, to_remove)[:removed]
+      client.remove_labels_from_issue(project.full_name, pull_request.github_number, to_remove)
     end
     private_class_method :apply_label_changes
+
+    def self.raise_removal_failure(failed)
+      return if failed.empty?
+
+      raise GithubClient::ApiError, "Failed to remove priority labels: #{failed.pluck(:label).join(', ')}"
+    end
+    private_class_method :raise_removal_failure
 
     def self.persist_local_labels(pull_request, to_add:, removed:)
       pull_request.with_lock do

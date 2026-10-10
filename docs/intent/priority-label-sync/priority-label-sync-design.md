@@ -63,6 +63,13 @@ hours — so the inline rescue also enqueues
 reconciliation (same guards, same label diff — it no-ops once repaired)
 until it applies or the retry policy is exhausted.
 
+`GithubClient#remove_labels_from_issue` attempts each removal independently
+and reports failures rather than raising. The reconciliation treats a
+non-empty `failed` result as a failed write: it first persists the subset of
+labels confirmed removed locally, then raises into the same retry path. This
+ensures the retry only re-attempts labels that remain stale rather than
+repeating successful removals.
+
 ## Interplay with PR Label Recovery
 
 `RecoverMissingPullRequestLabelsJob#missing_labels` still re-adds the

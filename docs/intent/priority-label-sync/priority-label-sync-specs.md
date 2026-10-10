@@ -38,7 +38,8 @@
   *Test:* `spec/services/issues/sync_priority_labels_to_pull_request_spec.rb`.
 
 - [x] **PRIORITY-LABEL-SYNC-005** — When a reconciliation fails with a
-  `GithubClient::Error`, the system SHALL enqueue
+  `GithubClient::Error` or reports one or more failed priority-label removals,
+  the system SHALL enqueue
   `Issues::SyncPriorityLabelsToPullRequestJob`, a bounded retry (polynomial
   backoff) that re-runs the same idempotent reconciliation — re-resolving the
   open Paid-created pull request and recomputing the label diff, so it no-ops

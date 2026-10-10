@@ -156,6 +156,20 @@ RSpec.describe Issues::SyncPriorityLabelsToPullRequest do
     end
 
     # @spec PRIORITY-LABEL-SYNC-005
+    it "enqueues a retry when removing a stale priority label reports a failure" do
+      issue = create(:issue, project: project, labels: [ "bug" ])
+      pull_request = create_linked_pull_request(issue, pr_labels: [ "P1", "P2", "paid-generated" ])
+      allow(github_client).to receive(:remove_labels_from_issue).and_return(
+        removed: [ "P1" ], failed: [ { label: "P2", error: "temporary failure" } ]
+      )
+
+      expect { described_class.call(issue: issue, project: project) }
+        .to have_enqueued_job(Issues::SyncPriorityLabelsToPullRequestJob).with(issue.id)
+
+      expect(pull_request.reload.labels).to contain_exactly("P2", "paid-generated")
+    end
+
+    # @spec PRIORITY-LABEL-SYNC-005
     it "does not enqueue a retry when reconciliation succeeds" do
       issue = create(:issue, project: project, labels: [ "P1" ])
       create_linked_pull_request(issue, pr_labels: [ "P2" ])
