@@ -113,13 +113,20 @@ export default class extends Controller {
     const sinceId = this.lastRenderedMessageId()
     if (sinceId == null) return
 
-    this.fetchRecentMessages(sinceId)
-      .then((messages) => {
-        messages.forEach((message) => this.handleMessageCreated(message))
-        this.scrollToBottom()
-      })
+    this.replayRecentMessages(sinceId)
+      .then(() => this.scrollToBottom())
       .catch((error) => {
         globalThis.console?.error?.("chat#resyncTranscript failed", error)
+      })
+  }
+
+  replayRecentMessages(sinceId) {
+    return this.fetchRecentMessages(sinceId)
+      .then(({ messages, hasMore }) => {
+        messages.forEach((message) => this.handleMessageCreated(message))
+
+        const lastMessage = messages.at(-1)
+        return hasMore && lastMessage ? this.replayRecentMessages(lastMessage.message_id) : null
       })
   }
 
@@ -128,8 +135,8 @@ export default class extends Controller {
       headers: { Accept: "application/json" },
       credentials: "same-origin"
     })
-      .then((response) => (response.ok ? response.json() : { messages: [] }))
-      .then((data) => data.messages || [])
+      .then((response) => (response.ok ? response.json() : { messages: [], has_more: false }))
+      .then((data) => ({ messages: data.messages || [], hasMore: data.has_more === true }))
   }
 
   // The highest data-message-id currently rendered — every persisted message

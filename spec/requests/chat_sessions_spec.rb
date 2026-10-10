@@ -1069,7 +1069,7 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["messages"]).to eq([])
       end
 
-      it "caps the response at MESSAGE_PAGE_SIZE so a wide gap cannot dump the full history" do
+      it "caps each response and signals when the client must fetch the next page" do
         anchor = create(:chat_message, chat_session: chat_session)
         (ChatSessionsController::MESSAGE_PAGE_SIZE + 10).times do |index|
           create(:chat_message, chat_session: chat_session, content: "Message #{index}")
@@ -1078,6 +1078,7 @@ RSpec.describe "ChatSessions" do
         get recent_messages_chat_session_path(chat_session), params: { since: anchor.id }
 
         expect(response.parsed_body["messages"].size).to eq(ChatSessionsController::MESSAGE_PAGE_SIZE)
+        expect(response.parsed_body["has_more"]).to be(true)
       end
 
       it "requires a since cursor" do

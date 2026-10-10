@@ -1440,7 +1440,18 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-022 — resyncTranscript fetches everything persisted
+    function immediateThenable(value) {
+      return {
+        then(onFulfilled) {
+          return immediateThenable(onFulfilled(value));
+        },
+        catch() {
+          return this;
+        }
+      };
+    }
+
+    // @spec CHAT-API-022 — resyncTranscript fetches every page persisted
     // after the last message the client actually rendered, and replays each
     // one through the same handleMessageCreated path a live broadcast uses.
     function testResyncTranscriptReplaysMessagesSinceLastRenderedId() {
@@ -1455,12 +1466,10 @@ class ChatControllerNodeHarness
         scrollToBottom: () => {},
         fetchRecentMessages: (sinceId) => {
           fetchedSinceId = sinceId;
-          return {
-            then(onFulfilled) {
-              onFulfilled([ { message_id: 43, html: "<article></article>" } ]);
-              return { catch() {} };
-            }
-          };
+          return immediateThenable({
+            messages: [ { message_id: 43, html: "<article></article>" } ],
+            hasMore: false
+          });
         },
         handleMessageCreated: (data) => { replayed.push(data); }
       });
@@ -1472,6 +1481,40 @@ class ChatControllerNodeHarness
       }
       if (replayed.length !== 1 || replayed[0].message_id !== 43) {
         throw new Error(`Expected resync to replay the fetched message through handleMessageCreated, got ${JSON.stringify(replayed)}`);
+      }
+    }
+
+    // @spec CHAT-API-022 — A reconnect may span more than one bounded server
+    // page. Follow each returned cursor so the transcript converges without a
+    // manual reload.
+    function testResyncTranscriptReplaysEveryPage() {
+      const rendered = { dataset: { messageId: "42" } };
+      const fetchedCursors = [];
+      const replayed = [];
+      const pages = {
+        42: { messages: [ { message_id: 43, html: "<article></article>" } ], hasMore: true },
+        43: { messages: [ { message_id: 44, html: "<article></article>" } ], hasMore: false }
+      };
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (selector) => (selector === "[data-message-id]" ? [ rendered ] : []),
+          append: () => {}
+        },
+        scrollToBottom: () => {},
+        fetchRecentMessages: (sinceId) => {
+          fetchedCursors.push(sinceId);
+          return immediateThenable(pages[sinceId]);
+        },
+        handleMessageCreated: (data) => { replayed.push(data.message_id); }
+      });
+
+      controller.resyncTranscript();
+
+      if (JSON.stringify(fetchedCursors) !== JSON.stringify([ 42, 43 ])) {
+        throw new Error(`Expected resync to fetch every page, got ${JSON.stringify(fetchedCursors)}`);
+      }
+      if (JSON.stringify(replayed) !== JSON.stringify([ 43, 44 ])) {
+        throw new Error(`Expected resync to replay every page, got ${JSON.stringify(replayed)}`);
       }
     }
 
@@ -1487,7 +1530,7 @@ class ChatControllerNodeHarness
         },
         fetchRecentMessages: () => {
           fetchCalls += 1;
-          return { then() { return { catch() {} }; } };
+          return immediateThenable({ messages: [], hasMore: false });
         }
       });
 
@@ -1625,6 +1668,7 @@ class ChatControllerNodeHarness
       testHandleConnectedSkipsResyncOnStableConnection();
       testHandleConnectedSkipsResyncAfterIdleDisconnect();
       testResyncTranscriptReplaysMessagesSinceLastRenderedId();
+      testResyncTranscriptReplaysEveryPage();
       testResyncTranscriptNoOpsWithNothingRenderedYet();
       testMessageChunkRearmsTrackingForAnUntrackedStream();
       testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged();

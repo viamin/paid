@@ -62,17 +62,19 @@ class ChatSessionsController < ApplicationController
   # @spec CHAT-API-022 — Recovers messages the client missed during an
   # ActionCable gap (dropped connection mid-turn): a broadcast emitted while
   # disconnected is gone for good, so on reconnect the client replays
-  # everything persisted after the last message it rendered. Capped at
-  # MESSAGE_PAGE_SIZE like the other message-fetching actions; a gap wider
-  # than one page is not expected and a full reload remains the backstop.
+  # everything persisted after the last message it rendered. Responses remain
+  # bounded at MESSAGE_PAGE_SIZE; has_more lets the reconnect client continue
+  # from the final returned id until its transcript converges.
   def recent_messages
     authorize @chat_session, :show?
     since_id = params.require(:since)
     messages = @chat_session.messages.chronological
       .where("chat_messages.id > ?", since_id)
       .limit(MESSAGE_PAGE_SIZE)
+    has_more = messages.size == MESSAGE_PAGE_SIZE &&
+      @chat_session.messages.where("chat_messages.id > ?", messages.last.id).exists?
 
-    render json: { messages: messages.map { |m| recent_message_payload(m) } }
+    render json: { messages: messages.map { |m| recent_message_payload(m) }, has_more: has_more }
   end
 
   def sidebar_page

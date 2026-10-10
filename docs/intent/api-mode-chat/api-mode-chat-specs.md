@@ -446,6 +446,7 @@
   `testHandleConnectedTriggersResyncWhenResumingATurn`,
   `testHandleConnectedSkipsResyncOnStableConnection`,
   `testResyncTranscriptReplaysMessagesSinceLastRenderedId`,
+  `testResyncTranscriptReplaysEveryPage`,
   `testResyncTranscriptNoOpsWithNothingRenderedYet`,
   `testLastRenderedMessageIdReturnsHighestId`,
   `testMessageChunkRearmsTrackingForAnUntrackedStream`,
