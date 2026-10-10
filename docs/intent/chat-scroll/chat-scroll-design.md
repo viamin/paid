@@ -18,11 +18,15 @@ could hide the answer's opening.
 
 ## Navigation behavior
 
-The top-bar and sticky controls share one target: the top of the last rendered
-assistant text response, measured relative to the transcript container. Tool
-cards do not become response anchors. If no assistant text exists, such as a
-new or user-only conversation, the shared target is the bottom of the
-transcript.
+The top-bar and sticky controls share one target: the top of the last
+rendered, *persisted* assistant text response, measured relative to the
+transcript container. Tool cards do not become response anchors, and neither
+does an in-flight streaming bubble — it carries no persisted row yet and can
+disappear (provider error, dropped connection) or be rewritten by its final
+render, so anchoring on it would strand the controls on text that is not
+there to look at a moment later. If no persisted assistant text exists, such
+as a new or user-only conversation, or one whose only assistant turn is still
+streaming, the shared target is the bottom of the transcript.
 
 On a forward page visit, the controller applies that target immediately so the
 latest answer starts in view. On a restoration visit, it restores the

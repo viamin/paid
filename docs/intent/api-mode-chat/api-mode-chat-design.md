@@ -105,7 +105,16 @@ What ships today:
   caller explicitly requests workspace capability
 - `ChatMessagesController` supports JSON and SSE request/response flows
 - `ChatChannel` plus `ChatSessions::ProcessMessageJob` support ActionCable
-  progress events for the browser UI
+  progress events for the browser UI. The client's in-flight streaming bubble
+  is torn down deterministically on every terminal event
+  (`message_complete`, `message_tool_confirmation`, `error`) rather than only
+  when a persisted `message_created` happens to have replaced it first, so a
+  provider error, a rate-limit pause, or a tool-confirmation pause never
+  leaves stale streamed text stranded at the transcript tail. On reconnect
+  after a disconnect that interrupted an in-flight turn, the client fetches
+  (`ChatSessionsController#recent_messages`) and replays everything persisted
+  after the last message it rendered, so broadcasts lost during the gap are
+  recovered instead of leaving the transcript missing a turn
 - `ChatSessions::AgentLoop` executes read-only tools inline and persists
   pending write-tool confirmations without letting the model self-authorize
   mutations

@@ -1246,6 +1246,251 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-022 — A dropped connection mid-turn must not leave the
+    // in-flight bubble stranded just because it already streamed text: the
+    // server never persisted that text (no message_created ever arrived to
+    // replace it), so it is stale and must be torn down on disconnect (#4225).
+    function testDisconnectMidStreamRemovesOrphanedBubbleWithContent() {
+      const wrapper = { removed: false, remove() { this.removed = true; } };
+      const bubble = {
+        dataset: { streamMessageId: "stream-1" },
+        closest: (selector) => (selector === "div" ? wrapper : null)
+      };
+      const { controller } = makeController({
+        streaming: true,
+        currentStreamId: "stream-1",
+        messagesTarget: {
+          querySelector: (selector) => (selector === 'article[data-stream-message-id="stream-1"]' ? bubble : null),
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        toggleTyping: () => {},
+        dispatchChatState: () => {},
+        setStatus: () => {}
+      });
+
+      controller.handleDisconnected();
+
+      if (!wrapper.removed) {
+        throw new Error("Expected a disconnect mid-stream to remove the orphaned bubble even though it already streamed content");
+      }
+      if (controller.streaming) {
+        throw new Error("Expected streaming to be reset to false after a disconnect");
+      }
+    }
+
+    // Mirrors the disconnect case for a provider error mid-stream: handleError
+    // must remove the bubble unconditionally, not just when it is still empty.
+    function testErrorMidStreamRemovesOrphanedBubbleWithContent() {
+      const wrapper = { removed: false, remove() { this.removed = true; } };
+      const bubble = {
+        dataset: { streamMessageId: "stream-1" },
+        closest: (selector) => (selector === "div" ? wrapper : null)
+      };
+      const { controller } = makeController({
+        currentStreamId: "stream-1",
+        pendingContent: null,
+        messagesTarget: {
+          querySelector: (selector) => (selector === 'article[data-stream-message-id="stream-1"]' ? bubble : null),
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        setBusy: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {}
+      });
+
+      controller.handleError({ message: "Provider unavailable" });
+
+      if (!wrapper.removed) {
+        throw new Error("Expected a provider error mid-stream to remove the orphaned bubble even though it already streamed content");
+      }
+    }
+
+    // A write-tool confirmation pause is a terminal path too (the turn stops
+    // to await approval) and must tear down any bubble that streamed
+    // reasoning/narration text before the pause, same as message_complete
+    // and error.
+    function testToolConfirmationRemovesOrphanedBubbleWithContent() {
+      const wrapper = { removed: false, remove() { this.removed = true; } };
+      const bubble = {
+        dataset: { streamMessageId: "stream-1" },
+        closest: (selector) => (selector === "div" ? wrapper : null)
+      };
+      const { controller } = makeController({
+        currentStreamId: "stream-1",
+        messagesTarget: {
+          querySelector: (selector) => (selector === 'article[data-stream-message-id="stream-1"]' ? bubble : null),
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        setBusy: () => {},
+        toggleTyping: () => {},
+        setStatus: () => {},
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageToolConfirmation({ tool_name: "trigger_agent_run" });
+
+      if (!wrapper.removed) {
+        throw new Error("Expected a tool-confirmation pause to remove an orphaned bubble that streamed narration text");
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — A non-persisted streaming bubble at the
+    // transcript tail must never become the "Jump to latest" anchor: it can
+    // vanish (error, disconnect) or get rewritten (final markdown render)
+    // under the user. The anchor must fall back to the last persisted
+    // assistant response instead (#4225).
+    function testAnchorSelectionExcludesTrailingStreamingBubble() {
+      const persistedAnchor = { dataset: {} };
+      const streamingBubble = { dataset: { streamMessageId: "stream-1" } };
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (selector) => (
+            selector.includes(":not([data-stream-message-id])") ? [ persistedAnchor ] : [ persistedAnchor, streamingBubble ]
+          ),
+          append: () => {}
+        }
+      });
+
+      const anchor = controller.lastAssistantTextResponse();
+
+      if (anchor !== persistedAnchor) {
+        throw new Error("Expected lastAssistantTextResponse to skip the trailing streaming bubble and return the persisted anchor");
+      }
+    }
+
+    // @spec CHAT-SCROLL-001 — With no persisted assistant response yet (only
+    // a live streaming bubble), the anchor must fall back to null rather than
+    // ever returning the bubble.
+    function testAnchorSelectionReturnsNullWithOnlyAStreamingBubble() {
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (selector) => (selector.includes(":not([data-stream-message-id])") ? [] : [ { dataset: { streamMessageId: "stream-1" } } ]),
+          append: () => {}
+        }
+      });
+
+      const anchor = controller.lastAssistantTextResponse();
+
+      if (anchor !== null) {
+        throw new Error("Expected lastAssistantTextResponse to return null when only a streaming bubble exists");
+      }
+    }
+
+    // @spec CHAT-API-022 — Reconnecting mid-turn must trigger a resync so any
+    // broadcast lost during the gap (message_created / message_complete /
+    // error) is recovered; a stable initial connect must not.
+    function testHandleConnectedTriggersResyncWhenResumingATurn() {
+      let resyncCalls = 0;
+      const { controller } = makeController({
+        streaming: true,
+        toggleTyping: () => {},
+        dispatchChatState: () => {},
+        setStatus: () => {},
+        resyncTranscript: () => { resyncCalls += 1; }
+      });
+
+      controller.handleConnected();
+
+      if (resyncCalls !== 1) {
+        throw new Error(`Expected handleConnected to resync exactly once when resuming a turn, got ${resyncCalls}`);
+      }
+    }
+
+    function testHandleConnectedSkipsResyncOnStableConnection() {
+      let resyncCalls = 0;
+      const { controller } = makeController({
+        streaming: false,
+        setStatus: () => {},
+        resyncTranscript: () => { resyncCalls += 1; }
+      });
+
+      controller.handleConnected();
+
+      if (resyncCalls !== 0) {
+        throw new Error(`Expected handleConnected not to resync on a stable initial connect, got ${resyncCalls} calls`);
+      }
+    }
+
+    // @spec CHAT-API-022 — resyncTranscript fetches everything persisted
+    // after the last message the client actually rendered, and replays each
+    // one through the same handleMessageCreated path a live broadcast uses.
+    function testResyncTranscriptReplaysMessagesSinceLastRenderedId() {
+      const rendered = { dataset: { messageId: "42" } };
+      const replayed = [];
+      let fetchedSinceId = null;
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (selector) => (selector === "[data-message-id]" ? [ rendered ] : []),
+          append: () => {}
+        },
+        scrollToBottom: () => {},
+        fetchRecentMessages: (sinceId) => {
+          fetchedSinceId = sinceId;
+          return {
+            then(onFulfilled) {
+              onFulfilled([ { message_id: 43, html: "<article></article>" } ]);
+              return { catch() {} };
+            }
+          };
+        },
+        handleMessageCreated: (data) => { replayed.push(data); }
+      });
+
+      controller.resyncTranscript();
+
+      if (fetchedSinceId !== 42) {
+        throw new Error(`Expected resync to fetch messages since the last rendered id (42), got ${fetchedSinceId}`);
+      }
+      if (replayed.length !== 1 || replayed[0].message_id !== 43) {
+        throw new Error(`Expected resync to replay the fetched message through handleMessageCreated, got ${JSON.stringify(replayed)}`);
+      }
+    }
+
+    // A gap covering the session's very first message leaves nothing
+    // rendered to resync from. Must no-op rather than fetch the whole
+    // history unbounded.
+    function testResyncTranscriptNoOpsWithNothingRenderedYet() {
+      let fetchCalls = 0;
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: () => [],
+          append: () => {}
+        },
+        fetchRecentMessages: () => {
+          fetchCalls += 1;
+          return { then() { return { catch() {} }; } };
+        }
+      });
+
+      controller.resyncTranscript();
+
+      if (fetchCalls !== 0) {
+        throw new Error("Expected resyncTranscript to no-op when nothing has been rendered yet");
+      }
+    }
+
+    function testLastRenderedMessageIdReturnsHighestId() {
+      const { controller } = makeController({
+        messagesTarget: {
+          querySelectorAll: (selector) => (selector === "[data-message-id]" ? [
+            { dataset: { messageId: "10" } },
+            { dataset: { messageId: "37" } },
+            { dataset: { messageId: "22" } }
+          ] : []),
+          append: () => {}
+        }
+      });
+
+      const id = controller.lastRenderedMessageId();
+
+      if (id !== 37) {
+        throw new Error(`Expected the highest rendered message id (37), got ${id}`);
+      }
+    }
+
     function run() {
       testChatSettingsAutosaveReportsResult();
       testToolCallAppendsCardAndUpdatesStatus();
@@ -1292,6 +1537,16 @@ class ChatControllerNodeHarness
       testStoppedCapabilityUnfoldsItsDisclosure();
       testHiddenCapabilityActionLeavesDisclosureAlone();
       testSameStateBroadcastLeavesDisclosureAlone();
+      testDisconnectMidStreamRemovesOrphanedBubbleWithContent();
+      testErrorMidStreamRemovesOrphanedBubbleWithContent();
+      testToolConfirmationRemovesOrphanedBubbleWithContent();
+      testAnchorSelectionExcludesTrailingStreamingBubble();
+      testAnchorSelectionReturnsNullWithOnlyAStreamingBubble();
+      testHandleConnectedTriggersResyncWhenResumingATurn();
+      testHandleConnectedSkipsResyncOnStableConnection();
+      testResyncTranscriptReplaysMessagesSinceLastRenderedId();
+      testResyncTranscriptNoOpsWithNothingRenderedYet();
+      testLastRenderedMessageIdReturnsHighestId();
     }
 
     try {

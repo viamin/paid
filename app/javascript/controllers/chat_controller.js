@@ -59,8 +59,15 @@ export default class extends Controller {
   // turn is in flight, so stable connections and the initial connect — where
   // dispatching chat:idle would also auto-focus the textarea — are unaffected.
   handleConnected() {
+    const resuming = this.streaming
     this.resetStreamingState()
     this.setStatus("Connected")
+    // resetStreamingState tears down any orphaned streaming bubble, but a gap
+    // wide enough to drop the connection can also drop the terminal broadcast
+    // (message_created / message_complete / error) entirely — those travel
+    // over the socket we just lost. Only resync when a turn was actually in
+    // flight, so a stable connection's initial connect stays a no-op.
+    if (resuming) this.resyncTranscript()
   }
 
   handleDisconnected() {
@@ -82,6 +89,52 @@ export default class extends Controller {
     this.currentAttemptToolCards = []
     this.toggleTyping(false)
     this.dispatchChatState("chat:idle")
+  }
+
+  // @spec CHAT-API-022
+  // Replays any messages persisted while the connection was down, through the
+  // same handleMessageCreated path a live broadcast uses, so the transcript
+  // converges on the persisted rows instead of silently missing a turn that
+  // completed (or progressed) during the gap (#4225). No-ops when there is
+  // nothing rendered yet to resync from (e.g. the gap covers the session's
+  // very first message) — a full reload remains the backstop for that case.
+  resyncTranscript() {
+    if (!this.hasMessagesTarget) return
+
+    const sinceId = this.lastRenderedMessageId()
+    if (sinceId == null) return
+
+    this.fetchRecentMessages(sinceId)
+      .then((messages) => {
+        messages.forEach((message) => this.handleMessageCreated(message))
+        this.scrollToBottom()
+      })
+      .catch((error) => {
+        globalThis.console?.error?.("chat#resyncTranscript failed", error)
+      })
+  }
+
+  fetchRecentMessages(sinceId) {
+    return fetch(`/chat/${this.sessionIdValue}/recent_messages?since=${encodeURIComponent(sinceId)}`, {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin"
+    })
+      .then((response) => (response.ok ? response.json() : { messages: [] }))
+      .then((data) => data.messages || [])
+  }
+
+  // The highest data-message-id currently rendered — every persisted message
+  // partial carries one (see app/views/chat_messages/_bubble.html.erb), and
+  // ids are assigned in creation order, so the max is the resync cursor.
+  lastRenderedMessageId() {
+    if (!this.hasMessagesTarget) return null
+
+    let max = null
+    this.messagesTarget.querySelectorAll("[data-message-id]").forEach((element) => {
+      const id = Number(element.dataset.messageId)
+      if (Number.isFinite(id) && (max === null || id > max)) max = id
+    })
+    return max
   }
 
   sendMessage(event) {
@@ -220,6 +273,12 @@ export default class extends Controller {
   }
 
   handleMessageComplete(data) {
+    // @spec CHAT-API-022
+    // A no-op on the normal path, where the preceding message_created already
+    // replaced the bubble. Defensive here (and not just in handleError) for
+    // paths that complete the turn without ever persisting the streamed text
+    // — e.g. a tool-only final response (#4225).
+    this.removePendingAssistantMessage()
     this.streaming = false
     this.currentStreamId = null
     this.pendingContent = null
@@ -396,6 +455,13 @@ export default class extends Controller {
   }
 
   handleMessageToolConfirmation(data) {
+    // @spec CHAT-API-022
+    // A write-tool pause can follow reasoning/narration text that already
+    // streamed into the bubble but was never persisted as its own message
+    // (the turn isn't done — it's paused awaiting approval), so it would
+    // otherwise orphan at the transcript tail until the next turn (#4225).
+    this.removePendingAssistantMessage()
+
     if (data.html) {
       const card = this.buildMessageElement(data.html)
       if (card) {
@@ -489,16 +555,20 @@ export default class extends Controller {
     return template.content.firstElementChild
   }
 
+  // @spec CHAT-API-022
+  // Unconditional by design: every terminal path that calls this (message
+  // completion, tool-confirmation pause, provider error, reconnect) either
+  // already replaced the bubble with a persisted message_created — in which
+  // case the data-stream-message-id selector below finds nothing and this is
+  // a no-op — or the turn ended with no replacement, in which case the
+  // streamed text was never persisted and must not linger as a frozen
+  // partial at the transcript tail (#4225). Preserving content here is
+  // exactly backwards: it only preserves text in the one case it is stale.
   removePendingAssistantMessage() {
     if (!this.currentStreamId) return
 
     const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
-    if (!pendingMessage) return
-
-    const contentTarget = pendingMessage.querySelector("[data-chat-message-target='content']")
-    if (contentTarget?.dataset.rawContent) return
-
-    pendingMessage.closest("div")?.remove()
+    pendingMessage?.closest("div")?.remove()
   }
 
   // On a runner fallback the partial answer AND any tool_call / tool_result
@@ -528,17 +598,13 @@ export default class extends Controller {
     this.currentAttemptToolCards = []
   }
 
-  // On a runner fallback the partial answer from the failed runner is discarded
-  // unconditionally (unlike removePendingAssistantMessage, which preserves a
-  // bubble that already streamed content): the fallback runner produces a fresh
-  // answer, so any partial text from the failed attempt is stale. currentStreamId
-  // is cleared so a late chunk for the old stream cannot resurrect the removed
-  // bubble before the next message_start assigns a new id.
+  // On a runner fallback the partial answer from the failed runner is always
+  // stale — the fallback runner produces a fresh answer — so beyond the
+  // ordinary removal this also clears currentStreamId, so a late chunk for
+  // the old stream cannot resurrect the removed bubble before the next
+  // message_start assigns a new id.
   removeCurrentAssistantMessage() {
-    if (!this.currentStreamId) return
-
-    const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
-    pendingMessage?.closest("div")?.remove()
+    this.removePendingAssistantMessage()
     this.currentStreamId = null
   }
 
@@ -694,15 +760,19 @@ export default class extends Controller {
     return this.containerTarget.scrollHeight
   }
 
-  // The last assistant text message inside the transcript — tool calls render
-  // without that flag and are skipped, while streaming bubbles from
-  // ensureAssistantMessage set it so the selector works mid-stream too.
-  // Falls back to null when there is no assistant text yet (new chat or one
-  // whose final turn is a user message).
+  // @spec CHAT-SCROLL-001 @spec CHAT-API-022
+  // The last persisted assistant text message inside the transcript — tool
+  // calls render without that flag and are skipped. Streaming bubbles from
+  // ensureAssistantMessage carry data-stream-message-id and are explicitly
+  // excluded: they are not yet persisted (and may never be, if the turn ends
+  // in an error or reconnect), so anchoring "Jump to latest" on one would
+  // land on text that can vanish or get rewritten under the user (#4225).
+  // While a turn is actively streaming this falls back to the previous
+  // persisted response, or null if there isn't one yet.
   lastAssistantTextResponse() {
     if (!this.hasMessagesTarget) return null
     const articles = this.messagesTarget.querySelectorAll(
-      'article[data-chat-message-role-value="assistant"][data-chat-message-markdown-value="true"]'
+      'article[data-chat-message-role-value="assistant"][data-chat-message-markdown-value="true"]:not([data-stream-message-id])'
     )
     return articles[articles.length - 1] || null
   }
