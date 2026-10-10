@@ -1,0 +1,31 @@
+<%# @spec OPERATOR-INBOX-002J %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-yellow-300 bg-yellow-50 p-4">
+    <h3 class="text-sm font-semibold text-yellow-900">Waiting at the TDD red-phase gate</h3>
+    <p class="mt-1 text-sm text-yellow-800">
+      This draft pull request contains the proposed tests. Implementation cannot begin until a human test review approves them — the pull request is the review surface; there is no implementation diff yet.
+    </p>
+  </div>
+
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">How to clear this</h3>
+    <ul class="space-y-2 text-sm text-gray-600">
+      <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+        <p class="font-medium text-gray-900">Approve the tests</p>
+        <p class="mt-1">Review the proposed tests on the pull request, then add the <code>paid-tests-approved</code> label. On non-strict TDD projects, Paid's automated review applies the verdict for you once it runs.</p>
+      </li>
+      <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+        <p class="font-medium text-gray-900">Request test changes</p>
+        <p class="mt-1">Add the <code>paid-test-changes-requested</code> label to send the tests back for revision before implementation starts.</p>
+      </li>
+    </ul>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <%= link_to inbox_issue_link_label(entry.issue),
+          entry.issue.github_url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-yellow-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500" %>
+  </div>
+</div>

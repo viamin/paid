@@ -13,6 +13,7 @@ module Inbox
     RETRY_LIMITED_KIND = "retry_limited"
     CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
     PARTIAL_CLOSEOUT_KIND = "partial_closeout"
+    TEST_REVIEW_PENDING_KIND = "test_review_pending"
     DEFAULT_SORT = "oldest"
     SORTS = {
       DEFAULT_SORT => "Oldest first",
@@ -29,7 +30,8 @@ module Inbox
       FEATURE_DECISION_KIND,
       RETRY_LIMITED_KIND,
       CHANGE_INTENT_DRAFT_KIND,
-      PARTIAL_CLOSEOUT_KIND
+      PARTIAL_CLOSEOUT_KIND,
+      TEST_REVIEW_PENDING_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -37,6 +39,17 @@ module Inbox
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
       PARTIAL_CLOSEOUT_KIND => "Partial closeouts"
     ).freeze
+
+    # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
+    # mark the draft PR as waiting for a test-review verdict before
+    # implementation may begin, regardless of TDD mode.
+    TDD_TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
+      .dig(:tdd_test_review, :name)
+      .freeze
+    # Draft phases a test-review-gated PR can wait in; `ready` means the gate
+    # already cleared, and later phases are past it.
+    TEST_REVIEW_PR_PHASES = %w[draft restarted].freeze
+    TEST_REVIEW_PENDING_SUMMARY = "TDD red-phase gate: waiting for a human test-review verdict on the proposed tests."
 
     # Statuses shown in the Inbox: the feature is not yet released, and not
     # abandoned. Included even while `approved_waiting_for_merge`, since a
@@ -115,6 +128,11 @@ module Inbox
         kind == PARTIAL_CLOSEOUT_KIND
       end
 
+      # @spec OPERATOR-INBOX-002J
+      def test_review_pending?
+        kind == TEST_REVIEW_PENDING_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -122,7 +140,8 @@ module Inbox
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
-          intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout?
+          intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
+          test_review_pending?
 
         "#{tasks.size} proposed tasks"
       end
@@ -168,6 +187,22 @@ module Inbox
       new(...).call
     end
 
+    # Shared lane computation so the queue list and the nav badge count can
+    # never disagree: open draft/restarted PRs whose labels still carry the
+    # TDD ready-for-review gate, via the same jsonb-containment convention
+    # Inbox::Count uses for the paid-hold-review label. `paid_state`-free on
+    # purpose — the gate is the label, not the state (OPERATOR-INBOX-002J).
+    def self.test_review_pending_issues(project_ids)
+      Issue
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: TEST_REVIEW_PR_PHASES
+        )
+        .where("labels @> ?::jsonb", [ TDD_TESTS_READY_FOR_REVIEW_LABEL ].to_json)
+    end
+
     def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT)
       @user = user
       @project = project
@@ -175,7 +210,7 @@ module Inbox
       @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
     end
 
-    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E
+    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
     def call
       entries = []
       entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
@@ -189,6 +224,7 @@ module Inbox
       entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
       entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
       entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
+      entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
       sort_entries(entries)
     end
 
@@ -624,6 +660,50 @@ module Inbox
           title_text: nil,
           action_url: nil
         )
+      end
+    end
+
+    # A TDD test-review-gated draft PR is parked solely on a human verdict at
+    # the red-phase gate — the PR itself is the review surface, there is no
+    # implementation diff yet. `waiting_since` approximates the wait with
+    # `github_updated_at` (GitHub bumps it when the label lands, so it is at
+    # worst newer than the true gate start); resolving the exact label
+    # timestamp costs a per-entry issue-events API call, which queue listing
+    # must not make (the same no-API-call principle `question_summary_for`
+    # records). The action URL is the PR: that is where the verdict lands.
+    # Label-derived, so the entry clears the moment a verdict label replaces
+    # the gate label, without waiting for the follow-up phase transition.
+    # @spec OPERATOR-INBOX-002J
+    def test_review_pending_entries
+      ordered_test_review_pending_issues.map do |issue|
+        Entry.new(
+          id: "#{TEST_REVIEW_PENDING_KIND}:#{issue.id}",
+          kind: TEST_REVIEW_PENDING_KIND,
+          project: issue.project,
+          issue: issue,
+          record: issue,
+          waiting_since: issue.github_updated_at,
+          questions: [],
+          tasks: [],
+          summary_text: TEST_REVIEW_PENDING_SUMMARY,
+          title_text: nil,
+          action_url: issue.github_url
+        )
+      end
+    end
+
+    # Oldest-waiting-first by `github_updated_at`, then the deterministic
+    # tiebreak the other ordered lanes use.
+    def ordered_test_review_pending_issues
+      @ordered_test_review_pending_issues ||= begin
+        ids = scoped_projects.map(&:id)
+        return Issue.none if ids.empty?
+
+        self.class.test_review_pending_issues(ids)
+          .joins(:project)
+          .includes(:project)
+          .order("issues.github_updated_at ASC")
+          .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end
     end
 

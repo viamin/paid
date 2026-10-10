@@ -938,8 +938,41 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Inbox clear")
     expect(response.body).to include(
       "clarifying-question", "plan-review", "merge-approval", "action-required",
-      "blocked-PR", "manual-review", "intent-conformance", "feature-decision", "retry-limited"
+      "blocked-PR", "manual-review", "intent-conformance", "feature-decision", "retry-limited",
+      "test-review"
     )
+  end
+
+  # @spec OPERATOR-INBOX-002J
+  it "exposes test_review_pending in the inbox filters dialog and filters to it" do
+    pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 517)
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    option = document.at_css("input[name='kind'][value='#{Inbox::Queue::TEST_REVIEW_PENDING_KIND}']")
+    expect(option).to be_present
+
+    get inbox_path(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(pr.title)
+  end
+
+  # @spec OPERATOR-INBOX-002J
+  it "links the test_review_pending detail pane to the pull request" do
+    pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 518)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::TEST_REVIEW_PENDING_KIND, pr),
+      kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND
+    )
+
+    document = Nokogiri::HTML(response.body)
+    pr_link = document.at_css(%(a[href="#{pr.github_url}"]))
+
+    expect(pr_link).to be_present
+    expect(pr_link.text).to include("View")
   end
 
   # @spec OPERATOR-INBOX-002D
@@ -1412,6 +1445,20 @@ RSpec.describe "Inbox" do
       github_number: github_number,
       paid_state: "manual_review",
       manual_review_reason: reason,
+      **attrs
+    )
+  end
+
+  # A draft PR parked at the TDD red-phase gate (OPERATOR-INBOX-002J).
+  def create_tdd_test_review_pr(title: "TDD test review PR", github_number: 519, pr_review_phase: "draft", **attrs)
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: title,
+      github_number: github_number,
+      pr_review_phase: pr_review_phase,
+      labels: [ "paid-generated", "paid-automation", Inbox::Queue::TDD_TESTS_READY_FOR_REVIEW_LABEL ],
       **attrs
     )
   end

@@ -32,7 +32,8 @@ module Inbox
     def compute_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
-        retry_limited_count + change_intent_draft_count + partial_closeout_count
+        retry_limited_count + change_intent_draft_count + partial_closeout_count +
+        test_review_pending_count
     end
 
     def needs_input_count
@@ -171,6 +172,17 @@ module Inbox
     # of the auto-pick gate used by issue-backed inbox lanes.
     def change_intent_draft_count
       ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review.count
+    end
+
+    # A direct indexed count sharing the exact lane computation with
+    # Inbox::Queue (test_review_pending_issues) so the badge can never
+    # disagree with the list, the same sharing partial_closeout_count does.
+    # @spec OPERATOR-INBOX-002J
+    def test_review_pending_count
+      project_ids = gated_project_ids
+      return 0 if project_ids.empty?
+
+      Inbox::Queue.test_review_pending_issues(project_ids).count
     end
 
     # Shares the exact lane computation with Inbox::Queue
