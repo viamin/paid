@@ -30,21 +30,11 @@ class RetryFailedManualRunJob < ApplicationJob
     [ RETRY_BASE_DELAY * (2**(attempt - 1)), RETRY_MAX_DELAY ].min
   end
 
-  def perform(agent_run_id, attempt) # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005
+  def perform(agent_run_id, attempt) # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005 MANUAL-RUN-RETRY-008
     agent_run = AgentRun.find_by(id: agent_run_id)
     return unless agent_run
 
-    new_run = AgentRun.transaction do
-      locked_run = AgentRun.lock.find_by(id: agent_run.id)
-      next unless locked_run && eligible_for_retry?(locked_run, attempt)
-
-      locked_run.retry!(
-        decision_point: "manual_failed_run_auto_retry",
-        signals: { attempt: attempt, max_attempts: AgentRun::MAX_MANUAL_RETRY_ATTEMPTS },
-        result: {}
-      )
-      create_retry_run(locked_run, attempt)
-    end
+    new_run = create_retry_run_in_transaction(agent_run, attempt)
     return unless new_run
 
     Rails.logger.info(
@@ -60,6 +50,35 @@ class RetryFailedManualRunJob < ApplicationJob
   end
 
   private
+
+  def create_retry_run_in_transaction(agent_run, attempt)
+    AgentRun.transaction do
+      locked_run = AgentRun.lock.find_by(id: agent_run.id)
+      next unless locked_run && eligible_for_retry?(locked_run, attempt)
+
+      locked_run.retry!(
+        decision_point: "manual_failed_run_auto_retry",
+        signals: { attempt: attempt, max_attempts: AgentRun::MAX_MANUAL_RETRY_ATTEMPTS },
+        result: {}
+      )
+      create_retry_run(locked_run, attempt)
+    end
+  rescue ActiveRecord::RecordNotUnique => e
+    raise unless lid_planning_active_run_conflict?(e)
+
+    # A planning run started while this delayed retry was pending. The
+    # transaction rolls back, leaving the original run failed as intended.
+    Rails.logger.info(
+      message: "agent_execution.manual_failed_run_auto_retry_skipped_existing_run",
+      original_agent_run_id: agent_run.id,
+      project_id: agent_run.project_id
+    )
+    nil
+  end
+
+  def lid_planning_active_run_conflict?(error)
+    (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_lid_planning")
+  end
 
   # Re-checks eligibility under the row lock: state may have changed since
   # the activity scheduled this job (the project toggle flipped off, the run

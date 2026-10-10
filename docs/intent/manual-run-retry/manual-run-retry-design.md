@@ -146,11 +146,13 @@ clear within minutes, not hours.
     document. Execution-state columns (container, temporal workflow, PR/issue
     artifacts, timestamps) are intentionally not copied; they belong to the
     old run's attempt, not the new one.
-4. Marking "retried" happens *before* the insert, in the same transaction,
-   so the new row never collides with
-   `idx_agent_runs_unique_active_lid_planning` (the partial unique index
-   that treats `rate_limited`/`queued`/`running`/`paused` `lid_planning`
-   runs as active per project).
+4. Marking "retried" happens *before* the insert, in the same transaction.
+   An operator can still start a `lid_planning` run while the delayed retry is
+   pending; if that creates an active planning run first,
+   `idx_agent_runs_unique_active_lid_planning` rejects the retry insert. The
+   job recognizes that specific conflict, logs a skipped retry, and returns
+   normally. The transaction rolls back, leaving the original run `failed`;
+   the operator-started run is the active attempt.
 5. Enqueues `ProcessRunQueueJob` (idempotent) so the new queued run is
    picked up promptly.
 

@@ -65,8 +65,7 @@
   new queued `AgentRun` carrying the original's `project`,
   `initiating_user`, `runner`, `agent_type`, `custom_prompt`,
   `plan_doc_source`, `goal`, and `external_metadata` (merged with
-  retry-chain bookkeeping keys) — in that order, so the new row never
-  collides with `idx_agent_runs_unique_active_lid_planning`.
+  retry-chain bookkeeping keys).
   `external_metadata` SHALL be carried forward (not reset) because
   `create_feature` derives its prompt from
   `external_metadata["feature_brief"]`. `plan_doc_source` SHALL be carried
@@ -75,6 +74,16 @@
   `plan_doc_source` as the only record of the operator-selected design
   document (LID-RUNS-005).
   *Code:* `RetryFailedManualRunJob#perform`, `RetryFailedManualRunJob#create_retry_run`.
+  *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
+
+- [x] **MANUAL-RUN-RETRY-008** — When a delayed retry for a failed
+  `lid_planning` run encounters `idx_agent_runs_unique_active_lid_planning`
+  because an operator has started another active planning run during the
+  backoff window, `RetryFailedManualRunJob` SHALL log and skip the retry
+  without raising a terminal job failure. The retry transaction SHALL roll
+  back, leaving the original run `failed` and the operator-started planning
+  run active.
+  *Code:* `RetryFailedManualRunJob#create_retry_run_in_transaction`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
 - [x] **MANUAL-RUN-RETRY-006** — The retry chain SHALL be bounded at

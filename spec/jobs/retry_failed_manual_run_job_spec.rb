@@ -63,6 +63,20 @@ RSpec.describe RetryFailedManualRunJob do
       expect(new_run.custom_prompt).to be_nil
     end
 
+    it "skips a lid_planning retry when an operator started another active planning run during backoff" do # @spec MANUAL-RUN-RETRY-008
+      original = create(:agent_run, :failed, :manual, :lid_planning_goal, project: project, issue: nil)
+      active_run = create(:agent_run, :manual, :lid_planning_goal, project: project, status: "queued")
+      agent_run_count = AgentRun.count
+
+      expect {
+        described_class.new.perform(original.id, 1)
+      }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+      expect(AgentRun.count).to eq(agent_run_count)
+      expect(original.reload.status).to eq("failed")
+      expect(active_run.reload.status).to eq("queued")
+    end
+
     it "does nothing when the run no longer exists" do
       expect {
         described_class.new.perform(-1, 1)
