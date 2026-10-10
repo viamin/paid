@@ -20,14 +20,16 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:, reason:)
+    def initialize(issue:, actor:, reason:, origin: :operator)
       @issue = issue
       @actor = actor
       @reason = reason.to_s.strip
+      @origin = origin.to_sym
     end
 
     def call
       return failure(:invalid_reason, "A continuation reason is required.") if reason.blank?
+      return failure(:automation_disabled, "Automatic continuation is disabled for this project.") if automatic? && !auto_pick_project_open?
 
       issue.with_lock do
         existing = IssueContinuationRequest.open_for_issue(issue)
@@ -53,7 +55,7 @@ module Issues
 
     private
 
-    attr_reader :actor, :issue, :reason
+    attr_reader :actor, :issue, :origin, :reason
 
     def refusal_for(status)
       unless status.evidence.present?
@@ -95,7 +97,8 @@ module Issues
           runner_id: runner_id,
           agent_type: agent_type,
           goal: "create_pr",
-          trigger_type: "manual",
+          trigger_type: trigger_type,
+          auto_pick: automatic?,
           review_depth_snapshot: issue.project.effective_review_depth,
           continuation_request: request,
           status: "queued"
@@ -137,6 +140,13 @@ module Issues
 
     def success(request, agent_run) = Result.new(request: request, agent_run: agent_run)
     def failure(code, message) = Result.new(code: code, message: message)
+
+    def automatic? = origin == :automatic
+    def trigger_type = automatic? ? "automatic" : "manual"
+
+    def auto_pick_project_open?
+      AutoPickProjectGate.call(issue.project)
+    end
 
     def duplicate_request?(error)
       (error.cause&.message || error.message).include?("index_issue_continuation_requests_open_per_issue")

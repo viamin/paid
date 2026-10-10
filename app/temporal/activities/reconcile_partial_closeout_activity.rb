@@ -16,6 +16,7 @@ module Activities
 
         assessment = persisted_assessment(agent_run)
         PartialCloseouts::Reconcile.call(agent_run: agent_run, assessment: assessment)
+        PartialCloseouts::Advance.call(agent_run: agent_run, assessment: assessment)
         { agent_run_id: agent_run.id, status: agent_run.reload.reconciliation.fetch("status"),
           gaps_remain: gaps_remain?(agent_run) }
       end
