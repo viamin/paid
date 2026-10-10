@@ -78,10 +78,10 @@ add_column :agent_runs, :tdd_returned_to_test_review, :boolean,
 the run's `tdd_phase`, `tdd_returned_to_test_review` flag, and a flat list of
 changed file paths — no I/O, no AI judgment (Zero Framework Cognition: this
 is a structural policy check, not a semantic one). File classification
-mirrors `CreatePullRequestActivity#changed_test_files`'s test-path
-convention (`spec/`, `test/`, `.ephemeral-tests/`) and the LID doc allowlist
-already used for `lid_planning` runs (`docs/`, `AGENTS.md`, `CLAUDE.md`,
-`.github/copilot-instructions.md`), so the three checks in
+mirrors `PullRequests::ReviewSurface::TEST_FILE_PATTERN`'s test-path
+convention (`spec/`, `test/`, `tests/`, `.ephemeral-tests/`) and the LID doc
+allowlist already used for `lid_planning` runs (`docs/`, `AGENTS.md`,
+`CLAUDE.md`, `.github/copilot-instructions.md`), so the checks in
 `CreatePullRequestActivity` agree on what counts as a test file or a LID doc.
 
 The result carries `forbidden_files` (not just a boolean) so the caller can

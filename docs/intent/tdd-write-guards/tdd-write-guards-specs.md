@@ -22,9 +22,9 @@
 
 - [x] **TDD-GUARD-003** — `Tdd::WriteGuard` SHALL reject a `test_writing`
   run's changed files if any fall outside the test-path pattern
-  (`spec/`, `test/`, `.ephemeral-tests/`) or the LID doc allowlist (`docs/`,
-  `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`), reporting the
-  offending implementation files.
+  (`spec/`, `test/`, `tests/`, `.ephemeral-tests/`) or the LID doc allowlist
+  (`docs/`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`),
+  reporting the offending implementation files.
   *Code:* `app/services/tdd/write_guard.rb`.
   *Test:* `spec/services/tdd/write_guard_spec.rb`.
 

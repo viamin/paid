@@ -20,10 +20,10 @@ module Tdd
   #   result.forbidden_files # => ["app/models/widget.rb"]
   #   result.reason          # => "test-writing runs may not change implementation code"
   class WriteGuard
-    # Mirrors CreatePullRequestActivity#changed_test_files's test-path
+    # Mirrors PullRequests::ReviewSurface::TEST_FILE_PATTERN's test-path
     # convention so the guard and the rest of the pipeline agree on what
     # counts as a test file.
-    TEST_PATH_PREFIXES = %w[spec/ test/ .ephemeral-tests/].freeze
+    TEST_PATH_PREFIXES = %w[spec/ test/ tests/ .ephemeral-tests/].freeze
 
     # Docs a test_writing run may touch alongside tests: LID artifacts and
     # the instruction files that carry the "## LID" block. Mirrors

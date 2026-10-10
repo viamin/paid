@@ -46,6 +46,12 @@ RSpec.describe Tdd::WriteGuard do
         expect(result.reason).to eq("test-writing runs may not change implementation code")
         expect(result.phase).to eq("test_writing")
       end
+
+      it "allows tests/ (plural) file changes, e.g. gdUnit4/Godot projects" do
+        result = described_class.call(agent_run: agent_run, changed_files: [ "tests/test_foundation_smoke.gd" ])
+
+        expect(result).to be_valid
+      end
     end
 
     context "when in test_fixing phase" do
@@ -63,6 +69,13 @@ RSpec.describe Tdd::WriteGuard do
         expect(result).not_to be_valid
         expect(result.forbidden_files).to eq([ "spec/models/widget_spec.rb" ])
         expect(result.reason).to eq("test-fixing runs may not change tests without returning the PR to test review")
+      end
+
+      it "rejects tests/ (plural) file changes when the run has not returned to test review" do
+        result = described_class.call(agent_run: agent_run, changed_files: [ "app/models/widget.rb", "tests/widget_test.gd" ])
+
+        expect(result).not_to be_valid
+        expect(result.forbidden_files).to eq([ "tests/widget_test.gd" ])
       end
 
       context "when the run has returned the PR to test review" do
@@ -91,6 +104,13 @@ RSpec.describe Tdd::WriteGuard do
         expect(result).not_to be_valid
         expect(result.forbidden_files).to eq([ "test/models/widget_test.rb" ])
         expect(result.reason).to eq("refactor runs may not change tests")
+      end
+
+      it "rejects tests/ (plural) file changes with no exception" do
+        result = described_class.call(agent_run: agent_run, changed_files: [ "app/models/widget.rb", "tests/widget_test.gd" ])
+
+        expect(result).not_to be_valid
+        expect(result.forbidden_files).to eq([ "tests/widget_test.gd" ])
       end
 
       context "when a refactor run has nonetheless returned to test review" do
