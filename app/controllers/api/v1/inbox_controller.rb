@@ -11,6 +11,9 @@ module Api
 
       # @spec MOBILE-API-006 MOBILE-API-010
       def index
+        authorize :inbox, policy_class: InboxPolicy
+        policy_scope(:inbox, policy_scope_class: InboxPolicy::Scope)
+
         filters = inbox_filters
         return if conditional_response?(filters)
 
@@ -25,6 +28,7 @@ module Api
 
       # @spec MOBILE-API-007 MOBILE-API-010
       def count
+        authorize :inbox, policy_class: InboxPolicy
         return if conditional_response?({})
 
         render json: { count: Inbox::Count.call(user: current_user) }
@@ -32,6 +36,7 @@ module Api
 
       # @spec MOBILE-API-008
       def show
+        authorize :inbox, policy_class: InboxPolicy
         entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
         return render_entry_not_found unless entry
 
@@ -40,6 +45,7 @@ module Api
 
       # @spec MOBILE-API-009
       def chat
+        authorize :inbox, policy_class: InboxPolicy
         entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
         return render_entry_not_found unless entry
 
