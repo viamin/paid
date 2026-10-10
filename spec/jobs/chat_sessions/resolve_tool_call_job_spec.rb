@@ -33,7 +33,7 @@ RSpec.describe ChatSessions::ResolveToolCallJob, type: :job do
   end
 
   it "numbers streamed chunks within the resolution stream" do
-    # @spec CHAT-API-020
+    # @spec CHAT-API-022
     allow(ChatSessions::ResolveToolCall).to receive(:call) do |**args|
       args[:on_chunk].call("Done ")
       args[:on_chunk].call("now.")

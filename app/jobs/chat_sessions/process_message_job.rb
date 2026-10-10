@@ -10,7 +10,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   end
 
   def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil)
-    # @spec CHAT-API-002, CHAT-API-020
+    # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"

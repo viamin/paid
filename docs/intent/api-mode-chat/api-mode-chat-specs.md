@@ -54,7 +54,7 @@
   `ChatSessions::ProcessMessageJob#perform`,
   `ChatSessions::SendMessage#call`.
 
-- [x] **CHAT-API-020** — When a streamed ActionCable or SSE chat response
+- [x] **CHAT-API-022** — When a streamed ActionCable or SSE chat response
   emits text chunks, each chunk SHALL carry a positive, stream-local sequence
   number. The browser SHALL append only contiguous chunks for its active
   stream, discard a temporary bubble after a duplicate or gap, and never

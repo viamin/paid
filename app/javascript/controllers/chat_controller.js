@@ -220,7 +220,7 @@ export default class extends Controller {
     this.toggleTyping(true)
   }
 
-  // @spec CHAT-API-020
+  // @spec CHAT-API-022
   handleMessageChunk(data) {
     if (data.message_id !== this.currentStreamId || this.ignoredStreamIds.has(data.message_id)) return
 
@@ -237,7 +237,7 @@ export default class extends Controller {
     this.scrollToBottom()
   }
 
-  // @spec CHAT-API-020
+  // @spec CHAT-API-022
   handleMessageComplete(data) {
     const streamId = data.message_id || this.currentStreamId
     this.removeStreamingMessage(streamId)

@@ -37,7 +37,7 @@ RSpec.describe ChatSessions::ResumeRateLimitedJob, type: :job do
   end
 
   it "numbers streamed chunks within the resumed stream" do
-    # @spec CHAT-API-020
+    # @spec CHAT-API-022
     allow(ChatSessions::ResumeRateLimited).to receive(:call) do |**args|
       args[:on_chunk].call("Still ")
       args[:on_chunk].call("here.")

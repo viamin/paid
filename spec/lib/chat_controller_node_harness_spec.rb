@@ -213,7 +213,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-020 — A terminal event must never leave an unpersisted
+    // @spec CHAT-API-022 — A terminal event must never leave an unpersisted
     // streaming bubble at the end of the transcript.
     function testMessageCompleteRemovesStreamingBubble() {
       let removedStreamId = null;
@@ -233,7 +233,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-020 — Duplicate chunks and gaps are not safe to append:
+    // @spec CHAT-API-022 — Duplicate chunks and gaps are not safe to append:
     // an incomplete transient bubble is preferable to corrupting transcript text.
     function testMessageChunksRequireContiguousSequence() {
       const appended = [];
