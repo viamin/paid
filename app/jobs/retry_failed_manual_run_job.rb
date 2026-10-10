@@ -56,12 +56,13 @@ class RetryFailedManualRunJob < ApplicationJob
       locked_run = AgentRun.lock.find_by(id: agent_run.id)
       next unless locked_run && eligible_for_retry?(locked_run, attempt)
 
+      created = create_retry_run(locked_run, attempt)
       locked_run.retry!(
         decision_point: "manual_failed_run_auto_retry",
         signals: { attempt: attempt, max_attempts: AgentRun::MAX_MANUAL_RETRY_ATTEMPTS },
-        result: {}
+        result: { new_agent_run_id: created.id }
       )
-      create_retry_run(locked_run, attempt)
+      created
     end
   rescue ActiveRecord::RecordNotUnique => e
     raise unless lid_planning_active_run_conflict?(e)

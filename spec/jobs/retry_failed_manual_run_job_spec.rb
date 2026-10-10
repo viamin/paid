@@ -36,6 +36,17 @@ RSpec.describe RetryFailedManualRunJob do
       expect(new_run.external_metadata[AgentRun::MANUAL_RETRY_PARENT_METADATA_KEY]).to eq(original.id)
     end
 
+    it "links the superseded run to its replacement via the retry orchestration decision" do
+      original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+
+      described_class.new.perform(original.id, 1)
+
+      event = OrchestrationDecision.last
+      expect(event.actor).to eq("manual_failed_run_auto_retry")
+      expect(event.agent_run).to eq(original)
+      expect(event.outputs["new_agent_run_id"]).to eq(AgentRun.order(:id).last.id)
+    end
+
     it "carries forward external_metadata needed by the goal (e.g. create_feature's feature_brief)" do
       original = create(:agent_run, :failed, :manual, :create_feature_goal, project: project, issue: nil,
         external_metadata: { "feature_brief" => { "summary" => "Add dark mode" } })

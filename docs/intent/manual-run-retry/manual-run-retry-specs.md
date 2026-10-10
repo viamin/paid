@@ -72,7 +72,10 @@
   forward because a manually-started `lid_planning` run may fail before
   `ensure_lid_planning_prompt!` persists `custom_prompt`, leaving
   `plan_doc_source` as the only record of the operator-selected design
-  document (LID-RUNS-005).
+  document (LID-RUNS-005). The `retry!` orchestration decision SHALL be
+  recorded with `result: { new_agent_run_id: ... }` so an operator can trace
+  the chain from a superseded run to its replacement through
+  `OrchestrationDecision` records, mirroring `RetryTimedOutIssueGoalJob`.
   *Code:* `RetryFailedManualRunJob#perform`, `RetryFailedManualRunJob#create_retry_run`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
