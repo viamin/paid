@@ -313,5 +313,115 @@ RSpec.describe Issues::UpsertFromGithub do
         expect(project.issues.find_by(github_issue_id: 9000).paid_state).to eq("new")
       end
     end
+
+    # @spec PRIORITY-LABEL-SYNC-001
+    describe "priority label reconciliation on the linked pull request" do
+      let(:project) { create(:project, owner: "viamin", repo: "paid") }
+      let(:github_client) { instance_double(GithubClient) }
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 1234,
+          number: 42,
+          title: "Re-triaged issue",
+          body: "body",
+          state: "open",
+          labels: [ "P1", "bug" ],
+          pull_request: nil,
+          state_reason: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
+          updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
+        )
+      end
+
+      before do
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:add_labels_to_issue)
+        allow(github_client).to receive(:remove_labels_from_issue).and_return(removed: [ "P2" ], failed: [])
+      end
+
+      def link_pull_request(issue, github_number: 416)
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          pull_request_number: github_number,
+          pull_request_url: "https://github.com/viamin/paid/pull/#{github_number}")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: github_number,
+          labels: [ "P2", "paid-generated" ])
+      end
+
+      it "syncs the linked pull request when the issue's priority label changes" do
+        issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, labels: [ "P2", "bug" ])
+        pull_request = link_pull_request(issue)
+
+        described_class.call(project: project, github_issue: github_issue)
+
+        expect(github_client).to have_received(:add_labels_to_issue).with("viamin/paid", 416, [ "P1" ])
+        expect(pull_request.reload.labels).to contain_exactly("paid-generated", "P1")
+      end
+
+      # @spec PRIORITY-LABEL-SYNC-005
+      it "eventually repairs the pull request when the inline reconciliation fails transiently" do
+        issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, labels: [ "P2", "bug" ])
+        pull_request = link_pull_request(issue)
+        allow(github_client).to receive(:add_labels_to_issue)
+          .and_raise(GithubClient::ApiError.new("boom", status: 500))
+
+        expect {
+          described_class.call(project: project, github_issue: github_issue)
+        }.to have_enqueued_job(Issues::SyncPriorityLabelsToPullRequestJob).with(issue.id)
+
+        # The failed upsert already persisted the issue's new labels, so a
+        # later sync of the unchanged issue never re-triggers the
+        # reconciliation inline — without the enqueued retry, the pull
+        # request stays at its stale priority forever.
+        described_class.call(project: project, github_issue: github_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+
+        allow(github_client).to receive(:add_labels_to_issue)
+        Issues::SyncPriorityLabelsToPullRequestJob.perform_now(issue.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with("viamin/paid", 416, [ "P1" ]).twice
+        expect(github_client).to have_received(:remove_labels_from_issue).with("viamin/paid", 416, [ "P2" ])
+        expect(pull_request.reload.labels).to contain_exactly("paid-generated", "P1")
+      end
+
+      it "does not touch the linked pull request when the priority label is unchanged" do
+        issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, labels: [ "P1", "other" ])
+        link_pull_request(issue)
+        github_issue.labels = [ "P1" ]
+
+        described_class.call(project: project, github_issue: github_issue)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+      end
+
+      it "does not reconcile priority labels for a synced pull request issue" do
+        pr_github_issue = OpenStruct.new(
+          id: 777,
+          number: 416,
+          title: "A PR",
+          body: "body",
+          state: "open",
+          labels: [ "P1" ],
+          pull_request: OpenStruct.new(html_url: "https://github.com/viamin/paid/pull/416"),
+          state_reason: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
+          updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
+        )
+        create(:issue, :pull_request, project: project, github_issue_id: 777, github_number: 416, labels: [ "P2" ])
+
+        described_class.call(project: project, github_issue: pr_github_issue)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+      end
+    end
   end
 end

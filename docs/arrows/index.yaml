@@ -194,6 +194,14 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-09-29
+  priority-label-sync:
+    title: Priority Label Sync
+    path: docs/intent/priority-label-sync/priority-label-sync-design.md
+    specs: docs/intent/priority-label-sync/priority-label-sync-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: OK
+    audited: 2026-10-10
   upstream-issue-pickup:
     title: Upstream Issue Pickup
     path: docs/intent/upstream-issue-pickup/upstream-issue-pickup-design.md

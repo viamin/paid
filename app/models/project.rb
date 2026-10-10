@@ -667,6 +667,16 @@ class Project < ApplicationRecord
     effective_priority_labels.values_at(*PRIORITY_TIERS).compact
   end
 
+  # Intersection of this project's priority label names with +labels+, shared
+  # by PR-creation inheritance (CreatePullRequestActivity,
+  # CreateAggregatedPullRequestActivity), label recovery
+  # (RecoverMissingPullRequestLabelsJob), and priority-label sync
+  # (Issues::SyncPriorityLabelsToPullRequest) so the "which labels count as
+  # priority" definition lives in one place.
+  def priority_labels_among(labels)
+    priority_label_names & Array(labels)
+  end
+
   # Whether Paid may add labels to pull requests it opens. The raw column also
   # governs issues on the fork, which remain supported in upstream mode.
   # @spec UPSTREAM-GATE-002

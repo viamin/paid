@@ -169,7 +169,7 @@ module Activities
         labels << project.automation_label_name
       end
       if project.inherit_priority_labels? && parent_issue&.labels.present?
-        labels.concat(project.priority_label_names & Array(parent_issue.labels))
+        labels.concat(project.priority_labels_among(parent_issue.labels))
       end
       labels.uniq!
       return if labels.empty?
