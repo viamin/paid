@@ -8,6 +8,7 @@ export default class extends Controller {
   connect() {
     this.autoScroll = true
     this.streaming = false
+    this.disconnectedMidTurn = false
     this.currentStreamId = null
     this.pendingContent = null
     this.currentAttemptToolCards = []
@@ -59,7 +60,14 @@ export default class extends Controller {
   // turn is in flight, so stable connections and the initial connect — where
   // dispatching chat:idle would also auto-focus the textarea — are unaffected.
   handleConnected() {
-    const resuming = this.streaming
+    // handleDisconnected() always runs before a real reconnect's connected()
+    // callback, and it already reset `this.streaming` to false via
+    // resetStreamingState(). Reading `this.streaming` here would therefore
+    // always see false, so the gap-recovery resync below would never fire —
+    // the "was a turn in flight when we dropped" signal has to survive that
+    // earlier reset. disconnectedMidTurn carries it across the gap.
+    const resuming = this.disconnectedMidTurn
+    this.disconnectedMidTurn = false
     this.resetStreamingState()
     this.setStatus("Connected")
     // resetStreamingState tears down any orphaned streaming bubble, but a gap
@@ -71,6 +79,7 @@ export default class extends Controller {
   }
 
   handleDisconnected() {
+    this.disconnectedMidTurn = this.streaming
     this.resetStreamingState()
     this.setStatus("Disconnected")
   }

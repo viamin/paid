@@ -1381,7 +1381,12 @@ class ChatControllerNodeHarness
 
     // @spec CHAT-API-022 — Reconnecting mid-turn must trigger a resync so any
     // broadcast lost during the gap (message_created / message_complete /
-    // error) is recovered; a stable initial connect must not.
+    // error) is recovered; a stable initial connect must not. ActionCable
+    // always runs disconnected() before the reconnect's connected() fires, and
+    // disconnected() already resets `streaming` to false — so this exercises
+    // the real disconnect-then-reconnect sequence (not just handleConnected()
+    // in isolation) to prove the "turn was in flight" signal survives that
+    // reset instead of being read back as false.
     function testHandleConnectedTriggersResyncWhenResumingATurn() {
       let resyncCalls = 0;
       const { controller } = makeController({
@@ -1392,6 +1397,7 @@ class ChatControllerNodeHarness
         resyncTranscript: () => { resyncCalls += 1; }
       });
 
+      controller.handleDisconnected();
       controller.handleConnected();
 
       if (resyncCalls !== 1) {
@@ -1411,6 +1417,26 @@ class ChatControllerNodeHarness
 
       if (resyncCalls !== 0) {
         throw new Error(`Expected handleConnected not to resync on a stable initial connect, got ${resyncCalls} calls`);
+      }
+    }
+
+    // @spec CHAT-API-022 — A disconnect that happens while no turn is in
+    // flight (the common case: idle between turns, or the very first
+    // connect) must not trigger a resync on the next reconnect, since there
+    // is nothing lost to recover.
+    function testHandleConnectedSkipsResyncAfterIdleDisconnect() {
+      let resyncCalls = 0;
+      const { controller } = makeController({
+        streaming: false,
+        setStatus: () => {},
+        resyncTranscript: () => { resyncCalls += 1; }
+      });
+
+      controller.handleDisconnected();
+      controller.handleConnected();
+
+      if (resyncCalls !== 0) {
+        throw new Error(`Expected handleConnected not to resync after an idle disconnect, got ${resyncCalls} calls`);
       }
     }
 
@@ -1544,6 +1570,7 @@ class ChatControllerNodeHarness
       testAnchorSelectionReturnsNullWithOnlyAStreamingBubble();
       testHandleConnectedTriggersResyncWhenResumingATurn();
       testHandleConnectedSkipsResyncOnStableConnection();
+      testHandleConnectedSkipsResyncAfterIdleDisconnect();
       testResyncTranscriptReplaysMessagesSinceLastRenderedId();
       testResyncTranscriptNoOpsWithNothingRenderedYet();
       testLastRenderedMessageIdReturnsHighestId();
