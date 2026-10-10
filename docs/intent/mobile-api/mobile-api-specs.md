@@ -70,8 +70,9 @@
   summary, `action_url`) plus its kind-specific payload, and the OpenAPI
   schema SHALL express the entry as `oneOf` across one branch per
   `Inbox::Queue::KINDS` kind.
-  *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
-  *Code:* `Api::V1::InboxController#index`.
+  *Tests:* `spec/requests/api/v1/inbox_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+  *Code:* `Api::V1::InboxController#index`, `Api::V1::InboxEntrySerializer`.
 
 - [x] **MOBILE-API-007** — When a client calls `GET /api/v1/inbox/count`,
   the system SHALL return the `Inbox::Count` value for the authenticated
