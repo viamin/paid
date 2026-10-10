@@ -117,14 +117,15 @@ for the full evidence trail.
 ### 2026-10-10 Continuation audit
 
 The continuation audit verifies the merges that postdate the October 1 audit:
-#4113 supplies `create_feature`/`lid_planning` attachment and the visible held
-issue tree, and #4114 supplies automatic/manual/dequeue/dispatch admission
-gates plus design-PR reconciliation. The audit found those paths and their
-specifications in the current tree; it did not infer success from closed child
-issues. FEATURE-APPROVAL-019 remains an active gap because `AttachFromAgentRun`
-does not persist run-emitted questions or inferred decisions. RDR-067's
-review/final-merge code is present, while its rollout evidence and scoped
-operator enablement remain prerequisites. #3860 therefore remains open.
+PR #4113 supplies `create_feature`/`lid_planning` attachment and the visible
+held issue tree, and #4114 supplies automatic/manual/dequeue/dispatch
+admission gates plus design-PR reconciliation. The audit found those paths and
+their specifications in the current tree; it did not infer success from closed
+child issues. FEATURE-APPROVAL-019 remains an active gap because
+`AttachFromAgentRun` does not persist run-emitted questions or inferred
+decisions. RDR-067's review/final-merge code is present, while its rollout
+evidence and scoped operator enablement remain prerequisites. #3860 therefore
+remains open.
 See [`audit-report-2026-10-10-rdr-066.md`](audit-report-2026-10-10-rdr-066.md)
 for the criterion-by-criterion evidence and runtime-verification limitation.
 
