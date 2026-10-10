@@ -42,8 +42,9 @@
   `runner_retry_abandoned_at`), has no blocking run and no open continuation
   request, and is not resolved-complete against the current evidence
   generation, the system SHALL expose it as a `partial_closeout` inbox entry
-  (same auto-pick-gated project scope every lane uses, `INBOX-FOUNDATION-006`)
-  whose detail shows the source PR/run links, the recorded completion outcome,
+  (same authorized Inbox visibility every lane uses — account isolation plus
+  owner visibility, independent of automatic work-selection eligibility,
+  `INBOX-FOUNDATION-006`) whose detail shows the source PR/run links, the recorded completion outcome,
   unresolved prerequisites, and the exact reason automatic continuation cannot
   proceed. The entry SHALL clear when the issue closes, when a continuation
   request is opened for it, when it is resolved-complete against the current

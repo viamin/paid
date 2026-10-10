@@ -51,6 +51,17 @@ RSpec.describe Dashboard::NeedsInputQueue do
       expect(entries.map(&:issue)).not_to include(marker_only_issue)
     end
 
+    it "excludes needs-input issues from auto-pick-disabled projects, unlike Inbox::Queue" do
+      auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "beta")
+      excluded_issue = create(:issue, :needs_input, project: auto_pick_off_project, github_number: 5, body: questions_body)
+      first_issue
+
+      entries = described_class.call(user: user, project: nil)
+
+      expect(entries.map(&:issue)).to include(first_issue)
+      expect(entries.map(&:issue)).not_to include(excluded_issue)
+    end
+
     it "returns clarifying questions persisted locally for create_feature issues without an API round-trip" do
       feature_issue = create(:issue, :needs_input, project: project, github_number: 20,
                              body: "Need dark mode",

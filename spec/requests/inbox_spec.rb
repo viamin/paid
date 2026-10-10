@@ -548,16 +548,19 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Require the agent to bring the PR back within scope")
   end
 
-  # @spec OPERATOR-INBOX-002C
-  it "lists escalated pull requests scoped to auto-pick projects" do
-    ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+  # @spec OPERATOR-INBOX-002C @spec INBOX-FOUNDATION-006
+  it "lists escalated pull requests regardless of auto-pick enablement but not from other accounts' projects" do
+    auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    other_user = create(:user, account: create(:account))
+    other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
     create_escalated_pr(title: "Escalated PR", github_number: 500)
-    create_escalated_pr(title: "Not gated", github_number: 501, project: ungated_project)
+    create_escalated_pr(title: "Auto-pick off PR", github_number: 501, project: auto_pick_off_project)
+    create_escalated_pr(title: "Other account PR", github_number: 502, project: other_account_project)
 
     get inbox_path(kind: Inbox::Queue::ESCALATED_PR_KIND)
 
-    expect(response.body).to include("Blocked PRs", "Escalated PR")
-    expect(response.body).not_to include("Not gated")
+    expect(response.body).to include("Blocked PRs", "Escalated PR", "Auto-pick off PR")
+    expect(response.body).not_to include("Other account PR")
   end
 
   # @spec OPERATOR-INBOX-002C
@@ -604,16 +607,19 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(">Unblock<")
   end
 
-  # @spec OPERATOR-INBOX-002D
-  it "lists manual_review issues scoped to auto-pick projects" do
-    ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+  # @spec OPERATOR-INBOX-002D @spec INBOX-FOUNDATION-006
+  it "lists manual_review issues regardless of auto-pick enablement but not from other accounts' projects" do
+    auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true)
+    other_user = create(:user, account: create(:account))
+    other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true)
     create_manual_review_issue(title: "Parked issue", github_number: 507)
-    create_manual_review_issue(title: "Not gated", github_number: 508, project: ungated_project)
+    create_manual_review_issue(title: "Auto-pick off issue", github_number: 508, project: auto_pick_off_project)
+    create_manual_review_issue(title: "Other account issue", github_number: 509, project: other_account_project)
 
     get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
 
-    expect(response.body).to include("Manual Review", "Parked issue")
-    expect(response.body).not_to include("Not gated")
+    expect(response.body).to include("Manual Review", "Parked issue", "Auto-pick off issue")
+    expect(response.body).not_to include("Other account issue")
   end
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
@@ -693,16 +699,19 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("enhancement round limit")
   end
 
-  # @spec OPERATOR-INBOX-002E
-  it "lists retry-limited issues scoped to auto-pick projects" do
-    ungated_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "epsilon")
+  # @spec OPERATOR-INBOX-002E @spec INBOX-FOUNDATION-006
+  it "lists retry-limited issues regardless of auto-pick enablement but not from other accounts' projects" do
+    auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "epsilon")
+    other_user = create(:user, account: create(:account))
+    other_account_project = create(:project, account: other_user.account, created_by: other_user, active: true, owner: "acme", repo: "zeta")
     create_retry_limited_issue(title: "Capped issue", github_number: 510)
-    create_retry_limited_issue(title: "Not gated", github_number: 511, project: ungated_project)
+    create_retry_limited_issue(title: "Auto-pick off issue", github_number: 511, project: auto_pick_off_project)
+    create_retry_limited_issue(title: "Other account issue", github_number: 512, project: other_account_project)
 
     get inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)
 
-    expect(response.body).to include("Retry-limited", "Capped issue")
-    expect(response.body).not_to include("Not gated")
+    expect(response.body).to include("Retry-limited", "Capped issue", "Auto-pick off issue")
+    expect(response.body).not_to include("Other account issue")
   end
 
   # @spec OPERATOR-INBOX-002E

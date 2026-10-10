@@ -3,13 +3,17 @@
 module Dashboard
   # Renders the existing /dashboard/needs_input page. Behavior is unchanged
   # from the pre-inbox-foundation version: issues only (`is_pull_request:
-  # false`), oldest-first within `(owner, repo, github_number, id)` ordering,
-  # and a questionless-filter. The implementation delegates to Inbox::Queue
-  # for the queue body, then restores the legacy dashboard ordering after
-  # applying the issues-only filter.
+  # false`), auto-pick-gated projects only (`Issues::AutoPickProjectGate`),
+  # oldest-first within `(owner, repo, github_number, id)` ordering, and a
+  # questionless-filter. The implementation delegates to Inbox::Queue for the
+  # queue body, then applies the legacy issues-only + auto-pick-gated filters
+  # and restores the legacy dashboard ordering.
   #
   # Inbox::Queue is the typed, broader abstraction (issues + PRs, structured
-  # entries). Keeping this delegator lets /dashboard/needs_input continue
+  # entries) and — per INBOX-FOUNDATION-006 (#4221) — deliberately shows
+  # human-review work independent of auto-pick eligibility. That broader
+  # visibility must not leak into this legacy page, so the auto-pick gate
+  # Inbox::Queue dropped is re-applied here to keep /dashboard/needs_input
   # rendering unchanged while the inbox page lands separately.
   class NeedsInputQueue
     Entry = Struct.new(:project, :issue, :questions, keyword_init: true)
@@ -32,6 +36,7 @@ module Dashboard
     def call
       issue_entries = inbox_entries.filter_map do |inbox_entry|
         next unless inbox_entry.issue.is_pull_request == false
+        next unless Issues::AutoPickProjectGate.call(inbox_entry.project)
 
         Entry.new(
           project: inbox_entry.project,
