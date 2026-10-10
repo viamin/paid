@@ -163,6 +163,15 @@ class AgentRun < ApplicationRecord
   # Reuses the stale_requeue_count column. Higher than MAX_STALE_REQUEUES because
   # runner-availability windows (rate limits, open circuits) are expected to clear.
   MAX_RATE_LIMITED_REQUEUES = 5
+  # Maximum number of times a failed manual run with no issue/PR attachment
+  # (create_feature, create_issue, lid_planning, or issue-less create_pr) is
+  # automatically re-queued before it is left terminally failed for an
+  # operator to notice. See MarkAgentRunFailedActivity.
+  MAX_MANUAL_RETRY_ATTEMPTS = 3
+  # external_metadata keys used to track a blind-retry chain for issue-less
+  # manual runs, since there is no issue/PR to carry that bookkeeping.
+  MANUAL_RETRY_ATTEMPT_METADATA_KEY = "manual_retry_attempt".freeze
+  MANUAL_RETRY_PARENT_METADATA_KEY = "retried_from_agent_run_id".freeze
   CLAIMED_SENTINEL = "claimed"
   SMOKE_TEST_CUSTOM_PROMPT = "smoke_test"
   STALE_CLAIMED_TIMEOUT = 15.minutes
@@ -1961,6 +1970,22 @@ class AgentRun < ApplicationRecord
 
     msg = error_message.to_s
     PUSH_PERMISSION_REJECTION_KEYWORDS.any? { |keyword| msg.include?(keyword) }
+  end
+
+  # Returns true when this run performed no observable work before failing:
+  # no agent iterations, no created PR, no created issue. A blind retry is
+  # only safe for this shape of failure — anything with partial side effects
+  # (an opened PR, a created issue) must stay terminal for an operator rather
+  # than risk a duplicate. Used to gate the issue-less manual run auto-retry
+  # (see MarkAgentRunFailedActivity).
+  def no_observable_work?
+    iterations.to_i.zero? && pull_request_number.blank? && created_issue_number.blank?
+  end
+
+  # The 1-indexed attempt number of a manual retry chain for an issue-less
+  # run (see MANUAL_RETRY_ATTEMPT_METADATA_KEY); 0 for the original run.
+  def manual_retry_attempt
+    external_metadata.fetch(MANUAL_RETRY_ATTEMPT_METADATA_KEY, 0).to_i
   end
 
   def total_tokens

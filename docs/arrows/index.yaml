@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-06
+last_updated: 2026-10-10
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -533,6 +533,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-04
+  manual-run-retry:
+    title: Manual Run Retry (Issue-less)
+    path: docs/intent/manual-run-retry/manual-run-retry-design.md
+    specs: docs/intent/manual-run-retry/manual-run-retry-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-10-10
   queue-priority-tiers:
     title: Queue Priority Tiers
     path: docs/intent/queue-priority-tiers/queue-priority-tiers-design.md

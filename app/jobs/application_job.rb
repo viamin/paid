@@ -187,6 +187,7 @@ class ApplicationJob < ActiveJob::Base
       FailureRecoveryDecisionJob,
       HumanFeedbackCollectionJob,
       QualityMetricsCollectionJob,
+      RetryFailedManualRunJob,
       RetryTimedOutIssueGoalJob
     ].any? { |job_class| is_a?(job_class) }
   end

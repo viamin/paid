@@ -108,6 +108,20 @@ RSpec.describe Project do
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
   end
 
+  # @spec MANUAL-RUN-RETRY-004
+  describe "retry_failed_manual_runs" do
+    it "defaults to enabled" do
+      project = create(:project)
+
+      expect(project.retry_failed_manual_runs?).to be true
+    end
+
+    it "is exposed as a project-level automation setting" do
+      expect(Project::AUTOMATION_SETTINGS.map { |setting| setting[:attribute] })
+        .to include(:retry_failed_manual_runs)
+    end
+  end
+
   describe "Apple verification records" do
     it "destroys retry descendants before their source attempts" do # @spec APPLE-VERIFY-006
       source_attempt = create(:apple_verification_attempt, status: "failed")

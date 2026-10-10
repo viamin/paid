@@ -654,6 +654,7 @@ class ProjectsController < ApplicationController
       :inherit_priority_labels,
       :auto_enhance_enabled,
       :knowledge_evolution_enabled,
+      :retry_failed_manual_runs,
       :auto_release_granularity,
       :plan_review_timeout_hours,
       :max_issue_runner_failures,

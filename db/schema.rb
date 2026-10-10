@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_054220) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -299,6 +299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.string "container_id", limit: 128
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
+    t.bigint "continuation_request_id", comment: "The scoped continuation authorization this run executes, if any."
     t.integer "cost_cents", default: 0
     t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
@@ -342,6 +343,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.string "pull_request_url", limit: 500
     t.datetime "queue_entered_at", comment: "Most recent time this run entered queued status so queue latency metrics reflect the current queue episode."
     t.datetime "rate_limited_until"
+    t.jsonb "reconciliation", default: {}, null: false, comment: "Durable replay state for partial PR closeout gap reconciliation."
     t.string "result_commit_sha", limit: 40
     t.string "review_depth_snapshot", limit: 32, default: "balanced", null: false, comment: "Effective review_depth preset snapshotted at run creation. Focused/Balanced/Thorough."
     t.datetime "review_posted_at"
@@ -374,8 +376,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
-    t.bigint "continuation_request_id", comment: "The scoped continuation authorization this run executes, if any."
-    t.jsonb "reconciliation", default: {}, null: false, comment: "Durable replay state for partial PR closeout gap reconciliation."
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
@@ -407,30 +407,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
 
   create_table "api_usage_attempts", comment: "Idempotent accounting reports for individual API provider requests.", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "project_id"
-    t.bigint "agent_run_id"
-    t.bigint "chat_session_id"
-    t.bigint "chat_message_id"
     t.bigint "actor_id"
-    t.bigint "runner_id"
-    t.bigint "token_usage_id"
+    t.bigint "agent_run_id"
     t.string "attempt_id", limit: 255, null: false, comment: "Harness-generated stable physical request identity."
-    t.integer "ordinal", null: false, comment: "Harness retry ordinal within the logical request."
-    t.string "provider", limit: 100, null: false
-    t.string "llm_model", limit: 100
-    t.string "status", limit: 20, null: false
-    t.integer "input_tokens", comment: "Nil means the provider did not report input usage."
-    t.integer "output_tokens", comment: "Nil means the provider did not report output usage."
     t.integer "cache_read_tokens", comment: "Provider-reported cached input tokens, when available."
     t.integer "cache_write_tokens", comment: "Provider-reported cache creation tokens, when available."
+    t.bigint "chat_message_id"
+    t.bigint "chat_session_id"
+    t.datetime "created_at", null: false
+    t.datetime "finished_at", null: false
+    t.integer "input_tokens", comment: "Nil means the provider did not report input usage."
+    t.string "llm_model", limit: 100
+    t.jsonb "metadata", default: {}, null: false
+    t.integer "ordinal", null: false, comment: "Harness retry ordinal within the logical request."
+    t.integer "output_tokens", comment: "Nil means the provider did not report output usage."
+    t.string "pricing_source", limit: 30, default: "unknown", null: false
+    t.bigint "project_id"
+    t.string "provider", limit: 100, null: false
     t.decimal "provider_cost_amount", precision: 20, scale: 8, comment: "Raw provider charge in provider_currency."
     t.string "provider_currency", limit: 3, comment: "ISO 4217 currency for the raw provider charge."
-    t.string "pricing_source", limit: 30, default: "unknown", null: false
     t.datetime "provider_priced_at", comment: "Provider or historical-pricing timestamp."
+    t.bigint "runner_id"
     t.datetime "started_at", null: false
-    t.datetime "finished_at", null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "created_at", null: false
+    t.string "status", limit: 20, null: false
+    t.bigint "token_usage_id"
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "idx_api_usage_attempts_account_created"
     t.index ["account_id"], name: "index_api_usage_attempts_on_account_id"
@@ -726,12 +726,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.text "intent", null: false, comment: "What the human was trying to accomplish."
     t.bigint "issue_id", comment: "Issue that motivated or contextualized the intent, when applicable."
     t.bigint "project_id", null: false, comment: "Project this change intent applies to."
+    t.datetime "requested_changes_at", comment: "When the latest operator review requested changes to this draft Change Intent Record."
+    t.text "requested_changes_reason", comment: "Operator-visible reason captured when the latest review requested changes on this draft."
     t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the record: draft, active, or superseded."
     t.bigint "superseded_by_id", comment: "Newer change intent that superseded this record."
     t.text "title", null: false, comment: "Short title summarizing the intent."
     t.datetime "updated_at", null: false
-    t.datetime "requested_changes_at", comment: "When the latest operator review requested changes to this draft Change Intent Record."
-    t.text "requested_changes_reason", comment: "Operator-visible reason captured when the latest review requested changes on this draft."
     t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
     t.index ["issue_id"], name: "index_change_intents_on_issue_id"
     t.index ["project_id", "status"], name: "index_change_intents_on_project_id_and_status"
@@ -1215,28 +1215,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
   end
 
   create_table "dependabot_alert_coverages", comment: "Durable alert-level Dependabot remediation coverage and escalation evidence.", force: :cascade do |t|
+    t.datetime "acceptance_expires_at"
+    t.text "acceptance_reason"
+    t.bigint "accepted_by_id"
     t.bigint "account_id", null: false
-    t.bigint "project_id", null: false
-    t.integer "alert_number", null: false, comment: "GitHub Dependabot alert number within the repository."
-    t.string "dependency_name", null: false
-    t.string "dependency_ecosystem", null: false
-    t.string "manifest_path"
-    t.string "advisory_ghsa_id", null: false
     t.string "advisory_cve_id"
+    t.string "advisory_ghsa_id", null: false
+    t.integer "alert_number", null: false, comment: "GitHub Dependabot alert number within the repository."
     t.string "alert_state", default: "open", null: false
     t.string "coverage_state", default: "awaiting_processing", null: false
-    t.string "reason", default: "unknown", null: false
-    t.jsonb "remediation_pull_requests", default: [], null: false
+    t.datetime "created_at", null: false
+    t.string "dependency_ecosystem", null: false
+    t.string "dependency_name", null: false
+    t.datetime "escalated_at"
     t.jsonb "evidence", default: {}, null: false
     t.datetime "first_detected_at", null: false
     t.datetime "last_detected_at", null: false
-    t.datetime "escalated_at"
-    t.bigint "accepted_by_id"
-    t.text "acceptance_reason"
-    t.datetime "acceptance_expires_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
+    t.string "manifest_path"
+    t.bigint "project_id", null: false
+    t.string "reason", default: "unknown", null: false
+    t.jsonb "remediation_pull_requests", default: [], null: false
     t.datetime "uncovered_since", comment: "When the alert most recently transitioned from an effective remediation to an uncovered state; nil while the alert is covered. Drives the seven-day escalation grace check after a remediation PR closes unmerged."
+    t.datetime "updated_at", null: false
     t.index ["accepted_by_id"], name: "index_dependabot_alert_coverages_on_accepted_by_id"
     t.index ["account_id"], name: "index_dependabot_alert_coverages_on_account_id"
     t.index ["project_id", "alert_number"], name: "idx_on_project_id_alert_number_4aee5d2590", unique: true
@@ -1674,13 +1674,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
   end
 
   create_table "feature_intent_approval_revisions", comment: "Immutable RDR-066 approval snapshots for feature intent design revisions.", force: :cascade do |t|
-    t.bigint "feature_intent_id", null: false
-    t.bigint "approved_by_id", null: false
     t.datetime "approved_at", null: false, comment: "When the authorized human approved this design revision."
-    t.string "source", null: false, comment: "Approval source, such as inbox or direct_github_merge."
+    t.bigint "approved_by_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", null: false
     t.jsonb "pr_heads", default: {}, null: false, comment: "Exact design PR number => head SHA snapshot approved by the human."
     t.integer "revision_number", null: false, comment: "Feature-local immutable approval revision sequence."
-    t.datetime "created_at", null: false
+    t.string "source", null: false, comment: "Approval source, such as inbox or direct_github_merge."
     t.datetime "updated_at", null: false
     t.index ["approved_by_id"], name: "index_feature_intent_approval_revisions_on_approved_by_id"
     t.index ["feature_intent_id", "revision_number"], name: "index_feature_intent_approval_revisions_unique_revision", unique: true
@@ -1938,14 +1938,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
   end
 
   create_table "intent_conformance_decisions", comment: "Human resolutions of a material_drift/uncertain/not_evaluated intent-conformance verdict (RDR-067). A bounded_exception decision is scoped to its exact head_sha and stops applying the moment a new commit changes the PR HEAD.", force: :cascade do |t|
-    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this decision resolves."
-    t.bigint "verdict_id", comment: "The intent-conformance verdict this decision responds to, when one exists."
-    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
     t.string "action", null: false, comment: "fix_pr, bounded_exception, or design_amendment (see IntentConformanceDecision::ACTIONS)."
-    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
-    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
+    t.bigint "actor_id", null: false, comment: "The human who recorded this decision."
     t.datetime "created_at", null: false
+    t.string "head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this decision applies to. A bounded_exception only clears the auto-merge blocker while the PR HEAD still matches this value."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this decision resolves."
+    t.text "reason", null: false, comment: "Actor-supplied justification, shown in the Inbox and audit trail."
     t.datetime "updated_at", null: false
+    t.bigint "verdict_id", comment: "The intent-conformance verdict this decision responds to, when one exists."
     t.index ["actor_id"], name: "index_intent_conformance_decisions_on_actor_id"
     t.index ["issue_id", "action", "head_sha"], name: "index_intent_conformance_decisions_on_issue_action_head"
     t.index ["issue_id"], name: "index_intent_conformance_decisions_on_issue_id"
@@ -1994,18 +1994,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
   end
 
   create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|
-    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
-    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
-    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
-    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
     t.string "approved_design_revision", null: false, comment: "Merged repository commit SHA of the approved RDR/LID design revision compared against."
-    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
-    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
     t.jsonb "cited_claims", default: [], null: false, comment: "Approved design claims the reviewer cited, e.g. [{design_ref:, claim_text:}]."
     t.jsonb "cited_diff_locations", default: [], null: false, comment: "PR diff locations the reviewer cited, e.g. [{file:, anchor:}]."
-    t.text "reasoning_summary", comment: "Reviewer's reasoning summary, shown to a human resolving the Inbox decision."
-    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
     t.datetime "created_at", null: false
+    t.datetime "evaluated_at", null: false, comment: "When the reviewer run produced this verdict."
+    t.bigint "issue_id", null: false, comment: "The pull request (Issue row) this verdict evaluates."
+    t.string "outcome", null: false, comment: "within_scope, material_drift, uncertain, or not_evaluated (see IntentConformanceVerdict::OUTCOMES)."
+    t.string "pr_head_sha", limit: 40, null: false, comment: "PR HEAD commit SHA this verdict was evaluated against."
+    t.bigint "project_id", null: false, comment: "The project the evaluated pull request belongs to."
+    t.text "reasoning_summary", comment: "Reviewer's reasoning summary, shown to a human resolving the Inbox decision."
+    t.string "reviewer_model", comment: "Model identifier used by the independent reviewer run, for audit."
+    t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
     t.datetime "updated_at", null: false
     t.index ["issue_id", "pr_head_sha", "evaluated_at"], name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
     t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
@@ -2015,16 +2015,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
   end
 
   create_table "issue_continuation_requests", comment: "Scoped authorizations to deliberately continue an issue past prior terminal closeout evidence (merged PR / no-code).", force: :cascade do |t|
-    t.bigint "issue_id", null: false, comment: "The issue whose terminal evidence the request authorizes continuing past."
-    t.bigint "project_id", null: false, comment: "Denormalized project for scoped admission queries; always matches issue.project_id."
-    t.bigint "requested_by_id", null: false, comment: "Actor who requested the deliberate continuation."
-    t.text "reason", null: false, comment: "Required operator/agent justification recorded with the authorization."
-    t.jsonb "evidence", default: {}, null: false, comment: "Snapshot of the terminal closeout evidence the request authorizes against (merged PRs, no-code timestamp)."
-    t.string "evidence_digest", null: false, comment: "SHA-256 outcome-generation identity; a changed digest supersedes the request."
-    t.string "status", default: "queued", null: false, comment: "queued (run in flight) / consumed (run terminal, guards re-armed) / superseded (authorization invalidated)."
     t.datetime "closed_at", comment: "When the request left the open state."
     t.text "closure_reason", comment: "Why the request closed (terminal outcome or supersede reason)."
     t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false, comment: "Snapshot of the terminal closeout evidence the request authorizes against (merged PRs, no-code timestamp)."
+    t.string "evidence_digest", null: false, comment: "SHA-256 outcome-generation identity; a changed digest supersedes the request."
+    t.bigint "issue_id", null: false, comment: "The issue whose terminal evidence the request authorizes continuing past."
+    t.bigint "project_id", null: false, comment: "Denormalized project for scoped admission queries; always matches issue.project_id."
+    t.text "reason", null: false, comment: "Required operator/agent justification recorded with the authorization."
+    t.bigint "requested_by_id", null: false, comment: "Actor who requested the deliberate continuation."
+    t.string "status", default: "queued", null: false, comment: "queued (run in flight) / consumed (run terminal, guards re-armed) / superseded (authorization invalidated)."
     t.datetime "updated_at", null: false
     t.index ["issue_id"], name: "index_issue_continuation_requests_on_issue_id"
     t.index ["issue_id"], name: "index_issue_continuation_requests_open_per_issue", unique: true, where: "((status)::text = 'queued'::text)"
@@ -2067,12 +2067,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.text "body"
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
+    t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
+    t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
+    t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
+    t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."
+    t.string "code_scanning_disposition", comment: "Latest explicit upstream code-scanning disposition (for example fixed or dismissed)."
+    t.jsonb "code_scanning_disposition_evidence", comment: "Bounded upstream evidence supporting the latest code-scanning disposition."
+    t.text "code_scanning_disposition_reason", comment: "Reason GitHub supplied for the latest code-scanning disposition."
     t.datetime "created_at", null: false
     t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
     t.integer "enhance_issue_rounds", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
+    t.string "github_html_url", comment: "Canonical GitHub HTML URL captured from the sync payload; stable across repository retargeting"
     t.bigint "github_issue_id", null: false
     t.integer "github_number", null: false
     t.string "github_state", null: false
@@ -2100,6 +2108,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
+    t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
+    t.datetime "partial_completion_at", comment: "When an evidence-backed assessment recorded that a merged implementation PR left this source issue incomplete."
+    t.integer "partial_completion_pr_number", comment: "Merged pull request correlated with the latest partial-completion assessment."
+    t.text "partial_completion_reason", comment: "Operator-visible evidence for the latest partial-completion assessment."
     t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
     t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
@@ -2117,24 +2129,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.datetime "review_goal_retry_reset_at"
     t.text "runner_retry_abandon_reason", comment: "Human-readable reason the issue was abandoned due to the retry cap."
     t.datetime "runner_retry_abandoned_at", comment: "When non-null, the issue was abandoned because every available provider reached the per-issue retry cap. Excluded from auto-pick until cleared (e.g. by a successful run)."
+    t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
+    t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
     t.string "source", default: "github", null: false
     t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
-    t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
-    t.string "github_html_url", comment: "Canonical GitHub HTML URL captured from the sync payload; stable across repository retargeting"
-    t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
-    t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
-    t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
-    t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
-    t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
-    t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."
-    t.datetime "partial_completion_at", comment: "When an evidence-backed assessment recorded that a merged implementation PR left this source issue incomplete."
-    t.integer "partial_completion_pr_number", comment: "Merged pull request correlated with the latest partial-completion assessment."
-    t.text "partial_completion_reason", comment: "Operator-visible evidence for the latest partial-completion assessment."
-    t.string "code_scanning_disposition", comment: "Latest explicit upstream code-scanning disposition (for example fixed or dismissed)."
-    t.text "code_scanning_disposition_reason", comment: "Reason GitHub supplied for the latest code-scanning disposition."
-    t.jsonb "code_scanning_disposition_evidence", comment: "Bounded upstream evidence supporting the latest code-scanning disposition."
     t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
@@ -2935,12 +2935,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.boolean "automation_on_label_enabled", default: true, null: false
     t.integer "code_scanning_interval_hours", default: 24, null: false
     t.datetime "code_scanning_permission_error_at", comment: "Timestamp of the most recent 403 (missing security_events/code_scanning_alerts:read permission) hit while scanning for code scanning alerts. Used to back off retrying a scan that will fail identically until a human fixes the token/App permission, without waiting the full code_scanning_interval_hours window. Cleared on the next successful scan."
+    t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
+    t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "creation_origin", default: "connected", null: false, comment: "How the project came to be: connected (existing repo) or blank (repo created by Paid)."
     t.string "data_classification", default: "internal", null: false, comment: "Sensitivity level for project data shared with model providers."
     t.string "default_branch", default: "main", null: false
+    t.datetime "dependabot_fetch_error_at", comment: "Timestamp of the most recent transient Dependabot fetch failure. Used to back off retries without blocking code-scanning coverage."
+    t.datetime "dependabot_permission_error_at", comment: "Timestamp of the most recent Dependabot permissions error. Used to back off identical failures until credentials or repository settings change."
     t.string "enhance_issue_enhanced_label_name", default: "paid-enhanced", null: false
     t.string "enhance_issue_needs_input_label_name", default: "paid-needs-input", null: false
     t.jsonb "feature_activation_labels", comment: "Optional project-level override for per-item activation labels. Null means inherit user, tenant, or built-in defaults."
@@ -2959,6 +2963,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.jsonb "language_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile. Drives polyglot test/lint command routing (e.g. { \"languages\": [...], \"test_languages\": [...] }). Populated by detection (#3207) and optional .paid.yml manifest."
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
+    t.datetime "last_code_scanning_scan_attempted_at", comment: "Timestamp of the most recent request to fetch code-scanning alerts. This is distinct from the last complete successful snapshot."
+    t.datetime "last_dependabot_scan_at", comment: "Timestamp of the most recent successful Dependabot alert scan. Uses code_scanning_interval_hours to limit polling."
     t.datetime "last_github_activity_at"
     t.datetime "last_issue_reconciliation_at", comment: "Timestamp of the last issue state reconciliation against GitHub"
     t.datetime "last_issue_sync_at"
@@ -2977,6 +2983,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.datetime "next_code_scanning_scan_at", comment: "Earliest time a failed code-scanning fetch may be retried."
     t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
     t.string "owner_reviewer_login"
@@ -2985,6 +2992,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
+    t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
@@ -2993,6 +3001,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.datetime "quality_paused_at"
     t.string "repo", null: false
     t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
+    t.boolean "retry_failed_manual_runs", default: true, null: false, comment: "When true, a failed manual agent run with no issue/PR attachment and no observable work is automatically re-queued with backoff, up to AgentRun::MAX_MANUAL_RETRY_ATTEMPTS."
     t.jsonb "review_settings", default: {}, null: false
     t.string "scheduler_pause_reason"
     t.datetime "scheduler_paused_at"
@@ -3006,16 +3015,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_014705) do
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.text "webhook_secret"
-    t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "upstream_full_name", comment: "owner/repo of the upstream repository where PRs are opened when pr_target=upstream."
-    t.datetime "last_dependabot_scan_at", comment: "Timestamp of the most recent successful Dependabot alert scan. Uses code_scanning_interval_hours to limit polling."
-    t.datetime "dependabot_permission_error_at", comment: "Timestamp of the most recent Dependabot permissions error. Used to back off identical failures until credentials or repository settings change."
-    t.datetime "dependabot_fetch_error_at", comment: "Timestamp of the most recent transient Dependabot fetch failure. Used to back off retries without blocking code-scanning coverage."
-    t.datetime "last_code_scanning_scan_attempted_at", comment: "Timestamp of the most recent request to fetch code-scanning alerts. This is distinct from the last complete successful snapshot."
-    t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
-    t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
-    t.datetime "next_code_scanning_scan_at", comment: "Earliest time a failed code-scanning fetch may be retried."
+    t.text "webhook_secret"
     t.index "account_id, lower((owner)::text), lower((name)::text)", name: "index_projects_on_account_id_and_lower_owner_name"
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
