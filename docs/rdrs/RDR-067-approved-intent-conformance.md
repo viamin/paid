@@ -38,8 +38,12 @@ review for each eligible `(PR, HEAD, approved-design revision)` identity; a
 new head or design revision schedules a fresh review. Issue #3870 shipped the
 read-only shadow-review flag and rollout design in
 `docs/intent/intent-conformance-rollout/`; issue #4205 owns the still-required
-blinded corpus adjudication and measured worksheet. An Implemented status
-requires those recorded results. The RDR-066
+blinded corpus adjudication and measured worksheet. The attempted 2026-10-09
+evaluation is retained only as an invalidated audit trail: its recorded design
+revision postdates the adjudications, and its strata were not independently
+content-adjudicated. Its recorded one missed drift count is not reviewer-
+accuracy evidence, and it did not evaluate the promotion rule. An Implemented
+status requires a valid replacement evaluation. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -189,10 +193,10 @@ evidence is recorded in
 
 - **Current-head/current-design protection and Inbox escalation remain shipped
   with executable test evidence.**
-- **The evaluation criterion remains unmet.** The mechanism schedules shadow
-  reviews, but no blinded, adjudicated corpus or aggregate false-alarm and
-  missed-drift worksheet is recorded. Open issue [#4205](https://github.com/viamin/paid/issues/4205)
-  owns that focused run.
+- **The evaluation criterion remains unmet.** The retained manifest and
+  worksheet are invalidated audit artifacts, not blinded, independently
+  adjudicated rollout evidence. Open issue [#4205](https://github.com/viamin/paid/issues/4205)
+  owns a replacement run.
 - **Status remains Partially Implemented.** The README row remains aligned;
   this re-audit does not claim Implemented status.
 - **Epic #3861 remains open.** This closeout uses `Tracks #3861` and does not

@@ -100,6 +100,27 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
     end
   end
 
+  context "with a test file under tests/ (plural), e.g. gdUnit4/Godot projects" do
+    let(:changed_files_output) { "tests/test_importer.py\n" }
+
+    before do
+      FileUtils.mkdir_p(File.join(worktree_path, "tests"))
+      File.write(File.join(worktree_path, "tests/test_importer.py"), <<~PYTHON)
+        class TestImporter:
+            def test_creates_project(self):
+                pass
+      PYTHON
+    end
+
+    it "recognizes the file as a test and renders an outline" do # @spec TDD-PR-004
+      body = described_class.call(body: "## Summary\n\nTest PR", agent_run: agent_run)
+
+      expect(body).to include("## Test Outline")
+      expect(body).to include("TestImporter")
+      expect(body).to include("creates project")
+    end
+  end
+
   context "when a follow-up run does not touch any test files" do
     let(:changed_files_output) { "app/services/projects/import.rb\n" }
     let(:existing_body) do

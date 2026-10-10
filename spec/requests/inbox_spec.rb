@@ -88,7 +88,7 @@ RSpec.describe "Inbox" do
     )
   end
 
-  # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
+  # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003 @spec INBOX-FOUNDATION-009
   it "lists clarifying-question and plan-review entries across auto-pick projects" do
     review = create_inbox_entries
 
@@ -99,6 +99,21 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Alpha question", "Beta question", "PR question", "Approval blocked PR", "Review me", "Quality pause requires manual review")
     expect(response.body).to include("Visible task", "What is the expected behavior?")
     expect(response.body).not_to include("Closed question")
+  end
+
+  it "renders compact URL-driven filters with the selected project, kind, and sort" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, sort: "newest")
+
+    document = Nokogiri::HTML(response.body)
+    filter = document.at_css("[data-controller~='inbox-filters']")
+
+    expect(filter).to be_present
+    expect(document.at_css("[data-inbox-filters-target='trigger']").text).to include("Filters", project.full_name, "Clarifying Questions", "Newest first")
+    expect(document.at_css("input[name='kind'][value='clarifying_questions']")["checked"]).to be_present
+    expect(document.at_css("input[name='project_id'][value='#{project.id}']")["checked"]).to be_present
+    expect(document.at_css("input[name='sort'][value='newest']")["checked"]).to be_present
   end
 
   # @spec NOTIFICATION-SEVERITY-009
@@ -380,11 +395,12 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(
       "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:999999",
       project_id: project.id,
-      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+      sort: "newest"
     )
 
     expect(response).to redirect_to(
-      inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+      inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, sort: "newest")
     )
     expect(response).to have_http_status(:see_other)
   end
@@ -429,7 +445,6 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include(project.full_name, "Alpha question")
-    expect(response.body).not_to include(second_project.full_name)
     expect(response.body).not_to include("Beta question")
   end
 
@@ -853,15 +868,13 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002E
-  it "exposes retry_limited in the inbox nav filter chips" do
+  it "exposes retry_limited in the inbox filter panel" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Retry-limited'][@href='#{inbox_path(kind: Inbox::Queue::RETRY_LIMITED_KIND)}'])
-    )
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::RETRY_LIMITED_KIND}']")
 
-    expect(chip).to be_present
+    expect(control).to be_present
   end
 
   # @spec OPERATOR-INBOX-002E
@@ -872,16 +885,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002D
-  it "exposes manual_review in the inbox nav filter chips and filters to it" do
+  it "exposes manual_review in the inbox filter panel and filters to it" do
     create_manual_review_issue(title: "Parked issue", github_number: 514)
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Manual Review'][@href='#{inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)}'])
-    )
-    expect(chip).to be_present
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")
+    expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
 
@@ -890,16 +901,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec FEATURE-APPROVAL-013
-  it "exposes feature_decision in the inbox nav filter chips and filters to it" do
+  it "exposes feature_decision in the inbox filter panel and filters to it" do
     feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Feature Decision'][@href='#{inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)}'])
-    )
-    expect(chip).to be_present
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::FEATURE_DECISION_KIND}']")
+    expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)
 
@@ -908,16 +917,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec INTENT-CONFORMANCE-006
-  it "exposes intent_conformance in the inbox nav filter chips and filters to it" do
+  it "exposes intent_conformance in the inbox filter panel and filters to it" do
     pr = create_intent_conformance_pr(title: "Drifted PR")
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Intent Conformance'][@href='#{inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)}'])
-    )
-    expect(chip).to be_present
+    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::INTENT_CONFORMANCE_KIND}']")
+    expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)
 
@@ -937,16 +944,14 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002J
-  it "exposes test_review_pending in the inbox nav filter chips and filters to it" do
+  it "exposes test_review_pending in the inbox filters dialog and filters to it" do
     pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 517)
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    chip = document.at_xpath(
-      %(//a[normalize-space()='Test Reviews'][@href='#{inbox_path(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND)}'])
-    )
-    expect(chip).to be_present
+    option = document.at_css("input[name='kind'][value='#{Inbox::Queue::TEST_REVIEW_PENDING_KIND}']")
+    expect(option).to be_present
 
     get inbox_path(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND)
 
