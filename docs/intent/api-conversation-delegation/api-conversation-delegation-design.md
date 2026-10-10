@@ -100,14 +100,24 @@ the same ID is reused only when delivery of that already-recorded attempt is
 redelivered, while any new outbound request receives a new ID. A runner switch
 is a Paid recovery action and starts a new attempt sequence under the same turn.
 
-Paid supplies `max_request_attempts`, retry classification, deadline, and a
-cancellation signal to the harness. Harness owns retries inside that one
+Paid supplies `max_request_attempts`, retry classification, and two
+independent bounds to the harness: a **read deadline** and a **request
+deadline**. The read deadline (`timeout: { read_seconds: ... }`) is the
+maximum time with no data on the stream; it fires on a genuinely stuck
+connection and is unaffected by how long the overall response takes. The
+request deadline is a generous wall-clock cap on the whole outbound attempt,
+supplied as a monotonic cancellation signal; it exists to bound a request
+that is stuck in a way the read deadline cannot see (e.g. an attempt that
+never starts), not to cap how long an actively streaming model may run. The
+request deadline MUST be longer than the read deadline — a response that is
+still receiving data when the read deadline's duration has elapsed must not
+be cancelled by the request deadline. Harness owns retries inside that one
 request only, checks cancellation before each internal attempt and while
-streaming, and returns a classified terminal result after the bound is reached.
-Neither RubyLLM nor Paid may add a second uncoordinated retry loop for the same
-request. Authentication and configuration failures are terminal for the
-candidate; rate-limit and transient failures remain distinguishable for Paid's
-runner policy.
+streaming, and returns a classified terminal result after either bound is
+reached. Neither RubyLLM nor Paid may add a second uncoordinated retry loop
+for the same request. Authentication and configuration failures are terminal
+for the candidate; rate-limit and transient failures remain distinguishable
+for Paid's runner policy.
 
 The harness reports each internal provider attempt with its stable parent
 attempt ID, ordinal, runner/provider/model identity, outcome, timestamps, and
@@ -186,7 +196,7 @@ host process, not inside agent containers.
 | Runner fallback eligibility, notices, rate-limit resumption (`ChatSessions::FallbackLoop`/`FallbackRunners`/`MarkRateLimited`) | `retained` | `HttpClient` raises the same `AgentHarness::*Error` subclasses as the old transports (translated from the harness's classified `result[:error]`), so this policy layer needed no changes. Multi-candidate/`fallback:` support in `ChatTransport` is intentionally unused — one call is one provider attempt, matching "transient model fallback alone cannot replace this policy." |
 | CLI/subscription chat runners | `retained` (unsupported path, unchanged) | Chat still requires an API-key runner (`BuildLlmClient.usable_runner?`); this was true before this migration and is not a new restriction. |
 | Chat loop sequencing, tool dispatch, approval resumption (`ChatSessions::AgentLoop`, `ResolveToolCall`, `Tools::Registry`) | `retained` | Out of scope per the Loop Delegation Decision; `HttpClient`'s public `#call(conversation, tools:, on_chunk:)` contract is unchanged so `AgentLoop`'s reflection-based kwarg detection and streaming replay keep working unmodified. |
-| Request attempt identity, retry-limit/deadline/cancellation plumbing (API-CONVERSATION-DELEGATION-003) | `migrated` | `HarnessTransport` persists a per-session request sequence, supplies its Paid-owned request identity, one-attempt bound, read deadline, and deadline cancellation signal to every harness call. `FallbackLoop` retains runner changes and receives a new identity for each new outbound request. |
+| Request attempt identity, retry-limit/deadline/cancellation plumbing (API-CONVERSATION-DELEGATION-003) | `migrated` | `HarnessTransport` persists a per-session request sequence, supplies its Paid-owned request identity, one-attempt bound, a `read_seconds` inactivity timeout, and a separate, longer monotonic request-deadline cancellation signal to every harness call. `FallbackLoop` retains runner changes and receives a new identity for each new outbound request. |
 | Durable attempt-report persistence (API-CONVERSATION-DELEGATION-002) | `unsupported` (tracked gap) | `HttpClient#call` still does not persist per-attempt harness reports. Tracked by viamin/paid#4125. |
 
 **Tests:** `spec/services/chat_sessions/build_llm_client_spec.rb` (black-box

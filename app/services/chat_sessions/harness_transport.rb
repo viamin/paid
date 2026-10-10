@@ -6,7 +6,12 @@ module ChatSessions
   # outbound request rather than an ambiguous replay of a prior provider call.
   class HarnessTransport
     MAX_REQUEST_ATTEMPTS = 1
+    # Inactivity bound: the maximum time with no data on the stream.
     READ_DEADLINE = 60.seconds
+    # Wall-clock bound on the whole outbound attempt. Independent of, and much
+    # longer than, READ_DEADLINE so a model that is still actively streaming
+    # past the read deadline's duration is never cancelled mid-stream.
+    REQUEST_DEADLINE = 10.minutes
     METADATA_SEQUENCE_KEY = "api_chat_request_sequence"
 
     def initialize(chat_session:, transport:, clock: Process.method(:clock_gettime))
@@ -46,7 +51,7 @@ module ChatSessions
         {
           request_id: "chat-#{@chat_session.external_id}-#{sequence}",
           sequence: sequence,
-          deadline: monotonic_now + READ_DEADLINE.in_seconds
+          deadline: monotonic_now + REQUEST_DEADLINE.in_seconds
         }
       end
     end
