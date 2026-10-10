@@ -4,6 +4,28 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-024** — When a current, bounded partial-closeout
+  assessment finds no remaining gap after previously recorded work has shipped,
+  the system SHALL automatically authorize and queue exactly one fresh acceptance
+  audit through the existing scoped continuation path when the project’s normal
+  auto-pick gate and all continuation admission guards permit it. The run SHALL be
+  automatic and retain the normal evidence digest, budget, trust, pause,
+  dependency, scanner-verification, and dequeue rechecks; an explicit hold or
+  disabled automation SHALL not be bypassed. When agent-owned work remains, the
+  system SHALL create or reuse its focused owners and wait; human prerequisites
+  SHALL remain specific Inbox requests while independent owners can progress.
+  Replays and concurrent workers SHALL reuse the existing continuation request and
+  run rather than create duplicates.
+  *Code:* `app/services/partial_closeouts/advance.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/temporal/activities/advance_partial_closeout_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/services/issues/request_continuation.rb`.
+  *Test:* `spec/services/partial_closeouts/advance_spec.rb`,
+  `spec/temporal/activities/advance_partial_closeout_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-023** — When a partial-closeout Inbox pane or its
   authorized chat context renders, the system SHALL expose the persisted
   criterion-level assessment with satisfied, unmet, or unknown states, cited

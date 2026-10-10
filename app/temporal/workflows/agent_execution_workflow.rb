@@ -463,6 +463,17 @@ module Workflows
                 reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
                   { agent_run_id: agent_run_id }, timeout: 120)
 
+                # CreatePullRequestActivity marks its source run terminal before
+                # returning. Keep advancement as a separate, post-completion
+                # activity so continuation admission can retain its in-flight-run
+                # protection for every other run on this issue. The patch guard
+                # preserves histories that recorded reconciliation before this
+                # activity existed. # @spec PARTIAL-CLOSEOUT-024
+                if Temporalio::Workflow.patched("partial-closeout-advance-v1")
+                  run_activity(Activities::AdvancePartialCloseoutActivity,
+                    { agent_run_id: agent_run_id }, timeout: 30)
+                end
+
                 # Step 7: Update issue with PR link. Full closeout: complete the
                 # parent. Partial closeout: keep the parent incomplete, but post
                 # the PR-link evidence on it (idempotent) so the partial PR is

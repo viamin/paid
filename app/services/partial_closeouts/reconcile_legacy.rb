@@ -286,6 +286,7 @@ module PartialCloseouts
 
       assessment = persisted_assessment(agent_run)
       Reconcile.call(agent_run: agent_run, assessment: assessment)
+      Advance.call(agent_run: agent_run, assessment: assessment)
       agent_run.reload
       status = agent_run.reconciliation.to_h.fetch("status", nil)
 

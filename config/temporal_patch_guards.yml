@@ -25,6 +25,8 @@ workflows:
       introduced_on: "2026-09-18"
     partial-closeout-reconciliation-v1:
       introduced_on: "2026-10-05"
+    partial-closeout-advance-v1:
+      introduced_on: "2026-10-10"
   Workflows::ParallelAgentExecutionWorkflow:
     parallel-agent-execution-remove-pr-aggregation-v1:
       introduced_on: "2026-09-03"
