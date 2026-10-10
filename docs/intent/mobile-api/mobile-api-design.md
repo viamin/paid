@@ -232,7 +232,7 @@ indistinguishable by design.
 | `PATCH /api/v1/chat_sessions/:id` | `ChatSessionsController#update` semantics (title etc.) | |
 | `DELETE /api/v1/chat_sessions/:id` | `ChatSessions::Close` | |
 | `PATCH …/:id/archive`, `…/unarchive`, `…/reopen` | existing member actions | |
-| `GET /api/v1/chat_sessions/:chat_session_id/messages` | `ChatMessagesController#index` semantics | Cursor pagination below. |
+| `GET /api/v1/chat_sessions/:chat_session_id/messages` | `ChatMessagesController#index` query semantics | Cursor pagination below — `limit` and `next_before` are new mobile shaping, not web reuse. |
 | `POST /api/v1/chat_sessions/:chat_session_id/messages` | `ChatSessions::SendMessage` | JSON default; SSE when `Accept` includes `text/event-stream` (mirror `sse_requested?`). |
 | `POST …/messages/:message_id/resolve` | `ChatSessions::ResolveToolCall` | `{ "decision": "approve" \| "deny" }`; same `Accept` negotiation. |
 
@@ -247,12 +247,19 @@ names and no payload reshaping. Authorization, archived-session rejection,
 content limits, and rate-limit handling match `ChatMessagesController`'s
 current behavior (`CHAT-API-002`/`004` remain the normative claims).
 
-**Cursor pagination.** Messages paginate with the same keyset cursor the
-web index uses: `before` (exclusive message-id cursor) and `limit` (default
-50, max 100), served newest-first internally and returned oldest-first in
-the response body, with a `next_before` field when more pages remain. No
-offset pagination — the transcript is append-mostly and keyset pagination
-stays correct as new messages land.
+**Cursor pagination.** The cursor *semantics* reuse the web index: `before`
+(exclusive message-id cursor), queried newest-first and returned
+oldest-first, with no offset pagination — the transcript is append-mostly
+and keyset pagination stays correct as new messages land. Two pieces are
+**new response shaping** for `Api::V1::ChatMessagesController#index`, not
+ports of web behavior: a configurable `limit` (default 50, max 100 — the
+web index hardcodes `.limit(50)` and accepts no limit parameter) and a
+`next_before` field when more pages remain (the web index returns a bare
+JSON array with no cursor metadata; the HTML surface paginates Turbo
+frames with a boolean `has_more` — `older_messages` on message id,
+`sidebar_page` on `before_updated_at`/`before_id` — not a cursor field).
+The implementation issues add this envelope to the mobile controller; the
+web endpoints stay unchanged.
 
 ## Error Taxonomy
 
@@ -339,8 +346,13 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
 ## Decisions
 
 - **Thin controllers, reused services.** Every endpoint delegates to an
-  existing service; the only new service is the thin `Inbox::FindEntry`
-  wrapper (queue re-resolution, kind-scoped).
+  existing service; the only new *service* is the thin `Inbox::FindEntry`
+  wrapper (queue re-resolution, kind-scoped). New logic is not limited to
+  that service: the mobile messages index adds controller-level response
+  shaping the web index does not have — the configurable `limit` and
+  `next_before` cursor envelope (see "Cursor pagination"). Scope the
+  messages endpoint accordingly; it is wire-format negotiation, not a
+  verbatim port.
 - **Digest-hashed bearer tokens.** Deterministic indexed lookup, plaintext
   shown once, generic 401s — no enumeration, no recoverable secret at rest.
 - **Re-resolution over direct lookup for entry detail.** Authorization is

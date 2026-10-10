@@ -126,7 +126,12 @@
   paginate with a keyset cursor — `before` (exclusive message-id cursor)
   and `limit` (default 50, max 100) — returning the page oldest-first and
   a `next_before` cursor when older messages remain, and SHALL NOT offer
-  offset pagination.
+  offset pagination. Provenance: only the `before` cursor and the
+  oldest-first ordering are reused from the web index (which hardcodes a
+  50-message page and returns a bare array with no cursor metadata); the
+  configurable `limit` and the `next_before` field are new mobile-surface
+  response shaping that `Api::V1::ChatMessagesController#index` must add,
+  not a port of existing web behavior.
   *Tests:* `spec/requests/api/v1/chat_messages_spec.rb`.
   *Code:* `Api::V1::ChatMessagesController#index`.
 
