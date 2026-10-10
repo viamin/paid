@@ -33,6 +33,7 @@ class ChatSessions::ResumeRateLimitedJob < ApplicationJob
     stream_name = "chat_session:#{chat_session.id}"
 
     ActionCable.server.broadcast(stream_name, { type: "message_start", message_id: stream_message_id })
+    chunk_sequence = 0
 
     assistant_message = ChatSessions::ResumeRateLimited.call(
       chat_session: chat_session,
@@ -41,7 +42,10 @@ class ChatSessions::ResumeRateLimitedJob < ApplicationJob
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
       on_chunk: ->(chunk) {
-        ActionCable.server.broadcast(stream_name, { type: "message_chunk", message_id: stream_message_id, content: chunk })
+        chunk_sequence += 1
+        ActionCable.server.broadcast(stream_name, {
+          type: "message_chunk", message_id: stream_message_id, content: chunk, sequence: chunk_sequence
+        })
       }
     )
 

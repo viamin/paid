@@ -80,8 +80,7 @@ RSpec.describe "ChatMessages" do
 
       it "creates a message and returns assistant response" do
         # @spec CHAT-API-002
-        llm_client = instance_double(Proc)
-        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(instance_double(Proc))
         allow(ChatSessions::SendMessage).to receive(:call).and_return(
           create(:chat_message, :assistant, chat_session: chat_session,
             content: "Hello back!", tokens_input: 10, tokens_output: 5)
@@ -215,7 +214,6 @@ RSpec.describe "ChatMessages" do
           args[:on_chunk].call("back!")
           assistant_msg
         end
-
         post chat_session_chat_messages_path(chat_session),
           params: { content: "Hello" },
           headers: { "Accept" => "text/event-stream" }
@@ -224,9 +222,8 @@ RSpec.describe "ChatMessages" do
         expect(response.headers["Content-Type"]).to include("text/event-stream")
 
         body = response.body
-        expect(body).to include("event: message_start")
-        expect(body).to include("event: message_chunk")
-        expect(body).to include("event: message_complete")
+        expect(body).to include("event: message_start", "event: message_chunk", "event: message_complete")
+        expect_sse_chunks(body, "Hello " => 1, "back!" => 2)
       end
 
       it "emits message_tool_call event when a tool call message is persisted" do
@@ -471,6 +468,7 @@ RSpec.describe "ChatMessages" do
         expect(body).to include("event: message_tool_resolved")
         expect(body).to include("event: message_chunk")
         expect(body).to include("event: message_complete")
+        expect_sse_chunks(body, "Done." => 1)
       end
     end
 
@@ -507,5 +505,11 @@ RSpec.describe "ChatMessages" do
         expect(response.body).not_to include("event: message_start")
       end
     end
+  end
+
+  def expect_sse_chunks(body, expected)
+    chunks = body.scan(/event: message_chunk\ndata: (.+)\n/).flatten.map { |event| JSON.parse(event) }
+    matchers = expected.map { |content, sequence| include("content" => content, "sequence" => sequence) }
+    expect(chunks).to match_array(matchers)
   end
 end

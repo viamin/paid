@@ -110,6 +110,11 @@ What ships today:
 - `ChatMessagesController` supports JSON and SSE request/response flows
 - `ChatChannel` plus `ChatSessions::ProcessMessageJob` support ActionCable
   progress events for the browser UI
+- ActionCable and SSE chunk events carry a stream-local, monotonically
+  increasing sequence. The browser appends only contiguous chunks for its
+  active stream; it discards a transient bubble on a duplicate or gap and
+  relies on the persisted message render as the authoritative transcript.
+  Terminal and error events likewise remove any remaining transient bubble.
 - `ChatSessions::AgentLoop` executes read-only tools inline and persists
   pending write-tool confirmations without letting the model self-authorize
   mutations
