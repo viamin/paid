@@ -55,7 +55,7 @@ Five merged PRs claimed `Closes #200001838`. **None of them touched
 
 | PR | Merged | What it actually changed |
 | --- | --- | --- |
-| [#2553](https://github.com/viamin/paid/pull/2553) | 2026-06-11 | `projects/agent_runs_controller.rb#refresh_auth`: `params[:auth_token]` / `params[:auth_code]` → `request.POST[...]` (sibling alerts #1844–#1848, fixed 2026-08-03) |
+| [#2553](https://github.com/viamin/paid/pull/2553) | 2026-06-11 | `projects/agent_runs_controller.rb#refresh_auth`: `params[:auth_token]` / `params[:auth_code]` → `request.POST[...]` |
 | [#3135](https://github.com/viamin/paid/pull/3135) | 2026-08-03 | `admin/github_app/setup_controller.rb`: `params[:code]` → `oauth_callback_code` with an `# lgtm[rb/sensitive-get-query]` suppression; added `/\Acode\z/` to `filter_parameters` |
 | [#4034](https://github.com/viamin/paid/pull/4034) | 2026-09-25 | `claude_login_sessions_controller.rb` / `codex_login_sessions_controller.rb`: `params[:session_token]` / `params[:authorization_code]` → `request.request_parameters[...]` |
 | [#4043](https://github.com/viamin/paid/pull/4043) | 2026-09-26 | `setup_controller.rb`: changed the suppression comment syntax `# lgtm[` → `# codeql[` |
@@ -75,6 +75,13 @@ The mis-targeting is visible in the PR bodies themselves: #2553's body admits it
 was "generalized from the CodeQL alert context" and asks the reviewer to
 "confirm the specific endpoint … against the actual diff", and #3135/#4043/#4047
 say only "See #200001838 for context" while their diffs touch other controllers.
+Sibling findings of the same rule did exist and were fixed over time — the
+closed-alert history shows five `agent_runs_controller` alerts (#1844–#1848,
+created 2026-08-02, fixed 2026-08-03), `clarifying_questions_controller` alerts
+(#1841–#1842, fixed 2026-08-03), `plan_reviews_controller` (#1849, fixed
+2026-08-26), and `change_intents_controller` alerts (#1851–#1856, fixed
+2026-10-07) — which is exactly how five "Closes #200001838" PRs could merge
+without ever addressing the tracked alert's location.
 
 ## Why the alert exists and keeps returning
 
