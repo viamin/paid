@@ -31,8 +31,7 @@ module Configuration
           "review_copilot" => false,
           "review_manual" => false,
           "quality_gate_enabled" => false,
-          "run_concurrency_mode" => "auto",
-          "agent_auto_continue" => true
+          "run_concurrency_mode" => "auto"
         }
       end
 
