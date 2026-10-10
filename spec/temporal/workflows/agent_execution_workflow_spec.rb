@@ -1383,6 +1383,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::CreatePullRequestActivity"
           { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
         when "Activities::ReconcilePartialCloseoutActivity" then reconcile_result
+        when "Activities::AdvancePartialCloseoutActivity" then {}
         when "Activities::UpdateIssueWithPrActivity" then {}
         when "Activities::PostPartialCloseoutEvidenceActivity" then { agent_run_id: 42, posted: true }
         when "Activities::RequestReviewActivity" then {}
@@ -1406,6 +1407,21 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       workflow.execute(input)
 
       expect(call_order.index("Activities::ReconcilePartialCloseoutActivity"))
+        .to be < call_order.index("Activities::UpdateIssueWithPrActivity")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-024
+    it "advances a gap-free closeout only after PR creation has completed the source run" do
+      call_order = []
+      stub_new_pr_creation_with_reconciliation(
+        { agent_run_id: 42, status: "reconciled", gaps_remain: false }, call_order
+      )
+
+      workflow.execute(input)
+
+      expect(call_order.index("Activities::ReconcilePartialCloseoutActivity"))
+        .to be < call_order.index("Activities::AdvancePartialCloseoutActivity")
+      expect(call_order.index("Activities::AdvancePartialCloseoutActivity"))
         .to be < call_order.index("Activities::UpdateIssueWithPrActivity")
     end
 

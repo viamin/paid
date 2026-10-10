@@ -224,6 +224,28 @@ machinery the workflow uses:
   rake task tells the operator that no work ran and to retry later, rather
   than presenting a zero-row sweep as a completed backlog.
 
+### Automatic advancement after investigation (#4223)
+
+After the shared reconciler persists a current assessment, `PartialCloseouts::Advance`
+uses the existing scoped continuation authorization to schedule one fresh acceptance
+audit when the assessment has no remaining gaps. This handles stale historical gap
+reports whose implementation shipped after the previous audit without asking an
+operator to bypass the merged-PR duplicate-work guard. Patched workflows invoke the
+advance activity only after PR creation returns with the source run terminal;
+`PartialCloseouts::Advance` also refuses a non-terminal source run. This preserves
+the continuation admission guard against every other in-flight run on the issue.
+Bounded legacy reconciliation already operates on terminal runs. The advancement path
+records the normal continuation evidence and audit event, and is idempotent through
+the existing open request and active-run constraints.
+
+It only operates while `Issues::AutoPickProjectGate` is open and delegates all
+remaining admission to `Issues::RequestContinuation` / `CloseoutStatus`; explicit
+holds, trust, budgets, dependencies, scanner verification, and human prerequisites
+therefore remain authoritative. Assessments with agent-owned gaps create or reuse
+their focused owners and wait for those owners; human prerequisites remain Inbox
+items with their exact requested evidence. No path here closes an issue, reopens a
+closed owner, dismisses a scanner finding, or treats a merge as verification.
+
 ### Human closeout guidance (#4189)
 
 The lane's recovery actions assume the operator already knows which action
