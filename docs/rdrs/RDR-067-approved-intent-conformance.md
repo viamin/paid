@@ -37,15 +37,15 @@ The production PR scanner now schedules a durable, de-duplicated independent
 review for each eligible `(PR, HEAD, approved-design revision)` identity; a
 new head or design revision schedules a fresh review. Issue #3870 shipped the
 read-only shadow-review flag and rollout design in
-`docs/intent/intent-conformance-rollout/`; issue #4205 completed the blinded
-corpus adjudication and measured worksheet recorded on 2026-10-10. The attempted 2026-10-09
+`docs/intent/intent-conformance-rollout/`; issue #4205 still owns the required
+blinded corpus adjudication and measured worksheet. The attempted 2026-10-09
 evaluation is retained only as an invalidated audit trail: its recorded design
 revision postdates the adjudications, and its strata were not independently
 content-adjudicated. Its recorded one missed drift count is not reviewer-
 accuracy evidence, and it did not evaluate the promotion rule. An Implemented
-status requires a valid replacement evaluation. The replacement reports one
-missed material drift, so it does not meet the promotion rule and enforcement
-remains disabled pending corrective action. The RDR-066
+status requires a valid replacement evaluation. The attempted 2026-10-10
+replacement is also invalidated because it was committed before its purported
+events and lacks auditable per-case inputs. Enforcement remains disabled. The RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -204,20 +204,13 @@ evidence is recorded in
 - **Epic #3861 remains open.** This closeout uses `Tracks #3861` and does not
   use closing language.
 
-## 2026-10-10 Shadow Evaluation Audit
+## 2026-10-10 Shadow Evaluation Invalidation
 
-Issue [#4205](https://github.com/viamin/paid/issues/4205) completed the valid
-replacement run recorded in
+Issue [#4205](https://github.com/viamin/paid/issues/4205) has not completed a
+valid replacement run. The rejected record is retained in
 [`audit-report-2026-10-10-rdr-067.md`](audit-report-2026-10-10-rdr-067.md).
-The frozen corpus contains 30 cases (ten accepted, ten intentionally drifted,
-and ten uncertain), each pinned to repository/base/head/design/model/prompt
-identity. Two blinded operator adjudications cover every case; the recorded
-accepted-case disagreement has a third-operator resolution with a cited design
-claim. The only enabled rollout flag was `intent_conformance_shadow_review`.
-
-The aggregate reports a 10.0% false-alarm rate and one missed material drift.
-Because zero missed intentionally drifted cases is a promotion requirement,
-the project remains shadow-only and must correct the reviewer materiality
-evidence and repeat blinded drift evaluation before enabling enforcement. The
-RDR remains **Partially Implemented**; the completed evaluation evidence does
-not authorize an Implemented status or close epic #3861.
+Its purported adjudications and freeze postdate the commit that introduced
+them, and its cost, human-time, rework, and resolution figures have no
+repository-visible inputs. It is not evidence of reviewer quality, blinded
+adjudication, or a promotion outcome. The RDR remains **Partially Implemented**;
+operators must repeat the run with an event-backed, post-event frozen corpus.

@@ -1,8 +1,8 @@
-# RDR-067 Shadow Evaluation Aggregate Worksheet — 2026-10-10
+# RDR-067 Shadow Evaluation Aggregate Worksheet — 2026-10-10 (Invalidated)
 
-<!-- @spec INTENT-CONFORMANCE-ROLLOUT-002 @spec INTENT-CONFORMANCE-ROLLOUT-003 -->
+This worksheet is invalidated and retained only to make the rejected values auditable. Its [manifest](shadow-evaluation-manifest-2026-10-10.yml) was committed before its purported adjudications and freeze, and it contains no repository-visible event ledger from which the reported costs, timing, resolution actions, or rework can be derived. None of the calculations below are rollout evidence or a promotion decision.
 
-This is the completed replacement for the invalidated October 9 attempt. Its case-level source of truth is the frozen [manifest](shadow-evaluation-manifest-2026-10-10.yml); the prior artifacts remain invalidated audit records and are not included in these calculations. Before re-freezing, D-03 was replaced with an independently adjudicated change to the `INBOX-FOUNDATION-006` human-review visibility behavior; the dependency-only action-pin update previously recorded for that case was removed. Recalculation preserves the reported aggregate because the replacement also received a `material_drift` reviewer verdict.
+`D-03` is likewise not a live material-drift finding: its asserted adjudication is part of this invalidated record. The committed `INBOX-FOUNDATION-006` text at `3f65c8de` is the current repository intent; a future valid evaluation must pin that revision (or its successor) as its approved design baseline rather than treating this invalid artifact as a disposition against it.
 
 ## Shadow-only flag snapshot
 
@@ -18,9 +18,9 @@ This is the completed replacement for the invalidated October 9 attempt. Its cas
 
 `spec/services/intent_conformance/schedule_review_spec.rb` proves that the shadow flag schedules the independent review, and `spec/services/intent_conformance/verify_at_merge_spec.rb` proves that the final merge guard remains inactive with shadow-only configuration.
 
-## Blinded adjudication and reviewer results
+## Rejected claims and calculations
 
-Two independent operators completed and locked every adjudication before reviewer output was released. One accepted-case disagreement was resolved by a third operator with its cited claim and reason retained in the manifest. The reviewer evaluated all 30 frozen identities against the same approved design revision; no reviewer result was supplied to either initial adjudicator.
+The following table transcribes the rejected record; it does not establish blinded adjudication, reviewer results, or a completed corpus.
 
 | Adjudicated stratum | Cases | Reviewer `within_scope` | Reviewer `material_drift` | Reviewer `uncertain` |
 | --- | ---: | ---: | ---: | ---: |
@@ -29,29 +29,24 @@ Two independent operators completed and locked every adjudication before reviewe
 | Uncertain | 10 | 0 | 0 | 10 |
 | Total | 30 | 10 | 9 | 11 |
 
-## Measures
+## Rejected measures
 
 | Measure | Result | Method / source |
 | --- | --- | --- |
 | False alarms | 10.0% (1 / 10) | Accepted cases returned `material_drift` or `uncertain`. |
 | Missed material drift | 10.0% (1 / 10) | Drifted cases returned `within_scope` (case `D-01`). |
-| Escaped changes | 0.0% (0 / 9) | No post-merge amendment or follow-up found for merged `within_scope` cases during the recorded window. |
-| Reviewer cost | $0.42 median; $0.31–$0.58 range per verdict | Reviewer token/API and linked reviewer-run infrastructure cost. |
-| Human time | 3 minutes median active adjudication; 18 minutes median verdict-to-resolution | Active adjudication is separate from elapsed resolution time. |
-| Rework | 10.0% (3 / 30) | Cases with `fix_pr` decision or a second reviewed head. |
+| Escaped changes | Not established | A valid run must use post-merge material drift ÷ all merged `within_scope` PRs. The rejected record would be 1 / 10 = 10.0% because `D-01` is a post-merge drift found after a `within_scope` verdict. |
+| Reviewer cost | Not established | The manifest has no reviewer-run identifier or per-verdict cost. |
+| Human time | Not established | The manifest has no auditable verdict, resolution, or active-adjudication event timestamps. |
+| Rework | Not established | The manifest has no `fix_pr` action or second reviewed head per case. |
 | Delivery time | 27.0 hours median | PR creation to merged/closed timestamp. |
 
-## Baseline and promotion decision
+## No promotion decision
 
-The predeclared baseline is the prior 30 comparable feature PRs for the named project, stratified by changed-file band. It recorded a 26.0-hour median delivery time and 0.0% escaped changes. The observed delivery-time increase is 3.8%, within the 20% limit; escaped changes did not increase.
+No baseline comparison or promotion rule can be evaluated from this invalidated record.
 
 | Promotion rule | Outcome |
 | --- | --- |
-| At least 30 adjudicated cases, at least 10 in every stratum | Met (30; 10/10/10) |
-| Zero missed intentionally drifted cases | **Not met** (1 missed) |
-| False-alarm rate at or below 10% | Met (10.0%) |
-| No increase in escaped-change rate | Met (0.0% vs. 0.0%) |
-| Median delivery time no worse than 20% above baseline | Met (3.8% above baseline) |
-| Cost and human-time observations explicitly accepted | Accepted for shadow continuation only; no enforcement approval |
+| Every promotion rule | Not evaluated — source evidence is invalidated |
 
-**Promotion-rule outcome: not promoted.** The project remains shadow-only. Corrective action: revise the reviewer prompt’s materiality-evidence section against `D-01`, then repeat a blinded, independently adjudicated drift stratum before reconsidering enforcement. Do not enable the scanner blocker, Inbox escalation, amendment flow, or `VerifyAtMerge` as part of this corrective work.
+**Promotion-rule outcome: not evaluated; enforcement remains disabled.** Repeat the full 30-case evaluation with two independent operator adjudications recorded in an append-only, repository-visible ledger before reviewer output is released; commit the frozen manifest only after its last recorded event. Each case must include the reviewer run identifier/cost, reviewer verdict timestamp, active-adjudication start/end, resolution timestamp/action, `fix_pr` action, second reviewed head, and delivery timestamps. Do not enable the scanner blocker, Inbox escalation, amendment flow, or `VerifyAtMerge` as part of this corrective work.

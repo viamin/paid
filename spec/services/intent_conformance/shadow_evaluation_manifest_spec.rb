@@ -2,15 +2,11 @@
 
 require "rails_helper"
 
-require "time"
-
 module IntentConformance
   module ShadowEvaluationManifest
   end
 end
 
-# @spec INTENT-CONFORMANCE-ROLLOUT-002
-# @spec INTENT-CONFORMANCE-ROLLOUT-003
 RSpec.describe IntentConformance::ShadowEvaluationManifest, :no_db do
   subject(:invalidated_manifest) do
     YAML.safe_load_file(
@@ -27,67 +23,23 @@ RSpec.describe IntentConformance::ShadowEvaluationManifest, :no_db do
     end
   end
 
-  describe "the completed shadow evaluation manifest" do
+  describe "the invalidated October 10 shadow evaluation manifest" do
     subject(:manifest) do
       YAML.safe_load_file(
         Rails.root.join("docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-10.yml")
       )
     end
 
-    it "uses the shadow-only rollout boundary" do
+    it "cannot be used as rollout measurement evidence" do
       expect(manifest).to include(
-        "evaluation_status" => "completed",
-        "repository" => "viamin/paid",
-        "enabled_flags" => [ "intent_conformance_shadow_review" ]
+        "evaluation_status" => "invalidated",
+        "invalidation_reason" => a_string_including("committed before its purported adjudications")
       )
-      expect(manifest.fetch("disabled_capabilities")).to include(
-        "intent_conformance_enforcement",
-        "scanner_blocker",
-        "inbox_escalation",
-        "design_amendments",
-        "verify_at_merge"
-      )
+      expect(manifest.fetch("frozen_at")).to be_nil
     end
 
-    it "contains at least ten cases in every adjudicated stratum" do
-      cases = manifest.fetch("cases")
-      expect(cases.size).to be >= 30
-      expect(cases.group_by { |evaluation_case| evaluation_case.fetch("stratum") }.transform_values(&:size)).to include(
-        "accepted" => be >= 10,
-        "intentionally_drifted" => be >= 10,
-        "uncertain" => be >= 10
-      )
-    end
-
-    it "uses a behavior-changing case for the third drift adjudication" do
-      drift_case = manifest.fetch("cases").find { |evaluation_case| evaluation_case.fetch("id") == "D-03" }
-
-      expect(drift_case).to include(
-        "base_sha" => "24e4ee6d6cbcfa42b1d760e50272bf4579278886",
-        "head_sha" => "3f65c8de20e20099c26d1f59ecfd0dd268c25dac"
-      )
-      expect(drift_case.fetch("operator_adjudications").pluck("cited_design_claim")).to all(eq("INBOX-FOUNDATION-006"))
-    end
-
-    it "records blinded independent adjudications after the design revision" do
-      cases = manifest.fetch("cases")
-      cases.each do |evaluation_case|
-        expect(evaluation_case).to include(
-          "repository" => "viamin/paid",
-          "base_sha" => a_string_matching(/\A[0-9a-f]{40}\z/),
-          "head_sha" => a_string_matching(/\A[0-9a-f]{40}\z/),
-          "approved_design_revision" => a_string_matching(/\A[0-9a-f]{40}\z/),
-          "model" => a_string_matching(/\A.+\z/),
-          "prompt_version" => a_string_matching(/\A.+\z/),
-          "reviewer_outcome" => a_string_matching(/\A.+\z/)
-        )
-        expect(evaluation_case.fetch("operator_adjudications").size).to eq(2)
-        expect(evaluation_case.fetch("operator_adjudications").map { |adjudication| adjudication.fetch("operator") }.uniq.size).to eq(2)
-        expect(evaluation_case.fetch("operator_adjudications")).to all(include("outcome", "cited_design_claim", "reason", "adjudicated_at"))
-        expect(Time.iso8601(evaluation_case.fetch("adjudicated_at_after_design_revision"))).to be > Time.iso8601(manifest.fetch("approved_design_revision_recorded_at"))
-      end
-
-      expect(cases.select { |evaluation_case| evaluation_case["operator_resolution"] }).not_to be_empty
+    it "retains the rejected payload only as an audit trail" do
+      expect(manifest.fetch("cases")).not_to be_empty
     end
   end
 end

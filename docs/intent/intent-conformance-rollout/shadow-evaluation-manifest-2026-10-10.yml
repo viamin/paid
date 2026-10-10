@@ -1,10 +1,11 @@
-# @spec INTENT-CONFORMANCE-ROLLOUT-002
-# Frozen after the two blinded adjudications were locked. The invalidated
-# 2026-10-09 artifact remains beside this file as an audit trail only.
+# INVALIDATED: this file is retained solely as an audit trail. It is not
+# rollout evidence and must not be used for a promotion decision.
 evaluation_id: rdr-067-shadow-2026-10-10
-evaluation_status: completed
+evaluation_status: invalidated
+invalidation_reason: The repository history proves the artifact was committed before its purported adjudications and freeze; the repository contains no independently verifiable event ledger for the listed adjudications, review costs, resolutions, or timings.
+invalidated_at: "2026-10-10T09:23:27Z"
 repository: viamin/paid
-frozen_at: "2026-10-10T12:15:00Z"
+frozen_at: null
 approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
 approved_design_revision_recorded_at: "2026-10-02T06:24:35Z"
 reviewer:
@@ -20,9 +21,9 @@ disabled_capabilities:
   - inbox_escalation
   - design_amendments
   - verify_at_merge
-blindness_protocol: reviewer output was withheld until both independent adjudications were locked; the resolver received only the two adjudications and source packet.
-operator_key: Operators are pseudonymized in the repository-visible record; the signed ledger is retained by the project operator.
-correction: Replaced D-03's dependency-only patch with the independently adjudicated human-review Inbox visibility change before re-freezing the corpus.
+blindness_protocol: Unverified claim from the invalidated record; do not treat as evidence of blinded adjudication.
+operator_key: Unverified claim from the invalidated record; no repository-visible signed event ledger is available.
+correction: Historical note only. D-03 has no live-drift disposition because this invalidated artifact is not conformance evidence; #4227's committed Inbox LID update remains the current repository intent.
 cases:
   - { id: A-01, stratum: accepted, repository: viamin/paid, base_sha: a3600d7362b49f4f46ffef66df9ffb1c4cd45a22, head_sha: f007058ad6fbf174bf9f457bd733ccd6cd98d89e, approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5, model: claude-sonnet-4-6, prompt_version: review-run-v1, reviewer_outcome: uncertain, adjudicated_at_after_design_revision: "2026-10-10T08:00:00Z", operator_adjudications: [{ operator: operator-a, outcome: within_scope, cited_design_claim: "RDR-067 §Materiality boundary", reason: "Auto-pick exclusion repair changes implementation mechanics only.", adjudicated_at: "2026-10-10T08:00:00Z" }, { operator: operator-b, outcome: within_scope, cited_design_claim: "RDR-067 §Materiality boundary", reason: "No approved behavior or acceptance criterion changes.", adjudicated_at: "2026-10-10T08:03:00Z" }] }
   - { id: A-02, stratum: accepted, repository: viamin/paid, base_sha: 625d601e110b3087854e5e16c0b99052b1ba014b, head_sha: a3600d7362b49f4f46ffef66df9ffb1c4cd45a22, approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5, model: claude-sonnet-4-6, prompt_version: review-run-v1, reviewer_outcome: within_scope, adjudicated_at_after_design_revision: "2026-10-10T08:05:00Z", operator_adjudications: [{ operator: operator-a, outcome: within_scope, cited_design_claim: "RDR-067 §Materiality boundary", reason: "Dependency maintenance preserves the approved contract.", adjudicated_at: "2026-10-10T08:05:00Z" }, { operator: operator-b, outcome: within_scope, cited_design_claim: "RDR-067 §Materiality boundary", reason: "No binding constraint changes.", adjudicated_at: "2026-10-10T08:08:00Z" }] }
