@@ -10,15 +10,12 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   end
 
   def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil)
-    # @spec CHAT-API-002
+    # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"
 
-    ActionCable.server.broadcast(stream_name, {
-      type: "message_start",
-      message_id: stream_message_id
-    })
+    chunk_sequence = 0
 
     assistant_message = ChatSessions::SendMessage.call(
       chat_session: chat_session,
@@ -29,10 +26,12 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
       on_chunk: ->(chunk) {
+        chunk_sequence += 1
         ActionCable.server.broadcast(stream_name, {
           type: "message_chunk",
           message_id: stream_message_id,
-          content: chunk
+          content: chunk,
+          sequence: chunk_sequence
         })
       }
     )

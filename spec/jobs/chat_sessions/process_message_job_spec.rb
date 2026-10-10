@@ -16,7 +16,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(llm_client)
   end
 
-  it "broadcasts message_start before invoking SendMessage" do
+  it "does not rebroadcast message_start while processing the turn" do
     assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
       tokens_input: 20, tokens_output: 10)
 
@@ -28,7 +28,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         content: "Hello",
         stream_message_id: stream_message_id
       )
-    }.to have_broadcasted_to(stream_name)
+    }.not_to have_broadcasted_to(stream_name)
       .with(hash_including(type: "message_start", message_id: stream_message_id))
   end
 
@@ -345,11 +345,9 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         stream_message_id: stream_message_id
       )
     }.to have_broadcasted_to(stream_name)
-      .with(hash_including(type: "message_start", message_id: stream_message_id))
+      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "Hello ", sequence: 1))
       .and have_broadcasted_to(stream_name)
-      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "Hello "))
-      .and have_broadcasted_to(stream_name)
-      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "there!"))
+      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "there!", sequence: 2))
       .and have_broadcasted_to(stream_name)
       .with(hash_including(type: "message_created", role: "assistant",
         stream_message_id: stream_message_id, html: include("Hello there!")))

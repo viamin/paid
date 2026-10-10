@@ -46,6 +46,10 @@ behavior.
   transport (viamin/paid#4016) now carries API-key chat requests for this
   segment, while the RDR-028 loop and confirmation authority described here
   remain retained and unchanged.
+- The `/api/v1` mobile surface (`docs/intent/mobile-api/`) reuses this
+  segment's JSON payload shapes and SSE event catalog verbatim; this
+  segment remains the normative owner of both, and the mobile specs extend
+  rather than replace the CHAT-API-* claims.
 
 The API-mode chat loop may still accept legacy `mode=workspace` inputs for
 backward compatibility, but that compatibility shim is not evidence that the
@@ -106,6 +110,11 @@ What ships today:
 - `ChatMessagesController` supports JSON and SSE request/response flows
 - `ChatChannel` plus `ChatSessions::ProcessMessageJob` support ActionCable
   progress events for the browser UI
+- ActionCable and SSE chunk events carry a stream-local, monotonically
+  increasing sequence. The browser appends only contiguous chunks for its
+  active stream; it discards a transient bubble on a duplicate or gap and
+  relies on the persisted message render as the authoritative transcript.
+  Terminal and error events likewise remove any remaining transient bubble.
 - `ChatSessions::AgentLoop` executes read-only tools inline and persists
   pending write-tool confirmations without letting the model self-authorize
   mutations

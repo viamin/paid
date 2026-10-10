@@ -61,6 +61,16 @@ arrows:
     status: OK
     audited: 2026-10-10
     next: "Suppress project GitHub commentary while retaining durable Paid status"
+  mobile-api:
+    title: Mobile API
+    path: docs/intent/mobile-api/mobile-api-design.md
+    specs: docs/intent/mobile-api/mobile-api-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: MAPPED
+    sampled: 2026-10-10
+    blockedBy: [api-mode-chat]
+    next: "Implement PAT bearer auth, /api/v1 inbox and chat endpoints, unified error envelope, and ETag polling (#4238-#4241 against #4237 design)"
   upstream-pull-requests:
     title: Upstream Pull Requests
     path: docs/intent/upstream-pull-requests/upstream-pull-requests-design.md
