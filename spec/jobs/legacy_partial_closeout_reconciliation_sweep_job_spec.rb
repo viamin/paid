@@ -94,11 +94,14 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
     end
 
     # @spec PARTIAL-CLOSEOUT-025
-    it "records advisory-lock contention without scheduling a duplicate" do
+    it "retries the same account and cursor after lock contention instead of dropping the continuation" do
       allow(PartialCloseouts::ReconcileLegacy).to receive(:call).and_return(result_for(lock_held: true, next_cursor: 41))
+      scheduler = instance_double(ActiveJob::ConfiguredJob, perform_later: nil)
+      allow(described_class).to receive(:set).with(wait: described_class::LOCK_CONTENTION_RETRY_DELAY).and_return(scheduler)
 
       described_class.perform_now(account_id: account.id, after_id: 41)
 
+      expect(scheduler).to have_received(:perform_later).with(account_id: account.id, after_id: 41, after_account_id: nil)
       expect(described_class).not_to have_received(:perform_later)
     end
   end

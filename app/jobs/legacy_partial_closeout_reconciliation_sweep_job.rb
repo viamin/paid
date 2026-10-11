@@ -12,6 +12,12 @@ class LegacyPartialCloseoutReconciliationSweepJob < ApplicationJob
 
   queue_as :maintenance
 
+  # An operator/rake `ReconcileLegacy` call for the same account holds the
+  # advisory lock for the duration of a batch, not forever — retrying soon
+  # finds it released. A short, fixed delay avoids hot-looping the queue
+  # while the other caller finishes.
+  LOCK_CONTENTION_RETRY_DELAY = 5.minutes
+
   good_job_control_concurrency_with(
     # A full batch enqueues its cursor continuation while it is still
     # performing. Keep that queued continuation separate from the single
@@ -33,9 +39,24 @@ class LegacyPartialCloseoutReconciliationSweepJob < ApplicationJob
   def reconcile(account, after_id:, after_account_id:)
     result = PartialCloseouts::ReconcileLegacy.call(account_id: account.id, after_id:)
     log_result(account, result, after_id:)
-    enqueue_next(account, result, after_account_id:) unless result.lock_held
+    if result.lock_held
+      retry_after_lock_contention(account, result, after_account_id:)
+    else
+      enqueue_next(account, result, after_account_id:)
+    end
   rescue StandardError => e
     log_failure(account, e, after_id:)
+  end
+
+  # `ReconcileLegacy` returns `next_cursor: after_id` unchanged on lock
+  # contention (app/services/partial_closeouts/reconcile_legacy.rb), so
+  # retrying with it resumes the same account and cursor instead of
+  # dropping the continuation and re-scanning from the start of the
+  # account's history on the next cron run.
+  def retry_after_lock_contention(account, result, after_account_id:)
+    self.class.set(wait: LOCK_CONTENTION_RETRY_DELAY).perform_later(
+      account_id: account.id, after_id: result.next_cursor, after_account_id:
+    )
   end
 
   def next_account(after_account_id)
