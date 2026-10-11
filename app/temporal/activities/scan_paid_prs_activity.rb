@@ -827,7 +827,7 @@ module Activities
       last_run = last_completed_run(project, issue)
       status_triggers = check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue,
-        allowed_bot_logins: paid_agent_review_logins(project))
+        allowed_bot_logins: tdd_paid_agent_review_logins)
 
       if status_triggers.any? { |trigger| trigger[:data_incomplete] }
         return draft_trigger_payload(issue, status_triggers)
@@ -840,7 +840,7 @@ module Activities
           details: "Automated test review requested changes before implementation")
       end
 
-      latest_paid_agent_review = latest_allowed_bot_review(reviews, paid_agent_review_logins(project))
+      latest_paid_agent_review = latest_allowed_bot_review(reviews, tdd_paid_agent_review_logins)
       if latest_paid_agent_review
         sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL)
         return tdd_followup_trigger(issue,
@@ -849,13 +849,11 @@ module Activities
       end
 
       pending_review = check_paid_agent_review_status(project, issue)
-      return draft_trigger_payload(issue, pending_review) if pending_review.any?
-
-      draft_trigger_payload(issue, [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]) if latest_paid_agent_review.nil?
+      draft_trigger_payload(issue, pending_review) if pending_review.any?
     end
 
     def current_tdd_test_review_verdicts(project, issue, reviews, pr_data: nil)
-      paid_agent_logins = paid_agent_review_logins(project)
+      paid_agent_logins = tdd_paid_agent_review_logins
 
       reviews.select do |review|
         paid_agent_logins.include?(review[:user_login]&.downcase) &&
@@ -873,7 +871,7 @@ module Activities
     # breaking the freshness guarantee in current_tdd_test_review_verdicts.
     # Non-paid-agent comments in the same thread are left untouched.
     def current_tdd_unresolved_threads(project, issue, unresolved_threads, pr_data: nil)
-      paid_agent_logins = paid_agent_review_logins(project)
+      paid_agent_logins = tdd_paid_agent_review_logins
 
       unresolved_threads.map do |thread|
         comments = thread[:comments].reject do |comment|
@@ -2458,6 +2456,13 @@ module Activities
     def paid_agent_review_logins(project)
       project.enabled_review_bot_logins &
         ProviderSupport.provider_bot_usernames_for("paid_agent")
+    end
+
+    # @spec TDD-PR-006
+    # Test review remains available when ordinary PR reviews are disabled, so
+    # its dedicated reviewer identity must not be filtered by that setting.
+    def tdd_paid_agent_review_logins
+      ProviderSupport.provider_bot_usernames_for("paid_agent")
     end
 
     # Returns the login that should be explicitly requested for a review-bot

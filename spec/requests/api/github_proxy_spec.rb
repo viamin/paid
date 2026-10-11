@@ -594,6 +594,37 @@ RSpec.describe "Api::GithubProxy" do
         end
       end
 
+    context "when a non-strict TDD review runs while ordinary reviews are disabled" do
+      let(:agent_run) do
+        create(:agent_run, :running, :review_goal, project: project, source_pull_request_number: 10)
+      end
+
+      before do
+        allow(Github::ReviewBotInstallationToken).to receive_messages(
+          configured?: true,
+          new: review_bot_token_provider
+        )
+        project.update!(review_settings: {
+          "enabled" => false,
+          "methods" => { "paid_agent" => { "enabled" => false } }
+        })
+        stub_review_list_response
+      end
+
+      it "uses the dedicated Paid reviewer token" do
+        # @spec TDD-PR-006
+        post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+          params: { body: "Looks good", event: "COMMENT" }.to_json,
+          headers: valid_headers
+
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: {
+            "Authorization" => "Bearer ghs_review_bot_token",
+            "Accept" => "application/vnd.github+json"
+          })
+      end
+    end
+
       context "when older paid-code-reviewer change requests exist" do
         it "dismisses the stale bot change request" do
           stub_review_list_response([
