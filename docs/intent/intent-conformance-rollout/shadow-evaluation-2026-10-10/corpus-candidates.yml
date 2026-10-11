@@ -1,0 +1,39 @@
+# This is a candidate inventory, not an adjudication and not a result set.
+# Candidates were selected from PR content categories (documented feature work,
+# implementation constrained by an LLD, and a change with incomplete/ambiguous
+# design linkage), never from contiguous commit history or recency.
+evaluation_id: rdr-067-shadow-tooling-4205
+status: candidates_pending_human_adjudication
+repository: viamin/paid
+approved_design_links_are_frozen_at: "2026-10-10T00:00:00Z"
+cases:
+  - id: candidate-feature-intent-lifecycle
+    candidate_stratum: accepted_candidate
+    selection_basis: Implements the feature-intent approval lifecycle described by its linked LLD; human adjudicators must determine the verdict.
+    number: 4230
+    title: "feat: RDR-066: implement feature intent approval lifecycle"
+    base_sha: 3f65c8de20e20099c26d1f59ecfd0dd268c25dac
+    head_sha: 579ab993a8557a2cc0ed8f39bbaeee1f34b11a53
+    merge_commit: 378acf45fb47c4f5ff8632aa131659edb2657227
+    url: https://github.com/viamin/paid/pull/4230
+    approved_design: https://github.com/viamin/paid/blob/378acf45fb47c4f5ff8632aa131659edb2657227/docs/intent/feature-intent-lifecycle/feature-intent-lifecycle-design.md
+  - id: candidate-partial-closeout
+    candidate_stratum: material-drift_candidate
+    selection_basis: Changes the documented partial-closeout behavior; this is a content-derived drift candidate only, not a verdict.
+    number: 4242
+    title: "fix(partial-closeouts): investigate and advance agent-actionable work before escalating to Inbox"
+    base_sha: 249965666ff094b83a7c2c6ee5318a0916646391
+    head_sha: 6d2736410bf93010b9bf3590102d57f11fccb8dd
+    merge_commit: 8e84a37a57a74f8c2045716a5650b65b77efc520
+    url: https://github.com/viamin/paid/pull/4242
+    approved_design: https://github.com/viamin/paid/blob/8e84a37a57a74f8c2045716a5650b65b77efc520/docs/intent/partial-closeouts/partial-closeouts-design.md
+  - id: candidate-mobile-api-design-only
+    candidate_stratum: uncertain_candidate
+    selection_basis: Adds design material rather than an implementation diff, leaving design-to-implementation evidence incomplete for this evaluation.
+    number: 4246
+    title: "feat: Mobile API: LID design segment (HLD + docs/intent/mobile-api/ LLD & EARS)"
+    base_sha: 8e84a37a57a74f8c2045716a5650b65b77efc520
+    head_sha: 329cf7445817781f09ace655fe0a88901d2e58e5
+    merge_commit: 2a95644cc9199903d7f6d1947a1f3827a447ec2f
+    url: https://github.com/viamin/paid/pull/4246
+    approved_design: https://github.com/viamin/paid/blob/2a95644cc9199903d7f6d1947a1f3827a447ec2f/docs/intent/mobile-api/mobile-api-design.md

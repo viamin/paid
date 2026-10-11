@@ -1,0 +1,84 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require_relative "../lib/intent_conformance/shadow_evaluation_ledger"
+require_relative "../lib/intent_conformance/shadow_evaluation_worksheet"
+
+module IntentConformance
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  module ShadowEvaluationCli
+    COMMANDS = %w[append validate shadow-run compile].freeze
+
+    module_function
+
+    def call(argv)
+      command = argv.shift
+      abort "usage: #{$PROGRAM_NAME} {append|validate|shadow-run|compile} --manifest PATH --ledger PATH --manifest-commit SHA" unless COMMANDS.include?(command)
+
+      options = parse(argv)
+      case command
+      when "append" then append(options)
+      when "validate" then validate(options)
+      when "shadow-run" then shadow_run(options)
+      when "compile" then compile(options)
+      end
+    rescue ShadowEvaluationLedger::PendingHumanInput => error
+      warn error.message
+      exit 2
+    rescue ShadowEvaluationLedger::InvalidLedger => error
+      warn "invalid shadow-evaluation ledger: #{error.message}"
+      exit 1
+    rescue OptionParser::ParseError => error
+      warn "invalid shadow-evaluation ledger: #{error.message}"
+      exit 1
+    end
+
+    def parse(argv)
+      options = {}
+      OptionParser.new do |parser|
+        parser.on("--manifest PATH") { |value| options[:manifest] = value }
+        parser.on("--ledger PATH") { |value| options[:ledger] = value }
+        parser.on("--manifest-commit SHA") { |value| options[:manifest_commit] = value }
+        parser.on("--event JSON") do |value|
+          options[:event] = JSON.parse(value)
+        rescue JSON::ParserError => error
+          raise ShadowEvaluationLedger::InvalidLedger, "--event is not valid JSON: #{error.message}"
+        end
+      end.parse!(argv)
+      %i[manifest ledger manifest_commit].each do |key|
+        raise ShadowEvaluationLedger::InvalidLedger, "--#{key.to_s.tr('_', '-')} is required" if options[key].to_s.strip.empty?
+      end
+      options
+    end
+
+    def append(options)
+      raise ShadowEvaluationLedger::InvalidLedger, "--event is required" unless options[:event]
+      raise ShadowEvaluationLedger::InvalidLedger, "--event must be a JSON object" unless options[:event].is_a?(Hash)
+
+      event = options[:event].merge("manifest_commit" => options[:manifest_commit])
+      ShadowEvaluationLedger.append!(path: options[:ledger], event: event, manifest_path: options[:manifest])
+    end
+
+    def validate(options)
+      ShadowEvaluationLedger.validate!(**ledger_options(options))
+      puts "valid"
+    end
+
+    def shadow_run(options)
+      ShadowEvaluationLedger.ready_for_shadow_run!(**ledger_options(options))
+      raise ShadowEvaluationLedger::PendingHumanInput, "pending human input: shadow execution requires the Rails operator command after blinded adjudications are complete"
+    end
+
+    def compile(options)
+      puts ShadowEvaluationWorksheet.compile(**ledger_options(options))
+    end
+
+    def ledger_options(options)
+      { manifest_path: options[:manifest], ledger_path: options[:ledger], manifest_commit: options[:manifest_commit] }
+    end
+  end
+end
+
+IntentConformance::ShadowEvaluationCli.call(ARGV)
