@@ -8,11 +8,12 @@
   reconciliation sweep runs, the system SHALL invoke `ReconcileLegacy` once
   for each active account using the persisted account/run cursor in its chained
   GoodJob arguments, record the bounded batch outcome and cursor, and resume
-  the next window until the account backlog is exhausted. Advisory-lock
-  contention SHALL not enqueue a duplicate. The scheduler SHALL not mutate
-  `paid_state` or bypass continuation admission, and its log plus the
-  reconciled run's existing Inbox assessment SHALL expose the outcome to
-  operators.
+  the next window until the account backlog is exhausted. A scheduled
+  invocation arriving during a batch SHALL leave a queued admission slot for
+  that cursor-carrying continuation. Advisory-lock contention SHALL not
+  enqueue a duplicate. The scheduler SHALL not mutate `paid_state` or bypass
+  continuation admission, and its log plus the reconciled run's existing Inbox
+  assessment SHALL expose the outcome to operators.
   *Code:* `app/jobs/legacy_partial_closeout_reconciliation_sweep_job.rb`,
   `app/services/partial_closeouts/reconcile_legacy.rb`.
   *Test:* `spec/jobs/legacy_partial_closeout_reconciliation_sweep_job_spec.rb`,

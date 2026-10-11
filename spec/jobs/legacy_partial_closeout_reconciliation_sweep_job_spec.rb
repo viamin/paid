@@ -10,7 +10,10 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
       config = described_class.good_job_concurrency_config
 
       expect(described_class.queue_name).to eq("maintenance")
-      expect(config).to include(total_limit: 1, enqueue_limit: 1)
+      # A cron invocation can arrive while a batch is performing. Reserve a
+      # second queued position so that invocation cannot evict the batch's
+      # cursor-carrying continuation.
+      expect(config).to include(total_limit: 1, enqueue_limit: 2)
       expect(config[:key]).to eq("legacy_partial_closeout_reconciliation_sweep")
     end
   end
