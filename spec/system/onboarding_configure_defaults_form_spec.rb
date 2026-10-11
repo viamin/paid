@@ -14,7 +14,7 @@ RSpec.describe "Onboarding configure_defaults step", system_driver: :rack_test, 
     Warden.test_mode!
     login_as(owner, scope: :user)
     Onboarding::StartOnboarding.call(account: account)
-    %w[account_profile github_token].each do |s|
+    %w[account_profile chat_api_key github_token].each do |s|
       Onboarding::CompleteStep.call(account: account, step: s)
     end
     Onboarding::CompleteStep.call(
@@ -22,6 +22,7 @@ RSpec.describe "Onboarding configure_defaults step", system_driver: :rack_test, 
       step: "first_project",
       metadata: { project_id: project.id }
     )
+    Onboarding::CompleteStep.call(account: account, step: "integrations")
   end
 
   # @spec FEATURE-APPROVAL-004

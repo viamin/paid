@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5215,6 +5215,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_used_at}')
+  SQL
+
   create_trigger :logidze_on_pr_templates, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_pr_templates BEFORE INSERT OR UPDATE ON public.pr_templates FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -5273,9 +5277,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_used_at}')
   SQL
 end
