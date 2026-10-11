@@ -139,6 +139,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily sweep recomputing project configuration health checks and refreshing the cached results"
     },
+    legacy_partial_closeout_reconciliation_sweep: {
+      cron: "45 5 * * *",
+      class: "LegacyPartialCloseoutReconciliationSweepJob",
+      queue: "maintenance",
+      description: "Daily bounded reconciliation of legacy partial closeouts"
+    },
     ab_test_analysis: {
       cron: "0 */4 * * *",
       class: "AbTestAnalysisCheckJob",

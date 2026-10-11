@@ -4,6 +4,20 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-025** — When the daily legacy partial-closeout
+  reconciliation sweep runs, the system SHALL invoke `ReconcileLegacy` once
+  for each active account using the persisted account/run cursor in its chained
+  GoodJob arguments, record the bounded batch outcome and cursor, and resume
+  the next window until the account backlog is exhausted. Advisory-lock
+  contention SHALL not enqueue a duplicate. The scheduler SHALL not mutate
+  `paid_state` or bypass continuation admission, and its log plus the
+  reconciled run's existing Inbox assessment SHALL expose the outcome to
+  operators.
+  *Code:* `app/jobs/legacy_partial_closeout_reconciliation_sweep_job.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`.
+  *Test:* `spec/jobs/legacy_partial_closeout_reconciliation_sweep_job_spec.rb`,
+  `spec/config/good_job_configuration_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-024** — When a current, bounded partial-closeout
   assessment finds no remaining gap after previously recorded work has shipped,
   the system SHALL automatically authorize and queue exactly one fresh acceptance
