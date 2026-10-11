@@ -120,6 +120,21 @@ RSpec.describe Tools::CompleteOnboardingStep do
     expect(account.onboarding_steps.find_by!(step: "first_project")).to be_pending
   end
 
+  it "resolves the owner from a GitHub token when connecting a project" do
+    github_token = create(:github_token, account:)
+    client = instance_double(GithubClient, authenticated_login: "viamin", repository: OpenStruct.new(
+      id: 1, name: "paid", default_branch: "main", language: "Ruby"
+    ))
+    allow(GithubClient).to receive(:new).and_return(client)
+
+    result = Tools::CreateProject.new(user:, session:).call(
+      mode: "connect_existing", repo: "paid", github_token_id: github_token.id, confirmed: true
+    )
+
+    expect(result).to include("owner" => "viamin", "repo" => "paid")
+    expect(client).to have_received(:repository).with("viamin/paid")
+  end
+
   it "strips confirmation from onboarding write tools advertised to chat" do
     definitions = Tools::Registry.chat_definitions_for(user:, session:)
 

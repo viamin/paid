@@ -41,11 +41,19 @@ module Tools
         raise ArgumentError, "exactly one GitHub credential (token or installation) is required"
       end
 
-      project = account.projects.build(owner:, repo:, name:, github_token:, github_installation:, created_by: user, allowed_github_usernames: [ owner ])
-      data = project.client.repository("#{owner}/#{repo}")
+      resolved_owner = owner.presence || credential_owner(github_token:, github_installation:)
+      project = account.projects.build(owner: resolved_owner, repo:, name:, github_token:, github_installation:, created_by: user, allowed_github_usernames: [ resolved_owner ])
+      data = project.client.repository("#{resolved_owner}/#{repo}")
       project.assign_attributes(github_id: data.id, name: name.presence || data.name, default_branch: data.default_branch, primary_language: data.language, creation_origin: "connected")
       project.save!
       project
+    end
+
+    def credential_owner(github_token:, github_installation:)
+      owner = github_installation&.account_login.presence || github_token&.client&.authenticated_login.to_s.strip.presence
+      raise ArgumentError, "could not determine the owner for the selected GitHub credential" if owner.blank?
+
+      owner
     end
 
     def token(id)
