@@ -8,6 +8,7 @@ class OnboardingController < ApplicationController
   def show
     @current_step = current_account.current_onboarding_step
     redirect_to dashboard_path if @current_step.nil?
+    flash.now[:alert] = Onboarding::ConfigureChatRunner::ASYNC_RETRY_MESSAGE if params[:chat_api_key_error] == "invalid"
     prepare_default_posture if @current_step&.step == "configure_defaults"
   end
 
@@ -18,10 +19,14 @@ class OnboardingController < ApplicationController
     case step_name
     when "account_profile"
       complete_account_profile
+    when "chat_api_key"
+      complete_chat_api_key
     when "github_token"
       complete_github_token
     when "first_project"
       complete_first_project
+    when "integrations"
+      complete_integrations
     when "configure_defaults"
       complete_configure_defaults
     end
@@ -66,6 +71,17 @@ class OnboardingController < ApplicationController
     redirect_to_next_step
   end
 
+  # @spec ONBOARD-CHAT-001 ONBOARD-CHAT-002 ONBOARD-CHAT-003
+  def complete_chat_api_key
+    result = Onboarding::ConfigureChatRunner.call(
+      account: current_account,
+      user: current_user,
+      api_service_type: params.dig(:chat_api_key, :api_service_type),
+      api_key: params.dig(:chat_api_key, :api_key)
+    )
+    redirect_to chat_session_path(result.chat_session), notice: "Welcome! Ask anything while we finish setting up Paid."
+  end
+
   def complete_github_token
     token = current_account.github_tokens.build(
       name: params.dig(:github_token, :name),
@@ -88,6 +104,11 @@ class OnboardingController < ApplicationController
     project.allowed_github_usernames = [ project.owner ] if project.allowed_github_usernames.blank?
 
     fetch_and_save_project(project)
+  end
+
+  def complete_integrations
+    Onboarding::CompleteStep.call(account: current_account, step: "integrations")
+    redirect_to_next_step
   end
 
   def complete_configure_defaults

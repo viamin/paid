@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class OnboardingStep < ApplicationRecord
-  STEPS = %w[account_profile github_token first_project configure_defaults].freeze
+  STEPS = %w[account_profile chat_api_key github_token first_project integrations configure_defaults].freeze
   STATUSES = %w[pending in_progress completed skipped].freeze
 
   belongs_to :account

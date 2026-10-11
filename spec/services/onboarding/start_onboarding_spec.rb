@@ -10,8 +10,8 @@ RSpec.describe Onboarding::StartOnboarding do
       described_class.call(account: account)
 
       steps = account.onboarding_steps.ordered
-      expect(steps.map(&:step)).to eq(%w[account_profile github_token first_project configure_defaults])
-      expect(steps.map(&:position)).to eq([ 0, 1, 2, 3 ])
+      expect(steps.map(&:step)).to eq(%w[account_profile chat_api_key github_token first_project integrations configure_defaults])
+      expect(steps.map(&:position)).to eq([ 0, 1, 2, 3, 4, 5 ])
     end
 
     it "marks the first step as in_progress" do
