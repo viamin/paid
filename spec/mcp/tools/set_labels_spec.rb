@@ -85,6 +85,7 @@ RSpec.describe Tools::SetLabels do
         )
         expect(result[:added]).to match_array(%w[bug enhancement])
         expect(result[:removed]).to be_empty
+        expect(result[:suppressed]).to be(false)
         expect(result[:current_labels]).to match_array(%w[bug enhancement])
       end
     end
@@ -143,6 +144,43 @@ RSpec.describe Tools::SetLabels do
       end
     end
 
+    # @spec LABEL-INTEGRATION-004
+    context "when the project suppresses label writes" do
+      let(:project) { create(:project, account:, label_integration_mode: "read_only") }
+
+      before do
+        labeled_issue = Struct.new(:number, :labels).new(42, [
+          Struct.new(:name).new("bug"),
+          Struct.new(:name).new("documentation")
+        ])
+        allow(github_client).to receive(:issue).and_return(labeled_issue, labeled_issue)
+      end
+
+      it "reports no changes and flags the suppression" do
+        result = tool.call(project_id: project.id, issue_number: 42,
+                           labels: %w[bug enhancement], confirmed: true)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
+        expect(result[:added]).to be_empty
+        expect(result[:removed]).to be_empty
+        expect(result[:failed]).to be_empty
+        expect(result[:suppressed]).to be(true)
+        expect(result[:current_labels]).to match_array(%w[bug documentation])
+      end
+
+      it "audits no additions or removals and records the suppression" do
+        tool.call(project_id: project.id, issue_number: 42,
+                  labels: %w[bug enhancement], confirmed: true)
+
+        event = AccountActivityEvent.last
+        expect(event.action).to eq("issue.labels_changed")
+        expect(event.metadata["added"]).to be_empty
+        expect(event.metadata["removed"]).to be_empty
+        expect(event.metadata["suppressed"]).to be(true)
+      end
+    end
+
     it "returns the refreshed labels when a removal fails" do
       labeled_issue = Struct.new(:number, :labels).new(42, [
         Struct.new(:name).new("bug"),
@@ -188,6 +226,7 @@ RSpec.describe Tools::SetLabels do
       expect(event.metadata["issue_number"]).to eq(42)
       expect(event.metadata["added"]).to match_array(%w[enhancement])
       expect(event.metadata["removed"]).to match_array(%w[bug])
+      expect(event.metadata["suppressed"]).to be(false)
     end
 
     it "raises for project in another account" do

@@ -61,6 +61,15 @@ arrows:
     status: OK
     audited: 2026-10-11
     next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+  label-integration-mode:
+    title: Per-Project Label Integration Mode
+    path: docs/intent/label-integration-mode/label-integration-mode-design.md
+    specs: docs/intent/label-integration-mode/label-integration-mode-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-10-11
+    next: "Control GitHub label writes per project while retaining configured label reads"
   quiet-mode:
     title: Project Quiet Mode
     path: docs/intent/quiet-mode/quiet-mode-design.md

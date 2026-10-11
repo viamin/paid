@@ -39,6 +39,7 @@ class Project < ApplicationRecord
   # @spec PROJECT-CREATION-011
   SETUP_STATUSES = %w[pending in_progress completed].freeze
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
+  LABEL_INTEGRATION_MODES = %w[read_write read_only ignored].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
   # Project-level TDD mode (RDR-056). "off" preserves existing Paid behavior;
@@ -360,6 +361,8 @@ class Project < ApplicationRecord
   before_validation :normalize_llm_provider_routing
   before_validation :ensure_paid_reviewer_bot_allowlisted
   before_validation :reset_git_push_pat_fallback_unless_app_backed
+  # @spec LABEL-INTEGRATION-001
+  before_validation :apply_tenant_label_integration_default, on: :create
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -412,6 +415,8 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
+  # @spec LABEL-INTEGRATION-001
+  validates :label_integration_mode, inclusion: { in: LABEL_INTEGRATION_MODES }
   # @spec PR-TARGET-001
   validates :pr_target, inclusion: { in: PR_TARGETS }
   # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
@@ -1595,11 +1600,24 @@ class Project < ApplicationRecord
   # every existing call site benefits without per-site rescue blocks.
   # @spec QUIET-MODE-002
   def client
-    github_client = @client ||= build_github_client
+    github_client = @client ||= wrap_for_label_policy(build_github_client)
     return github_client unless quiet_mode? && github_client
 
     GithubClient::CommentSuppressing.new(github_client)
   end
+
+  # Every GitHub client this project hands out passes through here first, so
+  # label-mode suppression applies regardless of quiet mode. Memoized
+  # alongside the raw client (not rebuilt per call like the quiet-mode wrap)
+  # since the decorator evaluates the current label mode dynamically on each
+  # mutation rather than baking it in at wrap time.
+  # @spec LABEL-INTEGRATION-002
+  def wrap_for_label_policy(github_client)
+    return github_client unless github_client
+
+    GithubClient::LabelWriteSuppressing.new(github_client, project: self)
+  end
+  private :wrap_for_label_policy
 
   # @spec GITHUB-SYNC-018
   def code_scanning_coverage_status
@@ -1654,6 +1672,13 @@ class Project < ApplicationRecord
     GithubClient::WithFallback.new(primary:, fallback:, project: self)
   end
   private :build_github_client
+
+  def apply_tenant_label_integration_default
+    return if label_integration_mode_came_from_user?
+
+    self.label_integration_mode = account&.tenant_setting&.default_label_integration_mode || "read_write"
+  end
+  private :apply_tenant_label_integration_default
 
   # @spec GITHUB-SYNC-017
   def saved_change_to_git_push_pat_fallback_configuration?

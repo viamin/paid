@@ -218,11 +218,18 @@ machinery the workflow uses:
   (`bin/rake issues:reconcile_legacy_partial_closeouts ACCOUNT_ID=<id>
   BATCH_SIZE=<n> AFTER_ID=<cursor>`) that the operator console / MCP surface
   can call with the account scope; the task prints `next_cursor` and prompts
-  a follow-up invocation when the batch filled, so working through a large
-  backlog is an explicit, operator-paced sequence of bounded calls. An
+  a follow-up invocation when the batch filled. A daily GoodJob sweep invokes
+  the same service for each active account and persists its account/run cursors
+  in chained GoodJob arguments, so it resumes the next bounded window without
+  an operator-paced loop. Its concurrency control reserves two queued positions
+  while permitting one performer, so an overlapping cron enqueue cannot consume
+  the cursor-carrying continuation's slot. Structured completion logs expose scanned,
+  reconciled, awaiting-operator, retryable-failure, skipped, lock, and cursor
+  outcomes; each reconciled run continues to expose its assessment in the
+  existing partial-closeout Inbox lane. An
   account-scoped advisory-lock contention returns a distinct result and the
-  rake task tells the operator that no work ran and to retry later, rather
-  than presenting a zero-row sweep as a completed backlog.
+  rake task and scheduled sweep preserve the cursor rather than presenting a
+  zero-row sweep as a completed backlog.
 
 ### Automatic advancement after investigation (#4223)
 
