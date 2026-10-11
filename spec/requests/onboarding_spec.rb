@@ -97,6 +97,22 @@ RSpec.describe "Onboarding" do
         expect(chat_session.runner).to be_enabled_for_chat
         expect(response).to redirect_to(chat_session_path(chat_session))
       end
+
+      # @spec ONBOARD-CHAT-003
+      it "keeps the user on the API-key step after an authentication failure" do
+        allow(AgentHarness).to receive(:check_provider).and_return(
+          { status: "error", error_category: :authentication, message: "403 Forbidden" }
+        )
+
+        patch onboarding_path, params: {
+          step: "chat_api_key",
+          chat_api_key: { api_service_type: "openai", api_key: "invalid-key" }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("verify that API key")
+        expect(account.onboarding_steps.find_by(step: "chat_api_key")).to be_in_progress
+      end
     end
 
     context "with first_project step" do

@@ -6,8 +6,10 @@ module Onboarding
   # bootstrap leaves the user on the API-key step with nothing partial saved.
   # @spec ONBOARD-CHAT-002 ONBOARD-CHAT-003
   class ConfigureChatRunner
+    InvalidApiKeyError = Class.new(ArgumentError)
     Result = Data.define(:provider_api_key, :runner, :chat_session)
     WELCOME_TITLE = "Welcome to Paid — let's set you up"
+    HEALTH_CHECK_TIMEOUT = 15
 
     def self.call(...)
       new(...).call
@@ -21,13 +23,18 @@ module Onboarding
     end
 
     def call
-      ActiveRecord::Base.transaction do
+      validate_proxy_health_checkable_key!
+
+      result = ActiveRecord::Base.transaction do
         provider_api_key = create_provider_api_key
         runner = create_runner(provider_api_key)
         chat_session = create_chat_session(runner)
         complete_onboarding_step(provider_api_key, runner)
         Result.new(provider_api_key, runner, chat_session)
       end
+
+      queue_runner_runtime_validation(result.runner) unless proxy_health_check_runner_key
+      result
     end
 
     private
@@ -40,6 +47,35 @@ module Onboarding
         api_service_type: api_service_type,
         api_key: api_key
       )
+    end
+
+    def validate_proxy_health_checkable_key!
+      return unless proxy_health_check_runner_key
+
+      result = AgentHarness.check_provider(
+        RunnerSupport.harness_runner_key_for(proxy_health_check_runner_key).to_sym,
+        timeout: HEALTH_CHECK_TIMEOUT,
+        provider_runtime: AgentHarness::ProviderRuntime.new(env: proxy_health_check_env)
+      )
+      raise InvalidApiKeyError, "We couldn't verify that API key. Check it and try again." if authentication_failure?(result)
+    end
+
+    def proxy_health_check_runner_key
+      @proxy_health_check_runner_key ||= RunnerSupport::RUNNER_API_SERVICE_TYPE.find do |runner_key, service_type|
+        service_type == api_service_type && RunnerSupport.proxy_health_check_api_key_for(runner_key)
+      end&.first
+    end
+
+    def proxy_health_check_env
+      api_key_name = RunnerSupport.proxy_health_check_api_key_for(proxy_health_check_runner_key)
+      { "#{api_key_name.to_s.upcase}_API_KEY" => api_key }
+    end
+
+    def authentication_failure?(result)
+      return false unless result[:status].to_s == "error"
+
+      result[:error_category].to_s == "authentication" ||
+        result[:message].to_s.match?(/\b(?:401|403)\b|unauthori[sz]ed|forbidden/i)
     end
 
     def create_runner(provider_api_key)
@@ -76,6 +112,10 @@ module Onboarding
           api_service_type: api_service_type
         }
       )
+    end
+
+    def queue_runner_runtime_validation(runner)
+      Onboarding::ValidateChatApiKeyJob.perform_later(runner.id)
     end
 
     def runner_key

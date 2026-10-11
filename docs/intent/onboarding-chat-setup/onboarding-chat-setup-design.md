@@ -75,10 +75,12 @@ infrastructure:
 Tracked under the umbrella (#4280):
 
 - **Phase 0 — chat bootstrap** (#4281): shipped the `chat_api_key` onboarding
-  step, `Onboarding::ConfigureChatRunner`, and chat handoff. The service uses
-  the shared runner/service-type contracts, creates the credential, runner,
-  welcome chat, and shared step metadata in one transaction. Provider-side
-  credential health validation remains part of Phase 4 hardening (#4282).
+  step, `Onboarding::ConfigureChatRunner`, credential validation, and chat
+  handoff. The service uses the shared runner/service-type contracts, creates
+  the credential, runner, welcome chat, and shared step metadata in one
+  transaction. It rejects authentication failures from synchronous
+  proxy-health checks before writing records and queues the same harness-backed
+  check for providers that require a runner runtime.
 - **Phases 1–3 — onboarding chat tools and persona** (#4282): read tools
   (`get_onboarding_status`, `list_runners`, `get_account_capabilities`), write
   tools (`create_runner`, `create_tracker_configuration`, `create_project`,
@@ -106,5 +108,5 @@ Tracked under the umbrella (#4280):
 
 ## Remaining Gap
 
-Phase 0 is implemented. The chat tools, persona, and provider-side key-health
-hardening remain active gaps tracked by #4282.
+Phase 0 is implemented. The chat tools and persona remain active gaps tracked
+by #4282.

@@ -16,11 +16,12 @@ umbrella issue #4280; phase issues #4281 (chat bootstrap) and #4282
   direct-outbound free-model policy), and a `ChatSession` bound to that
   runner in one transactional step, and SHALL redirect the user into that
   chat session rather than back to a form.
-- [ ] **ONBOARD-CHAT-003** — When key creation fails validation (e.g. a
+- [x] **ONBOARD-CHAT-003** — When key creation fails validation (e.g. a
   401/403 from the provider), Paid SHALL surface a friendly retry without
-  losing the user's place in the onboarding step. Provider-side validation is
-  deferred to Phase 4 hardening (#4282); local credential validation already
-  leaves the user on this form.
+  losing the user's place in the onboarding step. Paid SHALL use the
+  `agent_harness` proxy-health check with the submitted key before persisting
+  service types with a checkable fixed runner, and SHALL queue the
+  harness-backed runner-runtime validation for the remaining service types.
 - [ ] **ONBOARD-CHAT-004** — When an onboarding chat session is active and
   setup is incomplete, `ChatSessions::BuildSystemPrompt` SHALL inject a
   setup-interview persona that asks what tools the user uses (agent-run
