@@ -20,6 +20,26 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
       .to raise_error(IntentConformance::ShadowEvaluationLedger::PendingHumanInput, /pending human input/)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "refuses an otherwise adjudicated corpus that lacks the required rollout shape" do
+    File.write(manifest, { "cases" => [ complete_case("A-01") ] }.to_yaml)
+    File.write(ledger, complete_adjudication_events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /at least ten cases in each stratum/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "refuses a full corpus case without repository and reviewer identity" do
+    cases = complete_corpus_cases
+    cases.first.delete("prompt_version")
+    File.write(manifest, { "cases" => cases }.to_yaml)
+    File.write(ledger, complete_corpus_adjudication_events(cases).map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /model\/prompt identity/)
+  end
+
   it "rejects non-independent paired adjudications" do
     events = [
       base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[one two three]),
@@ -137,9 +157,9 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "accepts reviewer runs appended and timestamped after complete adjudications" do
-    events = complete_adjudication_events + [
-      base_event.merge("type" => "shadow_run", "event_id" => "run", "case_id" => "A-01", "reviewer_run_id" => "run-1", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:01:00Z")
-    ]
+    cases = complete_corpus_cases
+    File.write(manifest, { "cases" => cases }.to_yaml)
+    events = complete_corpus_adjudication_events(cases) + complete_corpus_shadow_runs(cases)
     File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
 
     expect(described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40)).to be(true)
@@ -239,5 +259,40 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
       base_event.merge("type" => "adjudication", "event_id" => "one", "case_id" => "A-01", "operator" => "one", "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y"),
       base_event.merge("type" => "adjudication", "event_id" => "two", "case_id" => "A-01", "operator" => "two", "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y")
     ]
+  end
+
+  def complete_case(id, stratum: "accepted")
+    {
+      "id" => id,
+      "stratum" => stratum,
+      "repository" => "viamin/paid",
+      "base_sha" => "a" * 40,
+      "head_sha" => "b" * 40,
+      "approved_design_revision" => "c" * 40,
+      "model" => "reviewer-model",
+      "prompt_version" => "review-run-v1"
+    }
+  end
+
+  def complete_corpus_cases
+    %w[accepted intentionally_drifted uncertain].flat_map do |stratum|
+      10.times.map { |index| complete_case("#{stratum}-#{index}", stratum:) }
+    end
+  end
+
+  def complete_corpus_adjudication_events(cases)
+    freeze = base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[one two])
+    adjudications = cases.flat_map do |corpus_case|
+      [ "one", "two" ].map do |operator|
+        base_event.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-#{operator}", "case_id" => corpus_case.fetch("id"), "operator" => operator, "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y")
+      end
+    end
+    [ freeze, *adjudications ]
+  end
+
+  def complete_corpus_shadow_runs(cases)
+    cases.map do |corpus_case|
+      base_event.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:01:00Z")
+    end
   end
 end

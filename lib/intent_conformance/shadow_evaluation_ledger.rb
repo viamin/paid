@@ -14,6 +14,8 @@ module IntentConformance
 
     HUMAN_VERDICTS = %w[accepted material_drift uncertain].freeze
     REVIEWER_VERDICTS = %w[within_scope material_drift uncertain].freeze
+    CORPUS_STRATA = %w[accepted intentionally_drifted uncertain].freeze
+    REQUIRED_CASE_IDENTITIES = %w[repository base_sha head_sha approved_design_revision model prompt_version].freeze
 
     module_function
 
@@ -50,6 +52,7 @@ module IntentConformance
       ensure_operators_frozen!(entries)
       ensure_adjudications!(cases, entries)
       ensure_shadow_runs_follow_adjudications!(cases, entries)
+      ensure_corpus_shape!(cases)
       true
     end
 
@@ -60,6 +63,7 @@ module IntentConformance
       ensure_manifest_predates_events!(entries, manifest_commit)
       ensure_operators_frozen!(entries)
       ensure_adjudications!(cases, entries)
+      ensure_corpus_shape!(cases)
       true
     end
 
@@ -127,6 +131,19 @@ module IntentConformance
 
       raise InvalidLedger, "#{case_id} tie-break operator must be independent" if entries.map { |entry| entry["operator"] }.uniq.length != 3
       raise InvalidLedger, "#{case_id} tie-break verdict must agree with one of the primary verdicts" unless [ entries[0]["verdict"], entries[1]["verdict"] ].include?(entries[2]["verdict"])
+    end
+
+    def ensure_corpus_shape!(cases)
+      raise InvalidLedger, "corpus must contain at least ten cases in each stratum" unless CORPUS_STRATA.all? { |stratum| cases.count { |corpus_case| corpus_case["stratum"] == stratum } >= 10 }
+
+      cases.each { |corpus_case| ensure_case_identity!(corpus_case) }
+    end
+
+    def ensure_case_identity!(corpus_case)
+      raise InvalidLedger, "corpus case #{corpus_case.fetch("id")} lacks a valid stratum" unless CORPUS_STRATA.include?(corpus_case["stratum"])
+      return if REQUIRED_CASE_IDENTITIES.all? { |key| corpus_case[key].to_s.strip != "" }
+
+      raise InvalidLedger, "corpus case #{corpus_case.fetch("id")} lacks required repository, revision, or model/prompt identity"
     end
 
     def ensure_shadow_runs_follow_adjudications!(cases, entries)

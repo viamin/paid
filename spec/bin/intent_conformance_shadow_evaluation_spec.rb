@@ -17,8 +17,9 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
     Dir.mktmpdir do |dir|
       manifest = File.join(dir, "manifest.yml")
       ledger = File.join(dir, "ledger.jsonl")
-      File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
-      File.write(ledger, complete_ledger_events.map { |event| JSON.generate(event) }.join("\n"))
+      cases = complete_corpus_cases
+      File.write(manifest, { "cases" => cases }.to_yaml)
+      File.write(ledger, complete_ledger_events(cases).map { |event| JSON.generate(event) }.join("\n"))
 
       stdout, stderr, status = run_cli("compile", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit)
 
@@ -120,14 +121,38 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
     end
   end
 
-  def complete_ledger_events
+  def complete_ledger_events(cases)
     base = { "manifest_commit" => commit }
-    [
-      base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b], "recorded_at" => "2026-10-10T08:00:00Z"),
-      base.merge("type" => "adjudication", "event_id" => "a01-1", "case_id" => "A-01", "operator" => "op-a", "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z"),
-      base.merge("type" => "adjudication", "event_id" => "a01-2", "case_id" => "A-01", "operator" => "op-b", "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:02:00Z"),
-      base.merge("type" => "shadow_run", "event_id" => "run-a01", "case_id" => "A-01", "reviewer_run_id" => "run-1", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 100, "recorded_at" => "2026-10-10T09:00:00Z")
-    ]
+    freeze = base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b], "recorded_at" => "2026-10-10T08:00:00Z")
+    adjudications = cases.flat_map { |corpus_case| adjudications_for(base, corpus_case) }
+    runs = cases.map { |corpus_case| shadow_run_for(base, corpus_case) }
+
+    [ freeze, *adjudications, *runs ]
+  end
+
+  def complete_corpus_cases
+    %w[accepted intentionally_drifted uncertain].flat_map do |stratum|
+      10.times.map { |index| complete_case("#{stratum}-#{index}", stratum) }
+    end
+  end
+
+  def complete_case(id, stratum)
+    { "id" => id, "stratum" => stratum, "repository" => "viamin/paid", "base_sha" => "a" * 40, "head_sha" => "b" * 40, "approved_design_revision" => "c" * 40, "model" => "reviewer-model", "prompt_version" => "review-run-v1" }
+  end
+
+  def adjudications_for(base, corpus_case)
+    verdict = corpus_case.fetch("stratum") == "intentionally_drifted" ? "material_drift" : corpus_case.fetch("stratum")
+    %w[op-a op-b].map do |operator|
+      base.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-#{operator}", "case_id" => corpus_case.fetch("id"), "operator" => operator, "verdict" => verdict, "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z")
+    end
+  end
+
+  def shadow_run_for(base, corpus_case)
+    stratum = corpus_case.fetch("stratum")
+    verdict = { "accepted" => "within_scope", "intentionally_drifted" => "material_drift", "uncertain" => "uncertain" }.fetch(stratum)
+    cost = stratum == "accepted" && corpus_case.fetch("id").end_with?("-0") ? 100 : 0
+
+    base.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => verdict, "cost_cents" => cost, "recorded_at" => "2026-10-10T09:00:00Z")
   end
 
   def run_cli(*args)
