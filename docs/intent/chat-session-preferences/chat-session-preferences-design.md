@@ -26,7 +26,17 @@ non-Turbo HTML callers keep the redirect flow.
 
 ## Runner and model controls
 
-Changing the runner or model in either chat header saves the form through
-Turbo. A status beside the controls shows when saving is in progress and
-whether it succeeded or failed. The conversation stays in place, and the
-controls remain editable after a failed save.
+The session configuration UI presents one runner-and-model selection rather
+than independent runner and model fields. Its options are derived from each
+chat-capable runner's configured model policy: every runner has an Automatic
+option, and explicit options only use that runner's configured direct-outbound
+or tier models. The submitted option is resolved against the current user's
+available chat runners before it is saved, so a stale or crafted selection
+cannot pair a runner with an unrelated model.
+
+Changing the selection in either chat header saves through Turbo. A status
+beside the control shows when saving is in progress and whether it succeeded
+or failed. The conversation stays in place, and the control remains editable
+after a failed save. If an existing session has a pair that is no longer
+configured, no invalid option is rendered; the user is prompted to choose a
+valid replacement.

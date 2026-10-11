@@ -26,17 +26,12 @@
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <div>
-          <%= form.label :runner_id, "Runner", class: "block text-sm font-medium text-gray-700" %>
-          <%= form.select :runner_id,
-                          options_from_collection_for_select(available_runners, :id, :display_name),
-                          { include_blank: "Default runner" },
-                          class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
-        </div>
-        <div>
-          <%= form.label :model, class: "block text-sm font-medium text-gray-700" %>
-          <%= form.select :model,
-                          options_for_select(available_models.map { |model| ["#{model.display_name} (#{model.model_id})", model.model_id] }),
-                          { include_blank: "Automatic" },
+          <% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners) %>
+          <%= form.label :runner_model, "Runner and model", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.select :runner_model,
+                          options_for_select(runner_model_options.map { |option| [option.label, option.value] }),
+                          { include_blank: "Choose a runner and model" },
+                          id: "new_chat_session_runner_model",
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <div>
