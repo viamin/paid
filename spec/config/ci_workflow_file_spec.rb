@@ -14,6 +14,10 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
   end
 
+  let(:openapi_schema) do
+    Psych.safe_load_file(Rails.root.join("docs/api/openapi.yaml"), aliases: true)
+  end
+
   let(:postgres_pin_step) do
     workflow.fetch("jobs").fetch("lint").fetch("steps")
       .find { |step| step["name"] == "Verify Postgres image pins and client install sources are in sync" }
@@ -116,6 +120,19 @@ RSpec.describe CiWorkflowFile, :no_db do
       "schemathesis==4.6.0", "--include-method GET", "--include-path /inbox/entries/{entry_id}",
       "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveToolCall"
+    )
+  end
+
+  # @spec MOBILE-API-006 MOBILE-API-018
+  it "seeds the documented inbox entry example for successful fuzzing" do
+    fixture_step = step_run(schemathesis_job, "Create mobile API bearer token")
+
+    expect(fixture_step).to include(
+      "GithubToken.create!", "Project.create!", "Issue.create!",
+      "id: 4_241", 'paid_state: "needs_input"', "needs_input_questions:"
+    )
+    expect(openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")).to include(
+      "example" => "clarifying_questions:4241"
     )
   end
 

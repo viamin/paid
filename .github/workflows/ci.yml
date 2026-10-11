@@ -482,6 +482,38 @@ jobs:
                 password: "password123",
                 password_confirmation: "password123"
               )
+              github_token = GithubToken.create!(
+                account: account,
+                created_by: user,
+                name: "CI",
+                token: "ghp_#{"a" * 36}",
+                scopes: %w[repo],
+                validation_status: "validated"
+              )
+              project = Project.create!(
+                account: account,
+                created_by: user,
+                github_token: github_token,
+                name: "Mobile API fixture",
+                github_id: 4_288,
+                owner: "paid",
+                repo: "mobile-api-fixture"
+              )
+              issue = Issue.create!(
+                id: 4_241,
+                project: project,
+                github_issue_id: 4_241,
+                github_number: 4_241,
+                title: "Mobile API fixture",
+                github_creator_login: "mobile-contract-verifier",
+                github_state: "open",
+                paid_state: "needs_input",
+                labels: [ project.enhance_issue_needs_input_label_name ],
+                needs_input_questions: [ "What should the mobile client do?" ],
+                needs_input_since: Time.current,
+                github_created_at: Time.current,
+                github_updated_at: Time.current
+              )
               token = PersonalAccessToken.create_for!(user: user, name: "CI")
               File.open(ENV.fetch("GITHUB_ENV"), "a") { |file| file.puts("MOBILE_API_TOKEN=#{token.plaintext_token}") }
             end
@@ -593,6 +625,38 @@ jobs:
                 email: "mobile-schema-fuzzer@example.test",
                 password: "password123",
                 password_confirmation: "password123"
+              )
+              github_token = GithubToken.create!(
+                account: account,
+                created_by: user,
+                name: "CI",
+                token: "ghp_#{"a" * 36}",
+                scopes: %w[repo],
+                validation_status: "validated"
+              )
+              project = Project.create!(
+                account: account,
+                created_by: user,
+                github_token: github_token,
+                name: "Mobile API fixture",
+                github_id: 4_288,
+                owner: "paid",
+                repo: "mobile-api-fixture"
+              )
+              issue = Issue.create!(
+                id: 4_241,
+                project: project,
+                github_issue_id: 4_241,
+                github_number: 4_241,
+                title: "Mobile API fixture",
+                github_creator_login: "mobile-schema-fuzzer",
+                github_state: "open",
+                paid_state: "needs_input",
+                labels: [ project.enhance_issue_needs_input_label_name ],
+                needs_input_questions: [ "What should the mobile client do?" ],
+                needs_input_since: Time.current,
+                github_created_at: Time.current,
+                github_updated_at: Time.current
               )
               token = PersonalAccessToken.create_for!(user: user, name: "CI")
               File.open(ENV.fetch("GITHUB_ENV"), "a") { |file| file.puts("MOBILE_API_TOKEN=#{token.plaintext_token}") }

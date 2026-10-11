@@ -156,6 +156,7 @@ components:
       required: true
       schema:
         type: string
+        example: clarifying_questions:4241
     InboxKind:
       name: kind
       in: query
