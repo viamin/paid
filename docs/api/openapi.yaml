@@ -5,6 +5,9 @@ info:
   description: |
     Schema-first contract for the Paid iOS companion. Clients MUST pin a
     commit or release ref of this document, never a moving branch.
+    HTTP bearer security requirements use empty arrays as required by OpenAPI
+    3.0. `x-required-pat-scopes` declares the Paid PAT scopes required by an
+    operation for clients that need scope discovery.
 servers:
   - url: /api/v1
 paths:
@@ -40,7 +43,8 @@ paths:
     get:
       operationId: listInboxEntries
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       parameters:
         - $ref: '#/components/parameters/IfNoneMatch'
         - $ref: '#/components/parameters/InboxKind'
@@ -68,7 +72,8 @@ paths:
     get:
       operationId: inboxCount
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       parameters:
         - $ref: '#/components/parameters/IfNoneMatch'
       responses:
@@ -98,7 +103,8 @@ paths:
     get:
       operationId: getInboxEntry
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       responses:
         '200':
           description: Inbox entry detail.
@@ -118,7 +124,8 @@ paths:
     post:
       operationId: openInboxEntryChat
       security:
-        - bearerAuth: [chat]
+        - bearerAuth: []
+      x-required-pat-scopes: [chat]
       responses:
         '201':
           description: The native chat session for this entry.
@@ -135,7 +142,8 @@ paths:
   /chat_sessions:
     get:
       operationId: listChatSessions
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       parameters:
         - $ref: '#/components/parameters/Archived'
       responses:
@@ -148,7 +156,8 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     post:
       operationId: createChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       requestBody:
         required: false
         content:
@@ -165,7 +174,8 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionResourceId'}]
     get:
       operationId: getChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200':
           description: Chat session.
@@ -173,7 +183,8 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     patch:
       operationId: updateChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/UpdateChatSessionRequest'}}}
@@ -184,7 +195,8 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     delete:
       operationId: closeChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '204': {description: Chat session closed.}
         default: {$ref: '#/components/responses/Error'}
@@ -194,7 +206,8 @@ paths:
       - $ref: '#/components/parameters/ChatSessionTransition'
     patch:
       operationId: transitionChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200':
           description: Transitioned chat session.
@@ -204,7 +217,8 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionId'}]
     get:
       operationId: listChatMessages
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       parameters:
         - $ref: '#/components/parameters/BeforeMessageId'
         - $ref: '#/components/parameters/MessageLimit'
@@ -215,7 +229,8 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     post:
       operationId: sendChatMessage
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       x-sse-events: {$ref: '#/components/x-sse-events'}
       requestBody:
         required: true
@@ -234,7 +249,8 @@ paths:
       - $ref: '#/components/parameters/MessageId'
     post:
       operationId: resolveChatToolCall
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       x-sse-events: {$ref: '#/components/x-sse-events'}
       requestBody:
         required: true

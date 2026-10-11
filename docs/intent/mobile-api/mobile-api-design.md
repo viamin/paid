@@ -328,7 +328,9 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
   of `/api/v1`: paths, the polymorphic inbox envelope (`oneOf` with `kind`
   discriminators), chat payloads, the error envelope, and the versioning
   policy (additive changes within `v1`; breaking changes require a new
-  path version).
+  path version). HTTP bearer security requirements use empty arrays as
+  OpenAPI requires; the per-operation `x-required-pat-scopes` extension
+  declares Paid PAT scopes for client discovery.
 - The SSE event catalog ships as a schema **extension**: an
   `x-sse-events` map on the send/resolve operations listing each event name
   with its payload schema (`message_start`, `message_chunk`,

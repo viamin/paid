@@ -194,7 +194,9 @@
   validating requests and responses against it — strict in the test
   environment so request specs assert conformance, warn-and-log elsewhere.
   The schema SHALL express the polymorphic inbox envelope as `oneOf` per
-  entry kind with `kind` discriminators.
+  entry kind with `kind` discriminators. HTTP bearer security requirements
+  SHALL use empty arrays, with required Paid PAT scopes exposed through the
+  documented `x-required-pat-scopes` operation extension.
   *Tests:* `spec/requests/api/v1/*` (behind committee middleware).
   *Code:* `config/initializers/committee.rb`, `docs/api/openapi.yaml`.
 

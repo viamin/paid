@@ -41,4 +41,33 @@ RSpec.describe Committee::Drivers do
 
     expect(schema.dig("components", "x-sse-events").keys).to match_array(expected_events)
   end
+
+  # @spec MOBILE-API-009 MOBILE-API-016
+  it "uses valid HTTP bearer requirements while documenting required PAT scopes" do
+    scoped_operations = {
+      "/inbox" => { "get" => [ "inbox" ] },
+      "/inbox/count" => { "get" => [ "inbox" ] },
+      "/inbox/entries/{entry_id}" => { "get" => [ "inbox" ] },
+      "/inbox/entries/{entry_id}/chat" => { "post" => [ "chat" ] },
+      "/chat_sessions" => { "get" => [ "chat" ], "post" => [ "chat" ] },
+      "/chat_sessions/{id}" => { "get" => [ "chat" ], "patch" => [ "chat" ], "delete" => [ "chat" ] },
+      "/chat_sessions/{id}/{transition}" => { "patch" => [ "chat" ] },
+      "/chat_sessions/{chat_session_id}/messages" => { "get" => [ "chat" ], "post" => [ "chat" ] },
+      "/chat_sessions/{chat_session_id}/messages/{message_id}/resolve" => { "post" => [ "chat" ] }
+    }
+
+    bearer_operations = schema.fetch("paths").values.flat_map do |path_item|
+      path_item.values.select { |value| value.is_a?(Hash) && value.key?("security") }
+    end
+
+    bearer_operations.each do |operation|
+      expect(operation.fetch("security")).to include("bearerAuth" => [])
+    end
+
+    scoped_operations.each do |path, operations|
+      operations.each do |method, scopes|
+        expect(schema.dig("paths", path, method, "x-required-pat-scopes")).to eq(scopes)
+      end
+    end
+  end
 end
