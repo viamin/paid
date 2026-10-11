@@ -10,7 +10,7 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
       config = described_class.good_job_concurrency_config
 
       expect(described_class.queue_name).to eq("maintenance")
-      expect(config).to include(total_limit: 1)
+      expect(config).to include(total_limit: 1, enqueue_limit: 1)
       expect(config[:key]).to eq("legacy_partial_closeout_reconciliation_sweep")
     end
   end
