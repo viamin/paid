@@ -13,10 +13,11 @@ class LegacyPartialCloseoutReconciliationSweepJob < ApplicationJob
   queue_as :maintenance
 
   good_job_control_concurrency_with(
-    total_limit: 1,
-    # The daily cron enqueue may overlap a currently performing batch. Keep a
-    # second queue position available for that batch's cursor continuation.
+    # A full batch enqueues its cursor continuation while it is still
+    # performing. Keep that queued continuation separate from the single
+    # performing job; total_limit would count the current job at enqueue time.
     enqueue_limit: 2,
+    perform_limit: 1,
     key: "legacy_partial_closeout_reconciliation_sweep"
   )
 

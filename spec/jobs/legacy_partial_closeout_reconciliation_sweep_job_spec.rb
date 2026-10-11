@@ -5,16 +5,47 @@ require "rails_helper"
 RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
   let(:account) { create(:account) }
 
+  def result_for(scanned: 0, reconciled: 0, awaiting_operator: 0, retryable_failure: 0, skipped: 0, next_cursor: nil, lock_held: false)
+    PartialCloseouts::ReconcileLegacy::Result.new(
+      scanned:, reconciled:, awaiting_operator:, retryable_failure:, skipped:, next_cursor:, lock_held:
+    )
+  end
+
   describe "GoodJob concurrency" do
     it "runs on maintenance with one fleet-wide scheduler invocation" do
       config = described_class.good_job_concurrency_config
 
       expect(described_class.queue_name).to eq("maintenance")
-      # A cron invocation can arrive while a batch is performing. Reserve a
-      # second queued position so that invocation cannot evict the batch's
-      # cursor-carrying continuation.
-      expect(config).to include(total_limit: 1, enqueue_limit: 2)
+      expect(config).to include(enqueue_limit: 2, perform_limit: 1)
+      expect(config).not_to have_key(:total_limit)
       expect(config[:key]).to eq("legacy_partial_closeout_reconciliation_sweep")
+    end
+  end
+
+  describe "full batches", :good_job do
+    around do |example|
+      original_adapter = described_class.queue_adapter
+      described_class.queue_adapter = GoodJob::Adapter.new(execution_mode: :external)
+      example.run
+    ensure
+      described_class.queue_adapter = original_adapter
+      GoodJob::Job.where(job_class: described_class.name).delete_all
+    end
+
+    # @spec PARTIAL-CLOSEOUT-025
+    it "persists and runs the cursor-carrying continuation" do
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call).and_return(
+        result_for(scanned: 200, next_cursor: 241),
+        result_for(scanned: 1, next_cursor: 242)
+      )
+
+      parent = described_class.perform_later(account_id: account.id, after_id: 41)
+      GoodJob::Job.find(parent.provider_job_id).perform(lock_id: SecureRandom.uuid)
+
+      continuation = GoodJob::Job.where(job_class: described_class.name, finished_at: nil).sole
+      continuation.perform(lock_id: SecureRandom.uuid)
+
+      expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(account_id: account.id, after_id: 241)
     end
   end
 
@@ -69,12 +100,6 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
       described_class.perform_now(account_id: account.id, after_id: 41)
 
       expect(described_class).not_to have_received(:perform_later)
-    end
-
-    def result_for(scanned: 0, reconciled: 0, awaiting_operator: 0, retryable_failure: 0, skipped: 0, next_cursor: nil, lock_held: false)
-      PartialCloseouts::ReconcileLegacy::Result.new(
-        scanned:, reconciled:, awaiting_operator:, retryable_failure:, skipped:, next_cursor:, lock_held:
-      )
     end
   end
 end
