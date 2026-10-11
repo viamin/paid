@@ -83,6 +83,8 @@ module Api
 
       def json_resolve(tool_call_message, decision)
         render json: assistant_response(resolve_tool_call(tool_call_message, decision))
+      rescue ChatSessions::ResolveToolCall::ResolutionConflictError => error
+        render_error(:conflict, :conflict, error.message)
       rescue ArgumentError => error
         validation_failed(error.message)
       rescue NotImplementedError, ChatSessions::LlmClientConfigurationError => error
@@ -115,7 +117,7 @@ module Api
       rescue IOError
         nil
       rescue StandardError => error
-        write_sse_event("error", { message: stream_error_message(error) }) rescue IOError
+        write_sse_event("error", stream_error_payload(error)) rescue IOError
       ensure
         response.stream.close
       end
@@ -159,8 +161,18 @@ module Api
         { limit_type: error.limit_type, limit: error.limit, used: error.used }.compact
       end
 
+      def token_limit_error_payload(error)
+        { error: error.message, limit_type: error.limit_type, limit: error.limit, used: error.used }.compact
+      end
+
+      def stream_error_payload(error)
+        return token_limit_error_payload(error) if error.is_a?(ChatSessions::TokenLimitExceededError)
+
+        { message: stream_error_message(error) }
+      end
+
       def stream_error_message(error)
-        return error.message if error.is_a?(ArgumentError) || error.is_a?(ChatSessions::TokenLimitExceededError)
+        return error.message if error.is_a?(ArgumentError)
         return ChatSessions::ErrorMessage.for(error) if error.is_a?(AgentHarness::Error)
 
         error.is_a?(NotImplementedError) || error.is_a?(ChatSessions::LlmClientConfigurationError) ? error.message : "An unexpected error occurred"

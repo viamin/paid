@@ -238,7 +238,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   end
 
   describe "validation" do
-    it "rejects a tool call that is not pending" do
+    it "raises a resolution conflict when a tool call is no longer pending" do
       tool_call_message.update!(tool_status: "approved")
 
       expect {
@@ -246,7 +246,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
           chat_session: chat_session, tool_call_message: tool_call_message,
           decision: :approve, llm_client: llm_client
         )
-      }.to raise_error(ArgumentError, /not awaiting confirmation/)
+      }.to raise_error(described_class::ResolutionConflictError, /not awaiting confirmation/)
     end
 
     it "does not reopen a closed chat for an already resolved confirmation" do

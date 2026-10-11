@@ -84,6 +84,17 @@ RSpec.describe "Mobile chat messages API" do
     expect(response.body).to include('"token_limit_error":true')
   end
 
+  # @spec MOBILE-API-013 CHAT-API-014
+  it "preserves the token-limit error payload after an SSE stream starts" do
+    error = ChatSessions::TokenLimitExceededError.new("Session token limit reached", remaining: 0, limit: 100, limit_type: "session", used: 110)
+    allow(ChatSessions::SendMessage).to receive(:call).and_raise(error)
+
+    post "/api/v1/chat/sessions/#{chat_session.id}/messages", params: { content: "Hello" },
+      headers: headers.merge("Accept" => "text/event-stream")
+
+    expect(response.body).to include("event: error\ndata: {\"error\":\"Session token limit reached\",\"limit_type\":\"session\",\"limit\":100,\"used\":110}")
+  end
+
   # @spec MOBILE-API-014 CHAT-API-004
   it "resolves tool calls through JSON and SSE" do
     tool_call = create(:chat_message, :tool_call, chat_session:, tool_status: "pending")
@@ -97,6 +108,20 @@ RSpec.describe "Mobile chat messages API" do
     post "/api/v1/chat/sessions/#{chat_session.id}/messages/#{tool_call.id}/resolve", params: { decision: "deny" }, headers: headers.merge("Accept" => "text/event-stream")
     expect(response.body).to include("event: message_start", "event: message_tool_resolved", "event: message_complete")
     expect(response.body).to match(/event: message_start\ndata: \{"message_id":"[^"]+"\}\n\n/)
+  end
+
+  # @spec MOBILE-API-014 CHAT-API-004 MOBILE-API-015
+  it "returns a conflict when another client already resolved the tool call" do
+    tool_call = create(:chat_message, :tool_call, chat_session:, tool_status: "pending")
+    allow(ChatSessions::ResolveToolCall).to receive(:call)
+      .and_raise(ChatSessions::ResolveToolCall::ResolutionConflictError, "Tool call is not awaiting confirmation")
+
+    post "/api/v1/chat/sessions/#{chat_session.id}/messages/#{tool_call.id}/resolve", params: { decision: "approve" }, headers: headers
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to eq(
+      "error" => { "code" => "conflict", "message" => "Tool call is not awaiting confirmation", "details" => {} }
+    )
   end
 
   # @spec MOBILE-API-013 MOBILE-API-015 CHAT-API-002
