@@ -102,7 +102,7 @@ class TenantConfigurationsController < ApplicationController
     raw_params = params.require(:tenant_setting)
     attrs = raw_params.permit(
       :max_concurrent_runs, :max_projects, :max_users, :max_tokens_per_run, :max_monthly_cost_cents,
-      :self_repo_full_name, :queue_fairness_mode,
+      :self_repo_full_name, :queue_fairness_mode, :default_label_integration_mode,
       allowed_runner_keys: [],
       auto_pick_skip_labels: [],
       runner_preferences: [
