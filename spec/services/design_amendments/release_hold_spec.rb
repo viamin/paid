@@ -21,6 +21,7 @@ RSpec.describe DesignAmendments::ReleaseHold do
       subject: held_issue,
       severity: :error,
       title: "Design amendment impact is uncertain",
+      description: "The amendment's effect on this issue could not be determined with confidence.",
       blocking: true,
       metadata: { "cited_claims" => [ "Claim A" ] }
     )
