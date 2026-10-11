@@ -203,6 +203,28 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects a committed rewrite of an earlier ledger event" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, manifest_commit)
+      events = complete_corpus_adjudication_events(cases, base) + complete_corpus_shadow_runs(cases, base)
+
+      record_events_in_separate_commits(dir, ledger_path, events)
+      rewritten_events = File.readlines(ledger_path)
+      rewritten_event = JSON.parse(rewritten_events.fetch(1)).merge("reason" => "rewritten after adjudication")
+      rewritten_events[1] = "#{JSON.generate(rewritten_event)}\n"
+      git_write!(dir, ledger_path, rewritten_events.join, "rewrite prior adjudication")
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /append exactly one event/)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "rejects a ledger commit that does not descend from the frozen manifest commit" do
     Dir.mktmpdir do |dir|
       init_git_repo(dir)

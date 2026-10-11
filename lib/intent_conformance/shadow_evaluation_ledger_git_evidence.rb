@@ -13,10 +13,10 @@ module IntentConformance
   # could otherwise append the whole freeze/adjudication/shadow-run sequence in
   # one sitting, backdate recorded_at, and pass any existing commit SHA as
   # manifest_commit. This module closes that gap by asking Git itself: does
-  # manifest_commit really contain the frozen manifest, and did an immutable,
-  # separate descendant commit introduce each ledger event? The latter binds
-  # every current JSONL line to the commit Git says introduced it, instead of
-  # merely counting unrelated commits that happened to touch the ledger.
+  # manifest_commit really contain the frozen manifest, and did each descendant
+  # commit append exactly one ledger event? Comparing each commit's ledger
+  # snapshot with its parent rejects historical rewrites and deletions, which
+  # current-line blame cannot detect after a rewrite is committed.
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
   module ShadowEvaluationLedgerGitEvidence
     module_function
@@ -48,15 +48,17 @@ module IntentConformance
     def verify_ledger_commits!(repo_root, ledger_path, manifest_commit, event_count)
       relative_path = relative_to(repo_root, ledger_path)
       ensure_ledger_matches_head!(repo_root, ledger_path, relative_path)
-      commits = event_commits(repo_root, relative_path)
-      raise invalid_ledger, "ledger file has no committed events to verify" unless commits.length == event_count
-      raise invalid_ledger, "each ledger event must be introduced by a separate git commit" unless commits.uniq.length == event_count
+      commits = event_commits(repo_root, relative_path, manifest_commit)
 
       commits.each do |sha|
-        next if strict_descendant?(repo_root, manifest_commit, sha)
+        raise invalid_ledger, "ledger event commit #{sha} does not descend from the frozen manifest commit" unless strict_descendant?(repo_root, manifest_commit, sha)
 
-        raise invalid_ledger, "ledger event commit #{sha} does not descend from the frozen manifest commit"
+        ensure_event_is_append!(repo_root, relative_path, sha)
       end
+
+      return if commits.length == event_count
+
+      raise invalid_ledger, "each ledger event must be introduced by a separate git commit"
     end
 
     def ensure_ledger_matches_head!(repo_root, ledger_path, relative_path)
@@ -66,20 +68,37 @@ module IntentConformance
       raise invalid_ledger, "ledger file must be committed before validation"
     end
 
-    def event_commits(repo_root, relative_path)
-      stdout, _stderr, status = Open3.capture3("git", "-C", repo_root, "blame", "--line-porcelain", "HEAD", "--", relative_path)
+    def event_commits(repo_root, relative_path, manifest_commit)
+      stdout, _stderr, status = Open3.capture3("git", "-C", repo_root, "rev-list", "--full-history", "--reverse", "#{manifest_commit}..HEAD", "--", relative_path)
       return [] unless status.success?
 
-      commits_for_nonempty_lines(stdout)
+      stdout.lines(chomp: true).reject(&:empty?)
     end
 
-    def commits_for_nonempty_lines(blame)
-      commit = nil
-      blame.each_line.filter_map do |line|
-        match = line.match(/\A([0-9a-f]{40}) \d+ \d+/)
-        commit = match[1] if match
-        commit if line.start_with?("\t") && !line.strip.empty?
-      end
+    def ensure_event_is_append!(repo_root, relative_path, sha)
+      parent = parent_for(repo_root, sha)
+      parent_content = file_content_at(repo_root, parent, relative_path)
+      content = file_content_at(repo_root, sha, relative_path)
+      appended_content = content.delete_prefix(parent_content)
+
+      return if content.start_with?(parent_content) && appended_content.lines.one? && !appended_content.strip.empty?
+
+      raise invalid_ledger, "each ledger event must be introduced by a separate git commit and must append exactly one event without changing prior events"
+    end
+
+    def parent_for(repo_root, sha)
+      stdout, _stderr, status = Open3.capture3("git", "-C", repo_root, "rev-list", "--parents", "-n", "1", sha)
+      parents = stdout.split.drop(1)
+      return parents.first if status.success? && parents.one?
+
+      raise invalid_ledger, "ledger event commit #{sha} must have exactly one parent"
+    end
+
+    def file_content_at(repo_root, commit, relative_path)
+      content, _stderr, status = Open3.capture3("git", "-C", repo_root, "show", "#{commit}:#{relative_path}")
+      return content if status.success?
+
+      ""
     end
 
     def commit_exists?(repo_root, sha)
