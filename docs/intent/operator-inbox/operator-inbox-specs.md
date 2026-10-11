@@ -30,8 +30,12 @@
 - [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
   entry until the notification resolves or is dismissed, reusing notification
-  metadata for remediation copy instead of introducing a separate persistence
-  model. Informational status/history notifications, including automatic
+  metadata for remediation copy and its persisted description for inline
+  context instead of introducing a separate persistence model. When
+  `recommended_action` is absent, the entry SHALL use the notification
+  description as its summary. The publish boundary SHALL reject a blocking
+  notification that has neither a non-blank description nor remediation
+  guidance. Informational status/history notifications, including automatic
   code-scanning verification waits, SHALL remain outside this lane and its
   badge; credential and configuration notifications that require an operator
   correction remain blocking entries.

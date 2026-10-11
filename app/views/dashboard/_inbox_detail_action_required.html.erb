@@ -1,9 +1,16 @@
+<%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
+  <% notification = entry.record %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
-    <p class="mt-1 text-sm text-rose-800">
-      <%= entry.summary.presence || "A human action is required before work can continue." %>
-    </p>
+    <% if notification.description.present? %>
+      <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
+    <% end %>
+    <% if entry.summary.present? && entry.summary != notification.description %>
+      <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
+    <% elsif notification.description.blank? %>
+      <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
+    <% end %>
   </div>
 
   <% if entry.tasks.any? %>
@@ -17,7 +24,6 @@
     </div>
   <% end %>
 
-  <% notification = entry.record %>
   <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",

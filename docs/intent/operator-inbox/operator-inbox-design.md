@@ -120,7 +120,11 @@ remain blocking because an operator must correct them.
 The entry payload carries the source notification, the related
 project/issue/run context when it can be derived from the subject, and
 remediation guidance from notification metadata (`recommended_action`, plus
-optional `remediation_steps` / `remediation_context`).
+optional `remediation_steps` / `remediation_context`). The detail pane always
+renders the notification description inline. When `recommended_action` is
+absent, the description is also the entry summary. `Notifications::Publish`
+rejects a blocking notification that has neither a non-blank description nor
+remediation guidance, so every Action Required entry has meaningful context.
 
 ### `merge_approval`
 

@@ -23,6 +23,8 @@ module Notifications
     end
 
     def call
+      validate_blocking_context!
+
       notification = Notification.find_or_initialize_by(
         account: account,
         user: user,
@@ -64,6 +66,22 @@ module Notifications
       return unless blocking
 
       default_action_url(notification) if notification.persisted?
+    end
+
+    # @spec OPERATOR-INBOX-002B
+    def validate_blocking_context!
+      return unless blocking
+      return if description.present? || recommended_action.present? || remediation_steps.any?(&:present?)
+
+      raise ArgumentError, "Blocking notifications require a description or remediation guidance"
+    end
+
+    def recommended_action
+      metadata["recommended_action"]
+    end
+
+    def remediation_steps
+      Array(metadata["remediation_steps"])
     end
 
     def persist_default_action_url!(notification)
