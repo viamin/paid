@@ -3,7 +3,7 @@
 module Tools
   # @spec ONBOARD-CHAT-006 ONBOARD-CHAT-007 ONBOARD-CHAT-012
   class CreateTrackerConfiguration < BaseTool
-    authorize :create?, ->(args) { configurable_for(args.fetch(:configurable_type), args[:configurable_id]) }, policy_class: TrackerConfigurationPolicy
+    authorize :create?, ->(args) { configurable_for(args.fetch(:configurable_type), args[:configurable_id]).build_tracker_configuration }, policy_class: TrackerConfigurationPolicy
 
     def self.tool_name = "create_tracker_configuration"
     def self.write_operation? = true
@@ -18,7 +18,7 @@ module Tools
 
     def perform(tracker_type:, configurable_type:, confirmed:, configurable_id: nil, integration_credential_id: nil, base_url: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to create a tracker configuration" unless confirmed
-      return { status: "connect_required", connect_url: "/integrations/#{tracker_type}/connect" } if oauth_tracker?(tracker_type, integration_credential_id)
+      return { status: "connect_required", connect_url: credential_setup_url(tracker_type) } if oauth_tracker?(tracker_type, integration_credential_id)
 
       tracker = configurable(configurable_type, configurable_id).build_tracker_configuration(
         tracker_type:, base_url: base_url.presence || Project::DEFAULT_ISSUE_TRACKER_URLS[tracker_type], integration_credential: credential(integration_credential_id), created_by: user
@@ -50,6 +50,10 @@ module Tools
 
     def oauth_tracker?(type, credential_id)
       credential_id.blank? && Integrations::CredentialCatalog.lookup(type)&.fetch(:auth_kinds, [])&.include?("oauth_token")
+    end
+
+    def credential_setup_url(tracker_type)
+      Rails.application.routes.url_helpers.new_integration_credential_path(service_key: tracker_type)
     end
   end
 end

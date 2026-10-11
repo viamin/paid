@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
-# @spec ONBOARD-CHAT-005 ONBOARD-CHAT-008 ONBOARD-CHAT-010
+# @spec ONBOARD-CHAT-005 ONBOARD-CHAT-006 ONBOARD-CHAT-007 ONBOARD-CHAT-008 ONBOARD-CHAT-010
 RSpec.describe Tools::CompleteOnboardingStep do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account:) }
@@ -86,6 +87,37 @@ RSpec.describe Tools::CompleteOnboardingStep do
     expect {
       Tools::CreateRunner.new(user:, session:).call(name: "Cursor", runner_key: "cursor", auth_type: "api_key", provider_api_key_id: key.id, confirmed: true)
     }.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
+  it "creates an account-level tracker configuration" do
+    result = Tools::CreateTrackerConfiguration.new(user:, session:).call(
+      tracker_type: "github_issues", configurable_type: "Account", confirmed: true
+    )
+
+    expect(result).to include("tracker_type" => "github_issues", "configurable_type" => "Account")
+  end
+
+  it "returns the credential setup route for an OAuth tracker" do
+    result = Tools::CreateTrackerConfiguration.new(user:, session:).call(
+      tracker_type: "jira", configurable_type: "Account", confirmed: true
+    )
+
+    expect(result).to eq(status: "connect_required", connect_url: "/integration_credentials/new?service_key=jira")
+  end
+
+  it "does not complete a pending first-project step when creating a project" do
+    Onboarding::StartOnboarding.call(account:)
+    github_token = create(:github_token, account:)
+    client = instance_double(GithubClient, repository: OpenStruct.new(
+      id: 1, name: "paid", default_branch: "main", language: "Ruby"
+    ))
+    allow(GithubClient).to receive(:new).and_return(client)
+
+    Tools::CreateProject.new(user:, session:).call(
+      mode: "connect_existing", owner: "viamin", repo: "paid", github_token_id: github_token.id, confirmed: true
+    )
+
+    expect(account.onboarding_steps.find_by!(step: "first_project")).to be_pending
   end
 
   it "strips confirmation from onboarding write tools advertised to chat" do

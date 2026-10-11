@@ -26,7 +26,9 @@ module Tools
       else
         raise ArgumentError, "mode must be connect_existing or create_blank"
       end
-      Onboarding::CompleteStep.call(account:, step: "first_project", metadata: { project_id: project.id }) if account.onboarding_steps.exists?(step: "first_project")
+      if account.onboarding_steps.exists?(step: "first_project", status: "in_progress")
+        Onboarding::CompleteStep.call(account:, step: "first_project", metadata: { project_id: project.id })
+      end
       project.attributes.slice("id", "name", "owner", "repo", "default_branch", "creation_origin")
     end
 
