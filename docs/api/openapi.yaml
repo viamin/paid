@@ -117,6 +117,72 @@ paths:
                     type: integer
         default:
           $ref: '#/components/responses/Error'
+  /chat/sessions:
+    get:
+      operationId: listChatSessions
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200':
+          description: Chat sessions.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ChatSessionListResponse'}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '201':
+          description: Created inline chat session.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{id}:
+    parameters: [{$ref: '#/components/parameters/ChatSessionId'}]
+    get:
+      operationId: getChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200': {description: Chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200': {description: Updated chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: closeChatSession
+      security: [{bearerAuth: [chat]}]
+      responses: {'204': {description: Closed chat session}, default: {$ref: '#/components/responses/Error'}}
+  /chat/sessions/{id}/{transition}:
+    parameters: [{$ref: '#/components/parameters/ChatSessionId'}, {$ref: '#/components/parameters/ChatSessionTransition'}]
+    patch:
+      operationId: transitionChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200': {description: Transitioned chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/messages:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/MessageBefore'}, {$ref: '#/components/parameters/MessageLimit'}]
+    get:
+      operationId: listChatMessages
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200': {description: Cursor page of chat messages, content: {application/json: {schema: {$ref: '#/components/schemas/ChatMessageListResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: sendChatMessage
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '201': {description: Chat response, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}}}
+        '200': {description: Chat SSE stream, content: {text/event-stream: {schema: {type: string}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/messages/{id}/resolve:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/MessageId'}]
+    post:
+      operationId: resolveChatToolCall
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200': {description: Tool resolution response or SSE stream, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}, text/event-stream: {schema: {type: string}}}}
+        default: {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     bearerAuth:
@@ -124,6 +190,34 @@ components:
       scheme: bearer
       bearerFormat: paid_pat
   parameters:
+    ChatSessionId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatSessionIdAsSessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatSessionTransition:
+      name: transition
+      in: path
+      required: true
+      schema: {type: string, enum: [archive, unarchive, reopen]}
+    MessageId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+    MessageBefore:
+      name: before
+      in: query
+      schema: {type: integer}
+    MessageLimit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100}
     EntryId:
       name: entry_id
       in: path
@@ -160,6 +254,41 @@ components:
       schema:
         type: string
   schemas:
+    ChatSessionListResponse:
+      type: object
+      required: [sessions]
+      properties:
+        sessions: {type: array, items: {$ref: '#/components/schemas/ChatSession'}}
+    ChatSession:
+      type: object
+      required: [id, status, container_capability]
+      properties:
+        id: {type: integer}
+        external_id: {type: string, nullable: true}
+        title: {type: string, nullable: true}
+        status: {type: string}
+        container_capability: {type: string}
+    ChatMessage:
+      type: object
+      required: [id, role]
+      properties:
+        id: {type: integer}
+        external_id: {type: string, nullable: true}
+        role: {type: string}
+        content: {type: string, nullable: true}
+        tool_status: {type: string, nullable: true}
+    ChatMessageListResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages: {type: array, items: {$ref: '#/components/schemas/ChatMessage'}}
+        next_before: {type: integer}
+    ChatAssistantResponse:
+      oneOf:
+        - $ref: '#/components/schemas/ChatMessage'
+        - type: object
+          required: [status]
+          properties: {status: {type: string, enum: [paused]}}
     ProbeResponse:
       type: object
       required: [user_id, account_id]

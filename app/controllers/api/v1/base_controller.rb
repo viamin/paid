@@ -20,6 +20,8 @@ module Api
 
       rescue_from Pundit::NotAuthorizedError, with: :forbidden
       rescue_from ActiveRecord::RecordNotFound, with: :not_found
+      rescue_from ActionController::ParameterMissing, with: :invalid_request
+      rescue_from StandardError, with: :internal_error
 
       private
 
@@ -136,6 +138,15 @@ module Api
 
       def not_found
         render_error(:not_found, :not_found, "The requested resource was not found.")
+      end
+
+      def invalid_request(error)
+        render_error(:bad_request, :invalid_request, error.message)
+      end
+
+      def internal_error(error)
+        Rails.logger.error(message: "mobile_api.request_failed", error_class: error.class.name, request_id: request.uuid)
+        render_error(:internal_server_error, :internal_error, "An unexpected error occurred")
       end
 
       def skip_pundit?
