@@ -41,6 +41,12 @@ collection failed, reports the terminal exception, and re-raises it so the
 adapter records the failed execution. This preserves serialized replacement
 without allowing a stranded database lock to create a job timeout.
 
+Full collection runs execute the registered collectors serially, and a large
+repository can legitimately require more than the individual command timeouts
+alone imply. `RunCollectorsJob` therefore has a 45-minute wall-clock ceiling:
+long enough to finish a complete bounded collection while still terminating a
+genuinely stuck container, git, network, or database operation.
+
 ### Derived vector indexing
 
 Embeddings are generated for active chunks that still need vectors, then synced

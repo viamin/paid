@@ -6,8 +6,9 @@ RSpec.describe RunCollectorsJob do
   let(:project) { create(:project) }
   let(:commit_sha) { "a" * 40 }
 
-  it "has a 20-minute perform_timeout so a hung job cannot deadlock the Rails reloader" do
-    expect(described_class.perform_timeout).to eq(20.minutes.to_i)
+  # @spec KNOWLEDGE-001
+  it "has a 45-minute perform_timeout for a complete bounded collection" do
+    expect(described_class.perform_timeout).to eq(45.minutes.to_i)
   end
 
   describe "#perform" do
