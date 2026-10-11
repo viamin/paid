@@ -54,6 +54,7 @@ RSpec.describe ApplicationJob, :no_db do
         FreeModels::SyncJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
+        LegacyPartialCloseoutReconciliationSweepJob
         ModelHealthCheckJob
         OrphanBranchReaperJob
         PollWorkflowHealthCheckJob
