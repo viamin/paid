@@ -9,9 +9,17 @@
   system SHALL persist versioned collector output in PostgreSQL as project
   versions, collector runs, artifacts, chunks, and links, and SHALL stale older
   active artifacts after a full successful collection run for a newer commit.
+  When concurrent collection contends for an artifact identity, it SHALL not
+  wait indefinitely on a database advisory lock; it SHALL fail the collection
+  attempt promptly and retry through the job's bounded retry policy. During
+  those retryable attempts, it SHALL retain the project's `collecting` status;
+  after the retry policy is exhausted, it SHALL mark the collection failed and
+  report the terminal failure through the job exception-notification path.
   *Code:* `app/services/knowledge/collector_runner.rb`,
-  `app/services/knowledge/artifact_store.rb`.
-  *Test:* `spec/services/knowledge/collector_runner_spec.rb`.
+  `app/services/knowledge/artifact_store.rb`, `app/jobs/run_collectors_job.rb`.
+  *Test:* `spec/services/knowledge/collector_runner_spec.rb`,
+  `spec/services/knowledge/artifact_store_spec.rb`,
+  `spec/jobs/run_collectors_job_spec.rb`.
 
 - [x] **KNOWLEDGE-002** — When active chunks need embeddings, the system SHALL
   redact them before embedding, SHALL skip fully redacted chunks, and SHALL
