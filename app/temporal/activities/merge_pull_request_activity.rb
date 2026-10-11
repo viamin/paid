@@ -43,21 +43,7 @@ module Activities
       end
 
       if issue.auto_merge_skipped?
-        logger.info(
-          message: "pr_review.auto_merge_skipped_by_label",
-          project_id: project.id,
-          pr_number: pr_number,
-          label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
-        )
-        record_attempt(
-          project,
-          issue,
-          status: "skipped",
-          reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL,
-          message: "Auto-merge skipped because the PR has the #{Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL} label.",
-          credential_mode: AutoMergeAttempt.primary_credential_mode(project)
-        )
-        return { merged: false, skipped: true, pr_number: pr_number }
+        return auto_merge_skipped_result(project, issue, pr_number)
       end
 
       return held_for_review_result(project, issue, pr_number) if issue.held_for_review?
@@ -83,7 +69,9 @@ module Activities
         return { merged: false, error: e.message, pr_number: pr_number }
       end
 
-      return held_for_review_result(project, issue, pr_number) if issue.held_for_review?
+      issue.reload
+      return auto_merge_skipped_result(project, issue, pr_number) if auto_merge_skipped_after_fetch?(issue, pr_data)
+      return held_for_review_result(project, issue, pr_number) if held_for_review_after_fetch?(issue, pr_data)
 
       merged = if pr_data.merged
         logger.info(
@@ -208,6 +196,39 @@ module Activities
         error: e.message
       )
       handle_merge_failure(project, issue, repo, pr_number, config, e.message)
+    end
+
+    # @spec AUTO-MERGE-009
+    def auto_merge_skipped_result(project, issue, pr_number)
+      logger.info(
+        message: "pr_review.auto_merge_skipped_by_label",
+        project_id: project.id,
+        pr_number: pr_number,
+        label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+      )
+      record_attempt(
+        project,
+        issue,
+        status: "skipped",
+        reason_code: AutoMergeAttempts::Record::REASON_SKIP_LABEL,
+        message: "Auto-merge skipped because the PR has the #{Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL} label.",
+        credential_mode: AutoMergeAttempt.primary_credential_mode(project)
+      )
+      { merged: false, skipped: true, pr_number: pr_number }
+    end
+
+    # @spec LABEL-CONTROL-004
+    def auto_merge_skipped_after_fetch?(issue, pr_data)
+      return issue.skip_auto_merge if issue.local_control_state?
+
+      pr_data.labels.include?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+    end
+
+    # @spec LABEL-CONTROL-004
+    def held_for_review_after_fetch?(issue, pr_data)
+      return issue.hold_for_review if issue.local_control_state?
+
+      pr_data.labels.include?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
     end
 
     # @spec AUTO-MERGE-009

@@ -30,8 +30,8 @@ credential is selected. Read paths deliberately remain intact except in
 an auto-pick exclusion reason replace their corresponding label reads.
 Escalation dismissal remains the existing local `PullRequests::Unblock`
 transition, preserving its token-cap waiver and audit contract. The project
-page and the MCP tool registry (and thus chat) expose these local controls;
-manual run actions remain the activation surface.
+page and the MCP tool registry (and thus chat) expose reversible actions for
+these local controls; manual run actions remain the activation surface.
 
 The project settings form and `update_project_settings` MCP write surface
 expose the setting; tenant configuration exposes the creation default.

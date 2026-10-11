@@ -373,6 +373,27 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "ignored-mode pull request controls" do
+    let(:user) { create(:user, :owner, account:) }
+    let(:project) do
+      create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+    end
+    let!(:pull_request) { create(:issue, :pull_request, project:) }
+
+    before { sign_in user }
+
+    it "renders actions to set and clear merge controls" do # @spec LABEL-CONTROL-002
+      get project_path(project)
+
+      expect(response.body).to include("Skip merge", "Hold review")
+
+      pull_request.update!(skip_auto_merge: true, hold_for_review: true)
+      get project_path(project)
+
+      expect(response.body).to include("Allow merge", "Release review hold")
+    end
+  end
+
   describe "GET /projects/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

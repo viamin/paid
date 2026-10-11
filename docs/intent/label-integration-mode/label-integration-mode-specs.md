@@ -25,8 +25,8 @@
   gate; `read_write` and `read_only` SHALL retain label-derived behavior.
 
 - [x] **LABEL-CONTROL-002** — When a project is in `ignored` mode, authorized
-  operators SHALL be able to change each local control state from the project
-  page and the MCP/chat control action.
+  operators SHALL be able to set and clear each local control state from the
+  project page and the MCP/chat control action.
 
 - [x] **LABEL-CONTROL-003** — When an ignored-mode issue has an auto-pick
   exclusion reason, Paid SHALL not select it automatically; ordering SHALL use
@@ -38,4 +38,5 @@
 
 - [x] **LABEL-CONTROL-005** — When an ignored-mode TDD pull request is at a
   local ready-for-review, approved, or changes-requested gate state, Paid SHALL
-  use that state to preserve the human test-review gate.
+  use that state to preserve the human test-review gate independently of
+  whether upstream label writes are enabled.

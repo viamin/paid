@@ -3,7 +3,7 @@
 module Issues
   # @spec LABEL-CONTROL-002
   class UpdateControlState
-    ACTIONS = %w[pause resume dismiss_escalation skip_auto_merge hold_for_review approve_tests request_test_changes set_priority exclude_from_auto_pick clear_auto_pick_exclusion].freeze
+    ACTIONS = %w[pause resume dismiss_escalation skip_auto_merge allow_auto_merge hold_for_review release_review_hold approve_tests request_test_changes set_priority exclude_from_auto_pick clear_auto_pick_exclusion].freeze
 
     def self.call(...) = new(...).call
 
@@ -32,7 +32,9 @@ module Issues
       when "resume" then issue.update!(paused: false)
       when "dismiss_escalation" then dismiss_escalation!
       when "skip_auto_merge" then issue.update!(skip_auto_merge: true)
+      when "allow_auto_merge" then issue.update!(skip_auto_merge: false)
       when "hold_for_review" then issue.update!(hold_for_review: true)
+      when "release_review_hold" then issue.update!(hold_for_review: false)
       when "approve_tests" then issue.update!(tdd_review_state: "approved")
       when "request_test_changes" then issue.update!(tdd_review_state: "changes_requested")
       when "set_priority" then issue.update!(control_priority: priority)

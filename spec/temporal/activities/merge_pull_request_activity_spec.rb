@@ -159,6 +159,47 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when an ignored-mode merge control changes during the provider fetch" do
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+
+      before do
+        project.update!(label_integration_mode: "ignored")
+        allow(provider).to receive(:merge_pull_request)
+      end
+
+      it "observes a newly persisted review hold" do # @spec LABEL-CONTROL-004
+        allow(provider).to receive(:fetch_pull_request) do
+          issue.update_column(:hold_for_review, true)
+          pr_data
+        end
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+
+      it "observes a newly persisted auto-merge skip" do # @spec LABEL-CONTROL-004
+        allow(provider).to receive(:fetch_pull_request) do
+          issue.update_column(:skip_auto_merge, true)
+          pr_data
+        end
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+    end
+
     context "when PR is not yet merged" do
       let(:pr_data) do
         Automation::Providers::Data::PullRequest.new(

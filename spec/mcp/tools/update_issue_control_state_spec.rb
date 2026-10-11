@@ -22,6 +22,18 @@ RSpec.describe Tools::UpdateIssueControlState do
     expect(issue.reload).to have_attributes(auto_pick_excluded_reason: "Awaiting product decision", control_priority: "P1")
   end
 
+  it "sets and clears ignored-mode pull request merge controls" do # @spec LABEL-CONTROL-002 LABEL-CONTROL-004
+    call(action: "skip_auto_merge")
+    call(action: "hold_for_review")
+
+    expect(issue.reload).to have_attributes(skip_auto_merge: true, hold_for_review: true)
+
+    call(action: "allow_auto_merge")
+    call(action: "release_review_hold")
+
+    expect(issue.reload).to have_attributes(skip_auto_merge: false, hold_for_review: false)
+  end
+
   it "rejects a control action outside ignored mode" do # @spec LABEL-CONTROL-001
     project.update!(label_integration_mode: "read_only")
 
