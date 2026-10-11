@@ -95,14 +95,11 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     expect(radio).to be_checked
   end
 
-  it "keeps a newly selected type when it clears an incompatible project" do
+  it "hides types that would be empty for the selected project" do
     open_filters
     choose "acme/alpha"
-    choose "Manual Review"
 
-    expect(page).to have_checked_field("Manual Review")
-    expect(page).to have_checked_field("All projects")
-    assert_project_option_state(project_a, :hidden)
-    assert_project_option_state(project_b, :visible)
+    expect(page).to have_field("Manual Review", visible: :hidden)
+    expect(page).to have_field("Clarifying Questions", visible: :visible)
   end
 end
