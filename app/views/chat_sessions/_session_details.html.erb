@@ -6,7 +6,7 @@
     the user chooses to expand it, which means the transcript and the
     composer stay the dominant region of the viewport-bound panel.
 
-    `dom_id_suffix` keeps the title / runner / model field ids unique
+    `dom_id_suffix` keeps the title / runner-model field ids unique
     between the two headers (mobile uses `_mobile`, desktop uses no
     suffix) so the `<label for>` association works in either copy without
     colliding in the DOM. %>
@@ -29,6 +29,10 @@
   </div>
 
   <% if can_update_chat_session %>
+    <% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners) %>
+    <% selected_runner_model = runner_model_options.find { |option| option.runner_id == chat_session.runner_id && option.model_id == chat_session.model } %>
+    <% runner_model_choices = runner_model_options.map { |option| [option.label, option.value] } %>
+    <% runner_model_choices.unshift(["Choose a valid runner and model", ""]) unless selected_runner_model %>
     <%= form_with model: chat_session,
                   url: chat_session_path(chat_session),
                   method: :patch,
@@ -58,31 +62,20 @@
     <%= form_with model: chat_session,
                   url: chat_session_path(chat_session),
                   method: :patch,
-                  class: "grid gap-3 sm:grid-cols-2",
+                  class: "space-y-3",
                   data: { action: "change->chat#saveSettings turbo:submit-end->chat#settingsSubmitted" } do |form| %>
       <div>
-        <%= form.label :runner_id,
-                       "Runner",
-                       for: "chat_session_runner_id#{dom_id_suffix}",
+        <%= form.label :runner_model,
+                       "Runner and model",
+                       for: "chat_session_runner_model#{dom_id_suffix}",
                        class: "block text-sm font-medium text-gray-700" %>
-        <%= form.select :runner_id,
-                        options_from_collection_for_select(available_runners, :id, :display_name, chat_session.runner_id),
-                        { include_blank: "Default runner" },
-                        id: "chat_session_runner_id#{dom_id_suffix}",
+        <%= form.select :runner_model,
+                        options_for_select(runner_model_choices, selected_runner_model&.value),
+                        {},
+                        id: "chat_session_runner_model#{dom_id_suffix}",
                         class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
       </div>
-      <div>
-        <%= form.label :model,
-                       "Model",
-                       for: "chat_session_model#{dom_id_suffix}",
-                       class: "block text-sm font-medium text-gray-700" %>
-        <%= form.select :model,
-                        options_for_select(available_models.map { |model| ["#{model.display_name} (#{model.model_id})", model.model_id] }, chat_session.model),
-                        { include_blank: "Automatic" },
-                        id: "chat_session_model#{dom_id_suffix}",
-                        class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
-      </div>
-      <p data-chat-settings-status role="status" class="text-sm text-gray-600 sm:col-span-2"></p>
+      <p data-chat-settings-status role="status" class="text-sm text-gray-600"></p>
     <% end %>
   <% else %>
     <div class="grid gap-3 sm:grid-cols-2">

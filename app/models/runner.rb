@@ -1849,6 +1849,7 @@ class Runner < ApplicationRecord
 
     candidates.uniq
   end
+  public :direct_outbound_catalog_model_id_candidates
 
   def direct_outbound_catalog_provider_prefix
     return DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :opencode_model_provider) if runner_key == "opencode"

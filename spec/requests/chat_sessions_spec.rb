@@ -255,6 +255,18 @@ RSpec.describe "ChatSessions" do
         expect(response).to redirect_to(chat_session_path(created_session))
       end
 
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "creates a default session when the runner and model selection is blank" do
+        existing_ids = ChatSession.pluck(:id)
+
+        post chat_sessions_path, params: {
+          chat_session: { container_capability: "none", runner_model: "", title: "UI Chat" }
+        }
+
+        created_session = ChatSession.where.not(id: existing_ids).sole
+        expect(response).to redirect_to(chat_session_path(created_session))
+      end
+
       it "defaults wildcard accept create requests to json" do
         post chat_sessions_path, params: { container_capability: "none", title: "API Chat" }, headers: { "Accept" => "*/*" }
 
@@ -437,20 +449,40 @@ RSpec.describe "ChatSessions" do
         expect(unarchive_form["data-turbo-frame"]).to eq("_top")
       end
 
-      it "autosaves both chat runner and model selectors with visible status" do
-        # @spec CHAT-SESSION-PREFERENCES-002
+      it "autosaves the combined chat runner and model selector with visible status" do
+        # @spec CHAT-SESSION-PREFERENCES-002 CHAT-SESSION-PREFERENCES-003
         get chat_session_path(chat_session)
 
         doc = Nokogiri::HTML(response.body)
-        forms = doc.xpath("//form[@action='#{chat_session_path(chat_session)}'][.//select[@name='chat_session[runner_id]']][.//select[@name='chat_session[model]']]")
+        forms = doc.xpath("//form[@action='#{chat_session_path(chat_session)}'][.//select[@name='chat_session[runner_model]']]")
 
         expect(forms.size).to eq(2)
         forms.each do |form|
+          expect(form.xpath(".//select[@name='chat_session[runner_id]']")).to be_empty
+          expect(form.xpath(".//select[@name='chat_session[model]']")).to be_empty
           expect(form.at_xpath(".//input[@type='submit']")).to be_nil
           expect(form.at_xpath(".//*[@data-chat-settings-status]")).to be_present
           expect(form["data-action"]).to include("change->chat#saveSettings")
           expect(form["data-action"]).to include("turbo:submit-end->chat#settingsSubmitted")
         end
+      end
+
+      it "lists only configured runner/model pairs and an automatic option for each runner" do
+        # @spec CHAT-SESSION-PREFERENCES-003
+        runner = create(:runner, :api_key, user: user, name: "OpenCode MiniMax", runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "minimax"),
+          config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2" } })
+        create(:llm_model, model_id: "glm-5.2", display_name: "GLM-5.2", provider: "zai_coding")
+        chat_session.update_columns(runner_id: runner.id, model: "glm-5.2")
+
+        get chat_session_path(chat_session)
+
+        selects = Nokogiri::HTML(response.body).xpath("//form[@action='#{chat_session_path(chat_session)}']//select[@name='chat_session[runner_model]']")
+
+        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — Automatic") })
+        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — Minimax-m2") })
+        expect(selects).to all(satisfy { |select| !select.text.include?("GLM-5.2") })
+        expect(selects).to all(satisfy { |select| select.at_css("option").text == "Choose a valid runner and model" })
       end
 
       it "hides saved assistant reasoning from the visible transcript" do
@@ -715,18 +747,15 @@ RSpec.describe "ChatSessions" do
         expect(disclosure).to be_present
         expect(summary).to be_present
 
-        runner_select = disclosure.at_xpath(".//select[@name='chat_session[runner_id]']")
-        model_select = disclosure.at_xpath(".//select[@name='chat_session[model]']")
+        runner_model_select = disclosure.at_xpath(".//select[@name='chat_session[runner_model]']")
         token_usage = disclosure.at_xpath(".//span[@data-chat-target='tokenUsage']")
 
-        expect(runner_select).to be_present
-        expect(model_select).to be_present
+        expect(runner_model_select).to be_present
         expect(token_usage).to be_present
 
         # The runner/model/token usage elements must live in the disclosure
         # body, not the always-visible summary line.
-        expect(summary.at_xpath(".//select[@name='chat_session[runner_id]']")).to be_nil
-        expect(summary.at_xpath(".//select[@name='chat_session[model]']")).to be_nil
+        expect(summary.at_xpath(".//select[@name='chat_session[runner_model]']")).to be_nil
         expect(summary.at_xpath(".//span[@data-chat-target='tokenUsage']")).to be_nil
       end
 
@@ -915,7 +944,7 @@ RSpec.describe "ChatSessions" do
         expect(chat_root.at_css("[data-chat-target='capabilityPanel']")).to eq(capability_panel)
       end
 
-      it "only offers API-key-backed runners in the inline chat runner selector" do
+      it "only offers API-key-backed runners in the combined chat selector" do
         # @spec CHAT-API-006
         create(:runner, user: user, runner_key: "codex", auth_type: "subscription", enabled_for_chat: true)
         api_runner = create(:runner, :api_key, user: user, runner_key: "opencode", name: "API Chat Runner",
@@ -925,9 +954,9 @@ RSpec.describe "ChatSessions" do
         get chat_session_path(chat_session)
 
         doc = Nokogiri::HTML(response.body)
-        runner_options = doc.css("select[name='chat_session[runner_id]'] option").map(&:text)
-        expect(runner_options).to include(api_runner.display_name)
-        expect(runner_options).not_to include("OpenAI Codex CLI")
+        runner_model_options = doc.css("select[name='chat_session[runner_model]'] option").map(&:text)
+        expect(runner_model_options).to include("#{api_runner.display_name} — Automatic")
+        expect(runner_model_options).not_to include("OpenAI Codex CLI — Automatic")
       end
 
       it "renders mobile archive controls without expanding the sidebar by default" do
@@ -1223,18 +1252,59 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.model).to eq("gpt-4.1")
       end
 
-      it "saves the selected chat runner and model together in place" do
-        # @spec CHAT-SESSION-PREFERENCES-002
+      it "saves a configured runner/model selection together in place" do
+        # @spec CHAT-SESSION-PREFERENCES-002 CHAT-SESSION-PREFERENCES-003
         runner = create(:runner, :api_key, user: user, runner_key: "opencode",
           provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id == "moonshotai/kimi-k2" }
 
         patch chat_session_path(chat_session),
-          params: { chat_session: { runner_id: runner.id, model: "moonshotai/kimi-k2" } },
+          params: { chat_session: { runner_model: selection.value } },
           headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
         expect(response).to have_http_status(:no_content)
         expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "moonshotai/kimi-k2")
+      end
+
+      it "offers a direct-outbound runner's provider-qualified model even when the catalog stores the bare id" do
+        # @spec CHAT-SESSION-PREFERENCES-003
+        create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", tier: "mid")
+        runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "minimax"),
+          config: { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M3" } })
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id == "minimax/MiniMax-M3" }
+        expect(selection).not_to be_nil
+
+        patch chat_session_path(chat_session),
+          params: { chat_session: { runner_model: selection.value } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:no_content)
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "minimax/MiniMax-M3")
+      end
+
+      it "saves a runner automatic selection without pinning a model" do
+        # @spec CHAT-SESSION-PREFERENCES-003
+        runner = create_api_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id.nil? }
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_model: selection.value }
+
+        expect(response).to have_http_status(:ok)
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: nil)
+      end
+
+      it "rejects a stale or crafted runner/model selection" do
+        # @spec CHAT-SESSION-PREFERENCES-003
+        create_api_chat_runner
+
+        patch chat_session_path(chat_session, format: :json),
+          params: { runner_model: "not-a-valid-selection" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("valid runner and model combination")
+        expect(chat_session.reload.model).not_to eq("not-a-valid-selection")
       end
 
       it "rejects runner updates that cannot build an API chat client" do
