@@ -40,11 +40,15 @@
           <%= form_with url: inbox_path, method: :get, class: "flex flex-1 flex-col gap-6", data: { action: "submit->inbox-filters#apply" } do %>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Type</legend>
-              <div class="mt-2 grid gap-2" role="radiogroup">
-                <label class="flex items-center gap-2 text-sm text-gray-700"><%= radio_button_tag :kind, "", @selected_kind.nil? %> All types</label>
-                <% Inbox::Queue::KINDS.each do |kind| %>
+              <div class="mt-2 grid gap-2" role="radiogroup" data-action="change->inbox-filters#kindChanged">
+                <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="kindOption"><%= radio_button_tag :kind, "", @selected_kind.nil? %> All types</label>
+                <% @inbox_availability.available_kinds.each do |kind| %>
                   <% label = Inbox::Queue::KIND_LABELS.fetch(kind) %>
-                  <label class="flex items-center gap-2 text-sm text-gray-700"><%= radio_button_tag :kind, kind, @selected_kind == kind %> <%= label %></label>
+                  <label class="flex items-center gap-2 text-sm text-gray-700"
+                         data-inbox-filters-target="kindOption"
+                         data-project-ids="<%= @inbox_availability.project_ids_for(kind).join(",") %>">
+                    <%= radio_button_tag :kind, kind, @selected_kind == kind %> <%= label %> (<%= @inbox_availability.kind_counts[kind] %>)
+                  </label>
                 <% end %>
               </div>
             </fieldset>
@@ -52,10 +56,15 @@
               <legend class="text-sm font-semibold text-gray-900">Project</legend>
               <label class="sr-only" for="inbox-project-search">Search projects</label>
               <input id="inbox-project-search" type="search" placeholder="Search projects" class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" data-inbox-filters-target="projectSearch" data-action="input->inbox-filters#filterProjects">
-              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" role="radiogroup">
+              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" role="radiogroup" data-action="change->inbox-filters#projectChanged">
                 <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="projectOption"><%= radio_button_tag :project_id, "", @scoped_project.nil? %> All projects</label>
                 <% @inbox_projects.each do |project| %>
-                  <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="projectOption" data-project-name="<%= project.full_name.downcase %>"><%= radio_button_tag :project_id, project.id, @scoped_project == project %> <%= project.full_name %></label>
+                  <label class="flex items-center gap-2 text-sm text-gray-700"
+                         data-inbox-filters-target="projectOption"
+                         data-project-name="<%= project.full_name.downcase %>"
+                         data-kind-ids="<%= @inbox_availability.kinds_for(project).join(",") %>">
+                    <%= radio_button_tag :project_id, project.id, @scoped_project == project %> <%= project.full_name %> (<%= @inbox_availability.project_counts[project.id] %>)
+                  </label>
                 <% end %>
               </div>
             </fieldset>
@@ -80,7 +89,7 @@
   <% if @inbox_entries.empty? %>
     <%= render "shared/list_detail_empty_state",
                title: "Inbox clear",
-               body: "Paid does not currently have any clarifying-question, plan-review, merge-approval, action-required, blocked-PR, manual-review, intent-conformance, feature-decision, retry-limited, or test-review-pending items waiting here." %>
+               body: "Paid does not currently have any human-actionable work waiting in your accessible projects." %>
   <%# Split-pane activates at Tailwind's `lg` breakpoint (≥1024px) instead of
       the `md` (≥768px) called out in #3506: the answer form renders multi-row
       textareas and a sticky submit, so the 22rem list + flexible detail grid

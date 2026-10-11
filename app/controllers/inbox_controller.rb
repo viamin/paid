@@ -45,13 +45,29 @@ class InboxController < ApplicationController
 
   private
 
-  # @spec INBOX-FOUNDATION-009
+  # @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010 @spec INBOX-FOUNDATION-011
   def load_inbox
     @scoped_project = scoped_needs_input_project
     @selected_kind = valid_inbox_kind
     @selected_sort = valid_inbox_sort
-    @inbox_projects = policy_scope(Project).order(:owner, :repo)
+    @inbox_availability = Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+    @inbox_projects = @inbox_availability.available_projects
     @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind, sort: @selected_sort)
+    redirect_for_empty_filtered_combination
+  end
+
+  # A filter combination with no matching items would otherwise render the
+  # same "Inbox clear" empty state as a genuinely empty inbox, with no
+  # explanation that widening the filters would surface items. Falls back to
+  # the fully unfiltered view (keeping only `sort`) rather than guessing at
+  # the "nearest" non-empty combination (#4276).
+  def redirect_for_empty_filtered_combination
+    return if @inbox_entries.present?
+    return if @selected_kind.nil? && @scoped_project.nil?
+    return if @inbox_availability.total_count.zero?
+
+    redirect_to inbox_path(sort: params[:sort].presence), status: :see_other,
+      notice: "No inbox items matched that filter, so it was cleared. Showing every open item instead."
   end
 
   def scoped_needs_input_project

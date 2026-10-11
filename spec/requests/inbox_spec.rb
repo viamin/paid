@@ -448,6 +448,83 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Beta question")
   end
 
+  # @spec INBOX-FOUNDATION-010
+  it "only lists kinds and projects with at least one waiting item in the filters dialog" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    untouched_project = create(:project, account: account, created_by: user, active: true, owner: "acme", repo: "gamma")
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}']")).to be_present
+    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")).to be_nil
+    expect(document.at_css("input[name='project_id'][value='#{project.id}']")).to be_present
+    expect(document.at_css("input[name='project_id'][value='#{untouched_project.id}']")).to be_nil
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "narrows the Type options to kinds with items in the actively filtered project" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    create(:issue, project: second_project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+    get inbox_path(project_id: project.id)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}']")).to be_present
+    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")).to be_nil
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "narrows the Project options to projects with items of the actively filtered kind" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    create(:issue, project: second_project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+
+    get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("input[name='project_id'][value='#{second_project.id}']")).to be_present
+    expect(document.at_css("input[name='project_id'][value='#{project.id}']")).to be_nil
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "embeds the kind<->project matrix so the dialog can narrow options client-side" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    kind_label = document.at_css("label[data-project-ids]")
+    project_label = document.at_css("label[data-kind-ids]")
+
+    expect(kind_label["data-project-ids"]).to eq(project.id.to_s)
+    expect(project_label["data-kind-ids"]).to eq(Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "shows per-option counts in the filters dialog" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    kind_label = document.at_css("label[data-project-ids]")
+
+    expect(kind_label.text).to include("Clarifying Questions (1)")
+    expect(document.at_css("label[data-kind-ids]").text).to include("#{project.full_name} (1)")
+  end
+
+  # @spec INBOX-FOUNDATION-011
+  it "redirects a now-empty filter combination back to the unfiltered inbox with a notice" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND, project_id: project.id)
+
+    expect(response).to redirect_to(inbox_path)
+    follow_redirect!
+    expect(response.body).to include("No inbox items matched that filter")
+    expect(response.body).to include("Alpha question")
+  end
+
   it "embeds the active inbox-kind filter in the answer form so submit preserves the tab" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
@@ -876,8 +953,10 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("_top")
   end
 
-  # @spec OPERATOR-INBOX-002E
-  it "exposes retry_limited in the inbox filter panel" do
+  # @spec OPERATOR-INBOX-002E @spec INBOX-FOUNDATION-010
+  it "exposes retry_limited in the inbox filter panel when a retry-limited item is waiting" do
+    create_retry_limited_issue(title: "Capped issue", github_number: 513)
+
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
@@ -941,15 +1020,12 @@ RSpec.describe "Inbox" do
     expect(response.body).to include(pr.title)
   end
 
-  it "lists every lane kind in the empty-state copy" do
+  # @spec INBOX-FOUNDATION-010
+  it "shows the empty-state copy only when nothing is waiting anywhere" do
     get inbox_path
 
     expect(response.body).to include("Inbox clear")
-    expect(response.body).to include(
-      "clarifying-question", "plan-review", "merge-approval", "action-required",
-      "blocked-PR", "manual-review", "intent-conformance", "feature-decision", "retry-limited",
-      "test-review"
-    )
+    expect(response.body).to include("Paid does not currently have any human-actionable work waiting")
   end
 
   # @spec OPERATOR-INBOX-002J

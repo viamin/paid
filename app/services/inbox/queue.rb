@@ -187,6 +187,19 @@ module Inbox
       new(...).call
     end
 
+    # Questionless rows are invalid and repaired during sync, so keep them out
+    # of every queue consumer until reconciliation clears the stale state.
+    # @spec INBOX-FOUNDATION-010
+    def self.questions_for(issue)
+      questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
+      return questions if questions.any?
+
+      # create_feature runs persist their clarifying questions locally when
+      # the needs-input comment is posted, so the dashboard renders without a
+      # per-issue GitHub API round-trip (RDR-053).
+      Array(issue.needs_input_questions)
+    end
+
     # Shared lane computation so the queue list and the nav badge count can
     # never disagree: open draft/restarted PRs whose labels still carry the
     # TDD ready-for-review gate, via the same jsonb-containment convention
@@ -256,7 +269,7 @@ module Inbox
 
     def clarifying_question_entries
       ordered_clarifying_issues.filter_map do |issue|
-        questions = question_summary_for(issue)
+        questions = self.class.questions_for(issue)
         next if questions.empty?
 
         Entry.new(
@@ -326,18 +339,6 @@ module Inbox
       owner_ids = [ user.id ]
       owner_ids << nil if AgentRun.orphaned_project_owner?(user)
       owner_ids
-    end
-
-    # Questionless rows are invalid and repaired during sync, so keep them out
-    # of every queue consumer until reconciliation clears the stale state.
-    def question_summary_for(issue)
-      questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
-      return questions if questions.any?
-
-      # create_feature runs persist their clarifying questions locally when
-      # the needs-input comment is posted, so the dashboard renders without a
-      # per-issue GitHub API round-trip (RDR-053).
-      Array(issue.needs_input_questions)
     end
 
     def plan_review_entries
@@ -506,7 +507,7 @@ module Inbox
           issue: issue,
           record: issue,
           waiting_since: issue.manual_review_started_at || issue.updated_at,
-          questions: question_summary_for(issue),
+          questions: self.class.questions_for(issue),
           tasks: [],
           summary_text: issue.manual_review_reason.presence || "Manual review required.",
           title_text: nil,
