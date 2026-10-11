@@ -434,7 +434,9 @@ module Automation
             end
           end
 
-          def epic_issue_ids(project)
+          def epic_issue_ids(project) # @spec LABEL-CONTROL-003
+            return [] if project.label_integration_mode == "ignored"
+
             Issue.where(project: project, is_pull_request: false, github_state: "open")
               .where("labels @> ?::jsonb", [ EPIC_LABEL ].to_json)
               .pluck(:id)

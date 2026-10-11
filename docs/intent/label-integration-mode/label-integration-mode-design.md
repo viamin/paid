@@ -27,7 +27,9 @@ replacement cannot bypass the gate, including when a trusted-human fallback
 credential is selected. Read paths deliberately remain intact except in
 `ignored` mode. In that mode, Paid is the source of truth for control state:
 `Issue#paused`, local PR merge holds, the TDD review gate, local priority, and
-an auto-pick exclusion reason replace their corresponding label reads.
+an auto-pick exclusion reason replace their corresponding label reads. The
+auto-pick epic label has no local replacement, so ignored-mode selection and
+re-audit paths treat it as a no-op rather than reading the upstream label.
 Escalation dismissal remains the existing local `PullRequests::Unblock`
 transition, preserving its token-cap waiver and audit contract. The project
 page and the MCP tool registry (and thus chat) expose reversible actions for

@@ -985,6 +985,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
     end
 
+    it "does not use an upstream epic label to re-audit an ignored-mode issue" do # @spec LABEL-CONTROL-003
+      project.update!(label_integration_mode: "ignored")
+
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        create(:issue, :closed, project: project, parent_issue: epic,
+          parent_issue_linked_at: 1.hour.ago, closed_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
+      end
+    end
+
     it "re-audits an epic after its audit links a pre-existing closed child" do # @spec AUTO-PICK-QUEUE-010
       travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
         epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",

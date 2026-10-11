@@ -14,7 +14,7 @@ module Inbox
     # instantiation per open, ready PR on the account. Shared by
     # `Inbox::Count` and `Inbox::Availability` so the candidate definition
     # can't drift between the badge, the filters dialog, and the queue.
-    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 LABEL-CONTROL-004
     def self.candidates(project_ids)
       Issue
         .includes(:project)
@@ -31,7 +31,8 @@ module Inbox
 
     def self.candidate_conditions
       Issue.sanitize_sql_array([
-        "issues.labels @> :hold_label::jsonb OR (" \
+        "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
+          "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE) OR (" \
           "issues.auto_merge_evaluated_at IS NOT NULL AND " \
           "issues.auto_merge_blockers IS NOT NULL AND " \
           "projects.owner_reviewer_login IS NOT NULL)",

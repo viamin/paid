@@ -30,11 +30,13 @@
 
 - [x] **LABEL-CONTROL-003** — When an ignored-mode issue has an auto-pick
   exclusion reason, Paid SHALL not select it automatically; ordering SHALL use
-  its local P1/P2/P3 priority.
+  its local P1/P2/P3 priority. Upstream auto-pick control labels, including
+  `epic`, SHALL NOT affect selection or re-audit eligibility in this mode.
 
 - [x] **LABEL-CONTROL-004** — When an ignored-mode pull request has a local
   skip-auto-merge or hold-for-review flag, Paid SHALL block automatic merge
-  without consulting the corresponding label.
+  without consulting the corresponding label, and SHALL surface a local review
+  hold in the Inbox even before an auto-merge blocker snapshot exists.
 
 - [x] **LABEL-CONTROL-005** — When an ignored-mode TDD pull request is at a
   local ready-for-review, approved, or changes-requested gate state, Paid SHALL
