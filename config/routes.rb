@@ -387,6 +387,16 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      scope "chat" do
+        resources :sessions, controller: "chat_sessions", only: %i[index create show update destroy] do
+          patch :archive, on: :member
+          patch :unarchive, on: :member
+          patch :reopen, on: :member
+          resources :messages, controller: "chat_messages", only: %i[index create] do
+            post :resolve, on: :member
+          end
+        end
+      end
     end
 
     resources :projects, only: [] do

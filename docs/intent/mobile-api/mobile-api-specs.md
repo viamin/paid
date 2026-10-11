@@ -126,8 +126,8 @@
 
 ## Chat endpoints
 
-- [ ] **MOBILE-API-011** — When a client manages chat sessions through
-  `/api/v1/chat_sessions` (list, create, show, update, close, archive,
+- [x] **MOBILE-API-011** — When a client manages chat sessions through
+  `/api/v1/chat/sessions` (list, create, show, update, close, archive,
   unarchive, reopen), the system SHALL reuse the web controllers' scoping
   and service delegation and SHALL return session payloads mirroring
   `session_json`. Mobile v1 session creation SHALL be inline-only: the
@@ -136,8 +136,8 @@
   *Tests:* `spec/requests/api/v1/chat_sessions_spec.rb`.
   *Code:* `Api::V1::ChatSessionsController`.
 
-- [ ] **MOBILE-API-012** — When a client lists
-  `GET /api/v1/chat_sessions/:chat_session_id/messages`, the system SHALL
+- [x] **MOBILE-API-012** — When a client lists
+  `GET /api/v1/chat/sessions/:chat_session_id/messages`, the system SHALL
   paginate with a keyset cursor — `before` (exclusive message-id cursor)
   and `limit` (default 50, max 100) — returning the page oldest-first and
   a `next_before` cursor when older messages remain, and SHALL NOT offer
@@ -150,8 +150,8 @@
   *Tests:* `spec/requests/api/v1/chat_messages_spec.rb`.
   *Code:* `Api::V1::ChatMessagesController#index`.
 
-- [ ] **MOBILE-API-013** — When a client sends a chat message through
-  `POST /api/v1/chat_sessions/:chat_session_id/messages`, the system SHALL
+- [x] **MOBILE-API-013** — When a client sends a chat message through
+  `POST /api/v1/chat/sessions/:chat_session_id/messages`, the system SHALL
   negotiate the response exactly as `ChatMessagesController` does (the
   normative claims remain CHAT-API-002 for send/pause behavior): JSON by
   default, SSE when the request's `Accept` header includes
@@ -162,8 +162,8 @@
   *Tests:* `spec/requests/api/v1/chat_messages_spec.rb`.
   *Code:* `Api::V1::ChatMessagesController#create`.
 
-- [ ] **MOBILE-API-014** — When a client resolves a pending tool call
-  through `POST /api/v1/chat_sessions/:chat_session_id/messages/:message_id/resolve`
+- [x] **MOBILE-API-014** — When a client resolves a pending tool call
+  through `POST /api/v1/chat/sessions/:chat_session_id/messages/:message_id/resolve`
   with `decision` `approve` or `deny`, the system SHALL delegate to
   `ChatSessions::ResolveToolCall` under the same authorization the web
   `resolve` action applies (CHAT-API-004 remains normative for the
@@ -174,7 +174,7 @@
 
 ## Error taxonomy
 
-- [ ] **MOBILE-API-015** — When any `/api/v1` endpoint fails, the system
+- [x] **MOBILE-API-015** — When any `/api/v1` endpoint fails, the system
   SHALL respond with the unified envelope
   `{ "error": { "code": …, "message": …, "details": … } }` and the status
   mapping defined in the LLD (`400 invalid_request`, `401 unauthorized`,
