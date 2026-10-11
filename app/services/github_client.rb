@@ -103,6 +103,23 @@ class GithubClient
       __getobj__.create_issue(repo, title:, body:, labels:, **options)
     end
 
+    # Updating an issue can replace all of its labels in the same request, so
+    # preserve non-label updates while suppressing that replacement.
+    # @spec LABEL-INTEGRATION-002
+    def update_issue(repo, number, **options)
+      options = options.except(:labels) unless write_allowed?
+      __getobj__.update_issue(repo, number, **options)
+    end
+
+    # Trust-gated MCP mutations may select a fallback credential. Re-wrap it
+    # so that selection cannot escape this project's label-write policy.
+    def trusted_human_mutation_client
+      selected_client = __getobj__.trusted_human_mutation_client
+      return self if selected_client.equal?(__getobj__)
+
+      self.class.new(selected_client, project:)
+    end
+
     private
 
     attr_reader :project

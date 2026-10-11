@@ -43,4 +43,38 @@ RSpec.describe Labels::WritePolicy do
     expect(client).to have_received(:create_issue)
       .with(project.full_name, title: "Analysis", body: "body", labels: [ "paid-generated" ])
   end
+
+  it "strips labels from issue updates when writes are suppressed" do
+    project = build(:project, label_integration_mode: "ignored")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive(:update_issue)
+
+    decorated.update_issue(project.full_name, 1, body: "body", labels: [ "paid-generated" ])
+
+    expect(client).to have_received(:update_issue).with(project.full_name, 1, body: "body")
+  end
+
+  it "keeps labels on issue updates in read_write mode" do
+    project = build(:project, label_integration_mode: "read_write")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive(:update_issue)
+
+    decorated.update_issue(project.full_name, 1, labels: [ "paid-generated" ])
+
+    expect(client).to have_received(:update_issue).with(project.full_name, 1, labels: [ "paid-generated" ])
+  end
+
+  it "keeps the write policy after selecting a trusted human client" do
+    project = build(:project, label_integration_mode: "read_only")
+    trusted_client = instance_double(GithubClient)
+    fallback_client = instance_double(GithubClient::WithFallback, trusted_human_mutation_client: trusted_client)
+    decorated = GithubClient::LabelWriteSuppressing.new(fallback_client, project:)
+    allow(trusted_client).to receive(:update_issue)
+
+    decorated.trusted_human_mutation_client.update_issue(project.full_name, 1, labels: [ "paid-generated" ])
+
+    expect(trusted_client).to have_received(:update_issue).with(project.full_name, 1)
+  end
 end

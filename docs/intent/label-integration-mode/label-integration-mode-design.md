@@ -16,7 +16,9 @@ before even listing remote labels. Suppressed operations return successful,
 empty results so callers cannot treat policy suppression as a GitHub failure.
 `create_issue` is gated too: the issue itself is still created, but its
 `labels:` argument — which adds labels in the same POST — is stripped when
-writes are suppressed. Read paths deliberately remain intact; the broader
+writes are suppressed. `update_issue` similarly strips `labels:` so label
+replacement cannot bypass the gate, including when a trusted-human fallback
+credential is selected. Read paths deliberately remain intact; the broader
 internal-control behavior for ignored mode is deferred.
 
 The project settings form and `update_project_settings` MCP write surface
