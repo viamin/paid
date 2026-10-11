@@ -108,6 +108,25 @@ RSpec.describe Inbox::Queue do
       expect(action_required_entry.tasks).to eq([ "Open the quality dashboard", "Resume manually or adjust thresholds" ])
     end
 
+    # @spec OPERATOR-INBOX-002B
+    it "uses the notification description when remediation guidance is absent" do
+      notification = create(
+        :notification,
+        :error,
+        account: account,
+        subject: project,
+        source: "review_method_unavailable",
+        blocking: true,
+        description: "The configured review method could not complete its check.",
+        metadata: {}
+      )
+
+      entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+        .find { |candidate| candidate.record == notification }
+
+      expect(entry.summary).to eq("The configured review method could not complete its check.")
+    end
+
     # @spec NOTIFICATION-SEVERITY-011
     it "projects runner-scoped blocking notifications into action_required using the owner's visible project" do
       project
