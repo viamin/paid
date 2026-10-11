@@ -1189,6 +1189,12 @@ module Activities
       # @spec UPSTREAM-GATE-006
       return unless project.upstream_feature_enabled?(:upstream_issue_labeling)
 
+      if project.label_integration_mode == "ignored"
+        return mark_local_tdd_ready(project, pr_number) if agent_run.tdd_test_writing_phase?
+
+        return
+      end
+
       labels = []
       labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?
@@ -1250,6 +1256,10 @@ module Activities
       pull_request.with_lock do
         pull_request.update!(labels: (pull_request.labels + labels).uniq)
       end
+    end
+
+    def mark_local_tdd_ready(project, pr_number)
+      project.issues.find_by(github_number: pr_number, is_pull_request: true)&.update!(tdd_review_state: "ready_for_review")
     end
 
     def record_pr_description_metric(project, pr_number, original_text: nil)

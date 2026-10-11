@@ -69,7 +69,7 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-10-11
-    next: "Control GitHub label writes per project while retaining configured label reads"
+    next: "Ignored mode now uses local work-item control state; mode-transition import and cleanup remain"
   quiet-mode:
     title: Project Quiet Mode
     path: docs/intent/quiet-mode/quiet-mode-design.md

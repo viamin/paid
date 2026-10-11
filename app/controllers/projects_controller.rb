@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :update_issue_control_state, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -275,6 +275,19 @@ class ProjectsController < ApplicationController
       end
       format.html { redirect_to @project }
     end
+  end
+
+  # @spec LABEL-CONTROL-002
+  def update_issue_control_state
+    authorize @project, :update?
+
+    Issues::UpdateControlState.call(
+      issue: @project.issues.find(params.require(:issue_id)), actor: current_user,
+      action: params.require(:action), priority: params[:priority], reason: params[:reason]
+    )
+    redirect_to @project, notice: "Local control state updated."
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    redirect_to @project, alert: e.message
   end
 
   def start_lid

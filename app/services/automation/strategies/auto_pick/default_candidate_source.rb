@@ -295,8 +295,12 @@ module Automation
               scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
 
-            project.effective_auto_pick_skip_labels.reduce(needs_input_excluded) do |scope, label|
-              scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+            if project.label_integration_mode == "ignored"
+              needs_input_excluded.where(auto_pick_excluded_reason: nil)
+            else
+              project.effective_auto_pick_skip_labels.reduce(needs_input_excluded) do |scope, label|
+                scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+              end
             end
           end
 
@@ -623,6 +627,17 @@ module Automation
           # first, so P1-labeled issues beat P2/P3/unlabeled, P2 beats
           # P3/unlabeled, and P3 beats unlabeled.
           def priority_label_order_node(project)
+            if project.label_integration_mode == "ignored"
+              return Arel.sql(<<~SQL.squish)
+                CASE issues.control_priority
+                WHEN 'P1' THEN 1
+                WHEN 'P2' THEN 2
+                WHEN 'P3' THEN 3
+                ELSE 4
+                END
+              SQL
+            end
+
             effective = project.effective_priority_labels
             priority_case = Arel::Nodes::Case.new
             configured_tiers = 0

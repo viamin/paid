@@ -42,7 +42,7 @@ module Activities
         return { merged: false, skipped: true, pr_number: pr_number }
       end
 
-      if issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+      if issue.auto_merge_skipped?
         logger.info(
           message: "pr_review.auto_merge_skipped_by_label",
           project_id: project.id,
@@ -60,7 +60,7 @@ module Activities
         return { merged: false, skipped: true, pr_number: pr_number }
       end
 
-      return held_for_review_result(project, issue, pr_number) if held_for_review?(issue.labels)
+      return held_for_review_result(project, issue, pr_number) if issue.held_for_review?
 
       provider = Automation::Providers::Resolver.repository_for(project)
       repo = project.full_name
@@ -83,7 +83,7 @@ module Activities
         return { merged: false, error: e.message, pr_number: pr_number }
       end
 
-      return held_for_review_result(project, issue, pr_number) if held_for_review?(pr_data.labels)
+      return held_for_review_result(project, issue, pr_number) if issue.held_for_review?
 
       merged = if pr_data.merged
         logger.info(
@@ -211,10 +211,6 @@ module Activities
     end
 
     # @spec AUTO-MERGE-009
-    def held_for_review?(labels)
-      Array(labels).include?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
-    end
-
     def held_for_review_result(project, issue, pr_number)
       logger.info(
         message: "pr_review.auto_merge_held_for_review",

@@ -799,18 +799,18 @@ module Activities
       return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
-      if issue.has_label?(TDD_TESTS_APPROVED_LABEL) &&
+      if issue.effective_tdd_review_state == "approved" &&
           tdd_implementation_started_for_current_revision?(project, issue)
         return :not_applicable
       end
 
       return tdd_followup_trigger(issue,
         type: "tdd_tests_approved",
-        details: "Test review approved; implementation may begin") if issue.has_label?(TDD_TESTS_APPROVED_LABEL)
+        details: "Test review approved; implementation may begin") if issue.effective_tdd_review_state == "approved"
 
       return tdd_followup_trigger(issue,
         type: "tdd_test_changes_requested",
-        details: "Test review requested changes before implementation") if issue.has_label?(TDD_TEST_CHANGES_REQUESTED_LABEL)
+        details: "Test review requested changes before implementation") if issue.effective_tdd_review_state == "changes_requested"
 
       return nil if tdd_mode == "strict"
 
@@ -949,6 +949,8 @@ module Activities
     end
 
     def tdd_test_review_pr?(issue)
+      return issue.tdd_review_state.present? if issue.local_control_state?
+
       tdd_review_labels(issue).any?
     end
 
@@ -981,6 +983,10 @@ module Activities
     end
 
     def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+      if issue.local_control_state?
+        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label))
+      end
+
       labels_to_remove = [
         TDD_TESTS_READY_FOR_REVIEW_LABEL,
         TDD_TESTS_APPROVED_LABEL,
@@ -993,6 +999,12 @@ module Activities
       client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
 
       issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
+    end
+
+    def tdd_review_state_for(label)
+      return "approved" if label == TDD_TESTS_APPROVED_LABEL
+
+      "changes_requested"
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -1635,6 +1647,7 @@ module Activities
     # result is memoized per scan pass (reset in #execute).
     # @spec PR-ESCALATION-009 @spec PR-ESCALATION-019
     def escalation_label_removed_by_owner?(issue)
+      return false if issue.local_control_state?
       return false if issue.has_label?(PAID_ESCALATED_LABEL)
       return @escalation_label_removals[issue.id] if @escalation_label_removals.key?(issue.id)
       return @escalation_label_removals[issue.id] = false if issue.pr_escalation_started_at.blank?
@@ -1654,6 +1667,7 @@ module Activities
     # so a failure is retried on the next scan instead of being papered over.
     # @spec PR-ESCALATION-021
     def reapply_escalation_label_if_missing(project, client, issue)
+      return if issue.local_control_state?
       return if issue.has_label?(PAID_ESCALATED_LABEL)
       return if escalation_label_removed_by_owner?(issue)
 
@@ -3676,8 +3690,8 @@ module Activities
         false
       end
 
-      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
-      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      skip_label = issue.auto_merge_skipped?
+      hold_for_review = issue.held_for_review?
       # @spec INTENT-CONFORMANCE-007
       intent_conformance_ok = IntentConformance::Signal.ok?(
         project: project, issue: issue, head_sha: pr_head_sha(pr_data)
@@ -3720,8 +3734,8 @@ module Activities
         false
       end
 
-      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
-      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      skip_label = issue.auto_merge_skipped?
+      hold_for_review = issue.held_for_review?
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,

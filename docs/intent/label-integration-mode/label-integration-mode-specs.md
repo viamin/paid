@@ -18,3 +18,24 @@
   priority-label sync) SHALL report and audit no label changes, SHALL surface
   that the write was suppressed, and SHALL NOT alter locally persisted label
   state as if the mutation had been performed.
+
+- [x] **LABEL-CONTROL-001** — When a project's mode is `ignored`, Paid SHALL
+  use persisted local control state rather than GitHub labels for pause,
+  auto-pick exclusion, priority, per-PR merge holds, and the TDD test-review
+  gate; `read_write` and `read_only` SHALL retain label-derived behavior.
+
+- [x] **LABEL-CONTROL-002** — When a project is in `ignored` mode, authorized
+  operators SHALL be able to change each local control state from the project
+  page and the MCP/chat control action.
+
+- [x] **LABEL-CONTROL-003** — When an ignored-mode issue has an auto-pick
+  exclusion reason, Paid SHALL not select it automatically; ordering SHALL use
+  its local P1/P2/P3 priority.
+
+- [x] **LABEL-CONTROL-004** — When an ignored-mode pull request has a local
+  skip-auto-merge or hold-for-review flag, Paid SHALL block automatic merge
+  without consulting the corresponding label.
+
+- [x] **LABEL-CONTROL-005** — When an ignored-mode TDD pull request is at a
+  local ready-for-review, approved, or changes-requested gate state, Paid SHALL
+  use that state to preserve the human test-review gate.

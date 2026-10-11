@@ -95,6 +95,9 @@ class DependabotAutoMergeJob < ApplicationJob
   end
 
   def skip_auto_merge_label?(project, pr_data)
+    local_control = local_pr_control(project, pr_data, :skip_auto_merge)
+    return local_control unless local_control.nil?
+
     skip_for_label?(
       project,
       pr_data,
@@ -106,6 +109,9 @@ class DependabotAutoMergeJob < ApplicationJob
 
   # @spec AUTO-MERGE-009
   def hold_for_review_label?(project, pr_data)
+    local_control = local_pr_control(project, pr_data, :hold_for_review)
+    return local_control unless local_control.nil?
+
     skip_for_label?(
       project,
       pr_data,
@@ -133,6 +139,13 @@ class DependabotAutoMergeJob < ApplicationJob
       credential_mode: AutoMergeAttempt.primary_credential_mode(project)
     )
     true
+  end
+
+  def local_pr_control(project, pr_data, attribute)
+    return unless project.label_integration_mode == "ignored"
+
+    issue = project.issues.find_by(github_number: pr_number_from(pr_data), is_pull_request: true)
+    issue&.public_send(attribute) || false
   end
 
   def pull_request_labels(pr_data)

@@ -76,7 +76,7 @@ module Inbox
       end
 
       def held_for_review?
-        issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+        issue.held_for_review?
       end
     end
 
@@ -101,7 +101,7 @@ module Inbox
     end
 
     def held_for_review?
-      issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      issue.held_for_review?
     end
 
     def approval_only_blockers?
