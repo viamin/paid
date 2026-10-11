@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_001626) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2978,6 +2978,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
     t.jsonb "interop_settings", default: {}, null: false, comment: "Project-level coexistence settings for gradual adoption, imports, connectors, and external execution sources."
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
+    t.string "label_integration_mode", default: "read_write", null: false, comment: "Whether Paid writes GitHub labels: read_write, read_only, or ignored."
     t.jsonb "label_mappings", default: {}, null: false
     t.jsonb "language_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile. Drives polyglot test/lint command routing (e.g. { \"languages\": [...], \"test_languages\": [...] }). Populated by detection (#3207) and optional .paid.yml manifest."
     t.datetime "last_agent_run_at"
@@ -3764,6 +3765,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
     t.jsonb "auto_pick_skip_labels", comment: "Optional tenant-level override for labels that make auto-pick skip an issue. Null means use built-in defaults."
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
+    t.string "default_label_integration_mode", default: "read_write", null: false, comment: "Label integration mode assigned to newly created projects."
     t.string "docker_host_fallback_behavior", default: "disabled", null: false, comment: "Fallback behavior when the preferred Docker host is unavailable: disabled or first_healthy."
     t.jsonb "feature_activation_labels", comment: "Optional tenant-level override for per-item activation labels. Null means use built-in defaults."
     t.jsonb "features", default: {}, null: false
@@ -5215,6 +5217,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_used_at}')
+  SQL
+
   create_trigger :logidze_on_pr_templates, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_pr_templates BEFORE INSERT OR UPDATE ON public.pr_templates FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -5273,9 +5279,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_used_at}')
   SQL
 end

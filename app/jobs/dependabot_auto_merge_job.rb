@@ -35,7 +35,6 @@ class DependabotAutoMergeJob < ApplicationJob
     return unless project
 
     client = project.client
-    client = client.primary if client.is_a?(GithubClient::WithFallback)
 
     if pr_number
       evaluate_single_pr(client, project, pr_number)
@@ -328,7 +327,7 @@ class DependabotAutoMergeJob < ApplicationJob
   end
 
   def merge_dependabot_pr_with(client, project, pr_number, credential_mode:)
-    client.merge_pull_request(
+    primary_merge_client(client).merge_pull_request(
       project.full_name, pr_number,
       merge_method: project.merge_method
     )
@@ -348,6 +347,18 @@ class DependabotAutoMergeJob < ApplicationJob
       credential_mode: credential_mode
     )
     true
+  end
+
+  # Unwraps the project-policy decorators (label-write suppression, quiet-mode
+  # comment suppression) down to a GithubClient::WithFallback's +primary+, so a
+  # permission-shaped merge failure raises here instead of being silently
+  # retried inside the wrapper. The rescue in +merge_dependabot_pr+ then runs
+  # the explicit PAT fallback retry and records which credential actually
+  # merged, rather than crediting the primary when the wrapper quietly
+  # substituted the fallback.
+  def primary_merge_client(client)
+    client = client.__getobj__ while client.is_a?(SimpleDelegator) && !client.is_a?(GithubClient::WithFallback)
+    client.is_a?(GithubClient::WithFallback) ? client.primary : client
   end
 
   def workflow_permission_rejection?(error)

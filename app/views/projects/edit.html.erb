@@ -833,6 +833,14 @@
               </div>
             </div>
 
+            <div>
+              <%= form.label :label_integration_mode, "GitHub label integration", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <%= form.select :label_integration_mode,
+                [["Read & write", "read_write"], ["Read only", "read_only"], ["Labels ignored", "ignored"]],
+                {}, class: "mt-2 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
+              <p class="mt-1 text-xs text-gray-500">Read-only and ignored modes never change labels on GitHub.</p>
+            </div>
+
             <div data-project-settings-form-target="prTargetGatedField" data-attribute="generated_label_name" class="<%= "opacity-50 pointer-events-none" if @project.upstream_disabled?(:generated_label_name) %>">
               <%= form.label :generated_label_name, "Generated Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2">

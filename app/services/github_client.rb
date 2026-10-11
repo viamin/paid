@@ -80,6 +80,37 @@ class GithubClient
     def create_pull_request_comment_reply(...) = nil
   end
 
+  # Project clients are decorated here rather than at every caller so every
+  # GitHub label mutation shares the same policy gate.
+  class LabelWriteSuppressing < SimpleDelegator
+    def initialize(client, project:)
+      super(client)
+      @project = project
+    end
+
+    def create_label(...) = write_or_nil { __getobj__.create_label(...) }
+    def update_label(...) = write_or_nil { __getobj__.update_label(...) }
+    def add_labels_to_issue(...) = write_or_nil { __getobj__.add_labels_to_issue(...) }
+    def remove_label_from_issue(...) = write_or_nil { __getobj__.remove_label_from_issue(...) }
+    def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
+
+    private
+
+    attr_reader :project
+
+    def write_or_nil
+      return yield if Labels::WritePolicy.allowed?(project: project)
+
+      nil
+    end
+
+    def write_or_empty_removal
+      return yield if Labels::WritePolicy.allowed?(project: project)
+
+      { removed: [], failed: [] }
+    end
+  end
+
   # @spec GITHUB-SYNC-011
   PASS_THROUGH_METHODS = %i[
     repository

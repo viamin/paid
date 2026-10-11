@@ -4,6 +4,7 @@ module Tools
   class UpdateTenantSettings < BaseTool
     authorize :update?, ->(_args) { account }, policy_class: AccountPolicy
 
+    # @spec LABEL-INTEGRATION-003
     PERMITTED_ATTRIBUTES = %i[
       max_concurrent_runs
       max_projects
@@ -12,6 +13,7 @@ module Tools
       max_monthly_cost_cents
       self_repo_full_name
       queue_fairness_mode
+      default_label_integration_mode
       allowed_runner_keys
       auto_pick_skip_labels
       runner_preferences
