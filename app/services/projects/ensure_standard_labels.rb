@@ -149,6 +149,8 @@ module Projects
     end
 
     def call
+      return empty_result unless Labels::WritePolicy.allowed?(project: project)
+
       client = github_client
       repo = project.full_name
 
@@ -190,6 +192,10 @@ module Projects
     end
 
     private
+
+    def empty_result
+      Result.new(created: [], existing: [], reconciled: [], errors: [])
+    end
 
     def github_client
       return project.client if project.respond_to?(:client)

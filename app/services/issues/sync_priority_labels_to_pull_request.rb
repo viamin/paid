@@ -54,6 +54,8 @@ module Issues
       return unless client
 
       removal_result = apply_label_changes(client, project, pull_request, to_add: to_add, to_remove: to_remove)
+      return log_reconcile_suppressed(project, pull_request) if removal_result[:suppressed]
+
       persist_local_labels(pull_request, to_add: to_add, removed: removal_result[:removed])
       raise_removal_failure(removal_result[:failed])
       log_reconciled(project, pull_request, added: to_add, removed: removal_result[:removed])
@@ -63,13 +65,34 @@ module Issues
     end
     private_class_method :reconcile_labels
 
+    # Suppressed writes must not leak into local state: GitHub still holds the
+    # old labels, so persisting the diff would record mutations that never
+    # happened.
+    # @spec LABEL-INTEGRATION-004
     def self.apply_label_changes(client, project, pull_request, to_add:, to_remove:)
-      client.add_labels_to_issue(project.full_name, pull_request.github_number, to_add) if to_add.any?
-      return { removed: [], failed: [] } if to_remove.empty?
+      add_result = client.add_labels_to_issue(project.full_name, pull_request.github_number, to_add) if to_add.any?
 
-      client.remove_labels_from_issue(project.full_name, pull_request.github_number, to_remove)
+      removal = { removed: [], failed: [] }
+      if to_remove.any?
+        removal = client.remove_labels_from_issue(project.full_name, pull_request.github_number, to_remove)
+      end
+
+      return removal.merge(suppressed: true) if GithubClient.label_write_suppressed?(add_result) ||
+        GithubClient.label_write_suppressed?(removal)
+
+      removal
     end
     private_class_method :apply_label_changes
+
+    def self.log_reconcile_suppressed(project, pull_request)
+      Rails.logger.info(
+        message: "github_sync.priority_labels_reconcile_suppressed",
+        project_id: project.id,
+        pull_request_id: pull_request.id,
+        github_number: pull_request.github_number
+      )
+    end
+    private_class_method :log_reconcile_suppressed
 
     def self.raise_removal_failure(failed)
       return if failed.empty?

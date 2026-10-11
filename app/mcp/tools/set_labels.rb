@@ -11,7 +11,8 @@ module Tools
 
     def self.description
       "Replace all labels on a GitHub issue or pull request. Computes the add/remove " \
-        "diff from the current labels — pass the full desired label set."
+        "diff from the current labels — pass the full desired label set. " \
+        "Returns suppressed: true when the project's label mode blocks label writes."
     end
 
     def self.input_schema
@@ -47,18 +48,8 @@ module Tools
       current = client.issue(repo, issue_number)
       current_labels = extract_label_names(current.labels)
 
-      to_add = labels - current_labels
-      to_remove = current_labels - labels
-
-      client.add_labels_to_issue(repo, issue_number, to_add) if to_add.any?
-
-      removed = []
-      failed = []
-      if to_remove.any?
-        result = client.remove_labels_from_issue(repo, issue_number, to_remove)
-        removed = result[:removed]
-        failed = result[:failed]
-      end
+      outcome = apply_label_diff(client, repo, issue_number,
+        to_add: labels - current_labels, to_remove: current_labels - labels)
 
       refreshed_issue = client.issue(repo, issue_number)
       final_labels = extract_label_names(refreshed_issue.labels)
@@ -69,19 +60,35 @@ module Tools
         actor: user,
         subject: project,
         metadata: {
-          issue_number:, repo:, added: to_add, removed:, failed:
+          issue_number:, repo:, **outcome
         }
       )
 
       {
-        added: to_add,
-        removed:,
-        failed:,
+        **outcome,
         current_labels: final_labels
       }
     end
 
     private
+
+    # Applies the add/remove diff and reports only mutations GitHub actually
+    # performed: when the project's label mode suppresses writes, nothing is
+    # sent and the outcome flags the suppression instead of claiming the
+    # requested additions.
+    # @spec LABEL-INTEGRATION-004
+    def apply_label_diff(client, repo, issue_number, to_add:, to_remove:)
+      add_result = client.add_labels_to_issue(repo, issue_number, to_add) if to_add.any?
+
+      removal = { removed: [], failed: [] }
+      if to_remove.any?
+        removal = client.remove_labels_from_issue(repo, issue_number, to_remove)
+      end
+
+      suppressed = GithubClient.label_write_suppressed?(add_result) ||
+        GithubClient.label_write_suppressed?(removal)
+      { added: suppressed ? [] : to_add, removed: removal[:removed], failed: removal[:failed], suppressed: }
+    end
 
     def sync_local_issue!(project, github_issue)
       Issues::UpsertFromGithub.call(project:, github_issue:)
