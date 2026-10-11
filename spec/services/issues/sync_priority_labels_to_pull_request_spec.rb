@@ -187,5 +187,25 @@ RSpec.describe Issues::SyncPriorityLabelsToPullRequest do
       expect { described_class.call!(issue: issue) }.to raise_error(GithubClient::ApiError)
       expect(Issues::SyncPriorityLabelsToPullRequestJob).not_to have_been_enqueued
     end
+
+    # @spec LABEL-INTEGRATION-004
+    it "neither sends nor persists label changes when writes are suppressed" do
+      project.update!(label_integration_mode: "read_only")
+      issue = create(:issue, project: project, labels: [ "P1" ])
+      pull_request = create_linked_pull_request(issue, pr_labels: [ "P2", "paid-generated" ])
+      allow(Rails.logger).to receive(:info)
+
+      described_class.call(issue: issue, project: project)
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(github_client).not_to have_received(:remove_labels_from_issue)
+      expect(pull_request.reload.labels).to contain_exactly("P2", "paid-generated")
+      expect(Issues::SyncPriorityLabelsToPullRequestJob).not_to have_been_enqueued
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "github_sync.priority_labels_reconcile_suppressed",
+        project_id: project.id,
+        pull_request_id: pull_request.id
+      ))
+    end
   end
 end

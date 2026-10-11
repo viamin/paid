@@ -16,8 +16,55 @@ RSpec.describe Labels::WritePolicy do
     decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
     allow(client).to receive(:add_labels_to_issue)
 
-    expect(decorated.add_labels_to_issue(project.full_name, 1, [ "paid-ready" ])).to be_nil
+    result = decorated.add_labels_to_issue(project.full_name, 1, [ "paid-ready" ])
+
+    expect(result.suppressed?).to be(true)
     expect(client).not_to have_received(:add_labels_to_issue)
+  end
+
+  # @spec LABEL-INTEGRATION-004
+  it "returns an explicit suppressed result callers can detect" do
+    project = build(:project, label_integration_mode: "ignored")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive(:add_labels_to_issue)
+
+    result = decorated.add_labels_to_issue(project.full_name, 1, [ "paid-ready" ])
+
+    expect(GithubClient.label_write_suppressed?(result)).to be(true)
+    expect(client).not_to have_received(:add_labels_to_issue)
+  end
+
+  # @spec LABEL-INTEGRATION-004
+  it "flags suppressed removals so callers cannot claim performed removals" do
+    project = build(:project, label_integration_mode: "read_only")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive(:remove_labels_from_issue)
+
+    result = decorated.remove_labels_from_issue(project.full_name, 1, [ "paid-ready" ])
+
+    expect(result).to include(removed: [], failed: [], suppressed: true)
+    expect(GithubClient.label_write_suppressed?(result)).to be(true)
+    expect(client).not_to have_received(:remove_labels_from_issue)
+  end
+
+  # @spec LABEL-INTEGRATION-004
+  it "does not mistake performed writes for suppressed ones" do
+    project = build(:project, label_integration_mode: "read_write")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive_messages(
+      add_labels_to_issue: [ "added" ],
+      remove_labels_from_issue: { removed: [ "paid-ready" ], failed: [] }
+    )
+
+    add_result = decorated.add_labels_to_issue(project.full_name, 1, [ "paid-ready" ])
+    removal_result = decorated.remove_labels_from_issue(project.full_name, 1, [ "paid-ready" ])
+
+    expect(GithubClient.label_write_suppressed?(add_result)).to be(false)
+    expect(GithubClient.label_write_suppressed?(removal_result)).to be(false)
+    expect(GithubClient.label_write_suppressed?(nil)).to be(false)
   end
 
   it "strips labels from issue creation but still creates the issue when writes are suppressed" do

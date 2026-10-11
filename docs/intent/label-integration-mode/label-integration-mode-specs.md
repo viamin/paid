@@ -12,3 +12,9 @@
 - [x] **LABEL-INTEGRATION-003** — The project settings UI and
   `update_project_settings` MCP tool SHALL expose the project's mode, and the
   tenant settings surface SHALL expose the default for new projects.
+
+- [x] **LABEL-INTEGRATION-004** — When a label mutation is suppressed by
+  project mode, outcome-reporting callers (the `set_labels` MCP tool and
+  priority-label sync) SHALL report and audit no label changes, SHALL surface
+  that the write was suppressed, and SHALL NOT alter locally persisted label
+  state as if the mutation had been performed.

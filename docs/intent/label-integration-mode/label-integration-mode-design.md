@@ -13,7 +13,13 @@ changes. `read_write` is the default and preserves existing behavior.
 `Labels::WritePolicy` is the sole authority for GitHub label mutations. Project
 GitHub clients are decorated with its gate, and label provisioning checks it
 before even listing remote labels. Suppressed operations return successful,
-empty results so callers cannot treat policy suppression as a GitHub failure.
+empty results so callers cannot treat policy suppression as a GitHub failure —
+and the no-op is explicit: singular suppressed writes return the
+`GithubClient::LabelWriteSuppressed` sentinel (detected via
+`GithubClient.label_write_suppressed?`) and suppressed removal hashes carry
+`suppressed: true`, so outcome-reporting callers — the `set_labels` MCP tool,
+audit events, and priority-label sync — report and persist no label changes
+instead of claiming suppressed mutations (LABEL-INTEGRATION-004).
 `create_issue` is gated too: the issue itself is still created, but its
 `labels:` argument — which adds labels in the same POST — is stripped when
 writes are suppressed. `update_issue` similarly strips `labels:` so label
