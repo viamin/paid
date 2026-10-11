@@ -52,6 +52,7 @@ module ChatSessions
       # interview surfaced in every chat started against it, so setup can also
       # happen from a plain new chat session.
       sections << { priority: 1, content: project_setup_section } if primary_project&.setup_pending?
+      sections << { priority: 1, content: onboarding_setup_section } if onboarding_incomplete?
       sections << { priority: 2, content: tool_definitions } if mcp_tools.any?
       sections << { priority: 3, content: cross_project_context } if reference_projects.any?
       sections << { priority: 4, content: workspace_context } if chat_session.container_ready?
@@ -137,6 +138,15 @@ module ChatSessions
       "## Project Setup Needed\n\n" + Projects::BuildSetupPrompt.call(project: primary_project)
     end
 
+    # @spec ONBOARD-CHAT-004
+    def onboarding_setup_section
+      <<~PROMPT.strip
+        ## Onboarding Setup Interview
+
+        This account still has setup work. Start by calling `get_onboarding_status`, `list_runners`, and `get_account_capabilities`; use their current state rather than guessing or re-asking completed steps. Adaptively ask what agent runners, GitHub repositories, and issue trackers (such as Linear) the user uses. After each completed action, summarize the remaining checklist. Offer `get_product_docs` whenever the user asks what a setting or feature means; use it as the authoritative product answer source, not memory. Provider choices are listed by `list_runners` and provider API key tools; explain the applicable provider options before recommending one. Always obtain the user's explicit approval before proposing a write tool. Write tools require human confirmation and must never be used to skip onboarding steps.
+      PROMPT
+    end
+
     def page_context
       context = chat_session.page_context
       return if context.blank?
@@ -152,6 +162,10 @@ module ChatSessions
       return if lines.empty?
 
       "## Current Page Context\n#{lines.join("\n")}"
+    end
+
+    def onboarding_incomplete?
+      chat_session.account.onboarding_completed_at.blank?
     end
 
     # @spec QUESTION-EXPLORATION-001

@@ -1,0 +1,25 @@
+---
+runners:
+  title: Runners and provider keys
+  content: A provider API key stores a credential. A runner selects how Paid uses that credential for chat or agent runs. Enable chat for interactive conversations and agent runs for repository work.
+auto_pick:
+  title: Auto-pick
+  content: Auto-pick selects eligible labeled work for configured projects. Use an operating profile to choose how conservatively Paid picks work.
+auto_merge:
+  title: Auto-merge modes
+  content: Auto-merge controls whether eligible pull requests can merge automatically after the required checks and review conditions are satisfied.
+tdd:
+  title: TDD modes
+  content: TDD modes control how strongly agent work emphasizes failing tests before implementation and verification after changes.
+profiles:
+  title: Operating modes and profiles
+  content: Configuration profiles apply a named operating posture in a reviewed batch. Plan a profile before applying it.
+knowledge_base:
+  title: Knowledge base
+  content: The knowledge base indexes project context for discovery. Use search_code for repository questions before broad code search.
+trackers:
+  title: Interoperability and trackers
+  content: Tracker configurations connect Paid to issue systems such as Linear. OAuth-based connections open a user-facing connect link rather than completing authorization in chat.
+cost_controls:
+  title: Cost controls
+  content: Cost controls include runner model choices, token budgets, and operating profiles. Choose a provider and model policy appropriate for the work and budget.
