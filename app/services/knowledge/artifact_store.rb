@@ -266,7 +266,8 @@ module Knowledge
     end
 
     def acquire_artifact_lock(lock_key)
-      execute_lock_sql(TRY_ADVISORY_LOCK_SQL, lock_key).getvalue(0, 0)
+      lock_result = execute_lock_sql(TRY_ADVISORY_LOCK_SQL, lock_key).getvalue(0, 0)
+      lock_result == true || lock_result == "t"
     end
   end
 end

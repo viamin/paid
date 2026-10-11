@@ -128,7 +128,7 @@ RSpec.describe Knowledge::ArtifactStore do
       # @spec KNOWLEDGE-001
       it "fails immediately instead of waiting for the advisory lock" do
         raw_connection = instance_double(PG::Connection)
-        lock_result = instance_double(PG::Result, getvalue: false)
+        lock_result = instance_double(PG::Result, getvalue: "f")
         connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter,
           raw_connection: raw_connection)
         allow(ActiveRecord::Base).to receive(:connection).and_return(connection)
