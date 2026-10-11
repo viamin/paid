@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  label-integration-mode:
+    title: Per-Project Label Integration Mode
+    path: docs/intent/label-integration-mode/label-integration-mode-design.md
+    specs: docs/intent/label-integration-mode/label-integration-mode-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-10-11
+    next: "Control GitHub label writes per project while retaining configured label reads"
   quiet-mode:
     title: Project Quiet Mode
     path: docs/intent/quiet-mode/quiet-mode-design.md

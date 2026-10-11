@@ -13,8 +13,10 @@ module Tools
     # are exposed so chat can switch a project to upstream mode. Selecting
     # upstream is subject to the same server-side automation gates as the
     # settings form, so chat cannot bypass the disabled controls.
+    # @spec LABEL-INTEGRATION-003
     PERMITTED_ATTRIBUTES = %i[
       active
+      label_integration_mode
       paused
       auto_pick_enabled
       automation_on_label_enabled

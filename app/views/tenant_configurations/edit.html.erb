@@ -100,6 +100,14 @@
           class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fair share keeps the current round-robin across projects. Strict priority lets high-priority work outrank cross-project fairness and can starve lower-priority queues.</p>
       </div>
+
+      <div class="mt-6 max-w-md">
+        <%= label_tag "tenant_setting_default_label_integration_mode", "Default GitHub label integration", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+        <%= select_tag "tenant_setting[default_label_integration_mode]",
+          options_for_select(TenantSetting::LABEL_INTEGRATION_MODES.map { |value| [value.humanize, value] }, @tenant_setting.default_label_integration_mode),
+          class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Applied only to projects created after this setting changes.</p>
+      </div>
     </section>
 
     <section>

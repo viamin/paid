@@ -3,6 +3,15 @@
 require "rails_helper"
 
 RSpec.describe TenantSetting do
+  describe "label integration defaults" do
+    it "applies the tenant default to newly created projects" do
+      account = create(:account)
+      account.tenant_setting!.update!(default_label_integration_mode: "read_only")
+
+      expect(build(:project, account:).tap(&:valid?).label_integration_mode).to eq("read_only")
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:account) }
   end

@@ -12,7 +12,8 @@ RSpec.describe Projects::EnsureStandardLabels do
                :generated_label_name, :automation_label_name,
                :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
                :effective_priority_labels, :effective_auto_pick_skip_labels,
-               :effective_feature_activation_labels, :label_mappings, keyword_init: true) do
+               :effective_feature_activation_labels, :label_mappings,
+               :label_integration_mode, keyword_init: true) do
       def label_for_stage(stage)
         (label_mappings || {})[stage.to_s]
       end
@@ -22,6 +23,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       end
     end
   end
+
   let(:project) do
     project_class.new(
       id: 1,
@@ -38,6 +40,21 @@ RSpec.describe Projects::EnsureStandardLabels do
       effective_feature_activation_labels: FeatureActivationLabels::DEFAULTS,
       label_mappings: {}
     )
+  end
+
+  context "when GitHub label writes are disabled" do
+    it "returns an empty error-free result without reading or writing GitHub labels" do
+      project.label_integration_mode = "read_only"
+      allow(github_client).to receive(:labels)
+
+      result = described_class.call(project: project)
+
+      expect(result.created).to be_empty
+      expect(result.existing).to be_empty
+      expect(result.reconciled).to be_empty
+      expect(result.errors).to be_empty
+      expect(github_client).not_to have_received(:labels)
+    end
   end
 
   # The full canonical set provisioned for the default project stub above:
