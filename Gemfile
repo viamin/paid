@@ -200,3 +200,5 @@ gem "fx"
 
 # Model change tracking via PostgreSQL triggers [https://github.com/palkan/logidze]
 gem "logidze"
+
+gem "committee", "~> 5.6"

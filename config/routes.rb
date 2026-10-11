@@ -383,6 +383,10 @@ Rails.application.routes.draw do
     namespace :v1 do
       get "probe", to: "probe#show"
       get "probe/stream", to: "probe#stream"
+      get "inbox", to: "inbox#index"
+      get "inbox/count", to: "inbox#count"
+      get "inbox/entries/:entry_id", to: "inbox#show"
+      post "inbox/entries/:entry_id/chat", to: "inbox#chat"
     end
 
     resources :projects, only: [] do

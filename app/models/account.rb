@@ -20,6 +20,7 @@ class Account < ApplicationRecord
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
   has_many :account_activity_events, dependent: :destroy
+  has_many :personal_access_tokens, dependent: :destroy
   has_many :members, through: :account_memberships, source: :user
   has_many :provider_api_keys, through: :users
   has_many :projects, dependent: :destroy
