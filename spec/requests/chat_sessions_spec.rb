@@ -1255,6 +1255,23 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "moonshotai/kimi-k2")
       end
 
+      it "offers a direct-outbound runner's provider-qualified model even when the catalog stores the bare id" do
+        # @spec CHAT-SESSION-PREFERENCES-003
+        create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", tier: "mid")
+        runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "minimax"),
+          config: { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M3" } })
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id == "minimax/MiniMax-M3" }
+        expect(selection).not_to be_nil
+
+        patch chat_session_path(chat_session),
+          params: { chat_session: { runner_model: selection.value } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:no_content)
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "minimax/MiniMax-M3")
+      end
+
       it "saves a runner automatic selection without pinning a model" do
         # @spec CHAT-SESSION-PREFERENCES-003
         runner = create_api_chat_runner

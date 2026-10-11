@@ -30,9 +30,19 @@ module ChatSessions
 
     def options_for_runner(runner, models_by_id)
       [ automatic_option(runner) ] + configured_model_ids(runner).filter_map do |model_id|
-        model = models_by_id[model_id]
+        model = catalog_model_for(runner, model_id, models_by_id)
         model_option(runner, model_id, model) if model
       end
+    end
+
+    # Direct-outbound runners may configure a provider-qualified model id
+    # (e.g. "minimax/MiniMax-M3") while the catalog stores the bare id — the
+    # same candidate list Runner#ensure_direct_outbound_llm_model! resolves
+    # against. The configured id is still what's sent to the chat client;
+    # only the catalog lookup needs normalizing.
+    def catalog_model_for(runner, model_id, models_by_id)
+      candidates = runner.direct_outbound_catalog_model_id_candidates(model_id)
+      models_by_id.values_at(*candidates).compact.first
     end
 
     def automatic_option(runner)
@@ -49,7 +59,9 @@ module ChatSessions
     end
 
     def model_ids
-      runners.flat_map { |runner| configured_model_ids(runner) }.uniq
+      runners.flat_map do |runner|
+        configured_model_ids(runner).flat_map { |model_id| runner.direct_outbound_catalog_model_id_candidates(model_id) }
+      end.uniq
     end
 
     def configured_model_ids(runner)
