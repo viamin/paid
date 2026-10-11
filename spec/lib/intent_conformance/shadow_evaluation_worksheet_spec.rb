@@ -8,7 +8,9 @@ RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
   let(:manifest) { Rails.root.join("tmp/shadow-worksheet-manifest.yml") }
   let(:ledger) { Rails.root.join("tmp/shadow-worksheet-ledger.jsonl") }
   let(:commit) { "a" * 40 }
-  let(:base_event) { { "manifest_commit" => commit } }
+  let(:base_event) do
+    { "manifest_commit" => commit, "manifest_digest" => IntentConformance::ShadowEvaluationLedger.manifest_digest(manifest) }
+  end
 
   before do
     File.write(manifest, { "cases" => [ { "id" => "A-01" }, { "id" => "A-02" } ] }.to_yaml)

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "json"
 require "time"
 require "yaml"
@@ -49,6 +50,7 @@ module IntentConformance
       entries = events(ledger_path)
       ensure_unique_event_ids!(entries)
       ensure_manifest_predates_events!(entries, manifest_commit)
+      ensure_manifest_content_frozen!(entries, manifest_path)
       ensure_operators_frozen!(entries)
       ensure_adjudications!(cases, entries)
       ensure_shadow_runs_follow_adjudications!(cases, entries)
@@ -61,19 +63,27 @@ module IntentConformance
       entries = events(ledger_path)
       ensure_unique_event_ids!(entries)
       ensure_manifest_predates_events!(entries, manifest_commit)
+      ensure_manifest_content_frozen!(entries, manifest_path)
       ensure_operators_frozen!(entries)
       ensure_adjudications!(cases, entries)
       ensure_corpus_shape!(cases)
       true
     end
 
-    def append!(path:, event:)
+    def append!(path:, event:, manifest_path:)
       raise InvalidLedger, "event must be a JSON object" unless event.is_a?(Hash)
       raise InvalidLedger, "event_id is required" if event["event_id"].to_s.strip.empty?
       raise InvalidLedger, "recorded_at is required" if event["recorded_at"].to_s.strip.empty?
       raise InvalidLedger, "event_id already exists" if events(path).any? { |entry| entry["event_id"] == event["event_id"] }
 
+      event = event.merge("manifest_digest" => manifest_digest(manifest_path))
       File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644) { |file| file.puts(JSON.generate(event)) }
+    end
+
+    def manifest_digest(manifest_path)
+      Digest::SHA256.file(manifest_path).hexdigest
+    rescue Errno::ENOENT => error
+      raise InvalidLedger, "invalid corpus manifest: #{error.message}"
     end
 
     def ensure_manifest_predates_events!(entries, manifest_commit)
@@ -83,6 +93,20 @@ module IntentConformance
       return if entries.all? { |entry| entry["manifest_commit"] == manifest_commit }
 
       raise InvalidLedger, "every ledger event must use the frozen corpus manifest commit"
+    end
+
+    # The caller-supplied manifest_commit is only a label. Binding every event to
+    # the manifest file's current content digest prevents replaying an old
+    # manifest_commit label against a manifest that was edited (or a case swapped
+    # in place) after adjudication, which would otherwise pass the label check
+    # above while no longer reflecting the frozen corpus that was adjudicated.
+    def ensure_manifest_content_frozen!(entries, manifest_path)
+      return if entries.empty?
+
+      current_digest = manifest_digest(manifest_path)
+      return if entries.all? { |entry| entry["manifest_digest"] == current_digest }
+
+      raise InvalidLedger, "every ledger event must match the frozen corpus manifest content"
     end
 
     def ensure_operators_frozen!(entries)
