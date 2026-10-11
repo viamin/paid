@@ -114,6 +114,8 @@ class GithubClient
     # Trust-gated MCP mutations may select a fallback credential. Re-wrap it
     # so that selection cannot escape this project's label-write policy.
     def trusted_human_mutation_client
+      return self unless __getobj__.respond_to?(:trusted_human_mutation_client)
+
       selected_client = __getobj__.trusted_human_mutation_client
       return self if selected_client.equal?(__getobj__)
 

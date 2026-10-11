@@ -77,4 +77,12 @@ RSpec.describe Labels::WritePolicy do
 
     expect(trusted_client).to have_received(:update_issue).with(project.full_name, 1)
   end
+
+  it "keeps the decorator when the wrapped client cannot select a trusted human credential" do
+    project = build(:project, label_integration_mode: "read_write")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+
+    expect(decorated.trusted_human_mutation_client).to equal(decorated)
+  end
 end
