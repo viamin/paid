@@ -7,7 +7,8 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
   let(:project) do
     double(
       client: github_client,
-      full_name: "paid/app"
+      full_name: "paid/app",
+      quiet_mode?: false
     )
   end
   let(:issue) do
@@ -136,6 +137,23 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
             questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
           )
         }.to raise_error(ArgumentError, /GitHub access is not configured/)
+
+        expect(github_client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when quiet mode is enabled" do
+      before { allow(project).to receive(:quiet_mode?).and_return(true) }
+
+      it "rejects answers before they can be silently suppressed" do
+        # @spec QUIET-MODE-006
+        expect {
+          described_class.call(
+            project: project,
+            issue: issue,
+            questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+          )
+        }.to raise_error(ArgumentError, /cannot be submitted while quiet mode is enabled/)
 
         expect(github_client).not_to have_received(:add_comment)
       end

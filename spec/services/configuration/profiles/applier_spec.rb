@@ -101,8 +101,7 @@ RSpec.describe Configuration::Profiles::Applier do
         include(key: "run_concurrency_mode", from: "auto", to: "manual", level: "user", applied: true)
       )
       expect(result.fetch(:skipped_levels)).to contain_exactly(
-        include("level" => "project", "reason" => "Not authorized to update project settings"),
-        include("level" => "tenant", "reason" => "Not authorized to update tenant settings")
+        include("level" => "project", "reason" => "Not authorized to update project settings")
       )
       expect(member.settings.reload.run_concurrency_mode).to eq("manual")
       expect(project.reload.auto_pick_enabled).to be false

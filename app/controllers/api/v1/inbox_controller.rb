@@ -121,7 +121,7 @@ module Api
       end
 
       def render_entry_not_found
-        render_error("not_found", "Entry is not in the inbox.", :not_found)
+        render_error(:not_found, :not_found, "Entry is not in the inbox.")
       end
     end
   end

@@ -1029,6 +1029,81 @@ RSpec.describe "ChatSessions" do
     end
   end
 
+  # @spec CHAT-API-023
+  describe "GET /chat/:id/recent_messages" do
+    let!(:chat_session) { create(:chat_session, account: account, created_by: user) }
+
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        message = create(:chat_message, chat_session: chat_session)
+
+        get recent_messages_chat_session_path(chat_session), params: { since: message.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "returns only messages persisted after the given cursor, rendered for direct DOM insertion" do
+        anchor = create(:chat_message, chat_session: chat_session, content: "Already rendered")
+        missed = create(:chat_message, :assistant, chat_session: chat_session, content: "Missed while disconnected")
+
+        get recent_messages_chat_session_path(chat_session), params: { since: anchor.id }
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body["messages"].map { |m| m["message_id"] }).to eq([ missed.id ])
+        expect(body["messages"].first["role"]).to eq("assistant")
+        expect(body["messages"].first["html"]).to include("Missed while disconnected")
+        expect(body["messages"].first["html"]).to include("data-message-id=\"#{missed.id}\"")
+      end
+
+      it "returns an empty list when nothing was persisted after the cursor" do
+        message = create(:chat_message, chat_session: chat_session)
+
+        get recent_messages_chat_session_path(chat_session), params: { since: message.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["messages"]).to eq([])
+      end
+
+      it "caps each response and signals when the client must fetch the next page" do
+        anchor = create(:chat_message, chat_session: chat_session)
+        (ChatSessionsController::MESSAGE_PAGE_SIZE + 10).times do |index|
+          create(:chat_message, chat_session: chat_session, content: "Message #{index}")
+        end
+
+        get recent_messages_chat_session_path(chat_session), params: { since: anchor.id }
+
+        expect(response.parsed_body["messages"].size).to eq(ChatSessionsController::MESSAGE_PAGE_SIZE)
+        expect(response.parsed_body["has_more"]).to be(true)
+      end
+
+      it "requires a since cursor" do
+        get recent_messages_chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:bad_request)
+      end
+
+      it "rejects a non-numeric since cursor" do
+        get recent_messages_chat_session_path(chat_session), params: { since: "not-a-message-id" }
+
+        expect(response).to have_http_status(:bad_request)
+      end
+
+      it "rejects access to a chat session outside the user's account" do
+        other_session = create(:chat_session)
+        message = create(:chat_message, chat_session: other_session)
+
+        get recent_messages_chat_session_path(other_session), params: { since: message.id }
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
   describe "GET /chat/sidebar_page" do
     before { sign_in user }
 

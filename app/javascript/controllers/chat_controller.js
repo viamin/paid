@@ -8,6 +8,7 @@ export default class extends Controller {
   connect() {
     this.autoScroll = true
     this.streaming = false
+    this.disconnectedMidTurn = false
     this.currentStreamId = null
     this.expectedStreamSequence = 1
     this.ignoredStreamIds = new Set()
@@ -61,11 +62,26 @@ export default class extends Controller {
   // turn is in flight, so stable connections and the initial connect — where
   // dispatching chat:idle would also auto-focus the textarea — are unaffected.
   handleConnected() {
+    // handleDisconnected() always runs before a real reconnect's connected()
+    // callback, and it already reset `this.streaming` to false via
+    // resetStreamingState(). Reading `this.streaming` here would therefore
+    // always see false, so the gap-recovery resync below would never fire —
+    // the "was a turn in flight when we dropped" signal has to survive that
+    // earlier reset. disconnectedMidTurn carries it across the gap.
+    const resuming = this.disconnectedMidTurn
+    this.disconnectedMidTurn = false
     this.resetStreamingState()
     this.setStatus("Connected")
+    // resetStreamingState tears down any orphaned streaming bubble, but a gap
+    // wide enough to drop the connection can also drop the terminal broadcast
+    // (message_created / message_complete / error) entirely — those travel
+    // over the socket we just lost. Only resync when a turn was actually in
+    // flight, so a stable connection's initial connect stays a no-op.
+    if (resuming) this.resyncTranscript()
   }
 
   handleDisconnected() {
+    this.disconnectedMidTurn = this.streaming
     this.resetStreamingState()
     this.setStatus("Disconnected")
   }
@@ -84,6 +100,59 @@ export default class extends Controller {
     this.currentAttemptToolCards = []
     this.toggleTyping(false)
     this.dispatchChatState("chat:idle")
+  }
+
+  // @spec CHAT-API-023
+  // Replays any messages persisted while the connection was down, through the
+  // same handleMessageCreated path a live broadcast uses, so the transcript
+  // converges on the persisted rows instead of silently missing a turn that
+  // completed (or progressed) during the gap (#4225). No-ops when there is
+  // nothing rendered yet to resync from (e.g. the gap covers the session's
+  // very first message) — a full reload remains the backstop for that case.
+  resyncTranscript() {
+    if (!this.hasMessagesTarget) return
+
+    const sinceId = this.lastRenderedMessageId()
+    if (sinceId == null) return
+
+    this.replayRecentMessages(sinceId)
+      .then(() => this.scrollToBottom())
+      .catch((error) => {
+        globalThis.console?.error?.("chat#resyncTranscript failed", error)
+      })
+  }
+
+  replayRecentMessages(sinceId) {
+    return this.fetchRecentMessages(sinceId)
+      .then(({ messages, hasMore }) => {
+        messages.forEach((message) => this.handleMessageCreated(message))
+
+        const lastMessage = messages.at(-1)
+        return hasMore && lastMessage ? this.replayRecentMessages(lastMessage.message_id) : null
+      })
+  }
+
+  fetchRecentMessages(sinceId) {
+    return fetch(`/chat/${this.sessionIdValue}/recent_messages?since=${encodeURIComponent(sinceId)}`, {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin"
+    })
+      .then((response) => (response.ok ? response.json() : { messages: [], has_more: false }))
+      .then((data) => ({ messages: data.messages || [], hasMore: data.has_more === true }))
+  }
+
+  // The highest data-message-id currently rendered — every persisted message
+  // partial carries one (see app/views/chat_messages/_bubble.html.erb), and
+  // ids are assigned in creation order, so the max is the resync cursor.
+  lastRenderedMessageId() {
+    if (!this.hasMessagesTarget) return null
+
+    let max = null
+    this.messagesTarget.querySelectorAll("[data-message-id]").forEach((element) => {
+      const id = Number(element.dataset.messageId)
+      if (Number.isFinite(id) && (max === null || id > max)) max = id
+    })
+    return max
   }
 
   sendMessage(event) {
@@ -220,9 +289,24 @@ export default class extends Controller {
     this.toggleTyping(true)
   }
 
-  // @spec CHAT-API-022
+  // @spec CHAT-API-022 @spec CHAT-API-023
+  // A mid-stream disconnect clears currentStreamId (resetStreamingState), but
+  // the turn is still in flight server-side — ProcessMessageJob only ever
+  // broadcasts message_start once, so reconnecting resumes receiving chunks
+  // for that same stream id with no new message_start to re-arm tracking.
+  // ensureAssistantMessage recreates the bubble regardless of tracking state,
+  // so an unowned chunk re-arms that stream. Once another stream is active,
+  // however, late chunks from the disconnected stream must not take ownership
+  // or a later terminal event could tear down the new stream's bubble (#4225).
   handleMessageChunk(data) {
-    if (data.message_id !== this.currentStreamId || this.ignoredStreamIds.has(data.message_id)) return
+    if (data.message_id == null) return
+
+    if (!this.currentStreamId) {
+      if (this.ignoredStreamIds.has(data.message_id)) return
+      this.currentStreamId = data.message_id
+      this.streaming = true
+    }
+    if (this.ignoredStreamIds.has(data.message_id) || !this.streamEventMatches(data)) return
 
     const sequence = Number(data.sequence)
     if (!Number.isInteger(sequence) || sequence !== this.expectedStreamSequence) {
@@ -237,14 +321,13 @@ export default class extends Controller {
     this.scrollToBottom()
   }
 
-  // @spec CHAT-API-022
+  // @spec CHAT-API-022 @spec CHAT-API-023
   handleMessageComplete(data) {
     const streamId = data.message_id || this.currentStreamId
     this.removeStreamingMessage(streamId)
     this.ignoredStreamIds ||= new Set()
     this.ignoredStreamIds.delete(streamId)
     if (data.message_id && this.currentStreamId && data.message_id !== this.currentStreamId) return
-
     this.streaming = false
     this.currentStreamId = null
     this.pendingContent = null
@@ -315,7 +398,6 @@ export default class extends Controller {
     this.ignoredStreamIds ||= new Set()
     this.ignoredStreamIds.delete(streamId)
     if (data.message_id && this.currentStreamId && data.message_id !== this.currentStreamId) return
-
     this.streaming = false
     this.currentStreamId = null
     this.setBusy(false)
@@ -426,6 +508,15 @@ export default class extends Controller {
   }
 
   handleMessageToolConfirmation(data) {
+    if (!this.streamEventMatches(data)) return
+
+    // @spec CHAT-API-023
+    // A write-tool pause can follow reasoning/narration text that already
+    // streamed into the bubble but was never persisted as its own message
+    // (the turn isn't done — it's paused awaiting approval), so it would
+    // otherwise orphan at the transcript tail until the next turn (#4225).
+    this.removePendingAssistantMessage()
+
     if (data.html) {
       const card = this.buildMessageElement(data.html)
       if (card) {
@@ -440,6 +531,10 @@ export default class extends Controller {
     this.setBusy(false)
     this.toggleTyping(false)
     this.setStatus(`Waiting for approval to run ${data.tool_name || "tool"}…`)
+  }
+
+  streamEventMatches(data) {
+    return this.currentStreamId === (data.stream_message_id || data.message_id)
   }
 
   handleMessageToolResolved(data) {
@@ -519,6 +614,15 @@ export default class extends Controller {
     return template.content.firstElementChild
   }
 
+  // @spec CHAT-API-022 @spec CHAT-API-023
+  // Unconditional by design: every terminal path that calls this (message
+  // completion, tool-confirmation pause, provider error, reconnect) either
+  // already replaced the bubble with a persisted message_created — in which
+  // case the data-stream-message-id selector below finds nothing and this is
+  // a no-op — or the turn ended with no replacement, in which case the
+  // streamed text was never persisted and must not linger as a frozen
+  // partial at the transcript tail (#4225). Preserving content here is
+  // exactly backwards: it only preserves text in the one case it is stale.
   removePendingAssistantMessage() {
     this.removeStreamingMessage(this.currentStreamId)
   }
@@ -725,10 +829,15 @@ export default class extends Controller {
     return this.containerTarget.scrollHeight
   }
 
+  // @spec CHAT-SCROLL-001 @spec CHAT-API-023
   // The last persisted assistant text message inside the transcript — tool
-  // calls and temporary streaming bubbles are skipped.
-  // Falls back to null when there is no assistant text yet (new chat or one
-  // whose final turn is a user message).
+  // calls render without that flag and are skipped. Streaming bubbles from
+  // ensureAssistantMessage carry data-stream-message-id and are explicitly
+  // excluded: they are not yet persisted (and may never be, if the turn ends
+  // in an error or reconnect), so anchoring "Jump to latest" on one would
+  // land on text that can vanish or get rewritten under the user (#4225).
+  // While a turn is actively streaming this falls back to the previous
+  // persisted response, or null if there isn't one yet.
   lastAssistantTextResponse() {
     if (!this.hasMessagesTarget) return null
     const articles = this.messagesTarget.querySelectorAll(

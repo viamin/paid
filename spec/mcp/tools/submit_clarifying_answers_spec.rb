@@ -122,6 +122,18 @@ RSpec.describe Tools::SubmitClarifyingAnswers do
       expect(result).to eq(posted: true, issue_id: issue.id, issue_number: issue.github_number)
     end
 
+    it "rejects quiet-mode answers without clearing the inbox item" do
+      # @spec QUIET-MODE-006
+      project.update!(quiet_mode: true)
+
+      expect do
+        tool.call(answers: [ "X is a feature", "Yes, by default" ], confirmed: true)
+      end.to raise_error(ArgumentError, /cannot be submitted while quiet mode is enabled/)
+
+      expect(github_client).not_to have_received(:add_comment)
+      expect(issue.reload.paid_state).to eq("needs_input")
+    end
+
     # @spec QUESTION-EXPLORATION-016
     it "posts a choice answer selected by option letter" do
       issue.update!(needs_input_questions: [

@@ -8,7 +8,7 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages]
+  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages]
   before_action :reject_archived_chat_session, only: %i[update destroy archive clone_project]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
@@ -57,6 +57,26 @@ class ChatSessionsController < ApplicationController
 
     render partial: "chat_sessions/older_messages",
       locals: { messages: messages, chat_session: @chat_session, has_more: has_more, frame_id: frame_id }
+  end
+
+  # @spec CHAT-API-023 — Recovers messages the client missed during an
+  # ActionCable gap (dropped connection mid-turn): a broadcast emitted while
+  # disconnected is gone for good, so on reconnect the client replays
+  # everything persisted after the last message it rendered. Responses remain
+  # bounded at MESSAGE_PAGE_SIZE; has_more lets the reconnect client continue
+  # from the final returned id until its transcript converges.
+  def recent_messages
+    authorize @chat_session, :show?
+    since_id = Integer(params.require(:since), exception: false)
+    return head :bad_request if since_id.nil? || since_id.negative?
+
+    messages = @chat_session.messages.chronological
+      .where("chat_messages.id > ?", since_id)
+      .limit(MESSAGE_PAGE_SIZE)
+    has_more = messages.size == MESSAGE_PAGE_SIZE &&
+      @chat_session.messages.where("chat_messages.id > ?", messages.last.id).exists?
+
+    render json: { messages: messages.map { |m| recent_message_payload(m) }, has_more: has_more }
   end
 
   def sidebar_page
@@ -345,6 +365,19 @@ class ChatSessionsController < ApplicationController
       tokens_input: message.tokens_input,
       tokens_output: message.tokens_output,
       created_at: message.created_at
+    }
+  end
+
+  # Mirrors the shape ChatChannel broadcasts carry (message_id, html,
+  # fallback_notice) so the client can replay a resync payload through the
+  # exact same handleMessageCreated path a live message_created event uses,
+  # instead of a separate rendering branch that could drift from it.
+  def recent_message_payload(message)
+    {
+      message_id: message.id,
+      role: message.role,
+      fallback_notice: message.fallback_notice?,
+      html: render_to_string(partial: "chat_messages/message", locals: { message: message })
     }
   end
 

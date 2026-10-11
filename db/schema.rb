@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_154741) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_133105) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2693,19 +2693,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_154741) do
     t.index ["github_installation_id"], name: "index_pending_install_claims_on_github_installation_id"
   end
 
-  create_table "personal_access_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, comment: "Bearer tokens for the versioned mobile API.", force: :cascade do |t|
-    t.bigint "account_id", null: false
+  create_table "personal_access_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, comment: "Personal access tokens for /api/v1 mobile API bearer auth. Only the SHA-256 digest of the paid_pat_ secret is persisted.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Bearer tenant (the user's account; drives tenant context on bearer resolution)."
     t.datetime "created_at", null: false
-    t.datetime "expires_at"
-    t.datetime "last_used_at"
+    t.datetime "expires_at", comment: "Optional expiry; blank means no expiry."
+    t.datetime "last_used_at", comment: "Throttled usage stamp (written at most once per 5 minutes); feeds the revocation UI only."
     t.jsonb "log_data"
-    t.string "name", null: false
-    t.datetime "revoked_at"
-    t.jsonb "scopes", default: [], null: false
-    t.string "token_digest", null: false, comment: "SHA-256 digest; plaintext is never persisted."
+    t.string "name", null: false, comment: "User-assigned label for the revocation UI; unique per user."
+    t.datetime "revoked_at", comment: "Soft revocation timestamp; blank means active."
+    t.jsonb "scopes", default: ["inbox", "chat"], null: false, comment: "Token scopes; v1 ships the full default set."
+    t.string "token_digest", null: false, comment: "SHA-256 base64digest of the full paid_pat_ secret; unique."
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id", null: false, comment: "Bearer subject (the user the token authenticates)."
     t.index ["account_id"], name: "index_personal_access_tokens_on_account_id"
+    t.index ["revoked_at"], name: "index_personal_access_tokens_on_revoked_at"
     t.index ["token_digest"], name: "index_personal_access_tokens_on_token_digest", unique: true
     t.index ["user_id", "name"], name: "index_personal_access_tokens_on_user_id_and_name", unique: true
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
@@ -3017,6 +3018,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_154741) do
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
+    t.boolean "quiet_mode", default: false, null: false, comment: "When true, Paid suppresses all issue/PR comment posting for this project (PR description writes are unaffected)."
     t.string "repo", null: false
     t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
     t.boolean "retry_failed_manual_runs", default: true, null: false, comment: "When true, a failed manual agent run with no issue/PR attachment and no observable work is automatically re-queued with backoff, up to AgentRun::MAX_MANUAL_RETRY_ATTEMPTS."
@@ -5274,6 +5276,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_154741) do
   SQL
 
   create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+      CREATE TRIGGER logidze_on_personal_access_tokens BEFORE INSERT OR UPDATE ON public.personal_access_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{last_used_at}')
   SQL
 end

@@ -107,6 +107,9 @@ Rails.application.routes.draw do
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
 
+  # Personal access tokens for the /api/v1 mobile namespace (web management UI)
+  resources :personal_access_tokens, only: %i[index new create destroy]
+
   # Customer-facing account administration
   resource :account, only: [ :show, :update ]
   resource :account_roi_dashboard, only: [ :show ], controller: "accounts/roi_dashboards" do
@@ -374,7 +377,12 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
+    # Versioned mobile API namespace (MOBILE-API): bearer-token
+    # authenticated, JSON + SSE. The stub probe route (#4238) verifies the
+    # auth boundary; inbox (#4239) and chat (#4240) endpoints land here next.
     namespace :v1 do
+      get "probe", to: "probe#show"
+      get "probe/stream", to: "probe#stream"
       get "inbox", to: "inbox#index"
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
@@ -439,6 +447,7 @@ Rails.application.routes.draw do
     end
     member do
       get :older_messages
+      get :recent_messages
     end
     resources :chat_messages, path: "messages", only: %i[index create] do
       member do
