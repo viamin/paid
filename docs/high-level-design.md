@@ -108,6 +108,13 @@ account onboarding proposes the mode as the default project posture with a
 reviewable settings plan. The mode composes with — never replaces — the
 project's independent auto-merge and TDD test-review choices.
 
+Onboarding itself is planned to become chat-led: a fresh account picks a
+provider API key first, lands in a working chat, and is walked through the
+rest of a minimal setup — an agent-run runner, a GitHub project and
+credential, optional Linear, and an operating profile — adapting to what the
+user reports using, with the existing step forms remaining as a fallback. See
+`docs/intent/onboarding-chat-setup/`.
+
 Each approval is retained as an immutable revision binding its authorized
 human actor to exact design PR heads. Feature release is a distinct transition:
 it fails closed until that latest snapshot remains current and every required
