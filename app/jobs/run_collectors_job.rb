@@ -12,7 +12,11 @@ class RunCollectorsJob < ApplicationJob
   self.perform_timeout = 20.minutes.to_i
 
   discard_on ActiveRecord::RecordNotFound
-  retry_on Knowledge::ArtifactStore::LockUnavailable, wait: :polynomially_longer, attempts: 5
+  retry_on Knowledge::ArtifactStore::LockUnavailable, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.mark_terminal_lock_failure
+    job.notify_terminal_failure(error)
+    raise error
+  end
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection
   # polls frequently and the prior job hasn't started yet.
@@ -24,6 +28,13 @@ class RunCollectorsJob < ApplicationJob
 
   def notification_project_id
     arguments.first
+  end
+
+  # retry_on intercepts lock contention before ApplicationJob's rescue_from
+  # handler, so exhaustion must set the terminal status and report explicitly.
+  # @spec KNOWLEDGE-001 EXCEPTION-NOTIFY-003
+  def mark_terminal_lock_failure
+    mark_knowledge_collection_failed(Project.find_by(id: notification_project_id))
   end
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil)
@@ -49,21 +60,25 @@ class RunCollectorsJob < ApplicationJob
     update_knowledge_status(project, result)
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
+  rescue Knowledge::ArtifactStore::LockUnavailable
+    raise # Keep the project collecting while retry_on schedules a new attempt.
   rescue StandardError
-    begin
-      project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
-      KnowledgeArtifact.bust_artifact_counts_cache(project.id) if project
-    rescue StandardError => update_error
-      Rails.logger.error(
-        message: "knowledge.job_status_update_failed",
-        project_id: project&.id,
-        error: update_error.message
-      )
-    end
+    mark_knowledge_collection_failed(project)
     raise
   end
 
   private
+
+  def mark_knowledge_collection_failed(project)
+    project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
+    KnowledgeArtifact.bust_artifact_counts_cache(project.id) if project
+  rescue StandardError => update_error
+    Rails.logger.error(
+      message: "knowledge.job_status_update_failed",
+      project_id: project&.id,
+      error: update_error.message
+    )
+  end
 
   def update_knowledge_status(project, result)
     statuses = Array(result&.dig(:results)).map { |r| r[:status] }

@@ -114,6 +114,18 @@ RSpec.describe RunCollectorsJob do
 
         expect(project.reload.knowledge_status).to eq("failed")
       end
+
+      # @spec KNOWLEDGE-001
+      it "keeps knowledge_status collecting when an artifact lock is unavailable for retry" do
+        allow(Knowledge::CollectorRunner).to receive(:call)
+          .and_raise(Knowledge::ArtifactStore::LockUnavailable, "lock unavailable")
+
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[Knowledge::ArtifactStore::LockUnavailable]" => 0 }
+
+        expect { job.perform_now }.not_to raise_error
+        expect(project.reload.knowledge_status).to eq("collecting")
+      end
     end
 
     context "when Docker is available" do
@@ -189,6 +201,31 @@ RSpec.describe RunCollectorsJob do
             described_class.perform_now(project.id, commit_sha)
           }.to raise_error(RuntimeError)
         }.to have_enqueued_job(HandleExceptionJob).exactly(:once)
+      end
+    end
+
+    context "when artifact lock contention exhausts retries" do
+      let(:notifier) { instance_double(Paid::ExceptionNotifier) }
+
+      before do
+        allow(Knowledge::CollectorRunner).to receive(:call)
+          .and_raise(Knowledge::ArtifactStore::LockUnavailable, "lock unavailable")
+        allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+        allow(notifier).to receive(:call)
+      end
+
+      # @spec KNOWLEDGE-001 EXCEPTION-NOTIFY-003
+      it "marks the collection failed, notifies, and re-raises" do
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[Knowledge::ArtifactStore::LockUnavailable]" => 4 }
+
+        expect { job.perform_now }.to raise_error(Knowledge::ArtifactStore::LockUnavailable, "lock unavailable")
+
+        expect(project.reload.knowledge_status).to eq("failed")
+        expect(notifier).to have_received(:call).with(
+          an_instance_of(Knowledge::ArtifactStore::LockUnavailable),
+          data: hash_including(subsystem: "knowledge", project_id: project.id)
+        )
       end
     end
   end
