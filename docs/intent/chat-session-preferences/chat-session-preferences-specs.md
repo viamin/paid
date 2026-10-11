@@ -18,10 +18,18 @@
 
 ## Runner and model selection
 
-- [x] **CHAT-SESSION-PREFERENCES-002** - When a user chooses a runner or model
-  in the chat header, the UI SHALL save the changed selection automatically
-  and show whether the update succeeded, without navigating away from the
-  conversation.
+- [x] **CHAT-SESSION-PREFERENCES-002** - When a user chooses a runner and
+  model combination in the chat header, the UI SHALL save the changed
+  selection automatically and show whether the update succeeded, without
+  navigating away from the conversation.
   *Test:* `spec/requests/chat_sessions_spec.rb`.
   *Code:* `app/views/chat_sessions/_chat_panel.html.erb`,
   `app/javascript/controllers/chat_controller.js`.
+
+- [x] **CHAT-SESSION-PREFERENCES-003** - When a user configures a chat session,
+  the system SHALL present a single choice for each valid runner/model pair,
+  including an Automatic choice for every available runner, and SHALL reject
+  selections that do not belong to an available runner's configured models.
+  *Test:* `spec/requests/chat_sessions_spec.rb`.
+  *Code:* `ChatSessions::RunnerModelOptions`,
+  `ChatSessionsController`, `app/views/chat_sessions/_session_details.html.erb`.

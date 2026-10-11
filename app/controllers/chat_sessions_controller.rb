@@ -286,6 +286,7 @@ class ChatSessionsController < ApplicationController
       :mode,
       :model,
       :runner_id,
+      :runner_model,
       :provider_id,
       :project_id,
       :system_prompt,
@@ -296,14 +297,33 @@ class ChatSessionsController < ApplicationController
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     normalize_legacy_create_params!(permitted)
+    resolve_runner_model_selection!(permitted)
     permitted
   end
 
   def update_params
-    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :provider_id, :auto_approve, metadata: {})
+    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :runner_model, :provider_id, :auto_approve, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
+    resolve_runner_model_selection!(permitted)
     permitted
+  end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  def resolve_runner_model_selection!(permitted)
+    return unless permitted.key?(:runner_model)
+
+    value = permitted.delete(:runner_model)
+    return if value.blank?
+
+    selection = ChatSessions::RunnerModelOptions.resolve(
+      runners: available_chat_runners,
+      value: value
+    )
+    raise ArgumentError, "Choose a valid runner and model combination." unless selection
+
+    permitted[:runner_id] = selection.runner_id
+    permitted[:model] = selection.model_id
   end
 
   def normalize_legacy_create_params!(permitted)
@@ -498,11 +518,15 @@ class ChatSessionsController < ApplicationController
   end
 
   def load_chat_panel_data
-    @available_runners = current_user.runners.kept_only.for_chat.api_key
+    @available_runners = available_chat_runners
+    @available_models = LlmModel.active.order(:provider, :display_name)
+  end
+
+  def available_chat_runners
+    current_user.runners.kept_only.for_chat.api_key
       .includes(:provider_api_key, :integration_credential)
       .ordered
       .select { |runner| ChatSessions::BuildLlmClient.usable_runner?(runner) }
-    @available_models = LlmModel.active.order(:provider, :display_name)
   end
 
   def load_chat_messages
