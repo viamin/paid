@@ -617,6 +617,7 @@ jobs:
             --include-method GET \
             --include-path /inbox \
             --include-path /inbox/count \
+            --include-path /inbox/entries/{entry_id} \
             docs/api/openapi.yaml
           pipx run --spec 'schemathesis==4.6.0' schemathesis run \
             --url http://127.0.0.1:3000/api/v1 \

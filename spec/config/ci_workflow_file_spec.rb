@@ -113,7 +113,8 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec MOBILE-API-018
   it "fuzzes safe mobile API operations without sending chat messages" do
     expect(step_run(schemathesis_job, "Fuzz mobile API contract")).to include(
-      "schemathesis==4.6.0", "--include-method GET", "--exclude-operation-id sendChatMessage",
+      "schemathesis==4.6.0", "--include-method GET", "--include-path /inbox/entries/{entry_id}",
+      "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveToolCall"
     )
   end
