@@ -29,7 +29,10 @@ module Projects
         end
 
         def test_directory_candidates
-          TEST_DIR_CANDIDATES.fetch(ecosystem, DEFAULT_CANDIDATES)
+          # @spec PROJECT-READINESS-002 @spec POLYGLOT-TEST-003
+          Prompts::LanguageCommands.test_languages(project).flat_map do |language|
+            TEST_DIR_CANDIDATES.fetch(language, DEFAULT_CANDIDATES)
+          end.uniq
         end
 
         def test_directory?

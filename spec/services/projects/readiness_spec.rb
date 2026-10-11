@@ -3,10 +3,10 @@
 require "rails_helper"
 require "tmpdir"
 
-# @spec PROJECT-READINESS-001, PROJECT-READINESS-002, PROJECT-READINESS-003, PROJECT-READINESS-004
+# @spec PROJECT-READINESS-001, PROJECT-READINESS-002, PROJECT-READINESS-003, PROJECT-READINESS-004, POLYGLOT-TEST-003
 RSpec.describe Projects::Readiness do
-  def evaluate(tdd_mode:, language:, fixture: nil, files: [], directories: [])
-    project = build(:project, tdd_mode:, primary_language: language)
+  def evaluate(tdd_mode:, language:, repo_profile: {}, fixture: nil, files: [], directories: [])
+    project = build(:project, tdd_mode:, primary_language: language, repo_profile:)
 
     if fixture
       described_class.call(project:, repo_path: fixture)
@@ -68,6 +68,18 @@ RSpec.describe Projects::Readiness do
       result = evaluate(
         tdd_mode: "non_strict",
         language: "Python",
+        directories: [ ".github/workflows", "tests" ],
+        files: [ ".github/workflows/test.yml" ]
+      )
+
+      expect(result).to be_satisfied
+    end
+
+    it "uses configured test languages when checking test directories" do
+      result = evaluate(
+        tdd_mode: "strict",
+        language: "Ruby",
+        repo_profile: { "test_languages" => [ "python" ] },
         directories: [ ".github/workflows", "tests" ],
         files: [ ".github/workflows/test.yml" ]
       )
