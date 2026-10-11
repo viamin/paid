@@ -12,9 +12,9 @@ bundle exec rspec spec/lib/committee/drivers_mobile_inbox_contract_spec.rb
 npx --yes @stoplight/spectral-cli@6.15.0 lint --fail-severity error docs/api/openapi.yaml
 ```
 
-Committee validates mobile request and response bodies in the test
-environment through `config/initializers/committee.rb`. It deliberately is
-not production middleware.
+Committee validates mobile request and response bodies through
+`config/initializers/committee.rb`: failures raise in test and warn without
+interrupting requests in development and production.
 
 To check Swift generation, copy the schema into the iOS package's configured
 OpenAPI input and run its package plugin:

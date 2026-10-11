@@ -214,7 +214,8 @@
   *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI Schemathesis job).
   *Code:* `.github/workflows` Schemathesis job.
 
-- [x] **MOBILE-API-019** — The OpenAPI document SHALL carry the SSE event
+- [D] **MOBILE-API-019** — When the chat routes in MOBILE-API-011 through
+  MOBILE-API-014 land, the OpenAPI document SHALL carry the SSE event
   catalog as an `x-sse-events` schema extension on the send and resolve
   operations, enumerating each event name from the CHAT-API catalog
   (`message_start`, `message_chunk`, `message_created`,
