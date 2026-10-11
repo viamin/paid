@@ -20,9 +20,13 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
       ledger = File.join(dir, "ledger.jsonl")
       cases = complete_corpus_cases
       File.write(manifest, { "cases" => cases }.to_yaml)
-      File.write(ledger, complete_ledger_events(cases, manifest).map { |event| JSON.generate(event) }.join("\n"))
+      manifest_commit = commit_fixture_file(dir, manifest, "freeze corpus manifest")
+      complete_ledger_events(cases, manifest, manifest_commit).each do |event|
+        File.open(ledger, "a") { |file| file.puts(JSON.generate(event)) }
+        commit_fixture_file(dir, ledger, "append #{event.fetch("event_id")}")
+      end
 
-      stdout, stderr, status = run_cli("compile", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit)
+      stdout, stderr, status = run_cli("compile", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", manifest_commit)
 
       expect(status.exitstatus).to eq(0), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(stdout).to include("| Review cost | 100 cents | shadow_run |")
@@ -122,8 +126,8 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
     end
   end
 
-  def complete_ledger_events(cases, manifest)
-    base = { "manifest_commit" => commit, "manifest_digest" => Digest::SHA256.file(manifest).hexdigest }
+  def complete_ledger_events(cases, manifest, manifest_commit)
+    base = { "manifest_commit" => manifest_commit, "manifest_digest" => Digest::SHA256.file(manifest).hexdigest }
     freeze = base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b], "recorded_at" => "2026-10-10T08:00:00Z")
     adjudications = cases.flat_map { |corpus_case| adjudications_for(base, corpus_case) }
     runs = cases.map { |corpus_case| shadow_run_for(base, corpus_case) }
@@ -158,5 +162,20 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
 
   def run_cli(*args)
     Open3.capture3("ruby", script_path, *args)
+  end
+
+  def commit_fixture_file(directory, path, message)
+    run_git(directory, "init") unless File.exist?(File.join(directory, ".git"))
+    run_git(directory, "add", path)
+    run_git(directory, "-c", "user.name=Spec User", "-c", "user.email=spec@example.test", "commit", "-m", message)
+    stdout, = run_git(directory, "rev-parse", "HEAD")
+    stdout.strip
+  end
+
+  def run_git(directory, *args)
+    stdout, stderr, status = Open3.capture3("git", "-C", directory, *args)
+    raise "git fixture setup failed: #{stderr}" unless status.success?
+
+    [ stdout, stderr, status ]
   end
 end

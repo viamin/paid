@@ -20,15 +20,22 @@ RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
   after { [ manifest, ledger ].each { |path| File.delete(path) if File.exist?(path) } }
 
   it "computes false alarms, missed material drift, and review cost across an agreeing pair and a tie-broken pair" do
-    cases = complete_corpus_cases
-    File.write(manifest, { "cases" => cases }.to_yaml)
-    File.write(ledger, complete_corpus_events(cases).map { |event| JSON.generate(event) }.join("\n"))
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      event_base = { "manifest_commit" => manifest_commit, "manifest_digest" => IntentConformance::ShadowEvaluationLedger.manifest_digest(manifest_path) }
 
-    worksheet = described_class.compile(manifest_path: manifest, ledger_path: ledger, manifest_commit: commit)
+      record_events_in_separate_commits(dir, ledger_path, complete_corpus_events(cases, event_base))
 
-    expect(worksheet).to include("| False alarms | 0.0% (0 / 10) | adjudication + shadow_run |")
-    expect(worksheet).to include("| Missed material drift | 10.0% (1 / 10) | adjudication + shadow_run |")
-    expect(worksheet).to include("| Review cost | 150 cents | shadow_run |")
+      worksheet = described_class.compile(manifest_path:, ledger_path:, manifest_commit:)
+
+      expect(worksheet).to include("| False alarms | 0.0% (0 / 10) | adjudication + shadow_run |")
+      expect(worksheet).to include("| Missed material drift | 10.0% (1 / 10) | adjudication + shadow_run |")
+      expect(worksheet).to include("| Review cost | 150 cents | shadow_run |")
+    end
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-003
@@ -93,22 +100,22 @@ RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
     [ *accepted, *drifted, *uncertain ]
   end
 
-  def complete_corpus_events(cases)
-    freeze = base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b op-c], "recorded_at" => "2026-10-10T08:00:00Z")
-    adjudications = cases.flat_map { |corpus_case| adjudications_for(corpus_case) }
-    runs = cases.map { |corpus_case| shadow_run_for(corpus_case) }
+  def complete_corpus_events(cases, event_base = base_event)
+    freeze = event_base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b op-c], "recorded_at" => "2026-10-10T08:00:00Z")
+    adjudications = cases.flat_map { |corpus_case| adjudications_for(corpus_case, event_base) }
+    runs = cases.map { |corpus_case| shadow_run_for(corpus_case, event_base) }
     [ freeze, *adjudications, *runs ]
   end
 
-  def adjudications_for(corpus_case)
+  def adjudications_for(corpus_case, event_base = base_event)
     verdict = corpus_case.fetch("id") == "A-02" ? "material_drift" : human_verdict_for(corpus_case)
     %w[op-a op-b].map do |operator|
-      base_event.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-#{operator}", "case_id" => corpus_case.fetch("id"), "operator" => operator, "verdict" => verdict, "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z")
+      event_base.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-#{operator}", "case_id" => corpus_case.fetch("id"), "operator" => operator, "verdict" => verdict, "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z")
     end
   end
 
-  def shadow_run_for(corpus_case)
-    base_event.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => reviewer_verdict_for(corpus_case), "cost_cents" => { "A-01" => 100, "A-02" => 50 }.fetch(corpus_case.fetch("id"), 0), "recorded_at" => "2026-10-10T09:00:00Z")
+  def shadow_run_for(corpus_case, event_base = base_event)
+    event_base.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => reviewer_verdict_for(corpus_case), "cost_cents" => { "A-01" => 100, "A-02" => 50 }.fetch(corpus_case.fetch("id"), 0), "recorded_at" => "2026-10-10T09:00:00Z")
   end
 
   def human_verdict_for(corpus_case)
@@ -119,5 +126,11 @@ RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
     return "within_scope" if %w[A-01 A-02].include?(corpus_case.fetch("id"))
 
     corpus_case.fetch("stratum") == "intentionally_drifted" ? "material_drift" : human_verdict_for(corpus_case) == "accepted" ? "within_scope" : "uncertain"
+  end
+
+  def record_events_in_separate_commits(dir, path, events)
+    first_event, *remaining_events = events
+    git_write!(dir, path, "#{JSON.generate(first_event)}\n", "record #{first_event.fetch("event_id")}")
+    remaining_events.each { |event| git_append_events!(dir, path, [ event ], "record #{event.fetch("event_id")}") }
   end
 end
