@@ -12,7 +12,12 @@ RSpec.describe Committee::Drivers do
       "/inbox",
       "/inbox/count",
       "/inbox/entries/{entry_id}",
-      "/inbox/entries/{entry_id}/chat"
+      "/inbox/entries/{entry_id}/chat",
+      "/chat/sessions",
+      "/chat/sessions/{id}",
+      "/chat/sessions/{id}/{transition}",
+      "/chat/sessions/{session_id}/messages",
+      "/chat/sessions/{session_id}/messages/{id}/resolve"
     ]
   end
 
@@ -37,7 +42,12 @@ RSpec.describe Committee::Drivers do
       "/inbox" => { "get" => [ "inbox" ] },
       "/inbox/count" => { "get" => [ "inbox" ] },
       "/inbox/entries/{entry_id}" => { "get" => [ "inbox" ] },
-      "/inbox/entries/{entry_id}/chat" => { "post" => [ "chat" ] }
+      "/inbox/entries/{entry_id}/chat" => { "post" => [ "chat" ] },
+      "/chat/sessions" => { "get" => [ "chat" ], "post" => [ "chat" ] },
+      "/chat/sessions/{id}" => { "get" => [ "chat" ], "patch" => [ "chat" ], "delete" => [ "chat" ] },
+      "/chat/sessions/{id}/{transition}" => { "patch" => [ "chat" ] },
+      "/chat/sessions/{session_id}/messages" => { "get" => [ "chat" ], "post" => [ "chat" ] },
+      "/chat/sessions/{session_id}/messages/{id}/resolve" => { "post" => [ "chat" ] }
     }
 
     expect(schema.fetch("paths").keys).to match_array(implemented_paths)
