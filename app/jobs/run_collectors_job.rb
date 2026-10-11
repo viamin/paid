@@ -7,9 +7,10 @@ class RunCollectorsJob < ApplicationJob
   self.notification_subsystem = "knowledge"
 
   # Backstop against a collector run hanging indefinitely on container/git/network
-  # I/O. Inner per-command timeouts are 30s each; 20 minutes leaves ample room for
-  # a full multi-collector run while guaranteeing the job cannot hang forever.
-  self.perform_timeout = 20.minutes.to_i
+  # I/O. A full run executes all collectors serially, so allow enough time for a
+  # large repository while still guaranteeing the job cannot hang forever.
+  # @spec KNOWLEDGE-001
+  self.perform_timeout = 45.minutes.to_i
 
   discard_on ActiveRecord::RecordNotFound
   retry_on Knowledge::ArtifactStore::LockUnavailable, wait: :polynomially_longer, attempts: 5 do |job, error|
