@@ -8,6 +8,38 @@ module Inbox
       new(issue).call
     end
 
+    # Narrows to rows that could plausibly be approval-only blockers before
+    # falling back to Ruby for the full `call` signal check (`APPROVAL_SIGNALS`),
+    # so counting/listing stays a bounded scan instead of one Issue
+    # instantiation per open, ready PR on the account. Shared by
+    # `Inbox::Count` and `Inbox::Availability` so the candidate definition
+    # can't drift between the badge, the filters dialog, and the queue.
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+    def self.candidates(project_ids)
+      Issue
+        .includes(:project)
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: "ready",
+          merge_permission_rejected_at: nil
+        )
+        .where.not(projects: { auto_merge_mode: "off" })
+        .where(candidate_conditions)
+    end
+
+    def self.candidate_conditions
+      Issue.sanitize_sql_array([
+        "issues.labels @> :hold_label::jsonb OR (" \
+          "issues.auto_merge_evaluated_at IS NOT NULL AND " \
+          "issues.auto_merge_blockers IS NOT NULL AND " \
+          "projects.owner_reviewer_login IS NOT NULL)",
+        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
+      ])
+    end
+    private_class_method :candidate_conditions
+
     def initialize(issue)
       @issue = issue
     end

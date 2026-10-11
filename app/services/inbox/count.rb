@@ -59,7 +59,7 @@ module Inbox
       project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
-      merge_approval_candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
+      Inbox::MergeApproval.candidates(project_ids).count { |issue| Inbox::MergeApproval.call(issue).present? }
     end
 
     # Excludes notifications whose subject cannot be projected into a visible
@@ -73,37 +73,6 @@ module Inbox
       Notification.preload_resolved_projects(notifications)
       preload_runner_users(notifications)
       notifications.count { |notification| project_for(notification).present? }
-    end
-
-    # Narrows to rows that could plausibly be approval-only blockers before
-    # falling back to Ruby for the full Inbox::MergeApproval signal check,
-    # so this stays a bounded scan instead of one Issue instantiation per
-    # open, ready PR on the account.
-    def merge_approval_candidates(project_ids)
-      Issue
-        .includes(:project)
-        .where(
-          project_id: project_ids,
-          is_pull_request: true,
-          github_state: "open",
-          pr_review_phase: "ready",
-          merge_permission_rejected_at: nil
-        )
-        .where.not(projects: { auto_merge_mode: "off" })
-        .where(merge_approval_candidate_conditions)
-    end
-
-    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
-    # A structured hold is actionable before the scanner persists a blocker
-    # snapshot and does not depend on a configured owner reviewer.
-    def merge_approval_candidate_conditions
-      Issue.sanitize_sql_array([
-        "issues.labels @> :hold_label::jsonb OR (" \
-          "issues.auto_merge_evaluated_at IS NOT NULL AND " \
-          "issues.auto_merge_blockers IS NOT NULL AND " \
-          "projects.owner_reviewer_login IS NOT NULL)",
-        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
-      ])
     end
 
     # A direct indexed count, unlike merge_approval_count: escalation is a
@@ -134,22 +103,7 @@ module Inbox
       project_ids = visible_project_ids
       return 0 if project_ids.empty?
 
-      intent_conformance_candidates(project_ids).count { |issue| Inbox::IntentConformance.call(issue).present? }
-    end
-
-    def intent_conformance_candidates(project_ids)
-      Issue
-        .includes(:project)
-        .where(
-          project_id: project_ids,
-          is_pull_request: true,
-          github_state: "open",
-          pr_review_phase: "ready",
-          merge_permission_rejected_at: nil
-        )
-        .where.not(auto_merge_evaluated_at: nil)
-        .where.not(auto_merge_blockers: nil)
-        .where.not(projects: { auto_merge_mode: "off" })
+      Inbox::IntentConformance.candidates(project_ids).count { |issue| Inbox::IntentConformance.call(issue).present? }
     end
 
     # A direct indexed count: both abandonment producers (runner-retry-cap and
