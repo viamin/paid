@@ -80,6 +80,98 @@ class GithubClient
     def create_pull_request_comment_reply(...) = nil
   end
 
+  # Explicit no-op result for a label write suppressed by project policy
+  # (Labels::WritePolicy). Callers that report mutation outcomes — audit
+  # events, MCP responses, locally persisted label state — must distinguish
+  # this sentinel from a performed write so they never claim labels that
+  # were not applied. Detect via {GithubClient.label_write_suppressed?}.
+  # @spec LABEL-INTEGRATION-004
+  class LabelWriteSuppressed
+    def self.instance = @instance ||= new.freeze
+
+    def suppressed? = true
+  end
+
+  # Detects a policy-suppressed label write across result shapes: the
+  # {LabelWriteSuppressed} sentinel returned by singular label writes, and
+  # the `suppressed: true` flag carried by suppressed removal hashes (whose
+  # shape callers already destructure).
+  # @spec LABEL-INTEGRATION-004
+  def self.label_write_suppressed?(result)
+    return true if result.is_a?(LabelWriteSuppressed)
+
+    result.is_a?(Hash) && result[:suppressed] == true
+  end
+
+  # Project clients are decorated here rather than at every caller so every
+  # GitHub label mutation shares the same policy gate.
+  class LabelWriteSuppressing < SimpleDelegator
+    def initialize(client, project:)
+      super(client)
+      @project = project
+    end
+
+    def create_label(...) = write_or_suppressed { __getobj__.create_label(...) }
+    def update_label(...) = write_or_suppressed { __getobj__.update_label(...) }
+    def add_labels_to_issue(...) = write_or_suppressed { __getobj__.add_labels_to_issue(...) }
+    def remove_label_from_issue(...) = write_or_suppressed { __getobj__.remove_label_from_issue(...) }
+    def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
+
+    # Issue creation is not itself a label write, so it must survive
+    # suppression — but the create request's `labels:` argument adds labels
+    # in the same POST, so strip it when label writes are suppressed.
+    # @spec LABEL-INTEGRATION-002
+    def create_issue(repo, title:, body: "", labels: [], **options)
+      labels = [] unless labels.blank? || write_allowed?
+      __getobj__.create_issue(repo, title:, body:, labels:, **options)
+    end
+
+    # Updating an issue can replace all of its labels in the same request, so
+    # preserve non-label updates while suppressing that replacement.
+    # @spec LABEL-INTEGRATION-002
+    def update_issue(repo, number, **options)
+      options = options.except(:labels) unless write_allowed?
+      __getobj__.update_issue(repo, number, **options)
+    end
+
+    # Trust-gated MCP mutations may select a fallback credential. Re-wrap it
+    # so that selection cannot escape this project's label-write policy.
+    def trusted_human_mutation_client
+      return self unless __getobj__.respond_to?(:trusted_human_mutation_client)
+
+      selected_client = __getobj__.trusted_human_mutation_client
+      return self if selected_client.equal?(__getobj__)
+
+      self.class.new(selected_client, project:)
+    end
+
+    private
+
+    attr_reader :project
+
+    def write_allowed?
+      Labels::WritePolicy.allowed?(project: project)
+    end
+
+    # Suppressed writes return the explicit {LabelWriteSuppressed} sentinel so
+    # outcome-reporting callers can tell a policy no-op from a performed write.
+    # @spec LABEL-INTEGRATION-004
+    def write_or_suppressed
+      return yield if write_allowed?
+
+      LabelWriteSuppressed.instance
+    end
+
+    # Keeps the removed/failed shape callers already destructure while
+    # flagging the no-op. Detect via {GithubClient.label_write_suppressed?}.
+    # @spec LABEL-INTEGRATION-004
+    def write_or_empty_removal
+      return yield if write_allowed?
+
+      { removed: [], failed: [], suppressed: true }
+    end
+  end
+
   # @spec GITHUB-SYNC-011
   PASS_THROUGH_METHODS = %i[
     repository

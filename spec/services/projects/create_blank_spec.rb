@@ -120,6 +120,25 @@ RSpec.describe Projects::CreateBlank do
       expect(result.bootstrap_issue_url).to eq("https://github.com/octocat/fresh-start/issues/1")
     end
 
+    %w[read_only ignored].each do |mode|
+      it "creates the bootstrap issue without labels when the tenant default is #{mode}" do
+        account.tenant_setting!.update!(default_label_integration_mode: mode)
+        allow(client).to receive(:create_repository).and_return(repo_response)
+
+        result = described_class.call(
+          account: account, user: user, github_token: github_token, repo_name: "fresh-start"
+        )
+
+        expect(client).to have_received(:create_issue).with(
+          "octocat/fresh-start",
+          title: a_string_including("Bootstrap"),
+          body: a_string_including("grill", "Language and framework", "CI"),
+          labels: []
+        )
+        expect(result.bootstrap_issue_url).to eq("https://github.com/octocat/fresh-start/issues/1")
+      end
+    end
+
     it "does not fail project creation when the bootstrap issue cannot be created" do
       allow(client).to receive(:create_repository).and_return(repo_response)
       allow(client).to receive(:create_issue).and_raise(GithubClient::ApiError.new("creation not allowed"))

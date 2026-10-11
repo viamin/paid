@@ -6,6 +6,7 @@ class TenantSetting < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
   has_logidze
   PG_INT_MAX = 2_147_483_647
+  LABEL_INTEGRATION_MODES = Project::LABEL_INTEGRATION_MODES
   BUDGET_TYPES = CostBudget::BUDGET_TYPES
   DEFAULT_RUNNER_PREFERENCES = {
     "model_preferences" => {},
@@ -215,6 +216,7 @@ class TenantSetting < ApplicationRecord
     if: -> { self_repo_full_name.present? }
   validates :docker_host_fallback_behavior, inclusion: { in: DOCKER_HOST_FALLBACK_BEHAVIORS }
   validates :queue_fairness_mode, inclusion: { in: QUEUE_FAIRNESS_MODES }
+  validates :default_label_integration_mode, inclusion: { in: LABEL_INTEGRATION_MODES }
 
   def provider_preferences = runner_preferences
 
