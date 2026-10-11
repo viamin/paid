@@ -235,14 +235,14 @@ indistinguishable by design.
 
 | Method & path | Delegates to | Notes |
 |---|---|---|
-| `GET /api/v1/chat_sessions` | `ChatSessionsController#index` semantics (`session_scope`, `archived` filter) | Payload mirrors `session_json`. |
-| `POST /api/v1/chat_sessions` | `ChatSessions::Create` | Mobile v1 requests are inline-only; `container_capability` is not an accepted input. |
-| `GET /api/v1/chat_sessions/:id` | `ChatSessionsController#show` semantics | |
-| `PATCH /api/v1/chat_sessions/:id` | `ChatSessionsController#update` semantics (title etc.) | |
-| `DELETE /api/v1/chat_sessions/:id` | `ChatSessions::Close` | |
+| `GET /api/v1/chat/sessions` | `ChatSessionsController#index` semantics (`session_scope`, `archived` filter) | Payload mirrors `session_json`. |
+| `POST /api/v1/chat/sessions` | `ChatSessions::Create` | Mobile v1 requests are inline-only; `container_capability` is not an accepted input. |
+| `GET /api/v1/chat/sessions/:id` | `ChatSessionsController#show` semantics | |
+| `PATCH /api/v1/chat/sessions/:id` | `ChatSessionsController#update` semantics (title etc.) | |
+| `DELETE /api/v1/chat/sessions/:id` | `ChatSessions::Close` | |
 | `PATCH …/:id/archive`, `…/unarchive`, `…/reopen` | existing member actions | |
-| `GET /api/v1/chat_sessions/:chat_session_id/messages` | `ChatMessagesController#index` query semantics | Cursor pagination below — `limit` and `next_before` are new mobile shaping, not web reuse. |
-| `POST /api/v1/chat_sessions/:chat_session_id/messages` | `ChatSessions::SendMessage` | JSON default; SSE when `Accept` includes `text/event-stream` (mirror `sse_requested?`). |
+| `GET /api/v1/chat/sessions/:chat_session_id/messages` | `ChatMessagesController#index` query semantics | Cursor pagination below — `limit` and `next_before` are new mobile shaping, not web reuse. |
+| `POST /api/v1/chat/sessions/:chat_session_id/messages` | `ChatSessions::SendMessage` | JSON default; SSE when `Accept` includes `text/event-stream` (mirror `sse_requested?`). |
 | `POST …/messages/:message_id/resolve` | `ChatSessions::ResolveToolCall` | `{ "decision": "approve" \| "deny" }`; same `Accept` negotiation. |
 
 **Message payloads mirror `message_json`** (`id`, `external_id`, `role`,
@@ -269,6 +269,13 @@ frames with a boolean `has_more` — `older_messages` on message id,
 `sidebar_page` on `before_updated_at`/`before_id` — not a cursor field).
 The implementation issues add this envelope to the mobile controller; the
 web endpoints stay unchanged.
+
+**SSE transport.** Bearer authentication completes before an SSE response is
+committed. Streams retain `Cache-Control: no-cache` and
+`X-Accel-Buffering: no` for the Kamal/proxy path. The existing CHAT-API event
+catalog has no synthetic heartbeat event; native clients use normal
+URLSession timeout/reconnect handling and receive events whenever the agent
+produces them.
 
 ## Error Taxonomy
 
