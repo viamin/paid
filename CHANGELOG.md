@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.14.0](https://github.com/viamin/paid/compare/v1.13.0...v1.14.0) (2026-10-11)
+
+
+### Features
+
+* Add per-project quiet mode: suppress all issue/PR comments, keep PR description updates ([#4247](https://github.com/viamin/paid/issues/4247)) ([fd78f36](https://github.com/viamin/paid/commit/fd78f363d55d86fd3e8390d18e100f8f02b1f746))
+* epic: Remove Duplicated API Execution Mechanics (RDR-072) ([#4229](https://github.com/viamin/paid/issues/4229)) ([24e4ee6](https://github.com/viamin/paid/commit/24e4ee6d6cbcfa42b1d760e50272bf4579278886))
+* **inbox:** add test_review_pending lane for TDD test-review-gated draft PRs ([#4214](https://github.com/viamin/paid/issues/4214)) ([a787bda](https://github.com/viamin/paid/commit/a787bdaedbf881ba09d5f81b6cc413719d4d559d))
+* **intent-conformance:** run blinded shadow-mode evaluation ([#4233](https://github.com/viamin/paid/issues/4233)) ([a0efb23](https://github.com/viamin/paid/commit/a0efb23f23d29368d4b0d2d19209823bd111d52a))
+* Issue priority label changes are not propagated to linked pull requests ([#4277](https://github.com/viamin/paid/issues/4277)) ([beda757](https://github.com/viamin/paid/commit/beda757434618f11a91e6286b5224fc36e8e76fe))
+* Mobile API: inbox endpoints (entries, count, detail, open-chat) ([#4248](https://github.com/viamin/paid/issues/4248)) ([77e70ed](https://github.com/viamin/paid/commit/77e70ed54e5254b0369c72a835961b83fe915509))
+* Mobile API: LID design segment (HLD + docs/intent/mobile-api/ LLD & EARS) ([#4246](https://github.com/viamin/paid/issues/4246)) ([2a95644](https://github.com/viamin/paid/commit/2a95644cc9199903d7f6d1947a1f3827a447ec2f))
+* RDR-066: implement feature intent approval lifecycle ([#4230](https://github.com/viamin/paid/issues/4230)) ([378acf4](https://github.com/viamin/paid/commit/378acf45fb47c4f5ff8632aa131659edb2657227))
+
+
+### Bug Fixes
+
+* Chat: garbled/duplicated streaming fragment lingers at end of transcript and corrupts "Jump to latest" anchor ([#4244](https://github.com/viamin/paid/issues/4244)) ([4a54800](https://github.com/viamin/paid/commit/4a548006f6cc64ccf2ce2120e25563891318f822))
+* **chat:** decouple total request deadline from the read-inactivity deadline ([#4218](https://github.com/viamin/paid/issues/4218)) ([f09e31f](https://github.com/viamin/paid/commit/f09e31f326536dd9ddeb18d2efcfda4b47352a1d))
+* **chat:** orphaned streaming bubbles leave garbled partial text at the transcript tail and hijack "Jump to latest" ([#4243](https://github.com/viamin/paid/issues/4243)) ([758b43a](https://github.com/viamin/paid/commit/758b43a01926d5ca0703ff8d238943e4d0c05961))
+* **chat:** provider rate limits (e.g. MiniMax 429) surface as unclassified errors and never pause the session ([#4219](https://github.com/viamin/paid/issues/4219)) ([fc53703](https://github.com/viamin/paid/commit/fc5370341b70aef7d7ce8296ca871a631003d92f))
+* Failed manual agent runs with no issue/PR attachment are never retried ([#4228](https://github.com/viamin/paid/issues/4228)) ([2499656](https://github.com/viamin/paid/commit/249965666ff094b83a7c2c6ee5318a0916646391))
+* human_led_feature_factory profile flips tenant-wide agent_auto_continue; auto-continue is core mechanics, not a human-led concern ([#4245](https://github.com/viamin/paid/issues/4245)) ([81794ec](https://github.com/viamin/paid/commit/81794ece585884d7734248b9108b8dec5d0fd658))
+* **inbox:** show human-review items when project auto-pick is disabled ([#4227](https://github.com/viamin/paid/issues/4227)) ([3f65c8d](https://github.com/viamin/paid/commit/3f65c8de20e20099c26d1f59ecfd0dd268c25dac))
+* Investigate recurrent CodeQL alert [#1838](https://github.com/viamin/paid/issues/1838) before further remediation ([#4234](https://github.com/viamin/paid/issues/4234)) ([377797d](https://github.com/viamin/paid/commit/377797dd4474d782b7686a3346ff352547bac5f8))
+* Mobile API: PAT bearer auth (token model, bearer resolution, settings UI) ([#4250](https://github.com/viamin/paid/issues/4250)) ([5a2843a](https://github.com/viamin/paid/commit/5a2843a0a63914b22a7fb11fdbf2226e1a4b7656))
+* **partial-closeouts:** investigate and advance agent-actionable work before escalating to Inbox ([#4242](https://github.com/viamin/paid/issues/4242)) ([8e84a37](https://github.com/viamin/paid/commit/8e84a37a57a74f8c2045716a5650b65b77efc520))
+
 ## [1.13.0](https://github.com/viamin/paid/compare/v1.12.0...v1.13.0) (2026-10-10)
 
 
