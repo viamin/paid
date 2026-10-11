@@ -227,6 +227,33 @@ RSpec.describe RunCollectorsJob do
           data: hash_including(subsystem: "knowledge", project_id: project.id)
         )
       end
+
+      # @spec KNOWLEDGE-001
+      # Reproduces the production timing gap directly on #mark_terminal_lock_failure:
+      # by the time retry_on's exhaustion block runs, ApplicationJob's
+      # around_perform has already unwound with_tenant_context, restoring the DB
+      # session to no account/no bypass (TenantContext#with's ensure). The
+      # :tenant_isolation tag opts this example out of rails_helper's blanket
+      # system-access wrap so that gap isn't masked by the test harness.
+      it "bypasses RLS for the project lookup even with no surrounding tenant context", :tenant_isolation do
+        job = described_class.new(project.id, commit_sha)
+        bypass_during_lookup = nil
+        allow(Project).to receive(:find_by).and_wrap_original do |method, *args, **kwargs|
+          bypass_during_lookup = current_bypass_setting
+          method.call(*args, **kwargs)
+        end
+
+        bypass_before = current_bypass_setting
+        job.send(:mark_terminal_lock_failure)
+
+        expect(bypass_during_lookup).to eq("true")
+        expect(current_bypass_setting).to eq(bypass_before)
+        expect(project.reload.knowledge_status).to eq("failed")
+      end
     end
+  end
+
+  def current_bypass_setting
+    ActiveRecord::Base.connection.select_value("SELECT current_setting('paid.bypass_tenant_rls', true)")
   end
 end

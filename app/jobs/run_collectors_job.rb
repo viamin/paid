@@ -34,7 +34,9 @@ class RunCollectorsJob < ApplicationJob
   # handler, so exhaustion must set the terminal status and report explicitly.
   # @spec KNOWLEDGE-001 EXCEPTION-NOTIFY-003
   def mark_terminal_lock_failure
-    mark_knowledge_collection_failed(Project.find_by(id: notification_project_id))
+    TenantContext.with_system_access do
+      mark_knowledge_collection_failed(Project.find_by(id: notification_project_id))
+    end
   end
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil)
