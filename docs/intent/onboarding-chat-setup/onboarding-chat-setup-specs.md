@@ -1,24 +1,27 @@
 # EARS Specs: Onboarding Chat-Led Setup
 
-Status: `[ ]` planned; no implementation is claimed by these specs. Tracked by
-umbrella issue #4280; phase issues #4281 (chat bootstrap) and #4282
-(onboarding chat tools) implement the claims below and flip their markers to
-`[x]` as each ships, with tests and code references added at that point.
+Status: implementation is shown per claim. This segment is tracked by umbrella
+issue #4280; phase issues #4281 (chat bootstrap) and #4282 (onboarding chat
+tools) implement the claims below, with tests and code references added as
+each ships.
 
-- [ ] **ONBOARD-CHAT-001** — When a new account reaches the chat-capable-key
+- [x] **ONBOARD-CHAT-001** — When a new account reaches the chat-capable-key
   onboarding step, Paid SHALL present the provider options enumerated from
   `RunnerSupport::API_SERVICE_TYPES` (including OpenRouter's free-model
   option) rather than a separately maintained, divergent list, with one-line
   guidance per option so the user can choose without asking.
-- [ ] **ONBOARD-CHAT-002** — When a user submits a provider API key during
+- [x] **ONBOARD-CHAT-002** — When a user submits a provider API key during
   onboarding, Paid SHALL create a `ProviderApiKey`, a chat-enabled API-key
   `Runner` matching the chosen service type (including the OpenRouter
   direct-outbound free-model policy), and a `ChatSession` bound to that
   runner in one transactional step, and SHALL redirect the user into that
   chat session rather than back to a form.
-- [ ] **ONBOARD-CHAT-003** — When key creation fails validation (e.g. a
+- [x] **ONBOARD-CHAT-003** — When key creation fails validation (e.g. a
   401/403 from the provider), Paid SHALL surface a friendly retry without
-  losing the user's place in the onboarding step.
+  losing the user's place in the onboarding step. Paid SHALL use the
+  `agent_harness` proxy-health check with the submitted key before persisting
+  service types with a checkable fixed runner, and SHALL queue the
+  harness-backed runner-runtime validation for the remaining service types.
 - [x] **ONBOARD-CHAT-004** — When an onboarding chat session is active and
   setup is incomplete, `ChatSessions::BuildSystemPrompt` SHALL inject a
   setup-interview persona that asks what tools the user uses (agent-run

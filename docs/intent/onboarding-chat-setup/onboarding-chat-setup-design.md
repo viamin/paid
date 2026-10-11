@@ -6,9 +6,9 @@ prefix: ONBOARD-CHAT
 # Low-Level Design: Onboarding Chat-Led Setup
 
 > Companion to the high-level design (`docs/high-level-design.md`). This
-> segment records the planned chat-led onboarding flow tracked by the umbrella
-> issue #4280. No implementation is claimed by this document; see
-> `onboarding-chat-setup-specs.md` for per-claim status.
+> segment records the chat-led onboarding flow tracked by the umbrella issue
+> #4280. See `onboarding-chat-setup-specs.md` for per-claim implementation
+> status.
 
 ## Purpose
 
@@ -74,9 +74,13 @@ infrastructure:
 
 Tracked under the umbrella (#4280):
 
-- **Phase 0 — chat bootstrap** (#4281): the `chat_api_key` onboarding step,
-  `Onboarding::ConfigureChatRunner`, key validation, and the chat handoff that
-  gets a fresh account from "no key" to "chatting."
+- **Phase 0 — chat bootstrap** (#4281): shipped the `chat_api_key` onboarding
+  step, `Onboarding::ConfigureChatRunner`, credential validation, and chat
+  handoff. The service uses the shared runner/service-type contracts, creates
+  the credential, runner, welcome chat, and shared step metadata in one
+  transaction. It rejects authentication failures from synchronous
+  proxy-health checks before writing records and queues the same harness-backed
+  check for providers that require a runner runtime.
 - **Phases 1–3 — onboarding chat tools and persona** (#4282): read tools
   (`get_onboarding_status`, `list_runners`, `get_account_capabilities`), write
   tools (`create_runner`, `create_tracker_configuration`, `create_project`,
