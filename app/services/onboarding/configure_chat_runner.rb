@@ -10,6 +10,7 @@ module Onboarding
     Result = Data.define(:provider_api_key, :runner, :chat_session)
     WELCOME_TITLE = "Welcome to Paid — let's set you up"
     HEALTH_CHECK_TIMEOUT = 15
+    ASYNC_RETRY_MESSAGE = "That API key was rejected. Please try another key."
 
     def self.call(...)
       new(...).call

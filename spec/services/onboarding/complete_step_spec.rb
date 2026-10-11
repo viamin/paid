@@ -28,7 +28,7 @@ RSpec.describe Onboarding::CompleteStep do
     it "advances the next step to in_progress" do
       described_class.call(account: account, step: "account_profile")
 
-      next_step = account.onboarding_steps.find_by(step: "github_token")
+      next_step = account.onboarding_steps.find_by(step: "chat_api_key")
       expect(next_step.status).to eq("in_progress")
     end
 

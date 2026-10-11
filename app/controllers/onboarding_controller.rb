@@ -8,6 +8,7 @@ class OnboardingController < ApplicationController
   def show
     @current_step = current_account.current_onboarding_step
     redirect_to dashboard_path if @current_step.nil?
+    flash.now[:alert] = Onboarding::ConfigureChatRunner::ASYNC_RETRY_MESSAGE if params[:chat_api_key_error] == "invalid"
     prepare_default_posture if @current_step&.step == "configure_defaults"
   end
 

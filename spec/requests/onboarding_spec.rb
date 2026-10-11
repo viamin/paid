@@ -57,6 +57,16 @@ RSpec.describe "Onboarding" do
         selected_provider = document.at_css('select[name="chat_api_key[api_service_type]"] option[selected]')
         expect(selected_provider["value"]).to eq("openrouter")
       end
+
+      # @spec ONBOARD-CHAT-003
+      it "shows the API-key retry form after asynchronous validation rejects a key" do
+        Onboarding::CompleteStep.call(account: account, step: "account_profile")
+
+        get onboarding_path, params: { chat_api_key_error: "invalid" }
+
+        expect(response.body).to include("That API key was rejected. Please try another key.")
+        expect(response.body).to include('name="chat_api_key[api_key]"')
+      end
     end
   end
 
@@ -250,7 +260,7 @@ RSpec.describe "Onboarding" do
   describe "POST /onboarding/skip" do
     before do
       sign_in user
-      %w[account_profile github_token first_project].each do |step|
+      %w[account_profile chat_api_key github_token first_project integrations].each do |step|
         Onboarding::CompleteStep.call(account: account, step: step)
       end
     end

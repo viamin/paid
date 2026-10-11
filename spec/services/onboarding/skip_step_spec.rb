@@ -8,7 +8,7 @@ RSpec.describe Onboarding::SkipStep do
   before do
     Onboarding::StartOnboarding.call(account: account)
     # Complete steps up to configure_defaults
-    %w[account_profile github_token first_project].each do |step|
+    %w[account_profile chat_api_key github_token first_project integrations].each do |step|
       Onboarding::CompleteStep.call(account: account, step: step)
     end
   end

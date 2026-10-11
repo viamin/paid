@@ -66,7 +66,18 @@ module Onboarding
     end
 
     def destroy_welcome_sessions(runner)
-      runner.chat_sessions.where("metadata @> ?", { onboarding: true }.to_json).find_each(&:destroy!)
+      runner.chat_sessions.where("metadata @> ?", { onboarding: true }.to_json).find_each do |session|
+        broadcast_retry(session)
+        session.destroy!
+      end
+    end
+
+    def broadcast_retry(session)
+      ActionCable.server.broadcast("chat_session:#{session.id}", {
+        type: "onboarding_retry",
+        message: ConfigureChatRunner::ASYNC_RETRY_MESSAGE,
+        redirect_url: Rails.application.routes.url_helpers.onboarding_path(chat_api_key_error: "invalid")
+      })
     end
 
     def restore_onboarding_step(step)

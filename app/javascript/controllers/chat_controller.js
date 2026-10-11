@@ -269,6 +269,9 @@ export default class extends Controller {
     case "capability_changed":
       this.handleCapabilityChanged(data)
       break
+    case "onboarding_retry":
+      this.handleOnboardingRetry(data)
+      break
     case "error":
       this.handleError(data)
       break
@@ -409,6 +412,11 @@ export default class extends Controller {
     // message_created broadcast, so restoring here would duplicate it.
     if (data.limit_type) this.restorePendingContent()
     this.setStatus(data.message || "An unexpected error occurred")
+  }
+
+  handleOnboardingRetry(data) {
+    this.setStatus(data.message)
+    if (data.redirect_url) window.location.assign(data.redirect_url)
   }
 
   // Puts the rejected turn's text back into the input (e.g. after a

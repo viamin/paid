@@ -472,6 +472,32 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec ONBOARD-CHAT-003 — An asynchronously rejected key returns the
+    // user to the still-active onboarding retry form before the session closes.
+    function testOnboardingRetryRedirectsToTheApiKeyForm() {
+      const originalWindow = globalThis.window;
+      let redirectedTo = null;
+      globalThis.window = { location: { assign: (url) => { redirectedTo = url; } } };
+
+      try {
+        const { controller, statusMessages } = makeController();
+        controller.handleEvent({
+          type: "onboarding_retry",
+          message: "That API key was rejected. Please try another key.",
+          redirect_url: "/onboarding?chat_api_key_error=invalid"
+        });
+
+        if (redirectedTo !== "/onboarding?chat_api_key_error=invalid") {
+          throw new Error(`Expected onboarding retry redirect, got ${redirectedTo}`);
+        }
+        if (statusMessages[statusMessages.length - 1] !== "That API key was rejected. Please try another key.") {
+          throw new Error("Expected onboarding retry to surface its failure message");
+        }
+      } finally {
+        globalThis.window = originalWindow;
+      }
+    }
+
     function testFallbackNoticeRemovesStaleToolCards() {
       const removed = [];
       const { controller, appended } = makeController({
@@ -1829,6 +1855,7 @@ class ChatControllerNodeHarness
       testToolConfirmationClearsPendingContent();
       testToolEventsDoNotResetStreamingBeforeComplete();
       testHandleEventDispatchesToolCall();
+      testOnboardingRetryRedirectsToTheApiKeyForm();
       testFallbackNoticeRemovesStaleToolCards();
       testFallbackNoticeKeepsStreamActiveForReplacementChunks();
       testRegularMessageCreatedKeepsAttemptToolCards();

@@ -28,7 +28,11 @@ RSpec.describe Onboarding::ValidateChatApiKeyJob do
     )
     result.runner.update!(tier_model_ids: { "high" => free_model.model_id })
 
+    allow(ActionCable.server).to receive(:broadcast).and_call_original
+
     described_class.perform_now(result.runner.id)
+
+    expect_retry_broadcast_for(result.chat_session)
 
     expect { result.provider_api_key.reload }.to raise_error(ActiveRecord::RecordNotFound)
     expect { result.runner.reload }.to raise_error(ActiveRecord::RecordNotFound)
@@ -59,5 +63,18 @@ RSpec.describe Onboarding::ValidateChatApiKeyJob do
     )
     expect { result.provider_api_key.reload }.to raise_error(ActiveRecord::RecordNotFound)
     expect(account.onboarding_steps.find_by(step: "chat_api_key")).to be_in_progress
+  end
+
+  private
+
+  def expect_retry_broadcast_for(chat_session)
+    expect(ActionCable.server).to have_received(:broadcast).with(
+      "chat_session:#{chat_session.id}",
+      hash_including(
+        type: "onboarding_retry",
+        message: "That API key was rejected. Please try another key.",
+        redirect_url: "/onboarding?chat_api_key_error=invalid"
+      )
+    )
   end
 end
