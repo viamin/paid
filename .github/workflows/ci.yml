@@ -396,6 +396,236 @@ jobs:
       - name: Run query performance benchmarks
         run: COVERAGE=false bin/rspec spec/performance
 
+  # @spec MOBILE-API-017
+  pact-provider-verification:
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_DEVELOPMENT_DATABASE: paid_test
+      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
+      PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
+      PACT_BROKER_BASE_URL: ${{ vars.PACT_BROKER_BASE_URL }}
+      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
+      - name: Create mobile API bearer token
+        run: |
+          bundle exec rails runner -e test '
+            TenantContext.with_system_access do
+              account = Account.create!(name: "Mobile contract verification")
+              user = User.create!(
+                account: account,
+                name: "Mobile contract verifier",
+                email: "mobile-contract-verifier@example.test",
+                password: "password123",
+                password_confirmation: "password123"
+              )
+              token = PersonalAccessToken.create_for!(user: user, name: "CI")
+              File.open(ENV.fetch("GITHUB_ENV"), "a") { |file| file.puts("MOBILE_API_TOKEN=#{token.plaintext_token}") }
+            end
+          '
+
+      - name: Start Rails server
+        run: |
+          bundle exec rails server -e test -b 127.0.0.1 -p 3000 > log/mobile-api-contract.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error http://127.0.0.1:3000/up && exit 0
+            sleep 1
+          done
+          cat log/mobile-api-contract.log
+          exit 1
+
+      - name: Verify mobile consumer Pact
+        run: |
+          test -n "$PACT_BROKER_BASE_URL" || {
+            echo "::error::PACT_BROKER_BASE_URL repository variable is required for mobile provider verification"
+            exit 1
+          }
+          bundle exec pact-provider-verifier \
+            --provider-base-url=http://127.0.0.1:3000 \
+            --provider=paid-mobile-api \
+            --consumer-version-tag=main \
+            --custom-provider-header="Authorization: Bearer $MOBILE_API_TOKEN" \
+            --fail-if-no-pacts-found
+
+  # @spec MOBILE-API-018
+  schemathesis:
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_DEVELOPMENT_DATABASE: paid_test
+      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
+      PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
+      - name: Create mobile API bearer token
+        run: |
+          bundle exec rails runner -e test '
+            TenantContext.with_system_access do
+              account = Account.create!(name: "Mobile schema fuzzing")
+              user = User.create!(
+                account: account,
+                name: "Mobile schema fuzzer",
+                email: "mobile-schema-fuzzer@example.test",
+                password: "password123",
+                password_confirmation: "password123"
+              )
+              token = PersonalAccessToken.create_for!(user: user, name: "CI")
+              File.open(ENV.fetch("GITHUB_ENV"), "a") { |file| file.puts("MOBILE_API_TOKEN=#{token.plaintext_token}") }
+            end
+          '
+
+      - name: Start Rails server
+        run: |
+          bundle exec rails server -e test -b 127.0.0.1 -p 3000 > log/mobile-api-contract.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error http://127.0.0.1:3000/up && exit 0
+            sleep 1
+          done
+          cat log/mobile-api-contract.log
+          exit 1
+
+      - name: Fuzz mobile API contract
+        run: |
+          pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+            --url http://127.0.0.1:3000/api/v1 \
+            --header "Authorization: Bearer $MOBILE_API_TOKEN" \
+            --include-method GET \
+            --include-path /inbox \
+            --include-path /inbox/count \
+            docs/api/openapi.yaml
+          pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+            --url http://127.0.0.1:3000/api/v1 \
+            --header "Authorization: Bearer $MOBILE_API_TOKEN" \
+            --include-path-regex '^/inbox/entries/[^/]+/chat$' \
+            --exclude-operation-id sendChatMessage \
+            --exclude-operation-id resolveToolCall \
+            docs/api/openapi.yaml
+
   migrations:
     if: >-
       github.event_name != 'pull_request'

@@ -94,4 +94,49 @@ RSpec.describe CiWorkflowFile, :no_db do
       "persist-credentials" => false
     )
   end
+
+  # @spec MOBILE-API-017 MOBILE-API-018
+  it "prepares a Rails app for mobile contract verification" do
+    contract_jobs.each do |job|
+      expect(job.fetch("env")).to include("RAILS_ENV" => "test")
+      expect(job_steps(job)).to include("Set up database", "Create mobile API bearer token", "Start Rails server")
+    end
+  end
+
+  # @spec MOBILE-API-017
+  it "verifies the mobile consumer Pact" do
+    expect(step_run(pact_job, "Verify mobile consumer Pact")).to include(
+      "pact-provider-verifier", "--provider-base-url=http://127.0.0.1:3000", "--fail-if-no-pacts-found"
+    )
+  end
+
+  # @spec MOBILE-API-018
+  it "fuzzes safe mobile API operations without sending chat messages" do
+    expect(step_run(schemathesis_job, "Fuzz mobile API contract")).to include(
+      "schemathesis==4.6.0", "--include-method GET", "--exclude-operation-id sendChatMessage",
+      "--exclude-operation-id resolveToolCall"
+    )
+  end
+
+  private
+
+  def contract_jobs
+    [ pact_job, schemathesis_job ]
+  end
+
+  def pact_job
+    workflow.fetch("jobs").fetch("pact-provider-verification")
+  end
+
+  def schemathesis_job
+    workflow.fetch("jobs").fetch("schemathesis")
+  end
+
+  def job_steps(job)
+    job.fetch("steps").map { |step| step["name"] }
+  end
+
+  def step_run(job, name)
+    job.fetch("steps").find { |step| step["name"] == name }.fetch("run")
+  end
 end

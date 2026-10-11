@@ -198,18 +198,18 @@
   *Tests:* `spec/requests/api/v1/*` (behind committee middleware).
   *Code:* `config/initializers/committee.rb`, `docs/api/openapi.yaml`.
 
-- [ ] **MOBILE-API-017** — CI SHALL verify the mobile consumer Pact against
+- [x] **MOBILE-API-017** — CI SHALL verify the mobile consumer Pact against
   the running app with provider responses validated against the same
   `openapi.yaml`, so Pact verification and schema validation cannot drift
   apart.
-  *Tests:* `spec/pact/providers/*` (CI job).
+  *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI job).
   *Code:* `.github/workflows` Pact job.
 
-- [ ] **MOBILE-API-018** — CI SHALL run Schemathesis fuzzing against the
+- [x] **MOBILE-API-018** — CI SHALL run Schemathesis fuzzing against the
   running app from `openapi.yaml`: full property-based fuzzing on read
   endpoints and request-conformance checks on mutation endpoints without
   executing real chat sends.
-  *Tests:* CI Schemathesis job.
+  *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI Schemathesis job).
   *Code:* `.github/workflows` Schemathesis job.
 
 - [x] **MOBILE-API-019** — The OpenAPI document SHALL carry the SSE event
