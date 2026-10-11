@@ -6,7 +6,7 @@
     <div>
       <%= form.label "chat_api_key[api_service_type]", "Provider", class: "block text-sm font-medium leading-6 text-gray-900" %>
       <div class="mt-2">
-        <%= form.select "chat_api_key[api_service_type]", RunnerSupport.api_service_types.map { |service_type, label| ["#{label} — #{onboarding_api_key_guidance(service_type)}", service_type] }, {}, class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
+        <%= form.select "chat_api_key[api_service_type]", RunnerSupport.api_service_types.map { |service_type, label| ["#{label} — #{onboarding_api_key_guidance(service_type)}", service_type] }, { selected: "openrouter" }, class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm" %>
       </div>
     </div>
 

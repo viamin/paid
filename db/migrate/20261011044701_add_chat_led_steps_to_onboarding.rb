@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class AddChatLedStepsToOnboarding < ActiveRecord::Migration[8.1]
+  # @spec ONBOARD-CHAT-001
   STEPS = %w[account_profile chat_api_key github_token first_project integrations configure_defaults].freeze
 
   def up
@@ -11,7 +12,7 @@ class AddChatLedStepsToOnboarding < ActiveRecord::Migration[8.1]
       add_missing_step(account, steps, "chat_api_key", after: "account_profile")
       add_missing_step(account, steps, "integrations", after: "first_project")
       account.onboarding_steps.each { |step| step.update_columns(position: STEPS.index(step.step)) }
-      promote_chat_key_step(account, steps)
+      promote_chat_key_step(steps)
     end
   end
 
@@ -32,12 +33,14 @@ class AddChatLedStepsToOnboarding < ActiveRecord::Migration[8.1]
     steps[name] = account.onboarding_steps.create!(step: name, position: reference.position + 1, status: "pending")
   end
 
-  def promote_chat_key_step(account, steps)
+  def promote_chat_key_step(steps)
     github_token = steps["github_token"]
     chat_api_key = steps["chat_api_key"]
-    return unless github_token&.in_progress? && chat_api_key&.pending?
+    in_progress_step = steps.values.find(&:in_progress?)
+    return unless github_token && chat_api_key&.pending? && in_progress_step
+    return unless in_progress_step.position >= github_token.position
 
-    github_token.update_columns(status: "pending")
+    in_progress_step.update_columns(status: "pending")
     chat_api_key.update_columns(status: "in_progress")
   end
 end

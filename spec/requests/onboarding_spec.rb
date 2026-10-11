@@ -46,6 +46,17 @@ RSpec.describe "Onboarding" do
         expect(response.body).to include("Dependabot auto-merge")
         expect(response.body).to include("auto-release")
       end
+
+      # @spec ONBOARD-CHAT-001
+      it "defaults the chat key provider to OpenRouter" do
+        Onboarding::CompleteStep.call(account: account, step: "account_profile")
+
+        get onboarding_path
+
+        document = Nokogiri::HTML(response.body)
+        selected_provider = document.at_css('select[name="chat_api_key[api_service_type]"] option[selected]')
+        expect(selected_provider["value"]).to eq("openrouter")
+      end
     end
   end
 
