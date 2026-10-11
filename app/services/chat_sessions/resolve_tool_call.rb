@@ -16,6 +16,8 @@ module ChatSessions
     include ToolDispatch
     include FallbackLoop
 
+    class ResolutionConflictError < ArgumentError; end
+
     DECISIONS = %i[approve deny].freeze
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
 
@@ -101,7 +103,7 @@ module ChatSessions
         .where(id: tool_call_message.id, tool_status: "pending")
         .update_all(tool_status: decision_status)
 
-      raise ArgumentError, "Tool call is not awaiting confirmation" if rows.zero?
+      raise ResolutionConflictError, "Tool call is not awaiting confirmation" if rows.zero?
 
       tool_call_message.reload
     end
