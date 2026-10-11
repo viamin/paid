@@ -142,6 +142,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         expect(client.model).to eq("moonshotai/kimi-k2")
       end
 
+      # @spec ONBOARD-CHAT-002
+      it "routes a Google API-key runner to Gemini's OpenAI-compatible endpoint" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "gemini-test-key", api_service_type: "google")
+        runner = create(:runner, :api_key,
+          user: user,
+          runner_key: "gemini",
+          provider_api_key: api_key_record
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
+
+        client = described_class.call(chat_session: chat_session)
+        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gemini-2.5-flash"))
+
+        client.call([ { role: "user", content: "What did you find?" } ])
+
+        expect(client.model).to eq("gemini-2.5-flash")
+        expect(chat_transport).to have_received(:call) do |request|
+          expect(request[:candidates].first[:endpoint]).to eq("https://generativelanguage.googleapis.com/v1beta/openai")
+        end
+      end
+
       it "keeps the transport default output cap for non-z.ai runners" do
         # @spec CHAT-API-007
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")

@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  def onboarding_api_key_guidance(service_type)
+    return "recommended — free models, one key covers many models" if service_type == "openrouter"
+
+    "chat-supported — check provider pricing and free-tier availability"
+  end
   ESCALATION_REASON_LABELS = {
     "failure_streak" => "Failure streak",
     "review_goal_retry_limit" => "Retry limit",

@@ -1,0 +1,9 @@
+<h2 class="text-lg font-semibold text-gray-900">Additional integrations</h2>
+<p class="mt-1 text-sm text-gray-500">You can connect Linear and add dedicated agent-run runners from the setup chat or Settings at any time.</p>
+
+<%= form_with url: onboarding_path, method: :patch, class: "mt-6" do |form| %>
+  <%= form.hidden_field :step, value: "integrations" %>
+  <div class="flex justify-end">
+    <%= form.submit "Continue", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+  </div>
+<% end %>

@@ -5,6 +5,9 @@ module ChatSessions
     ANTHROPIC_SERVICE_TYPE = "anthropic"
     ANTHROPIC_BASE_URL = "https://api.anthropic.com"
     ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    GOOGLE_SERVICE_TYPE = "google"
+    GOOGLE_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+    GOOGLE_DEFAULT_MODEL = "gemini-2.5-flash"
 
     def self.call(chat_session:, actor: chat_session.created_by, message: nil)
       new(chat_session: chat_session, actor: actor, message: message).call
@@ -14,6 +17,7 @@ module ChatSessions
     # ChatSessions::FallbackRunners so a runner switch picks the same default.
     def self.default_model_for_service_type(service_type)
       return ANTHROPIC_DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
+      return GOOGLE_DEFAULT_MODEL if service_type == GOOGLE_SERVICE_TYPE
 
       "gpt-4o"
     end
@@ -84,7 +88,7 @@ module ChatSessions
       service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
       # @spec CHAT-API-015
-      base_url = config&.dig(:chat_base_url) || config&.dig(:base_url) || "https://api.openai.com/v1"
+      base_url = config&.dig(:chat_base_url) || config&.dig(:base_url) || default_openai_base_url(service_type)
       model = chat_model_for(provider)
 
       HttpClient.new(
@@ -127,6 +131,12 @@ module ChatSessions
       return FreeModels::SelectChatModel.for_session(runner: provider, chat_session: chat_session).model_id if provider.free_model_policy?
 
       provider.direct_outbound_model_id.presence || default_model_for_service_type(provider_service_type(provider))
+    end
+
+    def default_openai_base_url(service_type)
+      return GOOGLE_OPENAI_BASE_URL if service_type == GOOGLE_SERVICE_TYPE
+
+      "https://api.openai.com/v1"
     end
 
     def default_model_for_service_type(service_type)
