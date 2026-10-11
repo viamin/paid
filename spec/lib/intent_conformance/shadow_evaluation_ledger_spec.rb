@@ -6,7 +6,9 @@ require Rails.root.join("lib/intent_conformance/shadow_evaluation_ledger")
 RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
   let(:manifest) { Rails.root.join("tmp/shadow-manifest.yml") }
   let(:ledger) { Rails.root.join("tmp/shadow-ledger.jsonl") }
-  let(:base_event) { { "manifest_commit" => "a" * 40, "recorded_at" => "2026-10-10T12:00:00Z" } }
+  let(:base_event) do
+    { "manifest_commit" => "a" * 40, "manifest_digest" => described_class.manifest_digest(manifest), "recorded_at" => "2026-10-10T12:00:00Z" }
+  end
 
   before do
     File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
@@ -100,6 +102,22 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
   it "rejects a requested manifest identity that differs from ledger events" do
     File.write(ledger, JSON.generate(base_event.merge("type" => "adjudication", "event_id" => "one")))
     expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "b" * 40) }.to raise_error(/every ledger event/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects a manifest whose content was edited after adjudication while keeping the same manifest_commit label" do
+    cases = complete_corpus_cases
+    File.write(manifest, { "cases" => cases }.to_yaml)
+    events = complete_corpus_adjudication_events(cases) + complete_corpus_shadow_runs(cases)
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+    expect(described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40)).to be(true)
+
+    tampered_cases = cases.dup
+    tampered_cases[0] = tampered_cases[0].merge("head_sha" => "f" * 40)
+    File.write(manifest, { "cases" => tampered_cases }.to_yaml)
+
+    expect { described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /must match the frozen corpus manifest content/)
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002

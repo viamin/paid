@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "digest"
 require "open3"
 require "tmpdir"
 
@@ -19,7 +20,7 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
       ledger = File.join(dir, "ledger.jsonl")
       cases = complete_corpus_cases
       File.write(manifest, { "cases" => cases }.to_yaml)
-      File.write(ledger, complete_ledger_events(cases).map { |event| JSON.generate(event) }.join("\n"))
+      File.write(ledger, complete_ledger_events(cases, manifest).map { |event| JSON.generate(event) }.join("\n"))
 
       stdout, stderr, status = run_cli("compile", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit)
 
@@ -121,8 +122,8 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
     end
   end
 
-  def complete_ledger_events(cases)
-    base = { "manifest_commit" => commit }
+  def complete_ledger_events(cases, manifest)
+    base = { "manifest_commit" => commit, "manifest_digest" => Digest::SHA256.file(manifest).hexdigest }
     freeze = base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b], "recorded_at" => "2026-10-10T08:00:00Z")
     adjudications = cases.flat_map { |corpus_case| adjudications_for(base, corpus_case) }
     runs = cases.map { |corpus_case| shadow_run_for(base, corpus_case) }
