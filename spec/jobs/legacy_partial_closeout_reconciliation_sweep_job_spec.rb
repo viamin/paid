@@ -104,5 +104,31 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
       expect(scheduler).to have_received(:perform_later).with(account_id: account.id, after_id: 41, after_account_id: nil)
       expect(described_class).not_to have_received(:perform_later)
     end
+
+    # @spec PARTIAL-CLOSEOUT-025
+    it "advances past a cursor-carrying continuation whose account was deactivated mid-chain" do
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call)
+      account_id = account.id
+      account.suspend!
+      account.deactivate!
+
+      described_class.perform_now(account_id:, after_id: 241)
+
+      expect(PartialCloseouts::ReconcileLegacy).not_to have_received(:call)
+      expect(described_class).to have_received(:perform_later).with(after_account_id: account_id)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-025
+    it "advances to the next account when reconcile raises instead of stalling the fleet" do
+      allow(PartialCloseouts::ReconcileLegacy).to receive(:call).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(Rails.logger).to receive(:error)
+
+      described_class.perform_now(account_id: account.id, after_id: 41)
+
+      expect(described_class).to have_received(:perform_later).with(after_account_id: account.id)
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "partial_closeouts.legacy_reconcile_sweep_failed", account_id: account.id)
+      )
+    end
   end
 end

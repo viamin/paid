@@ -30,7 +30,14 @@ class LegacyPartialCloseoutReconciliationSweepJob < ApplicationJob
   def perform(account_id: nil, after_id: nil, after_account_id: nil)
     TenantContext.with_system_access do
       account = account_id ? Account.active.find_by(id: account_id) : next_account(after_account_id)
-      reconcile(account, after_id:, after_account_id:) if account
+      if account
+        reconcile(account, after_id:, after_account_id:)
+      elsif account_id
+        # account_id resolved but the account is no longer active (suspended/
+        # deactivated mid-chain) - advance past it instead of dropping the
+        # rest of the fleet's sweep for the day.
+        self.class.perform_later(after_account_id: account_id)
+      end
     end
   end
 
@@ -46,6 +53,10 @@ class LegacyPartialCloseoutReconciliationSweepJob < ApplicationJob
     end
   rescue StandardError => e
     log_failure(account, e, after_id:)
+    # Advance past this account on failure (mirroring enqueue_next/
+    # retry_after_lock_contention) so one account's persistently failing
+    # reconcile can't starve every account after it for the rest of the day.
+    self.class.perform_later(after_account_id: account.id)
   end
 
   # `ReconcileLegacy` returns `next_cursor: after_id` unchanged on lock
