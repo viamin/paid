@@ -392,6 +392,14 @@ RSpec.describe "Projects" do
 
       expect(response.body).to include("Allow merge", "Release review hold")
     end
+
+    it "applies the submitted control action" do # @spec LABEL-CONTROL-002
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "skip_auto_merge" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.skip_auto_merge).to be(true)
+    end
   end
 
   describe "GET /projects/new" do

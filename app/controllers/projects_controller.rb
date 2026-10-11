@@ -283,7 +283,7 @@ class ProjectsController < ApplicationController
 
     Issues::UpdateControlState.call(
       issue: @project.issues.find(params.require(:issue_id)), actor: current_user,
-      action: params.require(:action), priority: params[:priority], reason: params[:reason]
+      action: params.require(:control_action), priority: params[:priority], reason: params[:reason]
     )
     redirect_to @project, notice: "Local control state updated."
   rescue ArgumentError, ActiveRecord::RecordInvalid => e

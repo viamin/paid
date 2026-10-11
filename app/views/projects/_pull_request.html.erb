@@ -30,21 +30,21 @@
     <%= render "projects/issue_pause_toggle", issue: pull_request, project: project %>
     <% if pull_request.local_control_state? && policy(project).update? %>
       <% if pull_request.escalated_phase? %>
-        <%= button_to "Dismiss escalation", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "dismiss_escalation" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Dismiss escalation", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "dismiss_escalation" }, class: "text-xs font-medium text-indigo-600" %>
       <% end %>
       <% if pull_request.skip_auto_merge %>
-        <%= button_to "Allow merge", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "allow_auto_merge" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Allow merge", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "allow_auto_merge" }, class: "text-xs font-medium text-indigo-600" %>
       <% else %>
-        <%= button_to "Skip merge", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "skip_auto_merge" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Skip merge", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "skip_auto_merge" }, class: "text-xs font-medium text-indigo-600" %>
       <% end %>
       <% if pull_request.hold_for_review %>
-        <%= button_to "Release review hold", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "release_review_hold" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Release review hold", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "release_review_hold" }, class: "text-xs font-medium text-indigo-600" %>
       <% else %>
-        <%= button_to "Hold review", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "hold_for_review" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Hold review", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "hold_for_review" }, class: "text-xs font-medium text-indigo-600" %>
       <% end %>
       <% if pull_request.tdd_review_state == "ready_for_review" %>
-        <%= button_to "Approve tests", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "approve_tests" }, class: "text-xs font-medium text-indigo-600" %>
-        <%= button_to "Request test changes", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, action: "request_test_changes" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Approve tests", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "approve_tests" }, class: "text-xs font-medium text-indigo-600" %>
+        <%= button_to "Request test changes", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "request_test_changes" }, class: "text-xs font-medium text-indigo-600" %>
       <% end %>
     <% end %>
     <% subscription_locals = { issue: pull_request, project: project } %>
