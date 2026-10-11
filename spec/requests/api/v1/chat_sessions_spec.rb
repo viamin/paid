@@ -49,4 +49,15 @@ RSpec.describe "Mobile chat sessions API" do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body.dig("error", "code")).to eq("validation_failed")
   end
+
+  # @spec MOBILE-API-011
+  it "filters the index by archived status like the web session scope" do
+    archived_session = create(:chat_session, :archived, account:, created_by: user, title: "Archived chat")
+
+    get "/api/v1/chat/sessions", params: { archived: "true" }, headers: headers
+    expect(response.parsed_body.fetch("sessions").map { |session| session.fetch("id") }).to eq([ archived_session.id ])
+
+    get "/api/v1/chat/sessions", headers: headers
+    expect(response.parsed_body.fetch("sessions").map { |session| session.fetch("id") }).to eq([ chat_session.id ])
+  end
 end

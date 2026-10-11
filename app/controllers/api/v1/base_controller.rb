@@ -18,10 +18,10 @@ module Api
       after_action :verify_authorized, unless: :skip_pundit?
       after_action :verify_policy_scoped, if: :verify_policy_scoped?
 
+      rescue_from StandardError, with: :internal_error
       rescue_from Pundit::NotAuthorizedError, with: :forbidden
       rescue_from ActiveRecord::RecordNotFound, with: :not_found
       rescue_from ActionController::ParameterMissing, with: :invalid_request
-      rescue_from StandardError, with: :internal_error
 
       private
 

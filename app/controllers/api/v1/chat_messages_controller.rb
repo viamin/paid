@@ -94,7 +94,7 @@ module Api
       end
 
       def stream_send
-        stream do |message_id, on_chunk, on_message_persisted, _on_resolved|
+        stream(message_start: { model: @chat_session.model }) do |message_id, on_chunk, on_message_persisted, _on_resolved|
           send_message(on_chunk:, on_message_persisted:)
         end
       end
@@ -105,10 +105,10 @@ module Api
         end
       end
 
-      def stream
+      def stream(message_start: {})
         configure_sse_response
         message_id = SecureRandom.uuid
-        write_sse_event("message_start", { message_id: })
+        write_sse_event("message_start", { message_id: }.merge(message_start))
         chunks = 0
         assistant = yield(message_id, ->(chunk) { chunks += 1; write_sse_event("message_chunk", { message_id:, content: chunk, sequence: chunks }) }, method(:write_sse_tool_event), ->(message) { write_sse_event("message_tool_resolved", tool_resolved_payload(message)) })
         write_sse_event("message_complete", { message_id:, tokens: { input: assistant&.tokens_input, output: assistant&.tokens_output } })
@@ -171,6 +171,9 @@ module Api
       end
 
       def write_sse_tool_event(message, stream_message_id: nil)
+        return write_sse_event("message_created", message_json(message).merge(fallback_notice: true, stream_message_id: nil)) if message.fallback_notice?
+        return write_sse_event("message_created", message_json(message).merge(token_limit_error: true, stream_message_id: nil)) if message.token_limit_error?
+
         event = message.role == "tool" ? "message_tool_result" : tool_event(message)
         return unless event
 

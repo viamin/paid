@@ -9,7 +9,7 @@ module Api
       # @spec MOBILE-API-011 CHAT-API-001
       def index
         authorize ChatSession.new(account: current_account), :index?
-        sessions = policy_scope(ChatSession).visible.includes(:project, :runner, :chat_session_projects, :projects)
+        sessions = session_scope.includes(:project, :runner, :chat_session_projects, :projects)
           .order(updated_at: :desc, id: :desc)
         render json: { sessions: sessions.map { |session| session_json(session) } }
       end
@@ -72,6 +72,11 @@ module Api
 
       def session_params
         params.permit(:model, :project_id, :runner_id, :title, :auto_approve, metadata: {}).to_h.symbolize_keys
+      end
+
+      def session_scope
+        scoped = policy_scope(ChatSession)
+        params[:archived] == "true" ? scoped.archived_only : scoped.visible
       end
 
       def validation_failed(message, details: {})
