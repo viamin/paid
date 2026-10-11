@@ -81,6 +81,23 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects non-object append JSON without a backtrace" do
+    Dir.mktmpdir do |dir|
+      manifest = File.join(dir, "manifest.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+      File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
+
+      [ "[1,2]", "42", '"text"' ].each do |event|
+        _stdout, stderr, status = run_cli("append", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit, "--event", event)
+
+        expect(status.exitstatus).to eq(1)
+        expect(stderr).to include("invalid shadow-evaluation ledger: --event must be a JSON object")
+        expect(stderr).not_to include("bin/intent-conformance-shadow-evaluation:")
+      end
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "reports malformed options without a backtrace" do
     _stdout, stderr, status = run_cli("validate", "--unknown")
 

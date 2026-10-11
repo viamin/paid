@@ -55,6 +55,8 @@ module IntentConformance
 
     def append(options)
       raise ShadowEvaluationLedger::InvalidLedger, "--event is required" unless options[:event]
+      raise ShadowEvaluationLedger::InvalidLedger, "--event must be a JSON object" unless options[:event].is_a?(Hash)
+
       event = options[:event].merge("manifest_commit" => options[:manifest_commit])
       ShadowEvaluationLedger.append!(path: options[:ledger], event: event)
     end
