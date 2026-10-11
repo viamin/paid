@@ -2,7 +2,9 @@ openapi: 3.0.3
 info:
   title: Paid Mobile API
   version: v1
-  description: Native inbox endpoints for Paid.
+  description: |
+    Schema-first contract for the Paid iOS companion. Clients MUST pin a
+    commit or release ref of this document, never a moving branch.
 servers:
   - url: /api/v1
 paths:
@@ -40,6 +42,7 @@ paths:
       security:
         - bearerAuth: [inbox]
       parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
         - $ref: '#/components/parameters/InboxKind'
         - $ref: '#/components/parameters/InboxSort'
         - $ref: '#/components/parameters/ProjectId'
@@ -52,6 +55,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InboxListResponse'
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoCache'
         '304':
           description: The inbox has not changed.
         default:
@@ -61,6 +69,8 @@ paths:
       operationId: inboxCount
       security:
         - bearerAuth: [inbox]
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: Inbox count.
@@ -73,6 +83,11 @@ paths:
                   count:
                     type: integer
                     minimum: 0
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoCache'
         '304':
           description: The inbox count has not changed.
         default:
@@ -117,6 +132,121 @@ paths:
                     type: integer
         default:
           $ref: '#/components/responses/Error'
+  /chat_sessions:
+    get:
+      operationId: listChatSessions
+      security: [{bearerAuth: [chat]}]
+      parameters:
+        - $ref: '#/components/parameters/Archived'
+      responses:
+        '200':
+          description: Chat sessions visible to the bearer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionListResponse'
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createChatSession
+      security: [{bearerAuth: [chat]}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateChatSessionRequest'}
+      responses:
+        '201':
+          description: Inline-only chat session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatSession'}
+        default: {$ref: '#/components/responses/Error'}
+  /chat_sessions/{id}:
+    parameters: [{$ref: '#/components/parameters/ChatSessionResourceId'}]
+    get:
+      operationId: getChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200':
+          description: Chat session.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateChatSession
+      security: [{bearerAuth: [chat]}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/UpdateChatSessionRequest'}}}
+      responses:
+        '200':
+          description: Updated chat session.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: closeChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '204': {description: Chat session closed.}
+        default: {$ref: '#/components/responses/Error'}
+  /chat_sessions/{id}/{transition}:
+    parameters:
+      - $ref: '#/components/parameters/ChatSessionResourceId'
+      - $ref: '#/components/parameters/ChatSessionTransition'
+    patch:
+      operationId: transitionChatSession
+      security: [{bearerAuth: [chat]}]
+      responses:
+        '200':
+          description: Transitioned chat session.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat_sessions/{chat_session_id}/messages:
+    parameters: [{$ref: '#/components/parameters/ChatSessionId'}]
+    get:
+      operationId: listChatMessages
+      security: [{bearerAuth: [chat]}]
+      parameters:
+        - $ref: '#/components/parameters/BeforeMessageId'
+        - $ref: '#/components/parameters/MessageLimit'
+      responses:
+        '200':
+          description: Oldest-first page of messages.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ChatMessageListResponse'}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: sendChatMessage
+      security: [{bearerAuth: [chat]}]
+      x-sse-events: {$ref: '#/components/x-sse-events'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SendChatMessageRequest'}}}
+      responses:
+        '201':
+          description: Assistant response or a paused turn.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AssistantResponse'}}}
+        '200':
+          description: Streaming assistant response.
+          content: {text/event-stream: {schema: {type: string}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat_sessions/{chat_session_id}/messages/{message_id}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/ChatSessionId'
+      - $ref: '#/components/parameters/MessageId'
+    post:
+      operationId: resolveChatToolCall
+      security: [{bearerAuth: [chat]}]
+      x-sse-events: {$ref: '#/components/x-sse-events'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ResolveToolCallRequest'}}}
+      responses:
+        '201':
+          description: Assistant response or a paused turn.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AssistantResponse'}}}
+        '200':
+          description: Streaming tool-call resolution.
+          content: {text/event-stream: {schema: {type: string}}}
+        default: {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     bearerAuth:
@@ -124,6 +254,42 @@ components:
       scheme: bearer
       bearerFormat: paid_pat
   parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: {type: string}
+    ChatSessionResourceId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatSessionId:
+      name: chat_session_id
+      in: path
+      required: true
+      schema: {type: integer}
+    MessageId:
+      name: message_id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatSessionTransition:
+      name: transition
+      in: path
+      required: true
+      schema: {type: string, enum: [archive, unarchive, reopen]}
+    Archived:
+      name: archived
+      in: query
+      schema: {type: boolean}
+    BeforeMessageId:
+      name: before
+      in: query
+      schema: {type: integer, minimum: 1}
+    MessageLimit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
     EntryId:
       name: entry_id
       in: path
@@ -160,6 +326,102 @@ components:
       schema:
         type: string
   schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, rate_limited, internal_error, provider_error, provider_unavailable]
+            message: {type: string}
+            details: {type: object, additionalProperties: true}
+    ChatSession:
+      type: object
+      required: [id, status, created_at, updated_at]
+      properties:
+        id: {type: integer}
+        title: {type: string, nullable: true}
+        status: {type: string}
+        project_id: {type: integer, nullable: true}
+        model: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ChatSessionListResponse:
+      type: object
+      required: [sessions]
+      properties:
+        sessions: {type: array, items: {$ref: '#/components/schemas/ChatSession'}}
+    CreateChatSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: {type: string}
+        project_id: {type: integer}
+        model: {type: string}
+        system_prompt: {type: string}
+    UpdateChatSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: {type: string}
+        project_id: {type: integer, nullable: true}
+        model: {type: string}
+    ChatMessage:
+      type: object
+      required: [id, role, created_at]
+      properties:
+        id: {type: integer}
+        external_id: {type: string, nullable: true}
+        role: {type: string}
+        content: {type: string, nullable: true}
+        model: {type: string, nullable: true}
+        tool_call_id: {type: string, nullable: true}
+        tool_name: {type: string, nullable: true}
+        tool_arguments: {type: object, nullable: true, additionalProperties: true}
+        tool_result: {type: object, nullable: true, additionalProperties: true}
+        tool_status: {type: string, nullable: true}
+        tokens_input: {type: integer, nullable: true}
+        tokens_output: {type: integer, nullable: true}
+        created_at: {type: string, format: date-time}
+    ToolEvent:
+      type: object
+      required: [message_id]
+      properties:
+        message_id: {}
+        role: {type: string}
+        tool_name: {type: string, nullable: true}
+        tool_call_id: {type: string, nullable: true}
+        tool_arguments: {type: object, nullable: true, additionalProperties: true}
+        tool_result: {type: object, nullable: true, additionalProperties: true}
+        tool_status: {type: string, nullable: true}
+    ChatMessageListResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages: {type: array, items: {$ref: '#/components/schemas/ChatMessage'}}
+        next_before: {type: integer, nullable: true}
+    SendChatMessageRequest:
+      type: object
+      required: [content]
+      additionalProperties: false
+      properties:
+        content: {type: string, minLength: 1}
+    ResolveToolCallRequest:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision: {type: string, enum: [approve, deny]}
+    AssistantResponse:
+      oneOf:
+        - $ref: '#/components/schemas/ChatMessage'
+        - type: object
+          required: [status]
+          properties: {status: {type: string, enum: [paused]}}
     ProbeResponse:
       type: object
       required: [user_id, account_id]
@@ -265,21 +527,21 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [plan_review]}
-            tasks: {type: array}
+            tasks: {type: array, items: {}}
     MergeApprovalEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [merge_approval]}
-            blockers: {type: array}
+            blockers: {type: array, items: {}}
     ActionRequiredEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [action_required]}
-            remediation_steps: {type: array}
+            remediation_steps: {type: array, items: {}}
     EscalatedPrEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -287,7 +549,7 @@ components:
           properties:
             kind: {type: string, enum: [escalated_pr]}
             reason: {type: string}
-            counters: {type: array}
+            counters: {type: array, items: {}}
             last_progress_at: {type: string, format: date-time, nullable: true}
             operator_paused: {type: boolean}
     ManualReviewListEntry:
@@ -318,7 +580,7 @@ components:
           properties:
             kind: {type: string, enum: [feature_decision]}
             ready: {type: boolean}
-            blockers: {type: array}
+            blockers: {type: array, items: {}}
     RetryLimitedEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -344,26 +606,49 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [partial_closeout]}
-            unresolved_prerequisites: {type: array}
+            unresolved_prerequisites: {type: array, items: {}}
     TestReviewPendingEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [test_review_pending]}
+  headers:
+    ETag:
+      description: Strong validator for polling. Send this value as If-None-Match on the next poll.
+      schema: {type: string}
+    PrivateNoCache:
+      description: Responses are user-specific and must be revalidated before reuse.
+      schema: {type: string, example: 'private, max-age=0'}
+  x-sse-events:
+    message_start:
+      schema:
+        type: object
+        required: [message_id]
+        properties: {message_id: {type: string}, model: {type: string, nullable: true}}
+    message_chunk:
+      schema:
+        type: object
+        required: [message_id, content, sequence]
+        properties: {message_id: {type: string}, content: {type: string}, sequence: {type: integer}}
+    message_created: {schema: {$ref: '#/components/schemas/ChatMessage'}}
+    message_tool_call: {schema: {$ref: '#/components/schemas/ToolEvent'}}
+    message_tool_confirmation: {schema: {$ref: '#/components/schemas/ToolEvent'}}
+    message_tool_result: {schema: {$ref: '#/components/schemas/ToolEvent'}}
+    message_tool_resolved: {schema: {$ref: '#/components/schemas/ToolEvent'}}
+    message_complete:
+      schema:
+        type: object
+        required: [message_id]
+        properties: {message_id: {type: string}, tokens: {type: object, additionalProperties: true}}
+    error:
+      schema:
+        type: object
+        required: [message]
+        properties: {message: {type: string}}
   responses:
     Error:
       description: API error.
       content:
         application/json:
-          schema:
-            type: object
-            required: [error]
-            properties:
-              error:
-                type: object
-                required: [code, message]
-                properties:
-                  code: {type: string}
-                  message: {type: string}
-                  details: {}
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}

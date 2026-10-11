@@ -69,6 +69,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile && bin/yarn-postinstall
 
+      - name: Lint the mobile OpenAPI contract
+        run: npx --yes @stoplight/spectral-cli@6.15.0 lint --fail-severity error docs/api/openapi.yaml
+
       - name: Prepare RuboCop cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         env:

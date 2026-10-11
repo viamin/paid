@@ -20,4 +20,25 @@ RSpec.describe Committee::Drivers do
       expect(branch_references).to match_array(mapping.values)
     end
   end
+
+  # @spec MOBILE-API-019
+  it "documents the complete SSE event catalog on both streaming operations" do
+    expected_events = %w[
+      message_start message_chunk message_created message_tool_call
+      message_tool_confirmation message_tool_result message_tool_resolved
+      message_complete error
+    ]
+
+    streaming_operations = [
+      schema.dig("paths", "/chat_sessions/{chat_session_id}/messages", "post"),
+      schema.dig("paths", "/chat_sessions/{chat_session_id}/messages/{message_id}/resolve", "post")
+    ]
+
+    streaming_operations.each do |operation|
+      expect(operation.dig("responses", "200", "content")).to have_key("text/event-stream")
+      expect(operation.fetch("x-sse-events").fetch("$ref")).to eq("#/components/x-sse-events")
+    end
+
+    expect(schema.dig("components", "x-sse-events").keys).to match_array(expected_events)
+  end
 end

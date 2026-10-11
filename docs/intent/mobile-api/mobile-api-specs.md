@@ -212,7 +212,7 @@
   *Tests:* CI Schemathesis job.
   *Code:* `.github/workflows` Schemathesis job.
 
-- [ ] **MOBILE-API-019** — The OpenAPI document SHALL carry the SSE event
+- [x] **MOBILE-API-019** — The OpenAPI document SHALL carry the SSE event
   catalog as an `x-sse-events` schema extension on the send and resolve
   operations, enumerating each event name from the CHAT-API catalog
   (`message_start`, `message_chunk`, `message_created`,
@@ -220,7 +220,7 @@
   `message_tool_resolved`, `message_complete`, `error`) with its payload
   schema, so client codegen and server tests share one machine-checkable
   catalog owned by `api-mode-chat`.
-  *Tests:* `spec/lib/api/v1/openapi_sse_catalog_spec.rb`.
+  *Tests:* `spec/lib/committee/drivers_mobile_inbox_contract_spec.rb`.
   *Code:* `docs/api/openapi.yaml`.
 
 ## Non-goals (pinned)

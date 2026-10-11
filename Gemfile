@@ -157,6 +157,10 @@ group :development, :test do
 end
 
 group :test do
+  # Pact provider verification is intentionally held to the 1.x line: its
+  # verifier CLI is the provider-side contract entry point until iOS pacts
+  # are published to the broker.
+  gem "pact-provider-verifier", "~> 1.39", require: false
   gem "simplecov", require: false
   gem "capybara"
   gem "ferrum", path: "vendor/ferrum"
