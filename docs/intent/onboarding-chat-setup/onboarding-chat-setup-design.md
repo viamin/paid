@@ -102,8 +102,7 @@ Tracked under the umbrella (#4280):
   complete); there is deliberately no `skip_onboarding_step` tool, so the
   model cannot fast-forward the wizard on the human's behalf.
 
-## Remaining Gap
+## Implementation
 
-Nothing in this segment is implemented yet; every claim in
-`onboarding-chat-setup-specs.md` is an active gap (`[ ]`) until the tracked
-phase issues (#4281, #4282) ship and update this document's status.
+Phase 1–4 tools and the chat persona are implemented by #4282. The curated
+product-docs corpus is version controlled at `config/onboarding_product_docs.yml`.

@@ -4,6 +4,10 @@ module Tools
   module Registry
     TOOL_CLASSES = [
       "Tools::ListProjects",
+      "Tools::GetOnboardingStatus",
+      "Tools::ListRunners",
+      "Tools::GetAccountCapabilities",
+      "Tools::GetProductDocs",
       "Tools::GetProject",
       "Tools::GetProjectIssues",
       "Tools::GetProjectPullRequests",
@@ -55,6 +59,10 @@ module Tools
       "Tools::ApplyConfigurationProfile",
       "Tools::ListProviderApiKeys",
       "Tools::CreateProviderApiKey",
+      "Tools::CreateRunner",
+      "Tools::CreateTrackerConfiguration",
+      "Tools::CreateProject",
+      "Tools::CompleteOnboardingStep",
       "Tools::UpdateProviderApiKey",
       "Tools::RemoveProviderApiKey",
       "Tools::ListMcpServerDefinitions",
