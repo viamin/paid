@@ -5,22 +5,26 @@ class AddChatLedStepsToOnboarding < ActiveRecord::Migration[8.1]
   STEPS = %w[account_profile chat_api_key github_token first_project integrations configure_defaults].freeze
 
   def up
-    Account.where(onboarding_completed_at: nil).find_each do |account|
-      steps = account.onboarding_steps.index_by(&:step)
-      next if steps.empty?
+    TenantContext.with_system_access do
+      Account.where(onboarding_completed_at: nil).find_each do |account|
+        steps = account.onboarding_steps.index_by(&:step)
+        next if steps.empty?
 
-      add_missing_step(account, steps, "chat_api_key", after: "account_profile")
-      add_missing_step(account, steps, "integrations", after: "first_project")
-      account.onboarding_steps.each { |step| step.update_columns(position: STEPS.index(step.step)) }
-      promote_chat_key_step(steps)
+        add_missing_step(account, steps, "chat_api_key", after: "account_profile")
+        add_missing_step(account, steps, "integrations", after: "first_project")
+        account.onboarding_steps.each { |step| step.update_columns(position: STEPS.index(step.step)) }
+        promote_chat_key_step(steps)
+      end
     end
   end
 
   def down
-    OnboardingStep.where(step: %w[chat_api_key integrations]).delete_all
-    OnboardingStep.find_each do |step|
-      position = %w[account_profile github_token first_project configure_defaults].index(step.step)
-      step.update_columns(position: position) if position
+    TenantContext.with_system_access do
+      OnboardingStep.where(step: %w[chat_api_key integrations]).delete_all
+      OnboardingStep.find_each do |step|
+        position = %w[account_profile github_token first_project configure_defaults].index(step.step)
+        step.update_columns(position: position) if position
+      end
     end
   end
 

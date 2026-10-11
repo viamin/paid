@@ -48,7 +48,34 @@ RSpec.describe AddChatLedStepsToOnboarding, :aggregate_failures do
     expect(account.onboarding_steps.ordered.pluck(:position)).to eq([ 0, 1, 2, 3 ])
   end
 
+  # @spec ONBOARD-CHAT-001
+  it "backfills and rolls back accounts without a tenant context" do
+    account = create(:account)
+    create_legacy_steps(account, in_progress: "github_token")
+
+    expect(migration_source.scan("TenantContext.with_system_access").count).to eq(2)
+
+    TenantContext.clear!
+    migration.up
+
+    TenantContext.with_system_access do
+      expect(account.onboarding_steps.ordered.pluck(:step)).to include("chat_api_key", "integrations")
+    end
+
+    migration.down
+
+    TenantContext.with_system_access do
+      expect(account.onboarding_steps.ordered.pluck(:step)).to eq(
+        %w[account_profile github_token first_project configure_defaults]
+      )
+    end
+  end
+
   private
+
+  def migration_source
+    Rails.root.join("db/migrate/20261011044701_add_chat_led_steps_to_onboarding.rb").read
+  end
 
   def create_legacy_steps(account, in_progress:)
     %w[account_profile github_token first_project configure_defaults].each_with_index do |step, position|
