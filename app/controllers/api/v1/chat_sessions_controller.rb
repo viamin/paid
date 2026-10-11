@@ -30,11 +30,14 @@ module Api
         render json: session_json(@chat_session)
       end
 
+      # @spec MOBILE-API-011
       def update
         authorize @chat_session
-        @chat_session.update!(session_params)
+        attributes = session_params
+        validate_api_chat_runner!(attributes[:runner_id]) if attributes.key?(:runner_id)
+        @chat_session.update!(attributes)
         render json: session_json(@chat_session)
-      rescue ActiveRecord::RecordInvalid => error
+      rescue ArgumentError, ActiveRecord::RecordInvalid => error
         validation_failed(error.message)
       end
 
@@ -77,6 +80,20 @@ module Api
       def session_scope
         scoped = policy_scope(ChatSession)
         params[:archived] == "true" ? scoped.archived_only : scoped.visible
+      end
+
+      def validate_api_chat_runner!(runner_id)
+        return if runner_id.blank?
+
+        runner = Runner.kept_only.find(runner_id)
+        unless runner.user&.account_id == current_account.id
+          raise ArgumentError, "runner must belong to the same account"
+        end
+        return if ChatSessions::BuildLlmClient.usable_runner?(runner)
+
+        raise ArgumentError, "runner must be an API-key chat runner with a configured API key"
+      rescue ActiveRecord::RecordNotFound
+        raise ArgumentError, "runner must belong to the same account"
       end
 
       def validation_failed(message, details: {})

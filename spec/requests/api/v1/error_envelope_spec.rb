@@ -22,7 +22,7 @@ RSpec.describe "API V1 unified error envelope" do
   it "maps ActiveRecord::RecordNotFound to 404 not_found, not the StandardError fallback" do
     create(:personal_access_token, user:, account:, name: "iPhone", scopes: %w[chat], plaintext:)
 
-    get "/api/v1/chat/sessions/#{SecureRandom.uuid}", headers: { "Authorization" => "Bearer #{plaintext}" }
+    get "/api/v1/chat/sessions/-1", headers: { "Authorization" => "Bearer #{plaintext}" }
 
     expect(response).to have_http_status(:not_found)
     expect(response.parsed_body).to match("error" => { "code" => "not_found", "message" => be_a(String), "details" => {} })

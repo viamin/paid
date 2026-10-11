@@ -42,6 +42,17 @@ RSpec.describe "Mobile chat sessions API" do
     expect(response).to have_http_status(:no_content)
   end
 
+  # @spec MOBILE-API-011
+  it "rejects assigning a runner owned by another account" do
+    foreign_runner = create(:runner, user: create(:user))
+
+    patch "/api/v1/chat/sessions/#{chat_session.id}", params: { runner_id: foreign_runner.id }, headers: headers
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.dig("error", "code")).to eq("validation_failed")
+    expect(chat_session.reload.runner_id).to be_nil
+  end
+
   # @spec MOBILE-API-011 MOBILE-API-015
   it "rejects unsupported mobile workspace requests with the unified envelope" do
     post "/api/v1/chat/sessions", params: { container_capability: "pending" }, headers: headers
