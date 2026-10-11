@@ -323,7 +323,8 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
 
 ## OpenAPI as the Contract Source of Truth
 
-- `docs/api/openapi.yaml` (OpenAPI 3.1) is the single normative description
+- `docs/api/openapi.yaml` (OpenAPI 3.0.3, the version supported by the
+  Committee runtime validator) is the single normative description
   of `/api/v1`: paths, the polymorphic inbox envelope (`oneOf` with `kind`
   discriminators), chat payloads, the error envelope, and the versioning
   policy (additive changes within `v1`; breaking changes require a new

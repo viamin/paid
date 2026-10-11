@@ -1,0 +1,335 @@
+openapi: 3.0.3
+info:
+  title: Paid Mobile API
+  version: v1
+  description: Native inbox endpoints for Paid.
+servers:
+  - url: /api/v1
+paths:
+  /inbox:
+    get:
+      operationId: listInboxEntries
+      security:
+        - bearerAuth: [inbox]
+      parameters:
+        - $ref: '#/components/parameters/InboxKind'
+        - $ref: '#/components/parameters/InboxSort'
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/InboxLimit'
+        - $ref: '#/components/parameters/InboxCursor'
+      responses:
+        '200':
+          description: Inbox entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboxListResponse'
+        '304':
+          description: The inbox has not changed.
+        default:
+          $ref: '#/components/responses/Error'
+  /inbox/count:
+    get:
+      operationId: inboxCount
+      security:
+        - bearerAuth: [inbox]
+      responses:
+        '200':
+          description: Inbox count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+        '304':
+          description: The inbox count has not changed.
+        default:
+          $ref: '#/components/responses/Error'
+  /inbox/entries/{entry_id}:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    get:
+      operationId: getInboxEntry
+      security:
+        - bearerAuth: [inbox]
+      responses:
+        '200':
+          description: Inbox entry detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entry]
+                properties:
+                  entry:
+                    $ref: '#/components/schemas/InboxEntry'
+        default:
+          $ref: '#/components/responses/Error'
+  /inbox/entries/{entry_id}/chat:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: openInboxEntryChat
+      security:
+        - bearerAuth: [chat]
+      responses:
+        '201':
+          description: The native chat session for this entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chat_session_id]
+                properties:
+                  chat_session_id:
+                    type: integer
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: paid_pat
+  parameters:
+    EntryId:
+      name: entry_id
+      in: path
+      required: true
+      schema:
+        type: string
+    InboxKind:
+      name: kind
+      in: query
+      schema:
+        type: string
+        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending]
+    InboxSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [oldest, newest]
+    ProjectId:
+      name: project_id
+      in: query
+      schema:
+        type: integer
+    InboxLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    InboxCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+  schemas:
+    InboxListResponse:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/InboxEntryListItem'
+        next_cursor:
+          type: string
+    InboxEntryListItem:
+      oneOf:
+        - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
+        - $ref: '#/components/schemas/PlanReviewEntry'
+        - $ref: '#/components/schemas/MergeApprovalEntry'
+        - $ref: '#/components/schemas/ActionRequiredEntry'
+        - $ref: '#/components/schemas/EscalatedPrEntry'
+        - $ref: '#/components/schemas/ManualReviewListEntry'
+        - $ref: '#/components/schemas/IntentConformanceEntry'
+        - $ref: '#/components/schemas/FeatureDecisionEntry'
+        - $ref: '#/components/schemas/RetryLimitedEntry'
+        - $ref: '#/components/schemas/ChangeIntentDraftEntry'
+        - $ref: '#/components/schemas/PartialCloseoutEntry'
+        - $ref: '#/components/schemas/TestReviewPendingEntry'
+      discriminator:
+        propertyName: kind
+        mapping:
+          clarifying_questions: '#/components/schemas/ClarifyingQuestionsEntry'
+          plan_review: '#/components/schemas/PlanReviewEntry'
+          merge_approval: '#/components/schemas/MergeApprovalEntry'
+          action_required: '#/components/schemas/ActionRequiredEntry'
+          escalated_pr: '#/components/schemas/EscalatedPrEntry'
+          manual_review: '#/components/schemas/ManualReviewListEntry'
+          intent_conformance: '#/components/schemas/IntentConformanceEntry'
+          feature_decision: '#/components/schemas/FeatureDecisionEntry'
+          retry_limited: '#/components/schemas/RetryLimitedEntry'
+          change_intent_draft: '#/components/schemas/ChangeIntentDraftEntry'
+          partial_closeout: '#/components/schemas/PartialCloseoutEntry'
+          test_review_pending: '#/components/schemas/TestReviewPendingEntry'
+    InboxEntry:
+      oneOf:
+        - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
+        - $ref: '#/components/schemas/PlanReviewEntry'
+        - $ref: '#/components/schemas/MergeApprovalEntry'
+        - $ref: '#/components/schemas/ActionRequiredEntry'
+        - $ref: '#/components/schemas/EscalatedPrEntry'
+        - $ref: '#/components/schemas/ManualReviewEntry'
+        - $ref: '#/components/schemas/IntentConformanceEntry'
+        - $ref: '#/components/schemas/FeatureDecisionEntry'
+        - $ref: '#/components/schemas/RetryLimitedEntry'
+        - $ref: '#/components/schemas/ChangeIntentDraftEntry'
+        - $ref: '#/components/schemas/PartialCloseoutEntry'
+        - $ref: '#/components/schemas/TestReviewPendingEntry'
+      discriminator:
+        propertyName: kind
+        mapping:
+          clarifying_questions: '#/components/schemas/ClarifyingQuestionsEntry'
+          plan_review: '#/components/schemas/PlanReviewEntry'
+          merge_approval: '#/components/schemas/MergeApprovalEntry'
+          action_required: '#/components/schemas/ActionRequiredEntry'
+          escalated_pr: '#/components/schemas/EscalatedPrEntry'
+          manual_review: '#/components/schemas/ManualReviewEntry'
+          intent_conformance: '#/components/schemas/IntentConformanceEntry'
+          feature_decision: '#/components/schemas/FeatureDecisionEntry'
+          retry_limited: '#/components/schemas/RetryLimitedEntry'
+          change_intent_draft: '#/components/schemas/ChangeIntentDraftEntry'
+          partial_closeout: '#/components/schemas/PartialCloseoutEntry'
+          test_review_pending: '#/components/schemas/TestReviewPendingEntry'
+    InboxEntryBase:
+      type: object
+      required: [id, kind]
+      properties:
+        id: {type: string}
+        kind: {type: string}
+        waiting_since: {type: string, format: date-time, nullable: true}
+        project:
+          type: object
+          nullable: true
+          properties:
+            id: {type: integer}
+            owner: {type: string}
+            repo: {type: string}
+            name: {type: string}
+        title: {type: string, nullable: true}
+        summary: {type: string, nullable: true}
+        action_url: {type: string, nullable: true}
+    ClarifyingQuestionsEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [clarifying_questions]}
+            questions: {type: array, items: {type: string}}
+    PlanReviewEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [plan_review]}
+            tasks: {type: array}
+    MergeApprovalEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [merge_approval]}
+            blockers: {type: array}
+    ActionRequiredEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [action_required]}
+            remediation_steps: {type: array}
+    EscalatedPrEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [escalated_pr]}
+            reason: {type: string}
+            counters: {type: array}
+            last_progress_at: {type: string, format: date-time, nullable: true}
+            operator_paused: {type: boolean}
+    ManualReviewListEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [manual_review]}
+            questions: {type: array, items: {type: string}}
+    ManualReviewEntry:
+      allOf:
+        - $ref: '#/components/schemas/ManualReviewListEntry'
+        - type: object
+          properties:
+            comment_url: {type: string, nullable: true}
+    IntentConformanceEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [intent_conformance]}
+            verdict: {type: object, nullable: true}
+            latest_decision: {type: object, nullable: true}
+    FeatureDecisionEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [feature_decision]}
+            ready: {type: boolean}
+            blockers: {type: array}
+    RetryLimitedEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [retry_limited]}
+            push_permission_abandoned: {type: boolean}
+            return_count: {type: integer}
+    ChangeIntentDraftEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [change_intent_draft]}
+            intent: {type: string, nullable: true}
+            behavior: {type: string, nullable: true}
+            constraints: {type: string, nullable: true}
+            decisions_made: {type: string, nullable: true}
+            requested_changes_reason: {type: string, nullable: true}
+    PartialCloseoutEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [partial_closeout]}
+            unresolved_prerequisites: {type: array}
+    TestReviewPendingEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [test_review_pending]}
+  responses:
+    Error:
+      description: API error.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: {type: string}
+                  message: {type: string}
+                  details: {}

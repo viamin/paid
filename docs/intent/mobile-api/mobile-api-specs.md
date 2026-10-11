@@ -189,7 +189,7 @@
 
 ## Contract infrastructure
 
-- [ ] **MOBILE-API-016** — The `/api/v1` namespace SHALL be described by
+- [x] **MOBILE-API-016** — The `/api/v1` namespace SHALL be described by
   `docs/api/openapi.yaml` as the contract source of truth, with `committee`
   validating requests and responses against it — strict in the test
   environment so request specs assert conformance, warn-and-log elsewhere.
