@@ -19,18 +19,21 @@
   independently adjudicated corpus containing accepted, intentionally drifted,
   and uncertain PR cases, and SHALL evaluate the reviewer in shadow mode.
   *Design:* `intent-conformance-rollout-design.md`.
-  *Gap:* The 2026-10-10 manifest is invalidated because it predates its
-  purported adjudications and lacks verifiable event evidence. #4205 remains
-  open until operators repeat the run with a post-event frozen record.
+  *Tooling:* `lib/intent_conformance/shadow_evaluation_ledger.rb`,
+  `bin/intent-conformance-shadow-evaluation`, and
+  `shadow-evaluation-2026-10-10/` provide the append-only, freeze-ordered
+  record and pending-human-input guards. #4205 remains open until operators
+  perform the evaluation.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-003** — The rollout record SHALL measure
   false alarms, missed material drift, escaped changes, reviewer cost, human
   resolution time, rework, and delivery time against a predeclared same-project
   baseline and promotion rule.
   *Design:* `intent-conformance-rollout-design.md`.
-  *Gap:* The 2026-10-10 worksheet is invalidated; its measures are not
-  reproducible from the manifest. A replacement must retain the per-case
-  inputs required by `intent-conformance-rollout-design.md`.
+  *Tooling:* `lib/intent_conformance/shadow_evaluation_worksheet.rb` computes
+  the aggregate measures from ledger evidence once shadow runs exist.
+  *Gap:* The 2026-10-10 worksheet is invalidated; no replacement values or
+  promotion outcome are produced by this tooling-only change.
 
 - [x] **INTENT-CONFORMANCE-ROLLOUT-004** — Operators SHALL not release
   feature work into the mode until scanner enforcement and the final merge
