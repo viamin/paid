@@ -116,8 +116,8 @@ RSpec.describe "Inbox" do
     expect(document.at_css("input[name='sort'][value='newest']")["checked"]).to be_present
   end
 
-  # @spec NOTIFICATION-SEVERITY-009
-  it "renders action_required detail with remediation steps" do
+  # @spec NOTIFICATION-SEVERITY-009 OPERATOR-INBOX-002B
+  it "renders action_required detail with its notification description and remediation steps" do
     notification = create_action_required_notification
 
     get inbox_entry_path(
@@ -127,8 +127,33 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Action Required", "Quality pause requires manual review")
+    expect(response.body).to include("The quality pause could not be automatically resumed.")
     expect(response.body).to include("Review the quality dashboard and resume manually or adjust thresholds.")
     expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
+  end
+
+  # @spec OPERATOR-INBOX-002B
+  it "renders a blocking notification description when remediation guidance is absent" do
+    notification = create(
+      :notification,
+      :error,
+      account: account,
+      subject: project,
+      source: "automation_review_method_unavailable",
+      blocking: true,
+      title: "Automated review could not complete",
+      description: "The configured review method could not complete its check.",
+      metadata: {}
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("The configured review method could not complete its check.")
+    expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007
@@ -1569,6 +1594,7 @@ RSpec.describe "Inbox" do
       source: source,
       blocking: true,
       title: "Quality pause requires manual review",
+      description: "The quality pause could not be automatically resumed.",
       metadata: {
         "recommended_action" => "Review the quality dashboard and resume manually or adjust thresholds.",
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]

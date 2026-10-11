@@ -61,7 +61,8 @@ RSpec.describe Notifications::Publish do
         subject: project,
         severity: :error,
         blocking: true,
-        title: "PR follow-up stopped"
+        title: "PR follow-up stopped",
+        description: "Automatic PR follow-up stopped after reaching its configured limit."
       )
 
       expect(notification.action_url).to eq("/inbox/action_required:#{notification.id}")
@@ -75,7 +76,8 @@ RSpec.describe Notifications::Publish do
         subject: account,
         severity: :error,
         blocking: true,
-        title: "Account-level blocker"
+        title: "Account-level blocker",
+        description: "An account-level configuration requires operator attention."
       )
 
       expect(notification.action_url).to be_nil
@@ -90,10 +92,25 @@ RSpec.describe Notifications::Publish do
         severity: :error,
         blocking: true,
         title: "Needs manual review",
+        description: "The quality pause needs manual review before work can continue.",
         action_url: "/projects/#{project.id}/quality_dashboard"
       )
 
       expect(notification.action_url).to eq("/projects/#{project.id}/quality_dashboard")
+    end
+
+    # @spec OPERATOR-INBOX-002B
+    it "rejects blocking notifications without inline context or remediation guidance" do
+      expect {
+        described_class.call(
+          account: account,
+          source: "missing_blocking_context",
+          subject: project,
+          severity: :error,
+          blocking: true,
+          title: "Manual action required"
+        )
+      }.to raise_error(ArgumentError, "Blocking notifications require a description or remediation guidance")
     end
 
     # @spec NOTIFICATION-SEVERITY-007
@@ -105,7 +122,8 @@ RSpec.describe Notifications::Publish do
           subject: project,
           severity: :warning,
           blocking: true,
-          title: "Invalid"
+          title: "Invalid",
+          description: "This notification has an invalid severity."
         )
       }.to raise_error(ActiveRecord::RecordInvalid, /Blocking requires error severity/)
     end
