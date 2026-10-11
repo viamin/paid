@@ -1600,14 +1600,24 @@ class Project < ApplicationRecord
   # every existing call site benefits without per-site rescue blocks.
   # @spec QUIET-MODE-002
   def client
-    github_client = @client ||= build_github_client
-    return github_client unless github_client
-
-    github_client = GithubClient::LabelWriteSuppressing.new(github_client, project: self)
-    return github_client unless quiet_mode?
+    github_client = @client ||= wrap_for_label_policy(build_github_client)
+    return github_client unless quiet_mode? && github_client
 
     GithubClient::CommentSuppressing.new(github_client)
   end
+
+  # Every GitHub client this project hands out passes through here first, so
+  # label-mode suppression applies regardless of quiet mode. Memoized
+  # alongside the raw client (not rebuilt per call like the quiet-mode wrap)
+  # since the decorator evaluates the current label mode dynamically on each
+  # mutation rather than baking it in at wrap time.
+  # @spec LABEL-INTEGRATION-002
+  def wrap_for_label_policy(github_client)
+    return github_client unless github_client
+
+    GithubClient::LabelWriteSuppressing.new(github_client, project: self)
+  end
+  private :wrap_for_label_policy
 
   # @spec GITHUB-SYNC-018
   def code_scanning_coverage_status

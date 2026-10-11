@@ -2044,7 +2044,7 @@ RSpec.describe Project do
         project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
         allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
 
-        client = project.client
+        client = project.client.__getobj__
 
         expect(client).to be_a(GithubClient::WithFallback)
         expect(client.primary).to be_a(GithubClient)
@@ -2058,8 +2058,8 @@ RSpec.describe Project do
         project = app_backed_project(account, git_push_pat_fallback_enabled: false)
         allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
 
-        expect(project.client).to be_a(GithubClient)
-        expect(project.client).not_to be_a(GithubClient::WithFallback)
+        expect(project.client.__getobj__).to be_a(GithubClient)
+        expect(project.client.__getobj__).not_to be_a(GithubClient::WithFallback)
       end
 
       it "returns a plain GithubClient for token-backed projects even with fallback enabled" do
@@ -2068,8 +2068,8 @@ RSpec.describe Project do
         project = build(:project, account: account, github_token: create(:github_token, account: account),
           git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
 
-        expect(project.client).to be_a(GithubClient)
-        expect(project.client).not_to be_a(GithubClient::WithFallback)
+        expect(project.client.__getobj__).to be_a(GithubClient)
+        expect(project.client.__getobj__).not_to be_a(GithubClient::WithFallback)
       end
 
       it "memoizes the wrapped client across calls" do
@@ -2088,11 +2088,11 @@ RSpec.describe Project do
         project = create(:project, :with_github_installation, account: account)
         allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_install_token")
 
-        original_client = project.client
+        original_client = project.client.__getobj__
         project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
 
-        expect(project.client).to be_a(GithubClient::WithFallback)
-        expect(project.client.primary).not_to equal(original_client)
+        expect(project.client.__getobj__).to be_a(GithubClient::WithFallback)
+        expect(project.client.__getobj__.primary).not_to equal(original_client)
         expect(project.client.fallback).to eq(fallback.client)
       end
 
@@ -2170,7 +2170,7 @@ RSpec.describe Project do
 
         allow(project).to receive(:github_token).and_return(github_token)
 
-        expect(project.client).to be(github_client)
+        expect(project.client.__getobj__).to be(github_client)
       end
 
       it "builds a GithubClient from the app-backed installation credential" do
@@ -2184,7 +2184,7 @@ RSpec.describe Project do
           token_refresher: instance_of(Proc)
         ).and_return(github_client)
 
-        expect(project.client).to be(github_client)
+        expect(project.client.__getobj__).to be(github_client)
       end
     end
 
