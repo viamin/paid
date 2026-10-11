@@ -32,7 +32,11 @@ the system that actually shipped.
 Collector runs are versioned by project commit and write artifact/chunk/link
 state into PostgreSQL. Full collection runs stale older active artifacts so the
 knowledge base tracks what was known for each commit while still surfacing the
-latest active view.
+latest active view. Artifact identity updates use a non-blocking PostgreSQL
+advisory lock: contention raises a retryable failure promptly instead of
+consuming the collection job's wall-clock budget. `RunCollectorsJob` retries
+that transient failure with its bounded backoff policy, preserving serialized
+replacement without allowing a stranded database lock to create a job timeout.
 
 ### Derived vector indexing
 

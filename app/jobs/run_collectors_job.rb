@@ -12,6 +12,7 @@ class RunCollectorsJob < ApplicationJob
   self.perform_timeout = 20.minutes.to_i
 
   discard_on ActiveRecord::RecordNotFound
+  retry_on Knowledge::ArtifactStore::LockUnavailable, wait: :polynomially_longer, attempts: 5
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection
   # polls frequently and the prior job hasn't started yet.
