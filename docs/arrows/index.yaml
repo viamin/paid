@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  project-readiness:
+    title: Settings-Aware Project Readiness
+    path: docs/intent/project-readiness/project-readiness-design.md
+    specs: docs/intent/project-readiness/project-readiness-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-10-11
+    next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
   quiet-mode:
     title: Project Quiet Mode
     path: docs/intent/quiet-mode/quiet-mode-design.md
