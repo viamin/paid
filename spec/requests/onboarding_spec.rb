@@ -36,7 +36,9 @@ RSpec.describe "Onboarding" do
       end
 
       it "mentions auto-release in the GitHub token permission guidance" do
-        Onboarding::CompleteStep.call(account: account, step: "account_profile")
+        %w[account_profile chat_api_key].each do |step|
+          Onboarding::CompleteStep.call(account: account, step: step)
+        end
 
         get onboarding_path
 
@@ -61,7 +63,9 @@ RSpec.describe "Onboarding" do
 
     context "with github_token step" do
       before do
-        Onboarding::CompleteStep.call(account: account, step: "account_profile")
+        %w[account_profile chat_api_key].each do |step|
+          Onboarding::CompleteStep.call(account: account, step: step)
+        end
       end
 
       it "creates a GitHub token and advances" do
@@ -77,13 +81,31 @@ RSpec.describe "Onboarding" do
       end
     end
 
+    context "with chat_api_key step" do
+      before { Onboarding::CompleteStep.call(account: account, step: "account_profile") }
+
+      # @spec ONBOARD-CHAT-001 ONBOARD-CHAT-002
+      it "creates a chat-ready runner and redirects into the welcome chat" do
+        expect {
+          patch onboarding_path, params: {
+            step: "chat_api_key",
+            chat_api_key: { api_service_type: "openrouter", api_key: "test-key" }
+          }
+        }.to change(ChatSession, :count).by(1)
+
+        chat_session = ChatSession.last
+        expect(chat_session.runner).to be_enabled_for_chat
+        expect(response).to redirect_to(chat_session_path(chat_session))
+      end
+    end
+
     context "with first_project step" do
       let(:github_token) { create(:github_token, account: account) }
       let(:mock_client) { instance_double(GithubClient) }
       let(:repo_data) { OpenStruct.new(id: 123_456, name: "hello-world", default_branch: "main", language: "Ruby") }
 
       before do
-        %w[account_profile github_token].each do |step|
+        %w[account_profile chat_api_key github_token].each do |step|
           Onboarding::CompleteStep.call(account: account, step: step)
         end
         allow(GithubClient).to receive(:new).and_return(mock_client)
@@ -123,9 +145,11 @@ RSpec.describe "Onboarding" do
 
     context "with configure_defaults step" do
       before do
-        %w[account_profile github_token first_project].each do |step|
+        %w[account_profile chat_api_key github_token].each do |step|
           Onboarding::CompleteStep.call(account: account, step: step)
         end
+        Onboarding::CompleteStep.call(account: account, step: "first_project")
+        Onboarding::CompleteStep.call(account: account, step: "integrations")
       end
 
       it "provisions default prompts and style guides" do
@@ -143,14 +167,9 @@ RSpec.describe "Onboarding" do
       let!(:project) { create(:project, account: account, created_by: owner) }
 
       before do
-        %w[account_profile github_token].each do |step|
+        %w[account_profile chat_api_key github_token first_project integrations].each do |step|
           Onboarding::CompleteStep.call(account: account, step: step)
         end
-        Onboarding::CompleteStep.call(
-          account: account,
-          step: "first_project",
-          metadata: { project_id: project.id }
-        )
       end
 
       # @spec FEATURE-APPROVAL-004
