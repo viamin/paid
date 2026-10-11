@@ -11502,13 +11502,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_current_non_strict_tdd_review(review_body:)
     end
 
-    def disable_regular_paid_agent_reviews!(max_review_rounds: 3)
+    def disable_regular_paid_agent_reviews!(max_review_rounds: 3, max_review_goal_retries: nil)
+      termination = { "max_review_rounds" => max_review_rounds }
+      termination["max_review_goal_retries"] = max_review_goal_retries if max_review_goal_retries
+
       project.update!(review_settings: {
         "enabled" => false,
         "methods" => {
           "paid_agent" => {
             "enabled" => false,
-            "termination" => { "max_review_rounds" => max_review_rounds }
+            "termination" => termination
           }
         }
       })
@@ -11546,6 +11549,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       create(:agent_run, :completed, :review_goal,
         project: project,
         source_pull_request_number: 42,
+        trigger_type: "automatic",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [],
+        review_threads: []
+      )
+    end
+
+    def stub_retry_limited_non_strict_tdd_review
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 2.hours.ago)
+      create(:agent_run, :failed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "review",
         trigger_type: "automatic",
         completed_at: 1.hour.ago)
       stub_github_for_pr(
@@ -11841,6 +11865,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       disable_regular_paid_agent_reviews!(max_review_rounds: 1)
       pull_request
       stub_exhausted_non_strict_tdd_review_round
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "honors the test-review retry limit when ordinary reviews are disabled" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      disable_regular_paid_agent_reviews!(max_review_rounds: 15, max_review_goal_retries: 1)
+      pull_request
+      stub_retry_limited_non_strict_tdd_review
 
       result = activity.execute(project_id: project.id)
 

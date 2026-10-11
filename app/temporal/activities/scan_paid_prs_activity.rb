@@ -848,6 +848,8 @@ module Activities
           details: "Automated test review approved the proposed tests")
       end
 
+      return if tdd_review_goal_retry_limit_reached?(project, issue)
+
       pending_review = check_paid_agent_review_status(project, issue)
       draft_trigger_payload(issue, pending_review) if pending_review.any?
     end
@@ -2753,6 +2755,10 @@ module Activities
     # reached the configurable retry limit. The reset boundary comes from the
     # unified PR progress model, so successful review/create_pr runs, explicit
     # human resets, and newer PR head commits all clear stale failures (#1002).
+    def tdd_review_goal_retry_limit_reached?(project, issue)
+      review_goal_consecutive_failure_count(project, issue) >= review_goal_max_retries(project)
+    end
+
     def review_goal_retry_limit_reached?(project, issue, progress_state: nil)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
