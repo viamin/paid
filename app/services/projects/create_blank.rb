@@ -191,8 +191,9 @@ module Projects
     # Best-effort: a failure here never fails project creation because every
     # setup channel (chat, intake) remains available without the issue.
     # @spec PROJECT-CREATION-008
+    # @spec LABEL-INTEGRATION-002
     def create_bootstrap_issue(project)
-      issue = client.create_issue(
+      issue = project.client.create_issue(
         project.full_name,
         title: bootstrap_issue_title,
         body: bootstrap_issue_body(project),
