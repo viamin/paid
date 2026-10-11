@@ -184,10 +184,10 @@ yielding `/api/v1/...` paths and `Api::V1::*` controllers.
 
 | Method & path | Delegates to | Notes |
 |---|---|---|
-| `GET /api/v1/inbox` | `Inbox::Queue` | Filters `kind`, `sort` (`oldest` default / `newest`), `project_id` — the same URL contract the web inbox restores (INBOX-FOUNDATION-009). |
+| `GET /api/v1/inbox` | `Inbox::Queue` | Filters `kind`, `sort` (`oldest` default / `newest`), `project_id` — the same URL contract the web inbox restores (INBOX-FOUNDATION-009). Pages with `limit` (default 50, max 100) and opaque `cursor`/`next_cursor` entry ids. |
 | `GET /api/v1/inbox/count` | `Inbox::Count` | Already cached 90 s per user; the badge is the cheapest poll target. |
-| `GET /api/v1/inbox/:entry_id` | `Inbox::FindEntry` (new, thin) | Entry detail. Stale/absent id → `404` envelope (the API analog of the web stale-member redirect). |
-| `POST /api/v1/inbox/:entry_id/open_chat` | `Inbox::OpenInteractiveChat` | Returns `{ "chat_session_id": … }`; the client routes itself natively instead of consuming a URL. |
+| `GET /api/v1/inbox/entries/:entry_id` | `Inbox::FindEntry` (new, thin) | Entry detail. Stale/absent id → `404` envelope (the API analog of the web stale-member redirect). |
+| `POST /api/v1/inbox/entries/:entry_id/chat` | `Inbox::OpenInteractiveChat` | Returns `{ "chat_session_id": … }`; the client routes itself natively instead of consuming a URL. |
 
 **Polymorphic entry envelope.** Every entry carries the common fields
 (`id`, `kind`, `waiting_since`, `project` `{ id, owner, repo, name }`,
@@ -200,6 +200,15 @@ mirrors what the web detail pane renders per kind (`questions` for
 reason/counters for `escalated_pr`, and so on). The envelope is the wire
 projection of the `Inbox::Queue::Entry` struct — when a new kind registers
 in the queue, the schema adds one `oneOf` branch; no controller rewrite.
+
+**Inbox list pagination.** `GET /api/v1/inbox` returns at most `limit`
+entries (50 by default, 100 at most) and supplies the last returned entry's
+opaque id as `next_cursor` only when another page exists. A following request
+passes that id as `cursor` to continue after it in the queue's deterministic
+sort order. The list projection must not resolve data that is intentionally
+lazy for a selected entry: in particular, a `manual_review` list row includes
+its questions but not the GitHub comment URL. `GET /api/v1/inbox/entries/:id`
+is the detail projection and may resolve that URL for its one selected entry.
 
 **Entry detail lookup — design note (decision).** `Inbox::Queue` builds
 entries in memory with string ids (`"kind:numeric_id"`), so there is no
@@ -314,7 +323,8 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
 
 ## OpenAPI as the Contract Source of Truth
 
-- `docs/api/openapi.yaml` (OpenAPI 3.1) is the single normative description
+- `docs/api/openapi.yaml` (OpenAPI 3.0.3, the version supported by the
+  Committee runtime validator) is the single normative description
   of `/api/v1`: paths, the polymorphic inbox envelope (`oneOf` with `kind`
   discriminators), chat payloads, the error envelope, and the versioning
   policy (additive changes within `v1`; breaking changes require a new

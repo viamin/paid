@@ -54,34 +54,45 @@
   before dispatch, and enforce the same Pundit policies and policy scopes
   the web controllers enforce. The namespace SHALL NOT accept tokens via
   query parameters, cookies, or any non-header channel, and SHALL NOT
-  require a Devise session.
+  require a Devise session. It SHALL also enforce the control plane's
+  account-lifecycle rule (RAILS-CONTROL-PLANE-006): a deactivated account's
+  token SHALL be rejected with the same generic `401 unauthorized` envelope
+  as an invalid token (so the response does not disclose account status),
+  and a suspended account SHALL keep read access but have write requests
+  rejected `403`.
   *Tests:* `spec/requests/api/v1/authentication_spec.rb`,
-  `spec/requests/api/v1/chat_messages_spec.rb`.
+  `spec/requests/api/v1/chat_messages_spec.rb`,
+  `spec/requests/api/v1/tenant_enforcement_spec.rb`.
   *Code:* `Api::V1::BaseController`.
 
 ## Inbox endpoints
 
-- [ ] **MOBILE-API-006** — When a client calls `GET /api/v1/inbox`, the
+- [x] **MOBILE-API-006** — When a client calls `GET /api/v1/inbox`, the
   system SHALL return inbox entries from `Inbox::Queue` for the
   authenticated user, honoring the `kind`, `sort` (`oldest` default,
   `newest`), and `project_id` filter parameters with the same URL contract
-  the web inbox restores (INBOX-FOUNDATION-009). Each entry SHALL carry the
+  the web inbox restores (INBOX-FOUNDATION-009). The list SHALL page with an
+  opaque entry-id `cursor`, a `limit` default of 50 and maximum of 100, and a
+  `next_cursor` only when another page exists. Each entry SHALL carry the
   common envelope fields (`id`, `kind`, `waiting_since`, `project`, title,
-  summary, `action_url`) plus its kind-specific payload, and the OpenAPI
+  summary, `action_url`) plus its list-safe kind-specific payload: a
+  `manual_review` list entry SHALL NOT resolve its lazy GitHub comment URL;
+  that URL is available from the single-entry detail endpoint. The OpenAPI
   schema SHALL express the entry as `oneOf` across one branch per
   `Inbox::Queue::KINDS` kind.
-  *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
-  *Code:* `Api::V1::InboxController#index`.
+  *Tests:* `spec/requests/api/v1/inbox_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+  *Code:* `Api::V1::InboxController#index`, `Api::V1::InboxEntrySerializer`.
 
-- [ ] **MOBILE-API-007** — When a client calls `GET /api/v1/inbox/count`,
+- [x] **MOBILE-API-007** — When a client calls `GET /api/v1/inbox/count`,
   the system SHALL return the `Inbox::Count` value for the authenticated
   user, reusing its existing per-user cache so the mobile badge and the web
   nav badge derive from one computation.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Api::V1::InboxController#count`.
 
-- [ ] **MOBILE-API-008** — When a client requests
-  `GET /api/v1/inbox/:entry_id`, the system SHALL resolve the entry by
+- [x] **MOBILE-API-008** — When a client requests
+  `GET /api/v1/inbox/entries/:entry_id`, the system SHALL resolve the entry by
   re-running `Inbox::Queue` scoped to the kind parsed from the entry id
   prefix and matching the id — queue re-resolution, not a parallel
   per-lane lookup — so resolution doubles as the authorization check the
@@ -91,15 +102,19 @@
   `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Inbox::FindEntry`, `Api::V1::InboxController#show`.
 
-- [ ] **MOBILE-API-009** — When a client posts
-  `POST /api/v1/inbox/:entry_id/open_chat`, the system SHALL delegate to
+- [x] **MOBILE-API-009** — When a client posts
+  `POST /api/v1/inbox/entries/:entry_id/chat`, the system SHALL require the
+  bearer token to carry the `chat` scope (distinct from the `inbox` scope
+  the read endpoints require) before delegating to
   `Inbox::OpenInteractiveChat` (same `InteractiveChatAccess` gate and
-  per-user per-entry chat resolution as the web action) and return the
-  resulting session's `chat_session_id`, without returning a web URL.
+  per-user per-entry chat resolution as the web action), and return the
+  resulting session's `chat_session_id`, without returning a web URL. A
+  token scoped to `inbox` only SHALL receive `403` without creating or
+  resuming a chat session.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
-  *Code:* `Api::V1::InboxController#open_chat`.
+  *Code:* `Api::V1::InboxController#chat`.
 
-- [ ] **MOBILE-API-010** — When a client sends `GET /api/v1/inbox` or
+- [x] **MOBILE-API-010** — When a client sends `GET /api/v1/inbox` or
   `GET /api/v1/inbox/count` with an `If-None-Match` header matching the
   current strong ETag, the system SHALL respond `304` with an empty body
   without building the inbox queue. The ETag SHALL be a digest of the
@@ -174,7 +189,7 @@
 
 ## Contract infrastructure
 
-- [ ] **MOBILE-API-016** — The `/api/v1` namespace SHALL be described by
+- [x] **MOBILE-API-016** — The `/api/v1` namespace SHALL be described by
   `docs/api/openapi.yaml` as the contract source of truth, with `committee`
   validating requests and responses against it — strict in the test
   environment so request specs assert conformance, warn-and-log elsewhere.

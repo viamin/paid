@@ -97,6 +97,10 @@ class PersonalAccessToken < ApplicationRecord
     update!(revoked_at: Time.current)
   end
 
+  def allows?(scope)
+    scopes.include?(scope.to_s)
+  end
+
   # Stamps the usage marker at most once per throttle window so polling
   # clients do not turn every request into a write. Feeds the revocation UI
   # and hygiene reporting only — never gates authorization.

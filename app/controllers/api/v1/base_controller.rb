@@ -13,11 +13,13 @@ module Api
 
       around_action :with_bearer_request_context, prepend: true
       before_action :authenticate_bearer!
+      before_action :enforce_account_status!
       before_action :enforce_bearer_rate_limit!
       after_action :verify_authorized, unless: :skip_pundit?
       after_action :verify_policy_scoped, if: :verify_policy_scoped?
 
       rescue_from Pundit::NotAuthorizedError, with: :forbidden
+      rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
       private
 
@@ -77,6 +79,20 @@ module Api
         end
       end
 
+      # API-safe equivalent of TenantEnforcement: deactivated accounts cannot
+      # use bearer credentials, while suspended accounts retain read access.
+      # @spec RAILS-CONTROL-PLANE-006
+      def enforce_account_status!
+        return unless current_account
+
+        return halt_request { render_unauthorized } if current_account.deactivated?
+        return unless current_account.suspended? && mutating_request?
+
+        halt_request do
+          render_error(:forbidden, :forbidden, "This account is suspended. Write operations are disabled.")
+        end
+      end
+
       # Marks a request whose callback chain stopped before the action ran
       # (401/429 renders), so Pundit verification does not demand an
       # authorize call from a request that never dispatched.
@@ -95,6 +111,14 @@ module Api
         value
       end
 
+      def mutating_request?
+        !request.get? && !request.head?
+      end
+
+      def require_scope!(scope)
+        raise Pundit::NotAuthorizedError unless current_bearer_token.allows?(scope)
+      end
+
       # One generic message for every failure case — the API does not
       # disclose whether a token is missing, malformed, unknown, revoked, or
       # expired.
@@ -108,6 +132,10 @@ module Api
 
       def forbidden
         render_error(:forbidden, :forbidden, "You are not authorized to perform this action.")
+      end
+
+      def not_found
+        render_error(:not_found, :not_found, "The requested resource was not found.")
       end
 
       def skip_pundit?
