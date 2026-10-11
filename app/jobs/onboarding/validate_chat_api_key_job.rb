@@ -15,7 +15,7 @@ module Onboarding
       result = AgentHarness.check_provider(
         RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym,
         timeout: Onboarding::ConfigureChatRunner::HEALTH_CHECK_TIMEOUT,
-        provider_runtime: runner.agent_harness_runner_runtime
+        provider_runtime: runner_runtime(runner)
       )
       invalidate_bootstrap(runner) if authentication_failure?(result)
       log_result(runner, result)
@@ -31,6 +31,19 @@ module Onboarding
 
     def authentication_failure?(result)
       result[:status].to_s == "error" && result[:error_category].to_s == "authentication"
+    end
+
+    def runner_runtime(runner)
+      runner.agent_harness_runner_runtime || fixed_runner_runtime(runner)
+    end
+
+    def fixed_runner_runtime(runner)
+      api_service_type = RunnerSupport.api_service_type_for(runner.runner_key)
+      return unless api_service_type
+
+      AgentHarness::ProviderRuntime.new(
+        env: { "#{api_service_type.upcase.tr('-', '_')}_API_KEY" => runner.effective_api_secret.to_s }
+      )
     end
 
     def invalidate_bootstrap(runner)

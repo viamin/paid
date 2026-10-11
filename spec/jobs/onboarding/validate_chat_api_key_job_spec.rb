@@ -40,4 +40,24 @@ RSpec.describe Onboarding::ValidateChatApiKeyJob do
     )
     expect(account.onboarding_steps.find_by(step: "github_token")).to be_pending
   end
+
+  # @spec ONBOARD-CHAT-003
+  it "checks a fixed Anthropic runner with its submitted API key" do
+    result = Onboarding::ConfigureChatRunner.call(
+      account: account,
+      user: user,
+      api_service_type: "anthropic",
+      api_key: "invalid-anthropic-key"
+    )
+
+    described_class.perform_now(result.runner.id)
+
+    expect(AgentHarness).to have_received(:check_provider).with(
+      :claude,
+      timeout: Onboarding::ConfigureChatRunner::HEALTH_CHECK_TIMEOUT,
+      provider_runtime: have_attributes(env: { "ANTHROPIC_API_KEY" => "invalid-anthropic-key" })
+    )
+    expect { result.provider_api_key.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    expect(account.onboarding_steps.find_by(step: "chat_api_key")).to be_in_progress
+  end
 end
