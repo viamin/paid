@@ -94,4 +94,15 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     radio = page.find("input[name='project_id'][value='#{project_b.id}']", visible: :all)
     expect(radio).to be_checked
   end
+
+  it "keeps a newly selected type when it clears an incompatible project" do
+    open_filters
+    choose "acme/alpha"
+    choose "Manual Review"
+
+    expect(page).to have_checked_field("Manual Review")
+    expect(page).to have_checked_field("All projects")
+    assert_project_option_state(project_a, :hidden)
+    assert_project_option_state(project_b, :visible)
+  end
 end

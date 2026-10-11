@@ -36,7 +36,7 @@ export default class extends Controller {
   kindChanged(event) {
     if (event.target.name !== "kind") return
 
-    this.refreshOptions()
+    this.refreshOptions("kind")
   }
 
   // Selecting a Project narrows the Type list to kinds with items in that
@@ -44,7 +44,7 @@ export default class extends Controller {
   projectChanged(event) {
     if (event.target.name !== "project_id") return
 
-    this.refreshOptions()
+    this.refreshOptions("project")
   }
 
   // Single writer for option visibility so the project search and the
@@ -53,14 +53,34 @@ export default class extends Controller {
   // query and carries items of the selected kind. Hiding through the
   // search never drops a selection; a selection excluded by the other
   // group's filter resets to that group's "All" option.
-  refreshOptions() {
+  refreshOptions(changedField) {
     const selectedKind = this.selectedValue("kind")
     const selectedProjectId = this.selectedValue("project_id")
     const query = this.projectSearchTarget.value.trim().toLowerCase()
 
+    if (changedField === "kind") {
+      this.refreshProjectOptions(selectedKind, query)
+      this.refreshKindOptions(this.selectedValue("project_id"))
+      return
+    }
+
+    if (changedField === "project") {
+      this.refreshKindOptions(selectedProjectId)
+      this.refreshProjectOptions(this.selectedValue("kind"), query)
+      return
+    }
+
+    this.refreshKindOptions(selectedProjectId)
+    this.refreshProjectOptions(this.selectedValue("kind"), query)
+  }
+
+  refreshKindOptions(selectedProjectId) {
     this.kindOptionTargets.forEach((option) => {
       this.updateOption(option, this.allowed(option, "projectIds", selectedProjectId))
     })
+  }
+
+  refreshProjectOptions(selectedKind, query) {
     this.projectOptionTargets.forEach((option) => {
       const allowed = this.allowed(option, "kindIds", selectedKind)
       const matchesQuery = query.length === 0 || Boolean(option.dataset.projectName?.includes(query))
