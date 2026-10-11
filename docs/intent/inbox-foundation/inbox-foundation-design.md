@@ -129,14 +129,20 @@ team gathers evidence that combined kinds are needed.
 
 The dialog only offers options that cannot yield an empty list. An
 `Inbox::Availability` service computes, per kind and per project, how many
-items are waiting — from the same lane scopes the `Inbox::Count` badge uses
-(shared candidate scopes on `Inbox::MergeApproval` and
-`Inbox::IntentConformance`; the exact SQL of the other lanes), never from
-`Inbox::Queue`'s per-entry build, so an ordinary `/inbox` render pays about
-what the nav badge already pays. The Type selector lists only kinds with ≥1
-item scoped to the active project filter; the Project selector lists only
-projects with ≥1 item scoped to the active kind filter; both show counts and
-keep their "All" reset.
+renderable items are waiting — from lane scopes corresponding to the
+`Inbox::Count` badge (shared candidate scopes on `Inbox::MergeApproval` and
+`Inbox::IntentConformance`; the exact SQL of the other lanes), without
+building full queue entries. The badge remains a bounded approximation for
+stale questionless `needs_input` rows, while availability must remain exact so
+its options never produce an empty list. The Type selector lists only kinds
+with ≥1 item scoped to the active project filter; the Project selector lists
+only projects with ≥1 item scoped to the active kind filter; both show counts
+and keep their "All" reset.
+
+The clarifying-questions availability lane additionally reuses
+`Inbox::Queue.questions_for` for its renderability predicate. A stale
+`needs_input` row without parseable body questions or persisted questions is
+not an inbox item, so it must not make a type or project option available.
 
 The kind↔project availability matrix is embedded in the dialog's DOM
 (`data-project-ids` on kind options, `data-kind-ids` on project options), so

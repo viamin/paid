@@ -6,6 +6,14 @@ require "rails_helper"
 RSpec.describe Inbox::Availability do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
+  let(:questions_body) do
+    <<~BODY
+      <!-- paid:enhance-issue -->
+
+      ## Clarifying questions
+      1. What is the expected behavior?
+    BODY
+  end
   let(:project_a) do
     create(
       :project,
@@ -33,8 +41,8 @@ RSpec.describe Inbox::Availability do
 
   describe "#kind_counts and #available_kinds" do
     it "counts entries per kind across visible projects and hides kinds with nothing waiting" do
-      create(:issue, :needs_input, project: project_a)
-      create(:issue, :needs_input, project: project_b)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      create(:issue, :needs_input, project: project_b, body: questions_body)
       create(:issue, project: project_a, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
       availability = described_class.call(user: user)
@@ -47,14 +55,25 @@ RSpec.describe Inbox::Availability do
     end
 
     it "narrows kind counts to the active project filter" do
-      create(:issue, :needs_input, project: project_a)
-      create(:issue, :needs_input, project: project_b)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      create(:issue, :needs_input, project: project_b, body: questions_body)
       create(:issue, project: project_b, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
       availability = described_class.call(user: user, project: project_a)
 
       expect(availability.kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]).to eq(1)
       expect(availability.available_kinds).to contain_exactly(Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+    end
+
+    it "excludes questionless needs-input issues that the queue cannot render" do
+      create(:issue, :needs_input, project: project_a, body: "Needs manual retry")
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]).to eq(0)
+      expect(availability.available_kinds).not_to include(Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+      expect(availability.available_projects).not_to include(project_a)
+      expect(availability.total_count).to eq(0)
     end
 
     # @spec OPERATOR-INBOX-002E @spec CHANGE-INTENT-INBOX-001
@@ -87,7 +106,7 @@ RSpec.describe Inbox::Availability do
 
   describe "#project_counts and #available_projects" do
     it "counts entries per project and hides projects with nothing waiting" do
-      create(:issue, :needs_input, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
       untouched_project = create(:project, account: account, created_by: user, active: true, owner: "acme", repo: "gamma")
 
       availability = described_class.call(user: user)
@@ -98,7 +117,7 @@ RSpec.describe Inbox::Availability do
     end
 
     it "narrows project counts to the active kind filter" do
-      create(:issue, :needs_input, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
       create(:issue, project: project_b, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
       availability = described_class.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
@@ -110,7 +129,7 @@ RSpec.describe Inbox::Availability do
 
   describe "#total_count" do
     it "ignores the active filters and matches Inbox::Count's unfiltered badge" do
-      create(:issue, :needs_input, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
       create(:issue, project: project_b, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
       availability = described_class.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND, project: project_b)
@@ -122,7 +141,7 @@ RSpec.describe Inbox::Availability do
 
   describe "#project_ids_for and #kinds_for" do
     it "exposes the full kind<->project matrix independent of the active filters" do
-      create(:issue, :needs_input, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
       create(:issue, project: project_b, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
       availability = described_class.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
@@ -136,7 +155,7 @@ RSpec.describe Inbox::Availability do
   it "excludes projects the operator cannot see" do
     other_user = create(:user, account: create(:account))
     hidden_project = create(:project, account: other_user.account, created_by: other_user, active: true, owner: "acme", repo: "hidden")
-    create(:issue, :needs_input, project: hidden_project)
+    create(:issue, :needs_input, project: hidden_project, body: questions_body)
 
     availability = described_class.call(user: user)
 
@@ -158,7 +177,7 @@ RSpec.describe Inbox::Availability do
 
     # @spec INBOX-FOUNDATION-010
     it "caches the per-user matrix for the TTL so repeated renders skip the lane work" do
-      issue = create(:issue, :needs_input, project: project_a)
+      issue = create(:issue, :needs_input, project: project_a, body: questions_body)
       # Capture the counts eagerly — the Availability readers are lazy, so
       # deferring them to assertion time would re-read the (now mutated)
       # cache instead of the value the first call produced.
@@ -176,7 +195,7 @@ RSpec.describe Inbox::Availability do
 
     # @spec INBOX-FOUNDATION-010
     it "refreshes the matrix after the inbox cache version bumps" do
-      issue = create(:issue, :needs_input, project: project_a)
+      issue = create(:issue, :needs_input, project: project_a, body: questions_body)
       described_class.call(user: user).kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]
 
       issue.update_column(:github_state, "closed")
@@ -189,7 +208,7 @@ RSpec.describe Inbox::Availability do
 
     # @spec INBOX-FOUNDATION-006
     it "keeps each operator's matrix in a separate cache entry" do
-      create(:issue, :needs_input, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
       described_class.call(user: user)
 
       other_user = create(:user, account: account)

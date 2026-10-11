@@ -123,7 +123,10 @@ module Inbox
       return {} if visible_project_ids.empty?
 
       Issue.where(project_id: visible_project_ids, paid_state: "needs_input", github_state: "open")
-        .group(:project_id).count
+        .select(:id, :project_id, :body, :needs_input_questions)
+        .find_each
+        .filter_map { |issue| issue.project_id if Inbox::Queue.questions_for(issue).any? }
+        .tally
     end
 
     def plan_review_by_project

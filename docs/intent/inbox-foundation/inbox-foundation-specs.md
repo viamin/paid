@@ -118,11 +118,14 @@
   only kinds with ≥1 waiting item (scoped to the active project filter when
   one is applied) plus "All types", and the Project selector SHALL list only
   projects with ≥1 waiting item (scoped to the active kind filter when one is
-  applied) plus "All projects". Each offered option SHALL display its item
-  count. Availability SHALL be computed from the same per-kind lane scopes the
-  `Inbox::Count` badge uses (so displayed counts agree with the unfiltered
-  badge total), not from `Inbox::Queue`'s heavier per-entry build, and the
-  per-user matrix SHALL be cached behind the same dashboard cache version and
+  applied) plus "All projects". The clarifying-questions lane SHALL exclude
+  `needs_input` rows that lack both parseable body questions and persisted
+  `needs_input_questions`, because `Inbox::Queue` cannot render them. Each
+  offered option SHALL display its item count. Availability SHALL be computed
+  from per-kind lane scopes corresponding to `Inbox::Count` without building
+  full queue entries; unlike the badge's bounded approximation, the matrix
+  SHALL apply each lane's renderability predicate. The per-user matrix SHALL
+  be cached behind the same dashboard cache version and
   short TTL the badge uses — every inbox render (`index`, `show`, and
   `open_chat` all build availability in `load_inbox`) pays one cache read
   instead of re-running every lane per request. The dialog
