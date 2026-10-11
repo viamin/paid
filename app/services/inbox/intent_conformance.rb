@@ -18,6 +18,26 @@ module Inbox
       new(issue).call
     end
 
+    # Cheap SQL prefilter narrowing to rows that could plausibly carry the
+    # intent_conformance blocker before falling back to Ruby for the full
+    # `call` verdict check. Shared by `Inbox::Count` and `Inbox::Availability`
+    # so the candidate definition can't drift between the badge, the filters
+    # dialog, and the queue.
+    def self.candidates(project_ids)
+      Issue
+        .includes(:project)
+        .where(
+          project_id: project_ids,
+          is_pull_request: true,
+          github_state: "open",
+          pr_review_phase: "ready",
+          merge_permission_rejected_at: nil
+        )
+        .where.not(auto_merge_evaluated_at: nil)
+        .where.not(auto_merge_blockers: nil)
+        .where.not(projects: { auto_merge_mode: "off" })
+    end
+
     def initialize(issue)
       @issue = issue
     end

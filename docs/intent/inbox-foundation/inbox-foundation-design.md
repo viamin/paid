@@ -125,6 +125,37 @@ closes it and Enter submits its GET form. Type deliberately remains
 single-select: that preserves the established `kind` URL contract while the
 team gathers evidence that combined kinds are needed.
 
+### Filter availability and empty-combination fallback (#4276)
+
+The dialog only offers options that cannot yield an empty list. An
+`Inbox::Availability` service computes, per kind and per project, how many
+renderable items are waiting — from lane scopes corresponding to the
+`Inbox::Count` badge (shared candidate scopes on `Inbox::MergeApproval` and
+`Inbox::IntentConformance`; the exact SQL of the other lanes), without
+building full queue entries. The badge remains a bounded approximation for
+stale questionless `needs_input` rows, while availability must remain exact so
+its options never produce an empty list. The Type selector lists only kinds
+with ≥1 item scoped to the active project filter; the Project selector lists
+only projects with ≥1 item scoped to the active kind filter; both show counts
+and keep their "All" reset.
+
+The clarifying-questions availability lane additionally reuses
+`Inbox::Queue.questions_for` for its renderability predicate. A stale
+`needs_input` row without parseable body questions or persisted questions is
+not an inbox item, so it must not make a type or project option available.
+
+The kind↔project availability matrix is embedded in the dialog's DOM
+(`data-project-ids` on kind options, `data-kind-ids` on project options), so
+the Stimulus controller narrows the opposite group live as the operator
+selects — no extra round-trip — and resets a now-invalid selection to "All".
+
+Server-side, a filtered URL matching zero entries while ≥1 item waits
+elsewhere (stale bookmark, deep link, item resolved since the list rendered)
+must not land on the "Inbox clear" empty state: the controller redirects to
+the unfiltered view (keeping only `sort`) with a notice that the filter was
+cleared. That empty state therefore means exactly "nothing is waiting
+anywhere", not "this combination matches nothing".
+
 Ordering differs in the one way the inbox page cares about:
 
 - **Oldest-waiting-first** by `needs_input_since ASC NULLS LAST`, with a stable
