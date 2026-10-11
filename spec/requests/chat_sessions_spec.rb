@@ -255,6 +255,18 @@ RSpec.describe "ChatSessions" do
         expect(response).to redirect_to(chat_session_path(created_session))
       end
 
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "creates a default session when the runner and model selection is blank" do
+        existing_ids = ChatSession.pluck(:id)
+
+        post chat_sessions_path, params: {
+          chat_session: { container_capability: "none", runner_model: "", title: "UI Chat" }
+        }
+
+        created_session = ChatSession.where.not(id: existing_ids).sole
+        expect(response).to redirect_to(chat_session_path(created_session))
+      end
+
       it "defaults wildcard accept create requests to json" do
         post chat_sessions_path, params: { container_capability: "none", title: "API Chat" }, headers: { "Accept" => "*/*" }
 

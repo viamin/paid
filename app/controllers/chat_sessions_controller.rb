@@ -313,9 +313,12 @@ class ChatSessionsController < ApplicationController
   def resolve_runner_model_selection!(permitted)
     return unless permitted.key?(:runner_model)
 
+    value = permitted.delete(:runner_model)
+    return if value.blank?
+
     selection = ChatSessions::RunnerModelOptions.resolve(
       runners: available_chat_runners,
-      value: permitted.delete(:runner_model)
+      value: value
     )
     raise ArgumentError, "Choose a valid runner and model combination." unless selection
 
