@@ -2,7 +2,9 @@
 
 module Knowledge
   class ArtifactStore
-    ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
+    class LockUnavailable < StandardError; end
+
+    TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock($1, $2)".freeze
     ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
     LOCK_NAMESPACE = 1_357_180_002
 
@@ -17,6 +19,7 @@ module Knowledge
       new(project: project, collector_run: collector_run).store_all(artifact_data_list)
     end
 
+    # @spec KNOWLEDGE-001
     # Accepts an array of artifact hashes and upserts them idempotently.
     # Returns the count of artifacts stored.
     def store_all(artifact_data_list = [])
@@ -236,10 +239,13 @@ module Knowledge
     end
 
     def with_artifact_lock(data)
-      execute_lock_sql(ADVISORY_LOCK_SQL, advisory_lock_key(data))
+      lock_key = advisory_lock_key(data)
+      acquired = acquire_artifact_lock(lock_key)
+      raise LockUnavailable, "Knowledge artifact lock is unavailable" unless acquired
+
       yield
     ensure
-      execute_lock_sql(ADVISORY_UNLOCK_SQL, advisory_lock_key(data))
+      execute_lock_sql(ADVISORY_UNLOCK_SQL, lock_key) if acquired
     end
 
     def advisory_lock_key(data)
@@ -257,6 +263,11 @@ module Knowledge
 
     def execute_lock_sql(sql, lock_key)
       ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, lock_key ])
+    end
+
+    def acquire_artifact_lock(lock_key)
+      lock_result = execute_lock_sql(TRY_ADVISORY_LOCK_SQL, lock_key).getvalue(0, 0)
+      lock_result == true || lock_result == "t"
     end
   end
 end

@@ -114,6 +114,18 @@ RSpec.describe RunCollectorsJob do
 
         expect(project.reload.knowledge_status).to eq("failed")
       end
+
+      # @spec KNOWLEDGE-001
+      it "keeps knowledge_status collecting when an artifact lock is unavailable for retry" do
+        allow(Knowledge::CollectorRunner).to receive(:call)
+          .and_raise(Knowledge::ArtifactStore::LockUnavailable, "lock unavailable")
+
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[Knowledge::ArtifactStore::LockUnavailable]" => 0 }
+
+        expect { job.perform_now }.not_to raise_error
+        expect(project.reload.knowledge_status).to eq("collecting")
+      end
     end
 
     context "when Docker is available" do
@@ -191,5 +203,57 @@ RSpec.describe RunCollectorsJob do
         }.to have_enqueued_job(HandleExceptionJob).exactly(:once)
       end
     end
+
+    context "when artifact lock contention exhausts retries" do
+      let(:notifier) { instance_double(Paid::ExceptionNotifier) }
+
+      before do
+        allow(Knowledge::CollectorRunner).to receive(:call)
+          .and_raise(Knowledge::ArtifactStore::LockUnavailable, "lock unavailable")
+        allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+        allow(notifier).to receive(:call)
+      end
+
+      # @spec KNOWLEDGE-001 EXCEPTION-NOTIFY-003
+      it "marks the collection failed, notifies, and re-raises" do
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[Knowledge::ArtifactStore::LockUnavailable]" => 4 }
+
+        expect { job.perform_now }.to raise_error(Knowledge::ArtifactStore::LockUnavailable, "lock unavailable")
+
+        expect(project.reload.knowledge_status).to eq("failed")
+        expect(notifier).to have_received(:call).with(
+          an_instance_of(Knowledge::ArtifactStore::LockUnavailable),
+          data: hash_including(subsystem: "knowledge", project_id: project.id)
+        )
+      end
+
+      # @spec KNOWLEDGE-001
+      # Reproduces the production timing gap directly on #mark_terminal_lock_failure:
+      # by the time retry_on's exhaustion block runs, ApplicationJob's
+      # around_perform has already unwound with_tenant_context, restoring the DB
+      # session to no account/no bypass (TenantContext#with's ensure). The
+      # :tenant_isolation tag opts this example out of rails_helper's blanket
+      # system-access wrap so that gap isn't masked by the test harness.
+      it "bypasses RLS for the project lookup even with no surrounding tenant context", :tenant_isolation do
+        job = described_class.new(project.id, commit_sha)
+        bypass_during_lookup = nil
+        allow(Project).to receive(:find_by).and_wrap_original do |method, *args, **kwargs|
+          bypass_during_lookup = current_bypass_setting
+          method.call(*args, **kwargs)
+        end
+
+        bypass_before = current_bypass_setting
+        job.send(:mark_terminal_lock_failure)
+
+        expect(bypass_during_lookup).to eq("true")
+        expect(current_bypass_setting).to eq(bypass_before)
+        expect(project.reload.knowledge_status).to eq("failed")
+      end
+    end
+  end
+
+  def current_bypass_setting
+    ActiveRecord::Base.connection.select_value("SELECT current_setting('paid.bypass_tenant_rls', true)")
   end
 end
