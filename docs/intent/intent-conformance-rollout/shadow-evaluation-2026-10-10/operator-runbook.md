@@ -8,7 +8,7 @@ This runbook starts from a pending corpus. It must not be used to infer any eval
 2. Commit the final corpus manifest. Record its immutable Git commit SHA.
 3. Before opening any case packet, append an `operators_frozen` event naming the two primary operators and a potential third operator. Every later event repeats that manifest SHA. The tool rejects any other manifest identity after the first adjudication.
 4. Give each primary operator only the case packet: PR metadata, base/head diff, and approved design revision. Do not give them the ledger's `shadow_run` events, an existing `IntentConformanceVerdict`, reviewer prompts, model output, or a worksheet.
-5. Each operator independently appends one `adjudication` event for each case. It must contain their identity, a verdict of `accepted`, `material_drift`, or `uncertain`, a cited design claim, a reason, and an ISO-8601 timestamp. An append is final; corrections require a separately documented, new corpus run rather than editing or deleting the event.
+5. Each operator independently appends one `adjudication` event for each case. It must contain their identity, a verdict of `accepted`, `material_drift`, or `uncertain`, a cited design claim, a reason, and an ISO-8601 timestamp. An append is final; corrections require a separately documented, new corpus run rather than editing or deleting the event. Commit each append separately — the tool verifies `manifest_commit` and every ledger event against actual Git history, not just the labels and digests recorded in the events, and rejects any event that shares its introducing commit with another ledger event.
 
 ## Tie-break and reviewer sequence
 

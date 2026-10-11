@@ -4,6 +4,7 @@ require "digest"
 require "json"
 require "time"
 require "yaml"
+require_relative "shadow_evaluation_ledger_git_evidence"
 
 module IntentConformance
   # Repository-visible, append-only evidence for the RDR-067 shadow evaluation.
@@ -55,6 +56,7 @@ module IntentConformance
       ensure_adjudications!(cases, entries)
       ensure_shadow_runs_follow_adjudications!(cases, entries)
       ensure_corpus_shape!(cases)
+      ensure_git_evidence!(entries, manifest_path, ledger_path, manifest_commit)
       true
     end
 
@@ -67,6 +69,7 @@ module IntentConformance
       ensure_operators_frozen!(entries)
       ensure_adjudications!(cases, entries)
       ensure_corpus_shape!(cases)
+      ensure_git_evidence!(entries, manifest_path, ledger_path, manifest_commit)
       true
     end
 
@@ -86,6 +89,10 @@ module IntentConformance
       raise InvalidLedger, "invalid corpus manifest: #{error.message}"
     end
 
+    # Cheap, fast-failing sanity check: every event must at least repeat the same
+    # manifest_commit label. This is NOT proof that the manifest commit predates
+    # the events — a label can be copy-pasted onto a fabricated sequence. Real
+    # proof is Git history, enforced by ensure_git_evidence! below.
     def ensure_manifest_predates_events!(entries, manifest_commit)
       return if entries.empty?
       raise InvalidLedger, "manifest_commit is required before adjudication" if manifest_commit.to_s.empty?
@@ -107,6 +114,19 @@ module IntentConformance
       return if entries.all? { |entry| entry["manifest_digest"] == current_digest }
 
       raise InvalidLedger, "every ledger event must match the frozen corpus manifest content"
+    end
+
+    # Neither of the two checks above touches Git: they only prove internal
+    # self-consistency between the ledger and the manifest file as they exist
+    # right now. An operator could still fabricate that self-consistent state
+    # entirely after the fact — write a manifest, back-date a ledger, pick any
+    # real commit SHA as manifest_commit. ShadowEvaluationLedgerGitEvidence
+    # verifies the claim against the repository itself: manifest_commit must be
+    # a real commit whose tree holds the frozen manifest content, and every
+    # ledger event must have its own introducing Git commit that descends from
+    # it, so a sequence cannot be manufactured in one or a few post-hoc edits.
+    def ensure_git_evidence!(entries, manifest_path, ledger_path, manifest_commit)
+      ShadowEvaluationLedgerGitEvidence.verify!(entries: entries, manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit)
     end
 
     def ensure_operators_frozen!(entries)

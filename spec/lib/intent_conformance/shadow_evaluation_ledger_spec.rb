@@ -106,18 +106,121 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "rejects a manifest whose content was edited after adjudication while keeping the same manifest_commit label" do
-    cases = complete_corpus_cases
-    File.write(manifest, { "cases" => cases }.to_yaml)
-    events = complete_corpus_adjudication_events(cases) + complete_corpus_shadow_runs(cases)
-    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
-    expect(described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40)).to be(true)
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, manifest_commit)
 
-    tampered_cases = cases.dup
-    tampered_cases[0] = tampered_cases[0].merge("head_sha" => "f" * 40)
-    File.write(manifest, { "cases" => tampered_cases }.to_yaml)
+      record_events_in_separate_commits(dir, ledger_path, complete_corpus_adjudication_events(cases, base) + complete_corpus_shadow_runs(cases, base))
 
-    expect { described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
-      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /must match the frozen corpus manifest content/)
+      expect(described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit)).to be(true)
+
+      tampered_cases = cases.dup
+      tampered_cases[0] = tampered_cases[0].merge("head_sha" => "f" * 40)
+      File.write(manifest_path, { "cases" => tampered_cases }.to_yaml)
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /must match the frozen corpus manifest content/)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects a manifest_commit that does not resolve to a real git commit" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, "a" * 40)
+
+      git_write!(dir, ledger_path, complete_corpus_adjudication_events(cases, base).map { |event| JSON.generate(event) }.join("\n"), "record adjudications")
+      git_append_events!(dir, ledger_path, complete_corpus_shadow_runs(cases, base), "record shadow runs")
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: "a" * 40) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /not a commit reachable in this repository/)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects a manifest_commit that exists in git but never held the frozen manifest content" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      unrelated_commit = git_write!(dir, File.join(dir, "unrelated.txt"), "irrelevant", "unrelated commit")
+      File.write(manifest_path, { "cases" => cases }.to_yaml)
+      base = event_base_for(manifest_path, unrelated_commit)
+
+      git_write!(dir, ledger_path, complete_corpus_adjudication_events(cases, base).map { |event| JSON.generate(event) }.join("\n"), "record adjudications")
+      git_append_events!(dir, ledger_path, complete_corpus_shadow_runs(cases, base), "record shadow runs")
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: unrelated_commit) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /does not contain the frozen corpus manifest content/)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects a ledger whose entire freeze/adjudication/shadow-run sequence was recorded in a single commit" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, manifest_commit)
+      events = complete_corpus_adjudication_events(cases, base) + complete_corpus_shadow_runs(cases, base)
+
+      git_write!(dir, ledger_path, events.map { |event| JSON.generate(event) }.join("\n"), "record entire sequence after the fact")
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /each ledger event must be introduced by a separate git commit/)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects multiple events introduced together after an earlier ledger commit" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, manifest_commit)
+      adjudications = complete_corpus_adjudication_events(cases, base)
+      shadow_runs = complete_corpus_shadow_runs(cases, base)
+
+      git_write!(dir, ledger_path, JSON.generate(adjudications.shift), "record first adjudication")
+      git_append_events!(dir, ledger_path, adjudications + shadow_runs, "fabricate remaining events together")
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /each ledger event must be introduced by a separate git commit/)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "rejects a ledger commit that does not descend from the frozen manifest commit" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+
+      run_git(dir, "checkout", "-q", "--orphan", "manifest-branch")
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+
+      run_git(dir, "checkout", "-q", "--orphan", "ledger-branch")
+      File.write(manifest_path, { "cases" => cases }.to_yaml)
+      base = event_base_for(manifest_path, manifest_commit)
+      record_events_in_separate_commits(dir, ledger_path, complete_corpus_adjudication_events(cases, base) + complete_corpus_shadow_runs(cases, base))
+
+      expect { described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit) }
+        .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /does not descend from the frozen manifest commit/)
+    end
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
@@ -175,12 +278,18 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "accepts reviewer runs appended and timestamped after complete adjudications" do
-    cases = complete_corpus_cases
-    File.write(manifest, { "cases" => cases }.to_yaml)
-    events = complete_corpus_adjudication_events(cases) + complete_corpus_shadow_runs(cases)
-    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, manifest_commit)
 
-    expect(described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40)).to be(true)
+      record_events_in_separate_commits(dir, ledger_path, complete_corpus_adjudication_events(cases, base) + complete_corpus_shadow_runs(cases, base))
+
+      expect(described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit)).to be(true)
+    end
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-003
@@ -279,6 +388,10 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     ]
   end
 
+  def event_base_for(manifest_path, manifest_commit)
+    base_event.merge("manifest_commit" => manifest_commit, "manifest_digest" => described_class.manifest_digest(manifest_path))
+  end
+
   def complete_case(id, stratum: "accepted")
     {
       "id" => id,
@@ -298,19 +411,25 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     end
   end
 
-  def complete_corpus_adjudication_events(cases)
-    freeze = base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[one two])
+  def complete_corpus_adjudication_events(cases, event_base = base_event)
+    freeze = event_base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[one two])
     adjudications = cases.flat_map do |corpus_case|
       [ "one", "two" ].map do |operator|
-        base_event.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-#{operator}", "case_id" => corpus_case.fetch("id"), "operator" => operator, "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y")
+        event_base.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-#{operator}", "case_id" => corpus_case.fetch("id"), "operator" => operator, "verdict" => "accepted", "cited_design_claim" => "X", "reason" => "Y")
       end
     end
     [ freeze, *adjudications ]
   end
 
-  def complete_corpus_shadow_runs(cases)
+  def complete_corpus_shadow_runs(cases, event_base = base_event)
     cases.map do |corpus_case|
-      base_event.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:01:00Z")
+      event_base.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:01:00Z")
     end
+  end
+
+  def record_events_in_separate_commits(dir, path, events)
+    first_event, *remaining_events = events
+    git_write!(dir, path, "#{JSON.generate(first_event)}\n", "record #{first_event.fetch("event_id")}")
+    remaining_events.each { |event| git_append_events!(dir, path, [ event ], "record #{event.fetch("event_id")}") }
   end
 end
