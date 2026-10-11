@@ -94,18 +94,31 @@ class GithubClient
     def remove_label_from_issue(...) = write_or_nil { __getobj__.remove_label_from_issue(...) }
     def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
 
+    # Issue creation is not itself a label write, so it must survive
+    # suppression — but the create request's `labels:` argument adds labels
+    # in the same POST, so strip it when label writes are suppressed.
+    # @spec LABEL-INTEGRATION-002
+    def create_issue(repo, title:, body: "", labels: [], **options)
+      labels = [] unless labels.blank? || write_allowed?
+      __getobj__.create_issue(repo, title:, body:, labels:, **options)
+    end
+
     private
 
     attr_reader :project
 
+    def write_allowed?
+      Labels::WritePolicy.allowed?(project: project)
+    end
+
     def write_or_nil
-      return yield if Labels::WritePolicy.allowed?(project: project)
+      return yield if write_allowed?
 
       nil
     end
 
     def write_or_empty_removal
-      return yield if Labels::WritePolicy.allowed?(project: project)
+      return yield if write_allowed?
 
       { removed: [], failed: [] }
     end

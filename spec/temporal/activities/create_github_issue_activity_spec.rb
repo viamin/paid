@@ -160,6 +160,21 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       expect(result[:issue_number]).to eq(10)
     end
 
+    # @spec LABEL-INTEGRATION-002
+    it "creates the issue without labels when the project suppresses label writes" do
+      project.update!(label_integration_mode: "read_only")
+
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(labels: [])
+      ).and_return(issue_response)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:issue_number]).to eq(10)
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
     it "marks the agent run as completed with issue details" do
       activity.execute(agent_run_id: agent_run.id)
 

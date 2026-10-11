@@ -14,8 +14,10 @@ changes. `read_write` is the default and preserves existing behavior.
 GitHub clients are decorated with its gate, and label provisioning checks it
 before even listing remote labels. Suppressed operations return successful,
 empty results so callers cannot treat policy suppression as a GitHub failure.
-Read paths deliberately remain intact; the broader internal-control behavior
-for ignored mode is deferred.
+`create_issue` is gated too: the issue itself is still created, but its
+`labels:` argument — which adds labels in the same POST — is stripped when
+writes are suppressed. Read paths deliberately remain intact; the broader
+internal-control behavior for ignored mode is deferred.
 
 The project settings form and `update_project_settings` MCP write surface
 expose the setting; tenant configuration exposes the creation default.

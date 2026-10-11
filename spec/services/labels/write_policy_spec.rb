@@ -19,4 +19,28 @@ RSpec.describe Labels::WritePolicy do
     expect(decorated.add_labels_to_issue(project.full_name, 1, [ "paid-ready" ])).to be_nil
     expect(client).not_to have_received(:add_labels_to_issue)
   end
+
+  it "strips labels from issue creation but still creates the issue when writes are suppressed" do
+    project = build(:project, label_integration_mode: "read_only")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive(:create_issue)
+
+    decorated.create_issue(project.full_name, title: "Analysis", body: "body", labels: [ "paid-generated" ])
+
+    expect(client).to have_received(:create_issue)
+      .with(project.full_name, title: "Analysis", body: "body", labels: [])
+  end
+
+  it "keeps labels on issue creation in read_write mode" do
+    project = build(:project, label_integration_mode: "read_write")
+    client = instance_double(GithubClient)
+    decorated = GithubClient::LabelWriteSuppressing.new(client, project:)
+    allow(client).to receive(:create_issue)
+
+    decorated.create_issue(project.full_name, title: "Analysis", body: "body", labels: [ "paid-generated" ])
+
+    expect(client).to have_received(:create_issue)
+      .with(project.full_name, title: "Analysis", body: "body", labels: [ "paid-generated" ])
+  end
 end
