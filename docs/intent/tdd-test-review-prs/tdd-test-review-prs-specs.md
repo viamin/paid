@@ -41,6 +41,13 @@
   `paid_agent` test-review verdict only when that review applies to the current
   test revision; older verdicts from before a newer test-writing or test-fixing
   push SHALL NOT re-apply `paid-tests-approved` or
-  `paid-test-changes-requested`.
-  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`.
-  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+  `paid-test-changes-requested`. The test-review run SHALL authenticate as the
+  dedicated Paid reviewer and the scanner SHALL recognize that reviewer even
+  when ordinary PR reviews are disabled. When no current verdict is available,
+  the scanner SHALL honor the existing completed-review suppression and
+  configured review-round and retry limits rather than enqueueing a review of
+  identical tests indefinitely.
+  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/controllers/api/github_proxy_controller.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/requests/api/github_proxy_spec.rb`.

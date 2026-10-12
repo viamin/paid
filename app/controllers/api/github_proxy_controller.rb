@@ -284,8 +284,8 @@ module Api
     end
 
     def use_review_bot_token?(path)
+      # @spec TDD-PR-006
       @agent_run&.review_goal? &&
-        authenticated_project&.review_method_enabled?("paid_agent") &&
         request.method == "POST" &&
         %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
     end

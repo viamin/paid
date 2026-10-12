@@ -390,13 +390,15 @@ module Activities
         .where(github_state: "open")
     end
 
-    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008
-    # With the project-level scan setting on, the scan set is exactly what it
-    # was before activation labels existed: open PRs carrying the project's
-    # automation label (Paid applies it to every PR it creates), so an
-    # activation label never widens scanning for on-projects. The
-    # activation-label path applies only when the setting is off.
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008 LABEL-CONTROL-006
+    # Ignored-mode projects use the durable project setting as their activation
+    # surface: scanning all eligible local PRs does not depend on remote labels.
+    # Other modes retain the historical automation-label behavior.
     def activation_scannable_prs(project, candidate_prs)
+      if project.label_integration_mode == "ignored"
+        return project.auto_scan_prs ? candidate_prs : candidate_prs.none
+      end
+
       if project.auto_scan_prs
         return candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
       end
@@ -799,18 +801,18 @@ module Activities
       return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
-      if issue.has_label?(TDD_TESTS_APPROVED_LABEL) &&
+      if issue.effective_tdd_review_state == "approved" &&
           tdd_implementation_started_for_current_revision?(project, issue)
         return :not_applicable
       end
 
       return tdd_followup_trigger(issue,
         type: "tdd_tests_approved",
-        details: "Test review approved; implementation may begin") if issue.has_label?(TDD_TESTS_APPROVED_LABEL)
+        details: "Test review approved; implementation may begin") if issue.effective_tdd_review_state == "approved"
 
       return tdd_followup_trigger(issue,
         type: "tdd_test_changes_requested",
-        details: "Test review requested changes before implementation") if issue.has_label?(TDD_TEST_CHANGES_REQUESTED_LABEL)
+        details: "Test review requested changes before implementation") if issue.effective_tdd_review_state == "changes_requested"
 
       return nil if tdd_mode == "strict"
 
@@ -827,7 +829,7 @@ module Activities
       last_run = last_completed_run(project, issue)
       status_triggers = check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue,
-        allowed_bot_logins: paid_agent_review_logins(project))
+        allowed_bot_logins: tdd_paid_agent_review_logins)
 
       if status_triggers.any? { |trigger| trigger[:data_incomplete] }
         return draft_trigger_payload(issue, status_triggers)
@@ -840,7 +842,7 @@ module Activities
           details: "Automated test review requested changes before implementation")
       end
 
-      latest_paid_agent_review = latest_allowed_bot_review(reviews, paid_agent_review_logins(project))
+      latest_paid_agent_review = latest_allowed_bot_review(reviews, tdd_paid_agent_review_logins)
       if latest_paid_agent_review
         sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL)
         return tdd_followup_trigger(issue,
@@ -848,14 +850,14 @@ module Activities
           details: "Automated test review approved the proposed tests")
       end
 
-      pending_review = check_paid_agent_review_status(project, issue)
-      return draft_trigger_payload(issue, pending_review) if pending_review.any?
+      return if tdd_review_goal_retry_limit_reached?(project, issue)
 
-      draft_trigger_payload(issue, [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]) if latest_paid_agent_review.nil?
+      pending_review = check_paid_agent_review_status(project, issue)
+      draft_trigger_payload(issue, pending_review) if pending_review.any?
     end
 
     def current_tdd_test_review_verdicts(project, issue, reviews, pr_data: nil)
-      paid_agent_logins = paid_agent_review_logins(project)
+      paid_agent_logins = tdd_paid_agent_review_logins
 
       reviews.select do |review|
         paid_agent_logins.include?(review[:user_login]&.downcase) &&
@@ -873,7 +875,7 @@ module Activities
     # breaking the freshness guarantee in current_tdd_test_review_verdicts.
     # Non-paid-agent comments in the same thread are left untouched.
     def current_tdd_unresolved_threads(project, issue, unresolved_threads, pr_data: nil)
-      paid_agent_logins = paid_agent_review_logins(project)
+      paid_agent_logins = tdd_paid_agent_review_logins
 
       unresolved_threads.map do |thread|
         comments = thread[:comments].reject do |comment|
@@ -912,7 +914,7 @@ module Activities
     end
 
     def tdd_implementation_started_for_current_revision?(project, issue)
-      approved_at = latest_label_applied_at(project, issue, TDD_TESTS_APPROVED_LABEL)
+      approved_at = tdd_tests_approved_at(project, issue)
       return false unless approved_at
 
       pr_run_history_scope(project, issue)
@@ -920,6 +922,12 @@ module Activities
         .where.not(status: "retried")
         .where(created_at: approved_at..)
         .exists?
+    end
+
+    def tdd_tests_approved_at(project, issue)
+      return issue.tdd_review_approved_at if issue.local_control_state?
+
+      latest_label_applied_at(project, issue, TDD_TESTS_APPROVED_LABEL)
     end
 
     def latest_label_applied_at(project, issue, label)
@@ -949,6 +957,8 @@ module Activities
     end
 
     def tdd_test_review_pr?(issue)
+      return issue.tdd_review_state.present? if issue.local_control_state?
+
       tdd_review_labels(issue).any?
     end
 
@@ -981,6 +991,12 @@ module Activities
     end
 
     def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+      if issue.local_control_state?
+        return issue.approve_tdd_tests! if verdict_label == TDD_TESTS_APPROVED_LABEL
+
+        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label))
+      end
+
       labels_to_remove = [
         TDD_TESTS_READY_FOR_REVIEW_LABEL,
         TDD_TESTS_APPROVED_LABEL,
@@ -993,6 +1009,12 @@ module Activities
       client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
 
       issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
+    end
+
+    def tdd_review_state_for(label)
+      return "approved" if label == TDD_TESTS_APPROVED_LABEL
+
+      "changes_requested"
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -1635,6 +1657,7 @@ module Activities
     # result is memoized per scan pass (reset in #execute).
     # @spec PR-ESCALATION-009 @spec PR-ESCALATION-019
     def escalation_label_removed_by_owner?(issue)
+      return false if issue.local_control_state?
       return false if issue.has_label?(PAID_ESCALATED_LABEL)
       return @escalation_label_removals[issue.id] if @escalation_label_removals.key?(issue.id)
       return @escalation_label_removals[issue.id] = false if issue.pr_escalation_started_at.blank?
@@ -1654,6 +1677,7 @@ module Activities
     # so a failure is retried on the next scan instead of being papered over.
     # @spec PR-ESCALATION-021
     def reapply_escalation_label_if_missing(project, client, issue)
+      return if issue.local_control_state?
       return if issue.has_label?(PAID_ESCALATED_LABEL)
       return if escalation_label_removed_by_owner?(issue)
 
@@ -2460,6 +2484,13 @@ module Activities
         ProviderSupport.provider_bot_usernames_for("paid_agent")
     end
 
+    # @spec TDD-PR-006
+    # Test review remains available when ordinary PR reviews are disabled, so
+    # its dedicated reviewer identity must not be filtered by that setting.
+    def tdd_paid_agent_review_logins
+      ProviderSupport.provider_bot_usernames_for("paid_agent")
+    end
+
     # Returns the login that should be explicitly requested for a review-bot
     # review, or nil when no enabled review method has a bot that accepts
     # explicit review requests. See Project#review_bot_request_login for the
@@ -2748,6 +2779,10 @@ module Activities
     # reached the configurable retry limit. The reset boundary comes from the
     # unified PR progress model, so successful review/create_pr runs, explicit
     # human resets, and newer PR head commits all clear stale failures (#1002).
+    def tdd_review_goal_retry_limit_reached?(project, issue)
+      review_goal_consecutive_failure_count(project, issue) >= review_goal_max_retries(project)
+    end
+
     def review_goal_retry_limit_reached?(project, issue, progress_state: nil)
       return false unless project&.review_enabled?
       return false unless project.review_method_enabled?("paid_agent")
@@ -3665,8 +3700,8 @@ module Activities
         false
       end
 
-      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
-      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      skip_label = issue.auto_merge_skipped?
+      hold_for_review = issue.held_for_review?
       # @spec INTENT-CONFORMANCE-007
       intent_conformance_ok = IntentConformance::Signal.ok?(
         project: project, issue: issue, head_sha: pr_head_sha(pr_data)
@@ -3709,8 +3744,8 @@ module Activities
         false
       end
 
-      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
-      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      skip_label = issue.auto_merge_skipped?
+      hold_for_review = issue.held_for_review?
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,

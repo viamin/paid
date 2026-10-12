@@ -99,6 +99,16 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "update_issue_control_state",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { project_id: project.id, issue_id: issue.id, action: "pause", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+          project_record.issues.find(issue.id)
+        }
+      },
+      {
         tool_name: "trigger_agent_run",
         denied_user: -> {
           project
@@ -717,6 +727,60 @@ RSpec.describe Tools::Registry do
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
         }
+      },
+      {
+        tool_name: "get_onboarding_status",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { authorize_record!(user, account, :show?, policy_class: ApplicationPolicy) }
+      },
+      {
+        tool_name: "list_runners",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { authorize_record!(user, Runner, :index?, policy_class: RunnerPolicy) }
+      },
+      {
+        tool_name: "get_account_capabilities",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { authorize_record!(user, account, :show?, policy_class: ApplicationPolicy) }
+      },
+      {
+        tool_name: "get_product_docs",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { authorize_record!(user, account, :show?, policy_class: ApplicationPolicy) }
+      },
+      {
+        tool_name: "create_runner",
+        denied_user: -> { nil },
+        arguments: -> { { name: "Denied Runner", runner_key: "anthropic", auth_type: "api_key", confirmed: true } },
+        ui_call: ->(user) { authorize_record!(user, user&.runners&.build, :create?, policy_class: RunnerPolicy) }
+      },
+      {
+        tool_name: "create_tracker_configuration",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { tracker_type: "linear", configurable_type: "Account", confirmed: true } },
+        ui_call: ->(user) {
+          tracker = user.account.build_tracker_configuration
+          authorize_record!(user, tracker, :create?, policy_class: TrackerConfigurationPolicy)
+        }
+      },
+      {
+        tool_name: "create_project",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { mode: "create_blank", repo: "denied-repo", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Project.new(account: user.account)
+          authorize_record!(user, project_record, :create?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "complete_onboarding_step",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { step: "account_profile", confirmed: true } },
+        ui_call: ->(user) { authorize_record!(user, user.account, :create?, policy_class: ApplicationPolicy) }
       }
     ] + operator_tool_scenarios
   end

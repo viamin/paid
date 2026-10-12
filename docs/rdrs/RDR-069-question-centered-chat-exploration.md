@@ -3,12 +3,13 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Accepted
+- **Status**: Partially Implemented (see [2026-10-12 Closeout](#2026-10-12-closeout))
 - **Type**: Product experience and chat architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Question exploration](../intent/question-exploration/question-exploration-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4322](https://github.com/viamin/paid/issues/4322); gaps [#4311](https://github.com/viamin/paid/issues/4311), [#4312](https://github.com/viamin/paid/issues/4312), [#4313](https://github.com/viamin/paid/issues/4313), [#4316](https://github.com/viamin/paid/issues/4316), [#4317](https://github.com/viamin/paid/issues/4317)
 
 ## Problem Statement
 
@@ -142,3 +143,50 @@ to the existing chat surfaces. Constrained rendering limits arbitrary visual
 tools initially, but supports the first question-centered release without a
 general-purpose canvas. Disposable diagrams reduce storage and review noise at
 the cost of not replaying every exploratory view.
+
+## Implementation Status
+
+As of the 2026-10-12 closeout, the chat-entry/reuse, final-answer submission,
+access-control, and Inbox-chat-context foundation this RDR extends are
+shipped with passing test evidence. The diagram-card, durable per-question
+progress, adaptive-clarification, and bounded-investigation behavior that
+make the experience question-centered are not yet shipped. See the
+2026-10-12 Closeout section below and
+[`audit-report-2026-10-12-rdr-069.md`](audit-report-2026-10-12-rdr-069.md)
+for the full criterion-by-criterion evidence.
+
+## 2026-10-12 Closeout
+
+Closeout issue [#4322](https://github.com/viamin/paid/issues/4322) audited
+every `QUESTION-EXPLORATION-*` EARS claim in
+[`question-exploration-specs.md`](../intent/question-exploration/question-exploration-specs.md)
+against shipped code and a live `bundle exec rspec` run (467 examples, 0
+failures) rather than against closed-issue history. Result: **Partially
+Implemented**.
+
+Shipped: `QUESTION-EXPLORATION-001`, `002`, `007`, `014`, `015`, `016`, `017`
+(conversation reuse/resumption, final-answer submission, access control and
+attribution, Inbox-chat audit metadata, frame rendering, choice-answer
+parsing, and on-demand Inbox context resolution).
+
+Not shipped, each tracked by an open, correctly-scoped issue under epic
+[#4309](https://github.com/viamin/paid/issues/4309):
+
+- `QUESTION-EXPLORATION-003`–`006`, `009`, `011` (diagram cards) — [#4312](https://github.com/viamin/paid/issues/4312)
+- `QUESTION-EXPLORATION-013` and the remainder of `002`'s durable-progress scope — [#4313](https://github.com/viamin/paid/issues/4313)
+- `QUESTION-EXPLORATION-008`, `011` (adaptive clarification, explicit preferences) — [#4316](https://github.com/viamin/paid/issues/4316)
+- `QUESTION-EXPLORATION-008`–`010`, `013` (bounded investigations) — [#4317](https://github.com/viamin/paid/issues/4317)
+- The conversation-open/focus slice of `QUESTION-EXPLORATION-012` and the
+  project-level exploration rollout setting this RDR's Rollout Guard
+  requires — [#4311](https://github.com/viamin/paid/issues/4311), added as
+  an explicit dependency of #4322 by this audit (it was not previously
+  listed, even though its own acceptance criteria already name this scope).
+
+No new gap issue was filed: every unmet criterion already has a focused,
+correctly-scoped open issue. The Rollout Guard's project-level setting
+remains unshipped and is not bypassed by anything shipped so far — the
+shipped behavior only extends the pre-existing, already-enabled legacy
+clarifying-question chat entry point and introduces no new diagram,
+investigation, or preference surface. Closeout issue #4322 remains open and
+keeps `Tracks #4309` language; only the umbrella's own final acceptance audit
+may close #4309.

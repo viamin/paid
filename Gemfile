@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.2.11"
+gem "avo", "4.3.0"
 
 # json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
 # Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
@@ -191,7 +191,7 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.20"
+gem "good_job", "~> 4.21"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.7"

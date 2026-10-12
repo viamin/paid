@@ -373,6 +373,52 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "ignored-mode pull request controls" do
+    let(:user) { create(:user, :owner, account:) }
+    let(:project) do
+      create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+    end
+    let!(:pull_request) { create(:issue, :pull_request, project:) }
+
+    before { sign_in user }
+
+    it "renders actions to set and clear merge controls" do # @spec LABEL-CONTROL-002
+      get project_path(project)
+
+      expect(response.body).to include("Skip merge", "Hold review")
+
+      pull_request.update!(skip_auto_merge: true, hold_for_review: true)
+      get project_path(project)
+
+      expect(response.body).to include("Allow merge", "Release review hold")
+    end
+
+    it "applies the submitted control action" do # @spec LABEL-CONTROL-002
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "skip_auto_merge" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.skip_auto_merge).to be(true)
+    end
+
+    it "records when an operator approves tests" do # @spec LABEL-CONTROL-005
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "approve_tests" }
+
+      expect(pull_request.reload).to have_attributes(tdd_review_state: "approved", tdd_review_approved_at: be_present)
+    end
+
+    it "clears a submitted local priority when the select is blank" do # @spec LABEL-CONTROL-002
+      pull_request.update!(control_priority: "P1")
+
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "set_priority", priority: "" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.control_priority).to be_nil
+    end
+  end
+
   describe "GET /projects/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -3666,6 +3712,41 @@ RSpec.describe "Projects" do
         post toggle_auto_merge_project_path(project)
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
+  describe "POST /projects/:id/cleanup_paid_labels" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders each affected item and its Paid labels before cleanup" do # @spec LABEL-INTEGRATION-006
+        project = create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+        issue = create(:issue, project:, labels: [ Issue::PAUSED_LABEL, "bug" ])
+        pull_request = create(:issue, :pull_request, project:, labels: [ Issue::ESCALATED_LABEL, "enhancement" ])
+
+        post cleanup_paid_labels_project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Preview Paid label cleanup")
+        expect(response.body).to include("Open item ##{issue.github_number}")
+        expect(response.body).to include(Issue::PAUSED_LABEL)
+        expect(response.body).to include("Open item ##{pull_request.github_number}")
+        expect(response.body).to include(Issue::ESCALATED_LABEL)
+        expect(response.body).to include("Remove Paid labels from these open items")
+      end
+
+      it "redirects with a missing-credential alert when the project has no usable GitHub credential" do # @spec LABEL-INTEGRATION-006
+        project = create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+        allow(Projects::CleanupPaidLabels).to receive(:execute).and_raise(
+          GithubClient::Error, "Project has no usable GitHub credential — re-link the token or GitHub App installation before cleaning up Paid labels."
+        )
+
+        post cleanup_paid_labels_project_path(project, execute: true)
+
+        expect(response).to redirect_to(edit_project_path(project, anchor: "labels"))
+        expect(flash[:alert]).to include("Could not clean up Paid labels")
+        expect(flash[:alert]).to include("no usable GitHub credential")
       end
     end
   end

@@ -269,7 +269,7 @@ components:
       in: query
       schema:
         type: string
-        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending]
+        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending]
     InboxSort:
       name: sort
       in: query
@@ -374,6 +374,7 @@ components:
         - $ref: '#/components/schemas/ChangeIntentDraftEntry'
         - $ref: '#/components/schemas/PartialCloseoutEntry'
         - $ref: '#/components/schemas/TestReviewPendingEntry'
+        - $ref: '#/components/schemas/ProjectSetupPendingEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -389,6 +390,7 @@ components:
           change_intent_draft: '#/components/schemas/ChangeIntentDraftEntry'
           partial_closeout: '#/components/schemas/PartialCloseoutEntry'
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
+          project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
     InboxEntry:
       oneOf:
         - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
@@ -403,6 +405,7 @@ components:
         - $ref: '#/components/schemas/ChangeIntentDraftEntry'
         - $ref: '#/components/schemas/PartialCloseoutEntry'
         - $ref: '#/components/schemas/TestReviewPendingEntry'
+        - $ref: '#/components/schemas/ProjectSetupPendingEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -418,6 +421,7 @@ components:
           change_intent_draft: '#/components/schemas/ChangeIntentDraftEntry'
           partial_closeout: '#/components/schemas/PartialCloseoutEntry'
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
+          project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
     InboxEntryBase:
       type: object
       required: [id, kind]
@@ -535,6 +539,13 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [test_review_pending]}
+    ProjectSetupPendingEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [project_setup_pending]}
+            tasks: {type: array, items: {type: string}}
   headers:
     ETag:
       description: Strong validator for polling. Send this value as If-None-Match on the next poll.

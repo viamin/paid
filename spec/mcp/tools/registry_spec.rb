@@ -28,8 +28,13 @@ RSpec.describe Tools::Registry do
       update_user_settings
       update_tenant_settings
       update_project_settings
+      update_issue_control_state
       apply_configuration_profile
       create_provider_api_key
+      create_runner
+      create_tracker_configuration
+      create_project
+      complete_onboarding_step
       update_provider_api_key
       remove_provider_api_key
       create_mcp_server_definition

@@ -34,7 +34,7 @@ module Inbox
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
-        test_review_pending_count
+        test_review_pending_count + project_setup_pending_count
     end
 
     def needs_input_count
@@ -138,6 +138,11 @@ module Inbox
       return 0 if project_ids.empty?
 
       Inbox::Queue.test_review_pending_issues(project_ids).count
+    end
+
+    # @spec PROJECT-READINESS-005
+    def project_setup_pending_count
+      Project.where(id: visible_project_ids).select(&:tdd_readiness_blocked?).count
     end
 
     # Shares the exact lane computation with Inbox::Queue

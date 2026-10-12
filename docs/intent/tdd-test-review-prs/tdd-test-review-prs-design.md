@@ -25,6 +25,13 @@ and the run-scoped file boundary checks in
   `paid-tests-approved` back to `paid-tests-ready-for-review` invalidates older
   review verdicts so implementation cannot resume until a fresh test review
   lands on the updated tests.
+- Non-strict reviewer identity and bounds: test-review runs authenticate as
+  Paid's dedicated reviewer even when ordinary PR review is disabled. The
+  scanner recognizes that identity independently of the ordinary-review
+  enablement setting. If no current verdict is recognizable, it may request a
+  review only through the existing completed-run, round, and retry limits; it
+  never manufactures an unbounded pending trigger after those guards decline
+  to request another review.
 - PR-body review sections derived mechanically from the run diff:
   - `## Test Outline` for any PR whose diff touches tests.
   - `## LID Phase Report` for LID-enabled projects, summarizing changed LID

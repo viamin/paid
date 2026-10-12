@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_144925) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -371,6 +371,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.string "token_limit_status", limit: 50
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
+    t.jsonb "tool_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of marketplace tool sidecars provisioned for this run"
     t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.integer "turns_completed", default: 0, null: false, comment: "Number of agent turns completed, tracked via streaming JSONL progress events"
     t.datetime "updated_at", null: false
@@ -2063,6 +2064,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
+    t.text "auto_pick_excluded_reason", comment: "Human-provided reason this issue is excluded from automatic selection in ignored label mode."
     t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"
     t.datetime "ci_action_dispatched_at"
@@ -2074,6 +2076,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.string "code_scanning_disposition", comment: "Latest explicit upstream code-scanning disposition (for example fixed or dismissed)."
     t.jsonb "code_scanning_disposition_evidence", comment: "Bounded upstream evidence supporting the latest code-scanning disposition."
     t.text "code_scanning_disposition_reason", comment: "Reason GitHub supplied for the latest code-scanning disposition."
+    t.string "control_priority", comment: "Local P1/P2/P3 priority used in ignored label mode."
     t.datetime "created_at", null: false
     t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
@@ -2085,6 +2088,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.integer "github_number", null: false
     t.string "github_state", null: false
     t.datetime "github_updated_at", null: false
+    t.boolean "hold_for_review", default: false, null: false, comment: "Local per-PR human-review hold used in ignored label mode."
     t.boolean "is_pull_request", default: false, null: false
     t.datetime "issue_analysis_backoff_set_at", comment: "When the current automatic analyze_issue provider-exhaustion backoff window was recorded."
     t.datetime "issue_analysis_next_attempt_at", comment: "When automatic analyze_issue retries become eligible again after provider exhaustion."
@@ -2131,8 +2135,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.datetime "runner_retry_abandoned_at", comment: "When non-null, the issue was abandoned because every available provider reached the per-issue retry cap. Excluded from auto-pick until cleared (e.g. by a successful run)."
     t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
     t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
+    t.boolean "skip_auto_merge", default: false, null: false, comment: "Local per-PR automatic-merge exclusion used in ignored label mode."
     t.string "source", default: "github", null: false
     t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
+    t.datetime "tdd_review_approved_at", comment: "Time the local TDD test-review gate was most recently approved in ignored label mode."
+    t.string "tdd_review_state", comment: "Local TDD test-review gate state used in ignored label mode."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
@@ -2143,6 +2150,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["needs_input_since"], name: "index_issues_needs_input_since_active", where: "((paid_state)::text = 'needs_input'::text)"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["partial_completion_at"], name: "index_issues_on_partial_completion_at", where: "(partial_completion_at IS NOT NULL)"
+    t.index ["project_id", "auto_pick_excluded_reason"], name: "index_issues_on_auto_pick_exclusion", where: "(auto_pick_excluded_reason IS NOT NULL)"
+    t.index ["project_id", "control_priority"], name: "index_issues_on_project_id_and_control_priority"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
@@ -3020,6 +3029,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
     t.boolean "quiet_mode", default: false, null: false, comment: "When true, Paid suppresses all issue/PR comment posting for this project (PR description writes are unaffected)."
+    t.datetime "readiness_evaluated_at", comment: "When the current project-readiness snapshot was evaluated against a checkout."
+    t.jsonb "readiness_gaps", default: [], null: false, comment: "Latest deterministic project-readiness gaps used by the operator Inbox."
     t.string "repo", null: false
     t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
     t.boolean "retry_failed_manual_runs", default: true, null: false, comment: "When true, a failed manual agent run with no issue/PR attachment and no observable work is automatically re-queued with backoff, up to AgentRun::MAX_MANUAL_RETRY_ATTEMPTS."

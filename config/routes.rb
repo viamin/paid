@@ -250,6 +250,7 @@ Rails.application.routes.draw do
     post :refresh_code_scanning_availability, on: :member
     post :toggle_auto_merge, on: :member
     post :toggle_pause, on: :member
+    post :update_issue_control_state, on: :member
     post :start_lid, on: :member
     post :start_setup_chat, on: :member
     post :finish_setup, on: :member
@@ -339,6 +340,7 @@ Rails.application.routes.draw do
     resource :pdf_knowledge_import, only: [ :new, :create ], controller: "projects/pdf_knowledge_imports"
     resource :okf_export, only: [ :new, :create ], controller: "projects/okf_exports"
     post :ensure_labels, on: :member
+    post :cleanup_paid_labels, on: :member
 
     resources :knowledge_recommendations, only: [ :index, :update ],
       controller: "projects/knowledge_recommendations"

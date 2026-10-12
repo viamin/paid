@@ -91,6 +91,45 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 42,
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .find { |candidate| candidate.issue == pr }
+
+      expect(entry).to have_attributes(
+        kind: described_class::MERGE_APPROVAL_KIND,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+    end
+
+    it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 43,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).not_to include(pr)
+    end
+
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
     it "returns typed entries for visible blocking notifications" do
       notification = create_action_required_notification
@@ -1486,5 +1525,29 @@ RSpec.describe Inbox::Queue do
       waiting_since: pr.awaiting_approval_since
     )
     expect(approval_entry.summary).to eq("Waiting for owner approval")
+  end
+  describe "project setup pending Inbox lane" do
+    # @spec PROJECT-READINESS-005
+    it "shows a strict-TDD project with its persisted gaps even when auto-pick is disabled" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => { "checked_paths" => [ ".github/workflows" ] } } ],
+        readiness_evaluated_at: 1.hour.ago)
+
+      entry = described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND).sole
+
+      expect(entry).to have_attributes(project:, issue: nil, record: project, tasks: [ "CI is required." ])
+      expect(entry).to be_project_setup_pending
+      expect(entry.action_url).to eq(Rails.application.routes.url_helpers.edit_project_path(project))
+    end
+
+    it "does not show a satisfied project" do
+      account = create(:account)
+      user = create(:user, account: account)
+      create(:project, account:, created_by: user, tdd_mode: "strict", readiness_gaps: [])
+
+      expect(described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND)).to be_empty
+    end
   end
 end

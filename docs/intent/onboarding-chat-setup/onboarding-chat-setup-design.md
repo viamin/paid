@@ -6,9 +6,9 @@ prefix: ONBOARD-CHAT
 # Low-Level Design: Onboarding Chat-Led Setup
 
 > Companion to the high-level design (`docs/high-level-design.md`). This
-> segment records the planned chat-led onboarding flow tracked by the umbrella
-> issue #4280. No implementation is claimed by this document; see
-> `onboarding-chat-setup-specs.md` for per-claim status.
+> segment records the chat-led onboarding flow tracked by the umbrella issue
+> #4280. See `onboarding-chat-setup-specs.md` for per-claim implementation
+> status.
 
 ## Purpose
 
@@ -106,7 +106,7 @@ Tracked under the umbrella (#4280):
   complete); there is deliberately no `skip_onboarding_step` tool, so the
   model cannot fast-forward the wizard on the human's behalf.
 
-## Remaining Gap
+## Implementation
 
-Phase 0 is implemented. The chat tools and persona remain active gaps tracked
-by #4282.
+Phase 1–4 tools and the chat persona are implemented by #4282. The curated
+product-docs corpus is version controlled at `config/onboarding_product_docs.yml`.

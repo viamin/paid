@@ -15,6 +15,9 @@
   those retryable attempts, it SHALL retain the project's `collecting` status;
   after the retry policy is exhausted, it SHALL mark the collection failed and
   report the terminal failure through the job exception-notification path.
+  A full collection job SHALL retain a 45-minute wall-clock ceiling so a large,
+  complete collection can finish while a genuinely stuck operation still
+  terminates and reports its failure.
   *Code:* `app/services/knowledge/collector_runner.rb`,
   `app/services/knowledge/artifact_store.rb`, `app/jobs/run_collectors_job.rb`.
   *Test:* `spec/services/knowledge/collector_runner_spec.rb`,
