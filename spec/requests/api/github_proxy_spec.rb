@@ -256,6 +256,14 @@ RSpec.describe "Api::GithubProxy" do
       stub_request(:post, target_url)
         .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
       allow(Rails.logger).to receive(:warn).and_call_original
+      # Review-goal runs always authenticate as the dedicated Paid reviewer,
+      # even when ordinary PR review is disabled (#4294). Default to the bot
+      # token in every spec so the proxy reaches the stubbed POST instead of
+      # short-circuiting with a ConfigurationError.
+      allow(Github::ReviewBotInstallationToken).to receive_messages(
+        configured?: true,
+        new: review_bot_token_provider
+      )
     end
 
     def stub_review_list_response(reviews = [])
