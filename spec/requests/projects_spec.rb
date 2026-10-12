@@ -373,6 +373,52 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "ignored-mode pull request controls" do
+    let(:user) { create(:user, :owner, account:) }
+    let(:project) do
+      create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+    end
+    let!(:pull_request) { create(:issue, :pull_request, project:) }
+
+    before { sign_in user }
+
+    it "renders actions to set and clear merge controls" do # @spec LABEL-CONTROL-002
+      get project_path(project)
+
+      expect(response.body).to include("Skip merge", "Hold review")
+
+      pull_request.update!(skip_auto_merge: true, hold_for_review: true)
+      get project_path(project)
+
+      expect(response.body).to include("Allow merge", "Release review hold")
+    end
+
+    it "applies the submitted control action" do # @spec LABEL-CONTROL-002
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "skip_auto_merge" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.skip_auto_merge).to be(true)
+    end
+
+    it "records when an operator approves tests" do # @spec LABEL-CONTROL-005
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "approve_tests" }
+
+      expect(pull_request.reload).to have_attributes(tdd_review_state: "approved", tdd_review_approved_at: be_present)
+    end
+
+    it "clears a submitted local priority when the select is blank" do # @spec LABEL-CONTROL-002
+      pull_request.update!(control_priority: "P1")
+
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "set_priority", priority: "" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.control_priority).to be_nil
+    end
+  end
+
   describe "GET /projects/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

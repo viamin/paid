@@ -25,6 +25,14 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.next_candidate(project)).to eq(p1)
     end
 
+    it "uses local priority instead of labels in ignored mode" do # @spec LABEL-CONTROL-003
+      project.update!(label_integration_mode: "ignored")
+      _labeled = create(:issue, project:, github_number: 1, labels: [ "P1" ], control_priority: "P3")
+      local = create(:issue, project:, github_number: 2, control_priority: "P1")
+
+      expect(described_class.next_candidate(project)).to eq(local)
+    end
+
     it "matches configured priority labels case-insensitively" do
       project.update!(priority_labels: { "P1" => "P1", "P2" => "P2", "P3" => "P3" })
       _p3 = create(:issue, project: project, github_number: 1, labels: [ "p3" ])
@@ -104,6 +112,28 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(described_class.eligible_scope(project)).to contain_exactly(eligible)
       expect(described_class.eligible_scope(project)).not_to include(skipped)
+    end
+
+    it "uses a local exclusion reason instead of skip labels in ignored mode" do # @spec LABEL-CONTROL-003
+      project.update!(label_integration_mode: "ignored", auto_pick_skip_labels: [ "category-hold" ])
+      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
+      labeled = create(:issue, project:, labels: [ "category-hold" ])
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
+      expect(described_class.eligible_scope(project)).not_to include(excluded)
+    end
+
+    it "uses local exclusion instead of needs-input labels in ignored mode" do # @spec LABEL-CONTROL-003
+      project.update!(
+        label_integration_mode: "ignored",
+        enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
+        label_mappings: { "needs_input" => "paid-stage-needs-input" }
+      )
+      labeled = create(:issue, project:, labels: [ "paid-stage-needs-input" ])
+      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
+      expect(described_class.eligible_scope(project)).not_to include(excluded)
     end
 
     it "allows an epic under the built-in defaults" do # @spec AUTO-PICK-QUEUE-009
@@ -965,6 +995,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         child.update!(github_state: "closed", github_updated_at: Time.current)
 
         expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
+    it "does not use an upstream epic label to re-audit an ignored-mode issue" do # @spec LABEL-CONTROL-003
+      project.update!(label_integration_mode: "ignored")
+
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        create(:issue, :closed, project: project, parent_issue: epic,
+          parent_issue_linked_at: 1.hour.ago, closed_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
       end
     end
 

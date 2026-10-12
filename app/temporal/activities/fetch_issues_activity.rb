@@ -829,6 +829,7 @@ module Activities
     # change that does not bump the issue's `updated_at` timestamp on GitHub
     # (e.g. due to clock skew) may be missed until the next full sync.
     def sync_paused_state(project, synced_issues)
+      return false if project.label_integration_mode == "ignored"
       return false if upstream_issue_write_skipped?(project, "sync_paused_label")
 
       open_issues = synced_issues.reject { |data| data[:github_state] == "closed" }

@@ -220,7 +220,13 @@ Scaling & Distribution above).
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
-RDR-066/067 continue to describe approval-gated features.
+RDR-066/067 continue to describe approval-gated features. The 2026-10-12
+implementation progress audits record the current baseline while the
+implementation chain remains active:
+[RDR-069](audit-report-2026-10-12-rdr-069.md) is Partially Implemented,
+[RDR-070](audit-report-2026-10-12-rdr-070.md) and
+[RDR-071](audit-report-2026-10-12-rdr-071.md) remain Accepted with no
+implementation shipped.
 
 ## Decision Summary
 
