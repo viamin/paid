@@ -1112,6 +1112,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(github_client).to receive(:pull_request)
       end
 
+      # @spec LABEL-CONTROL-006
+      it "scans an unlabeled PR in ignored label mode" do
+        project.update!(label_integration_mode: "ignored")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 43,
+          github_creator_login: "viamin",
+          labels: [],
+          paid_state: "completed")
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:pull_request).with(project.full_name, 43)
+      end
+
       it "does not widen the scan set beyond automation-labeled PRs" do
         create(:issue, :pull_request,
           project: project,
@@ -1228,6 +1244,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: scan_off_project.id)
 
         expect(automation_scan_results(result)).to eq([])
+        expect(github_client).not_to have_received(:pull_request)
+      end
+
+      # @spec LABEL-CONTROL-006
+      it "does not use activation labels in ignored label mode" do
+        scan_off_project.update!(label_integration_mode: "ignored")
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          labels: [ scan_off_project.feature_activation_label_for("auto_scan_prs") ],
+          paid_state: "completed")
+
+        activity.execute(project_id: scan_off_project.id)
+
         expect(github_client).not_to have_received(:pull_request)
       end
     end

@@ -390,13 +390,15 @@ module Activities
         .where(github_state: "open")
     end
 
-    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008
-    # With the project-level scan setting on, the scan set is exactly what it
-    # was before activation labels existed: open PRs carrying the project's
-    # automation label (Paid applies it to every PR it creates), so an
-    # activation label never widens scanning for on-projects. The
-    # activation-label path applies only when the setting is off.
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008 LABEL-CONTROL-006
+    # Ignored-mode projects use the durable project setting as their activation
+    # surface: scanning all eligible local PRs does not depend on remote labels.
+    # Other modes retain the historical automation-label behavior.
     def activation_scannable_prs(project, candidate_prs)
+      if project.label_integration_mode == "ignored"
+        return project.auto_scan_prs ? candidate_prs : candidate_prs.none
+      end
+
       if project.auto_scan_prs
         return candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
       end

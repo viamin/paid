@@ -48,6 +48,12 @@
   missing ready-for-review state from its test-writing run without replacing an
   existing operator decision.
 
+- [x] **LABEL-CONTROL-006** — When an ignored-mode project has
+  `auto_scan_prs` enabled, Paid SHALL scan each eligible open local pull request
+  regardless of its automation or feature-activation labels. When the setting
+  is disabled, Paid SHALL not use those labels as a PR-scanning activation
+  channel.
+
 - [x] **LABEL-INTEGRATION-005** — When a project enters `ignored` from another
   mode, Paid SHALL idempotently import the currently label-derived paused and
   escalated states into their local representations before later label edits
