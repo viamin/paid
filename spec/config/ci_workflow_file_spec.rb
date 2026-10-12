@@ -171,9 +171,20 @@ RSpec.describe CiWorkflowFile, :no_db do
     schema = openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")
 
     pattern = schema.fetch("pattern")
-    expect(pattern).to include("clarifying_questions", "test_review_pending", "[1-9][0-9]*$")
+    expect(pattern).to include("clarifying_questions", "test_review_pending", "[1-9][0-9]{0,18}$")
     expect(pattern).to include(":")
     expect(pattern).not_to include("%3A")
+  end
+
+  # @spec MOBILE-API-006 MOBILE-API-008 MOBILE-API-018
+  it "bounds opaque inbox cursors and entry IDs to bigint-backed queue IDs" do
+    parameters = openapi_schema.fetch("components").fetch("parameters")
+
+    expect(parameters.fetch("EntryId").fetch("schema")).to include("maxLength" => 40)
+    expect(parameters.fetch("InboxCursor").fetch("schema")).to include(
+      "maxLength" => 40,
+      "pattern" => parameters.fetch("EntryId").fetch("schema").fetch("pattern")
+    )
   end
 
   private
