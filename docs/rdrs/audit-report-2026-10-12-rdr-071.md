@@ -72,8 +72,17 @@ unified automatic release contract (#4319, P10); immutable builder context
 and policy-specific review (#4320, P11); completion-blocking follow-ups
 (#4321, P12); plus the independent facet-confidence closeout (#4323, C70).
 No duplicate issue is filed and no legacy RDR-066/067 work is reopened.
-Label hygiene is preserved by using dependencies rather than a planning,
-research, waiting, tracking, or needs-manual-setup label.
+Label hygiene on the closeout itself follows the checklist: this audit (#4324)
+carries none of the effective auto-pick skip labels, so the closeout is
+runnable. The cited gap issues #4310, #4314, #4315, #4318, #4319, #4320, and
+\#4321 today carry the `planning` label, which the [closeout
+checklist](closeout-checklist.md) step 6 reserves for issues that need
+human/LLM planning before any implementation. That reservation fits these
+gaps: each one is concrete implementation work whose plan still depends on
+upstream design decisions and existing contracts that have not yet shipped,
+and they will lose `planning` when their dependencies resolve and an
+operator promotes each one to runnable status — a dependency-issue action,
+not a closeout-audit action.
 
 This closeout `Tracks #4309`; it is non-closing. Only E01's final acceptance
 audit may close the umbrella after these dependencies resolve and shipped
