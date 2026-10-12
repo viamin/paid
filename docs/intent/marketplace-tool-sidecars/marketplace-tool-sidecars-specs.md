@@ -14,13 +14,18 @@
   (`paid-tool-<sanitized-name>-run<agent_run_id>`) reachable from the agent
   container. The container ID SHALL be recorded on
   `AgentRun#tool_sidecar_container_ids` so retries adopt existing sidecars
-  and run cleanup removes them.
-  *Tests:* `spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb`.
+  and run cleanup removes them. Capacity inventory SHALL recognize the
+  `paid.tool_sidecar` label and persisted IDs as sidecars, excluding them from
+  the running-agent count while retaining their resource usage in the paid-agent
+  capacity bucket.
+  *Tests:* `spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb`,
+  `spec/services/accounts/operations/auto_capacity_observer_spec.rb`.
   *Code:* `Containers::McpProvisioner#provision` (tool arm),
   `Containers::McpProvisioner#provision_tool_sidecar`,
   `Containers::McpProvisioner#create_hardened_tool_sidecar_container`,
   `Containers::McpProvisioner#cleanup_tool_sidecars`,
-  `Containers::McpProvisioner#tool_sidecar_hostname`.
+  `Containers::McpProvisioner#tool_sidecar_hostname`,
+  `Capacity::DockerContainerInventory#sidecar?`.
 
 - [x] **TOOL-SIDECAR-006** — When a `tool` sidecar is provisioned for an
   agent run, the image SHALL be validated against the account's allowlisted

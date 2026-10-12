@@ -166,6 +166,30 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
   end
 
+  # @spec TOOL-SIDECAR-005
+  it "excludes labeled and persisted tool sidecars from the running agent count" do
+    run = create(:agent_run, :running, project: create(:project, account: account), container_host: "local")
+    run.update!(tool_sidecar_container_ids: [ "persisted-tool-sidecar" ])
+    labeled_tool_sidecar = docker_container(
+      id: "labeled-tool-sidecar",
+      labels: { "paid.agent_run_id" => run.id.to_s, "paid.tool_sidecar" => "true" },
+      memory_bytes: 1.gigabyte,
+      cpu_percent: 55.0
+    )
+    persisted_tool_sidecar = docker_container(
+      id: "persisted-tool-sidecar",
+      labels: {},
+      memory_bytes: 1.gigabyte,
+      cpu_percent: 55.0
+    )
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ labeled_tool_sidecar, persisted_tool_sidecar ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:running_agent_count]).to eq(0)
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(2.gigabytes)
+  end
+
   it "only treats compose services from the paid project as paid control plane usage" do
     create_recent_run_profile!
     allow(backend).to receive(:list_containers).with(no_args).and_return(compose_labeled_containers)

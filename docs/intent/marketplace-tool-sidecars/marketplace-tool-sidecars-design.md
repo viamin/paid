@@ -43,6 +43,9 @@ with `"npx"` (stdio in-container), `"docker_image"` (MCP url sidecar on
   built-in families, `cap_add` restricted to `SAFE_OVERRIDE_CAPABILITIES`).
 - Tracks the container ID on `AgentRun#tool_sidecar_container_ids` so retries
   adopt existing sidecars and run cleanup removes them.
+- Labels each container `paid.tool_sidecar=true`; capacity inventory also uses
+  that label and the persisted IDs to retain sidecar resource usage in the
+  paid-agent bucket without counting a sidecar as an additional running agent.
 - Waits for a TCP health probe against `hostname:port` with a timeout
   matching `McpProvisioner::HEALTH_CHECK_TIMEOUT`, mirroring the
   `docker_image` arm.
