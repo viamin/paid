@@ -69,6 +69,7 @@ module Api
         when Inbox::Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_draft_payload
         when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then { unresolved_prerequisites: entry.tasks }
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
+        when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end

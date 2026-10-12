@@ -33,6 +33,23 @@ language switch. The initial specialized detector covers Godot 4.x + gdUnit4;
 it detects GDScript/Godot or `project.godot`, looks for `test` or `tests`, and
 requires `addons/gdUnit4` as the executable test-harness evidence.
 
-This segment owns only evaluation. Inbox surfacing, persisted readiness
-snapshots, remediation, and run-path enforcement are intentionally deferred to
-the next phases described by RDR-074.
+## Inbox readiness snapshot
+
+The evaluator remains read-only. `Projects::Readiness::Record` persists its
+serialized gaps and evaluation timestamp on the project after a worker has
+obtained a temporary checkout. The Inbox only reads that snapshot; it never
+clones, fetches, or evaluates during a poll/render.
+
+Enabled TDD projects with one or more stored gaps appear in the
+`project_setup_pending` Inbox lane. The entry is project-backed (rather than
+issue- or PR-backed), lists the structural gap descriptions and evidence, and
+links the operator to project settings. A satisfied snapshot, or a project
+whose TDD mode is off, has no entry. This lane is visible using the same
+authorized-project scope as other owner-scoped Inbox lanes and deliberately
+does not depend on `auto_pick_enabled`.
+
+Evaluation is queued when TDD readiness settings change and after a completed
+run that produced a result commit. A snapshot update bumps the Inbox cache
+version only when the gap set changes, so queue, filters, and nav badge refresh
+together without re-evaluating a checkout on every poll. Surfacing a gap never
+queues a bootstrap run; remediation remains a human decision for Phase 3.
