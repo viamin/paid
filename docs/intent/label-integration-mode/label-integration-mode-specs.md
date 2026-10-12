@@ -41,4 +41,6 @@
 - [x] **LABEL-CONTROL-005** — When an ignored-mode TDD pull request is at a
   local ready-for-review, approved, or changes-requested gate state, Paid SHALL
   use that state to preserve the human test-review gate independently of
-  whether upstream label writes are enabled.
+  whether upstream label writes are enabled. Paid SHALL retain the local
+  approval transition time and use it to avoid scheduling more than one
+  implementation run for the same approved test revision.

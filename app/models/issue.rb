@@ -500,6 +500,13 @@ class Issue < ApplicationRecord
     "ready_for_review" if has_label?("paid-tests-ready-for-review")
   end
 
+  # @spec LABEL-CONTROL-005
+  def approve_tdd_tests!
+    return if tdd_review_state == "approved" && tdd_review_approved_at.present?
+
+    update!(tdd_review_state: "approved", tdd_review_approved_at: Time.current)
+  end
+
   # Releases the escalation hold and returns the PR to an automation-managed
   # phase. Owner-initiated clearings also restart the attempt counters: they
   # measure attempts since the owner last looked, and escalation is the moment

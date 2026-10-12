@@ -35,9 +35,9 @@ module Issues
       when "allow_auto_merge" then issue.update!(skip_auto_merge: false)
       when "hold_for_review" then issue.update!(hold_for_review: true)
       when "release_review_hold" then issue.update!(hold_for_review: false)
-      when "approve_tests" then issue.update!(tdd_review_state: "approved")
+      when "approve_tests" then issue.approve_tdd_tests!
       when "request_test_changes" then issue.update!(tdd_review_state: "changes_requested")
-      when "set_priority" then issue.update!(control_priority: priority)
+      when "set_priority" then issue.update!(control_priority: priority.presence)
       when "exclude_from_auto_pick" then exclude_from_auto_pick!
       when "clear_auto_pick_exclusion" then issue.update!(auto_pick_excluded_reason: nil)
       else raise ArgumentError, "Unsupported control action: #{action}"

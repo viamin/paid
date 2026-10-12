@@ -912,7 +912,7 @@ module Activities
     end
 
     def tdd_implementation_started_for_current_revision?(project, issue)
-      approved_at = latest_label_applied_at(project, issue, TDD_TESTS_APPROVED_LABEL)
+      approved_at = tdd_tests_approved_at(project, issue)
       return false unless approved_at
 
       pr_run_history_scope(project, issue)
@@ -920,6 +920,12 @@ module Activities
         .where.not(status: "retried")
         .where(created_at: approved_at..)
         .exists?
+    end
+
+    def tdd_tests_approved_at(project, issue)
+      return issue.tdd_review_approved_at if issue.local_control_state?
+
+      latest_label_applied_at(project, issue, TDD_TESTS_APPROVED_LABEL)
     end
 
     def latest_label_applied_at(project, issue, label)
@@ -984,6 +990,8 @@ module Activities
 
     def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
       if issue.local_control_state?
+        return issue.approve_tdd_tests! if verdict_label == TDD_TESTS_APPROVED_LABEL
+
         return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label))
       end
 

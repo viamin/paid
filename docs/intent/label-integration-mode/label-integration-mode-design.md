@@ -28,6 +28,9 @@ credential is selected. Read paths deliberately remain intact except in
 `ignored` mode. In that mode, Paid is the source of truth for control state:
 `Issue#paused`, local PR merge holds, the TDD review gate, local priority, and
 an auto-pick exclusion reason replace their corresponding label reads. The
+local TDD approval records its transition time, which the PR scanner compares
+to implementation-run creation time so a subsequent poll cannot requeue the
+same approved revision. The
 auto-pick epic label has no local replacement, so ignored-mode selection and
 re-audit paths treat it as a no-op rather than reading the upstream label.
 Escalation dismissal remains the existing local `PullRequests::Unblock`

@@ -11770,6 +11770,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).not_to include("queue_create_pr_run")
     end
 
+    it "does not requeue implementation after an ignored-mode test approval has started implementation" do # @spec LABEL-CONTROL-005
+      project.update!(tdd_mode: "strict", label_integration_mode: "ignored")
+      pull_request.update!(tdd_review_state: "approved", tdd_review_approved_at: 2.hours.ago)
+      create(:agent_run,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_fixing",
+        status: "completed",
+        created_at: 1.hour.ago,
+        started_at: 1.hour.ago,
+        completed_at: 50.minutes.ago)
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "ready_for_owner")
+      )
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+    end
+
     it "routes strict-mode rejected tests back to test revision instead of implementation" do
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
