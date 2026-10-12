@@ -27,6 +27,22 @@
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002K** — When an open ready PR belongs to an authorized
+  project with auto-merge off, the system SHALL surface the same
+  `merge_approval` lane without relying on permission to execute an automatic
+  merge: approval-only current-head failures SHALL say whether review or
+  re-approval is needed, and a fully clear assessment SHALL say that a manual
+  merge decision is needed. CI, dependency, conflict, review-feedback, and
+  unevaluated policy signals SHALL keep the PR out of the actionable lane
+  rather than implying merge readiness. The queue, badge, filter availability,
+  API serializer, and supported GitHub action SHALL share that predicate;
+  test-review, escalation, and structured hold lanes retain their existing
+  precedence and no automatic merge is enabled by visibility alone.
+  *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
   entry until the notification resolves or is dismissed, reusing notification

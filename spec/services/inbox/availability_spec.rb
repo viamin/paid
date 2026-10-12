@@ -102,6 +102,28 @@ RSpec.describe Inbox::Availability do
 
       expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
     end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "includes clear manual-merge decisions but excludes PRs awaiting checks" do
+      project_a.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project_a, github_number: 42,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [] }
+      )
+      create(
+        :issue, :pull_request, project: project_a, github_number: 43,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: {
+          "failed" => [ { "signal" => "checks_green", "status" => "failed" } ],
+          "not_evaluated" => []
+        }
+      )
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
+    end
   end
 
   describe "#project_counts and #available_projects" do

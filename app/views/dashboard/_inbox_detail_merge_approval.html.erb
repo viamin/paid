@@ -1,8 +1,22 @@
 <div class="space-y-6">
   <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-    <h3 class="text-sm font-semibold text-emerald-900">Re-approve on GitHub</h3>
+    <h3 class="text-sm font-semibold text-emerald-900">
+      <%= if entry.summary == "Manual merge decision required"
+            "Manual merge decision on GitHub"
+          elsif entry.summary == "Waiting for owner re-approval on the current HEAD commit"
+            "Re-approve on GitHub"
+          else
+            "Review on GitHub"
+          end %>
+    </h3>
     <p class="mt-1 text-sm text-emerald-800">
-      <%= entry.summary %>. Re-approve this pull request on GitHub so Paid can merge it on the next PR scan.
+      <% if entry.summary == "Manual merge decision required" %>
+        This pull request's current-head checks and policy assessment are clear. Review and merge it on GitHub when appropriate.
+      <% elsif entry.summary == "Human review required before manual merge" %>
+        <%= entry.summary %>. Complete the required review on GitHub before making the merge decision.
+      <% else %>
+        <%= entry.summary %>. Re-approve this pull request on GitHub so Paid can merge it on the next PR scan.
+      <% end %>
     </p>
   </div>
 

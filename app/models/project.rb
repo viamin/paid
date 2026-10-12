@@ -364,6 +364,7 @@ class Project < ApplicationRecord
   # @spec LABEL-INTEGRATION-001
   before_validation :apply_tenant_label_integration_default, on: :create
   after_update_commit :invalidate_relationship_parsing_on_trust_change
+  after_update_commit :bump_inbox_cache_for_merge_policy_change, if: :merge_policy_changed?
 
   validates :name, presence: true
   validates :owner, presence: true
@@ -1826,6 +1827,15 @@ class Project < ApplicationRecord
   end
 
   private
+
+  # @spec INBOX-FOUNDATION-011
+  def bump_inbox_cache_for_merge_policy_change
+    Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def merge_policy_changed?
+    saved_change_to_auto_merge_mode? || saved_change_to_owner_reviewer_login?
+  end
 
   def reset_issue_sync_state # @spec UPSTREAM-ISSUE-006
     self.last_issue_sync_at = Time.at(0).utc

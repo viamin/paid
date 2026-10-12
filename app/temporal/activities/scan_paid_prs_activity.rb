@@ -1068,6 +1068,7 @@ module Activities
 
       reviews = fetch_reviews(client, project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      automatic_merge_active = auto_merge_active?(project, issue)
 
       auto_merge_evaluation = analyze_auto_merge(project, client, issue,
         pr_data: pr_data,
@@ -1076,7 +1077,7 @@ module Activities
         unresolved_threads: unresolved_threads,
         progress_state: progress_state)
 
-      if auto_merge_evaluation&.analysis&.eligible?
+      if automatic_merge_active && auto_merge_evaluation&.analysis&.eligible?
         track_approval_wait!(project, issue, blocked_only_on_approval: false)
         return owner_approved_trigger(issue)
       end
@@ -1088,7 +1089,9 @@ module Activities
       return :skipped if triggers.nil?
 
       if triggers.empty?
-        stale_owner_review_trigger = owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+        stale_owner_review_trigger = if automatic_merge_active
+          owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+        end
         unless stale_owner_review_trigger.nil?
           track_approval_wait!(project, issue, blocked_only_on_approval: false)
           return stale_owner_review_trigger
@@ -1097,7 +1100,8 @@ module Activities
         # No actionable signal and not auto-merge eligible. When the *only*
         # thing between this PR and a merge is the owner's approval, that
         # wait is tracked and — past the project ceiling — escalated.
-        blocked_only_on_approval = blocked_only_on_approval?(project, client, issue, signals)
+        blocked_only_on_approval = automatic_merge_active &&
+          blocked_only_on_approval?(project, client, issue, signals)
         track_approval_wait!(project, issue, blocked_only_on_approval: blocked_only_on_approval)
 
         if blocked_only_on_approval && approval_wait_exceeds_ceiling?(project, issue) # @spec PR-ESCALATION-024
@@ -3616,17 +3620,20 @@ module Activities
     # @spec AUTO-MERGE-005
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
-      analyze_auto_merge(project, client, issue,
+      evaluation = analyze_auto_merge(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
-        progress_state: progress_state)&.analysis&.eligible? || false
+        progress_state: progress_state)
+      auto_merge_active?(project, issue) && evaluation&.analysis&.eligible? || false
     end
 
     # Runs the full auto-merge analysis once and returns the
-    # {AutoMergeEvaluation} (signals + analysis), or nil when auto-merge is
-    # disabled or the PR data is missing. Callers that need both the
-    # eligibility decision and the underlying signals must use this instead
-    # of calling auto_merge_eligible? followed by build_auto_merge_signals,
-    # which would evaluate the expensive GitHub gates twice.
+    # {AutoMergeEvaluation} (signals + analysis), or nil when PR data is
+    # missing. The assessment is persisted for manual-merge projects too, but
+    # callers must still check `auto_merge_active?` before acting on
+    # eligibility. Callers that need both the eligibility decision and the
+    # underlying signals must use this instead of calling
+    # auto_merge_eligible? followed by build_auto_merge_signals, which would
+    # evaluate the expensive GitHub gates twice.
     def analyze_auto_merge(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
       signal_build = build_auto_merge_signals(project, client, issue,
@@ -3645,12 +3652,14 @@ module Activities
 
     # Collects the provider-neutral auto-merge preconditions for a
     # human-authored PR into an {Automation::Strategies::AutoMerge::Signals}.
-    # Returns nil when auto-merge is disabled or the PR data is missing, so
-    # callers can distinguish "not gated by auto-merge" from "gated and
-    # failing" — the distinction the awaiting_approval escalation keys on.
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    # Returns nil when PR data is missing. This policy assessment deliberately
+    # runs while auto-merge is off so the Inbox can distinguish manual review
+    # and merge decisions from pending machine work without render-time GitHub
+    # calls; it does not itself authorize automatic execution.
     def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
-      return nil unless pr_data.present? && auto_merge_active?(project, issue)
+      return nil unless pr_data.present?
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
       checks_green = !checks.nil? && all_checks_green?(checks)
@@ -3839,6 +3848,7 @@ module Activities
         attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
       end
       issue.update_columns(attributes)
+      Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if staged_this_pass
     end
 
     def auto_merge_snapshots

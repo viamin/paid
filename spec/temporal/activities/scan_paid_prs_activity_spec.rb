@@ -592,6 +592,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.last_scanned_head_sha).to eq("abc123")
       end
 
+      # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+      it "persists current-head manual-merge assessment while auto-merge is off without scheduling a merge" do
+        project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals
+
+        result = activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.auto_merge_blockers).to eq("failed" => [], "not_evaluated" => [])
+        expect(pr_issue.auto_merge_evaluated_at).to be_present
+        expect(automation_scan_results(result)).to be_empty
+      end
+
       # @spec INTENT-CONFORMANCE-010
       it "schedules one independent review for the live head of a released feature intent" do
         project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
