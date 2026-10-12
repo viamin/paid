@@ -688,7 +688,7 @@ jobs:
           pipx run --spec 'schemathesis==4.6.0' schemathesis run \
             --url http://127.0.0.1:3000/api/v1 \
             --header "Authorization: Bearer $MOBILE_API_TOKEN" \
-            --include-path-regex '^/inbox/entries/[^/]+/chat$' \
+            --include-path /inbox/entries/{entry_id}/chat \
             --exclude-operation-id sendChatMessage \
             --exclude-operation-id resolveToolCall \
             docs/api/openapi.yaml
