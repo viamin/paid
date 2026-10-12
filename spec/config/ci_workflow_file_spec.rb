@@ -18,6 +18,10 @@ RSpec.describe CiWorkflowFile, :no_db do
     Psych.safe_load_file(Rails.root.join("docs/api/openapi.yaml"), aliases: true)
   end
 
+  let(:mobile_pact) do
+    JSON.parse(Rails.root.join("docs/api/pacts/paid-mobile-api-schema.pact.json").read)
+  end
+
   let(:postgres_pin_step) do
     workflow.fetch("jobs").fetch("lint").fetch("steps")
       .find { |step| step["name"] == "Verify Postgres image pins and client install sources are in sync" }
@@ -110,19 +114,29 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec MOBILE-API-017
   it "verifies the mobile consumer Pact" do
     expect(step_run(pact_job, "Verify mobile consumer Pact")).to include(
-      "pact-provider-verifier", "docs/api/pacts/paid-mobile-api-schema.pact.json",
+      "pact_provider_verifier_compatibility", "pact-provider-verifier", "docs/api/pacts/paid-mobile-api-schema.pact.json",
       "--provider-base-url=http://127.0.0.1:3000", "--fail-if-no-pacts-found"
     )
   end
 
+  # @spec MOBILE-API-017
+  it "declares the JSON content type for the interim Pact response" do
+    response = mobile_pact.fetch("interactions").first.fetch("response")
+
+    expect(response.fetch("headers")).to include("Content-Type" => "application/json")
+  end
+
   # @spec MOBILE-API-018
-  it "fuzzes safe mobile API operations without sending chat messages" do
-    expect(step_run(schemathesis_job, "Fuzz mobile API contract")).to include(
-      "schemathesis==4.6.0", "--include-method GET", "--include-path /inbox/entries/{entry_id}",
+  it "fuzzes only the selected safe mobile API operations" do
+    fuzz_command = step_run(schemathesis_job, "Fuzz mobile API contract")
+
+    expect(fuzz_command).to include(
+      "schemathesis==4.6.0", "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
       "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveChatToolCall"
     )
+    expect(fuzz_command).not_to include("--include-method GET")
   end
 
   # @spec MOBILE-API-006 MOBILE-API-018

@@ -530,7 +530,7 @@ jobs:
 
       - name: Verify mobile consumer Pact
         run: |
-          bundle exec pact-provider-verifier \
+          RUBYOPT="-rbundler/setup -r$GITHUB_WORKSPACE/lib/pact_provider_verifier_compatibility" bundle exec pact-provider-verifier \
             docs/api/pacts/paid-mobile-api-schema.pact.json \
             --provider-base-url=http://127.0.0.1:3000 \
             --provider=paid-mobile-api \
@@ -674,7 +674,6 @@ jobs:
           pipx run --spec 'schemathesis==4.6.0' schemathesis run \
             --url http://127.0.0.1:3000/api/v1 \
             --header "Authorization: Bearer $MOBILE_API_TOKEN" \
-            --include-method GET \
             --include-path /inbox \
             --include-path /inbox/count \
             --include-path /inbox/entries/{entry_id} \
