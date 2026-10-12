@@ -195,6 +195,68 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-024 — A live stream only learns that a run has two tool
+    // cards when the second event arrives, so it upgrades the trailing card
+    // into the same collapsed chrome as a persisted run.
+    function testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt() {
+      const cards = [];
+      let trailing = null;
+      let groupRemoved = false;
+      const summary = { textContent: "" };
+      const cardContainer = {
+        append(card) {
+          cards.push(card);
+          card.closest = (selector) => selector === "[data-chat-tool-group]" ? group : null;
+        }
+      };
+      const group = {
+        querySelector(selector) {
+          if (selector === "[data-chat-tool-group-cards]") return cardContainer;
+          if (selector === "[data-chat-tool-group-summary]") return summary;
+          if (selector === "[data-chat-tool-card]") return cards[0] || null;
+          return null;
+        },
+        querySelectorAll(selector) {
+          return selector === "[data-chat-tool-card]" ? cards : [];
+        },
+        remove() { groupRemoved = true; }
+      };
+      const messagesTarget = {
+        get lastElementChild() { return trailing; },
+        append(card) { trailing = card; }
+      };
+      const first = {
+        matches: () => false,
+        querySelector: (selector) => selector === "[data-chat-tool-card]:not([data-chat-tool-pending])" ? {} : null,
+        replaceWith(replacement) { trailing = replacement; },
+        remove() { cards.splice(cards.indexOf(first), 1); }
+      };
+      const second = {
+        remove() { cards.splice(cards.indexOf(second), 1); }
+      };
+      let nextCard = first;
+      const { controller } = makeController({
+        messagesTarget,
+        buildMessageElement: () => nextCard,
+        createLiveToolGroup: () => group,
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageToolCall({ html: "first", tool_name: "search" });
+      nextCard = second;
+      controller.handleMessageToolResult({ html: "second" });
+
+      if (trailing !== group || cards.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error("Expected consecutive live tool cards to move into one collapsed group");
+      }
+
+      controller.removeCurrentAttemptToolCards();
+
+      if (!groupRemoved || cards.length !== 0) {
+        throw new Error("Expected fallback cleanup to remove an empty live tool group");
+      }
+    }
+
     function testMessageCompleteResetsStreamingState() {
       const { controller } = makeController({
         streaming: true,
@@ -1849,6 +1911,7 @@ class ChatControllerNodeHarness
       testToolCallWithMissingHtmlDoesNotAppend();
       testToolResultAppendsCard();
       testToolResultWithMissingHtmlDoesNotAppend();
+      testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt();
       testMessageCompleteResetsStreamingState();
       testMessageCompleteRemovesStreamingBubble();
       testMessageCompleteReleasesFallbackWithoutActiveStreamId();

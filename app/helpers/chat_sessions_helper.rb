@@ -116,6 +116,45 @@ module ChatSessionsHelper
     "flex justify-start"
   end
 
+  # @spec CHAT-API-024
+  # Keep transcript ordering intact while exposing consecutive, non-pending
+  # tool cards as a renderable segment. Notices and pending confirmations are
+  # hard boundaries because they need their own visible treatment.
+  def each_chat_transcript_segment(messages)
+    return enum_for(__method__, messages) unless block_given?
+
+    tool_run = []
+    messages.each do |message|
+      if chat_tool_groupable?(message)
+        tool_run << message
+      else
+        yield tool_run if tool_run.any?
+        tool_run = []
+        yield [ message ]
+      end
+    end
+    yield tool_run if tool_run.any?
+  end
+
+  # @spec CHAT-API-024
+  def chat_tool_run?(segment)
+    segment.size > 1 && segment.all? { |message| chat_tool_groupable?(message) }
+  end
+
+  # @spec CHAT-API-024
+  def chat_tool_groupable?(message)
+    (message.tool_name.present? || message.role == "tool") &&
+      !message.pending_confirmation? &&
+      !chat_transcript_notice?(message)
+  end
+
+  def chat_transcript_notice?(message)
+    message.token_limit_error? ||
+      message.rate_limit_paused? ||
+      message.provider_error_notice? ||
+      message.pending_confirmation_notice?
+  end
+
   def chat_message_meta_classes(message)
     return "mb-2 flex items-center justify-end gap-2" if message.role == "user"
 

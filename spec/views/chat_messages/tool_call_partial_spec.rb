@@ -6,6 +6,7 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
   def tool_message(**attrs)
     defaults = {
       role: "tool",
+      id: 1,
       tool_name: "grep_repo",
       tool_status: nil,
       tool_result: { "total_count" => 3 },
@@ -17,6 +18,14 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
       def pending_confirmation?
         tool_status == "pending"
       end
+
+      def token_limit_error? = false
+
+      def rate_limit_paused? = false
+
+      def provider_error_notice? = false
+
+      def pending_confirmation_notice? = false
     end.new(**defaults.merge(attrs))
   end
 
@@ -49,6 +58,32 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).to include("3 matches")
     expect(rendered).to include("completed")
     expect(rendered).not_to match(/<details[^>]*open/)
+  end
+
+  # @spec CHAT-API-024 — Consecutive non-pending tool transcript rows share
+  # quiet chrome while preserving the individual cards inside it.
+  it "renders a low-contrast collapsed container around a tool run" do
+    render partial: "chat_messages/tool_call_group", locals: {
+      messages: [ tool_message, tool_message(tool_name: "read_repo_file") ]
+    }
+
+    expect(rendered).to include('data-chat-tool-group')
+    expect(rendered).to include("2 tool actions")
+    expect(rendered).to include('<details class="group max-w-3xl" data-chat-tool-group>')
+    expect(rendered).not_to match(/<details class="group max-w-3xl[^>]*border-l/)
+    expect(rendered.scan('data-chat-tool-card').size).to eq(2)
+    expect(rendered).not_to match(/<details[^>]*data-chat-tool-group[^>]*open/)
+  end
+
+  # @spec CHAT-API-024
+  it "splits a tool run at a pending confirmation" do
+    pending = tool_message(role: "assistant", tool_status: "pending", tool_result: nil)
+    segments = []
+
+    view.each_chat_transcript_segment([ tool_message, pending, tool_message ]) { |segment| segments << segment }
+
+    expect(segments.map(&:size)).to eq([ 1, 1, 1 ])
+    expect(segments[1]).to eq([ pending ])
   end
 
   # @spec PARTIAL-CLOSEOUT-017 — executed write tools that queued a run are

@@ -485,3 +485,25 @@
   `#handleConnected`, `#resyncTranscript`, `#fetchRecentMessages`,
   `#lastRenderedMessageId`, `#lastAssistantTextResponse`, `#handleMessageChunk`,
   `ChatSessionsController#recent_messages`.
+
+- [x] **CHAT-API-024** — When two or more consecutive persisted or live
+  transcript rows are non-pending tool calls or results, the transcript SHALL
+  render them in one initially closed, low-contrast disclosure with a count
+  summary. Its expanded contents SHALL retain each existing individual,
+  initially closed tool card and its current styling. A pending confirmation,
+  a non-tool row, or a token-limit, rate-limit, provider-error, or pending-
+  confirmation notice SHALL end the run; pending confirmation cards SHALL
+  remain standalone, open, and retain their amber Approve/Deny treatment. A
+  runner-fallback cleanup SHALL remove an emptied live disclosure together with
+  its stale cards. Grouping SHALL NOT make tool cards eligible as "Jump to
+  latest" response anchors.
+  *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`,
+  `spec/lib/chat_controller_node_harness_spec.rb`
+  (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`),
+  `spec/lib/chat_controller_node_harness_spec.rb` (existing
+  `lastAssistantTextResponse` anchor tests).
+  *Code:* `ChatSessionsHelper#each_chat_transcript_segment`,
+  `#chat_tool_run?`, `app/views/chat_sessions/_conversation.html.erb`,
+  `app/views/chat_sessions/_older_messages.html.erb`,
+  `app/views/chat_messages/_tool_call_group.html.erb`,
+  `app/javascript/controllers/chat_controller.js#appendToolCard`.
