@@ -650,10 +650,23 @@ module Containers
 
     def hardening_profile_for(service_container)
       image = service_container.respond_to?(:image) ? service_container.image : service_container
+      self.class.compute_hardening_profile(image: image, env: service_container.respond_to?(:env) ? service_container.env : {})
+    end
+
+    # Computes the effective hardening profile for an image + env, applying the
+    # `HARDENING_PROFILES` entry when one matches the image's repository and the
+    # `DEFAULT_HARDENING_PROFILE` otherwise, then layering the
+    # `PAID_SERVICE_HARDENING` override carried in `env` (if any). Raises the
+    # same `Error` messages the per-record `ServiceContainer` validation does.
+    #
+    # @param image [String] Docker image reference (e.g. "postgres:16")
+    # @param env [Hash] env hash that may carry a `PAID_SERVICE_HARDENING` key
+    # @return [Hash] :readonly_rootfs, :user, :tmpfs, :cap_add
+    def self.compute_hardening_profile(image:, env:)
       family = built_in_hardening_family_for(image)
       base = built_in_hardening_profile_for(image)
-      overrides = hardening_overrides_for(
-        service_container,
+      overrides = hardening_overrides_for_env(
+        env,
         built_in_family: family,
         base_profile: base
       )
@@ -667,10 +680,18 @@ module Containers
     end
 
     def merge_hardening_capabilities(base_capabilities, override_capabilities)
+      self.class.merge_hardening_capabilities(base_capabilities, override_capabilities)
+    end
+
+    def self.merge_hardening_capabilities(base_capabilities, override_capabilities)
       (Array(base_capabilities) + Array(override_capabilities)).map(&:to_s).uniq
     end
 
     def built_in_hardening_profile_for(image)
+      self.class.built_in_hardening_profile_for(image)
+    end
+
+    def self.built_in_hardening_profile_for(image)
       family = built_in_hardening_family_for(image)
       return HARDENING_PROFILES.fetch(family) if family
 
@@ -678,6 +699,10 @@ module Containers
     end
 
     def built_in_hardening_family_for(image)
+      self.class.built_in_hardening_family_for(image)
+    end
+
+    def self.built_in_hardening_family_for(image)
       repository = image_repository(image)
 
       HARDENING_PROFILES.each_key do |family|
@@ -689,7 +714,12 @@ module Containers
     end
 
     def hardening_overrides_for(service_container, built_in_family:, base_profile:)
-      raw = service_container.respond_to?(:env) ? service_container.env[HARDENING_ENV_KEY] : nil
+      env = service_container.respond_to?(:env) ? service_container.env : {}
+      self.class.hardening_overrides_for_env(env, built_in_family: built_in_family, base_profile: base_profile)
+    end
+
+    def self.hardening_overrides_for_env(env, built_in_family:, base_profile:)
+      raw = env[HARDENING_ENV_KEY]
       return {} if raw.blank?
       raise Error, "#{HARDENING_ENV_KEY} must be a JSON object" unless raw.is_a?(Hash)
 
@@ -755,6 +785,10 @@ module Containers
     end
 
     def normalize_tmpfs_overrides(raw_tmpfs)
+      self.class.normalize_tmpfs_overrides(raw_tmpfs)
+    end
+
+    def self.normalize_tmpfs_overrides(raw_tmpfs)
       raise Error, "#{HARDENING_ENV_KEY}.tmpfs must be a JSON object" unless raw_tmpfs.is_a?(Hash)
 
       raw_tmpfs.each_with_object({}) do |(path, options), normalized|
@@ -772,10 +806,18 @@ module Containers
     end
 
     def docker_tmpfs_mounts(tmpfs)
+      self.class.docker_tmpfs_mounts(tmpfs)
+    end
+
+    def self.docker_tmpfs_mounts(tmpfs)
       tmpfs.transform_values { |options| docker_tmpfs_options(options) }
     end
 
     def image_repository(image)
+      self.class.image_repository(image)
+    end
+
+    def self.image_repository(image)
       segments = image.to_s.split("@", 2).first.split("/")
       if segments.length > 1 && registry_segment?(segments.first)
         segments = segments.drop(1)
@@ -789,7 +831,15 @@ module Containers
       segment.include?(".") || segment.include?(":") || segment == "localhost"
     end
 
+    def self.registry_segment?(segment)
+      segment.include?(".") || segment.include?(":") || segment == "localhost"
+    end
+
     def docker_tmpfs_options(options)
+      self.class.docker_tmpfs_options(options)
+    end
+
+    def self.docker_tmpfs_options(options)
       [
         "size=#{options.fetch(:size)}",
         "mode=#{options.fetch(:mode)}",

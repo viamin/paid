@@ -2,22 +2,31 @@
 
 require "docker-api"
 module Containers
-  # Provisions MCP (Model Context Protocol) servers for agent runs.
+  # Provisions MCP (Model Context Protocol) servers and hardened marketplace
+  # tool sidecars for agent runs.
   #
-  # Handles two types of MCP server definitions from the run's snapshot:
+  # Handles three types of definitions from the run's snapshot:
   #
-  # 1. **npx** — stdio-based servers that run inside the agent container.
+  # 1. **npx** — stdio-based MCP servers that run inside the agent container.
   #    These are materialized as command specs for the execution layer;
   #    no sidecar container is created.
   #
-  # 2. **docker_image** — sidecar containers provisioned on the same Docker
+  # 2. **docker_image** — MCP sidecar containers provisioned on the same Docker
   #    network as the agent container. Each gets a stable hostname so the
   #    agent can reach it at `http://<hostname>:<port>/sse`.
   #
-  # Sidecar container IDs are tracked on `AgentRun#mcp_sidecar_container_ids`
-  # for cleanup and auditability.
+  # 3. **tool** — hardened marketplace tool sidecar containers, built through
+  #    the `Containers::ServiceProvisioner` hardening profile path
+  #    (capabilities dropped, `no-new-privileges`, image-family profile or
+  #    default profile). Tools are plain TCP/HTTP endpoints — they are
+  #    registered on the same per-run DNS alias pattern as MCP sidecars but
+  #    never appear in the agent's MCP server list.
   #
-  # @example Provision MCP servers for a run
+  # Sidecar container IDs are persisted on `AgentRun#mcp_sidecar_container_ids`
+  # (MCP url servers) and `AgentRun#tool_sidecar_container_ids` (tools) so
+  # cleanup and auditability work uniformly across retries.
+  #
+  # @example Provision MCP servers and tools for a run
   #   provisioner = Containers::McpProvisioner.new
   #   result = provisioner.provision(agent_run, network: "paid_agent")
   #   result[:stdio_servers]  # => [{ "name" => "...", "command" => "@modelcontextprotocol/server-github", ... }]
@@ -31,7 +40,9 @@ module Containers
     HEALTH_CHECK_TIMEOUT = 30
     HEALTH_CHECK_INTERVAL = 1
     CONTAINER_NAME_PREFIX = "paid-mcp"
+    TOOL_CONTAINER_NAME_PREFIX = "paid-tool"
     DEFAULT_PORT = 3000
+    TOOL_DEFAULT_PORT = 8080
     MAX_NAME_LENGTH = 63
 
     RESOURCE_LIMITS = {
@@ -51,7 +62,8 @@ module Containers
       server
     end
 
-    # Provisions MCP servers from the agent run's snapshot.
+    # Provisions MCP servers and hardened tool sidecars from the agent run's
+    # snapshot.
     #
     # @param agent_run [AgentRun] the run whose mcp_server_snapshot to provision
     # @param network [String] Docker network name for sidecar containers
@@ -59,6 +71,7 @@ module Containers
     def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       snapshot = agent_run.mcp_server_snapshot
       sidecar_ids = []
+      tool_ids = []
       preserved_sidecar_ids = []
 
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
@@ -66,10 +79,14 @@ module Containers
       preserved_sidecar_ids, stale_ids = partition_preserved_sidecar_ids(agent_run, stale_ids)
       cleanup_containers(stale_ids) if stale_ids.present?
 
+      stale_tool_ids = Array(agent_run.tool_sidecar_container_ids)
+      cleanup_containers(stale_tool_ids) if stale_tool_ids.present?
+
       if snapshot.blank?
         agent_run.update!(
           mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
-          mcp_sidecar_container_ids: preserved_sidecar_ids
+          mcp_sidecar_container_ids: preserved_sidecar_ids,
+          tool_sidecar_container_ids: []
         )
         return { stdio_servers: [], url_servers: [] }
       end
@@ -86,39 +103,68 @@ module Containers
           result = provision_docker_sidecar(agent_run, definition)
           url_servers << result[:server]
           sidecar_ids << result[:container_id]
+        when "tool"
+          result = provision_tool_sidecar(agent_run, definition)
+          tool_ids << result[:container_id] if result
         end
       end
 
       agent_run.update!(
         mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers },
-        mcp_sidecar_container_ids: preserved_sidecar_ids + sidecar_ids
+        mcp_sidecar_container_ids: preserved_sidecar_ids + sidecar_ids,
+        tool_sidecar_container_ids: tool_ids
       )
 
       log_info("mcp_provisioner.provisioned",
         agent_run_id: agent_run.id,
         stdio_count: stdio_servers.size,
-        sidecar_count: url_servers.size)
+        sidecar_count: url_servers.size,
+        tool_count: tool_ids.size)
 
       { stdio_servers: stdio_servers, url_servers: url_servers }
     rescue Error
       cleanup_containers(sidecar_ids)
+      cleanup_containers(tool_ids)
       raise
+    rescue Containers::ServiceProvisioner::Error => e
+      cleanup_containers(sidecar_ids)
+      cleanup_containers(tool_ids)
+      raise Error, "MCP provisioning failed: #{e.message}"
     rescue => e
       cleanup_containers(sidecar_ids)
+      cleanup_containers(tool_ids)
       raise Error, "MCP provisioning failed: #{e.message}"
     end
 
-    # Removes all MCP sidecar containers for the given agent run.
+    # Removes all MCP and marketplace tool sidecar containers for the given
+    # agent run. Both kinds share the run lifecycle cleanup entrypoint.
     #
     # @param agent_run [AgentRun] the run to clean up
     def cleanup(agent_run)
       container_ids = agent_run.mcp_sidecar_container_ids
+      cleanup_containers(container_ids) if container_ids.present?
+      agent_run.update_columns(mcp_sidecar_container_ids: []) if container_ids.present?
+
+      cleanup_tool_sidecars(agent_run)
+
+      return if container_ids.blank?
+
+      log_info("mcp_provisioner.cleaned_up", agent_run_id: agent_run.id, container_count: container_ids.size)
+    end
+
+    # Removes all hardened marketplace tool sidecar containers for the given
+    # agent run.
+    #
+    # @param agent_run [AgentRun] the run to clean up
+    # @spec TOOL-SIDECAR-005
+    def cleanup_tool_sidecars(agent_run)
+      container_ids = agent_run.tool_sidecar_container_ids
       return if container_ids.blank?
 
       cleanup_containers(container_ids)
-      agent_run.update_columns(mcp_sidecar_container_ids: [])
+      agent_run.update_columns(tool_sidecar_container_ids: [])
 
-      log_info("mcp_provisioner.cleaned_up",
+      log_info("mcp_provisioner.tool_sidecars_cleaned_up",
         agent_run_id: agent_run.id,
         container_count: container_ids.size)
     end
@@ -184,6 +230,190 @@ module Containers
       { server: server, container_id: container.id }
     end
 
+    # Provisions a hardened marketplace tool sidecar for a `"tool"`
+    # install_type definition. Validates the image against the account's
+    # operator allowlist (fail closed) and builds the container through the
+    # `Containers::ServiceProvisioner` hardening profile path so capabilities
+    # are dropped, `no-new-privileges` is applied, and the image-family
+    # `HARDENING_PROFILES` entry (or the default profile) shapes the runtime
+    # user, root filesystem, tmpfs mounts, and additional capabilities.
+    #
+    # Returns +nil+ when the rollout guard flag is off — matching tool
+    # definitions still resolve into the snapshot but never provision or
+    # persist container IDs while the flag is disabled.
+    #
+    # @return [Hash, nil] with :container_id, or nil when the flag is off
+    # @spec TOOL-SIDECAR-005
+    # @spec TOOL-SIDECAR-006
+    def provision_tool_sidecar(agent_run, definition)
+      unless tool_sidecars_enabled?(agent_run)
+        log_info("mcp_provisioner.tool_sidecar_skipped_flag_off",
+          agent_run_id: agent_run.id,
+          name: definition["name"])
+        return nil
+      end
+
+      image = definition["image"]
+      name = definition["name"]
+      env = definition.fetch("env", {})
+      port = resolve_port(definition, default_port: TOOL_DEFAULT_PORT)
+
+      validate_tool_image_allowlisted!(agent_run, image)
+      validate_tool_hardening_override!(image, env)
+
+      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
+
+      hostname = tool_sidecar_hostname(agent_run, name)
+
+      pull_tool_image(image)
+      container = adopt_or_create_tool_sidecar(
+        image: image,
+        hostname: hostname,
+        port: port,
+        env: env,
+        agent_run: agent_run
+      )
+
+      begin
+        Containers.backend.start_container(container) unless container_running?(container)
+        wait_for_tool_health!(container, hostname, port)
+      rescue Error
+        remove_container(container)
+        raise
+      rescue => e
+        remove_container(container)
+        raise Error, "Failed to start tool sidecar #{name}: #{e.message}"
+      end
+
+      log_info("mcp_provisioner.tool_sidecar_started",
+        agent_run_id: agent_run.id,
+        name: name,
+        image: image,
+        container_id: container.id,
+        hostname: hostname,
+        port: port)
+
+      { container_id: container.id }
+    end
+
+    # Returns true when the rollout guard flag enables the tool arm for the
+    # run's project. When the flag is off, the `"tool"` arm in #provision
+    # returns nil and never creates a container.
+    def tool_sidecars_enabled?(agent_run)
+      FeatureFlags.enabled?(:marketplace_tool_sidecars, project: agent_run.project)
+    end
+
+    # Image gate (fail closed): raises when the image is not in the union of
+    # `allowed_service_images` configured on every admin/owner
+    # `UserSetting` for the run's account, matching the surface used by
+    # `ServiceContainer#image_in_allowlist`.
+    # @spec TOOL-SIDECAR-006
+    def validate_tool_image_allowlisted!(agent_run, image)
+      return if account_allowed_images_for(agent_run).include?(image)
+
+      raise Error, "Image #{image.inspect} is not in the allowed service images list for this account"
+    end
+
+    # @spec TOOL-SIDECAR-006
+    def account_allowed_images_for(agent_run)
+      project = agent_run.project
+      return [] unless project
+
+      admin_user_ids = AccountMembership
+        .where(account_id: project.account_id, role: [ :admin, :owner ])
+        .select(:user_id)
+
+      UserSetting.where(user_id: admin_user_ids)
+        .pluck(:allowed_service_images)
+        .compact
+        .flatten
+        .uniq
+    end
+
+    # Override gate (fail closed): a `PAID_SERVICE_HARDENING` payload on the
+    # tool definition is rejected the same way a service container override is.
+    # Built-in image families (`HARDENING_PROFILES`) refuse `readonly_rootfs`
+    # and `user` overrides; `cap_add` is restricted to
+    # `SAFE_OVERRIDE_CAPABILITIES`. The actual application happens inside
+    # `Containers::ServiceProvisioner.compute_hardening_profile`; this method
+    # surfaces its `Containers::ServiceProvisioner::Error` as
+    # `Containers::McpProvisioner::Error` so the activity layer sees a
+    # single failure shape.
+    # @spec TOOL-SIDECAR-006
+    def validate_tool_hardening_override!(image, env)
+      Containers::ServiceProvisioner.compute_hardening_profile(image: image, env: env)
+    end
+
+    # Adopts an existing tool sidecar container (from a prior attempt) or
+    # creates a new one. Mirrors the docker_image adoption path so retries
+    # are idempotent.
+    def adopt_or_create_tool_sidecar(image:, hostname:, port:, env:, agent_run:)
+      Containers.backend.get_container(hostname)
+    rescue Docker::Error::NotFoundError
+      create_hardened_tool_sidecar_container(
+        image: image,
+        hostname: hostname,
+        port: port,
+        env: env,
+        agent_run: agent_run
+      )
+    end
+
+    # Creates a hardened tool sidecar Docker container through the
+    # `Containers::ServiceProvisioner` hardening profile path:
+    # `CapDrop: ["ALL"]`, `SecurityOpt: ["no-new-privileges:true"]`, the
+    # image-family profile when one matches, the default profile otherwise.
+    # @spec TOOL-SIDECAR-005
+    def create_hardened_tool_sidecar_container(image:, hostname:, port:, env:, agent_run:)
+      hardening = Containers::ServiceProvisioner.compute_hardening_profile(
+        image: image,
+        env: env
+      )
+      cap_drop = [ "ALL" ]
+      cap_add = hardening[:cap_add]
+      security_opt = [ "no-new-privileges:true" ]
+      runtime_env = env.reject { |k, _| k == Containers::ServiceProvisioner::HARDENING_ENV_KEY }
+
+      options = {
+        "Image" => image,
+        "name" => hostname,
+        "Env" => runtime_env.map { |k, v| "#{k}=#{v}" },
+        "ExposedPorts" => { "#{port}/tcp" => {} },
+        "ReadonlyRootfs" => hardening[:readonly_rootfs],
+        "CapDrop" => cap_drop,
+        "CapAdd" => cap_add,
+        "SecurityOpt" => security_opt,
+        "HostConfig" => {
+          "NetworkMode" => @network,
+          "Memory" => RESOURCE_LIMITS[:memory],
+          "MemorySwap" => RESOURCE_LIMITS[:memory],
+          "CpuPeriod" => 100_000,
+          "CpuQuota" => RESOURCE_LIMITS[:cpu_quota],
+          "PidsLimit" => RESOURCE_LIMITS[:pids_limit],
+          "CapDrop" => cap_drop,
+          "CapAdd" => cap_add,
+          "SecurityOpt" => security_opt,
+          "Tmpfs" => Containers::ServiceProvisioner.docker_tmpfs_mounts(hardening[:tmpfs])
+        },
+        "NetworkingConfig" => {
+          "EndpointsConfig" => {
+            @network => {
+              "Aliases" => [ hostname ]
+            }
+          }
+        },
+        "Labels" => {
+          "paid.tool_sidecar" => "true",
+          "paid.agent_run_id" => agent_run.id.to_s
+        }
+      }
+      options["User"] = hardening[:user] if hardening[:user].present?
+
+      Containers.backend.create_container(options)
+    rescue Docker::Error::DockerError => e
+      raise Error, "Failed to create tool sidecar container: #{e.message}"
+    end
+
     # Adopts an existing sidecar container (from a prior attempt) or creates
     # a new one. This makes provisioning idempotent across activity retries.
     def adopt_or_create_sidecar(image:, hostname:, port:, env:, agent_run:)
@@ -237,6 +467,15 @@ module Containers
       raise Error, "Failed to pull MCP server image #{image}: #{e.message}"
     end
 
+    # @spec TOOL-SIDECAR-005
+    def pull_tool_image(image)
+      Containers.backend.pull_image("fromImage" => image)
+    rescue Docker::Error::NotFoundError
+      raise Error, "Tool sidecar image not found: #{image}"
+    rescue Docker::Error::DockerError => e
+      raise Error, "Failed to pull tool sidecar image #{image}: #{e.message}"
+    end
+
     def wait_for_health!(container, hostname, port)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
@@ -251,6 +490,21 @@ module Containers
       end
     end
 
+    # @spec TOOL-SIDECAR-005
+    def wait_for_tool_health!(container, hostname, port)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
+
+      loop do
+        return if Containers::TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
+
+        if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          raise Error, "Health check timeout for tool sidecar #{hostname}:#{port}"
+        end
+
+        sleep HEALTH_CHECK_INTERVAL
+      end
+    end
+
     def sidecar_hostname(agent_run, name)
       suffix = "run#{agent_run.id}"
       budget = [ MAX_NAME_LENGTH - CONTAINER_NAME_PREFIX.length - suffix.length - 2, 1 ].max
@@ -258,22 +512,30 @@ module Containers
       [ CONTAINER_NAME_PREFIX, segment, suffix ].join("-")
     end
 
-    def sanitize_name(name)
+    # @spec TOOL-SIDECAR-005
+    def tool_sidecar_hostname(agent_run, name)
+      suffix = "run#{agent_run.id}"
+      budget = [ MAX_NAME_LENGTH - TOOL_CONTAINER_NAME_PREFIX.length - suffix.length - 2, 1 ].max
+      segment = sanitize_name(name, fallback: "tool").first(budget).delete_suffix("-").presence || "tool"
+      [ TOOL_CONTAINER_NAME_PREFIX, segment, suffix ].join("-")
+    end
+
+    def sanitize_name(name, fallback: "mcp")
       name.to_s.downcase
         .gsub(/[^a-z0-9-]/, "-")
         .gsub(/-+/, "-")
         .delete_prefix("-")
-        .presence || "mcp"
+        .presence || fallback
     end
 
     VALID_PORT_RANGE = (1..65535).freeze
 
-    def resolve_port(definition)
+    def resolve_port(definition, default_port: DEFAULT_PORT)
       metadata = definition.fetch("metadata", {})
-      port = metadata["port"]&.to_i || DEFAULT_PORT
+      port = metadata["port"]&.to_i || default_port
 
       unless VALID_PORT_RANGE.cover?(port)
-        raise Error, "Invalid port #{port} for MCP server #{definition["name"].inspect}; must be 1..65535"
+        raise Error, "Invalid port #{port} for sidecar #{definition["name"].inspect}; must be 1..65535"
       end
 
       port
