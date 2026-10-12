@@ -51,7 +51,7 @@ focused, open owner under [#4309](https://github.com/viamin/paid/issues/4309):
   readiness and authorized 80/80 configuration.
 
 Issue #4323 already explicitly depends on #4316 and #4318. The audit records
-#4314 and #4315 as required upstream implementation gaps; its final closeout
+\#4314 and #4315 as required upstream implementation gaps; its final closeout
 must not claim implementation until all four owners have shipped and supplied
 running evidence. It keeps non-closing `Tracks #4309` language; only the
 umbrella's final acceptance audit may close #4309.
