@@ -43,4 +43,7 @@
   use that state to preserve the human test-review gate independently of
   whether upstream label writes are enabled. Paid SHALL retain the local
   approval transition time and use it to avoid scheduling more than one
-  implementation run for the same approved test revision.
+  implementation run for the same approved test revision. When a PR record is
+  reconciled after its initial sync was unavailable, Paid SHALL restore a
+  missing ready-for-review state from its test-writing run without replacing an
+  existing operator decision.

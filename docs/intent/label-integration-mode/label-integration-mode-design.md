@@ -30,7 +30,9 @@ credential is selected. Read paths deliberately remain intact except in
 an auto-pick exclusion reason replace their corresponding label reads. The
 local TDD approval records its transition time, which the PR scanner compares
 to implementation-run creation time so a subsequent poll cannot requeue the
-same approved revision. The
+same approved revision. If the initial PR sync is unavailable, later PR
+reconciliation restores a missing local TDD ready-for-review gate from the
+durably recorded test-writing run, without overwriting an operator decision. The
 auto-pick epic label has no local replacement, so ignored-mode selection and
 re-audit paths treat it as a no-op rather than reading the upstream label.
 Escalation dismissal remains the existing local `PullRequests::Unblock`
