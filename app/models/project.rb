@@ -1606,6 +1606,15 @@ class Project < ApplicationRecord
     GithubClient::CommentSuppressing.new(github_client)
   end
 
+  # A deliberate, user-confirmed exception to label write suppression.  Mode
+  # transition cleanup needs to remove the closed Paid catalog after a project
+  # has stopped ordinary label writes; callers must not use this for runtime
+  # automation.
+  # @spec LABEL-INTEGRATION-006
+  def label_cleanup_client
+    build_github_client
+  end
+
   # Every GitHub client this project hands out passes through here first, so
   # label-mode suppression applies regardless of quiet mode. Memoized
   # alongside the raw client (not rebuilt per call like the quiet-mode wrap)
