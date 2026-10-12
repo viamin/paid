@@ -47,9 +47,16 @@ module Projects
     end
 
     def remove(entry, result)
-      response = project.label_cleanup_client.remove_labels_from_issue(project.full_name, entry.number, entry.labels)
+      client = project.label_cleanup_client
+      raise GithubClient::Error, missing_credential_message if client.nil?
+
+      response = client.remove_labels_from_issue(project.full_name, entry.number, entry.labels)
       persist_removal(entry, response[:removed])
       Result.new(entries: result.entries, removed: result.removed + response[:removed], failed: result.failed + response[:failed])
+    end
+
+    def missing_credential_message
+      "Project has no usable GitHub credential — re-link the token or GitHub App installation before cleaning up Paid labels."
     end
 
     def persist_removal(entry, removed)

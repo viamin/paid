@@ -41,5 +41,20 @@ RSpec.describe Projects::CleanupPaidLabels do
 
       expect { described_class.execute(project:) }.to raise_error(ArgumentError, /read & write/)
     end
+
+    it "raises a GitHub client error when the project has no usable credential" do # @spec LABEL-INTEGRATION-006
+      create(:issue, project:, labels: [ Issue::PAUSED_LABEL ])
+      allow(project).to receive(:label_cleanup_client).and_return(nil)
+
+      expect { described_class.execute(project:) }.to raise_error(GithubClient::Error, /no usable GitHub credential/)
+    end
+
+    it "raises a GitHub client error when the project's token was revoked after the project was created" do # @spec LABEL-INTEGRATION-006
+      create(:issue, project:, labels: [ Issue::PAUSED_LABEL ])
+      project.github_token.revoke!
+      allow(project).to receive(:label_cleanup_client).and_return(nil)
+
+      expect { described_class.execute(project:) }.to raise_error(GithubClient::Error, /no usable GitHub credential/)
+    end
   end
 end
