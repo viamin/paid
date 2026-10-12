@@ -12,6 +12,7 @@ module Tools
       "Tools::GetProjectIssues",
       "Tools::GetProjectPullRequests",
       "Tools::UpdateProjectSettings",
+      "Tools::UpdateIssueControlState",
       "Tools::TriggerAgentRun",
       "Tools::RequestIssueContinuation",
       "Tools::ResolveIssueCloseout",

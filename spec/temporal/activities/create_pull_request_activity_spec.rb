@@ -521,6 +521,29 @@ RSpec.describe Activities::CreatePullRequestActivity do
       )
     end
 
+    it "marks ignored-mode upstream test-writing PRs ready without label capability" do # @spec LABEL-CONTROL-005
+      project.update!(
+        label_integration_mode: "ignored", pr_target: "upstream",
+        upstream_full_name: "stenolabs/stenoai", auto_add_labels_enabled: false,
+        inherit_priority_labels: false
+      )
+      agent_run.update!(
+        tdd_phase: "test_writing",
+        base_commit_sha: "def123def456789012345678901234567890abcd",
+        result_commit_sha: "abc123def456789012345678901234567890abcd"
+      )
+      allow(github_client).to receive(:repository)
+        .with("stenolabs/stenoai")
+        .and_return(OpenStruct.new(default_branch: "main"))
+      allow(github_client).to receive(:compare_changed_files).and_return([ "spec/models/widget_spec.rb" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      pull_request = project.issues.pull_requests_only.find_by!(github_number: 42)
+      expect(pull_request.tdd_review_state).to eq("ready_for_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
     it "marks the agent run as completed with PR details" do
       activity.execute(agent_run_id: agent_run.id)
 
@@ -2070,6 +2093,26 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_number]).to eq(99)
         expect(agent_run.reload.status).to eq("completed")
         expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/99")
+      end
+
+      it "preserves an operator-set ignored-mode TDD verdict when a test-writing activity retries against a reused PR" do # @spec LABEL-CONTROL-005
+        project.update!(label_integration_mode: "ignored")
+        agent_run.update!(
+          tdd_phase: "test_writing",
+          base_commit_sha: "def123def456789012345678901234567890abcd",
+          result_commit_sha: "abc123def456789012345678901234567890abcd"
+        )
+        create(:issue, :pull_request, project: project, github_issue_id: 9999, github_number: existing_pr.number,
+          github_state: "open", parent_issue_id: nil, tdd_review_state: "approved")
+        allow(github_client).to receive_messages(
+          pull_requests: [ existing_pr ],
+          compare_changed_files: [ "spec/models/widget_spec.rb" ]
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        pull_request = project.issues.pull_requests_only.find_by!(github_number: existing_pr.number)
+        expect(pull_request.tdd_review_state).to eq("approved")
       end
 
       it "still marks the run completed when post-processing raises" do

@@ -69,7 +69,7 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-10-11
-    next: "Control GitHub label writes per project while retaining configured label reads"
+    next: "Ignored mode now uses local work-item control state; mode-transition import and cleanup remain"
   quiet-mode:
     title: Project Quiet Mode
     path: docs/intent/quiet-mode/quiet-mode-design.md
@@ -114,17 +114,18 @@ arrows:
     taxonomy: intelligence
     status: MAPPED
     sampled: 2026-09-22
-    next: "Implement evidence-backed assessments and explicit preferences (RDR-070)"
+    audited: 2026-10-12
+    next: "RDR-070 remains Accepted: implement facets/evidence (#4314), assessments/corpus (#4315), explicit preferences (#4316), and scoped 80/80 readiness (#4318) before a terminal closeout."
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md
     specs: docs/intent/confidence-driven-delivery/confidence-driven-delivery-specs.md
     parent: PAID
     taxonomy: automation
-    status: MAPPED
-    sampled: 2026-09-22
+    status: PARTIAL
+    audited: 2026-10-12
     blockedBy: [facet-confidence, question-exploration]
-    next: "Implement issue readiness, policy dispatch and completion follow-ups (RDR-071)"
+    next: "Approval-gated foundations are shipped; implement policy/enrollment foundation (#4310), facets/evidence (#4314), assessments (#4315), scoped readiness (#4318), held-issue publication and release (#4319), builder dispatch (#4320), completion follow-ups (#4321), then complete the RDR-070 audit (#4323)."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md
