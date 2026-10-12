@@ -105,12 +105,15 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     session = create(:chat_session, :workspace, account:, created_by: user)
     stub_clone_project_for(session, project)
 
-    # The clone form is visibly expanded by the wide layout and initially
-    # folded into Workspace options on mobile. Exercise the desktop affordance
-    # with a real browser so visibility follows the responsive disclosure
-    # behavior rather than rack_test's static interpretation of <details>.
+    # The clone form sits inside the nested Workspace disclosure, which the
+    # #4269 layout keeps folded inside the closed Session details on initial
+    # load. Open Session details first so the desktop affordance is visible.
+    # Exercise it with a real browser so visibility follows the responsive
+    # disclosure behavior rather than rack_test's static interpretation of
+    # <details>.
     page.current_window.resize_to(1440, 900)
     visit chat_session_path(session, format: :html)
+    open_desktop_session_details
     within("[data-chat-header='desktop']") do
       select project.name, from: "project_id"
       click_button "Clone into workspace"
