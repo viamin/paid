@@ -27,16 +27,20 @@ issue body, not optional implementation suggestions.
 
 ## Existing work and overlap
 
-Checked on 2026-09-22 against main and GitHub issue bodies/comments:
+Checked on 2026-09-22 against main and GitHub issue bodies/comments. The
+open/closed annotations in this table are historical planning context, not
+current GitHub state or implementation evidence. At filing, #3860, #3862,
+and #3863, #3865, #3870, and #3871 were closed; #3861 remained open. P01 owns
+reconciliation of any remaining overlap against shipped code and tests.
 
 | Existing work | Relationship and action |
 |---|---|
 | [#3877](https://github.com/viamin/paid/issues/3877), [#3891](https://github.com/viamin/paid/issues/3891), [#3925](https://github.com/viamin/paid/issues/3925) | Closed layout, question-context and chat-header work. Reuse shipped surfaces; do not refile these changes. |
 | [#3864](https://github.com/viamin/paid/issues/3864) | Closed feature-decision Inbox work. Reuse feature links and access concepts; new policy does not ask for Mark approved. |
-| [#3862](https://github.com/viamin/paid/issues/3862), [#3863](https://github.com/viamin/paid/issues/3863), [#3865](https://github.com/viamin/paid/issues/3865) | Open feature/linkage/admission work. Existing models already implement part of their scope. P01 audits shipped code and revises/reuses these tasks for shared foundations; P09/P10 cover only the new confidence-driven contract. Do not make the new tree depend on obsolete whole-feature approval acceptance criteria. |
+| [#3862](https://github.com/viamin/paid/issues/3862), [#3863](https://github.com/viamin/paid/issues/3863), [#3865](https://github.com/viamin/paid/issues/3865) | Closed feature/linkage/admission work. Existing models already implement part of their scope. P01 audits shipped code and revises/reuses their contracts for shared foundations; P09/P10 cover only the new confidence-driven contract. Do not make the new tree depend on obsolete whole-feature approval acceptance criteria. |
 | [#3867](https://github.com/viamin/paid/issues/3867), [#3868](https://github.com/viamin/paid/issues/3868), [#3869](https://github.com/viamin/paid/issues/3869) | Closed conformance/merge/amendment work. P11 adds explicit policy dispatch and removes amendment-pause behavior only for confidence-driven features. |
-| [#3870](https://github.com/viamin/paid/issues/3870), [#3871](https://github.com/viamin/paid/issues/3871) | Open evaluation/closeout for approval-gated policy. Retain their scope; share fixtures/metrics where useful without claiming these tasks deliver the new policy. |
-| [#3860](https://github.com/viamin/paid/issues/3860), [#3861](https://github.com/viamin/paid/issues/3861) | Existing approval-gated epics. Link the new epic and explain the policy boundary; do not silently close or rewrite completed implementation evidence. |
+| [#3870](https://github.com/viamin/paid/issues/3870), [#3871](https://github.com/viamin/paid/issues/3871) | Closed evaluation/closeout work for approval-gated policy. Retain their evidence and scope boundaries; share fixtures/metrics where useful without claiming these tasks deliver the new policy. |
+| [#3860](https://github.com/viamin/paid/issues/3860), [#3861](https://github.com/viamin/paid/issues/3861) | Existing approval-gated epics. #3860 is closed and #3861 remains open at filing. Link the new epic and explain the policy boundary; do not silently close or rewrite completed implementation evidence. |
 | [PR #3958](https://github.com/viamin/paid/pull/3958) | Merged 2026-09-22 clarification-recovery fix. Rebase P04 on its outcome; do not recreate the stale-question recovery bug. |
 
 Issue state is not proof of implementation. P01 must inspect the delivered
