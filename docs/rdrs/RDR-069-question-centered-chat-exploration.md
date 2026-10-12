@@ -8,6 +8,7 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Question exploration](../intent/question-exploration/question-exploration-design.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4322](https://github.com/viamin/paid/issues/4322) (RDR-069 closeout); implementation tasks are linked in the shared tree
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
 
 ## Problem Statement
