@@ -4108,7 +4108,7 @@ class AgentRun < ApplicationRecord
 
   # @spec PROJECT-READINESS-006
   def project_readiness_refresh_needed?
-    saved_change_to_status? && status == "completed" && result_commit_sha.present?
+    saved_change_to_status? && status == "completed" && result_commit_sha.present? && !synthetic_operational_run?
   end
 
   def enqueue_project_readiness_evaluation

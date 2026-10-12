@@ -652,23 +652,15 @@ RSpec.describe Inbox::Count do
     }
   end
   describe "project setup pending Inbox count" do
-  around do |example|
-    original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    example.run
-  ensure
-    Rails.cache = original_store
-  end
+    # @spec PROJECT-READINESS-005
+    it "counts the same authorized auto-pick-disabled project as the queue" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "description" => "CI is required." } ])
 
-  # @spec PROJECT-READINESS-005
-  it "counts the same authorized auto-pick-disabled project as the queue" do
-    account = create(:account)
-    user = create(:user, account: account)
-    project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
-      readiness_gaps: [ { "description" => "CI is required." } ])
-
-    expect(described_class.call(user:)).to eq(1)
-    expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+      expect(described_class.call(user:)).to eq(1)
+      expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+    end
   end
-end
 end

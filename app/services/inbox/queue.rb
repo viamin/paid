@@ -735,6 +735,7 @@ module Inbox
     # @spec PROJECT-READINESS-005
     def project_setup_pending_entries
       scoped_projects.select(&:tdd_readiness_blocked?).map do |candidate|
+        gap_descriptions = candidate.readiness_gap_descriptions
         Entry.new(
           id: "#{PROJECT_SETUP_PENDING_KIND}:#{candidate.id}",
           kind: PROJECT_SETUP_PENDING_KIND,
@@ -743,8 +744,8 @@ module Inbox
           record: candidate,
           waiting_since: candidate.readiness_evaluated_at,
           questions: [],
-          tasks: candidate.readiness_gap_descriptions,
-          summary_text: "#{candidate.readiness_gap_descriptions.size} setup prerequisite(s) need attention.",
+          tasks: gap_descriptions,
+          summary_text: "#{gap_descriptions.size} setup prerequisite(s) need attention.",
           title_text: "Set up #{candidate.full_name}",
           action_url: Rails.application.routes.url_helpers.edit_project_path(candidate)
         )
