@@ -1,19 +1,21 @@
-# RDR-071 Audit Report — 2026-10-12 Umbrella Acceptance
+# RDR-071 Implementation Progress Audit — 2026-10-12
 
 - **RDR**: [RDR-071: Confidence-Driven Issue Delivery and Feature Completion](RDR-071-confidence-driven-issue-delivery.md)
 - **Audit date**: 2026-10-12
 - **Umbrella issue**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open)
-- **Closeout children**: P01, P09, P10, P11, P12, C71
-- **Conclusion**: **Not Implemented.** No RDR-071 acceptance criterion has
+- **Implementation work**: P01, P09, P10, P11, P12, C71
+- **Progress finding**: No RDR-071 acceptance criterion has
   shipped code or test evidence. No feature policy selection, no
   confidence-driven release contract, no unified admission path through the
   confidence-driven contract, no forward-work follow-up protocol, and no
   completion activation gate exist. The audit records the unimplemented
   scope and files it against the umbrella's open children; the umbrella
-  remains open for the closeout children that will deliver the work.
+  remains open for the implementation work that will deliver it.
 
-Follows the [RDR Closeout Checklist](closeout-checklist.md). This audit
-checks shipped behavior and test evidence, not issue closure alone.
+This is a non-closeout progress audit. The implementation chain is active, so
+it does not apply the [RDR Closeout Checklist](closeout-checklist.md), select
+a final status, or reconcile the RDR status. It records the current baseline
+for the implementation work that remains.
 
 ## Acceptance evidence
 
@@ -56,13 +58,11 @@ epics (`#3860`, `#3861`) and their reconciliation are owned separately by
 P01. This audit does not mutate any of those GitHub records and does not
 reopen the approval-gated flow.
 
-## Stale status reconciled by this audit
+## Current status
 
-- `docs/rdrs/RDR-071-confidence-driven-issue-delivery.md`: status stays
-  `Accepted`. This audit adds an `## Implementation Status` section that
-  records the current conclusion: no implementation has landed and no
-  RDR-071 acceptance criterion is implemented. The rollout guard is still
-  required before any automatic confidence-driven release.
+- `docs/rdrs/RDR-071-confidence-driven-issue-delivery.md`: status remains
+  `Accepted`, which denotes an accepted decision whose implementation has not
+  started. This progress audit does not perform closeout status reconciliation.
 - `docs/rdrs/README.md`: RDR-071 row status remains `Accepted`.
 - `docs/arrows/index.yaml`: the `confidence-driven-delivery` segment status
   stays `MAPPED`; no code added, audited 2026-10-12.
@@ -79,17 +79,17 @@ does not introduce or flip a flag. The shared `human_led_feature_factory`
 profile from RDR-066 continues to be the only named operating mode, and
 its guard is unchanged.
 
-## Remaining work and deployment prerequisites
+## Remaining implementation work and deployment prerequisites
 
 The remaining work is the entire RDR-071 acceptance scope. The umbrella
 children that will deliver it are P01 (policy foundation and existing-work
 reconciliation), P09 (scoped readiness with 80/80 thresholds), P10
 (publish held issues and one automatic release contract), P11 (carry
 admitted intent to builders and dispatch conformance by policy), P12
-(forward-work follow-ups and completion), and C71 (closeout audit). The
-umbrella issue #4309 must remain open; the closeout issue for this audit
-uses non-closing language so the umbrella's own final acceptance audit
-decides closure on shipped evidence.
+(forward-work follow-ups and completion), and C71 (final closeout audit). The
+umbrella issue #4309 remains open while that implementation work is active.
+A final closeout audit must run only after the implementation chain finishes
+or stalls.
 
 ## Verification record
 

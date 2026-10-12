@@ -30,12 +30,13 @@ approval-gated policy and its review guards
 `FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain
 unchanged and continue to gate their own policy.
 
-### 2026-10-12 Umbrella acceptance audit
+### 2026-10-12 Implementation progress audit
 
-This audit ([#4309](https://github.com/viamin/paid/issues/4309) closeout
-scope, the umbrella's own final acceptance audit per the closeout
-checklist) reconciles the working tree against the RDR-071 acceptance
-criteria. The audit verifies a structural absence rather than a runtime
+This non-closeout progress audit for
+[#4309](https://github.com/viamin/paid/issues/4309) records the working-tree
+baseline while implementation remains active. It does not apply the closeout
+checklist, select a final status, or reconcile the RDR status. The audit
+verifies a structural absence rather than a runtime
 test failure: no confidence-driven policy selection, no confidence-driven
 release, no confidence-driven admission, no completion verification, and
 no follow-up factory. The umbrella children that will deliver RDR-071 are
@@ -43,12 +44,13 @@ P01 (policy foundation and existing-work reconciliation), P09 (scoped
 readiness with 80/80 thresholds), P10 (publish held issues and one
 automatic release contract), P11 (carry admitted intent to builders and
 dispatch conformance by policy), P12 (forward-work follow-ups and
-completion), and C71 (closeout audit). The rollout guard's
+completion), and C71 (final closeout audit). The rollout guard's
 no-enrollment-without-integration requirement is satisfied automatically:
 no enrollment switch exists and no confidence-driven integration is
 wired. The audit does not introduce or flip a flag. The PR for this
 audit uses `Tracks #4309` so the umbrella stays visibly open for the
-children. See [`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
+children. After the implementation chain finishes or stalls, a final closeout
+audit can apply the checklist. See [`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
 for the criterion-by-criterion evidence.
 
 ## Problem Statement

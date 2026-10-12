@@ -24,22 +24,24 @@ issue-closure state: `app/models/` carries no facet or evidence table,
 unimplemented scope and files it against the umbrella's open children.
 The umbrella remains open; the audit does not claim implementation.
 
-### 2026-10-12 Umbrella acceptance audit
+### 2026-10-12 Implementation progress audit
 
-This audit ([#4309](https://github.com/viamin/paid/issues/4309) closeout
-scope, the umbrella's own final acceptance audit per the closeout
-checklist) reconciles the working tree against the RDR-070 acceptance
-criteria. The audit verifies a structural absence rather than a runtime
+This non-closeout progress audit for
+[#4309](https://github.com/viamin/paid/issues/4309) records the working-tree
+baseline while implementation remains active. It does not apply the closeout
+checklist, select a final status, or reconcile the RDR status. The audit
+verifies a structural absence rather than a runtime
 test failure: no facet or evidence schema, no assessment pipeline, no
 clarification or preference surface. The umbrella children that will
 deliver RDR-070 are P01 (policy foundation and existing-work
 reconciliation), P05 (facets, evidence, and prerequisites), P06
 (assessments and explanations), P07 (adaptive clarification and explicit
-preferences), P11 (builder context and review policy), and C70 (closeout
+preferences), P11 (builder context and review policy), and C70 (final closeout
 audit). The rollout guard's shadow-mode requirement is automatically
 satisfied because no shadow assessment exists; the audit does not
 introduce or flip a flag. The PR for this audit uses `Tracks #4309` so
-the umbrella stays visibly open for the children. See
+the umbrella stays visibly open for the children. After the implementation
+chain finishes or stalls, a final closeout audit can apply the checklist. See
 [`audit-report-2026-10-12-rdr-070.md`](audit-report-2026-10-12-rdr-070.md)
 for the criterion-by-criterion evidence.
 

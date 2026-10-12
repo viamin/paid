@@ -1,18 +1,20 @@
-# RDR-070 Audit Report — 2026-10-12 Umbrella Acceptance
+# RDR-070 Implementation Progress Audit — 2026-10-12
 
 - **RDR**: [RDR-070: Facet Confidence and Adaptive Clarification](RDR-070-facet-confidence-and-clarification.md)
 - **Audit date**: 2026-10-12
 - **Umbrella issue**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open)
-- **Closeout children**: P01, P05, P06, P07, P11, C70
-- **Conclusion**: **Not Implemented.** No RDR-070 acceptance criterion has
+- **Implementation work**: P01, P05, P06, P07, P11, C70
+- **Progress finding**: No RDR-070 acceptance criterion has
   shipped code or test evidence. The facets, evidence, assessment pipeline,
   clarification, explicit-preference persistence, and readiness handoff all
   remain in their current non-feature state. The audit records the unimplemented
   scope and files it against the umbrella's open children; the umbrella
-  remains open for the closeout children that will deliver the work.
+  remains open for the implementation work that will deliver it.
 
-Follows the [RDR Closeout Checklist](closeout-checklist.md). This audit
-checks shipped behavior and test evidence, not issue closure alone.
+This is a non-closeout progress audit. The implementation chain is active, so
+it does not apply the [RDR Closeout Checklist](closeout-checklist.md), select
+a final status, or reconcile the RDR status. It records the current baseline
+for the implementation work that remains.
 
 ## Acceptance evidence
 
@@ -47,13 +49,11 @@ implemented" caveat in
 [`docs/intent/facet-confidence/facet-confidence-design.md`](../intent/facet-confidence/facet-confidence-design.md)
 is upheld.
 
-## Stale status reconciled by this audit
+## Current status
 
-- `docs/rdrs/RDR-070-facet-confidence-and-clarification.md`: status stays
-  `Accepted`. This audit adds an `## Implementation Status` section that
-  records the current conclusion: no implementation has landed and no
-  RDR-070 acceptance criterion is implemented. The rollout guard is still
-  required before any automatic readiness behavior.
+- `docs/rdrs/RDR-070-facet-confidence-and-clarification.md`: status remains
+  `Accepted`, which denotes an accepted decision whose implementation has not
+  started. This progress audit does not perform closeout status reconciliation.
 - `docs/rdrs/README.md`: RDR-070 row status remains `Accepted`.
 - `docs/arrows/index.yaml`: the `facet-confidence` segment status stays
   `MAPPED`; no code added, audited 2026-10-12.
@@ -67,16 +67,16 @@ working tree has neither shadow assessment nor readiness enforcement; the
 guard is therefore automatically satisfied (nothing to gate). The audit
 does not introduce or flip a flag.
 
-## Remaining work and deployment prerequisites
+## Remaining implementation work and deployment prerequisites
 
 The remaining work is the entire RDR-070 acceptance scope. The umbrella
 children that will deliver it are P01 (policy foundation and existing-work
 reconciliation), P05 (facets, evidence, and prerequisites), P06
 (assessments and explanations), P07 (adaptive clarification and explicit
-preferences), P11 (builder context and review policy), and C70 (closeout
-audit). The umbrella issue #4309 must remain open; the closeout issue
-for this audit uses non-closing language so the umbrella's own final
-acceptance audit decides closure on shipped evidence.
+preferences), P11 (builder context and review policy), and C70 (final closeout
+audit). The umbrella issue #4309 remains open while that implementation work
+is active. A final closeout audit must run only after the implementation chain
+finishes or stalls.
 
 ## Verification record
 
