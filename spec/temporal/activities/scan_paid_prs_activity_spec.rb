@@ -11499,6 +11499,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     def stub_non_strict_tdd_review(review_body:)
       enable_paid_agent_review!
+      stub_current_non_strict_tdd_review(review_body:)
+    end
+
+    def disable_regular_paid_agent_reviews!(max_review_rounds: 3, max_review_goal_retries: nil)
+      termination = { "max_review_rounds" => max_review_rounds }
+      termination["max_review_goal_retries"] = max_review_goal_retries if max_review_goal_retries
+
+      project.update!(review_settings: {
+        "enabled" => false,
+        "methods" => {
+          "paid_agent" => {
+            "enabled" => false,
+            "termination" => termination
+          }
+        }
+      })
+    end
+
+    def stub_current_non_strict_tdd_review(review_body:)
       create(:agent_run, :completed,
         project: project,
         source_pull_request_number: 42,
@@ -11516,6 +11535,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           submitted_at: 1.hour.ago,
           commit_id: "abc123"
         } ],
+        review_threads: []
+      )
+    end
+
+    def stub_exhausted_non_strict_tdd_review_round
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 2.hours.ago)
+      create(:agent_run, :completed, :review_goal,
+        project: project,
+        source_pull_request_number: 42,
+        trigger_type: "automatic",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [],
+        review_threads: []
+      )
+    end
+
+    def stub_retry_limited_non_strict_tdd_review
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        completed_at: 2.hours.ago)
+      create(:agent_run, :failed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "review",
+        trigger_type: "automatic",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(
+        draft: true,
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        reviews: [],
         review_threads: []
       )
     end
@@ -11753,6 +11813,76 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         .with(project.full_name, 42, "paid-tests-ready-for-review")
       expect(github_client).to have_received(:add_labels_to_issue)
         .with(project.full_name, 42, [ "paid-tests-approved" ])
+    end
+
+    it "recognizes a clean dedicated review when ordinary reviews are disabled" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      disable_regular_paid_agent_reviews!
+      pull_request
+      stub_current_non_strict_tdd_review(review_body: "Tests look good. <!-- paid-review-clean -->")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-tests-approved")
+    end
+
+    it "recognizes a dedicated change request when ordinary reviews are disabled" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      disable_regular_paid_agent_reviews!
+      pull_request
+      stub_current_non_strict_tdd_review(review_body: "Add an edge-case spec for the failure path.")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_test_changes_requested")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+      expect(pull_request.reload.labels).to contain_exactly("paid-generated", "paid-automation", "paid-test-changes-requested")
+    end
+
+    it "does not queue another review when the same approved test revision is scanned again" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      disable_regular_paid_agent_reviews!
+      pull_request
+      stub_current_non_strict_tdd_review(review_body: "Tests look good. <!-- paid-review-clean -->")
+
+      activity.execute(project_id: project.id)
+      result = activity.execute(project_id: project.id)
+
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "does not bypass exhausted test-review rounds when no verdict is recognized" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      disable_regular_paid_agent_reviews!(max_review_rounds: 1)
+      pull_request
+      stub_exhausted_non_strict_tdd_review_round
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "honors the test-review retry limit when ordinary reviews are disabled" do
+      # @spec TDD-PR-006
+      project.update!(tdd_mode: "non_strict")
+      disable_regular_paid_agent_reviews!(max_review_rounds: 15, max_review_goal_retries: 1)
+      pull_request
+      stub_retry_limited_non_strict_tdd_review
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).not_to include("queue_review_run")
     end
 
     it "does not restore paid-tests-approved from a stale paid_agent review after returning tests to review" do
