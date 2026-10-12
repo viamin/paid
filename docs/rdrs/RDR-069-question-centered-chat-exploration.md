@@ -3,12 +3,65 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Accepted
+- **Status**: Partially Implemented
 - **Type**: Product experience and chat architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P03, P04, P07, P08 unimplemented; C69 closeout pending)
 - **Intent**: [Question exploration](../intent/question-exploration/question-exploration-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+- **Related Tests**: `spec/services/inbox/open_interactive_chat_spec.rb`, `spec/services/inbox/open_interactive_chat_call_concurrency_spec.rb`, `spec/services/inbox/chat_context_spec.rb`, `spec/services/clarifying_questions/open_chat_spec.rb`, `spec/services/clarifying_questions/choice_answers_spec.rb`, `spec/mcp/tools/submit_clarifying_answers_spec.rb`, `spec/mcp/tools/get_inbox_chat_context_spec.rb`, `spec/services/chat_sessions/resolve_tool_call_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/policies/chat_message_policy_spec.rb`, `spec/policies/project_policy_spec.rb`, `spec/policies/chat_session_policy_spec.rb`, `spec/channels/chat_channel_spec.rb`, `spec/jobs/chat_sessions/process_message_job_spec.rb`, `spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb`, `spec/requests/chat_sessions_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`
+
+## Implementation Status
+
+Partially Implemented as of 2026-10-12. Seven of the seventeen
+`QUESTION-EXPLORATION` claims have shipped code and test evidence: per-creator
+session selection for the clarifying-question Inbox item, the linked chat for
+the legacy clarifying-question entry, project/tenant access on the shared
+exploration transcript, Inbox chat persistence and the explicit context
+service, the linked chat panel inside the Inbox detail frame, chat-composed
+choice answers, and the final ordered answer submission path. The remaining
+ten claims (diagram card lifecycle, comment attribution, diagram replacement,
+stale-element handling, adaptive clarification, bounded investigations,
+diagram-rendering safety, non-preference-on-interaction, archive
+preservation, and UI/API/tool parity) are unimplemented. See the
+[2026-10-12 audit](audit-report-2026-10-12-rdr-069.md) for the
+criterion-by-criterion evidence.
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Per-creator session selection for the Inbox clarifying-question item | Shipped | `app/services/inbox/open_interactive_chat.rb` (`active_chat`, `resume_closed_chat`, `create_chat` under `user.with_lock`) and `spec/services/inbox/open_interactive_chat_spec.rb` plus `spec/services/inbox/open_interactive_chat_call_concurrency_spec.rb`. |
+| Linked chat for the legacy clarifying-question entry | Shipped | `app/services/clarifying_questions/open_chat.rb` (`existing_chat` against `ChatSession.where(clarifying_question_issue: issue)`), the partial unique index `index_chat_sessions_one_open_clarifying_question_chat` in `db/schema.rb`, and `spec/services/clarifying_questions/open_chat_spec.rb` plus `spec/requests/projects/clarifying_questions_spec.rb`. |
+| Project/tenant access on shared exploration transcript, message, subscription, and tool operations | Shipped | `app/policies/project_policy.rb` (`explore?` requires account owner/admin or project viewer), `app/policies/chat_message_policy.rb` (re-check on send), `app/models/chat_session.rb:391` (`sidebar_broadcast_stream` keys Turbo Streams on `[ project, :chat_sessions ]` for clarifying-question chats), and the policy/channel/job specs above. |
+| Inbox chat persistence and explicit context service | Shipped | `chat_sessions.inbox_item_key`, `chat_sessions.inbox_item_metadata`, `chat_sessions.opened_at`, `chat_sessions.closed_at` columns in `db/schema.rb`; `Inbox::OpenInteractiveChat` writes the audit snapshot and an Inbox-keyed chat title; `Inbox::ChatContext` (`app/services/inbox/chat_context.rb`) resolves record-backed entries on demand without inserting context into the system prompt; `Mcp::Tools::GetInboxChatContext` (`app/mcp/tools/get_inbox_chat_context.rb`) exposes the boundary. Specs: `spec/services/inbox/open_interactive_chat_spec.rb`, `spec/services/inbox/chat_context_spec.rb`, `spec/mcp/tools/get_inbox_chat_context_spec.rb`. |
+| Linked chat panel inside the Inbox detail frame | Shipped | `app/controllers/projects/clarifying_questions_controller.rb` (`open_chat`), `app/views/chat_sessions/_frame.html.erb`, `app/views/chat_sessions/_chat_panel.html.erb`, `app/views/chat_sessions/_session_details.html.erb`. Full `/chat` route keeps its normal shell; popup requests render the popup variant; embedded destinations carry `data-turbo-frame="_top"`. Specs: `spec/requests/projects/clarifying_questions_spec.rb`, `spec/requests/chat_sessions_spec.rb`. |
+| Chat-composed choice answers (assistant-spelled, not widget-composed) | Shipped | `app/services/clarifying_questions/choice_answers.rb` accepts the canonical `Label (text)`, the rendered `Label) text`, the bare label, the 1-based number, or the letter; `app/services/chat_sessions/build_system_prompt.rb` renders the canonical option lines and the accepted answer forms. The offered-option invariant of `OPERATOR-INBOX-012` is preserved. Specs: `spec/services/clarifying_questions/choice_answers_spec.rb`, `spec/mcp/tools/submit_clarifying_answers_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`. |
+| Final ordered answers posted through the standard clarifying-answer path | Shipped | `app/mcp/tools/submit_clarifying_answers.rb` invokes `ClarifyingQuestions::SubmitAnswers`, which posts the GitHub comment, adjusts labels, and clears the inbox item only after GitHub accepts the comment. Specs: `spec/mcp/tools/submit_clarifying_answers_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`. |
+| Diagram card lifecycle (text equivalent, expansion/collapse, keyboard, comment input) | Gap | No diagram message type, renderer, comment composer, or selection/collapse state is implemented. Tracked by umbrella child P03. |
+| Diagram comment attribution and stale-element handling | Gap | No diagram-comment record type or element-selection identifier exists. Tracked by umbrella child P03. |
+| Diagram replacement preserves human comments and answer evidence without retaining non-final visual source | Gap | No diagram lifecycle exists. Tracked by umbrella child P03/P04. |
+| Adaptive exploration-method selection and clarification prompts | Gap | No method-selection logic; no comparative-context aid; no A/B/both/neither/conditional/free-text instrumentation. Tracked by umbrella child P07. |
+| Bounded investigation dispatch with budget, progress, and cancellation | Gap | No investigation dispatch service or budget enforcement exists; `ChatSessions::ToolDispatch` has no investigation-only tool. Tracked by umbrella child P08. |
+| Diagram-rendering safety (validation, script-execution prevention, text-only fallback) | Gap | No diagram renderer exists. Tracked by umbrella child P03. |
+| Diagram interaction not treated as preference or certainty | Gap | No diagram interactions exist to evaluate. Tracked by umbrella child P07. |
+| Archive/investigation interruption preserves human answers and evidence | Gap | No investigation lifecycle or diagram-evidence summarization path exists. Tracked by umbrella child P04/P08. |
+| Per-question durable progress across sessions and reconnects | Gap | Per-question state is the existing `Inbox::Queue` entry plus the linked chat; no per-question answer/facet/notes record. Tracked by umbrella child P04. |
+| UI/API/tool parity for every exploration action | Gap | Only the clarifying-question final-answer path has API/tool parity (`SubmitClarifyingAnswers` MCP tool). Unimplemented exploration actions have no UI, no API, and no tool surfaces. Tracked by umbrella children P03, P04, P07, P08. |
+
+### 2026-10-12 Umbrella acceptance audit
+
+This audit ([#4309](https://github.com/viamin/paid/issues/4309) closeout
+scope, the umbrella's own final acceptance audit per the closeout
+checklist) reconciles the shipped foundation against the remaining RDR-069
+acceptance criteria. The audit verifies code and test evidence rather
+than closed-issue state. The umbrella remains open because the diagram
+card lifecycle (P03), per-question durable progress (P04), adaptive
+clarification and explicit preferences (P07), and bounded investigation
+dispatch (P08) are unimplemented. The C69 closeout must complete and
+validate before RDR-069 can move to **Implemented**. The PR for this audit
+uses `Tracks #4309` so the umbrella stays visibly open for the children.
+See [`audit-report-2026-10-12-rdr-069.md`](audit-report-2026-10-12-rdr-069.md)
+for the full evidence trail.
 
 ## Problem Statement
 

@@ -103,9 +103,9 @@ arrows:
     specs: docs/intent/question-exploration/question-exploration-specs.md
     parent: PAID
     taxonomy: chat
-    status: MAPPED
-    sampled: 2026-09-22
-    next: "Implement contextual chat, disposable diagrams and durable answers (RDR-069)"
+    status: PARTIAL
+    audited: 2026-10-12
+    next: "Implement disposable diagrams, durable answers, adaptive clarification, and bounded investigations (RDR-069 P03/P04/P07/P08; umbrella #4309 remains open)"
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
     path: docs/intent/facet-confidence/facet-confidence-design.md
@@ -114,7 +114,8 @@ arrows:
     taxonomy: intelligence
     status: MAPPED
     sampled: 2026-09-22
-    next: "Implement evidence-backed assessments and explicit preferences (RDR-070)"
+    audited: 2026-10-12
+    next: "Implement evidence-backed assessments and explicit preferences (RDR-070; umbrella #4309 remains open)"
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md
@@ -123,8 +124,9 @@ arrows:
     taxonomy: automation
     status: MAPPED
     sampled: 2026-09-22
+    audited: 2026-10-12
     blockedBy: [facet-confidence, question-exploration]
-    next: "Implement issue readiness, policy dispatch and completion follow-ups (RDR-071)"
+    next: "Implement issue readiness, policy dispatch and completion follow-ups (RDR-071; umbrella #4309 remains open)"
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md

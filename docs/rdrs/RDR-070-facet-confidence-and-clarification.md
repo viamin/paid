@@ -7,8 +7,41 @@
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P01, P05, P06, P07, P11, C70 unimplemented)
 - **Intent**: [Facet confidence](../intent/facet-confidence/facet-confidence-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+
+## Implementation Status
+
+Not implemented as of 2026-10-12. No RDR-070 acceptance criterion has
+shipped code or test evidence in the working tree. Facets, evidence,
+assessment pipeline, adaptive clarification, explicit-preference
+persistence, and readiness handoff all remain in their current
+non-feature state. The audit checks the codebase rather than relying on
+issue-closure state: `app/models/` carries no facet or evidence table,
+`app/services/` carries no assessment or clarification service, and
+`spec/` carries no facet or assessment spec. The audit records the
+unimplemented scope and files it against the umbrella's open children.
+The umbrella remains open; the audit does not claim implementation.
+
+### 2026-10-12 Umbrella acceptance audit
+
+This audit ([#4309](https://github.com/viamin/paid/issues/4309) closeout
+scope, the umbrella's own final acceptance audit per the closeout
+checklist) reconciles the working tree against the RDR-070 acceptance
+criteria. The audit verifies a structural absence rather than a runtime
+test failure: no facet or evidence schema, no assessment pipeline, no
+clarification or preference surface. The umbrella children that will
+deliver RDR-070 are P01 (policy foundation and existing-work
+reconciliation), P05 (facets, evidence, and prerequisites), P06
+(assessments and explanations), P07 (adaptive clarification and explicit
+preferences), P11 (builder context and review policy), and C70 (closeout
+audit). The rollout guard's shadow-mode requirement is automatically
+satisfied because no shadow assessment exists; the audit does not
+introduce or flip a flag. The PR for this audit uses `Tracks #4309` so
+the umbrella stays visibly open for the children. See
+[`audit-report-2026-10-12-rdr-070.md`](audit-report-2026-10-12-rdr-070.md)
+for the criterion-by-criterion evidence.
 
 ## Problem Statement
 

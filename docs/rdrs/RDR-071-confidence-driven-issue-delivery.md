@@ -7,8 +7,49 @@
 - **Type**: Product workflow and orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P01, P09, P10, P11, P12, C71 unimplemented)
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+
+## Implementation Status
+
+Not implemented as of 2026-10-12. No RDR-071 acceptance criterion has
+shipped code or test evidence in the working tree. There is no
+confidence-driven feature policy snapshot, no confidence-driven release
+contract, no confidence-driven admission path, no forward-work follow-up
+protocol, and no confidence-driven completion activation gate. The
+audit checks the codebase rather than relying on issue-closure state:
+`db/schema.rb` carries no policy-snapshot, release-audit, completion, or
+follow-up tables; `app/services/` and `app/jobs/` carry no confidence-driven
+release, completion, or follow-up services; `spec/` carries no
+confidence-driven spec. The audit records the unimplemented scope and
+files it against the umbrella's open children. The umbrella remains
+open; the audit does not claim implementation. The existing
+approval-gated policy and its review guards
+(`IntentConformance::VerifyAtMerge`, `DesignAmendments::EvaluateImpact`,
+`FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain
+unchanged and continue to gate their own policy.
+
+### 2026-10-12 Umbrella acceptance audit
+
+This audit ([#4309](https://github.com/viamin/paid/issues/4309) closeout
+scope, the umbrella's own final acceptance audit per the closeout
+checklist) reconciles the working tree against the RDR-071 acceptance
+criteria. The audit verifies a structural absence rather than a runtime
+test failure: no confidence-driven policy selection, no confidence-driven
+release, no confidence-driven admission, no completion verification, and
+no follow-up factory. The umbrella children that will deliver RDR-071 are
+P01 (policy foundation and existing-work reconciliation), P09 (scoped
+readiness with 80/80 thresholds), P10 (publish held issues and one
+automatic release contract), P11 (carry admitted intent to builders and
+dispatch conformance by policy), P12 (forward-work follow-ups and
+completion), and C71 (closeout audit). The rollout guard's
+no-enrollment-without-integration requirement is satisfied automatically:
+no enrollment switch exists and no confidence-driven integration is
+wired. The audit does not introduce or flip a flag. The PR for this
+audit uses `Tracks #4309` so the umbrella stays visibly open for the
+children. See [`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
+for the criterion-by-criterion evidence.
 
 ## Problem Statement
 
