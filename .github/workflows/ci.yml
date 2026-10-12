@@ -497,7 +497,8 @@ jobs:
                 name: "Mobile API fixture",
                 github_id: 4_288,
                 owner: "paid",
-                repo: "mobile-api-fixture"
+                repo: "mobile-api-fixture",
+                allowed_github_usernames: [ "mobile-contract-verifier" ]
               )
               issue = Issue.create!(
                 id: 4_241,
@@ -641,7 +642,8 @@ jobs:
                 name: "Mobile API fixture",
                 github_id: 4_288,
                 owner: "paid",
-                repo: "mobile-api-fixture"
+                repo: "mobile-api-fixture",
+                allowed_github_usernames: [ "mobile-schema-fuzzer" ]
               )
               issue = Issue.create!(
                 id: 4_241,

@@ -126,11 +126,14 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec MOBILE-API-006 MOBILE-API-018
   it "seeds the documented inbox entry example for successful fuzzing" do
     fixture_step = step_run(schemathesis_job, "Create mobile API bearer token")
+    pact_fixture_step = step_run(pact_job, "Create mobile API bearer token")
 
     expect(fixture_step).to include(
       "GithubToken.create!", "Project.create!", "Issue.create!",
-      "id: 4_241", 'paid_state: "needs_input"', "needs_input_questions:"
+      "id: 4_241", 'paid_state: "needs_input"', "needs_input_questions:",
+      "allowed_github_usernames: [ \"mobile-schema-fuzzer\" ]"
     )
+    expect(pact_fixture_step).to include('allowed_github_usernames: [ "mobile-contract-verifier" ]')
     expect(openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")).to include(
       "example" => "clarifying_questions:4241"
     )
