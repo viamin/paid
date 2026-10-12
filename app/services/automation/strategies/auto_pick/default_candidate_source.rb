@@ -291,13 +291,13 @@ module Automation
               base = base.where("LOWER(issues.github_creator_login) IN (?)", trusted_usernames)
             end
 
-            needs_input_excluded = project.needs_input_labels.reduce(base) do |scope, label|
-              scope.where.not("labels @> ?::jsonb", [ label ].to_json)
-            end
-
             if project.label_integration_mode == "ignored"
-              needs_input_excluded.where(auto_pick_excluded_reason: nil)
+              base.where(auto_pick_excluded_reason: nil)
             else
+              needs_input_excluded = project.needs_input_labels.reduce(base) do |scope, label|
+                scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+              end
+
               project.effective_auto_pick_skip_labels.reduce(needs_input_excluded) do |scope, label|
                 scope.where.not("labels @> ?::jsonb", [ label ].to_json)
               end

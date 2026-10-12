@@ -123,6 +123,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.eligible_scope(project)).not_to include(excluded)
     end
 
+    it "uses local exclusion instead of needs-input labels in ignored mode" do # @spec LABEL-CONTROL-003
+      project.update!(
+        label_integration_mode: "ignored",
+        enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
+        label_mappings: { "needs_input" => "paid-stage-needs-input" }
+      )
+      labeled = create(:issue, project:, labels: [ "paid-stage-needs-input" ])
+      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
+      expect(described_class.eligible_scope(project)).not_to include(excluded)
+    end
+
     it "allows an epic under the built-in defaults" do # @spec AUTO-PICK-QUEUE-009
       epic = create(:issue, project: project, labels: [ "epic" ])
 
