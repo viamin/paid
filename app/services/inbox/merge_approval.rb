@@ -108,6 +108,7 @@ module Inbox
       issue.is_pull_request? &&
         issue.github_state == "open" &&
         issue.pr_review_phase == "ready" &&
+        (manual_merge? || automatic_merge_active?) &&
         !issue.merge_permission_rejected?
     end
 

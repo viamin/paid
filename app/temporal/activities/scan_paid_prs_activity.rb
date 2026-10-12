@@ -3683,7 +3683,7 @@ module Activities
     # calls; it does not itself authorize automatic execution.
     def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
-      return nil unless pr_data.present?
+      return nil unless pr_data.present? && (auto_merge_active?(project, issue) || project.auto_merge_mode == "off")
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
       checks_green = !checks.nil? && all_checks_green?(checks)

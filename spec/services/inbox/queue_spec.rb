@@ -127,6 +127,22 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "excludes a human PR when only Dependabot auto-merge is enabled" do
+      project.update!(auto_merge_mode: "dependabot_only", auto_pick_enabled: false)
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ], not_evaluated: [])
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "distinguishes review, re-approval, and machine blockers for auto-merge-off PRs" do
       project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
       review_required = create(
