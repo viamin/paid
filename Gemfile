@@ -161,6 +161,9 @@ group :test do
   # verifier CLI is the provider-side contract entry point until iOS pacts
   # are published to the broker.
   gem "pact-provider-verifier", "~> 1.39", require: false
+  # Pact permits rack-proxy 0.x, but its pre-1.0 releases have a response
+  # smuggling vulnerability. Keep provider verification on the fixed release.
+  gem "rack-proxy", ">= 1.0.3", require: false
   gem "simplecov", require: false
   gem "capybara"
   gem "ferrum", path: "vendor/ferrum"

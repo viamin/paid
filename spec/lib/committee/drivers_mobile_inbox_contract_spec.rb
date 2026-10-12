@@ -38,7 +38,28 @@ RSpec.describe Committee::Drivers do
 
   # @spec MOBILE-API-009 MOBILE-API-016
   it "documents only implemented routes with valid bearer requirements and PAT scopes" do
-    scoped_operations = {
+    expect(schema.fetch("paths").keys).to match_array(implemented_paths)
+    bearer_operations.each do |operation|
+      expect(operation.fetch("security")).to include("bearerAuth" => [])
+    end
+
+    scoped_operations.each do |path, operations|
+      operations.each do |method, scopes|
+        expect(schema.dig("paths", path, method, "x-required-pat-scopes")).to eq(scopes)
+      end
+    end
+  end
+
+  private
+
+  def bearer_operations
+    schema.fetch("paths").values.flat_map do |path_item|
+      path_item.values.select { |value| value.is_a?(Hash) && value.key?("security") }
+    end
+  end
+
+  def scoped_operations
+    {
       "/inbox" => { "get" => [ "inbox" ] },
       "/inbox/count" => { "get" => [ "inbox" ] },
       "/inbox/entries/{entry_id}" => { "get" => [ "inbox" ] },
@@ -49,21 +70,5 @@ RSpec.describe Committee::Drivers do
       "/chat/sessions/{session_id}/messages" => { "get" => [ "chat" ], "post" => [ "chat" ] },
       "/chat/sessions/{session_id}/messages/{id}/resolve" => { "post" => [ "chat" ] }
     }
-
-    expect(schema.fetch("paths").keys).to match_array(implemented_paths)
-
-    bearer_operations = schema.fetch("paths").values.flat_map do |path_item|
-      path_item.values.select { |value| value.is_a?(Hash) && value.key?("security") }
-    end
-
-    bearer_operations.each do |operation|
-      expect(operation.fetch("security")).to include("bearerAuth" => [])
-    end
-
-    scoped_operations.each do |path, operations|
-      operations.each do |method, scopes|
-        expect(schema.dig("paths", path, method, "x-required-pat-scopes")).to eq(scopes)
-      end
-    end
   end
 end

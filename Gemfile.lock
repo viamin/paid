@@ -497,7 +497,7 @@ GEM
       rspec (>= 2.14)
       thor (>= 0.19, < 2.0)
       webrick (~> 1.8)
-    pact-provider-verifier (1.39.1)
+    pact-provider-verifier (1.39.0)
       faraday (~> 2.5)
       faraday-retry (~> 2.2)
       json (> 1.8)
@@ -505,7 +505,7 @@ GEM
       pact (~> 1.59)
       pact-message (~> 0.5)
       rack (>= 3.0, < 4.0)
-      rack-reverse-proxy-pact
+      rack-reverse-proxy
       rackup (~> 2.0)
       rspec (~> 3.5)
       rspec_junit_formatter (~> 0.3)
@@ -561,12 +561,10 @@ GEM
     raabro (1.5.0)
     racc (1.8.1)
     rack (3.2.7)
-    rack-proxy (0.8.3)
-      rack
-    rack-reverse-proxy-pact (1.0.2)
-      rack (>= 3.0, < 4.0)
-      rack-proxy (~> 0.6, >= 0.6.1)
-      rackup (~> 2.0)
+    rack-proxy (2.0.1)
+      rack (>= 2.0, < 4)
+    rack-reverse-proxy (0.4.4)
+      rack (>= 1.0.0)
     rack-session (2.1.2)
       base64 (>= 0.1.0)
       rack (>= 3.0.0)
@@ -876,6 +874,7 @@ DEPENDENCIES
   puma (>= 5.0)
   pundit
   qdrant-ruby
+  rack-proxy (>= 1.0.3)
   rails (~> 8.1.4)
   rails_performance
   ransack
@@ -1069,7 +1068,7 @@ CHECKSUMS
   pact (1.67.5) sha256=4fba7a343e2e3d5d133a7ee34790eb6e5e3c9c744223344200068836850d048f
   pact-message (0.11.1) sha256=8e5c10531abfeefcb3b334df69e2acf5ce4327f06ac2ba2b486d0a9e026f1d8e
   pact-mock_service (3.12.4) sha256=e1a727d41102d98b316cc2652d5e45e8c77704c35eb0b37f5e9c0fa9481f8eac
-  pact-provider-verifier (1.39.1) sha256=7df7cbed2d952d76073d81c37500f377c44c1351a5330faaa7cf1c2ef66173a7
+  pact-provider-verifier (1.39.0) sha256=47d64866b4d5567c6a85b36767b67e040fb67de05ffce8b0d794f07694c8726c
   pact-support (1.21.7) sha256=1fa9114df45019480b72b0b97e858e4197dcd10c2707f573d30eaee974854bf8
   pagy (43.7.0) sha256=877fd7f531eeb7a406b8046dfafb81b499e2b4352c976ce116e0a4909e82fd3d
   parallel (2.1.0) sha256=b35258865c2e31134c5ecb708beaaf6772adf9d5efae28e93e99260877b09356
@@ -1097,8 +1096,8 @@ CHECKSUMS
   raabro (1.5.0) sha256=3f998a7bc84f9c84df3ab580634d2e0a5bda4f0841168d56035f529c9877440a
   racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
   rack (3.2.7) sha256=93e13e1c24f93556671d85d2d79fa228c3485815c50d7e2f265b5330c6528fb7
-  rack-proxy (0.8.3) sha256=1e446a37be6d9c59647e710d2df7d23e3b0b4e1b982dab4f188a0354aa1fff0b
-  rack-reverse-proxy-pact (1.0.2) sha256=ba873c169478a83d998eef78733a5cf63dd77af6c28d298c3c7b1154461817cf
+  rack-proxy (2.0.1) sha256=e7afa56a48728c22ded1b7c435210918d7b07bdbc61ca8f9fd687c48951ae274
+  rack-reverse-proxy (0.4.4) sha256=de5c0e748de43c695859eeb564439fe5a5659d97e3d2a5f8dbdf37ad9e7fa9e8
   rack-session (2.1.2) sha256=595434f8c0c3473ae7d7ac56ecda6cc6dfd9d37c0b2b5255330aa1576967ffe8
   rack-test (2.2.0) sha256=005a36692c306ac0b4a9350355ee080fd09ddef1148a5f8b2ac636c720f5c463
   rackup (2.3.1) sha256=6c79c26753778e90983761d677a48937ee3192b3ffef6bc963c0950f94688868
