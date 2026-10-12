@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require Rails.root.join("app/middleware/api/v1/encoded_path_separator")
+
 mobile_api_schema = Rails.root.join("docs/api/openapi.yaml").to_s
 strict_validation = Rails.env.test?
 
@@ -29,3 +31,4 @@ contract_options = {
 # the inside out, so Committee receives JSON before it is gzip-compressed.
 Rails.application.config.middleware.insert_after Rack::Sendfile, Committee::Middleware::ResponseValidation, **contract_options
 Rails.application.config.middleware.insert_after Rack::Sendfile, Committee::Middleware::RequestValidation, **contract_options
+Rails.application.config.middleware.insert_before Committee::Middleware::RequestValidation, Api::V1::EncodedPathSeparator
