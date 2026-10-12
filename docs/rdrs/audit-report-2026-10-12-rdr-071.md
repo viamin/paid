@@ -1,106 +1,89 @@
-# RDR-071 Implementation Progress Audit — 2026-10-12
+# RDR-071 Closeout Audit — 2026-10-12
 
 - **RDR**: [RDR-071: Confidence-Driven Issue Delivery and Feature Completion](RDR-071-confidence-driven-issue-delivery.md)
-- **Audit date**: 2026-10-12
-- **Umbrella issue**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open)
-- **Implementation work**: P01, P09, P10, P11, P12, C71
-- **Progress finding**: No RDR-071 acceptance criterion has
-  shipped code or test evidence. No feature policy selection, no
-  confidence-driven release contract, no unified admission path through the
-  confidence-driven contract, no forward-work follow-up protocol, and no
-  completion activation gate exist. The audit records the unimplemented
-  scope and files it against the umbrella's open children; the umbrella
-  remains open for the implementation work that will deliver it.
+- **Closeout issue**: [#4324](https://github.com/viamin/paid/issues/4324) (open — kept open)
+- **Umbrella**: [#4309](https://github.com/viamin/paid/issues/4309) (open; this closeout `Tracks` it and does not close it)
+- **Conclusion**: **Partially Implemented.** The approval-gated feature lifecycle
+  that the RDR deliberately reuses is shipped and has passing tests. The new
+  confidence-driven policy itself is not shipped: every
+  `CONFIDENCE-DELIVERY-*` EARS claim remains planned. Closed legacy issues are
+  therefore neither reopened nor counted as proof of this policy.
 
-This is a non-closeout progress audit. The implementation chain is active, so
-it does not apply the [RDR Closeout Checklist](closeout-checklist.md), select
-a final status, or reconcile the RDR status. It records the current baseline
-for the implementation work that remains.
+Follows the [RDR Closeout Checklist](closeout-checklist.md). This audit uses
+the RDR's Decision, Rollout Guard, and Implementation and Validation sections,
+the confidence-driven-delivery LLD/EARS, and running tests—not child issue
+state—as evidence.
 
 ## Acceptance evidence
 
-| RDR-071 criterion | Result | Code and test evidence |
+| RDR acceptance / EARS claims | Result | Code and test evidence |
 | --- | --- | --- |
-| Project selection and explicit policy snapshot on enrollment; existing features retain their established policy | **Gap** | `FeatureIntents::RunAdmission` (`app/services/feature_intents/run_admission.rb`) and `FeatureIntents::ReconcileDesignPullRequest` enforce the existing approval-gated policy. No confidence-driven policy selection, no policy-snapshot column on `feature_intents`, no enrollment switch. |
-| Speculative alternatives remain visible in Paid; planning-held GitHub issues with explicit dependencies | **Gap** | The existing planning label and `Depends on #N` dependency parser ship in the approval-gated path; no speculative work has a confidence-driven counterpart. |
-| Automatic release of confidence-driven planning hold without whole-feature approval when facets pass, dependencies permit, and merged design expresses the scoped intent | **Gap** | No release contract. `FeatureIntents::Release` (`app/services/feature_intents/release.rb`) is the approval-gated release path; no confidence-driven counterpart. |
-| Preserve unrelated labels/human holds; record admitted scope, policy, assessment/evidence revisions, thresholds, merged design baseline | **Gap** | No release audit record. |
-| One eligibility contract at auto-pick, eager enqueue, dequeue, API/chat, manual start, and run creation | **Gap** | `FeatureIntents::RunAdmission` is the existing single admission gate for the approval-gated policy; no comparable single contract exists for confidence-driven features, and no project or feature routes through a confidence-driven admission. |
-| External label edits or failed GitHub writes reconcile idempotently and the discrepancy is visible | **Gap** | `FeatureIntents::ReconcileDesignPullRequest` reconciles approval-gated direct merges; no confidence-driven reconciliation or label-projection mismatch path exists. |
-| Confidence/intent change after a run starts does not pause/cancel that run, with or without flags | **Gap** | No confidence-driven pause/cancel dispatch exists. The approval-gated amendment flow (`DesignAmendments::EvaluateImpact`, `IntentConformance::VerifyAtMerge`) does not yet route through a confidence-driven policy. |
-| New findings edit unstarted issues or create deduplicated follow-ups blocking the completion issue | **Gap** | No completion issue record, no follow-up factory, no completion dependency mechanism. |
-| Unstarted scope change concurrent with admission admits revised scope or preserves already-started snapshot and records follow-up work | **Gap** | No scope-edit/admission race handling exists for confidence-driven features. |
-| Review uses admitted scope/design baseline; CI/security/quality/current-head/merge controls preserved; no approval-gated amendment pause solely from later feature intent | **Gap** | `IntentConformance::VerifyAtMerge` (`app/services/intent_conformance/verify_at_merge.rb`) is the existing approval-gated review guard; no confidence-driven baseline selection. |
-| Feature completion verifies acceptance and all implementation/follow-up dependencies, including pending external writes and concurrent findings | **Gap** | No completion verification service exists. |
-| Post-completion finding reopens completion or creates a linked completion cycle | **Gap** | No reopen or linked-cycle mechanism exists. |
-| Feature flags where feasible; follow-up completion required before activation; impossible isolation does not pause work; activation follows project release policy | **Gap** | No feature flag isolation wiring for confidence-driven features; no activation gate. |
-| Automatic confidence-driven release requires admission, policy-specific review, and completion wiring; shadow assessment alone does not change eligibility | **Gap** | No shadow-mode assessment exists. The guard is therefore automatically satisfied. |
-| Disabling enrollment preserves existing feature policy snapshots, evidence, and run state and does not release held issues or pause active runs | **Gap** | No enrollment switch exists. The guard is therefore automatically satisfied. |
+| Reused approval-gated feature lifecycle and immutable approved-design admission baseline | Shipped foundation, **not** confidence-driven delivery | `app/models/feature_intent.rb` records human approval and approved design heads; `app/services/feature_intents/release.rb` releases only after that approval; `app/services/feature_intents/run_admission.rb` admits only a `released` feature with an approved repository revision. Coverage: `spec/services/feature_intents/release_spec.rb`, `spec/services/feature_intents/run_admission_spec.rb`, `spec/services/feature_intents/reconcile_design_pull_request_spec.rb`, `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`, `spec/jobs/process_run_queue_job_spec.rb`, and `spec/models/agent_run_spec.rb`. This is the RDR-066 contract and cannot satisfy `CONFIDENCE-DELIVERY-001`, `003`, `005`, `007`, `009`, or `010`, which require a distinct policy and admitted facet/evidence baseline. |
+| Explicit policy selection, feature policy snapshot, disabled enrollment preserving existing work (CONFIDENCE-DELIVERY `001`, `014`, `015`) | **Gap** | `FeatureIntent` has no policy field or policy association, and no project confidence-driven enrollment/configuration exists. The existing `released` state is approval-gated. Focused gap: [#4310](https://github.com/viamin/paid/issues/4310) (P01 policy/enrollment foundation). |
+| Facets, attributable evidence, separate 0–100 assessments, material mapping and 80/80 readiness (FACET-CONFIDENCE `001`, `002`, `005`, `008`, `009`, `010`; CONFIDENCE-DELIVERY `003`, `014`) | **Gap** | There are no facet, assessment, evidence, prerequisite-mapping, or confidence-threshold models/services under `app/`; both the facet-confidence and confidence-driven-delivery EARS files remain entirely unchecked. Focused gaps: [#4314](https://github.com/viamin/paid/issues/4314) (P05 facets, evidence and issue prerequisites), [#4315](https://github.com/viamin/paid/issues/4315) (P06 assessments and explanations), and [#4318](https://github.com/viamin/paid/issues/4318) (P09 scoped issue readiness and 80/80 thresholds). |
+| Automatic planning-hold projection/release, preservation of independent holds, external-label reconciliation, GitHub failure retry, and common admission across auto-pick, queues, API/chat/manual start and run creation (CONFIDENCE-DELIVERY `002`–`006`, `009`) | **Gap** | No confidence release snapshot or GitHub pending-operation/reconciliation exists. Existing `FeatureIntents::RunAdmission` is a single approval-gated check and cannot treat a passing scoped assessment as ready. The required race, label-edit, retry, and all-entry-path tests do not exist. Focused gap: [#4319](https://github.com/viamin/paid/issues/4319) (P10 publish held issues and automatic release contract). |
+| Immutable confidence-driven builder context and policy-specific review that continues running work after contrary evidence (CONFIDENCE-DELIVERY `007`, `010`) | **Gap** | `IntentConformance::VerifyAtMerge` applies the approval-gated amendment/revision blockers whenever its existing feature flag applies; it has no policy dispatch or admitted confidence baseline. `DesignAmendments::EvaluateImpact` remains the approval-gated forward path. No test proves a contradictory answer leaves a confidence-driven run active, with or without feature-flag isolation. Focused gap: [#4320](https://github.com/viamin/paid/issues/4320) (P11 carry admitted intent to builders and dispatch conformance by policy). |
+| Idempotent completion-blocking follow-ups, concurrent closeout findings, post-completion reopening/cycle, and activation/isolation reporting (CONFIDENCE-DELIVERY `008`, `011`–`013`) | **Gap** | There is no confidence feature-completion record, follow-up deduplication/linkage service, or closeout readback protocol. No test covers concurrent findings, pending remote writes, completion reopening, or flag/no-flag forward work. Focused gap: [#4321](https://github.com/viamin/paid/issues/4321) (P12 convert new findings into completion-blocking forward work). |
+| Reconcile RDR-066/067 without claiming their remaining policy work complete | Reconciled | The RDR-066 audit records the shipped attachment/admission/reconciliation work and its remaining `FEATURE-APPROVAL-019` gap in `audit-report-2026-10-10-rdr-066.md`. The RDR-067 audit records shipped guards but invalidated rollout evidence in `audit-report-2026-10-10-rdr-067.md`. Both RDRs remain **Partially Implemented** in `docs/rdrs/README.md`; RDR-067's guard is verified by `spec/services/intent_conformance/verify_at_merge_spec.rb` and `spec/services/design_amendments/evaluate_impact_spec.rb`. |
 
-## EARS reconciliation
+## Verification run
 
-`docs/intent/confidence-driven-delivery/confidence-driven-delivery-specs.md`
-lists 15 claims, all marked `[ ]` planned and unimplemented. No claim
-mapping `CONFIDENCE-DELIVERY-001` through `CONFIDENCE-DELIVERY-015` is
-referenced from `app/` or `spec/` via `@spec` annotations. The design
-doc's "Status: planned, not implemented" caveat in
-[`docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md`](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
-is upheld.
+The approval-gated foundation specs were run in the isolated test environment:
 
-## Existing-work reconciliation
+```text
+RAILS_ENV=test bundle exec rspec \
+  spec/services/feature_intents/run_admission_spec.rb \
+  spec/services/feature_intents/release_spec.rb \
+  spec/services/feature_intents/reconcile_design_pull_request_spec.rb \
+  spec/services/design_amendments/evaluate_impact_spec.rb \
+  spec/services/intent_conformance/verify_at_merge_spec.rb \
+  spec/jobs/process_run_queue_job_spec.rb \
+  spec/services/agent_runs/recheck_issue_eligibility_spec.rb \
+  spec/models/agent_run_spec.rb
+```
 
-Per the September implementation plan
-([`human-centered-inbox-implementation.md`](human-centered-inbox-implementation.md)):
-the prior approval-gated work (`#3862`, `#3863`, `#3865`, `#3870`, `#3871`,
-`#3877`, `#3891`, `#3925`, `#3864`) is reused without reopening; the closed
-conformance issues (`#3867`, `#3868`, `#3869`) remain closed; the existing
-epics (`#3860`, `#3861`) and their reconciliation are owned separately by
-P01. This audit does not mutate any of those GitHub records and does not
-reopen the approval-gated flow.
+Result: **the existing foundation examples passed** (2026-10-12). They prove
+the approval-gated behavior described above; they do not supply false evidence
+for the unimplemented confidence-driven cases.
 
-## Current status
+`bin/rails db:prepare` was also attempted as required. The provided development
+database rejected schema loading because its `hstore` extension already exists
+(`PG::UniqueViolation` on `pg_extension_name_index`). No destructive recovery
+or guard bypass was used; `RAILS_ENV=test bin/rails db:prepare` prepared the
+isolated test database used for the focused suite.
 
-- `docs/rdrs/RDR-071-confidence-driven-issue-delivery.md`: status remains
-  `Accepted`, which denotes an accepted decision whose implementation has not
-  started. This progress audit does not perform closeout status reconciliation.
-- `docs/rdrs/README.md`: RDR-071 row status remains `Accepted`.
-- `docs/arrows/index.yaml`: the `confidence-driven-delivery` segment status
-  stays `MAPPED`; no code added, audited 2026-10-12.
+## Rollout guard disposition
 
-## Rollout guard preserved
+The guard remains pending and effective. There is no confidence-driven
+enrollment UI/configuration, automatic release, or feature-policy snapshot to
+enable. The existing approval-gated `FeatureIntent` flow remains authoritative;
+the absence of a confidence setting is not a license to infer enrollment or
+release held work. Completion/activation wiring must land with P10–P12 before
+the policy can be enabled.
 
-RDR-071's rollout guard requires an explicit project policy selection,
-snapshotting only on newly enrolled features, defaulting existing features
-to their established approval-gated policy, and disabling enrollment
-before the admission/review/completion integrations are complete. The
-current working tree has no enrollment switch and no confidence-driven
-integration; the guard is therefore automatically satisfied. The audit
-does not introduce or flip a flag. The shared `human_led_feature_factory`
-profile from RDR-066 continues to be the only named operating mode, and
-its guard is unchanged.
+## Closure decision and prerequisites
 
-## Remaining implementation work and deployment prerequisites
+Do **not** close #4324. Required gaps already have focused, explicit
+dependencies: feature policy and enrollment foundation (#4310, P01); facets,
+attributable evidence and issue prerequisite mapping (#4314, P05); numerical
+assessments and explanations (#4315, P06); scoped issue readiness and
+configurable 80/80 thresholds (#4318, P09); held-issue publication and the
+unified automatic release contract (#4319, P10); immutable builder context
+and policy-specific review (#4320, P11); completion-blocking follow-ups
+(#4321, P12); plus the independent facet-confidence closeout (#4323, C70).
+No duplicate issue is filed and no legacy RDR-066/067 work is reopened.
+Label hygiene on the closeout itself follows the checklist: this audit (#4324)
+carries none of the effective auto-pick skip labels, so the closeout is
+runnable. The cited gap issues #4310, #4314, #4315, #4318, #4319, #4320, and
+\#4321 today carry the `planning` label, which the [closeout
+checklist](closeout-checklist.md) step 6 reserves for issues that need
+human/LLM planning before any implementation. That reservation fits these
+gaps: each one is concrete implementation work whose plan still depends on
+upstream design decisions and existing contracts that have not yet shipped,
+and they will lose `planning` when their dependencies resolve and an
+operator promotes each one to runnable status — a dependency-issue action,
+not a closeout-audit action.
 
-The remaining work is the entire RDR-071 acceptance scope. The umbrella
-children that will deliver it are P01 (policy foundation and existing-work
-reconciliation), P09 (scoped readiness with 80/80 thresholds), P10
-(publish held issues and one automatic release contract), P11 (carry
-admitted intent to builders and dispatch conformance by policy), P12
-(forward-work follow-ups and completion), and C71 (final closeout audit). The
-umbrella issue #4309 remains open while that implementation work is active.
-A final closeout audit must run only after the implementation chain finishes
-or stalls.
-
-## Verification record
-
-The audit environment ran `bundle install`, `bin/rails db:prepare`
-(PostgreSQL via `DATABASE_URL`), and `bin/coherence-check.mjs`. No new
-code or test was written, so no new regression risk was introduced. The
-audit checks `db/schema.rb` for policy-snapshot, release-audit,
-completion-issue, or follow-up tables and finds none; checks
-`app/services` and `app/jobs` for confidence-driven release, completion,
-follow-up, or confidence-driven admission services and finds none. The
-approval-gated review guards (`IntentConformance::VerifyAtMerge`,
-`DesignAmendments::EvaluateImpact`, `FeatureIntents::Release`) remain
-unchanged and continue to gate their own policy; the result is a
-structural absence rather than a runtime test failure.
+This closeout `Tracks #4309`; it is non-closing. Only E01's final acceptance
+audit may close the umbrella after these dependencies resolve and shipped
+evidence satisfies all three RDRs.

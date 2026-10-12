@@ -216,17 +216,17 @@ Scaling & Distribution above).
 | [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Partially Implemented | P1 |
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
-| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Accepted | P1 |
+| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
 RDR-066/067 continue to describe approval-gated features. The 2026-10-12
-implementation progress audits record the current baseline while the
-implementation chain remains active:
-[RDR-069](audit-report-2026-10-12-rdr-069.md) is Partially Implemented,
-[RDR-070](audit-report-2026-10-12-rdr-070.md) and
-[RDR-071](audit-report-2026-10-12-rdr-071.md) remain Accepted with no
-implementation shipped.
+audits record the current state: [RDR-069](audit-report-2026-10-12-rdr-069.md)
+and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
+(reused approval-gated foundations are shipped; the new RDR-specific behavior
+remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
+and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
+no implementation shipped.
 
 ## Decision Summary
 
