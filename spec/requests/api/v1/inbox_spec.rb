@@ -90,6 +90,17 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
   end
 
+  # @spec MOBILE-API-008 MOBILE-API-018
+  it "accepts a percent-encoded colon in an inbox entry ID" do
+    issue
+    entry_id = "clarifying_questions%3A#{issue.id}"
+
+    get "/api/v1/inbox/entries/#{entry_id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "id")).to eq("clarifying_questions:#{issue.id}")
+  end
+
   # @spec MOBILE-API-009
   it "forbids opening chat for a token scoped to inbox only" do
     issue

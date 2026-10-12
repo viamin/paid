@@ -1,0 +1,9 @@
+extends: spectral:oas
+
+# Contract validity is blocking; descriptive/style suggestions remain advisory
+# and are reported by Spectral without failing CI's error-level threshold.
+rules:
+  operation-description: warn
+  operation-tags: warn
+  info-contact: off
+  info-description: warn
