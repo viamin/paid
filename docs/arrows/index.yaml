@@ -115,7 +115,7 @@ arrows:
     status: MAPPED
     sampled: 2026-09-22
     audited: 2026-10-12
-    next: "Implement evidence-backed assessments and explicit preferences (RDR-070; umbrella #4309 remains open)"
+    next: "RDR-070 remains Accepted: implement facets/evidence (#4314), assessments/corpus (#4315), explicit preferences (#4316), and scoped 80/80 readiness (#4318) before a terminal closeout."
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md

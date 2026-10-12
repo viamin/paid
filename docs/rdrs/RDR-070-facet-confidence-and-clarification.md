@@ -7,9 +7,15 @@
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P01, P05, P06, P07, P11, C70 unimplemented)
 - **Intent**: [Facet confidence](../intent/facet-confidence/facet-confidence-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309)
+  (open; P01, P05, P06, P07, P11, C70 unimplemented);
+  assessment audit [#4323](https://github.com/viamin/paid/issues/4323);
+  implementation gaps [#4314](https://github.com/viamin/paid/issues/4314),
+  [#4315](https://github.com/viamin/paid/issues/4315),
+  [#4316](https://github.com/viamin/paid/issues/4316), and
+  [#4318](https://github.com/viamin/paid/issues/4318)
 
 ## Implementation Status
 
@@ -184,3 +190,27 @@ Numerical scores make policy executable but can imply unjustified precision.
 Evidence, explanations, unknown states and correction mechanisms are part of
 the same feature, not optional observability. Rubric evaluation and assessment
 cost are additional work; no score eliminates the need for engineering review.
+
+## 2026-10-12 Assessment Audit
+
+Assessment issue [#4323](https://github.com/viamin/paid/issues/4323) compared
+this RDR and every `FACET-CONFIDENCE-*` claim with the repository rather than
+using closed historical issues as implementation evidence. **RDR-070 remains
+Accepted, not closed out:** no evidence-backed implementation status from the
+closeout checklist is currently truthful. The facet/evidence foundation,
+assessment pipeline, adaptive clarification/preferences, and scoped readiness
+are each still planned in focused, open implementation issues [#4314](https://github.com/viamin/paid/issues/4314),
+[#4315](https://github.com/viamin/paid/issues/4315),
+[#4316](https://github.com/viamin/paid/issues/4316), and
+[#4318](https://github.com/viamin/paid/issues/4318). The full evidence and
+rollout-guard disposition are in
+[`audit-report-2026-10-12-rdr-070.md`](audit-report-2026-10-12-rdr-070.md).
+
+The audit deliberately does not call the RDR Partially Implemented: the
+pre-existing approval-gated `FeatureIntentDecision` records and
+clarifying-answer parsing are reusable foundations, but they do not implement
+the independent scores, evidence provenance, explicit preference, or readiness
+contract. It also does not call the RDR Abandoned or Superseded: the accepted
+design remains the active intent and its focused implementation work is open.
+The required shadow-mode rollout guard remains in force; no confidence score
+may release work until the complete RDR-071 delivery path ships.
