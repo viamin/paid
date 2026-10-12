@@ -50,9 +50,10 @@ is upheld.
 ## Stale status reconciled by this audit
 
 - `docs/rdrs/RDR-070-facet-confidence-and-clarification.md`: status stays
-  `Accepted`. No implementation has landed; no `## Implementation Status`
-  section is added because there is no shipped scope to describe. The
-  rollout guard is still required before any automatic readiness behavior.
+  `Accepted`. This audit adds an `## Implementation Status` section that
+  records the current conclusion: no implementation has landed and no
+  RDR-070 acceptance criterion is implemented. The rollout guard is still
+  required before any automatic readiness behavior.
 - `docs/rdrs/README.md`: RDR-070 row status remains `Accepted`.
 - `docs/arrows/index.yaml`: the `facet-confidence` segment status stays
   `MAPPED`; no code added, audited 2026-10-12.

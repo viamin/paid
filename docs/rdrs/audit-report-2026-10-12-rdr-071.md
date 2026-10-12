@@ -59,10 +59,10 @@ reopen the approval-gated flow.
 ## Stale status reconciled by this audit
 
 - `docs/rdrs/RDR-071-confidence-driven-issue-delivery.md`: status stays
-  `Accepted`. No implementation has landed; no `## Implementation Status`
-  section is added because there is no shipped scope to describe. The
-  rollout guard is still required before any automatic confidence-driven
-  release.
+  `Accepted`. This audit adds an `## Implementation Status` section that
+  records the current conclusion: no implementation has landed and no
+  RDR-071 acceptance criterion is implemented. The rollout guard is still
+  required before any automatic confidence-driven release.
 - `docs/rdrs/README.md`: RDR-071 row status remains `Accepted`.
 - `docs/arrows/index.yaml`: the `confidence-driven-delivery` segment status
   stays `MAPPED`; no code added, audited 2026-10-12.
