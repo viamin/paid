@@ -9,6 +9,7 @@
 - **Type**: Architecture
 - **Priority**: Unassigned
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
+- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
 - **Blocked on**: RDR-073 implementation and final acceptance, tracked by [#4263](https://github.com/viamin/paid/issues/4263) and its [closeout #4268](https://github.com/viamin/paid/issues/4268)
 
 ## Dependencies
@@ -299,10 +300,23 @@ Recurring schedules remain explicitly opt-in after rollout.
    outcome, record gaps, reconcile RDR/index status, and decide guard removal
    using the [closeout checklist](closeout-checklist.md).
 
-Create implementation issues after the design is accepted. The maintenance
-umbrella and planning issue must explicitly depend on viamin/paid#4263;
-child issues must carry the appropriate phase dependencies. Closeout tracks
-the umbrella with non-closing language; only its final audit closes it.
+The implementation issue tree is filed under the linked umbrella. Planned
+implementation remains held until the design and required LID artifacts are
+finalized and merged. The umbrella, planning task, and each child explicitly
+depend on viamin/paid#4263, with phase dependencies controlling sequencing.
+Closeout tracks the umbrella with non-closing language; only its final audit
+closes it.
+
+### Filed issue tree
+
+- [#4327](https://github.com/viamin/paid/issues/4327): Plan maintenance intent and validate the RDR-073 tool handoff
+- [#4328](https://github.com/viamin/paid/issues/4328): Add manual report-only maintenance runs with scope and guidance
+- [#4329](https://github.com/viamin/paid/issues/4329): Persist maintenance reports, evidence, coverage and recurring finding identity
+- [#4330](https://github.com/viamin/paid/issues/4330): Integrate tool-assisted unnecessary-code recipes through RDR-073
+- [#4331](https://github.com/viamin/paid/issues/4331): Turn selected maintenance findings into bounded repair work
+- [#4332](https://github.com/viamin/paid/issues/4332): Schedule opt-in recurring maintenance with budgets and overlap prevention
+- [#4333](https://github.com/viamin/paid/issues/4333): Reuse maintenance evidence for advisory PR audits
+- [#4334](https://github.com/viamin/paid/issues/4334): Validate and close out general maintenance runs
 
 ## Validation
 
