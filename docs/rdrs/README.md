@@ -226,7 +226,9 @@ and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
 (reused approval-gated foundations are shipped; the new RDR-specific behavior
 remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
 and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
-no implementation shipped.
+no implementation shipped. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
+confirms that #4309 remains open until those focused gaps have shipped and its
+own final evidence audit can run.
 
 ## Decision Summary
 
