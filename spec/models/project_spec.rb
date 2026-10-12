@@ -3698,4 +3698,14 @@ RSpec.describe Project do
       expect(project.reload.scheduler_paused_at).to be_present
     end
   end
+
+  describe "project readiness" do
+    # @spec PROJECT-READINESS-006
+    it "queues a readiness evaluation when TDD mode changes" do
+      project = create(:project, tdd_mode: "off")
+
+      expect { project.update!(tdd_mode: "strict") }
+        .to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
+    end
+  end
 end

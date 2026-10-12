@@ -278,6 +278,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
   after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
+  after_commit :enqueue_project_readiness_evaluation, on: :update, if: :project_readiness_refresh_needed?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -4103,6 +4104,15 @@ class AgentRun < ApplicationRecord
 
   def enqueue_resource_profile_refresh
     AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
+  end
+
+  # @spec PROJECT-READINESS-006
+  def project_readiness_refresh_needed?
+    saved_change_to_status? && status == "completed" && result_commit_sha.present?
+  end
+
+  def enqueue_project_readiness_evaluation
+    EvaluateProjectReadinessJob.perform_later(project_id)
   end
 
   # Records the dispatch circuit breaker outcome for every terminal run,

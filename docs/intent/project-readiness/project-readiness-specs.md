@@ -38,3 +38,22 @@ prefix: PROJECT-READINESS
   `Projects::Readiness::Detectors`,
   `Projects::Readiness::Detectors::Godot`.
   *Test:* `spec/services/projects/readiness_spec.rb`.
+
+- [x] **PROJECT-READINESS-005** — When an enabled TDD project's persisted
+  readiness snapshot has one or more gaps, the system SHALL surface exactly one
+  project-backed `project_setup_pending` Inbox entry to authorized operators,
+  including every stored gap's description and evidence; it SHALL not require
+  `auto_pick_enabled`, and a satisfied snapshot SHALL not appear.
+  *Code:* `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`.
+
+- [x] **PROJECT-READINESS-006** — When a readiness evaluation records a gap
+  set different from the project's prior snapshot, the system SHALL persist the
+  result and invalidate the Inbox cache. It SHALL queue re-evaluation after a
+  TDD-mode setting change and after a completed run with a result commit, but
+  SHALL not evaluate during Inbox polling.
+  *Code:* `Projects::Readiness::Record`, `EvaluateProjectReadinessJob`,
+  `Project`, `AgentRun`.
+  *Test:* `spec/services/projects/readiness/record_spec.rb`,
+  `spec/models/project_spec.rb`, `spec/models/agent_run_spec.rb`.
