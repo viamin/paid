@@ -9,7 +9,7 @@
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
-- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
+- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4310](https://github.com/viamin/paid/issues/4310), [#4314](https://github.com/viamin/paid/issues/4314), [#4315](https://github.com/viamin/paid/issues/4315), [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
 
 ## Problem Statement
 
@@ -189,12 +189,16 @@ Closeout issue [#4324](https://github.com/viamin/paid/issues/4324) compared
 every `CONFIDENCE-DELIVERY-*` EARS claim and the RDR validation scenarios with
 the application and its tests. Result: **Partially Implemented**. The reused
 approval-gated foundations are verified and retained; the new confidence-driven
-policy has no shipped EARS claim and remains blocked on the focused P05/P06,
-P09/P10, P11/P12, and RDR-070 closeout work tracked by [#4318](https://github.com/viamin/paid/issues/4318),
-[#4319](https://github.com/viamin/paid/issues/4319),
-[#4320](https://github.com/viamin/paid/issues/4320),
-[#4321](https://github.com/viamin/paid/issues/4321), and
-[#4323](https://github.com/viamin/paid/issues/4323).
+policy has no shipped EARS claim and remains blocked on the focused
+policy/enrollment foundation [#4310](https://github.com/viamin/paid/issues/4310) (P01);
+facets and prerequisite mapping [#4314](https://github.com/viamin/paid/issues/4314) (P05);
+assessments and explanations [#4315](https://github.com/viamin/paid/issues/4315) (P06);
+scoped readiness and 80/80 thresholds [#4318](https://github.com/viamin/paid/issues/4318) (P09);
+held-issue publication and the unified release contract [#4319](https://github.com/viamin/paid/issues/4319) (P10);
+immutable builder context and policy-specific review [#4320](https://github.com/viamin/paid/issues/4320) (P11);
+completion-blocking follow-ups [#4321](https://github.com/viamin/paid/issues/4321) (P12);
+and the independent facet-confidence closeout [#4323](https://github.com/viamin/paid/issues/4323) (C70)
+work.
 
 The rollout guard remains in force: automatic confidence-driven release is not
 enabled, and no settings-only enrollment surface exists. This closeout tracks
