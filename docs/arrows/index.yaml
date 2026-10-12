@@ -114,7 +114,8 @@ arrows:
     taxonomy: intelligence
     status: MAPPED
     sampled: 2026-09-22
-    next: "Implement evidence-backed assessments and explicit preferences (RDR-070)"
+    audited: 2026-10-12
+    next: "Implement evidence-backed assessments and explicit preferences (RDR-070; umbrella #4309 remains open)"
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md
