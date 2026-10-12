@@ -135,3 +135,45 @@
   human-authored review thread exists and none of its comments are
   prompt-eligible.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
+
+- [x] **PROMPT-ASSEMBLY-019** — When `AgentRun#effective_prompt` resolves a
+  non-empty `custom_prompt` (whether supplied manually, materialized from a
+  queue-time PromptVersion, or generated for a code-scanning remediation
+  aside), the prompt SHALL still include the non-negotiable safety rules
+  (`PromptAssembly::Sections::SafetyRules`) and the settings-derived
+  `PromptAssembly::Sections::ServiceEnvironment` as `required: true`
+  sections assembled through `PromptAssembly::Build`, so profile suppression
+  or template overrides cannot omit them and the custom task text is
+  preserved verbatim. Provenance SHALL record each required section key
+  alongside the task key.
+  *Code:* `AgentRun#effective_prompt`, `PromptAssembly::BuildCustomPrompt`,
+  `PromptAssembly::Sections::SafetyRules`,
+  `PromptAssembly::Sections::ServiceEnvironment`.
+
+- [x] **PROMPT-ASSEMBLY-020** — When a TDD-governed `AgentRun` resolves its
+  prompt (whether from an issue, a `custom_prompt`, or a generated/materialized
+  prompt), the system SHALL include the run's effective TDD phase boundaries
+  as a `required: true` section (`PromptAssembly::Sections::TddBoundaries`)
+  assembled through `PromptAssembly::Build`, so the agent receives the same
+  write-boundary contract that `Tdd::WriteGuard` enforces at the pre-commit
+  hook regardless of prompt source.
+  *Code:* `PromptAssembly::Sections::TddBoundaries`, `Tdd::WriteGuard`,
+  `AgentRun#effective_prompt`.
+
+- [x] **PROMPT-ASSEMBLY-021** — When the create_pr goal has no associated
+  issue and no `code_scanning_remediation?` path, the `custom_prompt`-driven
+  `effective_prompt` SHALL still produce a non-empty prompt that contains the
+  service environment section (services available via env vars, "do not
+  install from source" guardrail) so an issue-less manual create_pr run is not
+  silently shipped without infrastructure context.
+  *Code:* `AgentRun#effective_prompt`, `PromptAssembly::BuildCustomPrompt`,
+  `PromptAssembly::Sections::ServiceEnvironment`.
+
+- [x] **PROMPT-ASSEMBLY-022** — When a `custom_prompt` is provided and the
+  prompt is assembled through `PromptAssembly::BuildCustomPrompt`, the
+  resulting `PromptAssembly::Result#provenance[:sections]` SHALL include a
+  `task.custom` entry that records the custom text's source as `:custom_prompt`
+  and identifies the run; the run's `external_metadata["prompt_assembly"]`
+  SHALL be populated so operators can audit which sections reached the agent.
+  *Code:* `AgentRun#effective_prompt`, `PromptAssembly::BuildCustomPrompt`,
+  `AgentRun#record_prompt_assembly!`.
