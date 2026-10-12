@@ -15,6 +15,12 @@ RSpec.describe Projects::CleanupPaidLabels do
       expect(result.entries).to contain_exactly(have_attributes(issue_id: issue.id, labels: [ Issue::PAUSED_LABEL ]))
       expect(result.removed).to be_empty
     end
+
+    it "rejects previews while Paid is still writing labels" do # @spec LABEL-INTEGRATION-006
+      project.update!(label_integration_mode: "read_write")
+
+      expect { described_class.preview(project:) }.to raise_error(ArgumentError, /read & write/)
+    end
   end
 
   describe ".execute" do

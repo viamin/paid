@@ -851,7 +851,6 @@
               <% unless @project.label_integration_mode == "read_write" %>
                 <div class="mt-3 flex gap-2">
                   <%= link_to "Preview Paid label cleanup", cleanup_paid_labels_project_path(@project), data: { turbo_method: :post }, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-                  <%= link_to "Remove Paid labels from open items", cleanup_paid_labels_project_path(@project, execute: true), data: { turbo_method: :post, turbo_confirm: "Remove only Paid-owned labels from open issues and pull requests? This does not delete label definitions." }, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-500" %>
                 </div>
               <% end %>
             </div>

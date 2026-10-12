@@ -16,12 +16,12 @@ module Projects
     end
 
     def preview
+      validate_mode!
       Result.new(entries: entries, removed: [], failed: [])
     end
 
     def execute
-      raise ArgumentError, "Paid labels cannot be cleaned up while label integration is read & write" if project.label_integration_mode == "read_write"
-
+      validate_mode!
       entries.reduce(Result.new(entries: entries, removed: [], failed: [])) { |result, entry| remove(entry, result) }
     end
 
@@ -38,6 +38,12 @@ module Projects
 
     def owned_labels
       @owned_labels ||= EnsureStandardLabels.owned_label_names(project:)
+    end
+
+    def validate_mode!
+      return unless project.label_integration_mode == "read_write"
+
+      raise ArgumentError, "Paid labels cannot be cleaned up while label integration is read & write"
     end
 
     def remove(entry, result)

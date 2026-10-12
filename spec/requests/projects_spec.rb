@@ -3670,6 +3670,28 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:id/cleanup_paid_labels" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders each affected item and its Paid labels before cleanup" do # @spec LABEL-INTEGRATION-006
+        project = create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+        issue = create(:issue, project:, labels: [ Issue::PAUSED_LABEL, "bug" ])
+        pull_request = create(:issue, :pull_request, project:, labels: [ Issue::ESCALATED_LABEL, "enhancement" ])
+
+        post cleanup_paid_labels_project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Preview Paid label cleanup")
+        expect(response.body).to include("Open item ##{issue.github_number}")
+        expect(response.body).to include(Issue::PAUSED_LABEL)
+        expect(response.body).to include("Open item ##{pull_request.github_number}")
+        expect(response.body).to include(Issue::ESCALATED_LABEL)
+        expect(response.body).to include("Remove Paid labels from these open items")
+      end
+    end
+  end
+
   describe "POST /projects/:id/cleanup_stale_runs" do
     context "when authenticated" do
       before { sign_in user }

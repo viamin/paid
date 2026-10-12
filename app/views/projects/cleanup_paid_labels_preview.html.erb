@@ -1,0 +1,39 @@
+<% content_for :title, "Preview Paid label cleanup" %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="rounded-lg bg-white p-6 shadow">
+    <h1 class="text-xl font-semibold text-gray-900">Preview Paid label cleanup</h1>
+    <p class="mt-2 text-sm text-gray-600">Only the Paid-owned labels below will be removed. Label definitions and all other labels will remain unchanged.</p>
+
+    <% if @cleanup_paid_labels_preview.entries.any? %>
+      <div class="mt-6 overflow-hidden rounded-md border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+          <thead class="bg-gray-50 text-left text-gray-600">
+            <tr>
+              <th scope="col" class="px-4 py-3 font-medium">Open item</th>
+              <th scope="col" class="px-4 py-3 font-medium">Paid labels to remove</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white text-gray-900">
+            <% @cleanup_paid_labels_preview.entries.each do |entry| %>
+              <tr>
+                <td class="px-4 py-3">Open item #<%= entry.number %></td>
+                <td class="px-4 py-3"><%= entry.labels.join(", ") %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-6 flex gap-3">
+        <%= button_to "Remove Paid labels from these open items", cleanup_paid_labels_project_path(@project, execute: true), method: :post, data: { turbo_confirm: "Remove only the listed Paid-owned labels? This does not delete label definitions." }, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-500" %>
+        <%= link_to "Back to project settings", edit_project_path(@project, anchor: "labels"), class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      </div>
+    <% else %>
+      <p class="mt-6 text-sm text-gray-600">No open items have Paid-owned labels eligible for removal.</p>
+      <div class="mt-6">
+        <%= link_to "Back to project settings", edit_project_path(@project, anchor: "labels"), class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      </div>
+    <% end %>
+  </div>
+</div>

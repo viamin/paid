@@ -227,14 +227,21 @@ class ProjectsController < ApplicationController
   # step. Passing `execute=true` is the separate confirmation.
   def cleanup_paid_labels # @spec LABEL-INTEGRATION-006
     authorize @project, :update?
-    result = params[:execute] == "true" ? Projects::CleanupPaidLabels.execute(project: @project) : Projects::CleanupPaidLabels.preview(project: @project)
-    message = params[:execute] == "true" ? "Removed #{result.removed.size} Paid label(s)." : "Preview: #{result.entries.size} open item(s) have Paid labels eligible for removal."
-    redirect_to edit_project_path(@project, anchor: "labels"), notice: message
+    return cleanup_paid_labels_preview unless params[:execute] == "true"
+
+    result = Projects::CleanupPaidLabels.execute(project: @project)
+    redirect_to edit_project_path(@project, anchor: "labels"), notice: "Removed #{result.removed.size} Paid label(s)."
   rescue ArgumentError => e
     redirect_to edit_project_path(@project, anchor: "labels"), alert: e.message
   rescue GithubClient::Error => e
     redirect_to edit_project_path(@project, anchor: "labels"), alert: "Could not clean up Paid labels: #{e.message}"
   end
+
+  def cleanup_paid_labels_preview
+    @cleanup_paid_labels_preview = Projects::CleanupPaidLabels.preview(project: @project)
+    render :cleanup_paid_labels_preview
+  end
+  private :cleanup_paid_labels_preview
 
   def import_label_control_state_if_needed(previous_label_mode) # @spec LABEL-INTEGRATION-005
     return unless @project.label_integration_mode == "ignored"
