@@ -8,6 +8,8 @@ class Issue < ApplicationRecord
     "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
+  CONTROL_PRIORITIES = %w[P1 P2 P3].freeze
+  TDD_REVIEW_STATES = %w[ready_for_review approved changes_requested].freeze
   # The first four reasons denote agent failure. `awaiting_approval` denotes
   # an unanswered human gate: the PR is green, blocked only on owner
   # approval, and has waited past the project ceiling. It must stay
@@ -111,6 +113,8 @@ class Issue < ApplicationRecord
   before_save :sync_closed_at, if: :will_save_change_to_github_state?
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
+  validates :control_priority, inclusion: { in: CONTROL_PRIORITIES }, allow_nil: true
+  validates :tdd_review_state, inclusion: { in: TDD_REVIEW_STATES }, allow_nil: true
   validates :pr_escalation_reason, inclusion: { in: PR_ESCALATION_REASONS }, allow_nil: true
   validates :enhance_issue_rounds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
@@ -461,6 +465,46 @@ class Issue < ApplicationRecord
 
   def merged_phase?
     pr_review_phase == "merged"
+  end
+
+  # @spec LABEL-CONTROL-001
+  def local_control_state?
+    project.label_integration_mode == "ignored"
+  end
+
+  # @spec LABEL-CONTROL-003
+  def auto_pick_excluded?
+    local_control_state? && auto_pick_excluded_reason.present?
+  end
+
+  # @spec LABEL-CONTROL-004
+  def auto_merge_skipped?
+    return skip_auto_merge if local_control_state?
+
+    has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+  end
+
+  # @spec LABEL-CONTROL-004
+  def held_for_review?
+    return hold_for_review if local_control_state?
+
+    has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+  end
+
+  # @spec LABEL-CONTROL-005
+  def effective_tdd_review_state
+    return tdd_review_state if local_control_state?
+
+    return "approved" if has_label?("paid-tests-approved")
+    return "changes_requested" if has_label?("paid-test-changes-requested")
+    "ready_for_review" if has_label?("paid-tests-ready-for-review")
+  end
+
+  # @spec LABEL-CONTROL-005
+  def approve_tdd_tests!
+    return if tdd_review_state == "approved" && tdd_review_approved_at.present?
+
+    update!(tdd_review_state: "approved", tdd_review_approved_at: Time.current)
   end
 
   # Releases the escalation hold and returns the PR to an automation-managed
@@ -876,7 +920,7 @@ class Issue < ApplicationRecord
   # github_state transitions already bump through
   # merge_approval_candidate_state_changed? (OPERATOR-INBOX-002J).
   def test_review_label_state_changed?
-    is_pull_request? && saved_change_to_labels?
+    is_pull_request? && (saved_change_to_labels? || saved_change_to_tdd_review_state?)
   end
 
   # Every counter an escalation accumulated, plus the markers that tell

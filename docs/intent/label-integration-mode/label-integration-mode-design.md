@@ -24,8 +24,25 @@ instead of claiming suppressed mutations (LABEL-INTEGRATION-004).
 `labels:` argument — which adds labels in the same POST — is stripped when
 writes are suppressed. `update_issue` similarly strips `labels:` so label
 replacement cannot bypass the gate, including when a trusted-human fallback
-credential is selected. Read paths deliberately remain intact; the broader
-internal-control behavior for ignored mode is deferred.
+credential is selected. Read paths deliberately remain intact except in
+`ignored` mode. In that mode, Paid is the source of truth for control state:
+`Issue#paused`, local PR merge holds, the TDD review gate, local priority, and
+an auto-pick exclusion reason replace their corresponding label reads. The
+project-level `auto_scan_prs` setting is the activation surface for PR scanning
+in ignored mode: when it is enabled, every eligible open local PR is scannable
+without an automation or feature-activation label. When it is disabled, Paid
+does not consult PR activation labels. The
+local TDD approval records its transition time, which the PR scanner compares
+to implementation-run creation time so a subsequent poll cannot requeue the
+same approved revision. If the initial PR sync is unavailable, later PR
+reconciliation restores a missing local TDD ready-for-review gate from the
+durably recorded test-writing run, without overwriting an operator decision. The
+auto-pick epic label has no local replacement, so ignored-mode selection and
+re-audit paths treat it as a no-op rather than reading the upstream label.
+Escalation dismissal remains the existing local `PullRequests::Unblock`
+transition, preserving its token-cap waiver and audit contract. The project
+page and the MCP tool registry (and thus chat) expose reversible actions for
+these local controls; manual run actions remain the activation surface.
 
 The project settings form and `update_project_settings` MCP write surface
 expose the setting; tenant configuration exposes the creation default.

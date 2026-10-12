@@ -91,6 +91,45 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 42,
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .find { |candidate| candidate.issue == pr }
+
+      expect(entry).to have_attributes(
+        kind: described_class::MERGE_APPROVAL_KIND,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+    end
+
+    it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 43,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).not_to include(pr)
+    end
+
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
     it "returns typed entries for visible blocking notifications" do
       notification = create_action_required_notification

@@ -206,14 +206,20 @@ module Inbox
     # Inbox::Count uses for the paid-hold-review label. `paid_state`-free on
     # purpose — the gate is the label, not the state (OPERATOR-INBOX-002J).
     def self.test_review_pending_issues(project_ids)
-      Issue
+      base = Issue
         .where(
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
           pr_review_phase: TEST_REVIEW_PR_PHASES
         )
+      label_gated = base.joins(:project)
+        .where.not(projects: { label_integration_mode: "ignored" })
         .where("labels @> ?::jsonb", [ TDD_TESTS_READY_FOR_REVIEW_LABEL ].to_json)
+      local_gated = base.joins(:project)
+        .where(projects: { label_integration_mode: "ignored" }, tdd_review_state: "ready_for_review")
+
+      label_gated.or(local_gated)
     end
 
     def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT)

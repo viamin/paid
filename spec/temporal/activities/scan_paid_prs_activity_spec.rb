@@ -1112,6 +1112,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         allow(github_client).to receive(:pull_request)
       end
 
+      # @spec LABEL-CONTROL-006
+      it "scans an unlabeled PR in ignored label mode" do
+        project.update!(label_integration_mode: "ignored")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 43,
+          github_creator_login: "viamin",
+          labels: [],
+          paid_state: "completed")
+        stub_github_for_pr(pr_number: 43)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:pull_request).with(project.full_name, 43)
+      end
+
       it "does not widen the scan set beyond automation-labeled PRs" do
         create(:issue, :pull_request,
           project: project,
@@ -1228,6 +1244,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: scan_off_project.id)
 
         expect(automation_scan_results(result)).to eq([])
+        expect(github_client).not_to have_received(:pull_request)
+      end
+
+      # @spec LABEL-CONTROL-006
+      it "does not use activation labels in ignored label mode" do
+        scan_off_project.update!(label_integration_mode: "ignored")
+        create(:issue, :pull_request,
+          project: scan_off_project,
+          github_number: 42,
+          github_creator_login: "viamin",
+          labels: [ scan_off_project.feature_activation_label_for("auto_scan_prs") ],
+          paid_state: "completed")
+
+        activity.execute(project_id: scan_off_project.id)
+
         expect(github_client).not_to have_received(:pull_request)
       end
     end
@@ -11770,6 +11801,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).not_to include("queue_create_pr_run")
     end
 
+    it "does not requeue implementation after an ignored-mode test approval has started implementation" do # @spec LABEL-CONTROL-005
+      project.update!(tdd_mode: "strict", label_integration_mode: "ignored")
+      pull_request.update!(tdd_review_state: "approved", tdd_review_approved_at: 2.hours.ago)
+      create(:agent_run,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_fixing",
+        status: "completed",
+        created_at: 1.hour.ago,
+        started_at: 1.hour.ago,
+        completed_at: 50.minutes.ago)
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "success" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "ready_for_owner")
+      )
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+    end
+
     it "routes strict-mode rejected tests back to test revision instead of implementation" do
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
@@ -11976,14 +12029,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     recent_multi_page: false,
     head_committed_at: 2.hours.ago,
     pr_updated_at: nil,
-    head_sha: "abc123"
+    head_sha: "abc123",
+    pr_number: 42
   )
     pr_data = OpenStruct.new(
       base: OpenStruct.new(ref: base_branch),
       head: OpenStruct.new(sha: head_sha, repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
-      number: 42,
+      number: pr_number,
       user: OpenStruct.new(login: author_login),
       updated_at: pr_updated_at
     )
@@ -11998,22 +12052,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     recent.define_singleton_method(:multi_page?) { multi_page }
 
     allow(github_client).to receive(:pull_request)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(pr_data)
     allow(github_client).to receive(:check_runs_for_ref)
       .with(project.full_name, head_sha)
       .and_return(checks)
     allow(github_client).to receive(:review_threads)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(review_threads)
     allow(github_client).to receive(:recent_issue_comments)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(recent)
     allow(github_client).to receive(:issue_comments)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(issue_comments)
     allow(github_client).to receive(:pull_request_reviews)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(reviews)
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)

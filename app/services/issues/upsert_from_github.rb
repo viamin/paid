@@ -29,6 +29,7 @@ module Issues
       )
 
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
+      establish_local_tdd_gate(issue, project: project)
       reconcile_design_pull_request(project, github_issue, github_pull_request) if issue.is_pull_request? && github_pull_request
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
@@ -38,6 +39,32 @@ module Issues
       sync_priority_labels_to_pull_request(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
     end
+
+    # A PR sync can fail after its producing run has durably recorded the PR
+    # identity. On the later reconciliation, restore the ignored-mode gate
+    # from that durable run state so a missing initial local row cannot bypass
+    # human test approval.
+    # @spec LABEL-CONTROL-005
+    def self.establish_local_tdd_gate(issue, project:)
+      return unless project.label_integration_mode == "ignored"
+      return unless issue.is_pull_request? && issue.tdd_review_state.nil?
+      return unless test_writing_run_for?(project, issue)
+
+      issue.with_lock do
+        issue.update!(tdd_review_state: "ready_for_review") if issue.tdd_review_state.nil?
+      end
+    end
+    private_class_method :establish_local_tdd_gate
+
+    def self.test_writing_run_for?(project, issue)
+      project.agent_runs.where(
+        goal: "create_pr",
+        tdd_phase: "test_writing",
+        pull_request_number: issue.github_number,
+        pull_request_url: issue.github_html_url
+      ).exists?
+    end
+    private_class_method :test_writing_run_for?
 
     # Issue priority labels are copied onto a pull request once, at PR
     # creation (CreatePullRequestActivity#inherited_priority_labels). This

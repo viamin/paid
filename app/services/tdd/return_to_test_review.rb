@@ -40,10 +40,7 @@ module Tdd
       return failure(:not_test_fixing_phase) unless agent_run.tdd_test_fixing_phase?
       return failure(:no_pull_request) if pull_request_number.blank?
 
-      client = project.client
-      return failure(:no_github_client) unless client
-
-      result = swap_labels(client)
+      result = project.label_integration_mode == "ignored" ? update_local_gate : swap_labels(project.client)
       return result unless result.success?
 
       grant_write_guard_exemption!
@@ -75,6 +72,8 @@ module Tdd
     end
 
     def swap_labels(client)
+      return failure(:no_github_client) unless client
+
       client.remove_label_from_issue(project.full_name, pull_request_number, TESTS_APPROVED_LABEL)
       client.add_labels_to_issue(project.full_name, pull_request_number, [ TESTS_READY_FOR_REVIEW_LABEL ])
       update_local_pull_request_labels
@@ -88,6 +87,14 @@ module Tdd
         error: e.message
       )
       failure(:label_sync_failed)
+    end
+
+    def update_local_gate
+      pull_request = project.issues.find_by(github_number: pull_request_number, is_pull_request: true)
+      return failure(:no_local_pull_request) unless pull_request
+
+      pull_request.update!(tdd_review_state: "ready_for_review")
+      Result.new(success: true, error: nil)
     end
 
     def update_local_pull_request_labels(labels = nil)
