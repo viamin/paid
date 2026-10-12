@@ -143,16 +143,11 @@ module ChatSessionsHelper
 
   # @spec CHAT-API-024
   def chat_tool_groupable?(message)
-    (message.tool_name.present? || message.role == "tool") &&
-      !message.pending_confirmation? &&
-      !chat_transcript_notice?(message)
+    message.groupable_tool?
   end
 
   def chat_transcript_notice?(message)
-    message.token_limit_error? ||
-      message.rate_limit_paused? ||
-      message.provider_error_notice? ||
-      message.pending_confirmation_notice?
+    message.transcript_notice?
   end
 
   def chat_message_meta_classes(message)

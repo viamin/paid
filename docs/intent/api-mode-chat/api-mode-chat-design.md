@@ -144,7 +144,9 @@ What ships today:
   transcript disclosure so multi-step tool activity is skimmable; expanding it
   preserves the existing muted left-railed individual cards. Pending
   confirmations never join a group and retain their amber approval treatment
-  as the transcript's strongest signal
+  as the transcript's strongest signal. Pagination extends its message slice
+  across a leading tool-run boundary so a persisted run is always rendered in
+  one maximal disclosure, including when older transcript frames load lazily
 - MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back

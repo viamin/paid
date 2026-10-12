@@ -494,10 +494,15 @@
   a non-tool row, or a token-limit, rate-limit, provider-error, or pending-
   confirmation notice SHALL end the run; pending confirmation cards SHALL
   remain standalone, open, and retain their amber Approve/Deny treatment. A
+  paginated persisted transcript SHALL extend a page across its leading
+  groupable-tool boundary, so lazy older-message loading renders every
+  consecutive run in one maximal disclosure rather than splitting it between
+  frames. A
   runner-fallback cleanup SHALL remove an emptied live disclosure together with
   its stale cards. Grouping SHALL NOT make tool cards eligible as "Jump to
   latest" response anchors.
   *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`,
+  `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/older_messages`),
   `spec/lib/chat_controller_node_harness_spec.rb`
   (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`),
   `spec/lib/chat_controller_node_harness_spec.rb` (existing
