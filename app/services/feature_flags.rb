@@ -77,6 +77,13 @@ class FeatureFlags
       intent: "Gate RDR-068 macOS guest verification until immutable images and the Paid-controlled network boundary pass pilot isolation checks.",
       rollout_plan: "Default-off; operators opt in selected pilot projects only after the approved worker profile, proxy, DNS, and isolation smoke tests pass.",
       cleanup_criteria: "Remove only after the RDR-068 closeout audit approves broad Apple-worker enablement."
+    ),
+    marketplace_tool_sidecars: Definition.new(
+      name: :marketplace_tool_sidecars,
+      owner: "marketplace-runtime",
+      intent: "Gate the RDR-073 third install arm on Containers::McpProvisioner so per-run hardened tool sidecars only provision behind per-tenant opt-in.",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features; expand after the hardened HostConfig, image gate, and PAID_SERVICE_HARDENING override path are exercised end-to-end.",
+      cleanup_criteria: "Remove once the RDR-073 closeout audit verifies the hardened provisioning path is complete, image gating is enforced, and pilot tenants have run tool-attached runs without incident."
     )
   }.freeze
 
