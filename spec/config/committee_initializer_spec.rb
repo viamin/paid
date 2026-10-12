@@ -9,7 +9,7 @@ CommitteeMiddlewareStack = Class.new do
     @entries = []
   end
 
-  def insert_before(*args, **options)
+  def insert_after(*args, **options)
     entries << { args:, options: }
   end
 end unless defined?(CommitteeMiddlewareStack)
@@ -32,6 +32,7 @@ RSpec.describe CommitteeInitializer, :no_db do
   it "raises strict validation failures in test" do
     load_initializer("test")
 
+    expect(middleware.entries.map { |entry| entry[:args].first }).to all(eq(Rack::Sendfile))
     expect(middleware.entries.map { |entry| entry[:options].slice(:strict, :raise, :ignore_error) })
       .to all(eq(strict: true, raise: true, ignore_error: false))
   end

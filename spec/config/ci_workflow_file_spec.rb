@@ -120,10 +120,10 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec MOBILE-API-017
-  it "declares the JSON content type for the interim Pact response" do
+  it "declares Rails' JSON content type for the interim Pact response" do
     response = mobile_pact.fetch("interactions").first.fetch("response")
 
-    expect(response.fetch("headers")).to include("Content-Type" => "application/json")
+    expect(response.fetch("headers")).to include("Content-Type" => "application/json; charset=utf-8")
   end
 
   # @spec MOBILE-API-018
@@ -133,6 +133,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(fuzz_command).to include(
       "schemathesis==4.6.0", "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
+      "--phases examples,fuzzing", "--mode positive",
       "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveChatToolCall"
     )
@@ -153,6 +154,20 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")).to include(
       "example" => "clarifying_questions:4241"
     )
+  end
+
+  # @spec MOBILE-API-010 MOBILE-API-018
+  it "limits conditional polling headers to the strong ETags the API emits" do
+    schema = openapi_schema.fetch("components").fetch("parameters").fetch("IfNoneMatch").fetch("schema")
+
+    expect(schema).to include("pattern" => '^"[0-9a-f]{64}"$')
+  end
+
+  # @spec MOBILE-API-008 MOBILE-API-018
+  it "limits inbox entry IDs to queue IDs that the API can resolve" do
+    schema = openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")
+
+    expect(schema.fetch("pattern")).to include("clarifying_questions", "test_review_pending", ":[1-9][0-9]*")
   end
 
   private

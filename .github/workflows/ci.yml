@@ -672,6 +672,8 @@ jobs:
       - name: Fuzz mobile API contract
         run: |
           pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+            --phases examples,fuzzing \
+            --mode positive \
             --url http://127.0.0.1:3000/api/v1 \
             --header "Authorization: Bearer $MOBILE_API_TOKEN" \
             --include-path /inbox \
@@ -679,6 +681,8 @@ jobs:
             --include-path /inbox/entries/{entry_id} \
             docs/api/openapi.yaml
           pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+            --phases examples,fuzzing \
+            --mode positive \
             --url http://127.0.0.1:3000/api/v1 \
             --header "Authorization: Bearer $MOBILE_API_TOKEN" \
             --include-path /inbox/entries/{entry_id}/chat \

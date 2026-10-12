@@ -23,5 +23,9 @@ contract_options = {
   strict_reference_validation: true
 }.freeze
 
-Rails.application.config.middleware.insert_before 0, Committee::Middleware::ResponseValidation, **contract_options
-Rails.application.config.middleware.insert_before 0, Committee::Middleware::RequestValidation, **contract_options
+# Validate the app's uncompressed response. The compression initializer runs
+# after this one and also inserts after Rack::Sendfile, placing Rack::Deflater
+# before Committee in the final stack. Rack middleware unwinds responses from
+# the inside out, so Committee receives JSON before it is gzip-compressed.
+Rails.application.config.middleware.insert_after Rack::Sendfile, Committee::Middleware::ResponseValidation, **contract_options
+Rails.application.config.middleware.insert_after Rack::Sendfile, Committee::Middleware::RequestValidation, **contract_options
