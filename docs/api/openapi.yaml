@@ -276,8 +276,7 @@ components:
     ProjectId:
       name: project_id
       in: query
-      schema:
-        type: integer
+      schema: {type: integer, minimum: 1, maximum: 9223372036854775807}
     InboxLimit:
       name: limit
       in: query

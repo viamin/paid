@@ -50,6 +50,13 @@ RSpec.describe Committee::Drivers do
     end
   end
 
+  # @spec MOBILE-API-006 MOBILE-API-018
+  it "bounds project filters to IDs PostgreSQL can resolve" do
+    schema = self.schema.dig("components", "parameters", "ProjectId", "schema")
+
+    expect(schema).to include("minimum" => 1, "maximum" => 9_223_372_036_854_775_807)
+  end
+
   private
 
   def bearer_operations

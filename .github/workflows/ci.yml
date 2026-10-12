@@ -435,6 +435,8 @@ jobs:
       PGUSER: postgres
       DB_PASSWORD: postgres
       PGPASSWORD: postgres
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
     steps:
       - name: Checkout code
@@ -576,6 +578,8 @@ jobs:
       PGUSER: postgres
       DB_PASSWORD: postgres
       PGPASSWORD: postgres
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
     steps:
       - name: Checkout code
