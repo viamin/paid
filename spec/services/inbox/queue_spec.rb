@@ -107,6 +107,25 @@ RSpec.describe Inbox::Queue do
       expect(entry).to have_attributes(issue: pr, summary_text: "Manual merge decision required")
     end
 
+    # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "excludes a clear PR with a trusted auto-merge activation" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        labels: [ project.feature_activation_label_for("auto_merge") ],
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [], not_evaluated: [])
+      )
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+        .with(project, pr, project.feature_activation_label_for("auto_merge")).and_return(true)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "distinguishes review, re-approval, and machine blockers for auto-merge-off PRs" do
       project.update!(auto_merge_mode: "off", auto_pick_enabled: false)

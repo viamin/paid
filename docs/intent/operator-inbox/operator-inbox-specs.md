@@ -37,7 +37,10 @@
   rather than implying merge readiness. The queue, badge, filter availability,
   API serializer, and supported GitHub action SHALL share that predicate;
   test-review, escalation, and structured hold lanes retain their existing
-  precedence and no automatic merge is enabled by visibility alone.
+  precedence and no automatic merge is enabled by visibility alone. A trusted
+  per-PR auto-merge activation excludes the PR from this manual-action lane even
+  when the project mode is `off`, because it authorizes the scanner's automatic
+  merge path; a structured hold remains visible and blocks that path.
   *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
   `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,

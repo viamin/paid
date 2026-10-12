@@ -133,7 +133,10 @@ The scanner assesses human-led projects even when automatic merging is off;
 that assessment never authorizes an automatic merge. The inbox surfaces an
 approval-only result (`owner_approved` and/or `reviews_fresh`) with no
 `not_evaluated` blockers as review/re-approval work. For auto-merge-off
-projects, it also surfaces a fully clear assessment as a manual merge decision.
+projects, it also surfaces a fully clear assessment as a manual merge decision,
+unless the pull request has a trusted per-PR auto-merge activation: that PR is
+automatically managed and must not race or misdirect an operator with a manual
+decision. The structured `paid-hold-review` lane still takes precedence.
 Red or pending CI, merge conflicts, unresolved review threads, dependencies,
 or policy checks remain machine/blocker state rather than Inbox noise. The
 detail pane reuses the standard PR badge and GitHub-link conventions and

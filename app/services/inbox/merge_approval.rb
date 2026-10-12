@@ -98,6 +98,7 @@ module Inbox
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
       return false unless reviewable_pr?
       return true if held_for_review?
+      return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
     end
@@ -123,6 +124,14 @@ module Inbox
 
     def manual_merge?
       issue.project.auto_merge_mode == "off"
+    end
+
+    def automatic_merge_active?
+      Automation::FeatureActivation.pull_request_feature_enabled?(
+        project: issue.project,
+        pull_request: issue,
+        feature: "auto_merge"
+      )
     end
 
     def manual_action_required?
