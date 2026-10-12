@@ -134,6 +134,8 @@ RSpec.describe CiWorkflowFile, :no_db do
       "schemathesis==4.6.0", "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
       "--phases examples,fuzzing", "--mode positive",
+      "Authorization: Bearer $MOBILE_API_READ_TOKEN",
+      "Authorization: Bearer $MOBILE_API_MUTATION_TOKEN",
       "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveChatToolCall"
     )
@@ -148,7 +150,8 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(fixture_step).to include(
       "GithubToken.create!", "Project.create!", "Issue.create!",
       "id: 4_241", 'paid_state: "needs_input"', "needs_input_questions:",
-      "allowed_github_usernames: [ \"mobile-schema-fuzzer\" ]"
+      "allowed_github_usernames: [ \"mobile-schema-fuzzer\" ]",
+      "MOBILE_API_READ_TOKEN", "MOBILE_API_MUTATION_TOKEN"
     )
     expect(pact_fixture_step).to include('allowed_github_usernames: [ "mobile-contract-verifier" ]')
     expect(openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")).to include(
@@ -169,7 +172,8 @@ RSpec.describe CiWorkflowFile, :no_db do
 
     pattern = schema.fetch("pattern")
     expect(pattern).to include("clarifying_questions", "test_review_pending", "[1-9][0-9]*$")
-    expect(pattern).to match(/:|%3A/)
+    expect(pattern).to include(":")
+    expect(pattern).not_to include("%3A")
   end
 
   private

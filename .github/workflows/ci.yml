@@ -658,8 +658,12 @@ jobs:
                 github_created_at: Time.current,
                 github_updated_at: Time.current
               )
-              token = PersonalAccessToken.create_for!(user: user, name: "CI")
-              File.open(ENV.fetch("GITHUB_ENV"), "a") { |file| file.puts("MOBILE_API_TOKEN=#{token.plaintext_token}") }
+              read_token = PersonalAccessToken.create_for!(user: user, name: "CI read fuzzing")
+              mutation_token = PersonalAccessToken.create_for!(user: user, name: "CI mutation fuzzing")
+              File.open(ENV.fetch("GITHUB_ENV"), "a") do |file|
+                file.puts("MOBILE_API_READ_TOKEN=#{read_token.plaintext_token}")
+                file.puts("MOBILE_API_MUTATION_TOKEN=#{mutation_token.plaintext_token}")
+              end
             end
           '
 
@@ -679,7 +683,7 @@ jobs:
             --phases examples,fuzzing \
             --mode positive \
             --url http://127.0.0.1:3000/api/v1 \
-            --header "Authorization: Bearer $MOBILE_API_TOKEN" \
+            --header "Authorization: Bearer $MOBILE_API_READ_TOKEN" \
             --include-path /inbox \
             --include-path /inbox/count \
             --include-path /inbox/entries/{entry_id} \
@@ -688,7 +692,7 @@ jobs:
             --phases examples,fuzzing \
             --mode positive \
             --url http://127.0.0.1:3000/api/v1 \
-            --header "Authorization: Bearer $MOBILE_API_TOKEN" \
+            --header "Authorization: Bearer $MOBILE_API_MUTATION_TOKEN" \
             --include-path /inbox/entries/{entry_id}/chat \
             --exclude-operation-id sendChatMessage \
             --exclude-operation-id resolveChatToolCall \
