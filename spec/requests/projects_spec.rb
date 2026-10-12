@@ -3670,6 +3670,41 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:id/cleanup_paid_labels" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders each affected item and its Paid labels before cleanup" do # @spec LABEL-INTEGRATION-006
+        project = create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+        issue = create(:issue, project:, labels: [ Issue::PAUSED_LABEL, "bug" ])
+        pull_request = create(:issue, :pull_request, project:, labels: [ Issue::ESCALATED_LABEL, "enhancement" ])
+
+        post cleanup_paid_labels_project_path(project)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Preview Paid label cleanup")
+        expect(response.body).to include("Open item ##{issue.github_number}")
+        expect(response.body).to include(Issue::PAUSED_LABEL)
+        expect(response.body).to include("Open item ##{pull_request.github_number}")
+        expect(response.body).to include(Issue::ESCALATED_LABEL)
+        expect(response.body).to include("Remove Paid labels from these open items")
+      end
+
+      it "redirects with a missing-credential alert when the project has no usable GitHub credential" do # @spec LABEL-INTEGRATION-006
+        project = create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+        allow(Projects::CleanupPaidLabels).to receive(:execute).and_raise(
+          GithubClient::Error, "Project has no usable GitHub credential — re-link the token or GitHub App installation before cleaning up Paid labels."
+        )
+
+        post cleanup_paid_labels_project_path(project, execute: true)
+
+        expect(response).to redirect_to(edit_project_path(project, anchor: "labels"))
+        expect(flash[:alert]).to include("Could not clean up Paid labels")
+        expect(flash[:alert]).to include("no usable GitHub credential")
+      end
+    end
+  end
+
   describe "POST /projects/:id/cleanup_stale_runs" do
     context "when authenticated" do
       before { sign_in user }

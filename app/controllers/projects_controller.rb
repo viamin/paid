@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_paid_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -173,6 +173,12 @@ class ProjectsController < ApplicationController
     @github_installations = policy_scope(GithubInstallation).active
 
     update_params = project_params
+    requested_label_mode = update_params[:label_integration_mode]
+    if requested_label_mode.present? && requested_label_mode != @project.label_integration_mode &&
+        params[:label_mode_transition_confirmed] != "true"
+      return redirect_to edit_project_path(@project, label_mode_transition: requested_label_mode),
+        alert: "Review the label integration transition and confirm it before saving."
+    end
     if update_params.key?(:lid_mode)
       submitted_mode = update_params[:lid_mode].presence
       update_params[:lid_mode] = submitted_mode
@@ -198,7 +204,9 @@ class ProjectsController < ApplicationController
     update_params = update_params.except(:github_auth_source, :github_token_id, :github_installation_id)
 
     Project.transaction do
+      previous_label_mode = @project.label_integration_mode
       @project.update!(update_params)
+      import_label_control_state_if_needed(previous_label_mode)
       redetect_lid_mode! if redetect_lid_mode_requested?
     end
     refresh_code_scanning_after_enable if enabling_security_scan?(update_params)
@@ -214,6 +222,34 @@ class ProjectsController < ApplicationController
     load_screenshot_settings_context
     render :edit, status: :unprocessable_content
   end
+
+  # Preview is the default so this destructive operation always has a review
+  # step. Passing `execute=true` is the separate confirmation.
+  def cleanup_paid_labels # @spec LABEL-INTEGRATION-006
+    authorize @project, :update?
+    return cleanup_paid_labels_preview unless params[:execute] == "true"
+
+    result = Projects::CleanupPaidLabels.execute(project: @project)
+    redirect_to edit_project_path(@project, anchor: "labels"), notice: "Removed #{result.removed.size} Paid label(s)."
+  rescue ArgumentError => e
+    redirect_to edit_project_path(@project, anchor: "labels"), alert: e.message
+  rescue GithubClient::Error => e
+    redirect_to edit_project_path(@project, anchor: "labels"), alert: "Could not clean up Paid labels: #{e.message}"
+  end
+
+  def cleanup_paid_labels_preview
+    @cleanup_paid_labels_preview = Projects::CleanupPaidLabels.preview(project: @project)
+    render :cleanup_paid_labels_preview
+  end
+  private :cleanup_paid_labels_preview
+
+  def import_label_control_state_if_needed(previous_label_mode) # @spec LABEL-INTEGRATION-005
+    return unless @project.label_integration_mode == "ignored"
+    return if previous_label_mode == "ignored"
+
+    Projects::ImportLabelControlState.call(project: @project)
+  end
+  private :import_label_control_state_if_needed
 
   # @spec GITHUB-SYNC-020
   def refresh_code_scanning_availability

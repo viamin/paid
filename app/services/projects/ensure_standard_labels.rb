@@ -123,6 +123,13 @@ module Projects
       new(...).call
     end
 
+    # The closed catalog used by the mode-transition cleanup.  This is public
+    # on purpose: callers must not reconstruct Paid ownership from a prefix
+    # (configured labels are not necessarily named `paid-*`).
+    def self.owned_label_names(project:)
+      new(project:).send(:expected_labels).pluck(:name).uniq
+    end
+
     # Best-effort variant for runtime write paths that apply a single status
     # label (paid-ready, paid-auto-merged, paid-auto-merged-dependabot,
     # paid-auto-released) after their primary action already succeeded. A

@@ -339,6 +339,7 @@ Rails.application.routes.draw do
     resource :pdf_knowledge_import, only: [ :new, :create ], controller: "projects/pdf_knowledge_imports"
     resource :okf_export, only: [ :new, :create ], controller: "projects/okf_exports"
     post :ensure_labels, on: :member
+    post :cleanup_paid_labels, on: :member
 
     resources :knowledge_recommendations, only: [ :index, :update ],
       controller: "projects/knowledge_recommendations"
