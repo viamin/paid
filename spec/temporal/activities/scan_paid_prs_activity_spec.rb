@@ -596,7 +596,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "persists current-head manual-merge assessment while auto-merge is off without scheduling a merge" do
         project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
         pr_issue.update!(pr_review_phase: "ready")
-        stub_owner_approval_ready_signals
+        stub_owner_approval_ready_signals(review_freshness: :fresh)
 
         result = activity.execute(project_id: project.id)
 
@@ -12096,7 +12096,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     )
   end
 
-  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123")
+  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123", review_freshness: :stale)
     stub_github_for_pr(
       checks: [ { name: "rspec", conclusion: checks_conclusion } ],
       reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ],
@@ -12106,7 +12106,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
-      review_freshness_for_head: :stale
+      review_freshness_for_head: review_freshness
     )
   end
 
