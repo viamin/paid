@@ -281,6 +281,54 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020
+    let(:real_issue) { create(:issue) }
+
+    it "includes test_writing boundaries when the run is TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_writing")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — test-writing run")
+      expect(result.sections.find { |s| s.key == :tdd_boundaries }).to be_required
+    end
+
+    it "includes test_fixing boundaries when the run is TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_fixing")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — test-fixing run")
+    end
+
+    it "includes refactor boundaries when the run is TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "refactor")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — refactor run")
+    end
+
+    it "omits TDD boundaries when the run is not TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: nil)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.sections.map(&:key)).not_to include(:tdd_boundaries)
+    end
+
+    it "keeps TDD boundaries even when a profile disables them" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_writing")
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :tdd_boundaries ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — test-writing run")
+      expect(result.skipped.map { |s| s[:key] }).not_to include(:tdd_boundaries)
+    end
+  end
+
   describe "continuation context" do # @spec PARTIAL-CLOSEOUT-013
     def continuation_run(reason: "Finish the RDR-067 audit; epic status claims are overstated.", evidence: nil)
       real_issue = create(:issue)

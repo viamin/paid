@@ -7,8 +7,12 @@
 # The assembled prompt preserves the content and ordering of the legacy
 # {Prompts::BuildForIssue} path while adding full section provenance and
 # keeping the task and safety-rules sections required (never suppressed).
+# When the run is TDD-governed the TDD-boundary section is contributed as a
+# required section so the agent sees the same write-boundary contract that
+# the pre-commit hook does, regardless of whether the prompt came from an
+# issue, a `custom_prompt`, or a materialized/generated source.
 #
-# @spec PROMPT-ASSEMBLY-014
+# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-020
 #
 # @example
 #   result = PromptAssembly::BuildIssuePrompt.call(
@@ -88,7 +92,7 @@ class PromptAssembly::BuildIssuePrompt
   end
 
   def sections_for(context)
-    [
+    sections = [
       PromptAssembly::Sections::IssueTask.call(context),
       PromptAssembly::Sections::ContinuationContext.call(context),
       PromptAssembly::Sections::TrustedComments.call(context),
@@ -102,6 +106,8 @@ class PromptAssembly::BuildIssuePrompt
       PromptAssembly::Sections::RdrRolloutGuard.call(context),
       PromptAssembly::Sections::SafetyRules.call(context)
     ]
+    sections << PromptAssembly::Sections::TddBoundaries.call(context) if context.agent_run&.tdd_governed?
+    sections
   end
 
   # Fetched once and shared by TrustedComments and ClarifiedRequirements so
