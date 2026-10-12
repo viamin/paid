@@ -1121,7 +1121,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_creator_login: "viamin",
           labels: [],
           paid_state: "completed")
-        stub_github_for_pr
+        stub_github_for_pr(pr_number: 43)
 
         activity.execute(project_id: project.id)
 
@@ -12029,14 +12029,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     recent_multi_page: false,
     head_committed_at: 2.hours.ago,
     pr_updated_at: nil,
-    head_sha: "abc123"
+    head_sha: "abc123",
+    pr_number: 42
   )
     pr_data = OpenStruct.new(
       base: OpenStruct.new(ref: base_branch),
       head: OpenStruct.new(sha: head_sha, repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
-      number: 42,
+      number: pr_number,
       user: OpenStruct.new(login: author_login),
       updated_at: pr_updated_at
     )
@@ -12051,22 +12052,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     recent.define_singleton_method(:multi_page?) { multi_page }
 
     allow(github_client).to receive(:pull_request)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(pr_data)
     allow(github_client).to receive(:check_runs_for_ref)
       .with(project.full_name, head_sha)
       .and_return(checks)
     allow(github_client).to receive(:review_threads)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(review_threads)
     allow(github_client).to receive(:recent_issue_comments)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(recent)
     allow(github_client).to receive(:issue_comments)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(issue_comments)
     allow(github_client).to receive(:pull_request_reviews)
-      .with(project.full_name, 42)
+      .with(project.full_name, pr_number)
       .and_return(reviews)
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
