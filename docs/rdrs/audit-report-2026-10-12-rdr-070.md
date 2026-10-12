@@ -1,92 +1,85 @@
-# RDR-070 Implementation Progress Audit — 2026-10-12
+# RDR-070 Assessment Audit — 2026-10-12
 
 - **RDR**: [RDR-070: Facet Confidence and Adaptive Clarification](RDR-070-facet-confidence-and-clarification.md)
-- **Audit date**: 2026-10-12
-- **Umbrella issue**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open)
-- **Implementation work**: P01, P05, P06, P07, P11, C70
-- **Progress finding**: No RDR-070 acceptance criterion has
-  shipped code or test evidence. The facets, evidence, facet-confidence
-  assessment pipeline, adaptive clarification, explicit-preference persistence,
-  and readiness handoff all remain in their current non-feature state. The audit
-  records the unimplemented scope and files it against the umbrella's open
-  children; the umbrella remains open for the implementation work that will
-  deliver it.
+- **Assessment issue**: [#4323](https://github.com/viamin/paid/issues/4323)
+  (open; it tracks, and does not close, [#4309](https://github.com/viamin/paid/issues/4309))
+- **Result**: **Implementation closeout is not yet eligible. RDR-070 remains
+  Accepted.** None of the closeout checklist's terminal statuses is accurate:
+  the RDR is neither implemented, partially implemented, superseded, nor
+  abandoned. Its active, focused implementation work remains open.
 
-This is a non-closeout progress audit. The implementation chain is active, so
-it does not apply the [RDR Closeout Checklist](closeout-checklist.md), select
-a final status, or reconcile the RDR status. It records the current baseline
-for the implementation work that remains.
+This bounded audit uses RDR-070's Decision and Implementation and Validation
+sections plus `docs/intent/facet-confidence/` as the current intent. It checks
+current code and tests rather than treating closed issues as proof. The
+historical approval-gated contracts cited by the implementation plan were
+reconciled as reusable foundations only; they are not facet-confidence
+implementation evidence.
 
-## Acceptance evidence
+## Evidence by acceptance area
 
-| RDR-070 criterion | Result | Code and test evidence |
+| RDR-070 requirement | Result | Code/test evidence and remaining owner |
 | --- | --- | --- |
-| Facets and candidate directions on a feature/issue | **Gap** | No `Facet`, `FacetCandidate`, or related model exists in `app/models`. `FeatureIntent` and `FeatureIntentDecision` carry open/resolved status only. |
-| Separable intent and technical confidence scores on a 0–100 scale with explicit unknown | **Gap** | No score columns, no `unknown` state, no bounds validation. |
-| Evidence records with attribution, source, time, design revision, supersession, and textual context | **Gap** | No evidence table or evidence-attribution service exists. |
-| Agent-produced assessments with evidence references, rubric/model version, and concise explanation via `agent_harness` | **Gap** | No facet-confidence `Assessment` model, no `agent_harness`-driven facet-confidence assessment job, no assessment-rubric artifact exists. |
-| Explicit corrections supersede superseded statements; collaborator disagreement triggers clarification | **Gap** | No evidence tracking exists. |
-| Repeated agent suggestions and incidental interactions do not drive intent certainty | **Gap** | No facet-confidence assessment pipeline exists. |
-| Chat-based challenge revises affected facets with visible explanation | **Gap** | No facet-confidence challenge flow exists. |
-| Adaptive clarifying questions (A/B, both/neither, conditional, free-text) | **Gap** | `ClarifyingQuestions::Choices` and the chat-composed answer validator (`app/services/clarifying_questions/choice_answers.rb`) handle the existing widget choices; no comparative-context aid, no A/B instrumentation, no selection-vs-preview discrimination exists. |
-| Explicit-preference persistence with provenance and authorized inspection/correction/deletion | **Gap** | No preference record type, no preference service, no `Settings::User` / `Settings::Project` exposure for facet-relevant preferences. Clicks and assessment inference cannot drive interpretation because the facets do not exist. |
-| Issue prerequisite mapping with rationale and coverage assessment; empty unassessed mapping fails visibly | **Gap** | No prerequisite mapping service exists. `FeatureIntents::ApprovalReadiness` (`app/services/feature_intents/approval_readiness.rb`) is the existing approval-gated readiness gate and does not score facets. |
-| Initial readiness requires every material facet's intent and technical score to meet the project threshold | **Gap** | No threshold-based readiness service exists. |
-| Default intent and technical thresholds of 80/100; authorized, audited project configuration within 0–100 | **Gap** | No thresholds table or settings exposure exists. |
-| Research-issue assessment scoped to investigation clarity/feasibility | **Gap** | No facet-confidence research-scoped assessment exists. |
-| Invalid, failed, and superseded-revision assessments never pass and the unresolved state is visible | **Gap** | No facet-confidence assessment pipeline exists. |
-| Builder context includes both scores, evidence summaries, and distinguishes expressed intent from inferred fit from demonstrated feasibility | **Gap** | No facet-confidence assessment context assembly exists. |
-| Inbox/chat state reads persisted assessments without per-entry synchronous LLM calls | **Gap** | No facet-confidence assessment read path exists. |
-| Confidence-driven threshold/evidence change after a run starts does not pause that run | **Gap** | No confidence-driven policy dispatch exists. |
+| Separate bounded intent/technical scores, explicit unknown, attributable evidence, material mapping | Gap | `FeatureIntentDecision` ([`app/models/feature_intent_decision.rb:9`](../../app/models/feature_intent_decision.rb#L9)) only stores an open/resolved question or inferred decision; the migration `db/migrate/20260917072615_create_feature_intent_decisions.rb` has no score, evidence revision, source, provenance, facet, or issue-prerequisite fields. Its existing behavior is covered by [`spec/models/feature_intent_decision_spec.rb:20`](../../spec/models/feature_intent_decision_spec.rb#L20), not by a facet-confidence spec. No `Facet`, `Assessment`, or `Preference` model/service/spec exists. Focused owner: [#4314](https://github.com/viamin/paid/issues/4314) (`FACET-CONFIDENCE-001`, `002`, `008`). |
+| Agent-harness assessment with rubric/evidence revisions, correction precedence, duplicate/repeated-agent resistance, collaborator clarification, challenge/reassessment, stale/failed output safety, read-only rendering | Gap | There is no facet assessment job, rubric, agent-harness request, assessment history, or assessment presentation. [`app/services/clarifying_questions/choice_answers.rb:76`](../../app/services/clarifying_questions/choice_answers.rb#L76) validates existing final choice answers, with parser tests at [`spec/services/clarifying_questions/choice_answers_spec.rb:36`](../../spec/services/clarifying_questions/choice_answers_spec.rb#L36), but does not assess semantic confidence or persist correction provenance. Focused owner: [#4315](https://github.com/viamin/paid/issues/4315) (`FACET-CONFIDENCE-002`–`005`, `012`–`014`). |
+| Discriminating questions and durable explicit preferences with provenance, authorization, correction/deletion, and non-inference from interactions | Gap | Existing clarifying-question choices are final-answer validation, not adaptive facet questions. No durable product-preference record, scope/provenance enforcement, or preference inspection/correction/deletion surface exists. Focused owner: [#4316](https://github.com/viamin/paid/issues/4316) (`FACET-CONFIDENCE-006`, `007`). |
+| Per-facet readiness: known scores independently meet configurable 80/80, unknown/empty mapping fails, no average, research scope is distinct | Gap | [`app/services/feature_intents/approval_readiness.rb:26`](../../app/services/feature_intents/approval_readiness.rb#L26) enforces the separate approval-gated RDR-066 policy; its readiness cases are tested at [`spec/services/feature_intents/approval_readiness_spec.rb:9`](../../spec/services/feature_intents/approval_readiness_spec.rb#L9). It has no facet mapping, separate confidence thresholds, assessment revision, or shadow-mode readiness result. No 79/80 readiness specs exist. Focused owner: [#4318](https://github.com/viamin/paid/issues/4318) (`FACET-CONFIDENCE-008`–`012`). |
+| Versioned representative assessment corpus and measurements of false readiness, unnecessary clarification, corrections, cost, and rework | Gap | No versioned facet-confidence corpus or reporting artifact exists. This audit cannot report fabricated delivery metrics. #4315 owns rubric/corpus inputs and #4318 owns readiness outcomes; the closeout must run and record the corpus only after those behaviors ship. |
 
-## EARS reconciliation
+## Reused but insufficient foundations
 
-`docs/intent/facet-confidence/facet-confidence-specs.md` lists 15 claims,
-all marked `[ ]` planned and unimplemented. No claim mapping
-`FACET-CONFIDENCE-001` through `FACET-CONFIDENCE-015` is referenced from
-`app/` or `spec/` via `@spec` annotations. The `prefix: FACET-CONFIDENCE`
-front matter remains accurate; the design doc's "Status: planned, not
-implemented" caveat in
-[`docs/intent/facet-confidence/facet-confidence-design.md`](../intent/facet-confidence/facet-confidence-design.md)
-is upheld.
+`FeatureIntentDecision`, `ClarifyingQuestions::SubmitAnswers`, and
+`ClarifyingQuestions::ChoiceAnswers` are real, tested approval-gated/final-answer
+primitives. They cannot satisfy RDR-070 by implication: none retains
+independent confidence axes, unknown state, source revision, assessment rubric,
+correction supersession, durable explicit preference provenance, or a
+confidence readiness decision. Reusing them must preserve their existing
+approval-gated policy rather than recreating or relabeling it as
+confidence-driven behavior.
 
-## Current status
+## Required gaps and dependencies
 
-- `docs/rdrs/RDR-070-facet-confidence-and-clarification.md`: status remains
-  `Accepted`, which denotes an accepted decision whose implementation has not
-  started. This progress audit does not perform closeout status reconciliation.
-- `docs/rdrs/README.md`: RDR-070 row status remains `Accepted`.
-- `docs/arrows/index.yaml`: the `facet-confidence` segment status stays
-  `MAPPED`; no code added, audited 2026-10-12.
+No duplicate child issue was filed. Each unmet requirement already has one
+focused, open owner under [#4309](https://github.com/viamin/paid/issues/4309):
 
-## Rollout guard preserved
+- [#4314](https://github.com/viamin/paid/issues/4314): facets, attributable
+  evidence, candidate directions, and prerequisite mapping.
+- [#4315](https://github.com/viamin/paid/issues/4315): versioned assessment,
+  explanation, correction/reassessment, and corpus.
+- [#4316](https://github.com/viamin/paid/issues/4316): adaptive clarification
+  and explicit preference lifecycle.
+- [#4318](https://github.com/viamin/paid/issues/4318): deterministic scoped
+  readiness and authorized 80/80 configuration.
+
+Issue #4323 already explicitly depends on #4316 and #4318. The audit records
+\#4314 and #4315 as required upstream implementation gaps; its final closeout
+must not claim implementation until all four owners have shipped and supplied
+running evidence. It keeps non-closing `Tracks #4309` language; only the
+umbrella's final acceptance audit may close #4309.
+
+## 80/80 policy and rollout guard
+
+The intended 80/80 defaults are provisional policy judgments, not calibrated
+probabilities, success guarantees, or a throughput target. There are no scores
+to tune today. The eventual corpus must report false readiness, unnecessary
+clarification, human corrections, cost, rework, and delivery time together;
+raising scores simply to release more work would violate RDR-070.
 
 RDR-070's rollout guard requires shadow-mode assessment before scores can
-release issues, and forbids silently enrolling old features or
-reinterpreting historical answers as numerically certain. The current
-working tree has neither shadow assessment nor readiness enforcement; the
-guard is therefore automatically satisfied (nothing to gate). The audit
-does not introduce or flip a flag.
+release issues. **Disposition: pending and preserved.** No facet assessment or
+confidence-driven release path is shipped, so no runtime behavior bypasses the
+guard. #4318 must keep assessments non-authoritative until the complete
+RDR-071 admission/review/completion wiring is available.
 
-## Remaining implementation work and deployment prerequisites
+## Verification
 
-The remaining work is the entire RDR-070 acceptance scope. The umbrella
-children that will deliver it are P01 (policy foundation and existing-work
-reconciliation), P05 (facets, evidence, and prerequisites), P06
-(assessments and explanations), P07 (adaptive clarification and explicit
-preferences), P11 (builder context and review policy), and C70 (final closeout
-audit). The umbrella issue #4309 remains open while that implementation work
-is active. A final closeout audit must run only after the implementation chain
-finishes or stalls.
-
-## Verification record
-
-The audit environment ran `bundle install`, `bin/rails db:prepare`
-(PostgreSQL via `DATABASE_URL`), and `bin/coherence-check.mjs`. No new code
-or test was written, so no new regression risk was introduced. The audit
-checks `db/schema.rb` for facet/score/preference tables and finds none;
-checks `app/models` for facet or evidence code and finds none; checks
-`app/services` and `app/policies` for RDR-070-specific facet-confidence
-assessment or adaptive-clarification code and finds none; checks `spec/` for
-facet-confidence assessment specs and finds none. The result is a structural
-absence rather than a runtime test failure.
+The audit's absence findings were confirmed by code inspection and the EARS
+status ledger: every `FACET-CONFIDENCE-001` through `015` entry remains `[ ]`
+in `docs/intent/facet-confidence/facet-confidence-specs.md`. The no-database
+choice-answer foundation spec passed with 29 examples, and RuboCop passed with
+3,863 files inspected and no offenses. `bin/coherence-check.mjs` completed
+with the expected facet-confidence and confidence-delivery `[ ]` gaps; it
+reported no arrow-reference errors. Database preparation could not reach the
+configured PostgreSQL service in this environment, so this audit must not
+report database-backed validation as passing. These checks validate that
+documenting the current status does not regress shipped behavior, not
+nonexistent facet-confidence behavior.
