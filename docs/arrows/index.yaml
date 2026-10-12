@@ -121,10 +121,10 @@ arrows:
     specs: docs/intent/confidence-driven-delivery/confidence-driven-delivery-specs.md
     parent: PAID
     taxonomy: automation
-    status: MAPPED
-    sampled: 2026-09-22
+    status: PARTIAL
+    audited: 2026-10-12
     blockedBy: [facet-confidence, question-exploration]
-    next: "Implement issue readiness, policy dispatch and completion follow-ups (RDR-071)"
+    next: "Approval-gated foundations are shipped; implement confidence policy/evidence (#4318, #4319), readiness/admission (#4320), builder dispatch and completion follow-ups (#4321), then complete the RDR-070 audit (#4323)."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md

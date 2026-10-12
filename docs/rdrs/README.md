@@ -216,7 +216,7 @@ Scaling & Distribution above).
 | [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Partially Implemented | P1 |
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
-| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Accepted | P1 |
+| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;

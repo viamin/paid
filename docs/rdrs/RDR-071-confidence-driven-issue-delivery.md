@@ -3,12 +3,13 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Accepted
+- **Status**: Partially Implemented (see [2026-10-12 Closeout](#2026-10-12-closeout))
 - **Type**: Product workflow and orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
 
 ## Problem Statement
 
@@ -169,3 +170,33 @@ Earlier issue execution accepts more follow-up work and requires honest
 completion accounting. Flags reduce exposure but are not universally available.
 Policy snapshots add an explicit boundary while approval-gated features exist;
 they prevent accidental release or pausing caused by mixing incompatible rules.
+
+## Implementation Status
+
+As of the 2026-10-12 closeout, the approval-gated `FeatureIntent` lifecycle,
+admission recheck, and amendment/conformance guards that this RDR reuses are
+shipped. They are deliberately not confidence-driven delivery: they require a
+whole-feature approval and use the current approved design revision. No
+confidence policy snapshot, facet/evidence assessment, readiness projection,
+policy-specific builder baseline, or completion-follow-up protocol is shipped.
+See the 2026-10-12 Closeout and
+[`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
+for criterion-by-criterion evidence.
+
+## 2026-10-12 Closeout
+
+Closeout issue [#4324](https://github.com/viamin/paid/issues/4324) compared
+every `CONFIDENCE-DELIVERY-*` EARS claim and the RDR validation scenarios with
+the application and its tests. Result: **Partially Implemented**. The reused
+approval-gated foundations are verified and retained; the new confidence-driven
+policy has no shipped EARS claim and remains blocked on the focused P05/P06,
+P09/P10, P11/P12, and RDR-070 closeout work tracked by [#4318](https://github.com/viamin/paid/issues/4318),
+[#4319](https://github.com/viamin/paid/issues/4319),
+[#4320](https://github.com/viamin/paid/issues/4320),
+[#4321](https://github.com/viamin/paid/issues/4321), and
+[#4323](https://github.com/viamin/paid/issues/4323).
+
+The rollout guard remains in force: automatic confidence-driven release is not
+enabled, and no settings-only enrollment surface exists. This closeout tracks
+[#4309](https://github.com/viamin/paid/issues/4309) and does not close it; E01's
+own final acceptance audit decides closure from shipped evidence.
