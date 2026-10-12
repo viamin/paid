@@ -103,9 +103,9 @@ arrows:
     specs: docs/intent/question-exploration/question-exploration-specs.md
     parent: PAID
     taxonomy: chat
-    status: MAPPED
-    sampled: 2026-09-22
-    next: "Implement contextual chat, disposable diagrams and durable answers (RDR-069)"
+    status: PARTIAL
+    audited: 2026-10-12
+    next: "Chat-entry/reuse, final-answer submission, access control and Inbox-chat context shipped (001, 002, 007, 014-017). Remaining: diagram cards (#4312), durable per-question progress (#4313), adaptive clarification and explicit preferences (#4316), bounded investigations (#4317), conversation-open API parity and the RDR-069 rollout-guard setting (#4311)."
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
     path: docs/intent/facet-confidence/facet-confidence-design.md
