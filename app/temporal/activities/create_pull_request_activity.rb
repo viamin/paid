@@ -1258,8 +1258,16 @@ module Activities
       end
     end
 
+    # Only initializes the gate when unset, under a lock, so a retried
+    # test-writing activity cannot clobber an operator's already-recorded
+    # approved/changes_requested verdict back to ready_for_review.
     def mark_local_tdd_ready(project, pr_number)
-      project.issues.find_by(github_number: pr_number, is_pull_request: true)&.update!(tdd_review_state: "ready_for_review")
+      issue = project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless issue
+
+      issue.with_lock do
+        issue.update!(tdd_review_state: "ready_for_review") if issue.tdd_review_state.nil?
+      end
     end
 
     def record_pr_description_metric(project, pr_number, original_text: nil)

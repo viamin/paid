@@ -2095,6 +2095,26 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/99")
       end
 
+      it "preserves an operator-set ignored-mode TDD verdict when a test-writing activity retries against a reused PR" do # @spec LABEL-CONTROL-005
+        project.update!(label_integration_mode: "ignored")
+        agent_run.update!(
+          tdd_phase: "test_writing",
+          base_commit_sha: "def123def456789012345678901234567890abcd",
+          result_commit_sha: "abc123def456789012345678901234567890abcd"
+        )
+        create(:issue, :pull_request, project: project, github_issue_id: 9999, github_number: existing_pr.number,
+          github_state: "open", parent_issue_id: nil, tdd_review_state: "approved")
+        allow(github_client).to receive_messages(
+          pull_requests: [ existing_pr ],
+          compare_changed_files: [ "spec/models/widget_spec.rb" ]
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        pull_request = project.issues.pull_requests_only.find_by!(github_number: existing_pr.number)
+        expect(pull_request.tdd_review_state).to eq("approved")
+      end
+
       it "still marks the run completed when post-processing raises" do
         allow(github_client).to receive(:add_labels_to_issue)
           .and_raise(StandardError.new("transient failure"))
