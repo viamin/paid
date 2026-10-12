@@ -27,7 +27,10 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     visit chat_session_path(chat_session, format: :html)
     expect(page).to have_css("[data-chat-target='container']")
     expect(page).to have_css("[data-controller='chat'][style*='--chat-panel-offset-top:']")
-    expect(page).to have_css("[data-chat-workspace-options]:not([open]) summary", text: "Workspace options")
+    # #4269: Workspace (and its nested Workspace options) now live inside
+    # Session details, so they're not rendered while it's closed. The
+    # visible chrome on initial load is just this one compact summary.
+    expect(page).to have_css("[data-chat-session-details-disclosure]:not([open]) summary", text: "Session details")
 
     metrics = settled_chat_layout_metrics
 
