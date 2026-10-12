@@ -16,8 +16,7 @@ This audit reads the RDR's Problem Statement/Decision/Validation sections as
 the source of truth and the EARS trace in
 `docs/intent/question-exploration/question-exploration-specs.md` as the
 up-to-date status ledger, then verifies both against the current codebase and
-a live test run — not against closed-issue history. #3860, #3862, #3863,
-#3865, #3870, and #3871 (cited in the issue's existing-work reconciliation
+a live test run — not against closed-issue history. Issues #3860, #3862, #3863, #3865, #3870, and #3871 (cited in the issue's existing-work reconciliation
 section) predate this epic and ship unrelated `FeatureIntent`/approval-gate
 contracts; they are not evidence for RDR-069's chat/diagram claims.
 
