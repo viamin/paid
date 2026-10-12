@@ -2,7 +2,12 @@ openapi: 3.0.3
 info:
   title: Paid Mobile API
   version: v1
-  description: Native inbox endpoints for Paid.
+  description: |
+    Schema-first contract for the Paid iOS companion. Clients MUST pin a
+    commit or release ref of this document, never a moving branch.
+    HTTP bearer security requirements use empty arrays as required by OpenAPI
+    3.0. `x-required-pat-scopes` declares the Paid PAT scopes required by an
+    operation for clients that need scope discovery.
 servers:
   - url: /api/v1
 paths:
@@ -38,8 +43,10 @@ paths:
     get:
       operationId: listInboxEntries
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
         - $ref: '#/components/parameters/InboxKind'
         - $ref: '#/components/parameters/InboxSort'
         - $ref: '#/components/parameters/ProjectId'
@@ -52,6 +59,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InboxListResponse'
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoCache'
         '304':
           description: The inbox has not changed.
         default:
@@ -60,7 +72,10 @@ paths:
     get:
       operationId: inboxCount
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: Inbox count.
@@ -73,6 +88,11 @@ paths:
                   count:
                     type: integer
                     minimum: 0
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoCache'
         '304':
           description: The inbox count has not changed.
         default:
@@ -83,7 +103,8 @@ paths:
     get:
       operationId: getInboxEntry
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       responses:
         '200':
           description: Inbox entry detail.
@@ -103,7 +124,8 @@ paths:
     post:
       operationId: openInboxEntryChat
       security:
-        - bearerAuth: [chat]
+        - bearerAuth: []
+      x-required-pat-scopes: [chat]
       responses:
         '201':
           description: The native chat session for this entry.
@@ -120,7 +142,8 @@ paths:
   /chat/sessions:
     get:
       operationId: listChatSessions
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200':
           description: Chat sessions.
@@ -128,7 +151,8 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     post:
       operationId: createChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '201':
           description: Created inline chat session.
@@ -138,25 +162,29 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionId'}]
     get:
       operationId: getChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
         default: {$ref: '#/components/responses/Error'}
     patch:
       operationId: updateChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Updated chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
         default: {$ref: '#/components/responses/Error'}
     delete:
       operationId: closeChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses: {'204': {description: Closed chat session}, default: {$ref: '#/components/responses/Error'}}
   /chat/sessions/{id}/{transition}:
     parameters: [{$ref: '#/components/parameters/ChatSessionId'}, {$ref: '#/components/parameters/ChatSessionTransition'}]
     patch:
       operationId: transitionChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Transitioned chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
         default: {$ref: '#/components/responses/Error'}
@@ -164,13 +192,15 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/MessageBefore'}, {$ref: '#/components/parameters/MessageLimit'}]
     get:
       operationId: listChatMessages
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Cursor page of chat messages, content: {application/json: {schema: {$ref: '#/components/schemas/ChatMessageListResponse'}}}}
         default: {$ref: '#/components/responses/Error'}
     post:
       operationId: sendChatMessage
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '201': {description: Chat response, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}}}
         '200': {description: Chat SSE stream, content: {text/event-stream: {schema: {type: string}}}}
@@ -179,7 +209,8 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/MessageId'}]
     post:
       operationId: resolveChatToolCall
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Tool resolution response or SSE stream, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}, text/event-stream: {schema: {type: string}}}}
         default: {$ref: '#/components/responses/Error'}
@@ -190,6 +221,10 @@ components:
       scheme: bearer
       bearerFormat: paid_pat
   parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: {type: string, pattern: '^"[0-9a-f]{64}"$'}
     ChatSessionId:
       name: id
       in: path
@@ -224,6 +259,11 @@ components:
       required: true
       schema:
         type: string
+        maxLength: 40
+        format: inbox-entry-id
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending):[1-9][0-9]{0,18}$'
+        description: Opaque `kind:id` queue identifier.
+        example: clarifying_questions:4241
     InboxKind:
       name: kind
       in: query
@@ -239,8 +279,7 @@ components:
     ProjectId:
       name: project_id
       in: query
-      schema:
-        type: integer
+      schema: {type: integer, minimum: 1, maximum: 9223372036854775807}
     InboxLimit:
       name: limit
       in: query
@@ -253,7 +292,23 @@ components:
       in: query
       schema:
         type: string
+        maxLength: 40
+        format: inbox-entry-id
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending):[1-9][0-9]{0,18}$'
   schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, rate_limited, internal_error, provider_error, provider_unavailable]
+            message: {type: string}
+            details: {type: object, additionalProperties: true}
     ChatSessionListResponse:
       type: object
       required: [sessions]
@@ -398,21 +453,21 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [plan_review]}
-            tasks: {type: array}
+            tasks: {type: array, items: {}}
     MergeApprovalEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [merge_approval]}
-            blockers: {type: array}
+            blockers: {type: array, items: {}}
     ActionRequiredEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [action_required]}
-            remediation_steps: {type: array}
+            remediation_steps: {type: array, items: {}}
     EscalatedPrEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -420,7 +475,7 @@ components:
           properties:
             kind: {type: string, enum: [escalated_pr]}
             reason: {type: string}
-            counters: {type: array}
+            counters: {type: array, items: {}}
             last_progress_at: {type: string, format: date-time, nullable: true}
             operator_paused: {type: boolean}
     ManualReviewListEntry:
@@ -451,7 +506,7 @@ components:
           properties:
             kind: {type: string, enum: [feature_decision]}
             ready: {type: boolean}
-            blockers: {type: array}
+            blockers: {type: array, items: {}}
     RetryLimitedEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -477,7 +532,7 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [partial_closeout]}
-            unresolved_prerequisites: {type: array}
+            unresolved_prerequisites: {type: array, items: {}}
     TestReviewPendingEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -491,19 +546,16 @@ components:
           properties:
             kind: {type: string, enum: [project_setup_pending]}
             tasks: {type: array, items: {type: string}}
+  headers:
+    ETag:
+      description: Strong validator for polling. Send this value as If-None-Match on the next poll.
+      schema: {type: string}
+    PrivateNoCache:
+      description: Responses are user-specific and must be revalidated before reuse.
+      schema: {type: string, example: 'private, max-age=0'}
   responses:
     Error:
       description: API error.
       content:
         application/json:
-          schema:
-            type: object
-            required: [error]
-            properties:
-              error:
-                type: object
-                required: [code, message]
-                properties:
-                  code: {type: string}
-                  message: {type: string}
-                  details: {}
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
