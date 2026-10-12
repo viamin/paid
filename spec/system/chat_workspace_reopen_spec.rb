@@ -50,6 +50,7 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     visit chat_session_path(session, format: :html)
 
     perform_enqueued_jobs do
+      open_desktop_session_details
       within("[data-chat-header='desktop']") { click_button "Reopen with workspace" }
     end
 
@@ -70,6 +71,7 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     visit chat_session_path(session, format: :html)
 
     perform_enqueued_jobs do
+      open_desktop_session_details
       within("[data-chat-header='desktop']") { click_button "Reopen with workspace" }
     end
 
@@ -126,6 +128,12 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
       "repo_path" => "/workspace/#{project.full_name.tr('/', '-')}",
       "token_identity" => "project-token:#{project.github_token.name}"
     }
+  end
+
+  def open_desktop_session_details
+    within("[data-chat-header='desktop']") do
+      find("details[data-chat-session-details-disclosure] > summary", text: "Session details").click
+    end
   end
 
   def stub_clone_project_for(session, project)

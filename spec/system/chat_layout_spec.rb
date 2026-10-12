@@ -34,13 +34,11 @@ RSpec.describe "Chat page layout", :js, system_driver: :paid_cuprite, type: :sys
     expect(metrics.fetch("panelBottomGap")).to be_between(-2, 4).inclusive
     expect(metrics.fetch("documentOverflow")).to be <= 4
     expect(metrics.fetch("transcriptH")).to be >= 288
-    # #3925 regression catcher: the always-visible chrome shrinks to a
-    # single compact title row, but the `Workspace` disclosure still
-    # renders open by default for this non-inline chat (per the
-    # CHAT-API-009 spec — workspace chats keep the disclosure open so
-    # the "Reopen with workspace" recovery path stays reachable). The
-    # The compact workspace recovery panel is open for this non-inline chat,
-    # but the transcript still needs to own most of the viewport-bound panel.
+    # #3925/#4269 regression catcher: only the compact Session details
+    # summary is visible initially. Its nested Workspace disclosure retains
+    # its open default for a non-inline chat once the user expands Session
+    # details, and live recovery transitions open the full disclosure chain.
+    # The transcript still needs to own most of the viewport-bound panel.
     # This catches a return to the header-heavy layout that caused the
     # original "sliver" failure (#3575, #3925).
     expect(metrics.fetch("transcriptShare")).to be >= 0.45

@@ -626,7 +626,7 @@ RSpec.describe "ChatSessions" do
         expect(panel["class"].split).not_to include("min-h-[70vh]", "lg:min-h-[70vh]")
       end
 
-      it "collapses the desktop workspace disclosure for an inline-only chat" do
+      it "nests the desktop workspace disclosure inside closed session details for an inline-only chat" do
         # @spec CHAT-API-009
         # The capability panel's cloned-repo list grows without bound. Inside
         # a viewport-bound panel an unbounded header starves the transcript,
@@ -642,9 +642,10 @@ RSpec.describe "ChatSessions" do
         expect(disclosure).to be_present
         expect(disclosure["open"]).to be_nil
         expect(disclosure.at_xpath(".//summary")&.text).to include("Workspace")
+        expect(disclosure.parent.at_xpath("./summary").text).to include("Session details")
       end
 
-      it "renders the desktop workspace disclosure open when the chat has a workspace" do
+      it "nests an open desktop workspace disclosure inside closed session details when the chat has a workspace" do
         # @spec CHAT-API-009
         # A stopped workspace's only recovery path is the "Reopen with
         # workspace" button inside this panel. Folded away, the chat looks
@@ -662,6 +663,8 @@ RSpec.describe "ChatSessions" do
           expect(disclosure).to be_present, "no workspace disclosure for #{capability}"
           expect(disclosure["data-chat-workspace-disclosure"]).to eq("true")
           expect(disclosure["open"]).not_to be_nil, "workspace disclosure folded shut for #{capability}"
+          expect(disclosure.parent.at_xpath("./summary").text).to include("Session details")
+          expect(disclosure.parent["open"]).to be_nil
         end
       end
 
@@ -685,9 +688,11 @@ RSpec.describe "ChatSessions" do
         desktop_header = headers.last
 
         expect(mobile_header["class"].split).to include("xl:hidden")
-        expect(mobile_header.text).to include("Session details")
-        expect(mobile_header.text).to include("Workspace")
-        expect(mobile_header.xpath("./details").last["open"]).not_to be_nil
+        expect(mobile_header.text).to include("Session details", "Workspace")
+        mobile_session_details = mobile_header.at_xpath("./details[summary[contains(., 'Session details')]]")
+        mobile_workspace = mobile_session_details.at_xpath(".//details[@data-chat-workspace-disclosure]")
+        expect(mobile_session_details["open"]).to be_nil
+        expect(mobile_workspace["open"]).not_to be_nil
 
         expect_compact_mobile_workspace_options(mobile_header)
 
@@ -1597,6 +1602,7 @@ RSpec.describe "ChatSessions" do
       &.ancestors("details")
       &.first
   end
+
 
   def create_api_chat_runner
     create(:runner, :api_key, user: user, runner_key: "opencode",

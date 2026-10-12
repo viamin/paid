@@ -707,12 +707,9 @@ export default class extends Controller {
     this.toggleCapabilityActions("[data-chat-capability-stopped-only]", capability === "stopped")
   }
 
-  // Revealing an action inside a collapsed disclosure reveals nothing, so
-  // unfold the Workspace <details> with it. Without this a workspace that
-  // stops mid-session hides its own "Reopen with workspace" recovery button.
-  // The ready-only clone control is nested inside Workspace options; opening
-  // only that nested disclosure still leaves it unreachable when Workspace is
-  // collapsed.
+  // Revealing an action inside a closed disclosure chain reveals nothing, so
+  // unfold Workspace and its Session details parent with it. Without this a
+  // workspace that stops mid-session hides its own recovery button.
   // Only unfold on an actual hidden -> shown transition — same-state snapshot
   // broadcasts (e.g. a clone_manifest rebroadcast that still carries
   // container_capability: "ready") would otherwise force a disclosure the user
@@ -721,8 +718,17 @@ export default class extends Controller {
     this.element.querySelectorAll(selector).forEach((element) => {
       const wasHidden = element.classList.contains("hidden")
       element.classList.toggle("hidden", !show)
-      if (show && wasHidden) element.closest("[data-chat-workspace-disclosure]")?.setAttribute("open", "")
+      if (show && wasHidden) this.openDisclosureChain(element.closest("[data-chat-workspace-disclosure]"))
     })
+  }
+
+  openDisclosureChain(disclosure) {
+    let current = disclosure
+
+    while (current) {
+      current.setAttribute("open", "")
+      current = current.parentElement?.closest("details")
+    }
   }
 
   updateCapabilityRepos(repos) {
