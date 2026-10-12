@@ -2,20 +2,18 @@
 
 ## Design baseline and filing contract
 
-This is a reviewable set of issue drafts for
+This is the filed issue tree for
 [RDR-069](RDR-069-question-centered-chat-exploration.md),
 [RDR-070](RDR-070-facet-confidence-and-clarification.md), and
 [RDR-071](RDR-071-confidence-driven-issue-delivery.md). All three RDRs are
-Accepted; no runtime behavior is implemented by this document.
+Accepted; this document records planned work, not shipped runtime behavior.
 
-The keys below are local draft identifiers, **not GitHub issue numbers**.
-When filing, create the epic and task records, replace every local dependency
-with its actual `Depends on #<number>` reference, add parent/child links, and
-read back the bodies. Keep implementation issues under `planning` until the
-design is finalized and merged; then remove that hold while preserving real
-dependencies. Label the epic `epic` — it identifies the umbrella, which
-receives a final acceptance audit once its children resolve — and do not
-leave runnable closeout issues excluded by `tracking` or `planning` labels.
+The task keys below identify the linked GitHub issues. Each child has an
+actual parent link and explicit dependency text. Keep implementation issues
+under `planning` until the design is finalized and merged; then remove that
+hold while preserving dependencies. The epic is a coordination record whose
+own final acceptance audit follows its children. Closeouts use non-closing
+`Tracks` language and carry no planning/tracking exclusion labels.
 
 Each implementation task must update its linked LLD/EARS as needed, write
 failing-first behavior tests, implement, and run relevant lint/coherence
@@ -27,21 +25,22 @@ issue body, not optional implementation suggestions.
 
 ## Existing work and overlap
 
-Checked on 2026-09-22 against main and GitHub issue bodies/comments:
+Issue states checked on 2026-10-11 against GitHub bodies/comments;
+P01 verifies shipped code/tests before reusing the earlier contracts:
 
 | Existing work | Relationship and action |
 |---|---|
 | [#3877](https://github.com/viamin/paid/issues/3877), [#3891](https://github.com/viamin/paid/issues/3891), [#3925](https://github.com/viamin/paid/issues/3925) | Closed layout, question-context and chat-header work. Reuse shipped surfaces; do not refile these changes. |
 | [#3864](https://github.com/viamin/paid/issues/3864) | Closed feature-decision Inbox work. Reuse feature links and access concepts; new policy does not ask for Mark approved. |
-| [#3862](https://github.com/viamin/paid/issues/3862), [#3863](https://github.com/viamin/paid/issues/3863), [#3865](https://github.com/viamin/paid/issues/3865) | Open feature/linkage/admission work. Existing models already implement part of their scope. P01 audits shipped code and revises/reuses these tasks for shared foundations; P09/P10 cover only the new confidence-driven contract. Do not make the new tree depend on obsolete whole-feature approval acceptance criteria. |
+| [#3862](https://github.com/viamin/paid/issues/3862), [#3863](https://github.com/viamin/paid/issues/3863), [#3865](https://github.com/viamin/paid/issues/3865) | Closed feature/linkage/admission work; reuse the shipped contract after code/test verification. P01 audits shipped code and revises/reuses these tasks for shared foundations; P09/P10 cover only the new confidence-driven contract. Do not make the new tree depend on obsolete whole-feature approval acceptance criteria. |
 | [#3867](https://github.com/viamin/paid/issues/3867), [#3868](https://github.com/viamin/paid/issues/3868), [#3869](https://github.com/viamin/paid/issues/3869) | Closed conformance/merge/amendment work. P11 adds explicit policy dispatch and removes amendment-pause behavior only for confidence-driven features. |
-| [#3870](https://github.com/viamin/paid/issues/3870), [#3871](https://github.com/viamin/paid/issues/3871) | Open evaluation/closeout for approval-gated policy. Retain their scope; share fixtures/metrics where useful without claiming these tasks deliver the new policy. |
-| [#3860](https://github.com/viamin/paid/issues/3860), [#3861](https://github.com/viamin/paid/issues/3861) | Existing approval-gated epics. Link the new epic and explain the policy boundary; do not silently close or rewrite completed implementation evidence. |
+| [#3870](https://github.com/viamin/paid/issues/3870), [#3871](https://github.com/viamin/paid/issues/3871) | Closed evaluation/closeout for approval-gated policy. Preserve their distinct policy scope; share fixtures/metrics where useful without claiming these tasks deliver the new policy. |
+| [#3860](https://github.com/viamin/paid/issues/3860), [#3861](https://github.com/viamin/paid/issues/3861) | Approval-gated epics: #3860 closed, #3861 open. Link the new epic and explain the policy boundary; do not silently close or rewrite completed implementation evidence. |
 | [PR #3958](https://github.com/viamin/paid/pull/3958) | Merged 2026-09-22 clarification-recovery fix. Rebase P04 on its outcome; do not recreate the stale-question recovery bug. |
 
 Issue state is not proof of implementation. P01 must inspect the delivered
 code/tests before reusing, editing, closing or superseding any existing task.
-This proposal does not mutate any of the existing GitHub records.
+The filed tree preserves the existing approval-gated GitHub records.
 
 ## Dependency tree
 
@@ -70,7 +69,7 @@ flowchart TD
   P12 --> C71
 ```
 
-## Epic E01 — Human-centered Inbox exploration and confidence-driven delivery
+## E01 — Human-centered Inbox exploration and confidence-driven delivery ([#4309](https://github.com/viamin/paid/issues/4309))
 
 **Purpose:** Help people reach informed answers through contextual chat and
 question-specific diagrams, then use explicit per-facet confidence to release
@@ -86,7 +85,7 @@ an Inbox question, explore/comment on a diagram, correct an assessment and see
 why particular work can proceed. Later findings create completion-blocking
 follow-ups without pausing active work. Only explicit preferences persist.
 
-## P01 — Reconcile feature policy and existing implementation tasks
+## P01 — Reconcile feature policy and existing implementation tasks ([#4310](https://github.com/viamin/paid/issues/4310))
 
 **Dependencies:** Finalized, merged RDR-069/070/071 and their LID documents.
 
@@ -106,9 +105,9 @@ Implement the policy/enrollment foundation without enabling automatic release.
 **Likely touchpoints:** `Project`, `FeatureIntent`, configuration profiles,
 `FeatureFlags`, onboarding and feature-approval intent.
 
-## P02 — Open persistent contextual chat from Inbox questions
+## P02 — Open persistent contextual chat from Inbox questions ([#4311](https://github.com/viamin/paid/issues/4311))
 
-**Dependencies:** Depends on P01.
+**Dependencies:** Depends on #4310.
 
 **Scope:** Add feature/standalone-issue conversation linkage and question focus
 to existing Inbox and chat navigation. Support attributed project collaboration.
@@ -126,9 +125,9 @@ to existing Inbox and chat navigation. Support attributed project collaboration.
 **Likely touchpoints:** `ChatSession`, `ChatMessage`, policies, `ChatChannel`,
 `chat_popup_controller.js`, chat and Inbox views.
 
-## P03 — Add collapsible question-linked diagrams and comment inputs to chat
+## P03 — Add collapsible question-linked diagrams and comment inputs to chat ([#4312](https://github.com/viamin/paid/issues/4312))
 
-**Dependencies:** Depends on P02.
+**Dependencies:** Depends on #4311.
 
 **Scope:** Add typed diagram messages and Paid-owned rendering, drawing on
 Archify's semantic relationships and Diagram Design's readable composition.
@@ -146,9 +145,9 @@ Archify's semantic relationships and Diagram Design's readable composition.
 **Likely touchpoints:** Chat message serializers/renderers, Stimulus components,
 `app/javascript/lib/safe_markdown.js` boundary, request/system specs.
 
-## P04 — Persist per-question progress and answers from exploration
+## P04 — Persist per-question progress and answers from exploration ([#4313](https://github.com/viamin/paid/issues/4313))
 
-**Dependencies:** Depends on P02.
+**Dependencies:** Depends on #4311.
 
 **Scope:** Bridge current clarifying-question production/submission into chat
 progress and durable question/evidence records. Reconcile the outcome of #3958.
@@ -165,9 +164,9 @@ progress and durable question/evidence records. Reconcile the outcome of #3958.
 **Likely touchpoints:** `ClarifyingQuestions::Load`, `SubmitAnswers`,
 `ClearNeedsInput`, feature decision records and chat services.
 
-## P05 — Model facets, attributable evidence and issue prerequisites
+## P05 — Model facets, attributable evidence and issue prerequisites ([#4314](https://github.com/viamin/paid/issues/4314))
 
-**Dependencies:** Depends on P01.
+**Dependencies:** Depends on #4310.
 
 **Scope:** Extend existing feature/question links with facets, candidate
 directions, evidence and issue prerequisite mapping.
@@ -184,9 +183,9 @@ directions, evidence and issue prerequisite mapping.
 **Likely touchpoints:** `FeatureIntentDecision`, feature/issue links, new
 assessment/evidence storage and associated model/service tests.
 
-## P06 — Assess and explain numerical intent and technical confidence
+## P06 — Assess and explain numerical intent and technical confidence ([#4315](https://github.com/viamin/paid/issues/4315))
 
-**Dependencies:** Depends on P04. Depends on P05.
+**Dependencies:** Depends on #4313. Depends on #4314.
 
 **Scope:** Background assessment through agent_harness with a versioned rubric,
 visible scores/explanations, and chat-based correction.
@@ -204,9 +203,9 @@ visible scores/explanations, and chat-based correction.
 **Likely touchpoints:** Assessment services/jobs, prompt definitions/migrations,
 chat contextual presentation, agent_harness adapters already used by Paid.
 
-## P07 — Ask discriminating questions and remember only explicit preferences
+## P07 — Ask discriminating questions and remember only explicit preferences ([#4316](https://github.com/viamin/paid/issues/4316))
 
-**Dependencies:** Depends on P06.
+**Dependencies:** Depends on #4315.
 
 **Scope:** Adaptive clarification grounded in uncertain facets and inspection,
 correction/deletion of explicitly stated preferences.
@@ -223,9 +222,9 @@ correction/deletion of explicitly stated preferences.
 **Likely touchpoints:** Chat prompts/tools, preference settings/services and
 assessment context assembly.
 
-## P08 — Run bounded investigations from the conversation
+## P08 — Run bounded investigations from the conversation ([#4317](https://github.com/viamin/paid/issues/4317))
 
-**Dependencies:** Depends on P02.
+**Dependencies:** Depends on #4311.
 
 **Scope:** Reuse existing research/container/preview capabilities for investigations
 chosen during exploration, with explicit budget and execution-policy enforcement.
@@ -242,9 +241,9 @@ chosen during exploration, with explicit budget and execution-policy enforcement
 **Likely touchpoints:** Chat tool dispatch, existing cost budgets, container
 capabilities, preview services and durable job/workflow execution.
 
-## P09 — Evaluate scoped issue readiness and configurable 80/80 thresholds
+## P09 — Evaluate scoped issue readiness and configurable 80/80 thresholds ([#4318](https://github.com/viamin/paid/issues/4318))
 
-**Dependencies:** Depends on P06.
+**Dependencies:** Depends on #4315.
 
 **Scope:** Deterministic readiness over agent-authored prerequisite mapping,
 current assessments and relevant merged design artifacts.
@@ -261,9 +260,9 @@ current assessments and relevant merged design artifacts.
 **Likely touchpoints:** Readiness services, project settings, feature design
 links and Inbox/chat readiness presentation.
 
-## P10 — Publish held issues and enforce one automatic release contract
+## P10 — Publish held issues and enforce one automatic release contract ([#4319](https://github.com/viamin/paid/issues/4319))
 
-**Dependencies:** Depends on P09.
+**Dependencies:** Depends on #4318.
 
 **Scope:** Reuse/reconcile #3863/#3865 foundations for confidence-driven issue
 publication, workflow-owned planning holds, snapshots and all admission paths.
@@ -281,9 +280,9 @@ publication, workflow-owned planning holds, snapshots and all admission paths.
 **Likely touchpoints:** Feature creation/LID output, dependency parser,
 `Issues::EnqueueEligible`, auto-pick candidate source and run admission.
 
-## P11 — Carry admitted intent to builders and dispatch conformance by policy
+## P11 — Carry admitted intent to builders and dispatch conformance by policy ([#4320](https://github.com/viamin/paid/issues/4320))
 
-**Dependencies:** Depends on P10.
+**Dependencies:** Depends on #4319.
 
 **Scope:** Builder context and review behavior use the confidence-driven
 admitted baseline rather than approval-gated amendment pauses.
@@ -301,9 +300,9 @@ admitted baseline rather than approval-gated amendment pauses.
 **Likely touchpoints:** Prompt context, `IntentConformance::Signal`,
 `VerifyAtMerge`, `DesignAmendments::EvaluateImpact`, PR scanner and Inbox.
 
-## P12 — Convert new findings into completion-blocking forward work
+## P12 — Convert new findings into completion-blocking forward work ([#4321](https://github.com/viamin/paid/issues/4321))
 
-**Dependencies:** Depends on P11.
+**Dependencies:** Depends on #4320.
 
 **Scope:** Idempotent follow-up creation, unstarted-issue edits, completion
 dependencies and release-readiness reporting.
@@ -321,27 +320,27 @@ dependencies and release-readiness reporting.
 **Likely touchpoints:** Design impact review, issue CRUD/dependency sync,
 feature completion and release/flag reporting.
 
-## C69 — Validate and close out question-centered chat exploration
+## C69 — Validate and close out question-centered chat exploration ([#4322](https://github.com/viamin/paid/issues/4322))
 
-**Dependencies:** Depends on P03. Depends on P04. Depends on P07. Depends on P08.
+**Dependencies:** Depends on #4312. Depends on #4313. Depends on #4316. Depends on #4317.
 
 - [ ] Exercise an Inbox question through shared chat, diagram comment, method redirection, partial progress, reconnect and final answer.
 - [ ] Verify the answer/evidence survives deletion of intermediate diagrams and chat archive.
 - [ ] Verify access, transport parity, mobile/keyboard usability, budgets and cancellation with running tests.
 - [ ] Follow the [RDR closeout checklist](closeout-checklist.md); store `audit-report-<date>-rdr-069.md`, file specific remaining gaps and update only evidence-supported statuses.
 
-## C70 — Evaluate and close out facet confidence and clarification
+## C70 — Evaluate and close out facet confidence and clarification ([#4323](https://github.com/viamin/paid/issues/4323))
 
-**Dependencies:** Depends on P07. Depends on P09.
+**Dependencies:** Depends on #4316. Depends on #4318.
 
 - [ ] Run the versioned assessment corpus and report false readiness, unnecessary clarification, human corrections, cost and rework.
 - [ ] Prove numerical bounds, unknown handling, explicit preference provenance, correction precedence and 79/80 readiness behavior.
 - [ ] Record that 80/80 defaults are provisional judgments rather than calibrated probabilities; do not tune scores solely to increase throughput.
 - [ ] Follow the [RDR closeout checklist](closeout-checklist.md); store `audit-report-<date>-rdr-070.md` and file specific gaps before claiming implementation.
 
-## C71 — Validate confidence-driven delivery and overall feature completion
+## C71 — Validate confidence-driven delivery and overall feature completion ([#4324](https://github.com/viamin/paid/issues/4324))
 
-**Dependencies:** Depends on P12. Depends on C69. Depends on C70.
+**Dependencies:** Depends on #4321. Depends on #4322. Depends on #4323.
 
 - [ ] Demonstrate partial feature readiness, relevant design merge, automatic issue release and immutable builder context across every admission path.
 - [ ] Introduce a contradictory answer during execution; prove work continues and the follow-up blocks completion, both with and without flags.
@@ -355,8 +354,8 @@ feature completion and release/flag reporting.
   their IDs and implementation markers, with their policy scope made explicit.
 - New policy dispatch is itself unimplemented and covered by P01/P11, not
   implied by the documentation scope edits.
-- No database, production feature flag, execution policy or GitHub issue is
-  changed by this design package.
+- The GitHub implementation tree is filed; no database, production feature
+  flag or execution policy is changed by this documentation.
 - LLD edge review covers shared-chat access, temporary-diagram stale comments,
   assessment/evidence races, empty mappings, remote write failure, admission
   concurrency, dependency direction and post-completion findings. These use
