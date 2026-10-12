@@ -50,6 +50,7 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     visit chat_session_path(session, format: :html)
 
     perform_enqueued_jobs do
+      open_desktop_session_details
       within("[data-chat-header='desktop']") { click_button "Reopen with workspace" }
     end
 
@@ -70,6 +71,7 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     visit chat_session_path(session, format: :html)
 
     perform_enqueued_jobs do
+      open_desktop_session_details
       within("[data-chat-header='desktop']") { click_button "Reopen with workspace" }
     end
 
@@ -103,16 +105,24 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     session = create(:chat_session, :workspace, account:, created_by: user)
     stub_clone_project_for(session, project)
 
-    # The clone form is visibly expanded by the wide layout and initially
-    # folded into Workspace options on mobile. Exercise the desktop affordance
-    # with a real browser so visibility follows the responsive disclosure
-    # behavior rather than rack_test's static interpretation of <details>.
+    # The clone form sits inside the nested Workspace disclosure, which the
+    # #4269 layout keeps folded inside the closed Session details on initial
+    # load. Open Session details first so the desktop affordance is visible.
+    # Exercise it with a real browser so visibility follows the responsive
+    # disclosure behavior rather than rack_test's static interpretation of
+    # <details>.
     page.current_window.resize_to(1440, 900)
     visit chat_session_path(session, format: :html)
+    open_desktop_session_details
     within("[data-chat-header='desktop']") do
       select project.name, from: "project_id"
       click_button "Clone into workspace"
     end
+
+    # Cloning follows an HTML redirect. CHAT-API-009 deliberately renders
+    # Session details closed on every server response, so reopen it before
+    # asserting on the newly rendered workspace details.
+    open_desktop_session_details
 
     expect(page).to have_text("/workspace/#{project.full_name.tr('/', '-')}")
     expect(page).to have_text("project-token:#{project.github_token.name}")
@@ -126,6 +136,12 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
       "repo_path" => "/workspace/#{project.full_name.tr('/', '-')}",
       "token_identity" => "project-token:#{project.github_token.name}"
     }
+  end
+
+  def open_desktop_session_details
+    within("[data-chat-header='desktop']") do
+      find("details[data-chat-session-details-disclosure] > summary", text: "Session details").click
+    end
   end
 
   def stub_clone_project_for(session, project)

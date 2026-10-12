@@ -208,27 +208,31 @@
   the header badge added no information.
 
   The workspace capability panel — whose cloned-repo list grows without
-  bound — SHALL sit behind its own `<details>` disclosure. On the desktop /
-  wide page header, that disclosure SHALL render **open in the server
-  response** for any session that has a workspace (`container_capability`
-  other than `none`), and collapsed only for inline-only chats. The same
-  rule applies on the mobile page header. When a live `capability_changed`
-  broadcast *reveals* one of the actions inside the capability panel —
-  i.e. the action transitions from hidden to shown — the controller SHALL
-  unfold the surrounding `<details>` with it, since un-hiding a control
-  inside a collapsed disclosure reveals nothing; it SHALL NOT unfold the
-  disclosure when it is hiding an action or when the action was already
-  visible before the toggle, or same-state snapshot broadcasts (e.g. a
-  `clone_manifest` rebroadcast that still carries `container_capability:
-  "ready"`) would fight a user who intentionally collapsed the disclosure.
+  bound — SHALL sit behind its own nested `Workspace` `<details>` disclosure
+  inside `Session details`, on both headers. The outer `Session details`
+  disclosure SHALL remain closed in the server response, so workspace content
+  is not visible until the user expands session details. The nested Workspace
+  disclosure SHALL render **open in the server response** for any session that
+  has a workspace (`container_capability` other than `none`), and collapsed
+  only for inline-only chats. When a live `capability_changed` broadcast
+  *reveals* one of the actions inside the capability panel — i.e. the action
+  transitions from hidden to shown — the controller SHALL unfold the Workspace
+  `<details>` and every enclosing `<details>` through Session details, since
+  un-hiding a control inside a closed disclosure chain reveals nothing; it
+  SHALL NOT unfold the chain when it is hiding an action or when the action
+  was already visible before the toggle, or same-state snapshot broadcasts
+  (e.g. a `clone_manifest` rebroadcast that still carries
+  `container_capability: "ready"`) would fight a user who intentionally
+  collapsed the disclosure.
 
   Below `xl`, the page SHALL switch to a compact header pattern that keeps
   the transcript as the dominant region: the compact single-line chrome
-  described above plus the two disclosures (`Session details` and
-  `Workspace`). Runner / model selectors, title editing, token usage, and
-  archive controls remain reachable inside the `Session details`
-  disclosure. A workspace's status and recovery action remain visible in its
-  open `Workspace` disclosure; on mobile, its potentially tall clone
+  described above plus the `Session details` disclosure containing its nested
+  `Workspace` disclosure. Runner / model selectors, title editing, token
+  usage, archive controls, and the workspace's status and recovery action
+  remain reachable inside `Session details`; the nested Workspace disclosure
+  stays open by default for a non-inline session once its parent is expanded.
+  On mobile, its potentially tall clone
   configuration and cloned-repository list SHALL sit in a nested, initially
   closed `Workspace options` disclosure so they remain reachable without
   consuming the transcript before the user asks for them. On a 390×844
@@ -242,7 +246,8 @@
   No `max-height` cap SHALL be applied to the desktop or mobile header:
   the always-visible chrome is a single compact line by design, so
   unbounded growth only happens when the user explicitly opens the
-  `Session details` or `Workspace` disclosures, and that is a user choice.
+  `Session details` disclosure (and optionally its nested `Workspace`
+  disclosure), and that is a user choice.
   Clipping content the user just chose to expand is worse than a
   temporarily shorter transcript, and collapsing it again reclaims the
   space.
@@ -255,13 +260,14 @@
   "places runner/model/token-usage/archive controls inside the desktop
   session-details disclosure", "does not render the redundant
   Active/Inline status badges in the desktop chat header", "collapses the
-  workspace disclosure for an inline-only chat", "renders the desktop
-  workspace disclosure open when the chat has a workspace", "uses a
-  compact mobile page header so the transcript remains usable"),
+  workspace disclosure for an inline-only chat", "nests an open desktop
+  workspace disclosure inside closed session details when the chat has a
+  workspace", "uses a compact mobile page header so the transcript remains
+  usable"),
   `spec/system/chat_layout_spec.rb`,
   `spec/system/chat_workspace_reopen_spec.rb`,
   `spec/lib/chat_controller_node_harness_spec.rb`
-  ("testStoppedCapabilityUnfoldsItsDisclosure",
+  ("testStoppedCapabilityUnfoldsItsDisclosureChain",
   "testHiddenCapabilityActionLeavesDisclosureAlone",
   "testSameStateBroadcastLeavesDisclosureAlone").
   *Code:* `app/views/chat_sessions/show.html.erb` (panel header),

@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -105,7 +105,7 @@ arrows:
     taxonomy: chat
     status: PARTIAL
     audited: 2026-10-12
-    next: "Implement disposable diagrams, durable answers, adaptive clarification, and bounded investigations (RDR-069 P03/P04/P07/P08; umbrella #4309 remains open)"
+    next: "Chat-entry/reuse, final-answer submission, access control and Inbox-chat context shipped (001, 002, 007, 014-017). Remaining: diagram cards (#4312), durable per-question progress (#4313), adaptive clarification and explicit preferences (#4316), bounded investigations (#4317), conversation-open API parity and the RDR-069 rollout-guard setting (#4311)."
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
     path: docs/intent/facet-confidence/facet-confidence-design.md
@@ -674,6 +674,15 @@ arrows:
     status: MAPPED
     sampled: 2026-10-11
     next: "Implement chat bootstrap API-key step (#4281) and onboarding chat read/write tools, persona, and product docs (#4282), tracked by umbrella #4280"
+  marketplace-tool-sidecars:
+    title: Marketplace Tool Sidecars
+    path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md
+    specs: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-12
+    next: "Expose provisioned tool aliases to the agent runtime (RDR-073 Phase 4)"
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

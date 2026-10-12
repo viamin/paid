@@ -1291,11 +1291,16 @@ class ChatControllerNodeHarness
       }
     }
 
-    // The reopen CTA lives inside the workspace disclosure, so un-hiding it is
-    // not enough — a chat whose workspace stops would show no way to recover.
-    function testStoppedCapabilityUnfoldsItsDisclosure() {
+    // The reopen CTA lives inside Workspace, which is nested in Session
+    // details. Un-hiding it must unfold both disclosures or the recovery path
+    // remains invisible.
+    function testStoppedCapabilityUnfoldsItsDisclosureChain() {
       const attributes = [];
-      const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
+      const sessionDetails = { setAttribute: (name, value) => attributes.push({ target: "session", name, value }) };
+      const details = {
+        setAttribute: (name, value) => attributes.push({ target: "workspace", name, value }),
+        parentElement: { closest: (selector) => (selector === "details" ? sessionDetails : null) }
+      };
       const reopenForm = {
         classList: { contains: (cls) => cls === "hidden", toggle: () => {} },
         closest: (selector) => (selector === "[data-chat-workspace-disclosure]" ? details : null)
@@ -1310,8 +1315,9 @@ class ChatControllerNodeHarness
 
       controller.updateCapabilityActions("stopped");
 
-      if (!attributes.some((attr) => attr.name === "open")) {
-        throw new Error("Expected a revealed stopped-only action to open its <details> disclosure");
+      if (!attributes.some((attr) => attr.target === "workspace" && attr.name === "open") ||
+          !attributes.some((attr) => attr.target === "session" && attr.name === "open")) {
+        throw new Error("Expected a revealed stopped-only action to open its Workspace and Session details disclosures");
       }
     }
 
@@ -1885,7 +1891,7 @@ class ChatControllerNodeHarness
       testUpdateViewportHeightTracksPanelOffset();
       testUpdateViewportHeightClampsNegativeOffset();
       testUpdateViewportHeightIsScrollInvariant();
-      testStoppedCapabilityUnfoldsItsDisclosure();
+      testStoppedCapabilityUnfoldsItsDisclosureChain();
       testHiddenCapabilityActionLeavesDisclosureAlone();
       testSameStateBroadcastLeavesDisclosureAlone();
       testDisconnectMidStreamRemovesOrphanedBubbleWithContent();
