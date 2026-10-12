@@ -350,11 +350,11 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
   (raise) in test, warn-and-log in development and production. Request
   specs in `spec/requests/api/v1/` run behind the middleware, so every
   endpoint's conformance is asserted on every test run.
-- Pact provider verification runs in CI from the same schema file: the
-  consumer contract (maintained by the iOS repo) is verified against
-  provider states whose responses are validated by `committee` against
-  `openapi.yaml`, so schema drift between the two mechanisms is impossible
-  by construction.
+- Pact provider verification runs in CI from an OpenAPI-derived Pact until
+  the iOS consumer publishes its Pact: its provider response is validated by
+  `committee` against `openapi.yaml`, so schema drift between the two
+  mechanisms is impossible by construction. The iOS consumer Pact replaces
+  the interim Pact when available.
 - Schemathesis fuzzes the running app in CI against `openapi.yaml`:
   full property-based fuzzing on read endpoints, and request-conformance
   checks on mutation endpoints without executing real chat sends (state

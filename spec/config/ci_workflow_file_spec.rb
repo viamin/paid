@@ -110,7 +110,8 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec MOBILE-API-017
   it "verifies the mobile consumer Pact" do
     expect(step_run(pact_job, "Verify mobile consumer Pact")).to include(
-      "pact-provider-verifier", "--provider-base-url=http://127.0.0.1:3000", "--fail-if-no-pacts-found"
+      "pact-provider-verifier", "docs/api/pacts/paid-mobile-api-schema.pact.json",
+      "--provider-base-url=http://127.0.0.1:3000", "--fail-if-no-pacts-found"
     )
   end
 
@@ -120,7 +121,7 @@ RSpec.describe CiWorkflowFile, :no_db do
       "schemathesis==4.6.0", "--include-method GET", "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
       "--exclude-operation-id sendChatMessage",
-      "--exclude-operation-id resolveToolCall"
+      "--exclude-operation-id resolveChatToolCall"
     )
   end
 

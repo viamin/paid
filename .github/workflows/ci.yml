@@ -435,8 +435,6 @@ jobs:
       PGUSER: postgres
       DB_PASSWORD: postgres
       PGPASSWORD: postgres
-      PACT_BROKER_BASE_URL: ${{ vars.PACT_BROKER_BASE_URL }}
-      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
 
     steps:
       - name: Checkout code
@@ -532,14 +530,10 @@ jobs:
 
       - name: Verify mobile consumer Pact
         run: |
-          test -n "$PACT_BROKER_BASE_URL" || {
-            echo "::error::PACT_BROKER_BASE_URL repository variable is required for mobile provider verification"
-            exit 1
-          }
           bundle exec pact-provider-verifier \
+            docs/api/pacts/paid-mobile-api-schema.pact.json \
             --provider-base-url=http://127.0.0.1:3000 \
             --provider=paid-mobile-api \
-            --consumer-version-tag=main \
             --custom-provider-header="Authorization: Bearer $MOBILE_API_TOKEN" \
             --fail-if-no-pacts-found
 
@@ -690,7 +684,7 @@ jobs:
             --header "Authorization: Bearer $MOBILE_API_TOKEN" \
             --include-path /inbox/entries/{entry_id}/chat \
             --exclude-operation-id sendChatMessage \
-            --exclude-operation-id resolveToolCall \
+            --exclude-operation-id resolveChatToolCall \
             docs/api/openapi.yaml
 
   migrations:

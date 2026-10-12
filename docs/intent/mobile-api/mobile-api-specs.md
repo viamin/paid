@@ -200,10 +200,11 @@
   *Tests:* `spec/requests/api/v1/*` (behind committee middleware).
   *Code:* `config/initializers/committee.rb`, `docs/api/openapi.yaml`.
 
-- [x] **MOBILE-API-017** — CI SHALL verify the mobile consumer Pact against
-  the running app with provider responses validated against the same
+- [x] **MOBILE-API-017** — CI SHALL verify the OpenAPI-derived mobile Pact
+  against the running app with provider responses validated against the same
   `openapi.yaml`, so Pact verification and schema validation cannot drift
-  apart.
+  apart. The iOS consumer Pact SHALL replace this interim contract when it is
+  published.
   *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI job).
   *Code:* `.github/workflows` Pact job.
 
