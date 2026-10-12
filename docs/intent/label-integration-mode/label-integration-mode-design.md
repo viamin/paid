@@ -29,3 +29,15 @@ internal-control behavior for ignored mode is deferred.
 
 The project settings form and `update_project_settings` MCP write surface
 expose the setting; tenant configuration exposes the creation default.
+
+Entering `ignored` snapshots the existing paused and escalated control labels
+into their local fields. This is assignment-based and retry-safe, so a mode
+change does not alter active runs or strand an escalated PR. The remaining
+label-control representations are owned by #4252; this transition consumes
+them as they become available rather than treating labels as authoritative
+after cutover. A separate settings action previews the closed Paid catalog on
+open items and, after an explicit confirmation, removes those labels using a
+narrow user-invoked bypass of ordinary write suppression. Definitions remain
+repository taxonomy and are never deleted. Returning to `read_write` lets the
+normal provisioner recreate the catalog; no reverse import occurs, so local
+state wins over stale labels.
