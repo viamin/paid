@@ -7008,4 +7008,22 @@ RSpec.describe AgentRun do
       )
     end
   end
+
+  describe "project readiness refresh" do
+    # @spec PROJECT-READINESS-006
+    it "queues re-evaluation after a completed run with a result commit" do
+      agent_run = create(:agent_run, status: "running")
+
+      expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
+        .to have_enqueued_job(EvaluateProjectReadinessJob).with(agent_run.project_id)
+    end
+
+    # @spec PROJECT-READINESS-006
+    it "does not queue re-evaluation for a completed synthetic run" do
+      agent_run = create(:agent_run, :synthetic, status: "running")
+
+      expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
+        .not_to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+  end
 end

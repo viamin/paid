@@ -14,6 +14,7 @@ module Inbox
     CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
     PARTIAL_CLOSEOUT_KIND = "partial_closeout"
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
+    PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     DEFAULT_SORT = "oldest"
     SORTS = {
       DEFAULT_SORT => "Oldest first",
@@ -31,13 +32,15 @@ module Inbox
       RETRY_LIMITED_KIND,
       CHANGE_INTENT_DRAFT_KIND,
       PARTIAL_CLOSEOUT_KIND,
-      TEST_REVIEW_PENDING_KIND
+      TEST_REVIEW_PENDING_KIND,
+      PROJECT_SETUP_PENDING_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
       RETRY_LIMITED_KIND => "Retry-limited",
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
-      PARTIAL_CLOSEOUT_KIND => "Partial closeouts"
+      PARTIAL_CLOSEOUT_KIND => "Partial closeouts",
+      PROJECT_SETUP_PENDING_KIND => "Project setup"
     ).freeze
 
     # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
@@ -133,6 +136,11 @@ module Inbox
         kind == TEST_REVIEW_PENDING_KIND
       end
 
+      # @spec PROJECT-READINESS-005
+      def project_setup_pending?
+        kind == PROJECT_SETUP_PENDING_KIND
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -141,7 +149,7 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending?
+          test_review_pending? || project_setup_pending?
 
         "#{tasks.size} proposed tasks"
       end
@@ -244,6 +252,7 @@ module Inbox
       entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
       entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
       entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
+      entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
       sort_entries(entries)
     end
 
@@ -718,6 +727,28 @@ module Inbox
           .includes(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
+      end
+    end
+
+    # Project-backed readiness snapshots are populated outside Inbox rendering;
+    # this query intentionally never acquires a checkout or re-runs rules.
+    # @spec PROJECT-READINESS-005
+    def project_setup_pending_entries
+      scoped_projects.select(&:tdd_readiness_blocked?).map do |candidate|
+        gap_descriptions = candidate.readiness_gap_descriptions
+        Entry.new(
+          id: "#{PROJECT_SETUP_PENDING_KIND}:#{candidate.id}",
+          kind: PROJECT_SETUP_PENDING_KIND,
+          project: candidate,
+          issue: nil,
+          record: candidate,
+          waiting_since: candidate.readiness_evaluated_at,
+          questions: [],
+          tasks: gap_descriptions,
+          summary_text: "#{gap_descriptions.size} setup prerequisite(s) need attention.",
+          title_text: "Set up #{candidate.full_name}",
+          action_url: Rails.application.routes.url_helpers.edit_project_path(candidate)
+        )
       end
     end
 
