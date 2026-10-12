@@ -34,6 +34,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         github_number: 42,
         github_creator_login: "paid-bot",
         has_label?: true,
+        local_control_state?: false,
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,

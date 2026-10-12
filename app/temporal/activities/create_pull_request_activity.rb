@@ -515,7 +515,7 @@ module Activities
         best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
       end
       best_effort(agent_run_id, context: "add_pr_labels") do
-        add_pr_labels(client, project, pr.number, agent_run, issue: issue) if project.upstream_feature_enabled?(:upstream_issue_labeling)
+        add_pr_labels(client, project, pr.number, agent_run, issue: issue)
       end
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
@@ -1186,6 +1186,12 @@ module Activities
 
     # @spec TDD-PR-001
     def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+      if project.label_integration_mode == "ignored"
+        return mark_local_tdd_ready(project, pr_number) if agent_run.tdd_test_writing_phase?
+
+        return
+      end
+
       # @spec UPSTREAM-GATE-006
       return unless project.upstream_feature_enabled?(:upstream_issue_labeling)
 
@@ -1249,6 +1255,18 @@ module Activities
 
       pull_request.with_lock do
         pull_request.update!(labels: (pull_request.labels + labels).uniq)
+      end
+    end
+
+    # Only initializes the gate when unset, under a lock, so a retried
+    # test-writing activity cannot clobber an operator's already-recorded
+    # approved/changes_requested verdict back to ready_for_review.
+    def mark_local_tdd_ready(project, pr_number)
+      issue = project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless issue
+
+      issue.with_lock do
+        issue.update!(tdd_review_state: "ready_for_review") if issue.tdd_review_state.nil?
       end
     end
 

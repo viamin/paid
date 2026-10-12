@@ -40,6 +40,28 @@ RSpec.describe Issues::UpsertFromGithub do
       )
     end
 
+    it "restores the ignored-mode TDD gate when a test-writing PR is reconciled" do # @spec LABEL-CONTROL-005
+      project.update!(label_integration_mode: "ignored")
+      create(:agent_run, project: project, goal: "create_pr", tdd_phase: "test_writing",
+        pull_request_number: github_issue.number, pull_request_url: github_issue.html_url)
+
+      issue = described_class.call(project: project, github_issue: github_issue)
+
+      expect(issue.tdd_review_state).to eq("ready_for_review")
+    end
+
+    it "does not overwrite an existing ignored-mode TDD review decision during reconciliation" do # @spec LABEL-CONTROL-005
+      project.update!(label_integration_mode: "ignored")
+      create(:agent_run, project: project, goal: "create_pr", tdd_phase: "test_writing",
+        pull_request_number: github_issue.number, pull_request_url: github_issue.html_url)
+      create(:issue, :pull_request, project: project, github_issue_id: github_issue.id,
+        github_number: github_issue.number, tdd_review_state: "approved")
+
+      issue = described_class.call(project: project, github_issue: github_issue)
+
+      expect(issue.tdd_review_state).to eq("approved")
+    end
+
     it "allows callers to override the stored body" do
       issue = described_class.call(project: project, github_issue: github_issue, body: nil)
 
