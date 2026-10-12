@@ -113,8 +113,8 @@ arrows:
     parent: PAID
     taxonomy: intelligence
     status: MAPPED
-    sampled: 2026-09-22
-    next: "Implement evidence-backed assessments and explicit preferences (RDR-070)"
+    audited: 2026-10-12
+    next: "RDR-070 remains Accepted: implement facets/evidence (#4314), assessments/corpus (#4315), explicit preferences (#4316), and scoped 80/80 readiness (#4318) before a terminal closeout."
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md
