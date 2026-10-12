@@ -19,8 +19,9 @@ assessment pipeline, adaptive clarification, explicit-preference
 persistence, and readiness handoff all remain in their current
 non-feature state. The audit checks the codebase rather than relying on
 issue-closure state: `app/models/` carries no facet or evidence table,
-`app/services/` carries no assessment or clarification service, and
-`spec/` carries no facet or assessment spec. The audit records the
+`app/services/` carries no RDR-070-specific facet-confidence assessment or
+adaptive-clarification service, and `spec/` carries no facet-confidence
+assessment spec. The audit records the
 unimplemented scope and files it against the umbrella's open children.
 The umbrella remains open; the audit does not claim implementation.
 
@@ -31,8 +32,9 @@ This non-closeout progress audit for
 baseline while implementation remains active. It does not apply the closeout
 checklist, select a final status, or reconcile the RDR status. The audit
 verifies a structural absence rather than a runtime
-test failure: no facet or evidence schema, no assessment pipeline, no
-clarification or preference surface. The umbrella children that will
+test failure: no facet or evidence schema, no facet-confidence assessment
+pipeline, no adaptive-clarification or preference surface. The umbrella
+children that will
 deliver RDR-070 are P01 (policy foundation and existing-work
 reconciliation), P05 (facets, evidence, and prerequisites), P06
 (assessments and explanations), P07 (adaptive clarification and explicit
