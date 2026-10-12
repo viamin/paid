@@ -167,7 +167,9 @@ RSpec.describe CiWorkflowFile, :no_db do
   it "limits inbox entry IDs to queue IDs that the API can resolve" do
     schema = openapi_schema.fetch("components").fetch("parameters").fetch("EntryId").fetch("schema")
 
-    expect(schema.fetch("pattern")).to include("clarifying_questions", "test_review_pending", ":[1-9][0-9]*")
+    pattern = schema.fetch("pattern")
+    expect(pattern).to include("clarifying_questions", "test_review_pending", "[1-9][0-9]*$")
+    expect(pattern).to match(/:|%3A/)
   end
 
   private

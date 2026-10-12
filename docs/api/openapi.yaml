@@ -259,7 +259,7 @@ components:
       required: true
       schema:
         type: string
-        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending):[1-9][0-9]*$'
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending)(:|%3A)[1-9][0-9]*$'
         example: clarifying_questions:4241
     InboxKind:
       name: kind
