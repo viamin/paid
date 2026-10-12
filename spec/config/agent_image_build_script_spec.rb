@@ -121,7 +121,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("id: image-digest")
       expect(workflow_source).to include("bundle exec ruby scripts/generate-agent-image-metadata.rb")
       expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test")
-      expect(workflow_source).to include("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1")
+      expect(workflow_source).to include("uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2")
       expect(workflow_source).to include("path: tmp/agent-image-metadata.json")
     end
   end
