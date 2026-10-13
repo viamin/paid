@@ -324,6 +324,21 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("Commit Message Is The Commentary Channel")
       expect(result.text).to include("Implement: extract runner selection into AgentRun#select_runner")
     end
+
+    it "adds guidance to a pinned template that omits the placeholder" do
+      prompt = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+        record.name = "Issue implementation"
+        record.category = "coding"
+        record.active = true
+      end
+      prompt.create_version!(template: "# Task\n\nImplement {{title}}.", variables: [])
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt.current_version)
+
+      result = described_class.call(issue: issue, project: quiet_project, agent_run: agent_run)
+
+      expect(result.text).to include("Implement Fix login redirect.")
+      expect(result.text).to include("Commit Message Is The Commentary Channel")
+    end
   end
 
   describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020 # @spec PROMPT-ASSEMBLY-023

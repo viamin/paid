@@ -56,8 +56,6 @@ class PromptAssembly::Sections::IssueTask
     5. Run the test suite and fix any failures: `{{test_command}}`
     6. Commit your changes with a descriptive message
 
-    {{commit_message_guidance}}
-
     If you open a pull request that requires human judgment before it can land,
     apply the structured review hold through the GitHub API proxy; no `gh` CLI
     exists in this environment. Use the repository and pull request number from
@@ -83,7 +81,7 @@ class PromptAssembly::Sections::IssueTask
   private
 
   def build_section
-    PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
+    [ task_template, commit_message_guidance ].compact_blank.join("\n\n")
   end
 
   def required
@@ -102,7 +100,7 @@ class PromptAssembly::Sections::IssueTask
       lint_command: lint_command,
       test_command: test_command,
       setup_database_instruction: setup_database_instruction,
-      commit_message_guidance: commit_message_guidance
+      commit_message_guidance: ""
     }
   end
 
@@ -115,7 +113,7 @@ class PromptAssembly::Sections::IssueTask
   def commit_message_guidance
     return "" unless quiet_mode?
 
-    "\n\n#{QUIET_MODE_COMMIT_MESSAGE_BODY}"
+    QUIET_MODE_COMMIT_MESSAGE_BODY
   end
 
   def quiet_mode?
@@ -140,6 +138,10 @@ class PromptAssembly::Sections::IssueTask
       variables: variables,
       fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, variables) }
     )
+  end
+
+  def task_template
+    PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
   end
 
   def lint_command

@@ -41,10 +41,11 @@ The agent-facing prompt is the contract for that rerouting:
   (`quiet_mode_commit_message`) in the PromptAssembly path. The guidance
   tells the agent that no summary comment will be posted and that every
   commit on the branch must carry a reviewer-facing subject and body.
-- `PromptAssembly::Sections::IssueTask` (and the legacy
-  `Prompts::BuildForIssue` fallback) inject the same guidance for initial
-  implementation commits, so create_pr runs carry the contract from the
-  first push.
+- `PromptAssembly::Sections::IssueTask` appends the same guidance as a
+  required assembly section after rendering the issue template (and the legacy
+  `Prompts::BuildForIssue` fallback injects it for its path), so project
+  overrides and pinned prompt versions cannot omit the contract for initial
+  implementation commits.
 
 `Activities::CompleteExistingPrunActivity` short-circuits both the
 `summary_comments_enabled?` and `add_comment` paths as soon as quiet mode is
