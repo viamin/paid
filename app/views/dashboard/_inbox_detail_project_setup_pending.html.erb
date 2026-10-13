@@ -1,4 +1,4 @@
-<%# @spec PROJECT-READINESS-005 %>
+<%# @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-007 %>
 <div class="space-y-6">
   <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-sm font-semibold text-amber-900">Project setup required</h3>
@@ -21,6 +21,17 @@
       <% end %>
     </ul>
   </div>
+
+  <% if (failed_run = entry.latest_failed_bootstrap_readiness_run) %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+      <h3 class="text-sm font-semibold text-rose-900">Bootstrap run failed</h3>
+      <p class="mt-1 break-words text-sm text-rose-800">
+        <%= failed_run.error_message.presence || "No failure reason was recorded." %>
+      </p>
+      <%= link_to "View run details", project_agent_run_path(entry.project, failed_run),
+            class: "mt-3 inline-flex text-sm font-semibold text-rose-700 hover:text-rose-600" %>
+    </div>
+  <% end %>
 
   <div class="flex gap-3">
     <%= button_to "Start bootstrap run", bootstrap_readiness_project_agent_runs_path(entry.project),

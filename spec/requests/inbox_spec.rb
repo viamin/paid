@@ -156,6 +156,27 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec PROJECT-READINESS-007
+  it "renders the latest failed bootstrap run with its failure reason and details link" do
+    project.update!(tdd_mode: "strict", readiness_gaps: [
+      { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => {} }
+    ])
+    older_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness",
+      error_message: "Older bootstrap failure", completed_at: 2.hours.ago)
+    failed_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness",
+      error_message: "Bootstrap write guard rejected app/models/user.rb", completed_at: 1.hour.ago)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Bootstrap run failed", failed_run.error_message)
+    expect(response.body).to include(project_agent_run_path(project, failed_run))
+    expect(response.body).not_to include(older_run.error_message)
+  end
+
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007
   it "directs operators to make the stalled issue depend on its follow-up prerequisite" do
     issue = create(:issue, project: project, github_number: 500, paid_state: "in_progress")

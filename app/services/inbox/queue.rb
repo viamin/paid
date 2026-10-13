@@ -141,6 +141,18 @@ module Inbox
         kind == PROJECT_SETUP_PENDING_KIND
       end
 
+      # This stays lazy because only the selected Inbox entry renders its
+      # detail pane. The readiness gap remains actionable after a failure, but
+      # the operator also needs the most recent failed bootstrap attempt to
+      # diagnose it before starting another one.
+      # @spec PROJECT-READINESS-007
+      def latest_failed_bootstrap_readiness_run
+        return unless project_setup_pending?
+
+        project.agent_runs.where(goal: "bootstrap_readiness", status: "failed")
+          .order(completed_at: :desc, id: :desc).first
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end

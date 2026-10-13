@@ -64,13 +64,16 @@ prefix: PROJECT-READINESS
   readiness gaps and normal token accounting. It SHALL not create another
   unfinished bootstrap run for that project, SHALL not automatically retry a
   terminal bootstrap attempt, and SHALL leave a failed attempt's readiness
-  entry visible for a new explicit trigger.
+  entry visible for a new explicit trigger, including its failure reason and
+  a link to the run details.
   It SHALL re-evaluate only after GitHub reports that the bootstrap PR merged,
   so the next snapshot is target-branch evidence.
-  *Code:* `Projects::AgentRunsController`, `AgentRun`,
+  *Code:* `Projects::AgentRunsController`, `AgentRun`, `Inbox::Queue`,
+  `dashboard/_inbox_detail_project_setup_pending`,
   `Activities::MarkAgentRunFailedActivity`, `RetryFailedManualRunJob`,
   `Issues::UpsertFromGithub`.
   *Test:* `spec/requests/agent_runs_spec.rb`,
+  `spec/requests/inbox_spec.rb`,
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
   `spec/jobs/retry_failed_manual_run_job_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
