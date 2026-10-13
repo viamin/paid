@@ -214,5 +214,5 @@ All findings in this audit were confirmed by direct inspection:
   open, #4366–#4369 still open with `planning` labels, #4370 still open
   with `quality` label.
 
-No code, schema, doc, or test was changed by this audit; no Ruby or RSpec
+No product code, schema, or tests were changed by this audit; no Ruby or RSpec
 execution was needed.
