@@ -136,20 +136,13 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
       )
     end
 
-    # @spec TDD-GUARD-009
+    # @spec TDD-GUARD-009 # @spec TDD-GUARD-010
     it "suppresses the mutation command during a test_writing phase run even when mutation testing is configured" do
       allow(project).to receive_messages(
         detected_language: "ruby",
         has_running_database_container?: true
       )
-      create(
-        :pre_commit_requirement,
-        :mutation_test,
-        account: account,
-        project: project,
-        name: "mutant",
-        command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
-      )
+      create(:pre_commit_requirement, :mutation_test, account:, project:, name: "mutant", command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1")
       test_writing_run = create(:agent_run, project: project, tdd_phase: "test_writing")
 
       host.install_quality_hooks(git_ops, test_writing_run)
@@ -158,6 +151,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         lint_command: [ "bundle exec rubocop" ],
         test_command: [ "bundle exec rspec" ],
         mutation_command: "true",
+        test_failure_behavior: :permit,
         pre_commit_guard: a_string_including("tdd_phase=\"test_writing\"")
       )
     end

@@ -1956,6 +1956,18 @@ RSpec.describe Containers::GitOperations do
       expect(captured).to include("echo tdd guard")
     end
 
+    it "reports but permits red-phase test failures when requested" do # @spec TDD-GUARD-010
+      captured = capture_pre_commit_hook(
+        lint_command: "bundle exec rubocop",
+        test_command: "bundle exec rspec",
+        mutation_command: "true",
+        test_failure_behavior: :permit
+      )
+
+      expect(captured).to include("Red-phase test command failed; inspect and resolve infrastructure, syntax, or unrelated failures before committing.")
+      expect(captured).to include("bundle exec rspec || echo")
+    end
+
     it "emits one availability-checked block per command for a polyglot repo" do
       captured = capture_pre_commit_hook(
         lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
