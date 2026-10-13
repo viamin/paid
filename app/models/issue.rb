@@ -10,6 +10,17 @@ class Issue < ApplicationRecord
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   CONTROL_PRIORITIES = %w[P1 P2 P3].freeze
   TDD_REVIEW_STATES = %w[ready_for_review approved changes_requested].freeze
+  # @spec LABEL-CONTROL-007. The Paid-local per-item activation state used in
+  # ignored label mode (#4253). Kept open-ended so future states (e.g.
+  # "deactivated", "superseded") can be added without another migration;
+  # callers treat any non-nil value as "activated" via +paid_activated?+.
+  PAID_ACTIVATION_STATES = %w[activated].freeze
+  # The marker string FeatureActivation returns to label-read callers when an
+  # issue/PR is paid-activated in ignored mode (instead of consulting the
+  # activation label name). Identical-shape return so callers like
+  # LabelPolicy#label_decision_for can branch on trust-only-or-trusted-creator
+  # semantics without changing their contract.
+  PAID_ACTIVATION_SENTINEL = "__paid_activated__"
   # The first four reasons denote agent failure. `awaiting_approval` denotes
   # an unanswered human gate: the PR is green, blocked only on owner
   # approval, and has waited past the project ceiling. It must stay
@@ -117,6 +128,7 @@ class Issue < ApplicationRecord
   validates :tdd_review_state, inclusion: { in: TDD_REVIEW_STATES }, allow_nil: true
   validates :pr_escalation_reason, inclusion: { in: PR_ESCALATION_REASONS }, allow_nil: true
   validates :enhance_issue_rounds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :paid_activation_state, inclusion: { in: PAID_ACTIVATION_STATES }, allow_nil: true
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
@@ -178,6 +190,9 @@ class Issue < ApplicationRecord
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
   scope :local_repository, -> { where(source: GITHUB_SOURCE) }
+  # @spec LABEL-CONTROL-007. Issue/PR scope over rows a user has marked as
+  # Paid's to work on (the ignored-mode replacement for the activation label).
+  scope :paid_activated, -> { where(paid_activation_state: "activated") }
   # List surfaces (blocked PRs, retry-limited issues, recent activity) never
   # render the issue body; skipping it keeps the largest TEXT column off
   # list queries. Raises MissingAttributeError if a view starts using body —
@@ -470,6 +485,30 @@ class Issue < ApplicationRecord
   # @spec LABEL-CONTROL-001
   def local_control_state?
     project.label_integration_mode == "ignored"
+  end
+
+  # @spec LABEL-CONTROL-007 — Paid-local per-item activation signal for
+  # ignored label mode. True when the user (via UI, chat, or MCP) has marked
+  # this issue/PR as Paid's to work on. In read_write/read_only modes the
+  # equivalent signal is a trusted activation label, so this flag is normally
+  # nil; it is only consulted by the activation gates that opt into ignored
+  # mode.
+  def paid_activated?
+    paid_activation_state == "activated"
+  end
+
+  # Idempotent: re-applying the same state keeps the original timestamp.
+  # @spec LABEL-CONTROL-007
+  def paid_activate!(time: Time.current)
+    return true if paid_activated?
+
+    update!(paid_activation_state: "activated", paid_activated_at: time)
+  end
+
+  def paid_deactivate!
+    return true unless paid_activated?
+
+    update!(paid_activation_state: nil, paid_activated_at: nil)
   end
 
   # @spec LABEL-CONTROL-003

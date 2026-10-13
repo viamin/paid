@@ -990,6 +990,15 @@ module Projects
       external_metadata = external_metadata.merge("plan_docs" => plan_docs) if plan_docs.any?
 
       ActiveRecord::Base.transaction do
+        # @spec LABEL-CONTROL-007 — In ignored mode any manual run against a
+        # specific issue or PR marks it as Paid's to work on; auto-pick on
+        # the same project will pick it up without waiting for a label.
+        Issues::ActivatePaid.call(
+          project: @project,
+          issue: issue,
+          pull_request_number: source_pull_request_number
+        )
+
         agent_run = AgentRun.create!(
           project: @project,
           issue: issue,

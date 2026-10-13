@@ -162,14 +162,31 @@ module Automation
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-006
-    # The activation label path still honors the automation_on_label_enabled
-    # master switch: a project that turned label-triggered automation off
-    # (e.g. the observe_only configuration profile) must not be re-armed by
-    # an activation label. #3804 excludes that setting from getting its own
-    # activation label; it does not exempt the setting from the gate.
+    # @spec LABEL-CONTROL-007 — In ignored mode the activation label reads
+    # are replaced by the local paid_activation_state column (#4253); the
+    # +automation_on_label_enabled+ master switch does not apply because
+    # there are no labels to gate. The trust path is the same (the sentinel
+    # value never matches an unlabeled triggering path, so callers fall
+    # through to the existing no-label-no-trigger behaviour).
     def activation_trigger(project, record)
+      return paid_local_trigger(project, record) if project.paid_local_activation?
+
       return nil unless project.automation_on_label_enabled?
 
+      activation_label = FeatureActivation.issue_auto_pick_trigger(project:, issue: record)
+      return nil unless activation_label
+
+      action = if FeatureActivation.issue_auto_enhance_enabled?(project:, issue: record)
+        "queue_analyze_issue_run"
+      else
+        "queue_create_pr_run"
+      end
+
+      { action: action, label: activation_label, trust_label_only: true }
+    end
+
+    # @spec LABEL-CONTROL-007
+    def paid_local_trigger(project, record)
       activation_label = FeatureActivation.issue_auto_pick_trigger(project:, issue: record)
       return nil unless activation_label
 
