@@ -11512,6 +11512,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  # Audit coverage for #4232: the review-fix loop chain
+  # (ScanPaidPrsActivity → QueueAgentRunActivity → PushBranchActivity →
+  # CompleteExistingPrRunActivity) must not post any commentary on its own.
+  # Each round inherits the QuietMode-001..006 chokepoint suppression; the
+  # scan's own contribution is the absence of comment posting so quiet-mode
+  # projects get no per-round commentary at all from the scan side.
+  describe "review-fix loop commentary audit (#4232 / QUIET-MODE-007)" do
+    let(:commenting_methods) do
+      [ :add_comment, :create_pull_request_comment_reply, :update_comment ]
+    end
+
+    def stub_all_commenting_methods(client)
+      commenting_methods.each do |method|
+        allow(client).to receive(method)
+      end
+    end
+
+    it "never posts a comment from ScanPaidPrsActivity regardless of quiet mode" do
+      [ false, true ].each do |quiet_flag|
+        project.update!(quiet_mode: quiet_flag)
+        stub_all_commenting_methods(github_client)
+        stub_github_for_pr(draft: false, reviews: [], head_committed_at: 1.hour.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        commenting_methods.each do |method|
+          expect(github_client).not_to have_received(method), \
+            "ScanPaidPrsActivity posted #{method} on a #{quiet_flag ? 'quiet' : 'standard'} project"
+        end
+        # Scans that found no actionable triggers still return a result object;
+        # a non-empty trigger payload must not have side-effected GitHub.
+        expect(result).to be_a(Hash)
+      end
+    end
+  end
+
   describe "TDD test-review gating" do
     let(:pull_request) do
       create(:issue, :pull_request,
