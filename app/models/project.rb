@@ -681,6 +681,15 @@ class Project < ApplicationRecord
     effective_feature_activation_labels[feature.to_s]
   end
 
+  # @spec LABEL-CONTROL-007. Whether per-item activation is read from
+  # GitHub labels (read_write / read_only) or from the local
+  # +issues.paid_activation_state+ column (ignored). Activation labels
+  # themselves still exist in ignored mode for projects transitioning back
+  # to read_write, but selection and scan scope ignore them.
+  def paid_local_activation?
+    label_integration_mode == "ignored"
+  end
+
   # All configured priority label names, used by queue ordering and PR inheritance.
   def priority_label_names
     effective_priority_labels.values_at(*PRIORITY_TIERS).compact
