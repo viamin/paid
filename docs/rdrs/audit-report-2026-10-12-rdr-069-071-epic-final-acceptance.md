@@ -39,15 +39,15 @@ remain owned by focused, open children.
 ## 2. Verification re-run
 
 This refresh re-verifies the prior RDR-specific findings against the current
-working tree. Database-backed validation remains unavailable in this agent
-environment: `bundle exec rspec` fails fast because its configured test
-database does not exist. `bin/rails db:version` cannot prepare that database
-because Rails rejects its `agent` role for having `SUPERUSER` and `BYPASSRLS`
-privileges, and `bin/rails db:prepare` subsequently cannot connect to the local
-PostgreSQL socket. The audit does not bypass the runtime-role guard or
-substitute a privileged connection. The structural checks below do not depend
-on database reachability and confirm that no new code has shipped under the
-three RDRs' scope since the prior audits.
+working tree. The configured PostgreSQL service (`paid-svc-a3-s1-postgres`,
+database `agent_run_12154_attempt_0`) is available in this refresh
+environment, and `RAILS_ENV=test bin/rails db:prepare` prepares the test
+database end-to-end. The `development`-mode runtime role guard rejects the
+shared `agent` role (`SUPERUSER` and `BYPASSRLS`) so this audit runs the
+focused specs under `RAILS_ENV=test` only and does not bypass the guard or
+substitute a privileged connection. The structural checks below additionally
+confirm that no new code has shipped under the three RDRs' scope since the
+prior audits.
 
 ```
 node bin/coherence-check.mjs       # 2026-10-13
@@ -87,10 +87,50 @@ schema, service, job, MCP tool, controller, view, or spec ships under
 RDR-069, RDR-070, or RDR-071 beyond the reused approval-gated primitives
 recorded by the prior RDR-070 and RDR-071 audits.
 
-The grep results above, the coherence-check gap list, and the existing
-RDR-specific audit reports all reach the same conclusion: no RDR-069-070-071
-claim that was `[ ]` on 2026-10-12 has shipped code, migration, or test
-evidence between then and this audit. The prior `[x]` markers remain valid.
+```
+RAILS_ENV=test bundle exec rspec \
+  spec/services/inbox/open_interactive_chat_spec.rb \
+  spec/services/clarifying_questions/open_chat_spec.rb \
+  spec/policies/chat_message_policy_spec.rb \
+  spec/services/chat_sessions/resolve_tool_call_spec.rb \
+  spec/requests/chat_sessions_spec.rb \
+  spec/requests/projects/clarifying_questions_spec.rb \
+  spec/mcp/tools/submit_clarifying_answers_spec.rb \
+  spec/models/chat_session_spec.rb \
+  spec/policies/chat_session_policy_spec.rb \
+  spec/requests/chat_messages_spec.rb \
+  spec/channels/chat_channel_spec.rb \
+  spec/jobs/chat_sessions/process_message_job_spec.rb \
+  spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb \
+  spec/services/inbox/chat_context_spec.rb \
+  spec/services/clarifying_questions/choice_answers_spec.rb \
+  spec/services/chat_sessions/build_system_prompt_spec.rb \
+  spec/mcp/tools/get_inbox_chat_context_spec.rb \
+  spec/services/feature_intents/run_admission_spec.rb \
+  spec/services/feature_intents/release_spec.rb \
+  spec/services/feature_intents/reconcile_design_pull_request_spec.rb \
+  spec/services/design_amendments/evaluate_impact_spec.rb \
+  spec/services/intent_conformance/verify_at_merge_spec.rb \
+  spec/jobs/process_run_queue_job_spec.rb \
+  spec/services/agent_runs/recheck_issue_eligibility_spec.rb \
+  spec/models/agent_run_spec.rb                            # 2026-10-13
+```
+
+Result: **1,310 examples pass on the cited RDR-069 chat/reuse/access-control
+foundation, the RDR-070 final-answer validator, and the RDR-071
+approval-gated admission/release/conformance/spec set, with 0 failures**.
+The RDR-069 count (468) differs from the 2026-10-06 number (467) by one
+example in `clarifying_questions/open_chat_spec.rb`; the other counts
+match the per-RDR audits because no behavior changed. The test runs re-prove
+the reused approval-gated foundations; they do not supply false evidence for
+the unimplemented `FACET-CONFIDENCE-*` or `CONFIDENCE-DELIVERY-*` claims,
+which the structural checks above already record as not shipped.
+
+The grep results, the coherence-check gap list, the database-backed test run,
+and the existing RDR-specific audit reports all reach the same conclusion:
+no RDR-069-070-071 claim that was `[ ]` on 2026-10-12 has shipped code,
+migration, or test evidence between then and this audit. The prior `[x]`
+markers remain valid.
 
 ## 3. Gap ownership and reconciliation
 
