@@ -16,7 +16,7 @@ require "warden/test/helpers"
 # with `format: :html` to force the HTML branch.
 #
 # @spec LIST-DETAIL-001 @spec LIST-DETAIL-002 @spec LIST-DETAIL-003
-# @spec LIST-DETAIL-005
+# @spec LIST-DETAIL-005 @spec LIST-DETAIL-007
 RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, type: :system do
   include Warden::Test::Helpers
 
@@ -81,6 +81,21 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
     expect(toggle_row).to be_present
     expect(toggle_row[:class]).to include("lg:hidden")
     expect(toggle_row[:class]).not_to include("rounded-lg", "shadow")
+  end
+
+  # @spec LIST-DETAIL-007
+  it "renders Chat in the shared viewport-bound shell with independent pane scroll regions" do
+    show_user = create(:user, :owner, account: account, email: "chat-scroll@example.com", password: "password123")
+    Warden.test_reset!
+    login_as(show_user, scope: :user)
+    session = create(:chat_session, account: account, created_by: show_user, container_capability: "none")
+
+    visit chat_session_path(session, format: :html)
+
+    document = Nokogiri::HTML(page.body)
+    expect(document.at_css("div.grid")[:class]).to include("lg:h-[calc(100dvh-12rem)]")
+    expect(document.at_css("#chat-list > div")[:class]).to include("lg:overflow-y-auto")
+    expect(document.at_css("#chat-detail > div")[:class]).to include("lg:overflow-y-auto")
   end
 
   it "exposes the shared active-row class set on chat session cards via data-active-classes" do

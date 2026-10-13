@@ -21,7 +21,7 @@
 
 - [x] **LIST-DETAIL-002** — The two-pane shell SHALL render the list pane
   and the detail pane inside cards that share the same chrome
-  (`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm`)
+  (`min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm`)
   so the two halves of the surface read as one unit. The empty state for an
   no-selection visit SHALL render in the detail pane slot as
   `rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12
@@ -95,3 +95,14 @@
   `app/javascript/controllers/inbox_master_detail_controller.js`,
   `app/javascript/controllers/chat_session_list_controller.js`.
   *Test:* `spec/system/inbox_chat_popup_spec.rb`.
+
+- [x] **LIST-DETAIL-007** — When Inbox or Chat renders a populated
+  list-and-detail surface on a viewport `≥1024px` wide, the shared shell SHALL
+  constrain the grid to the viewport and give the list and detail panes
+  separate inner `overflow-y-auto` regions. The page-level heading and
+  controls SHALL remain outside those regions. Below `1024px`, the shell SHALL
+  leave pane height and scrolling to the feature's existing mobile layout.
+  *Code:* `app/helpers/master_detail_layout_helper.rb`,
+  `app/views/shared/_list_detail_shell.html.erb`.
+  *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
+  `spec/system/dashboard_inbox_spec.rb`, `spec/system/chat_shared_layout_spec.rb`.
