@@ -39,13 +39,12 @@ remain owned by focused, open children.
 ## 2. Verification re-run
 
 This audit re-verifies the prior RDR-specific findings against the current
-working tree (commit `4f4ce86`) without rerunning the test suite. The
-agent environment does not provide a reachable PostgreSQL service
-(`paid-svc-a3-s1-postgres` is unresolvable from this checkout), so this
-audit cannot report database-backed validation. The structural checks
-below do not depend on database reachability and are sufficient to confirm
-that no new code has shipped under the three RDRs' scope since the prior
-audits.
+working tree without rerunning the test suite. The agent environment does not
+provide a reachable PostgreSQL service (`paid-svc-a3-s1-postgres` is
+unresolvable from this checkout), so this audit cannot report database-backed
+validation. The structural checks below do not depend on database reachability
+and are sufficient to confirm that no new code has shipped under the three
+RDRs' scope since the prior audits.
 
 ```
 node bin/coherence-check.mjs       # 2026-10-12
