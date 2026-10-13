@@ -95,11 +95,14 @@ module ClarifyingQuestions
     end
 
     # Replaces the existing questions section (if any) with a new one whose
-    # body is the supplied numbered list. If the body has no section yet the
-    # section is appended at the end. Existing human-written content outside
-    # the section is preserved unchanged.
-    def replace_questions_section(body:, questions:)
+    # body is the supplied numbered list. The optional preamble is emitted
+    # immediately before the section so a subsequent enhancement retains its
+    # agent-authored context. If the body has no section yet the section is
+    # appended at the end. Existing human-written content outside the section
+    # is preserved unchanged.
+    def replace_questions_section(body:, questions:, preamble: nil)
       new_block = build_questions_block(questions: questions)
+      new_block = [ preamble, new_block ].reject(&:blank?).join("\n\n")
       wrapped_body = body.to_s
 
       if wrapped_body.match?(QUESTIONS_SECTION_PATTERN)

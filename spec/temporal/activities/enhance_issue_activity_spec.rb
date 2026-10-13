@@ -294,6 +294,51 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
     end
 
+    context "when quiet-mode questions are being replaced" do
+      before do
+        project.update!(quiet_mode: true)
+        allow(client).to receive(:update_issue)
+        issue.update!(enhance_issue_rounds: 1, body: <<~MARKDOWN)
+          Record user actions
+
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          1. Which events should be recorded?
+          <!-- /paid:clarifying-questions -->
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          **Q1: Which events should be recorded?**
+          **A1:** Login events
+          <!-- /paid:clarifying-answers -->
+        MARKDOWN
+        log_agent_stdout({
+          sufficient_context: false,
+          comment_body: "The audit trail must include compliance events.\n\n## Clarifying questions\n1. Which compliance events are required?"
+        }.to_json)
+      end
+
+      it "replaces prior questions with the next enhancement's questions and preamble" do # @spec QUIET-MODE-009
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(client).to have_received(:update_issue).with(
+          project.full_name,
+          issue.github_number,
+          body: a_string_including(
+            "The audit trail must include compliance events.",
+            "Which compliance events are required?"
+          )
+        )
+        expect(issue.reload.body.scan(ClarifyingQuestions::DescriptionSection::QUESTIONS_OPEN_MARKER).size).to eq(1)
+        expect(ClarifyingQuestions::DescriptionSection.parse_questions(issue.body).questions).to eq(
+          [ "Which compliance events are required?" ]
+        )
+        expect(client).not_to have_received(:add_comment)
+      end
+    end
+
     it "fails before moving to needs_input when adding the GitHub label fails" do
       allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
       log_agent_stdout({

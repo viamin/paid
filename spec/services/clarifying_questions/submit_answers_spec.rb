@@ -14,7 +14,8 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
   let(:issue) do
     double(
       github_number: 1964,
-      needs_input?: false
+      needs_input?: false,
+      body: "Human-written issue context"
     )
   end
 
@@ -145,16 +146,26 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
     context "when quiet mode is enabled" do
       before { allow(project).to receive(:quiet_mode?).and_return(true) }
 
-      it "rejects answers before they can be silently suppressed" do
-        # @spec QUIET-MODE-006
-        expect {
-          described_class.call(
-            project: project,
-            issue: issue,
-            questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
-          )
-        }.to raise_error(ArgumentError, /cannot be submitted while quiet mode is enabled/)
+      it "writes answers into the description without posting a comment" do # @spec QUIET-MODE-010
+        allow(github_client).to receive(:update_issue)
+        allow(issue).to receive(:update!)
 
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(github_client).to have_received(:update_issue).with(
+          project.full_name,
+          issue.github_number,
+          body: a_string_including(
+            "Human-written issue context",
+            "<!-- paid:clarifying-answers -->",
+            "**Q1: Q1?**",
+            "**A1:** A1"
+          )
+        )
         expect(github_client).not_to have_received(:add_comment)
       end
     end

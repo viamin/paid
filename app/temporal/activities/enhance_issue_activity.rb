@@ -535,11 +535,11 @@ module Activities
       return nil if questions.empty?
 
       body = issue.body.to_s
-      questions_block = ClarifyingQuestions::DescriptionSection.build_questions_block(questions: questions)
       preamble_block = build_description_preamble(comment_body)
-      new_body = ClarifyingQuestions::DescriptionSection.append_section(
-        body,
-        [ preamble_block, questions_block ].reject(&:blank?).join("\n\n")
+      new_body = ClarifyingQuestions::DescriptionSection.replace_questions_section(
+        body: body,
+        questions: questions,
+        preamble: preamble_block
       )
       response = client.update_issue(project.full_name, issue.github_number, body: new_body)
       issue.update!(body: new_body)
