@@ -146,10 +146,6 @@ module ChatSessionsHelper
     message.groupable_tool?
   end
 
-  def chat_transcript_notice?(message)
-    message.transcript_notice?
-  end
-
   def chat_message_meta_classes(message)
     return "mb-2 flex items-center justify-end gap-2" if message.role == "user"
 
