@@ -14,6 +14,16 @@ RSpec.describe Projects::Readiness::BootstrapWriteGuard do
       expect(result.forbidden_files).to eq([])
     end
 
+    it "allows each conventional test directory layout" do
+      result = described_class.call(changed_files: [
+        "spec/example_spec.rb", "test/example_test.rb", "tests/example_test.py",
+        "__tests__/example.test.js", "Tests/ExampleTests.swift"
+      ])
+
+      expect(result).to be_valid
+      expect(result.forbidden_files).to eq([])
+    end
+
     it "rejects behavior-bearing files outside the harness class" do
       result = described_class.call(changed_files: [ ".github/workflows/gdunit.yml", "scripts/player.gd" ])
 

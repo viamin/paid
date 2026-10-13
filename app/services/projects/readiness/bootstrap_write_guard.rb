@@ -34,6 +34,8 @@ module Projects
         spec/
         test/
         tests/
+        __tests__/
+        Tests/
       ].freeze
       REASON = "bootstrap runs may only change harness configuration and test layout"
 

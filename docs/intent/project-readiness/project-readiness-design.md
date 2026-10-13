@@ -66,11 +66,12 @@ test-review PR.
 `CreatePullRequestActivity` before a PR is created or reused. It permits only
 CI configuration (`.github/workflows/`, `.circleci/`, `.gitlab-ci.yml`),
 project/scaffold manifests (including `project.godot`, `package.json`, and
-`go.mod`), conventional test-directory layout (`test/`, `tests/`, `spec/`),
-and tool configuration files. Any other changed file aborts the run with the
-offending paths recorded in its system log. This structural boundary is not a
-judgment about whether a configuration is runnable; the bootstrap prompt must
-inspect the actual checkout and configure a runnable harness.
+`go.mod`), conventional test-directory layout (`test/`, `tests/`, `spec/`,
+`__tests__/`, `Tests/`), and tool configuration files. Any other changed file
+aborts the run with the offending paths recorded in its system log. This
+structural boundary is not a judgment about whether a configuration is
+runnable; the bootstrap prompt must inspect the actual checkout and configure
+a runnable harness.
 
 The bootstrap class is deliberately separate from `Tdd::WriteGuard`. The
 `test_writing`, `test_fixing`, and `refactor` allowed-write semantics are
