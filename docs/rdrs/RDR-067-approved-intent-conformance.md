@@ -214,3 +214,19 @@ them, and its cost, human-time, rework, and resolution figures have no
 repository-visible inputs. It is not evidence of reviewer quality, blinded
 adjudication, or a promotion outcome. The RDR remains **Partially Implemented**;
 operators must repeat the run with an event-backed, post-event frozen corpus.
+
+## 2026-10-13 Shadow Evaluation Provenance Gap
+
+Issue [#4205](https://github.com/viamin/paid/issues/4205) recorded a frozen
+30-case corpus (`docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml`,
+freeze commit `5ccf04bd0…`). Its prior ledger does not establish independent
+human adjudication: every purported operator event was introduced under the
+same `Paid Agent <paid-agents@paid-agents.com>` identity. Operator labels and
+event ordering alone cannot prove two blinded human reviews.
+
+The re-audit in
+[`audit-report-2026-10-13-rdr-067.md`](audit-report-2026-10-13-rdr-067.md)
+and the [2026-10-13 worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-13.md)
+therefore record the adjudication criterion and every derived measure as
+unmet. Two independently authenticated humans must adjudicate the frozen
+corpus before an operator records reviewer runs. Enforcement remains disabled.
