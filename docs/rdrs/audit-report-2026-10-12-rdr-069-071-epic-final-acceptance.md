@@ -65,7 +65,7 @@ outside the RDR-069–071 scope and are not addressed here.
 
 ```
 npx markdownlint \
-  docs/rdrs/audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md   # 2026-10-12
+  docs/rdrs/audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md   # 2026-10-13
 ```
 
 Result: 0 offenses detected on the audit report file. No documentation churn
