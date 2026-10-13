@@ -430,7 +430,8 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:see_other)
   end
 
-  it "marks list rows with the inbox-master-detail row target and member hrefs" do
+  # @spec OPERATOR-INBOX-003
+  it "targets row navigation at the inbox detail frame while advancing history" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -444,10 +445,12 @@ RSpec.describe "Inbox" do
 
     expect(link).to be_present
     expect(link["data-inbox-master-detail-target"]).to eq("row")
+    expect(link["data-turbo-frame"]).to eq("inbox-detail")
+    expect(link["data-turbo-action"]).to eq("advance")
   end
 
-  it "wires the shared list-detail shell's list and detail panes to the inbox master-detail targets" do
-    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
+  it "wires the shared independently scrollable shell panes to the inbox master-detail targets" do
+    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 @spec LIST-DETAIL-007
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -458,8 +461,10 @@ RSpec.describe "Inbox" do
 
     expect(list).to be_present
     expect(list["data-inbox-master-detail-target"]).to eq("list")
+    expect(list.element_children.first["class"]).to include("lg:overflow-y-auto")
     expect(detail).to be_present
     expect(detail["data-inbox-master-detail-target"]).to eq("detailSection")
+    expect(detail.element_children.first["class"]).to include("lg:overflow-y-auto")
   end
 
   it "supports project scoping" do
