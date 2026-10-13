@@ -106,9 +106,9 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "round-trips non-ASCII event content under the US-ASCII default locale" do
     # The system locale is C/POSIX (US-ASCII default external encoding) on this
-    # image. The CLI normalizes to UTF-8 at the boundary so adjudicator reason
-    # text such as the section mark in cited_design_claim survives a validate
-    # cycle on the same disk file.
+    # image. The ledger normalizes its file reads and writes to UTF-8 so
+    # adjudicator reason text such as the section mark in cited_design_claim
+    # survives a validate cycle on the same disk file.
     Dir.mktmpdir do |dir|
       manifest = File.join(dir, "manifest.yml")
       ledger = File.join(dir, "ledger.jsonl")
@@ -190,7 +190,7 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
   end
 
   def run_cli(*args)
-    Open3.capture3("ruby", script_path, *args)
+    Open3.capture3({ "LC_ALL" => "C", "LANG" => "C" }, "ruby", script_path, *args)
   end
 
   def commit_fixture_file(directory, path, message)
