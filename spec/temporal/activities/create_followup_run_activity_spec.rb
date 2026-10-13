@@ -71,5 +71,23 @@ RSpec.describe Activities::CreateFollowupRunActivity do
       )
       expect(AgentRun.where(project: project, issue: issue, goal: "create_pr")).to be_empty
     end
+
+    # QUIET-MODE-007 audit: the review-fix follow-up chain routes through
+    # QueueAgentRunActivity; this activity must not post any commentary
+    # regardless of quiet mode. The per-push summary comment lives only in
+    # CompleteExistingPrRunActivity (covered by its own spec).
+    it "is a no-comment chokepoint: its source contains no comment-posting methods" do
+      source = File.read(Rails.root.join("app/temporal/activities/create_followup_run_activity.rb"))
+
+      commenting_methods = %w[add_comment create_pull_request_comment_reply update_comment]
+      commenting_methods.each do |method|
+        expect(source).not_to match(/\b#{Regexp.escape(method)}\b/),
+          "CreateFollowupRunActivity must not call #{method} — the review-fix " \
+          "follow-up path delegates that responsibility to CompleteExistingPrRunActivity"
+      end
+      # It should only hand off to QueueAgentRunActivity, which is the next
+      # activity in the chain. Post-push commentary lives there.
+      expect(source).to include("QueueAgentRunActivity")
+    end
   end
 end

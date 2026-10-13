@@ -281,6 +281,66 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  # @spec QUIET-MODE-008
+  describe "quiet mode commit-message guidance (#4232)" do
+    let(:quiet_project) do
+      OpenStruct.new(
+        full_name: "owner-1/repo-1",
+        account: OpenStruct.new(id: 7),
+        allowed_github_usernames: [ "viamin" ],
+        service_containers: service_containers_relation,
+        lid_mode: nil,
+        detected_languages: [],
+        quiet_mode: true
+      ).tap do |p|
+        def p.trusted_github_user?(login)
+          return false if login.nil?
+          allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+        end
+
+        def p.paid_bot_author?(login)
+          login == "paid-code-reviewer[bot]"
+        end
+
+        def p.uses_feature_flags_pattern?
+          false
+        end
+
+        def p.quiet_mode?
+          quiet_mode == true
+        end
+      end
+    end
+
+    it "omits the quiet mode guidance when quiet mode is off" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).not_to include("Commit Message Is The Commentary Channel")
+    end
+
+    it "embeds the quiet mode guidance in the issue_task section when quiet mode is on" do
+      result = described_class.call(issue: issue, project: quiet_project)
+
+      expect(result.text).to include("Commit Message Is The Commentary Channel")
+      expect(result.text).to include("Implement: extract runner selection into AgentRun#select_runner")
+    end
+
+    it "adds guidance to a pinned template that omits the placeholder" do
+      prompt = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+        record.name = "Issue implementation"
+        record.category = "coding"
+        record.active = true
+      end
+      prompt.create_version!(template: "# Task\n\nImplement {{title}}.", variables: [])
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt.current_version)
+
+      result = described_class.call(issue: issue, project: quiet_project, agent_run: agent_run)
+
+      expect(result.text).to include("Implement Fix login redirect.")
+      expect(result.text).to include("Commit Message Is The Commentary Channel")
+    end
+  end
+
   describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020 # @spec PROMPT-ASSEMBLY-023
     let(:real_issue) { create(:issue) }
 

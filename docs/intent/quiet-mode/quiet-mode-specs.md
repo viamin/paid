@@ -25,3 +25,20 @@ prefix: QUIET-MODE
   answers can only be persisted in a GitHub comment, when an operator submits
   answers, the system SHALL reject the submission before clearing the issue's
   needs-input state or reporting a successful post.
+- [x] **QUIET-MODE-007** — When a project's quiet mode is enabled, the
+  PR follow-up completion path (`CompleteExistingPrRunActivity`) SHALL NOT post
+  a per-push `## Agent Update` summary comment after the agent pushes to the
+  PR branch, including the duplicate-aware idempotency check or LLM summary
+  generation, and SHALL still complete the run as usual. When quiet mode is
+  disabled, the prior summary-comment behavior SHALL be unchanged.
+- [x] **QUIET-MODE-008** — When a project's quiet mode is enabled, the
+  agent-facing prompt/runner contract (PR follow-up `Prompts::BuildForPr` and
+  issue implementation `PromptAssembly::Sections::IssueTask`) SHALL include
+  the quiet-mode commit-message guidance that tells the agent to embed what
+  changed, why, and which review feedback was addressed in the commit body
+  instead of expecting a follow-up summary comment. The issue implementation
+  guidance SHALL be appended as a required assembly section even when a
+  project override or pinned `PromptVersion` omits its placeholder; the PR
+  follow-up legacy builder SHALL append it in the same case. When quiet mode
+  is disabled, the prior prompt SHALL be unchanged (no commit-message guidance
+  section is added, and the rendered prompt does not mention quiet mode).

@@ -120,6 +120,40 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
     end
 
+    # @spec QUIET-MODE-007
+    it "skips the summary comment when the project has quiet mode enabled" do
+      project.update!(quiet_mode: true)
+      enable_summary_comments
+
+      expect(github_client).not_to receive(:add_comment)
+      # Quiet mode skips summary generation as well — no LLM tokens are spent
+      # on building a comment body the suppression layer would drop anyway.
+      expect(AgentHarness).not_to receive(:send_message)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
+    # @spec QUIET-MODE-007
+    it "skips the duplicate-aware post before the API call when quiet mode is on" do
+      project.update!(quiet_mode: true)
+
+      expect(github_client).not_to receive(:issue_comments)
+      expect(github_client).not_to receive(:add_comment)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still posts the summary comment when quiet mode is off (default)" do
+      project.update!(quiet_mode: false)
+      enable_summary_comments
+
+      expect(github_client).to receive(:add_comment).once
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "summarizes only the new push when a pre-run PR head SHA was recorded" do
       agent_run.update!(external_metadata: { "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc" })
       enable_summary_comments

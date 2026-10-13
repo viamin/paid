@@ -66,6 +66,8 @@ upsert_global_prompt.call(
     5. Run the test suite and fix any failures: `{{test_command}}`
     6. Commit your changes with a descriptive message
 
+    {{commit_message_guidance}}
+
     If you open a pull request that requires human judgment before it can land,
     apply the structured review hold through the GitHub API proxy; no `gh` CLI
     exists in this environment. Use the repository and pull request number from
@@ -93,7 +95,8 @@ upsert_global_prompt.call(
     var.call("body", "Issue body/description"),
     var.call("test_command", "Test command for the project language", required: false),
     var.call("lint_command", "Lint command for the project language", required: false),
-    var.call("setup_database_instruction", "Optional database setup line for projects with service containers", required: false)
+    var.call("setup_database_instruction", "Optional database setup line for projects with service containers", required: false),
+    var.call("commit_message_guidance", "Quiet-mode commit message guidance shown only when the project has quiet mode enabled (#4232)", required: false)
   ]
 )
 
@@ -131,6 +134,7 @@ upsert_global_prompt.call(
     Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
     {{already_addressed_instruction}}
+    {{commit_message_guidance}}
 
     When you're done, commit all your changes. Do not push.
 
@@ -149,6 +153,7 @@ upsert_global_prompt.call(
     var.call("setup_database_instruction", "Optional database setup line", required: false),
     var.call("review_scan_instruction", "Extra clause emphasizing same-class issues when reviewers flagged something", required: false),
     var.call("already_addressed_instruction", "Instruction to emit the already-addressed marker when all listed review threads are already fixed", required: false),
+    var.call("commit_message_guidance", "Quiet-mode-specific commit-message guidance shown only when the project has quiet mode enabled (#4232)", required: false),
     var.call("lint_command", "Project lint command"),
     var.call("test_command", "Project test command")
   ]
