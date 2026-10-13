@@ -60,8 +60,6 @@ agent-run trace artifact path above.
 - **Not the polyglot runtime segment.** Phoenix support here is preview-specific
   foundation work; the shared language/runtime contract lives in
   `polyglot-test-execution`.
-- **Not a claim that the current preview buttons expose a real live app.** They
-  are precisely one of the still-open gaps this segment records.
 - **Not a production-data bridge.** Preview sessions remain intended for local
   or seeded data only.
 - **Not a host-credential bridge.** Setup and app startup commands executed
