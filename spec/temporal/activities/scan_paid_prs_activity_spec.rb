@@ -1149,6 +1149,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       # @spec LABEL-CONTROL-007
+      it "does not scan a trusted external PR linked only to an unactivated parent issue" do
+        project.update!(label_integration_mode: "ignored")
+        parent = create(:issue, project: project, github_number: 7)
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 43,
+          github_creator_login: "viamin",
+          parent_issue: parent,
+          labels: [],
+          paid_state: "completed")
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:pull_request)
+      end
+
+      # @spec LABEL-CONTROL-007
       it "does not scan a deactivated PR that is linked to a parent issue" do
         project.update!(label_integration_mode: "ignored")
         parent = create(:issue, project: project, github_number: 7)

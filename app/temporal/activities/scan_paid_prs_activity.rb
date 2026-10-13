@@ -431,12 +431,11 @@ module Activities
         .where("issues.paid_activation_state IS NULL OR issues.paid_activation_state != ?", "deactivated")
     end
 
-    # Scoped to PRs a Paid agent run already linked back to the project:
-    #   - parent_issue_id IS NOT NULL  (the typical sync-driven linkage)
-    #   - OR a row in agent_runs matches project_id + pull_request_number
-    # The two are not redundant: parent_issue_id is set when sync catches
-    # the PR back to its Issue row, while agent_runs.pull_request_number is
-    # stamped the moment the PR is published (before any sync), so a just-
+    # Scoped to PRs a Paid agent run already linked back to the project.
+    # A parent_issue_id alone is user-declared GitHub content and is not
+    # Paid-work evidence; parent-linked PRs are instead admitted by the
+    # separately scoped paid-activated-parent path above. An agent run's
+    # pull_request_number is stamped when the PR is published, so a just-
     # published PR is in scope before sync arrives.
     # @spec LABEL-CONTROL-007
     def paid_linked_scannable_prs(project, candidate_prs)
@@ -446,7 +445,7 @@ module Activities
         .select(:pull_request_number)
 
       candidate_prs.where(
-        "issues.parent_issue_id IS NOT NULL OR issues.github_number IN (?)",
+        "issues.github_number IN (?)",
         agent_run_pr_numbers
       )
     end
