@@ -9,9 +9,10 @@ prefix: INTENT-CONFORMANCE-ROLLOUT
 > approval-gated operating mode; it does not alter the reviewer’s semantic
 > decision or authorize a merge.
 
-**Current state (2026-10-09):** The shadow-mode scheduling mechanism is
-shipped, but no frozen adjudicated corpus or completed aggregate worksheet is
-recorded. Issue #4205 owns the measured rollout run required before promotion.
+**Current state (2026-10-13):** The 30-case corpus is frozen and independently
+adjudicated, but reviewer shadow runs and the resulting aggregate worksheet
+are not yet recorded. Issue #4205 remains open for that measured rollout work;
+the adjudication record alone does not authorize promotion.
 
 ## Purpose
 
