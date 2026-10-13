@@ -98,10 +98,13 @@ child issue under epic #4309:
 | Inbox question → contextual shared chat; project rollout setting | [#4311](https://github.com/viamin/paid/issues/4311) (P02), [#4312](https://github.com/viamin/paid/issues/4312) (P03), [#4313](https://github.com/viamin/paid/issues/4313) (P04), [#4316](https://github.com/viamin/paid/issues/4316) (P07), [#4317](https://github.com/viamin/paid/issues/4317) (P08) |
 | Facets, evidence, assessments, explicit preferences, scoped 80/80 readiness | [#4314](https://github.com/viamin/paid/issues/4314) (P05), [#4315](https://github.com/viamin/paid/issues/4315) (P06), [#4316](https://github.com/viamin/paid/issues/4316) (P07), [#4318](https://github.com/viamin/paid/issues/4318) (P09) |
 | Confidence-driven policy/enrollment, release, builder baseline, follow-up completion | [#4310](https://github.com/viamin/paid/issues/4310) (P01), [#4314](https://github.com/viamin/paid/issues/4314) (P05), [#4315](https://github.com/viamin/paid/issues/4315) (P06), [#4318](https://github.com/viamin/paid/issues/4318) (P09), [#4319](https://github.com/viamin/paid/issues/4319) (P10), [#4320](https://github.com/viamin/paid/issues/4320) (P11), [#4321](https://github.com/viamin/paid/issues/4321) (P12) |
-| RDR closeouts | [#4322](https://github.com/viamin/paid/issues/4322) (C69), [#4323](https://github.com/viamin/paid/issues/4323) (C70), [#4324](https://github.com/viamin/paid/issues/4324) (C71) |
 
-No new child issue is filed: every unmet acceptance area already has a
-single-focus, independent, pickable owner. Per the implementation plan,
+The per-RDR closeouts [#4322](https://github.com/viamin/paid/issues/4322)
+(C69), [#4323](https://github.com/viamin/paid/issues/4323) (C70), and
+[#4324](https://github.com/viamin/paid/issues/4324) (C71) are completed
+closeouts, not open delivery owners. No new child issue is filed: every unmet
+acceptance area already has a single-focus, independent, pickable owner. Per
+the implementation plan,
 P01 (#4310) owns the existing-work reconciliation across #3862/#3863/#3865
 and the RDR-066/067 epics and must not recreate or relabel the approval-gated
 policy. The implementation plan's September open/closed annotations are
