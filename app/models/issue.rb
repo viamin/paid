@@ -11,10 +11,10 @@ class Issue < ApplicationRecord
   CONTROL_PRIORITIES = %w[P1 P2 P3].freeze
   TDD_REVIEW_STATES = %w[ready_for_review approved changes_requested].freeze
   # @spec LABEL-CONTROL-007. The Paid-local per-item activation state used in
-  # ignored label mode (#4253). Kept open-ended so future states (e.g.
-  # "deactivated", "superseded") can be added without another migration;
-  # callers treat any non-nil value as "activated" via +paid_activated?+.
-  PAID_ACTIVATION_STATES = %w[activated].freeze
+  # ignored label mode (#4253). A deactivation is persisted, rather than
+  # cleared, so it can override eligibility inherited from a linked run or
+  # a paid-activated parent issue.
+  PAID_ACTIVATION_STATES = %w[activated deactivated].freeze
   # The marker string FeatureActivation returns to label-read callers when an
   # issue/PR is paid-activated in ignored mode (instead of consulting the
   # activation label name). Identical-shape return so callers like
@@ -497,6 +497,10 @@ class Issue < ApplicationRecord
     paid_activation_state == "activated"
   end
 
+  def paid_deactivated?
+    paid_activation_state == "deactivated"
+  end
+
   # Idempotent: re-applying the same state keeps the original timestamp.
   # @spec LABEL-CONTROL-007
   def paid_activate!(time: Time.current)
@@ -506,9 +510,9 @@ class Issue < ApplicationRecord
   end
 
   def paid_deactivate!
-    return true unless paid_activated?
+    return true if paid_deactivated?
 
-    update!(paid_activation_state: nil, paid_activated_at: nil)
+    update!(paid_activation_state: "deactivated", paid_activated_at: nil)
   end
 
   # @spec LABEL-CONTROL-003

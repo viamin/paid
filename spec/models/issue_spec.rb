@@ -2846,4 +2846,18 @@ RSpec.describe Issue do
       expect(issue.merge_permission_retry_due?).to be(true)
     end
   end
+
+  describe "#paid_deactivate!" do
+    # @spec LABEL-CONTROL-007
+    it "persists deactivation so it overrides inherited PR scan eligibility" do
+      issue = create(:issue, paid_activation_state: "activated", paid_activated_at: Time.current)
+
+      issue.paid_deactivate!
+
+      issue.reload
+      expect(issue).to be_paid_deactivated
+      expect(issue).not_to be_paid_activated
+      expect(issue.paid_activated_at).to be_nil
+    end
+  end
 end

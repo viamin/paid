@@ -391,13 +391,11 @@ module Activities
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008 LABEL-CONTROL-006
-    # @spec LABEL-CONTROL-007 — Ignored-mode projects scope PR scanning to
-    # PRs linked to a Paid agent run (via parent_issue_id or matching
-    # agent_runs.pull_request_number) rather than to activation labels, so
-    # an unactivated label never produces a scan.
+    # @spec LABEL-CONTROL-007 — Ignored-mode projects use Paid-local PR and
+    # parent activation state together with Paid-run linkage, never labels.
     def activation_scannable_prs(project, candidate_prs)
       if project.label_integration_mode == "ignored"
-        return paid_linked_scannable_prs(project, candidate_prs) if project.auto_scan_prs
+        return ignored_mode_scannable_prs(project, candidate_prs) if project.auto_scan_prs
 
         return candidate_prs.none
       end
@@ -416,6 +414,21 @@ module Activities
       labels.reduce(candidate_prs.none) do |scope, label|
         scope.or(candidate_prs.where("labels @> ?", [ label ].to_json))
       end.or(candidate_prs.where(parent_issue_id: catchall_parent_issue_ids(project, candidate_prs)))
+    end
+
+    # Explicit PR activation admits externally opened PRs. A paid-activated
+    # parent admits its child PRs, and Paid-run linkage preserves existing
+    # generated-PR scanning. Explicit deactivation wins over all three paths.
+    # @spec LABEL-CONTROL-007
+    def ignored_mode_scannable_prs(project, candidate_prs)
+      activated_parent_ids = project.issues.paid_activated.select(:id)
+      activated_prs = candidate_prs.paid_activated
+      parent_activated_prs = candidate_prs.where(parent_issue_id: activated_parent_ids)
+
+      paid_linked_scannable_prs(project, candidate_prs)
+        .or(activated_prs)
+        .or(parent_activated_prs)
+        .where("issues.paid_activation_state IS NULL OR issues.paid_activation_state != ?", "deactivated")
     end
 
     # Scoped to PRs a Paid agent run already linked back to the project:
@@ -442,14 +455,16 @@ module Activities
       candidate_prs.where("LOWER(github_creator_login) IN (?)", DEPENDABOT_AUTO_MERGE_AUTHORS.map(&:downcase))
     end
 
-    # @spec LABEL-CONTROL-007 — In ignored mode the per-PR activation-label
-    # paths do not exist; only the trusted-creator / dependency-bot author
-    # checks apply (paid-activation has no label equivalent on the PR).
+    # @spec LABEL-CONTROL-007 — A local activation is an authorized operator
+    # decision. Parent activation carries that decision to its child PRs.
     def authorized_for_automation_scan?(project, issue)
       return true if project.trusted_github_author?(issue.github_creator_login)
       return true if dependency_update_bot_author?(issue.github_creator_login)
 
       if project.paid_local_activation?
+        return true if issue.paid_activated?
+        return true if trusted_issue_catchall_for_pr?(project, issue)
+
         Rails.logger.warn(
           message: "pr_scanner.untrusted_pr_blocked",
           project_id: project.id,

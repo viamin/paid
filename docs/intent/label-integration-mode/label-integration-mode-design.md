@@ -27,11 +27,11 @@ replacement cannot bypass the gate, including when a trusted-human fallback
 credential is selected. Read paths deliberately remain intact except in
 `ignored` mode. In that mode, Paid is the source of truth for control state:
 `Issue#paused`, local PR merge holds, the TDD review gate, local priority, and
-an auto-pick exclusion reason replace their corresponding label reads. The
-project-level `auto_scan_prs` setting is the activation surface for PR scanning
-in ignored mode: when it is enabled, every eligible open local PR is scannable
-without an automation or feature-activation label. When it is disabled, Paid
-does not consult PR activation labels. The
+an auto-pick exclusion reason replace their corresponding label reads. In
+ignored mode, `auto_scan_prs` scans open PRs already linked to Paid work, PRs
+explicitly paid-activated by an operator, and child PRs of a paid-activated
+parent issue; an explicit PR deactivation overrides every one of those paths.
+Paid does not consult PR activation labels. The
 local TDD approval records its transition time, which the PR scanner compares
 to implementation-run creation time so a subsequent poll cannot requeue the
 same approved revision. If the initial PR sync is unavailable, later PR

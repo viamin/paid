@@ -116,8 +116,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
     it "uses a local exclusion reason instead of skip labels in ignored mode" do # @spec LABEL-CONTROL-003
       project.update!(label_integration_mode: "ignored", auto_pick_skip_labels: [ "category-hold" ])
-      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
-      labeled = create(:issue, project:, labels: [ "category-hold" ])
+      excluded = create(:issue, project:, paid_activation_state: "activated", auto_pick_excluded_reason: "operator hold")
+      labeled = create(:issue, project:, paid_activation_state: "activated", labels: [ "category-hold" ])
 
       expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
       expect(described_class.eligible_scope(project)).not_to include(excluded)
@@ -129,8 +129,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
         label_mappings: { "needs_input" => "paid-stage-needs-input" }
       )
-      labeled = create(:issue, project:, labels: [ "paid-stage-needs-input" ])
-      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
+      labeled = create(:issue, project:, paid_activation_state: "activated", labels: [ "paid-stage-needs-input" ])
+      excluded = create(:issue, project:, paid_activation_state: "activated", auto_pick_excluded_reason: "operator hold")
 
       expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
       expect(described_class.eligible_scope(project)).not_to include(excluded)
