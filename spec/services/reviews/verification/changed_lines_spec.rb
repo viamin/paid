@@ -69,6 +69,24 @@ RSpec.describe Reviews::Verification::ChangedLines do
       expect(changed_lines.valid_line?("a.txt", 1)).to be true
     end
 
+    it "does not advance the right-side line for a no-newline marker after a deletion" do
+      files = [
+        {
+          filename: "a.txt",
+          status: "modified",
+          additions: 2,
+          deletions: 1,
+          patch: "@@ -1 +1,2 @@\n-old\n\\ No newline at end of file\n+new\n+second"
+        }
+      ]
+
+      changed_lines = described_class.from_files(files)
+
+      expect(changed_lines.valid_line?("a.txt", 1)).to be true
+      expect(changed_lines.valid_line?("a.txt", 2)).to be true
+      expect(changed_lines.valid_line?("a.txt", 3)).to be false
+    end
+
     it "exposes changed file names even without a parseable patch (binary files)" do
       files = [
         { filename: "image.png", status: "modified", additions: 0, deletions: 0, patch: nil }

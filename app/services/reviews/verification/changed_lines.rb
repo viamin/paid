@@ -37,7 +37,7 @@ module Reviews
           elsif right_line && line.start_with?("+")
             changed_lines << right_line
             right_line += 1
-          elsif right_line && !line.start_with?("-")
+          elsif right_line && !line.start_with?("-", "\\")
             right_line += 1
           end
         end
