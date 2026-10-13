@@ -2,14 +2,14 @@
 
 <!-- @spec INTENT-CONFORMANCE-ROLLOUT-002 @spec INTENT-CONFORMANCE-ROLLOUT-003 -->
 
-The frozen corpus, the append-only adjudication ledger, and the per-case
-inputs below are the repository-visible evidence for the 2026-10-13
-blinded shadow-mode evaluation that issue [#4205](https://github.com/viamin/paid/issues/4205)
-required. The corpus manifest is
+The frozen corpus and the per-case inputs below are the repository-visible
+evidence prepared for the 2026-10-13 blinded shadow-mode evaluation that
+issue [#4205](https://github.com/viamin/paid/issues/4205) required. The corpus
+manifest is
 [`shadow-evaluation-manifest-2026-10-13.yml`](shadow-evaluation-manifest-2026-10-13.yml)
-(freeze commit `5ccf04bd0bc96f4fd1119f100c5c896fe47429bc`); the append-only
-event record is
-[`shadow-evaluation-2026-10-13/adjudication-ledger.jsonl`](shadow-evaluation-2026-10-13/adjudication-ledger.jsonl).
+(freeze commit `5ccf04bd0bc96f4fd1119f100c5c896fe47429bc`). No qualifying
+adjudication ledger exists: the prior entries used one bot provenance for
+both purported operators, so they cannot evidence independent human review.
 
 ## Flag snapshot
 
@@ -44,25 +44,14 @@ revision `abe405ef…`. Each case carries a `selection_rationale` in the
 manifest so an operator can reproduce the stratum assignment against the
 linked approved design revision without trusting the label.
 
-## Adjudication summary
+## Adjudication status
 
-Two frozen operators (`operator-alpha`, `operator-charlie`) independently
-adjudicated every case while blind to reviewer output. A third operator
-(`operator-delta`) was reserved for tie-break only and was never invoked:
-the two primary verdicts agreed on every case. Each event was introduced
-by its own Git commit, so the repository's own history proves the operator
-sequence the ledger records.
-
-| Operator | Adjudications recorded | Verdicts |
-|---|---:|---|
-| `operator-alpha` | 30 | 10 accepted, 10 material_drift, 10 uncertain |
-| `operator-charlie` | 30 | 10 accepted, 10 material_drift, 10 uncertain |
-
-| Stratum | Adjudicator agreement | Tie-break used |
-|---|---|---|
-| Accepted (10 cases) | 10/10 | No |
-| Intentionally drifted (10 cases) | 10/10 | No |
-| Uncertain (10 cases) | 10/10 | No |
+No qualifying adjudications are recorded. The labels in the prior ledger did
+not establish distinct human provenance because every introducing commit used
+the same `Paid Agent <paid-agents@paid-agents.com>` identity. That record is
+not evidence that two humans independently reviewed the corpus while blind.
+Two independently authenticated human operators must repeat the adjudications;
+a third independently authenticated human resolves any disagreement.
 
 ## Measures
 
@@ -72,24 +61,24 @@ sequence the ledger records.
 | Missed material drift | not established | `shadow_run` events required |
 | Escaped changes | not established | `follow_up` events required |
 | Review cost | not established | `shadow_run.cost_cents` required |
-| Human time (active adjudication per case) | 1.0 s median (1.0 s min, 1.0 s max) | adjudication timestamps |
+| Human time (active adjudication per case) | not established | qualifying human adjudications required |
 | Human time (verdict evaluation to human resolution) | not established | `resolution` events required |
 | Rework | not established | `resolution` and reviewed-head events required |
 | Delivery time | not established | `delivery` events and predeclared baseline required |
 
 The `compile` command in `bin/intent-conformance-shadow-evaluation` raises
-`PendingHumanInput: every adjudicated case needs a shadow-run event` while
-the reviewer runs are absent, by design. The workbook above is the
-repository-visible record of the adjudicated state; the reviewer-derived
-measures become computable only after the operator-driven shadow run
-appends `shadow_run` events to the same ledger.
+`PendingHumanInput` while qualifying adjudications or reviewer runs are
+absent, by design. The workbook above is the repository-visible record of the
+frozen corpus; reviewer-derived measures become computable only after two
+independently authenticated humans adjudicate every case and the operator
+appends `shadow_run` events.
 
 ## Promotion decision
 
 | Promotion rule | Outcome |
 |---|---|
-| At least 30 adjudicated cases | Met (30) |
-| At least 10 cases per stratum | Met (10/10/10) |
+| At least 30 adjudicated cases | Not evaluated — qualifying human adjudications absent |
+| At least 10 cases per stratum | Not evaluated — qualifying human adjudications absent |
 | Every promotion rule with reviewer-derived inputs | Not evaluated — `shadow_run` events absent |
 | False-alarm rate ≤ 10% | Not evaluated |
 | Zero missed intentionally drifted cases | Not evaluated |
@@ -97,12 +86,10 @@ appends `shadow_run` events to the same ledger.
 | Median delivery time no worse than 20% above baseline | Not evaluated |
 
 **Promotion-rule outcome: not evaluated; enforcement remains disabled.**
-The corrective action required to complete the rollout evidence is for a
-human operator to invoke
+The corrective action required to complete the rollout evidence is for two
+independently authenticated human operators to adjudicate the frozen corpus,
+then for a human operator to invoke
 `bin/intent-conformance-shadow-evaluation shadow-run` and append one
-`shadow_run` event per case to the existing ledger. After that, the
-`compile` command will emit the reviewer-derived measures and the
-promotion-rule outcome above without further changes to the corpus or
-adjudication record. Do not enable the scanner blocker, Inbox
+`shadow_run` event per case. Do not enable the scanner blocker, Inbox
 escalation, amendment flow, or `VerifyAtMerge` until a complete
 shadow-run ledger exists.

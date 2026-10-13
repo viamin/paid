@@ -9,10 +9,11 @@ prefix: INTENT-CONFORMANCE-ROLLOUT
 > approval-gated operating mode; it does not alter the reviewer’s semantic
 > decision or authorize a merge.
 
-**Current state (2026-10-13):** The 30-case corpus is frozen and independently
-adjudicated, but reviewer shadow runs and the resulting aggregate worksheet
-are not yet recorded. Issue #4205 remains open for that measured rollout work;
-the adjudication record alone does not authorize promotion.
+**Current state (2026-10-13):** The 30-case corpus is frozen, but it has not
+been independently adjudicated by two humans with auditable, distinct
+provenance. The prior label-only record does not establish independence.
+Issue #4205 remains open for the complete measured rollout; the corpus alone
+does not authorize promotion.
 
 ## Purpose
 

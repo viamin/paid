@@ -2,12 +2,12 @@
 
 This runbook is for the 2026-10-13 measured rollout run. It starts from a
 frozen corpus commit and ends with the reviewer-run events appended by the
-human operator. The agent that owns this PR performs steps 1–4 (freeze,
-commit, append operators_frozen + adjudication events) so the audit has
-executable evidence for `INTENT-CONFORMANCE-ROLLOUT-002`. Steps 5–6
-(reviewer run, worksheet compilation) require the operator-driven
-`shadow-run` step that the CLI intentionally defers with
-`pending-human-input`.
+human operator. An agent may prepare and freeze the corpus, but it MUST NOT
+create adjudication records or represent labels as independent operators.
+`INTENT-CONFORMANCE-ROLLOUT-002` remains unmet until two distinct human
+operators supply auditable, distinct provenance for their blinded
+adjudications. The `shadow-run` step remains operator-driven and the CLI
+intentionally defers it with `pending-human-input`.
 
 ## Freeze, then adjudicate
 
@@ -17,15 +17,18 @@ executable evidence for `INTENT-CONFORMANCE-ROLLOUT-002`. Steps 5–6
 2. Commit the manifest file (`docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml`)
    and record its immutable Git commit SHA — that SHA is the
    `manifest_commit` every later event carries.
-3. Before opening any case packet, append an `operators_frozen` event naming
-   the two primary operators and a potential third operator. Every later
-   event repeats the same `manifest_commit`. The tool rejects any other
-   manifest identity after the first adjudication.
-4. Each primary operator independently appends one `adjudication` event per
-   case. The event carries their identity, a verdict of `accepted`,
-   `material_drift`, or `uncertain`, a cited design claim, a reason, and an
-   ISO-8601 timestamp. Each `adjudication` event MUST be introduced by its
-   own Git commit so the repository proves the operator sequence.
+3. Before opening any case packet, the two named human operators and a
+   potential third operator record their distinct, organization-authenticated
+   identities in the rollout record. Each identity must be independently
+   auditable; aliases, a shared bot account, and commits authored by the PR
+   agent are not provenance. Every later event repeats the same
+   `manifest_commit`.
+4. Each primary human operator independently appends one `adjudication` event
+   per case. The event carries their authenticated identity, a verdict of
+   `accepted`, `material_drift`, or `uncertain`, a cited design claim, a
+   reason, and an ISO-8601 timestamp. Preserve an auditable link from each
+   event to that human's authenticated action. Do not proceed if the two
+   actions cannot be distinguished.
 
 ## Tie-break and reviewer sequence
 
@@ -50,5 +53,5 @@ Compile only after adjudications and reviewer events exist. The compiler
 traces every metric to ledger events and prints `not established` for
 missing evidence. It does not issue a promotion decision while any
 promotion-rule input is missing. The 2026-10-13 worksheet will record
-adjudication-derived measures and `not established` for any measure that
-still requires shadow-run evidence.
+measures only after the independently provenanced adjudications exist; until
+then, all adjudication- and reviewer-derived measures remain `not established`.

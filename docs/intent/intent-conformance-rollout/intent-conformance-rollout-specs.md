@@ -22,13 +22,11 @@
   *Corpus:* `shadow-evaluation-manifest-2026-10-13.yml` freezes the 30-case
   corpus pinned to repository / base SHA / head SHA / approved design revision
   / model-prompt version.
-  *Adjudication ledger:*
-  `shadow-evaluation-2026-10-13/adjudication-ledger.jsonl` records 60
-  adjudication events (two operators per case, each in its own Git commit);
-  the freeze commit is the manifest SHA and every event repeats it. The
-  adjudicated state satisfies the corpus requirement but the shadow-review
-  step is still pending operator action: `shadow-run` exits
-  `pending-human-input` until the reviewer runs are recorded.
+  *Adjudication:* The prior label-only ledger is not qualifying evidence: its
+  entries were introduced under one bot identity, so it cannot prove two
+  independent human adjudicators. The corpus requirement remains unmet until
+  two distinct, authenticated human operators adjudicate every case while
+  blind to reviewer output. Only then may `shadow-run` record reviewer runs.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-003** — The rollout record SHALL measure
   false alarms, missed material drift, escaped changes, reviewer cost, human
@@ -36,10 +34,9 @@
   baseline and promotion rule.
   *Design:* `intent-conformance-rollout-design.md`.
   *Worksheet:* `shadow-evaluation-worksheet-2026-10-13.md` records the
-  adjudicated state, the active-adjudication human time, and the
-  reviewer-derived measures as `not established` until the operator appends
-  `shadow_run` events to the same ledger. The promotion decision stays
-  unestablished until those reviewer runs exist.
+  frozen corpus and marks every adjudication- and reviewer-derived measure
+  `not established`. The promotion decision stays unestablished until the
+  independent human adjudications and reviewer runs exist.
 
 - [x] **INTENT-CONFORMANCE-ROLLOUT-004** — Operators SHALL not release
   feature work into the mode until scanner enforcement and the final merge
