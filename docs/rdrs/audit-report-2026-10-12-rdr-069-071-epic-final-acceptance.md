@@ -61,11 +61,12 @@ and `app/temporal/activities/chain_lid_planning_activity.rb`; they are
 outside the RDR-069–071 scope and are not addressed here.
 
 ```
-bundle exec rubocop docs/         # 2026-10-12
+npx markdownlint \
+  docs/rdrs/audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md   # 2026-10-12
 ```
 
-Result: 0 files inspected, no offenses detected. No documentation churn in
-this audit introduces style violations.
+Result: 0 offenses detected on the audit report file. No documentation churn
+in this audit introduces style violations.
 
 ```
 rg -i 'facet'     app/ db/ config/        # 0 facet-related matches
@@ -73,7 +74,7 @@ rg -i 'diagram'   app/ db/ config/        # 0 diagram-related matches
 rg -i 'bounded[_ ]investigation|investigation_budget' app/ db/ config/  # 0
 rg -i 'question_exploration|exploration_enabled|chat_exploration' \
                                               app/ db/ config/        # 0
-rg -inE 'create_table.*(facet|exploration|investigation|diagram|confidence_driven)' \
+rg -in 'create_table.*(facet|exploration|investigation|diagram|confidence_driven)' \
                                               db/schema.rb            # 0
 ```
 
