@@ -1060,6 +1060,19 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to match(/<turbo-frame[^>]*id="older_messages_next"/)
         expect(response.body).to match(/<turbo-frame[^>]*id="older_messages_next_next"/)
       end
+
+      # @spec CHAT-API-024 — Lazy pages carry a leading tool run across the
+      # fixed-size page boundary so one persisted run has one disclosure.
+      it "keeps a tool run that crosses the lazy-page boundary together" do
+        51.times { create(:chat_message, :tool, chat_session: chat_session) }
+        newest_message = create(:chat_message, chat_session: chat_session, content: "Newest message")
+
+        get older_messages_chat_session_path(chat_session), params: { before: newest_message.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("51 tool actions")
+        expect(response.body).not_to include("50 tool actions")
+      end
     end
   end
 

@@ -140,9 +140,13 @@ What ships today:
 - the transcript hides leading `<think>` reasoning blocks from assistant
   messages during streaming and on reload while retaining the original
   content and escaping ordinary HTML
-- non-pending tool calls render as muted, left-railed cards so they are
-  distinguishable from assistant prose by silhouette; pending confirmations
-  retain their amber approval treatment as the transcript's strongest signal
+- consecutive non-pending tool calls render inside one closed, low-contrast
+  transcript disclosure so multi-step tool activity is skimmable; expanding it
+  preserves the existing muted left-railed individual cards. Pending
+  confirmations never join a group and retain their amber approval treatment
+  as the transcript's strongest signal. Pagination extends its message slice
+  across a leading tool-run boundary so a persisted run is always rendered in
+  one maximal disclosure, including when older transcript frames load lazily
 - MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back
