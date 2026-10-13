@@ -129,7 +129,7 @@ is not required by the current umbrella body.
 
 The cheapest deterministic layers the RDR names are honest reuse paths:
 `Tdd::Mode` and `Projects::Readiness` already ship behavioral-test substrate
-under RDR-056/074, and `IntConformance::VerifyAtMerge` ships approved-design
+under RDR-056/074, and `IntentConformance::VerifyAtMerge` ships approved-design
 conformance under RDR-067. None of those is a substitute for the add-on's
 own coordinator, obligation store, rubric, evidence model, finding classes,
 or three entry paths; each is a delegation target the add-on will compose
