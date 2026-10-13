@@ -50,7 +50,10 @@ prefix: QUIET-MODE
   comment, while still applying the same label and paid-state updates and
   still rejecting `add_comment` API calls through the project-scoped GitHub
   client. When quiet mode is disabled, the prior enhancement-comment flow
-  SHALL be unchanged.
+  SHALL be unchanged. A subsequent enhancement run SHALL process its fresh
+  agent output when the marked questions have a matching complete marked
+  answers section, rather than treating those answered questions as a prior
+  incomplete enhancement.
 - [x] **QUIET-MODE-010** — When a project's quiet mode is enabled, the
   clarifying-question answer submission path (`Projects::ClarifyingQuestionsController#create`,
   `Tools::SubmitClarifyingAnswers#perform`, and any future quiet-mode-aware

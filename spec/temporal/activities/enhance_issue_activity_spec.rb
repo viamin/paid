@@ -339,6 +339,37 @@ RSpec.describe Activities::EnhanceIssueActivity do
       end
     end
 
+    it "processes a rerun after matching quiet-mode answers were submitted" do # @spec QUIET-MODE-009 @spec QUIET-MODE-011
+      project.update!(quiet_mode: true)
+      issue.update!(body: <<~MARKDOWN)
+        Record user actions
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        <!-- paid:clarifying-questions-digest:#{ClarifyingQuestions::DescriptionSection.digest_for([ "Which events should be recorded?" ])} -->
+        1. Which events should be recorded?
+        <!-- /paid:clarifying-questions -->
+
+        <!-- paid:clarifying-answers -->
+        ## Clarifying question answers
+
+        <!-- paid:clarifying-answers-digest:#{ClarifyingQuestions::DescriptionSection.digest_for([ "Which events should be recorded?" ])} -->
+        **Q1: Which events should be recorded?**
+        **A1:** Login events
+        <!-- /paid:clarifying-answers -->
+      MARKDOWN
+      log_agent_stdout(structured_output)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).not_to be(true)
+      expect(result[:sufficient_context]).to be(true)
+      expect_label_added(project.enhance_issue_enhanced_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
     it "fails before moving to needs_input when adding the GitHub label fails" do
       allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
       log_agent_stdout({

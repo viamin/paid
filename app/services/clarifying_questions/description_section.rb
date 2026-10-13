@@ -94,6 +94,20 @@ module ClarifyingQuestions
       }
     end
 
+    # Returns whether the description has a complete answers section for the
+    # supplied questions. The digest confirms that the answers belong to this
+    # question set, while AnswerPairs ensures every question has an answer.
+    def answers_complete_for_questions?(body, questions)
+      parsed_answers = parse_answers(body)
+      return false unless parsed_answers
+
+      parsed_pairs = AnswerPairs.parse(parsed_answers[:inner])
+      return false unless AnswerPairs.questions_match?(questions, parsed_pairs)
+      return false if parsed_pairs.any? { |pair| pair[:answer].blank? }
+
+      parsed_answers[:digest].blank? || parsed_answers[:digest] == digest_for(questions)
+    end
+
     # Replaces the existing questions section (if any) with a new one whose
     # body is the supplied numbered list. The optional preamble is emitted
     # immediately before the section so a subsequent enhancement retains its

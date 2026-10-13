@@ -27,12 +27,15 @@ Clarifying-question answers currently persist only in a marker-tagged GitHub
 comment. In quiet mode, the channel moves into a marked section of the issue
 or PR description: questions are written between `<!-- paid:clarifying-questions -->`
 and `<!-- /paid:clarifying-questions -->` markers, and answers between
-`<!-- paid:clarifying-answers -->` and `<!-- /paid -->` markers, with a
+`<!-- paid:clarifying-answers -->` and `<!-- /paid:clarifying-answers -->` markers, with a
 stable question-set digest embedded in both sections so `Load` can match
 them without relying on `comment.created_at`. Body editing is the permitted
 channel in quiet mode, and a single shared `ClarifyingQuestions::SubmitAnswers`
 service writes through that channel for both the inbox controller and the
 linked-chat MCP tool so per-call-site branching stays out of the request path.
+When an operator has supplied a complete answer section matching the current
+questions digest, the next enhancement run consumes its new agent output; the
+preserved questions section is not treated as an incomplete prior enhancement.
 
 ## Commit-message commentary channel (#4232)
 

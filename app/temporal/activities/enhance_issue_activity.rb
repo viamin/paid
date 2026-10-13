@@ -76,7 +76,7 @@ module Activities
       existing_comment = enhancement_comment(comments)
       if issue.enhance_issue_rounds.zero?
         return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment
-        return complete_existing_body(agent_run, client, project, issue) if description_has_questions?(issue)
+        return complete_existing_body(agent_run, client, project, issue) if description_has_unanswered_questions?(issue)
       end
 
       parsed = parse_agent_output!(agent_run, project, issue, client, raw_comments)
@@ -404,8 +404,13 @@ module Activities
       }
     end
 
-    def description_has_questions?(issue)
-      ClarifyingQuestions::DescriptionSection.parse_questions(issue.body.to_s).any?
+    # A preserved body section represents an existing enhancement only while
+    # its questions await answers. Matching complete answers mean the operator
+    # has supplied new input, so this run must consume its fresh agent output.
+    # @spec QUIET-MODE-009 @spec QUIET-MODE-011
+    def description_has_unanswered_questions?(issue)
+      questions = ClarifyingQuestions::DescriptionSection.parse_questions(issue.body.to_s).questions
+      questions.any? && !ClarifyingQuestions::DescriptionSection.answers_complete_for_questions?(issue.body, questions)
     end
 
     def existing_body_paid_state(issue)

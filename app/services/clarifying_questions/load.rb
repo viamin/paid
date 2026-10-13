@@ -94,19 +94,11 @@ module ClarifyingQuestions
     # questions and answers sections is the question-set digest embedded in
     # both sections, not `comment.created_at` (#4236).
     def answered_via_body?(body_questions)
-      parsed_answers = DescriptionSection.parse_answers(issue.body)
-      return false unless parsed_answers
-
       current_questions = body_questions.presence || DescriptionSection.parse_questions(issue.body).questions
       current_questions = current_questions.presence || Array(issue.respond_to?(:needs_input_questions) ? issue.needs_input_questions : [])
       return false if current_questions.empty?
 
-      parsed_pairs = AnswerPairs.parse(parsed_answers[:inner].to_s)
-      return false unless AnswerPairs.questions_match?(current_questions, parsed_pairs)
-      return false if parsed_pairs.any? { |pair| pair[:answer].blank? }
-
-      current_digest = DescriptionSection.digest_for(current_questions)
-      parsed_answers[:digest].blank? || parsed_answers[:digest] == current_digest
+      DescriptionSection.answers_complete_for_questions?(issue.body, current_questions)
     end
 
     # Render the description-section context when the questions live in the
