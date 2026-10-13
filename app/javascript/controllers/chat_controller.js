@@ -498,8 +498,7 @@ export default class extends Controller {
     const card = this.buildMessageElement(data.html)
     if (!card) return
 
-    this.messagesTarget.append(card)
-    this.trackAttemptToolCard(card)
+    this.appendToolCard(card)
     this.setStatus(`Running ${data.tool_name || "tool"}…`)
     this.scrollToBottom()
   }
@@ -510,9 +509,67 @@ export default class extends Controller {
     const card = this.buildMessageElement(data.html)
     if (!card) return
 
-    this.messagesTarget.append(card)
-    this.trackAttemptToolCard(card)
+    this.appendToolCard(card)
     this.scrollToBottom()
+  }
+
+  // @spec CHAT-API-024
+  // The first live card stays standalone because a stream cannot know whether
+  // another tool event follows. A second adjacent card upgrades that pair into
+  // the same quiet container used by persisted transcript rendering.
+  appendToolCard(card) {
+    this.appendGroupedToolCard(card)
+    this.trackAttemptToolCard(card)
+  }
+
+  // @spec CHAT-API-024
+  // Keep live tool-event cleanup separate from persisted rows replayed after a
+  // reconnect: both use the same grouping behavior, but only live cards belong
+  // to the current fallback attempt.
+  appendGroupedToolCard(card) {
+    const group = this.currentLiveToolGroup() || this.groupTrailingToolCard()
+
+    if (group) {
+      group.querySelector("[data-chat-tool-group-cards]").append(card)
+      this.updateToolGroupSummary(group)
+    } else {
+      this.messagesTarget.append(card)
+    }
+  }
+
+  currentLiveToolGroup() {
+    const lastMessage = this.messagesTarget.lastElementChild
+    return lastMessage?.matches("[data-chat-tool-group]") ? lastMessage : null
+  }
+
+  groupTrailingToolCard() {
+    const trailingCard = this.messagesTarget.lastElementChild
+    if (!trailingCard?.querySelector("[data-chat-tool-card]:not([data-chat-tool-pending])")) return null
+
+    const group = this.createLiveToolGroup()
+    trailingCard.replaceWith(group)
+    group.querySelector("[data-chat-tool-group-cards]").append(trailingCard)
+    this.updateToolGroupSummary(group)
+    return group
+  }
+
+  createLiveToolGroup() {
+    const group = document.createElement("details")
+    group.className = "group max-w-3xl"
+    group.dataset.chatToolGroup = ""
+    group.innerHTML = `
+      <summary class="flex cursor-pointer list-none items-center gap-2 rounded-md bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500 marker:hidden hover:bg-gray-100">
+        <svg class="h-3 w-3 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+        <span data-chat-tool-group-summary></span>
+      </summary>
+      <div class="mt-2 space-y-3" data-chat-tool-group-cards></div>
+    `
+    return group
+  }
+
+  updateToolGroupSummary(group) {
+    const count = group.querySelectorAll("[data-chat-tool-card]").length
+    group.querySelector("[data-chat-tool-group-summary]").textContent = `${count} tool action${count === 1 ? "" : "s"}`
   }
 
   handleMessageToolConfirmation(data) {
@@ -554,10 +611,46 @@ export default class extends Controller {
     const existing = this.messageElementById(data.message_id)
     if (existing) {
       this.renderedMessageElement(existing)?.replaceWith(card)
+      this.mergeResolvedCardIntoAdjacentRun(card)
     } else {
       this.messagesTarget.append(card)
     }
     this.scrollToBottom()
+  }
+
+  // @spec CHAT-API-024
+  // A pending confirmation stands alone while it waits for the user. Once the
+  // user resolves it, the card is no longer pending, so it should merge into
+  // the preceding tool run instead of sitting between that run and the next
+  // tool card — otherwise the next tool result groups only with the resolved
+  // card, leaving two disclosures for what is logically one run, while a
+  // reload renders the same maximal run as one disclosure. The replaceWith
+  // above always places the card at the position of the old pending card,
+  // which is a direct child of messagesTarget (a pending confirmation cannot
+  // already be inside a group), so we only merge when that placement holds —
+  // otherwise a duplicate resolve would nest a fresh group inside the group
+  // the original merge already created.
+  mergeResolvedCardIntoAdjacentRun(card) {
+    if (card.parentElement !== this.messagesTarget) return
+    if (!this.groupableToolCard(card)) return
+
+    const precedingGroup = card.previousElementSibling?.matches?.("[data-chat-tool-group]") ? card.previousElementSibling : null
+    if (precedingGroup) {
+      card.remove()
+      precedingGroup.querySelector("[data-chat-tool-group-cards]").append(card)
+      this.updateToolGroupSummary(precedingGroup)
+      return
+    }
+
+    const precedingCard = card.previousElementSibling
+    if (precedingCard?.querySelector?.("[data-chat-tool-card]:not([data-chat-tool-pending])")) {
+      const group = this.createLiveToolGroup()
+      card.remove()
+      precedingCard.replaceWith(group)
+      group.querySelector("[data-chat-tool-group-cards]").append(precedingCard)
+      group.querySelector("[data-chat-tool-group-cards]").append(card)
+      this.updateToolGroupSummary(group)
+    }
   }
 
   approveToolCall(event) {
@@ -605,8 +698,25 @@ export default class extends Controller {
       }
     }
 
-    this.messagesTarget.append(messageElement)
+    this.appendCreatedMessage(messageElement)
     this.scrollToBottom()
+  }
+
+  // @spec CHAT-API-024
+  // A reconnect replays persisted rows through handleMessageCreated. Preserve
+  // consecutive non-pending tool rows as one group without tracking them as
+  // discardable cards from the current live attempt.
+  appendCreatedMessage(messageElement) {
+    if (this.groupableToolCard(messageElement)) {
+      this.appendGroupedToolCard(messageElement)
+    } else {
+      this.messagesTarget.append(messageElement)
+    }
+  }
+
+  groupableToolCard(messageElement) {
+    const selector = "[data-chat-tool-card]:not([data-chat-tool-pending])"
+    return messageElement.matches?.(selector) || messageElement.querySelector(selector)
   }
 
   handleMessageDeleted(data) {
@@ -670,8 +780,17 @@ export default class extends Controller {
   }
 
   removeCurrentAttemptToolCards() {
-    (this.currentAttemptToolCards || []).forEach((card) => card.remove())
+    (this.currentAttemptToolCards || []).forEach((card) => this.removeToolCard(card))
     this.currentAttemptToolCards = []
+  }
+
+  // @spec CHAT-API-024
+  // Fallback cleanup tracks individual cards, but a live grouping wrapper is
+  // only presentation chrome and must leave with its final tracked card.
+  removeToolCard(card) {
+    const group = card.closest?.("[data-chat-tool-group]")
+    card.remove()
+    if (group && !group.querySelector("[data-chat-tool-card]")) group.remove()
   }
 
   // On a runner fallback the partial answer from the failed runner is discarded
