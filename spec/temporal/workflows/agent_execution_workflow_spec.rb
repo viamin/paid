@@ -63,7 +63,11 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
 
     def stub_multi_issue_plan_activities
-      multi_plan = { tasks: [ { index: 0, title: "Task A", body: "Body", dependencies: [] } ], parent_issue_number: 10 }
+      multi_plan = {
+        tasks: [ { index: 0, title: "Task A", body: "Body", dependencies: [] } ],
+        parent_issue_number: 10,
+        plan_revision: "multi-issue-plan-revision"
+      }
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
@@ -177,7 +181,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           timeout: 30)
     end
 
-    it "runs CreateMultipleIssuesActivity when a multi-issue plan is detected" do
+    it "runs CreateMultipleIssuesActivity with the parsed plan revision when a multi-issue plan is detected" do # @spec ISSUE-TREE-003
       stub_multi_issue_plan_activities
 
       result = workflow.execute(input)
@@ -185,7 +189,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(result[:success]).to be true
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CreateMultipleIssuesActivity,
-          hash_including(agent_run_id: 42, tasks: anything, parent_issue_number: 10),
+          hash_including(agent_run_id: 42, tasks: anything, parent_issue_number: 10,
+            plan_revision: "multi-issue-plan-revision"),
           timeout: 300, retry_policy: described_class::NO_RETRY)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CreateGithubIssueActivity, anything,

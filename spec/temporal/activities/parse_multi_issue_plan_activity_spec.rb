@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec ISSUE-TREE-003
 RSpec.describe Activities::ParseMultiIssuePlanActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
@@ -97,6 +98,23 @@ RSpec.describe Activities::ParseMultiIssuePlanActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:plan][:parent_issue_number]).to eq(99)
+    end
+
+    it "derives a stable revision after defaulting the parent issue" do
+      issue = create(:issue, project: project, github_number: 99)
+      agent_run.update!(issue: issue)
+
+      agent_run.log!("stdout", <<~OUTPUT)
+        <!-- multi-issue-plan-start -->
+        [{"title": "Task A", "body": "Do A", "dependencies": []}]
+        <!-- multi-issue-plan-end -->
+      OUTPUT
+
+      first_plan = activity.execute(agent_run_id: agent_run.id).fetch(:plan)
+      second_plan = activity.execute(agent_run_id: agent_run.id).fetch(:plan)
+
+      expect(first_plan[:plan_revision]).to match(/\A[a-f0-9]{64}\z/)
+      expect(second_plan[:plan_revision]).to eq(first_plan[:plan_revision])
     end
 
     it "does not override explicit parent-issue marker with source issue" do
