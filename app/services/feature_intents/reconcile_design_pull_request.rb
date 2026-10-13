@@ -149,7 +149,10 @@ module FeatureIntents
 
     def pull_request_value(key)
       pull_request = github_pull_request || (github_issue.pull_request if github_issue.respond_to?(:pull_request))
-      pull_request.respond_to?(key) ? pull_request.public_send(key) : pull_request&.fetch(key, nil)
+      return pull_request.public_send(key) if pull_request.respond_to?(key)
+      return unless pull_request.respond_to?(:[])
+
+      pull_request[key] || pull_request[key.to_s]
     end
   end
 end

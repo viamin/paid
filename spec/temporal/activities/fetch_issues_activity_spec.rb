@@ -227,7 +227,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     # poll. Load the bootstrap PR numbers once and reuse them.
     it "loads the bootstrap PR numbers once per project sync, not once per PR" do
       [ 97, 98, 99 ].each do |n|
-        create(:agent_run, project: project, goal: "bootstrap_readiness", pull_request_number: n)
+        create(:agent_run, :completed, project: project, goal: "bootstrap_readiness", pull_request_number: n)
       end
       github_issues = [ 96, 97, 98, 99, 100 ].map { |n| github_pr_issue(n) }
       stub_issues_by_label(nil => github_issues)

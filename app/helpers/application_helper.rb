@@ -542,7 +542,8 @@ module ApplicationHelper
     "enhance_issue" => "Issue Enhancement",
     "analyze_issue" => "Issue Analysis",
     "lid_planning" => "LID Planning",
-    "create_feature" => "Feature Creation"
+    "create_feature" => "Feature Creation",
+    "bootstrap_readiness" => "Bootstrap Readiness"
   }.freeze
 
   AGENT_RUN_FOCUS_LABELS = {
