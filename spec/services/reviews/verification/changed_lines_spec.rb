@@ -33,19 +33,18 @@ RSpec.describe Reviews::Verification::ChangedLines do
       ]
     end
 
-    it "parses right-side changed line ranges from unified diff patches" do
+    it "parses only changed right-side lines from unified diff patches" do
       changed_lines = described_class.from_files(two_hunk_files)
 
       expect(changed_lines.changed_file?("app/models/user.rb")).to be true
       expect(changed_lines.changed_file?("app/models/other.rb")).to be false
-      # Right-side lines of first hunk: 10..16; second hunk: 44..45
-      expect(changed_lines.valid_line?("app/models/user.rb", 10)).to be true
-      expect(changed_lines.valid_line?("app/models/user.rb", 16)).to be true
-      expect(changed_lines.valid_line?("app/models/user.rb", 44)).to be true
-      expect(changed_lines.valid_line?("app/models/user.rb", 45)).to be true
-      # Context line between hunks and unchanged lines are not valid anchors
-      expect(changed_lines.valid_line?("app/models/user.rb", 17)).to be false
-      expect(changed_lines.valid_line?("app/models/user.rb", 9)).to be false
+      # Only added right-side lines are valid anchors; unchanged hunk context
+      # must not accept an inline review comment.
+      added_lines = [ 11, 12, 13, 14, 45 ]
+      expect(added_lines).to all(satisfy { |line| changed_lines.valid_line?("app/models/user.rb", line) })
+      # Context line between hunks and unchanged hunk lines are not valid anchors.
+      unchanged_lines = [ 10, 44, 16, 17, 9 ]
+      expect(unchanged_lines).to all(satisfy { |line| !changed_lines.valid_line?("app/models/user.rb", line) })
       expect(changed_lines.valid_line?("app/models/other.rb", 10)).to be false
     end
 

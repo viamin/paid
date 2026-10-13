@@ -2,7 +2,7 @@
 
 module Reviews
   module Verification
-    # Index of the right-side (new version) line ranges touched by a pull
+    # Index of changed right-side (new version) line ranges touched by a pull
     # request, parsed from the unified diff patches GitHub returns per file.
     # Used to validate that every inline comment anchors to a line GitHub will
     # accept for the pinned head (#3898).
@@ -13,33 +13,39 @@ module Reviews
     #
     # @spec REVIEW-VERIFY-008
     class ChangedLines
-      HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(?<start>\d+)(?:,(?<count>\d+))? @@/
+      HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(?<start>\d+)(?:,\d+)? @@/
 
       # @param files [Array<Hash>] entries shaped like
       #   GithubClient#detailed_pull_request_files (+:filename+, +:patch+)
       # @return [ChangedLines]
       def self.from_files(files)
         ranges = files.to_h do |file|
-          [ file[:filename], hunk_ranges(file[:patch]) ]
+          [ file[:filename], changed_ranges(file[:patch]) ]
         end
         new(ranges)
       end
 
-      def self.hunk_ranges(patch)
+      def self.changed_ranges(patch)
         return [] if patch.blank?
 
-        patch.each_line.filter_map do |line|
-          match = HUNK_HEADER.match(line)
-          next unless match
+        changed_lines = []
+        right_line = nil
 
-          start = match[:start].to_i
-          count = (match[:count] || 1).to_i
-          next if count.zero?
-
-          start..(start + count - 1)
+        patch.each_line do |line|
+          if (match = HUNK_HEADER.match(line))
+            right_line = match[:start].to_i
+          elsif right_line && line.start_with?("+") && !line.start_with?("+++")
+            changed_lines << right_line
+            right_line += 1
+          elsif right_line && !line.start_with?("-")
+            right_line += 1
+          end
         end
+
+        changed_lines.chunk_while { |previous, current| current == previous + 1 }
+          .map { |lines| lines.first..lines.last }
       end
-      private_class_method :hunk_ranges
+      private_class_method :changed_ranges
 
       # @param ranges [Hash{String => Array<Range>}] filename => right-side hunk ranges
       def initialize(ranges)
