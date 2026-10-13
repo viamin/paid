@@ -161,6 +161,23 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       )
     end
 
+    it "does not report a feature-planning run complete when the native parent link is unreconciled" do
+      brief_issue = create(:issue, project: project)
+      feature_intent = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
+      agent_run.update!(issue: brief_issue)
+      allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Parent body"))
+      allow(github_client).to receive(:update_issue)
+
+      activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451)
+
+      expect(agent_run.reload.status).to eq("running")
+      expect(feature_intent.reload.issue_tree_verification.fetch("state")).to eq("incomplete")
+      expect(feature_intent.issue_tree_verification.fetch("unresolved")).to include(
+        a_string_matching(/native parent link unavailable/)
+      )
+    end
+
     it "logs all created issue numbers" do
       activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
 
@@ -445,6 +462,20 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
           expect(e.details.first.first[:github_number]).to eq(101)
         }
       end
+
+      it "persists the partial issue-tree manifest on the linked feature intent before raising" do
+        brief_issue = create(:issue, project: project)
+        feature_intent = create(:feature_intent, project: project)
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
+        agent_run.update!(issue: brief_issue)
+        stub_first_issue_creation_succeeds_then_fails
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+        }.to raise_error(Temporalio::Error::ApplicationError, /Partial failure/)
+
+        expect_partial_filing_persisted(feature_intent)
+      end
     end
 
     it "enqueues ProcessRunQueueJob after completing the agent run" do
@@ -468,5 +499,29 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
 
     activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
     call_args.map { |opts| opts[:body] }
+  end
+
+  def stub_first_issue_creation_succeeds_then_fails
+    call_count = 0
+    allow(github_client).to receive(:create_issue) do |*_args|
+      call_count += 1
+      if call_count <= 1
+        gh_issue_response(number: 101, id: 200_001, title: "Add database migration", body: "body1")
+      else
+        raise StandardError, "GitHub API timeout"
+      end
+    end
+  end
+
+  def expect_partial_filing_persisted(feature_intent)
+    feature_intent.reload
+    manifest_tasks = feature_intent.issue_tree_manifest.fetch("tasks")
+    expect(manifest_tasks.map { |task| task["identity"] }).to include("task-0")
+    expect(manifest_tasks.first).to include("issue" => hash_including("number" => 101))
+    expect(feature_intent.issue_tree_manifest["filing_progress"]).to include(
+      "confirmed" => 1, "expected" => tasks.size
+    )
+    expect(feature_intent.issue_tree_verification.fetch("state")).to eq("incomplete")
+    expect(feature_intent.issues).to include(Issue.find_by(github_number: 101))
   end
 end

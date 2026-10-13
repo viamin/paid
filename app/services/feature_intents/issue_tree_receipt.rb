@@ -31,7 +31,7 @@ module FeatureIntents
     def verify
       return stale_result if stale_revision?
 
-      unresolved = coverage_gaps + cycle_gaps + remote_gaps + linkage_gaps
+      unresolved = coverage_gaps + cycle_gaps + remote_gaps + linkage_gaps + native_link_gaps
       state = unresolved.empty? ? "verified" : "incomplete"
       payload = verification_payload(state:, unresolved:)
       feature_intent.update!(issue_tree_verification: payload)

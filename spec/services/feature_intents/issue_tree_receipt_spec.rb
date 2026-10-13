@@ -60,4 +60,21 @@ RSpec.describe FeatureIntents::IssueTreeReceipt do
 
     expect(result.unresolved).to include("remote access unknown for foundation", "remote access unknown for delivery")
   end
+
+  it "blocks completion while the native parent link remains unreconciled" do
+    result = described_class.record(
+      feature_intent:, tasks:, created_issues:,
+      plan_revision: "design-sha", parent_issue_number: 451
+    )
+
+    expect(result).not_to be_complete
+    expect(result.state).to eq("incomplete")
+    expect(result.missing_native_links).to include(
+      a_string_matching(/native parent link unavailable/)
+    )
+    expect(result.unresolved).to include(
+      a_string_matching(/native parent link unavailable/)
+    )
+    expect(feature_intent.reload.issue_tree_verification.fetch("state")).to eq("incomplete")
+  end
 end

@@ -116,6 +116,8 @@ module Activities
     rescue StandardError => e
       raise e if created_issues.empty?
 
+      record_partial_filing(agent_run, tasks, created_issues, parent_issue_number)
+
       issue_numbers = created_issues.map { |i| "##{i[:github_number]}" }.join(", ")
       raise Temporalio::Error::ApplicationError.new(
         "Partial failure after creating #{created_issues.size}/#{creation_order.size} issues " \
@@ -273,6 +275,29 @@ module Activities
       return unless agent_run.issue
 
       FeatureIntent.linked_to_issue(agent_run.issue).first
+    end
+
+    # Persist what was confirmed before the failure so retries and operators
+    # retain the partial issue identities. We swallow errors here because the
+    # caller is already re-raising the original creation failure; this must
+    # never mask it. @spec ISSUE-TREE-003
+    def record_partial_filing(agent_run, tasks, created_issues, parent_issue_number)
+      feature_intent = feature_intent_for(agent_run)
+      return unless feature_intent
+
+      FeatureIntents::IssueTreeReceipt.record(
+        feature_intent: feature_intent,
+        tasks: tasks,
+        created_issues: created_issues,
+        parent_issue_number: parent_issue_number
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.partial_filing_receipt_failed",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        error: e.message
+      )
     end
 
     def update_parent_issue(client, project, parent_issue_number, created_issues)
