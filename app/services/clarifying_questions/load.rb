@@ -13,6 +13,7 @@ module ClarifyingQuestions
       @issue = issue
     end
 
+    # @spec QUIET-MODE-011
     def call
       body_questions = Parse.call(comment_body: issue.body)
       stored_questions = issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions).map { |question| question.to_s.strip }.reject(&:blank?) : []
@@ -21,15 +22,15 @@ module ClarifyingQuestions
       if current_questions.any?
         return current_questions unless github_available?
 
-        return reconcile_answered if answered_via_body?(current_questions)
+        return reconcile_answered if quiet_mode? && answered_via_body?(current_questions)
         return reconcile_answered if answered_after_latest_questions?(body_questions: current_questions)
 
-        return current_questions
+        return latest_comment_questions || current_questions
       end
 
       return [] unless github_available?
 
-      return reconcile_answered if answered_via_body?([])
+      return reconcile_answered if quiet_mode? && answered_via_body?([])
       enhancement_comment = latest_enhancement_comment
       return reconcile_answered if answered_after_latest_questions?(body_questions:)
 
@@ -100,11 +101,12 @@ module ClarifyingQuestions
       current_questions = current_questions.presence || Array(issue.respond_to?(:needs_input_questions) ? issue.needs_input_questions : [])
       return false if current_questions.empty?
 
-      current_digest = DescriptionSection.digest_for(current_questions)
-      return true if parsed_answers[:digest].present? && parsed_answers[:digest] == current_digest
-
       parsed_pairs = AnswerPairs.parse(parsed_answers[:inner].to_s)
-      AnswerPairs.questions_match?(current_questions, parsed_pairs)
+      return false unless AnswerPairs.questions_match?(current_questions, parsed_pairs)
+      return false if parsed_pairs.any? { |pair| pair[:answer].blank? }
+
+      current_digest = DescriptionSection.digest_for(current_questions)
+      parsed_answers[:digest].blank? || parsed_answers[:digest] == current_digest
     end
 
     # Render the description-section context when the questions live in the
@@ -156,6 +158,13 @@ module ClarifyingQuestions
       end
     end
 
+    def latest_comment_questions
+      enhancement_comment = latest_enhancement_comment
+      return unless enhancement_comment
+
+      Parse.call(comment_body: comment_body(enhancement_comment)).presence
+    end
+
     def answer_satisfies_latest_questions?(answer_comment)
       enhancement_comment = latest_enhancement_comment
       return true unless enhancement_comment
@@ -182,7 +191,7 @@ module ClarifyingQuestions
     end
 
     def ingest_answers
-      if body_answers?
+      if quiet_mode? && body_answers?
         IngestAnswers.call(project: project, issue: issue, issue_body: issue.body)
       else
         IngestAnswers.call(project: project, issue: issue, issue_comments: issue_comments)
@@ -198,6 +207,10 @@ module ClarifyingQuestions
 
     def body_answers?
       DescriptionSection.parse_answers(issue.body).present?
+    end
+
+    def quiet_mode?
+      project.quiet_mode? == true
     end
   end
 end
