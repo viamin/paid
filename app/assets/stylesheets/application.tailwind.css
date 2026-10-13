@@ -69,9 +69,13 @@
    viewport-subtraction height would extend below the grid track, so
    `--chat-panel-height` is set to `100%` here and the panel's inline
    `height: var(--chat-panel-height, ...)` resolves to `100%` of that inner
-   wrapper (the grid track). The fallback inside `var(...)` keeps the original
-   `100dvh - offset-top - bottom-space` calculation available for any
-   caller that mounts the panel outside the shared shell. (@spec CHAT-API-009)
+   wrapper (the grid track). The media query is unconditional, so this `100%`
+   override applies to every caller at `lg`+ — a panel rendered outside the
+   shared shell at desktop still resolves to `100%` here, not to the
+   `var(...)` fallback. The fallback inside `var(...)` therefore only takes
+   effect below `lg`, where the media query does not fire and the original
+   `100dvh - offset-top - bottom-space` calculation still produces the
+   intended viewport-bound height. (@spec CHAT-API-009)
    ======================================== */
 [data-controller~="chat"] {
   --chat-panel-bottom-space: 0px;

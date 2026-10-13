@@ -595,9 +595,9 @@ RSpec.describe "ChatSessions" do
         # turn the wrapper into a second scroll container in front of the
         # transcript (#4374 review). The panel therefore references
         # `--chat-panel-height` (set to `100%` by the
-        # `[data-controller~="chat"]` rule at `lg`), with the viewport
-        # subtraction as the `var(...)` fallback for below `lg` and for any
-        # caller that mounts the panel outside the shared shell.
+        # `[data-controller~="chat"]` rule at `lg`); the viewport subtraction
+        # is the `var(...)` fallback, but the rule fires unconditionally at
+        # desktop, so the fallback only takes effect below `lg`.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 

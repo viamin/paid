@@ -105,9 +105,10 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
   # the `[data-controller~="chat"]` rule at `lg`) rather than carry a
   # viewport-subtraction `calc(100dvh - offset-top - bottom-space)` that
   # extends below the `100dvh - 12rem` grid track and turns the wrapper
-  # into a second scroll container. The fallback inside `var(...)` keeps
-  # the original calculation available below `lg` and for any future
-  # caller that mounts the panel outside the shared shell.
+  # into a second scroll container. The fallback inside `var(...)` only
+  # takes effect below `lg` — the `[data-controller~="chat"]` rule fires
+  # unconditionally at desktop, so a panel rendered outside the shared
+  # shell at `lg`+ still resolves to `100%`, not to the fallback.
   it "binds the chat panel height to --chat-panel-height so the shared desktop wrapper stays the only scroll region" do
     show_user = create(:user, :owner, account: account, email: "chat-panel-height@example.com", password: "password123")
     Warden.test_reset!

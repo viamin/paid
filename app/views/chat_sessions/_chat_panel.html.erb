@@ -21,10 +21,14 @@
     `[data-controller~="chat"]` rule at `lg`, so the panel resolves
     to `height: 100%` (the inner wrapper, which itself resolves to
     the grid track) and the conversation remains the only scroll
-    region the composer depends on. The fallback inside `var(...)`
-    preserves the original mobile calculation for the show page
-    below `lg` and for any future caller that mounts the panel
-    outside the shared shell.
+    region the composer depends on. The media query is unconditional,
+    so this `100%` override applies to every chat panel at `lg`+ —
+    a caller rendering this partial outside the shared shell at
+    desktop still resolves to `100%`, not to the `var(...)` fallback.
+    The fallback inside `var(...)` therefore only takes effect below
+    `lg`, where the media query does not fire and the original
+    `100dvh - offset-top - bottom-space` calculation still produces
+    the intended viewport-bound height for the chat show page.
 
     This must remain a definite `height`, never a `max-height`, and
     must carry no `min-h` floor. A `max-height` leaves the panel's

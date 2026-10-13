@@ -6,6 +6,14 @@ require "rails_helper"
 # desktop split is rendered with both panes, that the inline one-page form
 # is present, and that the master/detail collapse is wired for mobile via
 # the inbox-master-detail Stimulus controller.
+#
+# Pairs with `spec/system/chat_shared_layout_spec.rb`, which covers the
+# same shared `app/views/shared/_list_detail_shell.html.erb` partial from
+# the Chat side, so a future change to the shared grid, pane chrome,
+# empty state, or active-row treatment is caught when only one of the two
+# screens drifts.
+#
+# @spec LIST-DETAIL-007
 RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
   let!(:account) { create(:account) }
   let!(:user) { create(:user, :owner, account: account, email: "owner@example.com", password: "password123") }
@@ -58,6 +66,25 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     expect(form).to have_field("inbox_kind", type: :hidden, with: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
     expect(form).to have_css("textarea[name='answers[]']", count: 2)
     expect(form).to have_button("Submit Answers")
+  end
+
+  # @spec LIST-DETAIL-007
+  it "renders Inbox in the shared viewport-bound shell with independent pane scroll regions" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    sign_in_as(user)
+    visit inbox_path(
+      project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+    )
+
+    document = Nokogiri::HTML(page.body)
+    grid = document.at_css("div.grid.gap-6")
+
+    expect(grid).to be_present
+    expect(grid[:class]).to include("lg:h-[calc(100dvh-12rem)]")
+    expect(document.at_css("#inbox-list > div")[:class]).to include("lg:overflow-y-auto")
+    expect(document.at_css("#inbox-detail-pane > div")[:class]).to include("lg:overflow-y-auto")
   end
 
   it "renders a labeled, multi-line continuation reason in a partial closeout" do # @spec PARTIAL-CLOSEOUT-010
