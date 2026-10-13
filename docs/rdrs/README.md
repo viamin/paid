@@ -227,7 +227,8 @@ and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
 remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
 and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
 no implementation shipped. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
-and the [umbrella final-acceptance audit](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
+and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
+2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
 confirm that #4309 remains open until those focused gaps ship and a future
 audit can rerun the structural and database-backed checks against shipped
 behavior.
