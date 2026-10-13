@@ -238,14 +238,11 @@ so it does not appear in the index above; the umbrella
 [#4365](https://github.com/viamin/paid/issues/4365) tracks its
 implementation tree. The 2026-10-12 readiness audit
 [(`audit-report-2026-10-12-rdr-075.md`)](audit-report-2026-10-12-rdr-075.md)
-and the 2026-10-13 final-acceptance audit
-([`audit-report-2026-10-13-rdr-075-final.md`](audit-report-2026-10-13-rdr-075-final.md))
-record that no RDR-075 code, schema, model, coordinator, rubric,
-evidence, finding synthesis, or `layered_verification_coordinator`
-flag has shipped, that no `docs/intent/layered-verification/` LID
-segment yet exists, and that #4365 must remain open until Phases
-1–4 (#4366–#4369) and the closeout (#4370) own their part of the
-implementation.
+records that no RDR-075 code, schema, model, coordinator, rubric, evidence,
+finding synthesis, or `layered_verification_coordinator` flag has shipped,
+that no `docs/intent/layered-verification/` LID segment yet exists, and that
+the umbrella issue must remain open until Phases 1–4 (#4366–#4369) and the
+closeout (#4370) own their part of the implementation.
 
 ## Decision Summary
 
