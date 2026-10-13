@@ -242,7 +242,10 @@ records that no RDR-075 code, schema, model, coordinator, rubric, evidence,
 finding synthesis, or `layered_verification_coordinator` flag has shipped,
 that no `docs/intent/layered-verification/` LID segment yet exists, and that
 the umbrella issue must remain open until Phases 1–4 (#4366–#4369) and the
-closeout (#4370) own their part of the implementation.
+closeout (#4370) own their part of the implementation. The
+[2026-10-13 final-acceptance audit](audit-report-2026-10-13-rdr-075-final.md)
+reconfirms that outcome against the live issue state and repository, without
+claiming that RDR-075 is merged or ready to close.
 
 ## Decision Summary
 
