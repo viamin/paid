@@ -98,6 +98,41 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
     expect(document.at_css("#chat-detail > div")[:class]).to include("lg:overflow-y-auto")
   end
 
+  # @spec LIST-DETAIL-007
+  # Regression for #4374 (PR review): the chat panel renders inside the
+  # shared shell's `lg:overflow-y-auto` inner wrapper at desktop, so its
+  # inline height must reference `--chat-panel-height` (set to `100%` by
+  # the `[data-controller~="chat"]` rule at `lg`) rather than carry a
+  # viewport-subtraction `calc(100dvh - offset-top - bottom-space)` that
+  # extends below the `100dvh - 12rem` grid track and turns the wrapper
+  # into a second scroll container. The fallback inside `var(...)` keeps
+  # the original calculation available below `lg` and for any future
+  # caller that mounts the panel outside the shared shell.
+  it "binds the chat panel height to --chat-panel-height so the shared desktop wrapper stays the only scroll region" do
+    show_user = create(:user, :owner, account: account, email: "chat-panel-height@example.com", password: "password123")
+    Warden.test_reset!
+    login_as(show_user, scope: :user)
+    session = create(:chat_session, account: account, created_by: show_user, container_capability: "none")
+
+    visit chat_session_path(session, format: :html)
+
+    document = Nokogiri::HTML(page.body)
+    chat_panel = document.at_css("[data-controller='chat']")
+
+    expect(chat_panel).to be_present
+    expect(chat_panel[:style]).to include("var(--chat-panel-height")
+    expect(chat_panel[:style]).to include("calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem))")
+
+    # The CSS source is the committed artifact; the compiled build under
+    # `app/assets/builds/` is gitignored and only populated by `yarn build:css`
+    # (or `bin/dev`). Asserting the source keeps this regression test
+    # reproducible on a clean checkout.
+    css_source = File.read(Rails.root.join("app/assets/stylesheets/application.tailwind.css"))
+    expect(css_source).to match(
+      /@media\s*\(min-width:\s*1024px\)\s*\{\s*\[data-controller~="chat"\][^{]*\{[^}]*--chat-panel-height:\s*100%/
+    )
+  end
+
   it "exposes the shared active-row class set on chat session cards via data-active-classes" do
     # The active-row state is applied at runtime by `chat-session-list`;
     # the server-rendered initial visit puts the shared class set on

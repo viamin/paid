@@ -1,32 +1,48 @@
 <%# @spec CHAT-API-008 @spec CHAT-API-009
-    The viewport bound is applied from the controller with a measured
-    `--chat-panel-offset-top` variable instead of a fixed subtraction
-    so layout chrome above `<main>` (notably notice/alert flashes)
-    still leaves the conversation pane as the real scroll container.
-    Below `lg` the page carries no bottom padding at all (`pt-4`, no
-    `pb-*`) and `--chat-panel-bottom-space` is `0`, so the panel runs
-    flush to the viewport edge — every mobile pixel goes to the
-    transcript. At `lg`+ the page keeps symmetric `py-8` padding and
-    the panel subtracts the matching `2rem`. dvh (not vh) so the iOS
-    Safari URL bar doesn't shrink the available space.
+    Below `lg` the panel runs flush to the viewport edge — every mobile
+    pixel goes to the transcript. The viewport bound is applied from
+    the controller with a measured `--chat-panel-offset-top` variable
+    instead of a fixed subtraction so layout chrome above `<main>`
+    (notably notice/alert flashes) still leaves the conversation pane
+    as the real scroll container. The page carries no bottom padding
+    at all (`pt-4`, no `pb-*`) and `--chat-panel-bottom-space` is `0`,
+    so the height drops to `100dvh - offset-top`. dvh (not vh) so the
+    iOS Safari URL bar doesn't shrink the available space.
 
-    This must be a definite `height`, never a `max-height`, and must
-    carry no `min-h` floor. A `max-height` leaves the panel's own
-    height `auto` — indefinite — so percentage heights below it do not
-    resolve: the shared conversation partial's `h-full` root falls
-    back to its natural content height, overflows the
-    `min-h-0 flex-1 overflow-hidden` wrapper below, and the transcript
-    is clipped mid-conversation with the input unreachable and nothing
-    scrollable. A `min-height` is equally wrong here: against a height
-    already fitted to the viewport it can only clamp the panel taller
-    than the viewport, which is the document-scroll failure this bound
-    exists to prevent.
-    (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635) %>
+    At `lg`+ the chat show page and the inbox frame both render this
+    panel inside the shared `list-detail` shell, whose grid is bound
+    to `calc(100dvh - 12rem)` and whose detail pane wraps the panel
+    in an `lg:h-full lg:overflow-y-auto` inner wrapper. The mobile
+    `100dvh - offset-top - bottom-space` height no longer fits that
+    wrapper — the panel would extend below the grid track by ~4rem
+    and the inner wrapper would become a second scroll container in
+    front of the transcript. To stay bounded to the shared shell,
+    `--chat-panel-height` is set to `100%` by the
+    `[data-controller~="chat"]` rule at `lg`, so the panel resolves
+    to `height: 100%` (the inner wrapper, which itself resolves to
+    the grid track) and the conversation remains the only scroll
+    region the composer depends on. The fallback inside `var(...)`
+    preserves the original mobile calculation for the show page
+    below `lg` and for any future caller that mounts the panel
+    outside the shared shell.
+
+    This must remain a definite `height`, never a `max-height`, and
+    must carry no `min-h` floor. A `max-height` leaves the panel's
+    own height `auto` — indefinite — so percentage heights below it
+    do not resolve: the shared conversation partial's `h-full` root
+    falls back to its natural content height, overflows the
+    `min-h-0 flex-1 overflow-hidden` wrapper below, and the
+    transcript is clipped mid-conversation with the input
+    unreachable and nothing scrollable. A `min-height` is equally
+    wrong here: against a height already fitted to the viewport it
+    can only clamp the panel taller than the viewport, which is the
+    document-scroll failure this bound exists to prevent.
+    (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635, #4271) %>
 <% chat_panel_bottom_space = local_assigns[:chat_panel_bottom_space] %>
 <div class="flex flex-col overflow-x-hidden"
      data-controller="chat"
      data-chat-session-id-value="<%= chat_session.id %>"
-     style="<%= "--chat-panel-bottom-space: #{chat_panel_bottom_space};" if chat_panel_bottom_space %>height: calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem));">
+     style="<%= "--chat-panel-bottom-space: #{chat_panel_bottom_space};" if chat_panel_bottom_space %>height: var(--chat-panel-height, calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem)));">
   <%# The chat page is chat-first: the only always-visible chrome is a
       single compact line — the title and a "Session details" toggle —
       so the transcript and composer stay the dominant region of the
