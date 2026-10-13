@@ -38,7 +38,7 @@ prefix: QUIET-MODE
   changed, why, and which review feedback was addressed in the commit body
   instead of expecting a follow-up summary comment. The issue implementation
   guidance SHALL be appended as a required assembly section even when a
-  project override or pinned `PromptVersion` omits its placeholder. When quiet
-  mode is disabled, the prior prompt SHALL be unchanged (no commit-message
-  guidance section is added, and the rendered prompt does not mention quiet
-  mode).
+  project override or pinned `PromptVersion` omits its placeholder; the PR
+  follow-up legacy builder SHALL append it in the same case. When quiet mode
+  is disabled, the prior prompt SHALL be unchanged (no commit-message guidance
+  section is added, and the rendered prompt does not mention quiet mode).

@@ -1822,6 +1822,25 @@ expect(prompt).to include("Commit Message Is The Commentary Channel")
       expect(occurrences).to eq(1)
     end
 
+    # @spec QUIET-MODE-008
+    it "appends guidance when a custom legacy prompt omits its interpolation" do
+      project.update!(quiet_mode: true)
+      prompt = create(:prompt, :global, slug: "test.#{SecureRandom.hex(8)}")
+      prompt_version = prompt.create_version!(template: "Custom instructions", variables: [])
+
+      rendered = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_version: prompt_version
+      )
+
+      expect(rendered).to include("Custom instructions")
+      expect(rendered).to include("Commit Message Is The Commentary Channel")
+      expect(rendered.scan(/# Commit Message Is The Commentary Channel/).length).to eq(1)
+    end
+
     it "adds a quiet_mode_commit_message section to the PromptAssembly result when quiet mode is on" do
       project.update!(quiet_mode: true)
 

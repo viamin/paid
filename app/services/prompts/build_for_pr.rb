@@ -206,8 +206,16 @@ module Prompts
     def legacy_injected_section?(section)
       # The legacy string builder renders `{{commit_message_guidance}}` from
       # the seeded instructions template; emitting the explicit section here
-      # would duplicate the body. PromptAssembly emits the section instead.
-      [ :style_guides, :project_conventions, :lid_workflow, :quiet_mode_commit_message ].include?(section.key)
+      # would duplicate the body. A custom or pinned prompt version can omit
+      # that interpolation, though, so retain the required section in that
+      # case. PromptAssembly always emits the section instead.
+      return quiet_mode_guidance_rendered? if section.key == :quiet_mode_commit_message
+
+      [ :style_guides, :project_conventions, :lid_workflow ].include?(section.key)
+    end
+
+    def quiet_mode_guidance_rendered?
+      instructions_and_rules_shell.content.include?(quiet_mode_commit_message_body)
     end
 
     # Resolves the assembly profile from project/account/global config.
