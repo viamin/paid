@@ -311,7 +311,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
 
       expect(result.text).to include("TDD Boundaries — refactor run")
-      expect(result.text).to include("Keep the approved test suite green")
+      expect(result.text).to match(/Keep the\s+approved test suite green/)
     end
 
     it "omits TDD boundaries when the run is not TDD-governed" do
