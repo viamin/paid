@@ -34,7 +34,7 @@ module Reviews
         patch.each_line do |line|
           if (match = HUNK_HEADER.match(line))
             right_line = match[:start].to_i
-          elsif right_line && line.start_with?("+") && !line.start_with?("+++")
+          elsif right_line && line.start_with?("+")
             changed_lines << right_line
             right_line += 1
           elsif right_line && !line.start_with?("-")

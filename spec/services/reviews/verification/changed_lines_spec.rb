@@ -59,6 +59,16 @@ RSpec.describe Reviews::Verification::ChangedLines do
       expect(changed_lines.valid_line?("a.txt", 2)).to be false
     end
 
+    it "treats an addition beginning with two plus signs as a changed line" do
+      files = [
+        { filename: "a.txt", status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1 @@\n-old\n+++counter" }
+      ]
+
+      changed_lines = described_class.from_files(files)
+
+      expect(changed_lines.valid_line?("a.txt", 1)).to be true
+    end
+
     it "exposes changed file names even without a parseable patch (binary files)" do
       files = [
         { filename: "image.png", status: "modified", additions: 0, deletions: 0, patch: nil }
