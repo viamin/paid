@@ -16,6 +16,14 @@ module Activities
     PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
 
     def execute(input)
+      # Per-execute memoization caches for the PR-number lookups below.
+      # Temporal workers build activity instances once and invoke execute on
+      # the same instance for every task, so a memo without a reset would
+      # outlive the pass and a later task could see the previous project's
+      # PR numbers.
+      @design_pr_numbers = nil
+      @bootstrap_readiness_pr_numbers = nil
+
       project_id = input[:project_id]
       github_state = unavailable_github_state
 
@@ -355,21 +363,46 @@ module Activities
       client.pull_request(project.issue_target_repository, github_issue.number)
     end
 
+    # @spec FEATURE-APPROVAL-025
     def design_pull_request?(project, github_issue)
-      return unless github_issue.respond_to?(:pull_request) && github_issue.pull_request
+      return false unless github_issue.respond_to?(:pull_request) && github_issue.pull_request
 
-      FeatureIntentDesignPr.joins(:feature_intent).exists?(
-        feature_intents: { project_id: project.id }, pull_request_number: github_issue.number
-      )
+      design_pr_numbers(project).include?(github_issue.number)
     end
 
     # @spec PROJECT-READINESS-007 — the bootstrap PR must be re-fetched during
     # sync so Issues::UpsertFromGithub can detect its merged state and enqueue
     # the next readiness evaluation against the merged target branch.
     def bootstrap_readiness_pull_request?(project, github_issue)
-      return unless github_issue.respond_to?(:pull_request) && github_issue.pull_request
+      return false unless github_issue.respond_to?(:pull_request) && github_issue.pull_request
 
-      project.agent_runs.where(goal: "bootstrap_readiness", pull_request_number: github_issue.number).exists?
+      bootstrap_readiness_pr_numbers(project).include?(github_issue.number)
+    end
+
+    # @spec FEATURE-APPROVAL-025
+    # Pull request numbers for feature-intent design PRs in this project.
+    # Loaded once per execute so sync_issue can test membership in O(1)
+    # instead of issuing a fresh `FeatureIntentDesignPr.exists?` query per
+    # PR — the activity's 1,000-PR fetch cap would otherwise turn into
+    # 1,000 extra queries per poll.
+    def design_pr_numbers(project)
+      @design_pr_numbers ||= FeatureIntentDesignPr.joins(:feature_intent)
+        .where(feature_intents: { project_id: project.id })
+        .pluck(:pull_request_number)
+        .to_set
+    end
+
+    # @spec PROJECT-READINESS-007
+    # Pull request numbers for `bootstrap_readiness` agent runs in this
+    # project. Loaded once per execute so sync_issue can test membership
+    # in O(1) instead of issuing a fresh `agent_runs.exists?` query per
+    # non-design PR.
+    def bootstrap_readiness_pr_numbers(project)
+      @bootstrap_readiness_pr_numbers ||= project.agent_runs
+        .where(goal: "bootstrap_readiness")
+        .where.not(pull_request_number: nil)
+        .pluck(:pull_request_number)
+        .to_set
     end
 
     # The issue author is a hard trust boundary in upstream mode: do not keep
