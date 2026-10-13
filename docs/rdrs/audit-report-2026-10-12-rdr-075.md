@@ -119,8 +119,10 @@ The audit's absence findings were confirmed by code and doc inspection:
 - `grep -r "BusinessObligation\|business_obligation" app/ db/ spec/` returns
   nothing.
 - `grep -r "Verification::" app/ spec/` returns nothing (other than unrelated
-  matches in `FeatureFlag`-related code paths that share the `Verification::`
-  module name only because of namespace reuse).
+  substring matches under `AppleVerification::*` (e.g. `AppleVerification::Bundles`,
+  `AppleVerification::Lifecycle`), full-namespace matches inside `AgentRuns::Verification`
+  (MCP provisioner labels) and `Reviews::Verification` (the control-plane review
+  pipeline); none of those are RDR-075 surfaces).
 - `db/schema.rb` does not list a `business_obligations` table.
 - The umbrella body's four phase issues (#4366, #4367, #4368, #4369) and
   closeout issue (#4370) are all open on GitHub; none has been picked.
