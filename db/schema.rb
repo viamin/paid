@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_144925) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_034815) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1726,7 +1726,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_144925) do
     t.bigint "issue_id", null: false
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id"], name: "index_feature_intent_issues_on_feature_intent_id"
-    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id", unique: true
+    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id"
   end
 
   create_table "feature_intents", comment: "RDR-066 feature intent: links a feature's approved design revision to its issue tree.", force: :cascade do |t|
@@ -1741,6 +1741,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_144925) do
     t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
     t.string "criteria_clarity_state", default: "pending", null: false, comment: "Cached AI clarity judgment for acceptance criteria: pending, clear, or vague. Computed by FeatureIntents::EvaluateCriteriaClarity, not on Inbox render, so listing entries never makes a live LLM call per feature."
     t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
+    t.jsonb "issue_tree_manifest", default: {}, null: false, comment: "Planned issue-tree receipt keyed by stable task identity, including expected relationships and qualified remote identities."
+    t.jsonb "issue_tree_verification", default: {}, null: false, comment: "Latest structural issue-tree verification result, revision, time, filing progress, and unresolved work."
     t.bigint "project_id", null: false
     t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
     t.string "title", null: false, comment: "Human-readable feature name."
