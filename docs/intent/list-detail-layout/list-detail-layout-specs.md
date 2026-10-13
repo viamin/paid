@@ -103,6 +103,7 @@
   controls SHALL remain outside those regions. Below `1024px`, the shell SHALL
   leave pane height and scrolling to the feature's existing mobile layout.
   *Code:* `app/helpers/master_detail_layout_helper.rb`,
-  `app/views/shared/_list_detail_shell.html.erb`.
+  `app/views/shared/_list_detail_shell.html.erb`,
+  `app/views/inbox/index.html.erb`.
   *Test:* `spec/helpers/master_detail_layout_helper_spec.rb`,
   `spec/system/dashboard_inbox_spec.rb`, `spec/system/chat_shared_layout_spec.rb`.

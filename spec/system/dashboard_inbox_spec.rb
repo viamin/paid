@@ -87,6 +87,76 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     expect(document.at_css("#inbox-detail-pane > div")[:class]).to include("lg:overflow-y-auto")
   end
 
+  # @spec LIST-DETAIL-007 @spec QUESTION-EXPLORATION-015
+  # Regression for #4374 (PR review): `<turbo-frame>` has no app- or
+  # gem-level CSS rule, so it defaults to `display: inline` and its height
+  # is content-based. The shared shell's `[data-controller~="chat"]` rule
+  # sets `--chat-panel-height: 100%` unconditionally at `lg`+, so an
+  # embedded chat panel inside the `<turbo-frame id="inbox-detail">` would
+  # resolve `height: 100%` to `auto` — dropping the panel to content height
+  # and turning the inner `lg:overflow-y-auto` wrapper into a second
+  # scroll container in front of the transcript. The host page gives the
+  # turbo-frame `block h-full` so the shared list-detail grid track carries
+  # through the frame and the panel's `100%` resolves to the wrapper (the
+  # grid track) at desktop.
+  it "gives the inbox-detail turbo-frame a definite height so an embedded chat panel resolves --chat-panel-height against the shared grid track" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    sign_in_as(user)
+    visit inbox_path(
+      project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+    )
+
+    document = Nokogiri::HTML(page.body)
+    frame = document.at_css("turbo-frame#inbox-detail")
+
+    expect(frame).to be_present
+    expect(frame[:class]).to include("block")
+    expect(frame[:class]).to include("h-full")
+  end
+
+  # @spec LIST-DETAIL-007 @spec QUESTION-EXPLORATION-015
+  # Regression for #4374 (PR review): the "Answer in chat" affordance on a
+  # clarifying-question entry POSTs to the chat endpoint, which redirects
+  # to `chat_session_path(chat, frame: "inbox-detail")`. The chat show
+  # controller sees the `frame` param and renders `chat_sessions/_frame`,
+  # which wraps the chat panel in `<turbo-frame id="inbox-detail">`. Turbo
+  # extracts the panel and replaces the host frame's contents in place; the
+  # host frame's `block h-full` classes (asserted by the preceding test)
+  # are preserved through the replacement, so the panel's inline `height:
+  # var(--chat-panel-height, ...)` resolves to `100%` of the shared grid
+  # track at `lg`+ and the inner `lg:overflow-y-auto` wrapper stays the
+  # only scroll region the composer depends on. Direct GET to the
+  # frame-scoped chat session URL — what Turbo would receive as the
+  # follow-up request after the chat action's 302 — verifies that the
+  # chat panel itself wires `--chat-panel-height` through `var(...)` with
+  # the viewport-subtraction fallback, so the host frame's definite
+  # height can resolve it at `lg`+.
+  it "renders the embedded chat panel inside the inbox-detail turbo-frame with --chat-panel-height wired to 100% at desktop" do
+    issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    chat_session = create(
+      :chat_session,
+      account: account,
+      created_by: user,
+      project: project,
+      container_capability: "none",
+      clarifying_question_issue: issue
+    )
+
+    sign_in_as(user)
+    visit chat_session_path(chat_session, format: :html, frame: "inbox-detail")
+
+    document = Nokogiri::HTML(page.body)
+    frame = document.at_css("turbo-frame#inbox-detail")
+    chat_panel = frame ? frame.at_css("div[data-controller='chat']") : nil
+
+    expect(frame).to be_present
+    expect(chat_panel).to be_present
+    expect(chat_panel[:style]).to include("var(--chat-panel-height")
+    expect(chat_panel[:style]).to include("calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem))")
+  end
+
   it "renders a labeled, multi-line continuation reason in a partial closeout" do # @spec PARTIAL-CLOSEOUT-010
     issue = create(:issue, project:, github_number: 201, paid_state: "in_progress")
     create(:issue, :pull_request, project:, github_number: 202, github_state: "closed",

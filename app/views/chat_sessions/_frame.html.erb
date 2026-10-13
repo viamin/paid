@@ -8,7 +8,10 @@
     `[data-controller~="chat"]` rule) so it stays bounded to the shared
     `list-detail` grid track and the inner `lg:overflow-y-auto` wrapper does
     not become a second scroll container in front of the transcript (#4374
-    review). %>
+    review). The Inbox host page gives the `<turbo-frame id="inbox-detail">`
+    matching the `frame_id` local `block h-full` so the panel's `height:
+    100%` can resolve against the shared grid track through the otherwise
+    `display: inline` (content-height) turbo-frame element. %>
 <%= turbo_frame_tag frame_id do %>
   <%= turbo_stream_from current_account, :chat_sessions %>
   <%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.clarifying_question_issue.present? %>
