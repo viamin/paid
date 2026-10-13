@@ -47,7 +47,7 @@ module Reviews
       end
       private_class_method :changed_ranges
 
-      # @param ranges [Hash{String => Array<Range>}] filename => right-side hunk ranges
+      # @param ranges [Hash{String => Array<Range>}] filename => right-side changed-line ranges
       def initialize(ranges)
         @ranges = ranges.freeze
       end
