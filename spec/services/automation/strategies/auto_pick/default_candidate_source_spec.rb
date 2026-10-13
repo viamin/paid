@@ -25,10 +25,11 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.next_candidate(project)).to eq(p1)
     end
 
-    it "uses local priority instead of labels in ignored mode" do # @spec LABEL-CONTROL-003
+    it "uses local priority instead of labels in ignored mode" do # @spec LABEL-CONTROL-003 LABEL-CONTROL-007
       project.update!(label_integration_mode: "ignored")
-      _labeled = create(:issue, project:, github_number: 1, labels: [ "P1" ], control_priority: "P3")
-      local = create(:issue, project:, github_number: 2, control_priority: "P1")
+      _labeled = create(:issue, project:, github_number: 1, labels: [ "P1" ], control_priority: "P3",
+        paid_activation_state: "activated")
+      local = create(:issue, project:, github_number: 2, control_priority: "P1", paid_activation_state: "activated")
 
       expect(described_class.next_candidate(project)).to eq(local)
     end
@@ -116,8 +117,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
     it "uses a local exclusion reason instead of skip labels in ignored mode" do # @spec LABEL-CONTROL-003
       project.update!(label_integration_mode: "ignored", auto_pick_skip_labels: [ "category-hold" ])
-      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
-      labeled = create(:issue, project:, labels: [ "category-hold" ])
+      excluded = create(:issue, project:, paid_activation_state: "activated", auto_pick_excluded_reason: "operator hold")
+      labeled = create(:issue, project:, paid_activation_state: "activated", labels: [ "category-hold" ])
 
       expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
       expect(described_class.eligible_scope(project)).not_to include(excluded)
@@ -129,8 +130,8 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
         label_mappings: { "needs_input" => "paid-stage-needs-input" }
       )
-      labeled = create(:issue, project:, labels: [ "paid-stage-needs-input" ])
-      excluded = create(:issue, project:, auto_pick_excluded_reason: "operator hold")
+      labeled = create(:issue, project:, paid_activation_state: "activated", labels: [ "paid-stage-needs-input" ])
+      excluded = create(:issue, project:, paid_activation_state: "activated", auto_pick_excluded_reason: "operator hold")
 
       expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
       expect(described_class.eligible_scope(project)).not_to include(excluded)

@@ -58,6 +58,15 @@
       <% end %>
       <%= button_to(issue.auto_pick_excluded? ? "Include" : "Exclude", update_issue_control_state_project_path(project), method: :post,
                     params: { issue_id: issue.id, control_action: issue.auto_pick_excluded? ? "clear_auto_pick_exclusion" : "exclude_from_auto_pick", reason: "Excluded from auto-pick by project operator" }, class: "text-xs font-medium text-indigo-600") %>
+      <%# @spec LABEL-CONTROL-007 — per-item Paid-activation signal the
+          ignored-mode replacement for the activation label. Toggling it
+          persists immediately so the next auto-pick tick sees the item
+          without re-reading any GitHub label. %>
+      <%= button_to(issue.paid_activated? ? "Deactivate" : "Activate for Paid",
+                    update_issue_control_state_project_path(project), method: :post,
+                    params: { issue_id: issue.id, control_action: issue.paid_activated? ? "unmark_paid_activated" : "mark_paid_activated" },
+                    class: "text-xs font-medium #{issue.paid_activated? ? 'text-gray-600' : 'text-green-700'}",
+                    title: issue.paid_activated? ? "Stop Paid auto-selecting this issue." : "Let Paid auto-pick this issue (no labels needed).") %>
     <% end %>
     <% if issue.source == Issue::GITHUB_SOURCE %>
       <% subscription_locals = { issue: issue, project: project } %>
