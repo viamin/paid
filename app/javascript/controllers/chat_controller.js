@@ -518,6 +518,15 @@ export default class extends Controller {
   // another tool event follows. A second adjacent card upgrades that pair into
   // the same quiet container used by persisted transcript rendering.
   appendToolCard(card) {
+    this.appendGroupedToolCard(card)
+    this.trackAttemptToolCard(card)
+  }
+
+  // @spec CHAT-API-024
+  // Keep live tool-event cleanup separate from persisted rows replayed after a
+  // reconnect: both use the same grouping behavior, but only live cards belong
+  // to the current fallback attempt.
+  appendGroupedToolCard(card) {
     const group = this.currentLiveToolGroup() || this.groupTrailingToolCard()
 
     if (group) {
@@ -526,8 +535,6 @@ export default class extends Controller {
     } else {
       this.messagesTarget.append(card)
     }
-
-    this.trackAttemptToolCard(card)
   }
 
   currentLiveToolGroup() {
@@ -655,8 +662,25 @@ export default class extends Controller {
       }
     }
 
-    this.messagesTarget.append(messageElement)
+    this.appendCreatedMessage(messageElement)
     this.scrollToBottom()
+  }
+
+  // @spec CHAT-API-024
+  // A reconnect replays persisted rows through handleMessageCreated. Preserve
+  // consecutive non-pending tool rows as one group without tracking them as
+  // discardable cards from the current live attempt.
+  appendCreatedMessage(messageElement) {
+    if (this.groupableToolCard(messageElement)) {
+      this.appendGroupedToolCard(messageElement)
+    } else {
+      this.messagesTarget.append(messageElement)
+    }
+  }
+
+  groupableToolCard(messageElement) {
+    const selector = "[data-chat-tool-card]:not([data-chat-tool-pending])"
+    return messageElement.matches?.(selector) || messageElement.querySelector(selector)
   }
 
   handleMessageDeleted(data) {

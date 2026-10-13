@@ -257,6 +257,54 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-024 — Reconnect recovery replays persisted rows through
+    // handleMessageCreated, which must group tool cards without treating them
+    // as stale cards belonging to the current live attempt.
+    function testReplayedToolCardsUseTheGroupingPath() {
+      const cards = [];
+      let trailing = null;
+      const summary = { textContent: "" };
+      const cardContainer = {
+        append(card) { cards.push(card); }
+      };
+      const group = {
+        matches: (selector) => selector === "[data-chat-tool-group]",
+        querySelector(selector) {
+          if (selector === "[data-chat-tool-group-cards]") return cardContainer;
+          if (selector === "[data-chat-tool-group-summary]") return summary;
+          return null;
+        },
+        querySelectorAll: () => cards
+      };
+      const first = {
+        querySelector: () => ({}),
+        replaceWith(replacement) { trailing = replacement; }
+      };
+      const second = { querySelector: () => ({}) };
+      let nextCard = first;
+      const { controller } = makeController({
+        messagesTarget: {
+          get lastElementChild() { return trailing; },
+          append(card) { trailing = card; },
+          querySelector: () => null
+        },
+        buildMessageElement: () => nextCard,
+        createLiveToolGroup: () => group,
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageCreated({ html: "first", message_id: "1" });
+      nextCard = second;
+      controller.handleMessageCreated({ html: "second", message_id: "2" });
+
+      if (trailing !== group || cards.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error("Expected replayed tool cards to share one collapsed group");
+      }
+      if (controller.currentAttemptToolCards) {
+        throw new Error("Expected replayed tool cards to stay out of the live fallback attempt");
+      }
+    }
+
     function testMessageCompleteResetsStreamingState() {
       const { controller } = makeController({
         streaming: true,
@@ -1912,6 +1960,7 @@ class ChatControllerNodeHarness
       testToolResultAppendsCard();
       testToolResultWithMissingHtmlDoesNotAppend();
       testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt();
+      testReplayedToolCardsUseTheGroupingPath();
       testMessageCompleteResetsStreamingState();
       testMessageCompleteRemovesStreamingBubble();
       testMessageCompleteReleasesFallbackWithoutActiveStreamId();
