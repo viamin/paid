@@ -135,6 +135,8 @@ Do **not** close #4370. Required gaps remain across all ten acceptance criteria 
 - The umbrella's final acceptance audit (a future closeout run after all four phase issues have shipped) is the only place that may close #4365 with `Closes #4365`. Per the closeout checklist §8, only the final umbrella audit may visibly close the umbrella, and only when its evidence confirms no required gaps remain.
 - This audit's purpose is to record the current state honestly, not to claim closure prematurely. The audit's closeout PR carries the `paid-hold-review` label so a human reviewer can decide whether to land the audit now (as the early "not yet eligible" record) or to defer until PR #4364 merges and the phase issues begin shipping.
 
+The PR description must say `Tracks #4365` and `Tracks #4370`, not `Closes` for either issue. #4370 remains open until the four phase issues (#4366–#4369) land and a follow-up audit re-verifies the ten acceptance criteria. #4365 remains open until its children resolve and a final umbrella acceptance audit is filed. The `epic` label on #4365 identifies the umbrella, which receives a final acceptance audit once its children resolve, and does not silently exclude the issue from auto-pick.
+
 When PR #4364 merges and Phases 1–4 begin producing merged PRs, this audit must be re-run: re-walk the per-acceptance check above, add EARS claims to `docs/intent/layered-verification/` alongside the code, confirm `bin/coherence-check.mjs` is clean for the new segment, and only then flip the RDR and README index row to **Partially Implemented** (and later **Implemented** when every acceptance criterion has shipped code and test evidence).
 
 ## Notes
