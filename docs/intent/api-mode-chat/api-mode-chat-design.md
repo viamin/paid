@@ -84,29 +84,29 @@ automatic routers are never substitutes. The selected model is reported by
 the client and response and saved on API sessions without mutating the runner's
 agent-run tier mappings.
 
-API client construction, fallback selection, container chat plans, and
-chat-only runner tests share the selector. Mixed agent/chat runner tests retain
-the agent tier test behavior. Free chat selection is separate from automatic
-retry: existing chat runner fallback and rate-limit handling remain in force.
+API client construction, fallback selection, and chat-only runner tests share
+the selector. Mixed agent/chat runner tests retain the agent tier test
+behavior. Free chat selection is separate from automatic retry: existing chat
+runner fallback and rate-limit handling remain in force.
 
 All attached primary and reference projects constrain the pool. API clients
 revalidate selection before every request, including follow-up tool rounds,
 so newly attached project context cannot bypass those restrictions. The current
 agent-harness API transport cannot transmit OpenRouter data-collection/ZDR
 options: managed free API chat therefore rejects confidential and restricted
-context before transmission with an actionable configuration error. Container
-chat uses the most restrictive attached project's routing controls; Pi/OMP
-container chat also rejects sensitive context until those runners consume the
-routing metadata. Empty or privacy-incompatible free pools are excluded from fallback candidates so a
-later configured runner remains reachable.
+context before transmission with an actionable configuration error. Empty or
+privacy-incompatible free pools are excluded from fallback candidates so a
+later configured runner remains reachable. Container-specific routing and
+sensitive-context enforcement are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
 
 What ships today:
 
-- sessions default to inline-only (`container_capability: none`) unless the
-  caller explicitly requests workspace capability
+- API sessions default to inline-only (`container_capability: none`); a
+  capability request is a handoff to the RDR-037 workspace lifecycle, not
+  behavior shipped by this RDR-028 coverage
 - `ChatMessagesController` supports JSON and SSE request/response flows
 - `ChatChannel` plus `ChatSessions::ProcessMessageJob` support ActionCable
   progress events for the browser UI. The client's in-flight streaming bubble
