@@ -21,17 +21,18 @@ module ClarifyingQuestions
       if current_questions.any?
         return current_questions unless github_available?
 
-        enhancement_comment = latest_enhancement_comment
-        current_questions = latest_questions(body_questions: current_questions, enhancement_comment:)
-        return reconcile_answered if answered_after_latest_questions?(body_questions: current_questions, enhancement_comment:)
+        return reconcile_answered if answered_via_body?(current_questions)
+        return reconcile_answered if answered_after_latest_questions?(body_questions: current_questions)
 
         return current_questions
       end
 
       return [] unless github_available?
 
+      return reconcile_answered if answered_via_body?([])
       enhancement_comment = latest_enhancement_comment
-      return reconcile_answered if answered_after_latest_questions?(body_questions:, enhancement_comment:)
+      return reconcile_answered if answered_after_latest_questions?(body_questions:)
+
       return [] unless enhancement_comment
 
       Parse.call(comment_body: comment_body(enhancement_comment))
@@ -51,7 +52,15 @@ module ClarifyingQuestions
     # transient GitHub error blocks the fetch, or when the comment body has
     # no recoverable context — callers use a single nil-check to decide
     # whether to show the panel.
+    #
+    # In quiet mode (#4236), the questions live in the description's marked
+    # section rather than in a GitHub comment, so the context block falls
+    # back to the section's preamble when the description carries the
+    # questions.
     def context_markdown
+      section_context = description_section_context_markdown
+      return section_context unless section_context.nil?
+
       return nil unless github_available?
 
       enhancement_comment = latest_enhancement_comment
@@ -78,11 +87,54 @@ module ClarifyingQuestions
       end
     end
 
-    def answered_after_latest_questions?(body_questions:, enhancement_comment:)
+    # Reads the description's clarifying-questions section (the body-channel
+    # equivalent of `latest_enhancement_comment`) and reports whether the
+    # questions were answered in the same body. Freshness between the
+    # questions and answers sections is the question-set digest embedded in
+    # both sections, not `comment.created_at` (#4236).
+    def answered_via_body?(body_questions)
+      parsed_answers = DescriptionSection.parse_answers(issue.body)
+      return false unless parsed_answers
+
+      current_questions = body_questions.presence || DescriptionSection.parse_questions(issue.body).questions
+      current_questions = current_questions.presence || Array(issue.respond_to?(:needs_input_questions) ? issue.needs_input_questions : [])
+      return false if current_questions.empty?
+
+      current_digest = DescriptionSection.digest_for(current_questions)
+      return true if parsed_answers[:digest].present? && parsed_answers[:digest] == current_digest
+
+      parsed_pairs = AnswerPairs.parse(parsed_answers[:inner].to_s)
+      AnswerPairs.questions_match?(current_questions, parsed_pairs)
+    end
+
+    # Render the description-section context when the questions live in the
+    # body. Quiet-mode body sections carry a digest line that has to be
+    # stripped before the surrounding prose is rendered, and they may not
+    # carry a "Current Context" block — the section's preamble (everything
+    # before the numbered list) is the fallback the inbox needs.
+    def description_section_context_markdown
+      parsed = DescriptionSection.parse_questions(issue.body)
+      return nil unless parsed.any?
+
+      inner = extract_questions_inner(parsed.raw_body)
+      return nil if inner.blank?
+
+      Context.call(comment_body: inner)
+    end
+
+    def extract_questions_inner(section_block)
+      match = section_block.to_s.match(DescriptionSection::QUESTIONS_SECTION_PATTERN)
+      return nil unless match
+
+      match[1].to_s
+    end
+
+    def answered_after_latest_questions?(body_questions:)
       latest_answer_comment = latest_answer_comment()
       return false unless latest_answer_comment
-      return false unless answer_satisfies_latest_questions?(latest_answer_comment, enhancement_comment)
+      return false unless answer_satisfies_latest_questions?(latest_answer_comment)
 
+      enhancement_comment = latest_enhancement_comment
       current_questions = latest_questions(body_questions:, enhancement_comment:)
       parsed_pairs = AnswerPairs.parse(comment_body(latest_answer_comment))
 
@@ -104,7 +156,8 @@ module ClarifyingQuestions
       end
     end
 
-    def answer_satisfies_latest_questions?(answer_comment, enhancement_comment)
+    def answer_satisfies_latest_questions?(answer_comment)
+      enhancement_comment = latest_enhancement_comment
       return true unless enhancement_comment
 
       answer_comment.created_at > enhancement_comment.created_at
@@ -129,7 +182,11 @@ module ClarifyingQuestions
     end
 
     def ingest_answers
-      IngestAnswers.call(project: project, issue: issue, issue_comments: issue_comments)
+      if body_answers?
+        IngestAnswers.call(project: project, issue: issue, issue_body: issue.body)
+      else
+        IngestAnswers.call(project: project, issue: issue, issue_comments: issue_comments)
+      end
     rescue ActiveRecord::ActiveRecordError => e
       Rails.logger.warn(
         message: "clarifying_questions.ingest_answers_failed",
@@ -137,6 +194,10 @@ module ClarifyingQuestions
         issue_id: issue.respond_to?(:id) ? issue.id : nil
       )
       nil
+    end
+
+    def body_answers?
+      DescriptionSection.parse_answers(issue.body).present?
     end
   end
 end

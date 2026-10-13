@@ -18,6 +18,14 @@ module ClarifyingQuestions
     end
 
     def call
+      # Description-section channel (#4236): when quiet mode routes
+      # clarifying questions into the issue/PR body, the same numbered-list
+      # parser runs against the description sections. The marker lives
+      # outside the comment-side flow, so an absence of ENHANCEMENT_MARKER
+      # does not block the body-channel parse.
+      section_questions = DescriptionSection.parse_questions(comment_body).questions
+      return section_questions if section_questions.any?
+
       return [] unless comment_body.include?(ENHANCEMENT_MARKER)
       return [] unless comment_body.match?(CLARIFYING_SECTION_PATTERN)
 

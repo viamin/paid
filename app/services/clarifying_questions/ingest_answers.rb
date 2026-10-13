@@ -5,20 +5,28 @@ module ClarifyingQuestions
     ARTIFACT_TYPE = "qa_pair"
     COLLECTOR_TYPE = "clarifying_question_answers"
 
-    def self.call(project:, issue:, issue_comments: nil)
-      new(project: project, issue: issue, issue_comments: issue_comments).call
+    def self.call(project:, issue:, issue_comments: nil, issue_body: nil, answers: nil)
+      new(
+        project: project,
+        issue: issue,
+        issue_comments: issue_comments,
+        issue_body: issue_body,
+        answers: answers
+      ).call
     end
 
-    def initialize(project:, issue:, issue_comments: nil)
+    def initialize(project:, issue:, issue_comments: nil, issue_body: nil, answers: nil)
       @project = project
       @issue = issue
       @injected_comments = issue_comments
+      @issue_body = issue_body
+      @answers = answers
     end
 
     def call
       return unless github_available?
 
-      extraction = ExtractAnswerPairs.call(project: project, issue_comments: issue_comments, issue: issue)
+      extraction = extract_pairs
       qa_pairs = extraction.qa_pairs
       return if qa_pairs.empty?
 
@@ -29,7 +37,7 @@ module ClarifyingQuestions
 
     private
 
-    attr_reader :project, :issue
+    attr_reader :project, :issue, :issue_body, :answers
 
     def github_available?
       project.github_credential_present?
@@ -37,6 +45,48 @@ module ClarifyingQuestions
 
     def github_client
       @github_client ||= project.client
+    end
+
+    # Resolves the qa pairs and their source comment from one of three
+    # channels: a pre-parsed answers payload (description channel),
+    # a description body carrying an answers section (description channel,
+    # no comment fetch), or the comment channel. Each path runs through
+    # the same ExtractAnswerPairs contract so the knowledge-base writes
+    # converge.
+    def extract_pairs
+      return payload_extraction if @answers
+      return body_extraction if @issue_body
+
+      ExtractAnswerPairs.call(project: project, issue_comments: issue_comments, issue: issue)
+    end
+
+    def payload_extraction
+      current_questions = Array(@answers[:questions])
+      parsed_pairs = Array(@answers[:parsed_pairs])
+      return empty_result if current_questions.empty? || parsed_pairs.empty?
+
+      paired = pair_qa(current_questions, parsed_pairs)
+      ExtractAnswerPairs::Result.new(qa_pairs: paired, answer_comment: nil)
+    end
+
+    def body_extraction
+      section = DescriptionSection.parse_answers(@issue_body)
+      return empty_result unless section
+
+      current_questions = DescriptionSection.parse_questions(@issue_body).questions
+      current_questions = Array(issue.respond_to?(:needs_input_questions) ? issue.needs_input_questions : []) if current_questions.empty?
+      current_questions = current_questions.presence || []
+      parsed_pairs = AnswerPairs.parse(section[:inner].to_s)
+      return empty_result unless AnswerPairs.questions_match?(current_questions, parsed_pairs)
+
+      ExtractAnswerPairs::Result.new(
+        qa_pairs: pair_qa(current_questions, parsed_pairs),
+        answer_comment: nil
+      )
+    end
+
+    def empty_result
+      ExtractAnswerPairs::Result.new(qa_pairs: [], answer_comment: nil)
     end
 
     def issue_comments
@@ -80,8 +130,9 @@ module ClarifyingQuestions
         metadata: {
           issue_id: issue.id,
           issue_number: issue.github_number,
-          comment_id: answer_comment.id,
-          question: qa_pair[:question]
+          comment_id: answer_comment&.id,
+          question: qa_pair[:question],
+          source: answer_comment ? "comment" : "description"
         },
         status: "active"
       )
@@ -95,6 +146,15 @@ module ClarifyingQuestions
         sequence: 0,
         status: "active"
       )
+    end
+
+    def pair_qa(questions, parsed_pairs)
+      questions.each_with_index.filter_map do |question, index|
+        answer = parsed_pairs[index]&.fetch(:answer, nil)
+        next if answer.blank?
+
+        { question: question, answer: answer }
+      end
     end
 
     def find_or_create_project_version!

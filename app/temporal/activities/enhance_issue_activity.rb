@@ -74,7 +74,10 @@ module Activities
       raw_comments = client.issue_comments(project.issue_target_repository, issue.github_number)
       comments = trusted_comments(project, raw_comments)
       existing_comment = enhancement_comment(comments)
-      return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
+      if issue.enhance_issue_rounds.zero?
+        return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment
+        return complete_existing_body(agent_run, client, project, issue) if description_has_questions?(issue)
+      end
 
       parsed = parse_agent_output!(agent_run, project, issue, client, raw_comments)
       return parsed if parsed[:recovered_paid_question_comment]
@@ -92,9 +95,7 @@ module Activities
       questions = needs_input_questions(parsed, comment_body)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
-      gh_comment = unless upstream_issue_write_skipped?(project, "enhance_issue_comment", issue: issue, agent_run_id: agent_run.id)
-        client.add_comment(project.full_name, issue.github_number, comment_body)
-      end
+      gh_comment = publish_enhancement(agent_run, project, issue, client, comment_body)
       label_result = apply_label_state(client, project, issue, parsed, agent_run)
       sync_needs_input_questions(issue, questions)
 
@@ -375,6 +376,44 @@ module Activities
       }
     end
 
+    # Quiet-mode twin of `complete_existing`: when the prior enhancement
+    # wrote clarifying questions into the description body (no comment),
+    # the activity reconciles the same way — `sufficient_context` and the
+    # resulting paid_state/label match the comment-side path so manual
+    # runs converge on the same verdict regardless of which channel
+    # carried the prior questions.
+    def complete_existing_body(agent_run, client, project, issue)
+      label_result = apply_label_state(
+        client, project, issue, { sufficient_context: false }, agent_run
+      )
+      paid_state = existing_body_paid_state(issue)
+      complete_run!(agent_run, paid_state,
+        sufficient_context: false,
+        reason: (issue.manual_review_reason if paid_state == "manual_review"))
+      agent_run.log!("system", "Enhancement questions already exist in issue body: ##{issue.github_number}")
+      ProcessRunQueueJob.perform_later
+
+      {
+        agent_run_id: agent_run.id,
+        issue_number: issue.github_number,
+        comment_url: nil,
+        sufficient_context: false,
+        label_applied: label_result[:applied],
+        max_rounds_reached: label_result[:max_rounds_reached],
+        already_enhanced: true
+      }
+    end
+
+    def description_has_questions?(issue)
+      ClarifyingQuestions::DescriptionSection.parse_questions(issue.body.to_s).any?
+    end
+
+    def existing_body_paid_state(issue)
+      return "needs_input" if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+
+      "completed"
+    end
+
     # `## Auto-enhancement stopped` markers can be posted by either the
     # max-rounds path (max_rounds_reason) or raise_parse_error! (the
     # "Paid could not validate..." reason). On an automatic retry that
@@ -460,6 +499,65 @@ module Activities
       sections << parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY)
       sections << change_intent_section(draft) if draft
       sections.join("\n\n")
+    end
+
+    # Routes the enhancement into the right channel for the project's
+    # quiet-mode setting. When quiet mode is off (the default), the prior
+    # enhancement-comment path is used unchanged so the project-scoped
+    # GitHub client posts the marker-tagged comment as before. When quiet
+    # mode is on, the questions are written into the issue/PR description's
+    # marked `<!-- paid:clarifying-questions -->` section and the agent's
+    # prose preamble is preserved verbatim so the operator still sees the
+    # "Current Context" section the inbox renders beside the answer form
+    # (QUIET-MODE-009). The change-intent draft, when present, rides in
+    # the same description section so it stays adjacent to the questions.
+    # @spec QUIET-MODE-009
+    def publish_enhancement(agent_run, project, issue, client, comment_body)
+      if project.quiet_mode?
+        publish_enhancement_via_description(agent_run, project, issue, client, comment_body)
+      else
+        publish_enhancement_via_comment(agent_run, project, issue, client, comment_body)
+      end
+    end
+
+    def publish_enhancement_via_comment(agent_run, project, issue, client, comment_body)
+      return nil if upstream_issue_write_skipped?(project, "enhance_issue_comment", issue: issue, agent_run_id: agent_run.id)
+
+      client.add_comment(project.full_name, issue.github_number, comment_body)
+    end
+
+    def publish_enhancement_via_description(agent_run, project, issue, client, comment_body)
+      if upstream_issue_write_skipped?(project, "enhance_issue_comment", issue: issue, agent_run_id: agent_run.id)
+        return nil
+      end
+
+      questions = ClarifyingQuestions::Parse.call(comment_body: comment_body)
+      return nil if questions.empty?
+
+      body = issue.body.to_s
+      questions_block = ClarifyingQuestions::DescriptionSection.build_questions_block(questions: questions)
+      preamble_block = build_description_preamble(comment_body)
+      new_body = ClarifyingQuestions::DescriptionSection.append_section(
+        body,
+        [ preamble_block, questions_block ].reject(&:blank?).join("\n\n")
+      )
+      response = client.update_issue(project.full_name, issue.github_number, body: new_body)
+      issue.update!(body: new_body)
+      response
+    end
+
+    # Pulls the agent-authored prose preamble (everything before the
+    # numbered clarifying-questions list) out of the comment body so it
+    # can ride along with the questions section in the description. The
+    # heading, marker, and numbered list are stripped — they belong to
+    # the section, not the preamble — but the prose that introduces the
+    # questions stays attached so the operator still sees what the agent
+    # is asking and why.
+    def build_description_preamble(comment_body)
+      text = comment_body.to_s.sub(/\A#{Regexp.escape(COMMENT_MARKER)}/, "")
+      text = text.sub(/\A\s*##\s+[^\n]*clarifying questions[^\n]*\n/i, "")
+      text = text.sub(ClarifyingQuestions::Parse::CLARIFYING_SECTION_PATTERN, "")
+      text.strip
     end
 
     # @spec CHANGE-INTENT-004
