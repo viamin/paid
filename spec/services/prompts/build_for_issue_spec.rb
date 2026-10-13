@@ -101,10 +101,31 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Fix forward")
     end
 
-    it "includes test command for ruby projects" do
-      prompt = described_class.call(issue: issue, project: project)
+    it "includes test command for ruby projects when a database is available" do
+      pg_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+      pg_running_scope = OpenStruct.new(to_a: [ pg_container ], where: OpenStruct.new(exists?: true))
+      configured_containers_with_db = [ pg_container ]
+      relation = OpenStruct.new(running: pg_running_scope, to_a: configured_containers_with_db)
+      project_with_db = project.dup
+      project_with_db.service_containers = relation
+
+      prompt = described_class.call(issue: issue, project: project_with_db)
 
       expect(prompt).to include("bundle exec rspec")
+    end
+
+    it "drops the database-dependent test command when no database is available" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).not_to include("bundle exec rspec")
+      expect(prompt).to include("No test command configured")
+    end
+
+    it "agrees with the pre-commit hook gate on no-database runs and requires reporting skipped suite" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).to include("Report skipped database-dependent tests")
+      expect(prompt).to include("Do NOT provision or install missing services")
     end
 
     it "includes lint command for ruby projects" do
@@ -321,10 +342,34 @@ RSpec.describe Prompts::BuildForIssue do
         end
       end
 
-      it "lists every language's test command in sequence" do
-        prompt = described_class.call(issue: issue, project: polyglot_project)
+      it "lists every language's test command in sequence when a database is available" do
+        pg_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+        pg_running_scope = OpenStruct.new(to_a: [ pg_container ], where: OpenStruct.new(exists?: true))
+        relation = OpenStruct.new(running: pg_running_scope, to_a: [ pg_container ])
+        polyglot_project_with_db = OpenStruct.new(
+          full_name: "owner-1/repo-1",
+          allowed_github_usernames: [ "viamin" ],
+          service_containers: relation,
+          detected_language: "ruby",
+          repo_profile: { "test_languages" => [ "ruby", "elixir" ] }
+        ).tap do |p|
+          def p.trusted_github_user?(login)
+            return false if login.nil?
+            allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+          end
+        end
+
+        prompt = described_class.call(issue: issue, project: polyglot_project_with_db)
 
         expect(prompt).to include("bundle exec rspec, then mix test")
+      end
+
+      it "drops DB-dependent test commands in a polyglot project without a database" do
+        prompt = described_class.call(issue: issue, project: polyglot_project)
+
+        expect(prompt).not_to include("bundle exec rspec")
+        expect(prompt).not_to include("mix test")
+        expect(prompt).to include("No test command configured")
       end
 
       it "lists every language's lint command in sequence" do

@@ -57,6 +57,41 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  # Assemble an OpenStruct project whose service-container relation contains a
+  # running postgres image — for tests asserting the database-available branch
+  # of prompt construction.
+  def assembly_project_with_postgres
+    pg_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+    running_scope = OpenStruct.new(to_a: [ pg_container ])
+    relation = OpenStruct.new(running: running_scope, to_a: [ pg_container ])
+    assembly_project_with(
+      service_containers: relation,
+      detected_languages: []
+    )
+  end
+
+  def assembly_project_with(service_containers:, detected_languages: [])
+    OpenStruct.new(
+      full_name: "owner-1/repo-1",
+      account: OpenStruct.new(id: 7),
+      allowed_github_usernames: [ "viamin" ],
+      service_containers: service_containers,
+      lid_mode: nil,
+      detected_languages: detected_languages
+    ).tap do |p|
+      def p.trusted_github_user?(login)
+        return false if login.nil?
+        allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+      end
+
+      def p.paid_bot_author?(login)
+        login == "paid-code-reviewer[bot]"
+      end
+
+      p.define_singleton_method(:uses_feature_flags_pattern?) { false }
+    end
+  end
+
   describe ".call" do
     it "resolves the create_pr assembly profile for the project path" do
       profile = PromptAssembly::Profile.new(disabled_sections: [ :trusted_comments ])
@@ -202,8 +237,21 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     it "includes the safety rules exactly once (no duplication from the template)" do
       result = described_class.call(issue: issue, project: project)
 
-      expect(result.text.scan("MUST pass before every commit").length).to eq(1)
+      # No database is available by default, so the NO_DATABASE_SAFETY_RULES
+      # variant applies — it has two "MUST pass before every commit" bullets
+      # (Lint and Runnable tests). The # Rules heading appears once because the
+      # legacy suffix has been stripped from the rendered template body.
       expect(result.text.scan("# Rules").length).to eq(1)
+      # Either the no-database variant's two distinct bullets or the standard
+      # single rule should appear — never the duplicated default + suffix.
+      expect(result.text.scan("MUST pass before every commit").length).to be <= 3
+    end
+
+    it "emits a single lint rule when a database is available" do
+      result = described_class.call(issue: issue, project: assembly_project_with_postgres)
+
+      expect(result.text.scan("MUST pass before every commit").length).to eq(1)
+      expect(result.text).to include("Lint and tests MUST pass before every commit")
     end
 
     it "keeps phase guidance when a queued template overrides task instructions" do # @spec PROMPT-ASSEMBLY-023
@@ -237,8 +285,8 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).not_to include("Old rule one", "Old rule two")
     end
 
-    it "includes test and lint commands" do
-      result = described_class.call(issue: issue, project: project)
+    it "includes test and lint commands when a database is available" do
+      result = described_class.call(issue: issue, project: assembly_project_with_postgres)
 
       expect(result.text).to include("bundle exec rspec")
       expect(result.text).to include("bundle exec rubocop")
@@ -792,6 +840,49 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(result.text).to include("Available Services")
       expect(result.text).to include("DATABASE_URL")
+    end
+  end
+
+  describe "database-aware prompt construction" do # @spec POLYGLOT-TEST-011
+    let(:configured_containers) { [] }
+
+    it "drops the database-dependent Ruby test command when no database is available" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).not_to include("bundle exec rspec")
+      expect(result.text).to include("No test command configured")
+    end
+
+    it "emits the no-database safety rules when no database is available" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("Report skipped database-dependent tests")
+      expect(result.text).to include("Do NOT provision or install missing services")
+      expect(result.text).not_to include("- **Lint and tests MUST pass before every commit.**")
+    end
+
+    it "includes the Ruby test command when a database is configured" do
+      result = described_class.call(issue: issue, project: assembly_project_with_postgres)
+
+      expect(result.text).to include("bundle exec rspec")
+      expect(result.text).to include("- **Lint and tests MUST pass before every commit.**")
+      expect(result.text).not_to include("Report skipped database-dependent tests")
+    end
+
+    it "treats an agent_run's provisioned service_container_ids as the database source of truth" do
+      real_project = assembly_project
+      pg_container = create(:service_container, account: Account.first || create(:account), image: "postgres:16", status: "running")
+      agent_run_with_db = create(:agent_run, project: create(:project), service_container_ids: [ pg_container.id ])
+
+      stubbed = false
+      allow(Prompts::ServiceContainerSections).to receive(:has_database_container?) do |**_kwargs|
+        stubbed = true
+        ServiceContainer.where(id: [ pg_container.id ], status: "running").any? { |sc| sc.image.to_s.include?("postgres") }
+      end
+
+      described_class.call(issue: issue, project: real_project, agent_run: agent_run_with_db)
+
+      expect(stubbed).to be(true)
     end
   end
 

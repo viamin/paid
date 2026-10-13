@@ -277,14 +277,40 @@ module Prompts
           fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
         )
       end
+      # Strip the inline rules suffix from the rendered shell so the
+      # database-aware safety rules section can render it back with the
+      # variant that matches the actual database availability (POLYGLOT-TEST-011).
+      stripped_content = PromptAssembly::Sections::SafetyRules
+        .strip_legacy_suffix(content.to_s)
+        .rstrip
+
+      rendered = [ stripped_content, safety_rules_body ].compact.reject(&:empty?).join("\n\n")
+
       PromptAssembly::Section.new(
         key: :instructions_and_rules,
         source: :instructions_and_rules,
-        content: content.to_s,
+        content: rendered,
         trust_level: :trusted,
         required: true,
         inclusion_reason: "core instructions and rules shell"
       )
+    end
+
+    # Mirrors {PromptAssembly::Sections::SafetyRules}'s body selection so a
+    # PR follow-up run does not embed the unconditional "tests MUST pass"
+    # rule when no database is provisioned — the prompt and the pre-commit
+    # hook must agree on whether database-dependent verification is
+    # available (#4305, POLYGLOT-TEST-011).
+    def safety_rules_body
+      if database_unavailable?
+        PromptAssembly::Sections::SafetyRules::NO_DATABASE_SAFETY_RULES
+      else
+        PromptAssembly::Sections::SafetyRules::SAFETY_RULES
+      end
+    end
+
+    def database_unavailable?
+      !database_available?
     end
 
     def service_environment_section
@@ -1137,11 +1163,22 @@ module Prompts
     end
 
     def detected_lint_command
-      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project))
+      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project, db_available: database_available?))
     end
 
     def detected_test_command
-      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project))
+      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project, db_available: database_available?))
+    end
+
+    # Whether the agent's runtime environment has a usable database service
+    # container. The prompt and the pre-commit hook must agree on this so a
+    # PR follow-up run does not contradict itself by running services that
+    # weren't actually provisioned (#4305, POLYGLOT-TEST-011).
+    def database_available?
+      @database_available ||= Prompts::ServiceContainerSections.has_database_container?(
+        project: project,
+        agent_run: agent_run
+      )
     end
   end
 end

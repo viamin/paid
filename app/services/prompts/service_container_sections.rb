@@ -30,12 +30,48 @@ module Prompts
     # line that goes between the install-deps step and the analyze step in
     # the issue prompt. Used by both BuildForIssue and CreateAgentRunActivity
     # so the prompt template can carry a {{setup_database_instruction}} slot.
-    def self.setup_database_instruction_for(project:)
-      containers = project.service_containers.to_a
-      has_db = containers.any? { |sc| sc.image.include?("postgres") }
+    def self.setup_database_instruction_for(project:, agent_run: nil)
+      has_db = has_database_container?(project: project, agent_run: agent_run)
       language = Prompts::LanguageCommands.detected_language(project)
       render_database_instruction(has_db: has_db, language: language, project: project)
     end
+
+    # Single source of truth for "does this run actually have a database
+    # service container available?". The prompt and the pre-commit hook
+    # MUST agree on this answer; otherwise the agent gets contradictory
+    # instructions (no database available vs. "fix all test failures").
+    #
+    # When +agent_run+ has a non-empty +service_container_ids+ (i.e. the run
+    # has been provisioned), this consults THAT set — the agents running
+    # for that exact run — rather than the project's generic configured
+    # container list, which may include a postgres container the project
+    # owner configured but did not actually provision for this run.
+    #
+    # When +agent_run+ is nil or has no provisioned service containers, this
+    # falls back to the project's configured service containers (a
+    # pre-prompt-build check for runs that have not been provisioned yet).
+    # @spec POLYGLOT-TEST-011
+    # @spec QUALITY-LOOPS-004
+    def self.has_database_container?(project:, agent_run: nil)
+      return false unless project
+
+      ids = extract_run_container_ids(agent_run)
+      if ids
+        ServiceContainer.where(id: ids, status: "running").any? { |sc| sc.image.to_s.include?("postgres") }
+      else
+        project.service_containers.to_a.any? { |sc| sc.image.to_s.include?("postgres") }
+      end
+    end
+
+    def self.extract_run_container_ids(agent_run)
+      return nil unless agent_run
+
+      ids = agent_run.service_container_ids if agent_run.respond_to?(:service_container_ids)
+      return nil if ids.blank?
+
+      Array(ids).map(&:to_i).reject(&:zero?)
+    end
+    private_class_method :extract_run_container_ids
 
     def self.build_database_instruction(has_db:, language:)
       if has_db
@@ -239,9 +275,11 @@ module Prompts
     def has_database_container?
       return @has_database_container unless @has_database_container.nil?
 
-      @has_database_container = configured_service_containers.any? do |sc|
-        sc.image.include?("postgres")
-      end
+      agent_run = respond_to?(:agent_run, true) ? agent_run : nil
+      @has_database_container = ServiceContainerSections.has_database_container?(
+        project: project,
+        agent_run: agent_run
+      )
     end
 
     def service_description(sc)

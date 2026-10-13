@@ -10,11 +10,17 @@ module Containers
     # Ruby (Rails/ActiveRecord) and Elixir (Phoenix/Ecto) both fail
     # unconditionally without PostgreSQL, which would trap the agent in a
     # commit loop. Their test hooks are no-op'd when no DB container is running.
-    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby elixir].freeze
+    # Mirrors {Prompts::LanguageCommands::DB_DEPENDENT_TEST_LANGUAGES} so the
+    # pre-commit hook and the prompt agree on which suites are runnable
+    # (POLYGLOT-TEST-011).
+    DB_DEPENDENT_TEST_LANGUAGES = Prompts::LanguageCommands::DB_DEPENDENT_TEST_LANGUAGES
 
-    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec TDD-GUARD-009 # @spec TDD-GUARD-010
+    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011 # @spec TDD-GUARD-009 # @spec TDD-GUARD-010
       languages = Prompts::LanguageCommands.test_languages(agent_run.project)
-      db_available = agent_run.project.has_running_database_container?
+      db_available = Prompts::ServiceContainerSections.has_database_container?(
+        project: agent_run.project,
+        agent_run: agent_run
+      )
 
       lint_commands, test_commands = resolve_commands(languages, db_available)
       mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, languages)
