@@ -277,6 +277,7 @@ class ChatControllerNodeHarness
         querySelectorAll: () => cards
       };
       const first = {
+        matches: () => false,
         querySelector: () => ({}),
         replaceWith(replacement) { trailing = replacement; }
       };
@@ -611,7 +612,7 @@ class ChatControllerNodeHarness
     function testFallbackNoticeRemovesStaleToolCards() {
       const removed = [];
       const { controller, appended } = makeController({
-        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); }, matches: () => false, querySelector: () => null } : null
       });
 
       controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
@@ -666,7 +667,7 @@ class ChatControllerNodeHarness
     function testRegularMessageCreatedKeepsAttemptToolCards() {
       const removed = [];
       const { controller } = makeController({
-        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); }, matches: () => false, querySelector: () => null } : null
       });
 
       controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
