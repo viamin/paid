@@ -57,13 +57,17 @@ migration, model, schema, or spec.
 
 ## 3. Verification performed
 
-This refresh re-runs the structural checks against the current working tree
-under `RAILS_ENV=test`. Dependency installation completed via
-`bundle _4.0.14_ install`. `bin/rails db:test:prepare` succeeds; a runtime
-probe of the test database reports 175 tables and confirms none of
-`BusinessObligation`, `Verification::Coordinator`, or `Verification::Rubric`
-is defined, the `verification_coverage` schema is absent, and
-`FeatureFlags::DEFINITIONS` has no `layered_verification_coordinator` entry.
+This refresh re-runs the structural checks against the current working tree.
+Dependency installation completed via `bundle install` and `yarn install`.
+`bin/rails db:prepare` was attempted, but this audit environment cannot reach
+its configured PostgreSQL service (Rails falls back to unavailable local
+sockets), so it does not claim a new database-backed runtime probe. The
+source and schema checks below independently confirm that no
+`BusinessObligation`, `Verification::Coordinator`, `Verification::Rubric`,
+verification-coverage schema, or `layered_verification_coordinator` flag has
+shipped. The historical database-backed observation from the earlier refresh
+remains recorded above as time-bounded evidence, not as a result reproduced by
+this run.
 
 ```
 ls docs/rdrs/RDR-075*.md                                  # nothing
@@ -191,10 +195,10 @@ GitHub-visible outcome is:
   ([`audit-report-2026-10-13-rdr-075-final.md`](audit-report-2026-10-13-rdr-075-final.md))
   both already `Tracks #4365` and are non-closing.
 - This umbrella final-acceptance refresh records the same conclusion with
-  database-backed runtime confirmation (175 tables, no `BusinessObligation`,
-  no `Verification::Coordinator`, no `Verification::Rubric`, no
-  `verification_coverage` schema, no `layered_verification_coordinator`
-  flag) and the live GitHub state listed above.
+  current source/schema, coherence, and live GitHub evidence. Its earlier
+  database-backed runtime observation is retained as time-bounded evidence;
+  the current environment's unavailable PostgreSQL service prevented a new
+  runtime probe.
 - [`docs/rdrs/README.md`](README.md) continues to describe #4365 as open
   until the focused gaps ship.
 - No closing PR reference such as `Closes #4365` is used; no
