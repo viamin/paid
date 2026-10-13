@@ -232,6 +232,18 @@ confirm that #4309 remains open until those focused gaps ship and a future
 audit can rerun the structural and database-backed checks against shipped
 behavior.
 
+RDR-075 is held for human review in
+[#4364](https://github.com/viamin/paid/pull/4364) and is not yet merged,
+so it does not appear in the index above; the umbrella
+[#4365](https://github.com/viamin/paid/issues/4365) tracks its
+implementation tree. The 2026-10-12 readiness audit
+[(`audit-report-2026-10-12-rdr-075.md`)](audit-report-2026-10-12-rdr-075.md)
+records that no RDR-075 code, schema, model, coordinator, rubric, evidence,
+finding synthesis, or `layered_verification_coordinator` flag has shipped,
+that no `docs/intent/layered-verification/` LID segment yet exists, and that
+the umbrella issue must remain open until Phases 1–4 (#4366–#4369) and the
+closeout (#4370) own their part of the implementation.
+
 ## Decision Summary
 
 ### Core Stack
