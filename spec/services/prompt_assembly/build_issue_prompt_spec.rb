@@ -206,7 +206,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text.scan("# Rules").length).to eq(1)
     end
 
-    it "strips a legacy embedded rules suffix from the queued prompt version before appending safety rules" do
+    it "keeps phase guidance when a queued template overrides task instructions" do # @spec PROMPT-ASSEMBLY-023
       prompt_record = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |prompt|
         prompt.name = "Issue implementation"
         prompt.category = "coding"
@@ -227,14 +227,14 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         TEMPLATE
         variables: []
       )
-      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt_record.current_version)
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt_record.current_version, tdd_phase: "test_writing")
 
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
 
-      expect(result.text.scan("When you're done, commit all your changes. Do not push.").length).to eq(1)
+      expect(result.text).not_to include("When you're done, commit all your changes. Do not push.")
+      expect(result.text).to include("When you're done, commit the permitted tests and LID docs only. Do not push.", "does not unlock implementation within this run")
       expect(result.text.scan("# Rules — you MUST follow these").length).to eq(1)
-      expect(result.text).not_to include("Old rule one")
-      expect(result.text).not_to include("Old rule two")
+      expect(result.text).not_to include("Old rule one", "Old rule two")
     end
 
     it "includes test and lint commands" do
@@ -281,7 +281,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
-  describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020
+  describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020 # @spec PROMPT-ASSEMBLY-023
     let(:real_issue) { create(:issue) }
 
     it "includes test_writing boundaries when the run is TDD-governed" do
@@ -290,6 +290,9 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
 
       expect(result.text).to include("TDD Boundaries — test-writing run")
+      expect(result.text).to include("does not unlock implementation within this run")
+      expect(result.text).to include("paid-tests-approved")
+      expect(result.text).to include("expected assertion failures")
       expect(result.sections.find { |s| s.key == :tdd_boundaries }).to be_required
     end
 
@@ -299,6 +302,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
 
       expect(result.text).to include("TDD Boundaries — test-fixing run")
+      expect(result.text).to include("return the PR to test review before editing tests")
     end
 
     it "includes refactor boundaries when the run is TDD-governed" do
@@ -307,6 +311,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
 
       expect(result.text).to include("TDD Boundaries — refactor run")
+      expect(result.text).to include("Keep the approved test suite green")
     end
 
     it "omits TDD boundaries when the run is not TDD-governed" do
@@ -326,6 +331,15 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(result.text).to include("TDD Boundaries — test-writing run")
       expect(result.skipped.map { |s| s[:key] }).not_to include(:tdd_boundaries)
+    end
+
+    it "records the effective phase guidance in provenance" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_writing")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      section = result.provenance[:sections].find { |entry| entry[:key] == :tdd_boundaries }
+      expect(section).to include(required: true, inclusion_reason: "TDD phase guidance and write-boundary contract")
     end
   end
 

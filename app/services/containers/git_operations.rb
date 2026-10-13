@@ -378,8 +378,8 @@ module Containers
     # @param test_command [String, Array<String>] one or more test commands
     # @param mutation_command [String] command to run for mutation testing
     # @return [void]
-    def install_git_hooks(lint_command:, test_command:, mutation_command: "true", pre_commit_guard: nil) # @spec POLYGLOT-TEST-003
-      install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command, pre_commit_guard))
+    def install_git_hooks(lint_command:, test_command:, mutation_command: "true", pre_commit_guard: nil, test_failure_behavior: :fail) # @spec POLYGLOT-TEST-003 # @spec TDD-GUARD-010
+      install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command, pre_commit_guard, test_failure_behavior))
     rescue Error => e
       # Expected failures: hook write/chmod failed, unsafe command, etc.
       Rails.logger.warn(
@@ -1289,7 +1289,7 @@ module Containers
       raise Error, "Hook command contains unsafe characters: #{command.inspect}"
     end
 
-    def pre_commit_script(lint_command, test_command, mutation_command, pre_commit_guard = nil)
+    def pre_commit_script(lint_command, test_command, mutation_command, pre_commit_guard = nil, test_failure_behavior = :fail)
       lint_commands = Array(lint_command)
       test_commands = Array(test_command)
       lint_commands.each { |cmd| validate_hook_command!(cmd) }
@@ -1304,7 +1304,7 @@ module Containers
 
         #{pre_commit_guard}
         #{lint_section(lint_commands)}
-        #{test_section(test_commands)}
+        #{test_section(test_commands, test_failure_behavior)}
         #{mutation_section(mutation_command)}
       SHELL
     end
@@ -1324,8 +1324,22 @@ module Containers
     end
 
     # One availability-checked block per test command (polyglot support).
-    def test_section(commands)
-      commands.filter_map { |cmd| availability_block(cmd, "test") }.join("\n")
+    def test_section(commands, failure_behavior)
+      commands.filter_map { |cmd| test_availability_block(cmd, failure_behavior) }.join("\n")
+    end
+
+    def test_availability_block(command, failure_behavior)
+      return availability_block(command, "test") unless failure_behavior == :permit
+
+      binary = command.split.first
+      <<~SHELL
+        if command -v #{binary} >/dev/null 2>&1; then
+          echo "Running #{command}..."
+          #{command} || echo "Red-phase test command failed; inspect and resolve infrastructure, syntax, or unrelated failures before committing."
+        else
+          echo "Warning: test tool not available, skipping test check"
+        fi
+      SHELL
     end
 
     # Skips mutation checks unless the Gemfile declares mutant (Ruby-only).

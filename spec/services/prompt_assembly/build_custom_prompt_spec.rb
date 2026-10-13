@@ -91,6 +91,8 @@ RSpec.describe PromptAssembly::BuildCustomPrompt do
 
       expect(result.text).to include("TDD Boundaries — test-writing run")
       expect(result.text).to include("spec/")
+      expect(result.text).to include("expected assertion failures")
+      expect(result.text).to include("does not unlock implementation within this run")
       section = result.sections.find { |s| s.key == :tdd_boundaries }
       expect(section).to be_required
     end
