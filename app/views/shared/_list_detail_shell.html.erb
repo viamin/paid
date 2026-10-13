@@ -51,18 +51,22 @@
   <%= tag.div id: list_dom_id,
               class: list_class_string,
               data: list_data do %>
-    <%= list %>
+    <div class="<%= master_detail_pane_scroll_classes %>">
+      <%= list %>
+    </div>
   <% end %>
 
   <%= tag.div id: detail_dom_id,
               class: detail_class_string,
               data: detail_data do %>
-    <% if detail.present? %>
-      <%= detail %>
-    <% elsif empty_title.present? %>
-      <%= render "shared/list_detail_empty_state",
-                 title: empty_title,
-                 body: empty_body %>
-    <% end %>
+    <div class="<%= master_detail_pane_scroll_classes %>">
+      <% if detail.present? %>
+        <%= detail %>
+      <% elsif empty_title.present? %>
+        <%= render "shared/list_detail_empty_state",
+                   title: empty_title,
+                   body: empty_body %>
+      <% end %>
+    </div>
   <% end %>
 </div>

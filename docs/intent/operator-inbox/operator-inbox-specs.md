@@ -308,7 +308,12 @@
   shared pane proportions, breakpoint, gap, pane chrome, empty state, or
   active-row treatment lands in one place. The Inbox's mobile master-detail
   flow (`inbox-master-detail` controller, route-based member pane) is
-  feature-specific; the shared pattern encodes layout only.
+  feature-specific; the shared pattern encodes layout only. Selecting a queue
+  row SHALL target the `inbox-detail` Turbo Frame and advance browser history,
+  so only detail content is replaced, the list retains its DOM and scroll
+  position, and the existing controller applies the selected-row treatment.
+  A direct member-route visit SHALL continue to render the complete page for
+  deep links and mobile navigation.
   *Code:* `app/controllers/inbox_controller.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,

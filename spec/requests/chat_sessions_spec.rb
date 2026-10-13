@@ -586,6 +586,18 @@ RSpec.describe "ChatSessions" do
         # bottom padding per breakpoint (1rem below `lg`, 2rem at `lg`+); the
         # static 2rem used to clamp 16px of mobile panel out and starve the
         # transcript (#3635).
+        #
+        # At `lg`+ the chat show page mounts this panel inside the shared
+        # `list-detail` shell, whose grid is bound to `calc(100dvh - 12rem)`
+        # and whose detail pane wraps the panel in an `lg:h-full
+        # lg:overflow-y-auto` inner wrapper. The mobile `100dvh - offset-top -
+        # bottom-space` height would extend below that grid track by ~4rem and
+        # turn the wrapper into a second scroll container in front of the
+        # transcript (#4374 review). The panel therefore references
+        # `--chat-panel-height` (set to `100%` by the
+        # `[data-controller~="chat"]` rule at `lg`); the viewport subtraction
+        # is the `var(...)` fallback, but the rule fires unconditionally at
+        # desktop, so the fallback only takes effect below `lg`.
         get chat_session_path(chat_session)
         expect(response).to have_http_status(:ok)
 
@@ -595,7 +607,7 @@ RSpec.describe "ChatSessions" do
         expect(panel).to be_present
         # Anchored so a `max-height:` declaration cannot satisfy it by substring.
         expect(panel["style"]).to match(
-          /(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)/
+          /(?:\A|;\s*)height: var\(--chat-panel-height, calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)\)/
         )
       end
 
@@ -867,9 +879,12 @@ RSpec.describe "ChatSessions" do
         # substring. The bound uses `--chat-panel-bottom-space` so the
         # subtraction tracks the page's actual bottom padding per breakpoint
         # (1rem below `lg`, 2rem at `lg`+); see the CHAT-API-009 mobile test
-        # below for the responsive variant.
+        # below for the responsive variant. At `lg`+ the panel resolves to
+        # `--chat-panel-height` (set to `100%` by the
+        # `[data-controller~="chat"]` rule) so it stays bounded to the shared
+        # `list-detail` grid track (#4374 review).
         expect(panel["style"]).to match(
-          /(?:\A|;\s*)height: calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)/
+          /(?:\A|;\s*)height: var\(--chat-panel-height, calc\(100dvh - var\(--chat-panel-offset-top, 0px\) - var\(--chat-panel-bottom-space, 2rem\)\)\)/
         )
       end
 

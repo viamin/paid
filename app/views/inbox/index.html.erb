@@ -97,8 +97,23 @@
       sub-300px column. Below `lg` the master-detail Stimulus controller takes
       over and stacks the panes. (@spec OPERATOR-INBOX-003 @spec LIST-DETAIL-001) %>
   <% else %>
+    <%# @spec QUESTION-EXPLORATION-015 @spec LIST-DETAIL-007
+        `<turbo-frame>` has no app- or gem-level CSS rule, so it defaults to
+        `display: inline` per the HTML spec and its height is content-based.
+        The "Answer in chat" embedded flow renders the chat panel inside this
+        frame, and the panel's inline `height: 100%` then resolves to `auto`
+        at `lg`+ — dropping the panel to content height and turning the
+        shared list-detail shell's `lg:overflow-y-auto` inner wrapper into a
+        second scroll container in front of the transcript (#4374 review).
+        `block` overrides the default `display: inline` and `h-full` carries
+        the wrapper's definite height through the frame so the chat panel
+        can resolve `100%` against the shared grid track. Below `lg` the
+        wrapper is naturally sized and `h-full` resolves to `auto` (content
+        height), so the panel's mobile `calc(100dvh - ...)` fallback still
+        drives its viewport bound and the mobile single-column flow is
+        unaffected. %>
     <% detail_content = capture do %>
-      <%= turbo_frame_tag("inbox-detail") do %>
+      <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
         <%= render "dashboard/inbox_detail",
                    entry: @selected_entry,
                    scoped_project: @scoped_project,

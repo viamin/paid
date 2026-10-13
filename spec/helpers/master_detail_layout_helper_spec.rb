@@ -12,7 +12,7 @@ require "rails_helper"
 # and `spec/system/chat_shared_layout_spec.rb`.
 #
 # @spec LIST-DETAIL-001 @spec LIST-DETAIL-002 @spec LIST-DETAIL-004
-# @spec LIST-DETAIL-005
+# @spec LIST-DETAIL-005 @spec LIST-DETAIL-007
 RSpec.describe MasterDetailLayoutHelper do
   describe "shared structural constants" do
     # @spec LIST-DETAIL-001 @spec LIST-DETAIL-004
@@ -24,13 +24,15 @@ RSpec.describe MasterDetailLayoutHelper do
   describe "shared class strings" do
     # @spec LIST-DETAIL-001 @spec LIST-DETAIL-004
     it "exposes a single grid class string with the shared template and gap-6 spacing" do
-      expect(helper.master_detail_grid_classes).to eq("grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]")
+      expect(helper.master_detail_grid_classes).to eq(
+        "grid gap-6 lg:h-[calc(100dvh-12rem)] lg:min-h-0 lg:grid-cols-[22rem_minmax(0,1fr)]"
+      )
     end
 
     # @spec LIST-DETAIL-002 @spec LIST-DETAIL-004
     it "exposes a single pane-card chrome so the list and detail halves read as one card" do
       expect(helper.master_detail_pane_classes).to eq(
-        "overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+        "min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
       )
     end
 
@@ -64,6 +66,14 @@ RSpec.describe MasterDetailLayoutHelper do
       expect(document.at_css("#list-detail-detail").text).to include("detail body")
     end
 
+    # @spec LIST-DETAIL-007
+    it "gives each desktop pane an independent inner scroll region" do
+      document = render_shell(detail: "<p>detail body</p>".html_safe)
+
+      expect(document.at_css("#list-detail-list > div")[:class]).to eq("lg:h-full lg:overflow-y-auto")
+      expect(document.at_css("#list-detail-detail > div")[:class]).to eq("lg:h-full lg:overflow-y-auto")
+    end
+
     # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
     # Regression for #3881: passing `data:` keys straight through keeps
     # `tag.div`'s built-in `data-` + dasherize conversion as the single
@@ -88,7 +98,7 @@ RSpec.describe MasterDetailLayoutHelper do
     # @spec LIST-DETAIL-002 @spec LIST-DETAIL-005
     it "renders the shared empty-state card in the detail pane when detail is blank and empty_title is set" do
       document = render_shell(detail: nil, empty_title: "Nothing selected", empty_body: "Pick something.")
-      empty_card = document.at_css("#list-detail-detail > div")
+      empty_card = document.at_css("#list-detail-detail > div > div")
 
       expect(empty_card[:class]).to eq(helper.master_detail_empty_state_classes)
       expect(empty_card.at_css("h2").text).to eq("Nothing selected")

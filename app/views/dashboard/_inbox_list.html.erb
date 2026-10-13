@@ -1,5 +1,5 @@
 <%# @spec OPERATOR-INBOX-006 @spec LIST-DETAIL-003 %>
-<div class="border-b border-gray-200 px-4 py-4">
+<div class="sticky top-0 z-10 border-b border-gray-200 bg-white px-4 py-4">
   <h2 class="text-sm font-semibold text-gray-900">Queue</h2>
   <p class="mt-1 text-sm text-gray-500"><%= pluralize(entries.size, "entry") %> waiting</p>
 </div>
@@ -11,6 +11,8 @@
       <%= link_to inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
           data: {
             action: "click->inbox-master-detail#open",
+            turbo_frame: "inbox-detail",
+            turbo_action: "advance",
             inbox_master_detail_target: "row",
             active_classes: master_detail_active_row_classes
           },
