@@ -2160,6 +2160,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_103927) do
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
     t.index ["project_id", "orphaned_needs_input_label_evaluated_at"], name: "index_issues_pending_orphaned_needs_input_label_evaluation", where: "(orphaned_needs_input_label_evaluated_at IS NULL)"
+    t.index ["project_id", "paid_activation_state"], name: "index_issues_on_project_id_and_paid_activation_state"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "paused"], name: "index_issues_on_project_id_and_paused"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"

@@ -63,9 +63,8 @@ module Automation
     def pull_request_feature_enabled?(project:, pull_request:, feature:)
       return false if upstream_mode_disables?(project, feature)
 
-      # @spec LABEL-CONTROL-007 — ignored mode: only the project-level
-      # setting decides. The check above already returned true on the
-      # setting, so we just need to fall through to false here.
+      # @spec LABEL-CONTROL-007 — ignored mode has no per-PR feature
+      # activation; the project-level setting is the only signal.
       return project_setting_enabled?(project, feature) if project.paid_local_activation?
 
       return true if project_setting_enabled?(project, feature)

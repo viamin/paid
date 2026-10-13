@@ -2847,6 +2847,31 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#paid_activate!" do
+    # @spec LABEL-CONTROL-007
+    it "persists activation at the supplied time" do
+      issue = create(:issue)
+      activated_at = Time.zone.parse("2026-10-13 10:00:00")
+
+      issue.paid_activate!(time: activated_at)
+
+      issue.reload
+      expect(issue).to be_paid_activated
+      expect(issue.paid_activated_at).to eq(activated_at)
+    end
+
+    # @spec LABEL-CONTROL-007
+    it "keeps the original activation timestamp when reapplied" do
+      issue = create(:issue)
+      activated_at = Time.zone.parse("2026-10-13 10:00:00")
+
+      issue.paid_activate!(time: activated_at)
+      issue.paid_activate!(time: activated_at + 1.hour)
+
+      expect(issue.reload.paid_activated_at).to eq(activated_at)
+    end
+  end
+
   describe "#paid_deactivate!" do
     # @spec LABEL-CONTROL-007
     it "persists deactivation so it overrides inherited PR scan eligibility" do
