@@ -63,9 +63,11 @@ records the next-step ship list per RDR matching this audit's findings.
 Five unrelated `CREATE-FEATURE-*` / `FEAT-NAME-001` reverse orphans exist
 in `app/models/agent_run.rb`, `app/services/prompts/build_for_create_feature.rb`,
 and `app/temporal/activities/chain_lid_planning_activity.rb`; they are
-outside the RDR-069–071 scope and are not addressed here. The 2026-10-12
-counts (`Total specs: 1213`, `[x] implemented: 1131`, `[ ] active gap: 65`,
-`[D] deferred: 17`) match this 2026-10-13 re-run exactly.
+outside the RDR-069–071 scope and are not addressed here. The 2026-10-13
+re-run reports `Total specs: 1215`, `[x] implemented: 1133`, `[ ] active gap:
+65`, and `[D] deferred: 17`. Compared with the 2026-10-12 audit, total specs
+and implemented specs each increased by 2; active gaps and deferred specs are
+unchanged.
 
 ```
 npx markdownlint \
