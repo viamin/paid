@@ -8,6 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture + Quality + AI Safety
 - **Priority**: P1 `[inferred — not supplied by the feature brief]`
+- **Target project**: `viamin/paid` (project_id 19)
 - **Related RDRs**: [RDR-011](RDR-011-observability.md) (Observability Stack), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) (Live Web App Preview and Interactive Agent Verification), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (Test-Driven Development Modes), [RDR-061](RDR-061-infrastructure-safety-and-audit.md) (Infrastructure Safety Rails and Execution Audit Events), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle), [RDR-067](RDR-067-approved-intent-conformance.md) (Approved Intent Conformance)
 - **Related Issues**: implementation issue tree to be filed after this RDR PR; numbers will be recorded in the epic issue
 - **Related Intent**: to be created by the `lid_planning` run after this RDR is accepted
