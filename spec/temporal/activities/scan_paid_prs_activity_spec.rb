@@ -11893,9 +11893,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).not_to include("queue_create_pr_run")
     end
 
-    it "does not requeue implementation after an ignored-mode test approval has started implementation" do # @spec LABEL-CONTROL-005
+    it "does not requeue implementation after an ignored-mode test approval has started implementation" do # @spec LABEL-CONTROL-005 LABEL-CONTROL-007
       project.update!(tdd_mode: "strict", label_integration_mode: "ignored")
       pull_request.update!(tdd_review_state: "approved", tdd_review_approved_at: 2.hours.ago)
+      pull_request.paid_activate!
       create(:agent_run,
         project: project,
         source_pull_request_number: 42,

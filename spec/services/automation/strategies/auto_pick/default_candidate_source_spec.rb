@@ -25,10 +25,11 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.next_candidate(project)).to eq(p1)
     end
 
-    it "uses local priority instead of labels in ignored mode" do # @spec LABEL-CONTROL-003
+    it "uses local priority instead of labels in ignored mode" do # @spec LABEL-CONTROL-003 LABEL-CONTROL-007
       project.update!(label_integration_mode: "ignored")
-      _labeled = create(:issue, project:, github_number: 1, labels: [ "P1" ], control_priority: "P3")
-      local = create(:issue, project:, github_number: 2, control_priority: "P1")
+      _labeled = create(:issue, project:, github_number: 1, labels: [ "P1" ], control_priority: "P3",
+        paid_activation_state: "activated")
+      local = create(:issue, project:, github_number: 2, control_priority: "P1", paid_activation_state: "activated")
 
       expect(described_class.next_candidate(project)).to eq(local)
     end
