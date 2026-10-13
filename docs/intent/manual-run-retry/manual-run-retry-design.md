@@ -36,6 +36,7 @@ is the issue-less counterpart, called unconditionally after that branch:
 ```ruby
 def manual_run_retry_eligible?(agent_run)
   agent_run.manual? &&
+    !agent_run.bootstrap_readiness_goal? &&
     agent_run.issue.nil? &&
     agent_run.source_pull_request_number.nil? &&
     agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&
@@ -45,11 +46,19 @@ def manual_run_retry_eligible?(agent_run)
 end
 ```
 
-`issue.nil? && source_pull_request_number.nil?` is sufficient to scope this
-to exactly the four goals named above: `AgentRun#issue_goal_requires_issue`
-requires an issue for `enhance_issue`/`analyze_issue`, and
+`issue.nil? && source_pull_request_number.nil?` together with the explicit
+`!bootstrap_readiness_goal?` exclusion scopes this to exactly the four goals
+named above: `AgentRun#issue_goal_requires_issue` requires an issue for
+`enhance_issue`/`analyze_issue`, and
 `#review_goal_requires_pull_request` requires a PR for `review` — no other
 goal can be issue-less and PR-less by validation.
+
+`bootstrap_readiness` also has no issue or source PR, but it is deliberately
+excluded: PROJECT-READINESS-007 requires a failed bootstrap attempt to remain
+terminal until an authorized operator explicitly starts another one from the
+project-setup Inbox entry. The delayed job independently repeats that exclusion
+under its row lock, so a job scheduled before this policy is deployed cannot
+mint a replacement bootstrap run.
 
 ## Why `recoverable_rate_limited?` is excluded
 

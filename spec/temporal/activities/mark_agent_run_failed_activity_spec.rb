@@ -423,6 +423,17 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         }.not_to have_enqueued_job(RetryFailedManualRunJob)
       end
 
+      # @spec PROJECT-READINESS-007
+      it "does not schedule a retry for a bootstrap run that fails before producing output" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "bootstrap_readiness")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
       it "does not schedule a retry when the project toggle is disabled" do
         project.update!(retry_failed_manual_runs: false)
         agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")

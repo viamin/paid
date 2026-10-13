@@ -23,7 +23,9 @@
 
 - [x] **MANUAL-RUN-RETRY-002** — The scheduling check SHALL NOT fire for a
   run that is attached to an issue, attached to a source pull request, not
-  manually triggered, or currently `recoverable_rate_limited?` (a
+  manually triggered, a `bootstrap_readiness` run (which requires a fresh
+  operator trigger after failure under PROJECT-READINESS-007), or currently
+  `recoverable_rate_limited?` (a
   `rate_limited` run with a recovery time, already owned by
   `StaleRunDetectorJob`'s in-place recovery) — avoiding a duplicate,
   competing retry path for state another mechanism already owns.

@@ -138,9 +138,10 @@ module Activities
         .perform_later(agent_run.id, attempt)
     end
 
-    # @spec MANUAL-RUN-RETRY-002 MANUAL-RUN-RETRY-003 MANUAL-RUN-RETRY-004
+    # @spec MANUAL-RUN-RETRY-002 MANUAL-RUN-RETRY-003 MANUAL-RUN-RETRY-004 PROJECT-READINESS-007
     def manual_run_retry_eligible?(agent_run)
       agent_run.manual? &&
+        !agent_run.bootstrap_readiness_goal? &&
         agent_run.issue.nil? &&
         agent_run.source_pull_request_number.nil? &&
         agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&

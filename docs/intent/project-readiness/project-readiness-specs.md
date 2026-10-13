@@ -67,8 +67,13 @@ prefix: PROJECT-READINESS
   entry visible for a new explicit trigger.
   It SHALL re-evaluate only after GitHub reports that the bootstrap PR merged,
   so the next snapshot is target-branch evidence.
-  *Code:* `Projects::AgentRunsController`, `AgentRun`, `Issues::UpsertFromGithub`.
-  *Test:* `spec/requests/agent_runs_spec.rb`, `spec/services/issues/upsert_from_github_spec.rb`.
+  *Code:* `Projects::AgentRunsController`, `AgentRun`,
+  `Activities::MarkAgentRunFailedActivity`, `RetryFailedManualRunJob`,
+  `Issues::UpsertFromGithub`.
+  *Test:* `spec/requests/agent_runs_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/jobs/retry_failed_manual_run_job_spec.rb`,
+  `spec/services/issues/upsert_from_github_spec.rb`.
 
 - [x] **PROJECT-READINESS-008** — When `bootstrap_readiness` creates or
   reuses a pull request, the system SHALL allow only CI configuration,
