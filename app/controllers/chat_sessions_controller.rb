@@ -463,7 +463,7 @@ class ChatSessionsController < ApplicationController
 
   def leading_tool_run(scope, messages)
     preceding = scope.where("chat_messages.id < ?", messages.first.id)
-    boundary = preceding.where.not(id: ChatMessage.groupable_tools.select(:id)).reorder(created_at: :desc, id: :desc).first
+    boundary = preceding.where.not(id: preceding.groupable_tools.select(:id)).reorder(created_at: :desc, id: :desc).first
     tool_run = boundary ? preceding.where("chat_messages.id > ?", boundary.id) : preceding
 
     tool_run.groupable_tools.to_a + messages

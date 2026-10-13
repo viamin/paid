@@ -26,6 +26,14 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
       def provider_error_notice? = false
 
       def pending_confirmation_notice? = false
+
+      def groupable_tool?
+        (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
+      end
+
+      def transcript_notice?
+        token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+      end
     end.new(**defaults.merge(attrs))
   end
 
