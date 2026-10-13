@@ -177,6 +177,31 @@
 
 ## Create-feature and LID-planning attachment (#3863)
 
+- [x] **ISSUE-TREE-001** — When a feature-planning run creates or adopts
+  implementation issues, the system SHALL persist an issue-tree manifest on
+  its `FeatureIntent`, keyed by stable task identity and containing expected
+  dependencies, repository-qualified confirmed identities, and filing
+  progress. A linked issue MAY belong to multiple feature intents; title
+  matching alone SHALL NOT establish membership.
+  *Tests:* `spec/services/feature_intents/issue_tree_receipt_spec.rb`.
+  *Code:* `app/services/feature_intents/issue_tree_receipt.rb`.
+
+- [x] **ISSUE-TREE-002** — When feature-planning filing finishes, the system
+  SHALL verify task coverage, dependency cycles, remote existence or unknown
+  access state, and durable local linkage before marking the run complete.
+  Missing sync/link, confirmed absence, or unknown API access SHALL remain
+  visible as unresolved work; opening a design PR does not waive this check.
+  *Tests:* `spec/services/feature_intents/issue_tree_receipt_spec.rb`.
+  *Code:* `app/services/feature_intents/issue_tree_receipt.rb`,
+  `app/temporal/activities/create_multiple_issues_activity.rb`.
+
+- [x] **ISSUE-TREE-003** — When a plan revision changes after verification,
+  the system SHALL mark verification stale rather than reusing it. Partial
+  filing SHALL retain confirmed issue identities and unresolved task
+  identities for retry and operator visibility.
+  *Tests:* `spec/services/feature_intents/issue_tree_receipt_spec.rb`.
+  *Code:* `app/services/feature_intents/issue_tree_receipt.rb`.
+
 - [x] **FEATURE-APPROVAL-014** — For approval-gated features, when a
   `create_feature` agent run is queued, the system SHALL create a
   `FeatureIntent` linked to that run's brief issue (`status: "discovering"`,

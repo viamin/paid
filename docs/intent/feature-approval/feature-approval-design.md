@@ -36,6 +36,24 @@ Planning PR) remain the source of design content; this segment persists only
 the linkage, open-decision state, and authorization record needed to enforce
 the workflow.
 
+## Issue-tree completion receipts
+
+A planning PR may open before issue filing finishes, but its run cannot report
+planning completion merely because GitHub accepted one or more writes. Each
+`FeatureIntent` owns a persisted issue-tree manifest: stable task identities,
+expected dependencies, repository-qualified remote issue references, and
+filing progress. Its verification receipt records the plan revision,
+verification time, unresolved structural work, and missing native parent links
+(a body relationship remains evidence, not a native-link substitute).
+
+`FeatureIntents::IssueTreeReceipt` performs deterministic structural checks:
+task coverage, dependency cycles, remote existence/access state, and durable
+local `FeatureIntentIssue` linkage. Semantic design-coverage assessment remains
+an `agent_harness` concern. A changed plan revision invalidates verification.
+Partial or unknown remote state stays incomplete and retains confirmed
+identities for retry. An implementation issue may belong to related feature
+intents, with each intent's receipt making its own membership explicit.
+
 ## Operating mode, profile, and onboarding
 
 ### Operating-mode setting

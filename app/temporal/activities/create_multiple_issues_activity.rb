@@ -43,8 +43,6 @@ module Activities
         client, project, agent_run, parent_issue_number
       )
 
-      completed = complete_agent_run!(agent_run, created_issues)
-
       parent_updated = false
       if parent_issue_number && created_issues.any?
         parent_updated = update_parent_issue(
@@ -52,11 +50,14 @@ module Activities
         )
       end
 
-      # @spec FEATURE-APPROVAL-016 — link each issue the run filed to the
-      # FeatureIntent the run was attached to, so the Inbox detail view's
-      # "Proposed issue tree" lists real filed issues. Defensive: a failed
-      # attach must not block run completion.
-      attach_issues_to_feature_intent!(agent_run, created_issues)
+      completed = complete_after_tree_verification!(
+        agent_run,
+        tasks: tasks,
+        created_issues: created_issues,
+        parent_issue_number: parent_issue_number,
+        plan_revision: input[:plan_revision],
+        client: client
+      )
 
       ProcessRunQueueJob.perform_later if completed
 
@@ -246,6 +247,34 @@ module Activities
       completed
     end
 
+    # A GitHub write is not evidence that planning is complete. For feature
+    # planning, persist and verify the receipt before publishing the terminal
+    # run result; a partial sync/link failure stays visible and retryable.
+    # @spec ISSUE-TREE-001 @spec ISSUE-TREE-002
+    def complete_after_tree_verification!(agent_run, tasks:, created_issues:, parent_issue_number:, plan_revision:, client:)
+      feature_intent = feature_intent_for(agent_run)
+      return complete_agent_run!(agent_run, created_issues) unless feature_intent
+
+      receipt = FeatureIntents::IssueTreeReceipt.record(
+        feature_intent: feature_intent,
+        tasks: tasks,
+        created_issues: created_issues,
+        parent_issue_number: parent_issue_number,
+        plan_revision: plan_revision,
+        client: client
+      )
+      return complete_agent_run!(agent_run, created_issues) if receipt.complete?
+
+      agent_run.log!("system", "Issue-tree receipt incomplete: #{receipt.unresolved.join('; ')}")
+      false
+    end
+
+    def feature_intent_for(agent_run)
+      return unless agent_run.issue
+
+      FeatureIntent.linked_to_issue(agent_run.issue).first
+    end
+
     def update_parent_issue(client, project, parent_issue_number, created_issues)
       task_list = created_issues.map { |i| "- [ ] ##{i[:github_number]} — #{i[:title]}" }.join("\n")
       section = "\n\n## Sub-issues\n\n#{task_list}"
@@ -290,39 +319,6 @@ module Activities
         error: e.message
       )
       nil
-    end
-
-    # @spec FEATURE-APPROVAL-016 — wire the just-filed issues into the
-    # FeatureIntent the run is attached to. Best-effort: a failed attach
-    # is logged but does not raise, because the issues have already been
-    # filed on GitHub and the run is complete — the attachment is a
-    # bookkeeping record, not a correctness gate.
-    def attach_issues_to_feature_intent!(agent_run, created_issues)
-      brief_issue = agent_run.issue
-      return unless brief_issue
-
-      feature_intent = FeatureIntent.linked_to_issue(brief_issue).first
-      return unless feature_intent
-
-      created_issues.each do |created|
-        issue_id = created[:issue_id]
-        next unless issue_id
-
-        issue = Issue.find_by(id: issue_id)
-        next unless issue
-
-        FeatureIntents::AttachFromAgentRun.attach_issue(
-          feature_intent: feature_intent,
-          issue: issue
-        )
-      end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.feature_intent_issue_attach_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
     end
   end
 end

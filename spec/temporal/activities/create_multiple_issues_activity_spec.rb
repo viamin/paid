@@ -39,6 +39,7 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       gh_issue_response(number: 102, id: 200_002, title: "Add User model", body: "body2"),
       gh_issue_response(number: 103, id: 200_003, title: "Add API endpoint", body: "body3")
     )
+    allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(""))
   end
 
   describe "#execute" do
@@ -140,6 +141,24 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       expect(agent_run.status).to eq("completed")
       expect(agent_run.created_issue_number).to eq(101)
       expect(agent_run.created_issue_url).to include("/issues/101")
+    end
+
+    it "does not report a feature-planning run complete when local issue linkage is incomplete" do
+      brief_issue = create(:issue, project: project)
+      feature_intent = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
+      agent_run.update!(issue: brief_issue)
+      allow(Issues::UpsertFromGithub).to receive(:call).and_raise(StandardError, "sync unavailable")
+
+      activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: nil)
+
+      expect(agent_run.reload.status).to eq("running")
+      expect(feature_intent.reload.issue_tree_verification.fetch("state")).to eq("incomplete")
+      expect(feature_intent.issue_tree_verification.fetch("unresolved")).to include(
+        "local linkage missing for task-0",
+        "local linkage missing for task-1",
+        "local linkage missing for task-2"
+      )
     end
 
     it "logs all created issue numbers" do
