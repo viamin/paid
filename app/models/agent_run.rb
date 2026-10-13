@@ -4140,8 +4140,10 @@ class AgentRun < ApplicationRecord
     AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
   end
 
-  # @spec PROJECT-READINESS-006
+  # @spec PROJECT-READINESS-006 @spec PROJECT-READINESS-007
   def project_readiness_refresh_needed?
+    return false if bootstrap_readiness_goal?
+
     saved_change_to_status? && status == "completed" && result_commit_sha.present? && !synthetic_operational_run?
   end
 

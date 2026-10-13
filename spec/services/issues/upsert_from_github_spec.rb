@@ -138,6 +138,18 @@ RSpec.describe Issues::UpsertFromGithub do
       }.to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
     end
 
+    it "does not re-evaluate on a repeated sync of an already merged bootstrap PR" do # @spec PROJECT-READINESS-007
+      create(:agent_run, project: project, goal: "bootstrap_readiness", pull_request_number: github_issue.number)
+      create(:issue, :pull_request, project: project, github_issue_id: github_issue.id,
+        github_number: github_issue.number, github_state: "closed")
+      github_issue.state = "closed"
+      github_pull_request = OpenStruct.new(merged_at: Time.current)
+
+      expect {
+        described_class.call(project: project, github_issue: github_issue, github_pull_request: github_pull_request)
+      }.not_to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+
     it "does not deliver completion notifications for issues closed as not planned" do
       user = create(:user, account: project.account)
       issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")

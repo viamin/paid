@@ -350,7 +350,7 @@ module Activities
     end
 
     def fetch_design_pull_request(client, project, github_issue)
-      return unless client && design_pull_request?(project, github_issue)
+      return unless client && (design_pull_request?(project, github_issue) || bootstrap_readiness_pull_request?(project, github_issue))
 
       client.pull_request(project.issue_target_repository, github_issue.number)
     end
@@ -361,6 +361,15 @@ module Activities
       FeatureIntentDesignPr.joins(:feature_intent).exists?(
         feature_intents: { project_id: project.id }, pull_request_number: github_issue.number
       )
+    end
+
+    # @spec PROJECT-READINESS-007 — the bootstrap PR must be re-fetched during
+    # sync so Issues::UpsertFromGithub can detect its merged state and enqueue
+    # the next readiness evaluation against the merged target branch.
+    def bootstrap_readiness_pull_request?(project, github_issue)
+      return unless github_issue.respond_to?(:pull_request) && github_issue.pull_request
+
+      project.agent_runs.where(goal: "bootstrap_readiness", pull_request_number: github_issue.number).exists?
     end
 
     # The issue author is a hard trust boundary in upstream mode: do not keep

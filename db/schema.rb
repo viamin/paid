@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_034815) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_103406) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -395,6 +395,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_034815) do
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "idx_agent_runs_unique_active_bootstrap_readiness", unique: true, where: "(((goal)::text = 'bootstrap_readiness'::text) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('rate_limited'::character varying)::text])))"
     t.index ["project_id"], name: "idx_agent_runs_unique_active_lid_planning", unique: true, where: "(((goal)::text = 'lid_planning'::text) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('rate_limited'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"

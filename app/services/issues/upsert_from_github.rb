@@ -99,6 +99,7 @@ module Issues
     # @spec PROJECT-READINESS-007
     def self.enqueue_readiness_evaluation_after_bootstrap_merge(project, issue, github_pull_request)
       return unless github_pull_request&.merged_at.present?
+      return unless issue.saved_change_to_github_state?
       return unless project.agent_runs.where(goal: "bootstrap_readiness", pull_request_number: issue.github_number).exists?
 
       EvaluateProjectReadinessJob.perform_later(project.id)

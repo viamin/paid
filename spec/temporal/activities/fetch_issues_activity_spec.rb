@@ -171,6 +171,37 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
   end
 
+  describe "bootstrap readiness pull request fetch" do
+    # @spec PROJECT-READINESS-007
+    it "re-fetches a bootstrap PR's GitHub state during issue sync" do
+      create(:agent_run, project: project, goal: "bootstrap_readiness", pull_request_number: 99)
+      github_issue = github_pr_issue(99)
+      github_issue.state = "closed"
+      github_pull_request = OpenStruct.new(merged_at: Time.current, merged: true)
+      allow(github_client).to receive(:pull_request)
+        .with(project.issue_target_repository, 99)
+        .and_return(github_pull_request)
+      stub_issues_by_label(nil => [ github_issue ])
+
+      activity.execute(project_id: project.id)
+
+      expect(project.issues.find_by!(github_number: 99)).to have_attributes(github_state: "closed", is_pull_request: true)
+      expect(github_client).to have_received(:pull_request).with(project.issue_target_repository, 99)
+      expect(EvaluateProjectReadinessJob).to have_been_enqueued.at_least(:once).with(project.id)
+    end
+
+    # @spec PROJECT-READINESS-007
+    it "does not fetch PR details for an unrelated closed PR" do
+      github_issue = github_pr_issue(77)
+      github_issue.state = "closed"
+      stub_issues_by_label(nil => [ github_issue ])
+
+      activity.execute(project_id: project.id)
+
+      expect(github_client).not_to have_received(:pull_request).with(project.issue_target_repository, 77)
+    end
+  end
+
   def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)
     labels ||= [ project.enhance_issue_needs_input_label_name, "paid-build" ]
     refreshed_labels ||= labels

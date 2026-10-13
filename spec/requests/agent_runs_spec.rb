@@ -2269,6 +2269,20 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(inbox_path)
       end
+
+      it "does not queue a bootstrap attempt while a rate-limited attempt recovers" do
+        # A rate-limited run remains dedup-blocking while its recovery window
+        # is pending, even though it is not in UNFINISHED_STATUSES.
+        create(:agent_run, project: project, goal: "bootstrap_readiness", status: "rate_limited")
+
+        expect {
+          post bootstrap_readiness_project_agent_runs_path(project)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(inbox_path)
+        follow_redirect!
+        expect(response.body).to include("A bootstrap attempt is already in progress")
+      end
     end
   end
 

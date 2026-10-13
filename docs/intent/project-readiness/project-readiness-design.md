@@ -74,6 +74,7 @@ inspect the actual checkout and configure a runnable harness.
 
 The bootstrap class is deliberately separate from `Tdd::WriteGuard`. The
 `test_writing`, `test_fixing`, and `refactor` allowed-write semantics are
-unchanged. A completed bootstrap run with a result commit schedules the normal
-readiness evaluation, which reads merged-repository evidence on its next
-checkout; no durable ready latch exists.
+unchanged. A completed bootstrap run never schedules an eager readiness
+evaluation: the issue-sync path schedules it only after GitHub confirms the
+bootstrap PR merged, so the checkout reads target-branch evidence. No durable
+ready latch exists.
