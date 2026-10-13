@@ -187,7 +187,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "includes language-specific test command for ruby when a database is available" do
-      pg_container = create(:service_container, account: project.account)
+      pg_container = create(:service_container, account: project.account, status: "running")
       create(:project_service_container, project: project, service_container: pg_container)
       agent_run_with_db = create(:agent_run, project: project, service_container_ids: [ pg_container.id ])
 
@@ -217,6 +217,24 @@ RSpec.describe Prompts::BuildForPr do
       expect(no_db_prompt).to include("No test command configured")
       expect(no_db_prompt).to include("Report skipped database-dependent tests")
       expect(no_db_prompt).not_to include("- **Lint and tests MUST pass before every commit.**")
+    end
+
+    it "uses the agent run before resolving default test commands" do
+      postgres_container = create(:service_container, account: project.account, image: "postgres:16", status: "running")
+      redis_container = create(:service_container, :redis, account: project.account, status: "running")
+      create(:project_service_container, project: project, service_container: postgres_container)
+      agent_run_without_db = create(:agent_run, project: project, service_container_ids: [ redis_container.id ])
+
+      configured_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: agent_run_without_db
+      )
+
+      expect(configured_prompt).not_to include("bundle exec rspec")
+      expect(configured_prompt).to include("Report skipped database-dependent tests")
     end
 
     it "omits merge conflicts section when rebase succeeded" do
@@ -1125,7 +1143,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured database containers" do
-      let!(:service_container) { create(:service_container, account: project.account) }
+      let!(:service_container) { create(:service_container, account: project.account, status: "running") }
 
       before do
         project.service_containers << service_container
@@ -1156,7 +1174,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured non-database service containers" do
-      let!(:redis_container) { create(:service_container, :redis, account: project.account) }
+      let!(:redis_container) { create(:service_container, :redis, account: project.account, status: "running") }
 
       before do
         project.service_containers << redis_container

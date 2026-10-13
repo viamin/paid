@@ -884,6 +884,21 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(stubbed).to be(true)
     end
+
+    it "uses the agent run's services in the service environment section" do
+      postgres_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+      configured_project = assembly_project_with(
+        service_containers: OpenStruct.new(running: OpenStruct.new(to_a: [ postgres_container ]), to_a: [ postgres_container ])
+      )
+      redis_container = create(:service_container, :redis, account: Account.first || create(:account), status: "running")
+      agent_run_without_db = create(:agent_run, project: create(:project), service_container_ids: [ redis_container.id ])
+
+      result = described_class.call(issue: issue, project: configured_project, agent_run: agent_run_without_db)
+
+      expect(result.text).to include("Environment Constraints")
+      expect(result.text).to include("REDIS_URL")
+      expect(result.text).not_to include("DATABASE_URL")
+    end
   end
 
   describe "provenance manifest" do

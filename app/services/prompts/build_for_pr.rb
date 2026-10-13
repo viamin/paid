@@ -84,12 +84,12 @@ module Prompts
       @pr_number = pr_number
       @github_client = github_client
       @rebase_succeeded = rebase_succeeded
+      @agent_run = agent_run
       @lint_command = lint_command || detected_lint_command
       @test_command = test_command || detected_test_command
       @issue = issue
       @prompt_version = prompt_version
       @focus = focus.presence || "general"
-      @agent_run = agent_run
       @prompt_builder = prompt_builder.to_s
     end
 
@@ -97,9 +97,10 @@ module Prompts
       new(...).build
     end
 
-    def self.service_environment_section_render_for(project:, include_setup_instruction: false)
+    def self.service_environment_section_render_for(project:, agent_run: nil, include_setup_instruction: false)
       ServiceContainerSections.service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end
@@ -316,6 +317,7 @@ module Prompts
     def service_environment_section
       content = ServiceContainerSections.service_environment_section_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: false
       )
 

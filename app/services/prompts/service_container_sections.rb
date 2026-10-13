@@ -53,15 +53,25 @@ module Prompts
     # @spec POLYGLOT-TEST-011
     # @spec QUALITY-LOOPS-004
     def self.has_database_container?(project:, agent_run: nil)
-      return false unless project
+      available_service_containers(project:, agent_run:).any? { |sc| sc.image.to_s.include?("postgres") }
+    end
+
+    def self.available_service_containers(project:, agent_run: nil)
+      return [] unless project
 
       ids = extract_run_container_ids(agent_run)
-      if ids
-        ServiceContainer.where(id: ids, status: "running").any? { |sc| sc.image.to_s.include?("postgres") }
-      else
-        project.service_containers.to_a.any? { |sc| sc.image.to_s.include?("postgres") }
-      end
+      return ServiceContainer.where(id: ids, status: "running").to_a if ids
+
+      running_project_service_containers(project)
     end
+
+    def self.running_project_service_containers(project)
+      containers = project.service_containers
+      return containers.running.to_a if containers.respond_to?(:running)
+
+      containers.to_a.select { |container| !container.respond_to?(:running?) || container.running? }
+    end
+    private_class_method :running_project_service_containers
 
     def self.extract_run_container_ids(agent_run)
       return nil unless agent_run
@@ -127,15 +137,16 @@ module Prompts
       SECTION
     end
 
-    def self.service_environment_section_for(project:, include_setup_instruction: true)
+    def self.service_environment_section_for(project:, agent_run: nil, include_setup_instruction: true)
       service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       ).content
     end
 
-    def self.service_environment_section_render_for(project:, include_setup_instruction: true)
-      containers = project.service_containers.to_a
+    def self.service_environment_section_render_for(project:, agent_run: nil, include_setup_instruction: true)
+      containers = available_service_containers(project:, agent_run:)
       has_db = containers.any? { |sc| sc.image.include?("postgres") }
       language = Prompts::LanguageCommands.detected_language(project)
 
@@ -269,17 +280,23 @@ module Prompts
     end
 
     def configured_service_containers
-      @configured_service_containers ||= project.service_containers.to_a
+      @configured_service_containers ||= ServiceContainerSections.available_service_containers(
+        project: project,
+        agent_run: current_agent_run
+      )
     end
 
     def has_database_container?
       return @has_database_container unless @has_database_container.nil?
 
-      agent_run = respond_to?(:agent_run, true) ? agent_run : nil
       @has_database_container = ServiceContainerSections.has_database_container?(
         project: project,
-        agent_run: agent_run
+        agent_run: current_agent_run
       )
+    end
+
+    def current_agent_run
+      respond_to?(:agent_run, true) ? agent_run : nil
     end
 
     def service_description(sc)

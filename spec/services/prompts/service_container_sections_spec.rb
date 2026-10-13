@@ -61,6 +61,14 @@ RSpec.describe Prompts::ServiceContainerSections do # @spec POLYGLOT-TEST-011
       expect(described_class.has_database_container?(project: project, agent_run: agent_run)).to be(true)
     end
 
+    it "returns false when the configured postgres container is stopped" do
+      stopped_container = create(:service_container, account: project.account, image: postgres_image, status: "stopped")
+      create(:project_service_container, project: project, service_container: stopped_container)
+
+      expect(described_class.has_database_container?(project: project)).to be(false)
+      expect(described_class.service_environment_section_for(project: project)).to include("Environment Constraints")
+    end
+
     it "returns false when the agent_run is nil and the project has no containers" do
       expect(described_class.has_database_container?(project: project, agent_run: nil)).to be(false)
     end
