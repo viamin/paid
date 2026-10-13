@@ -611,10 +611,46 @@ export default class extends Controller {
     const existing = this.messageElementById(data.message_id)
     if (existing) {
       this.renderedMessageElement(existing)?.replaceWith(card)
+      this.mergeResolvedCardIntoAdjacentRun(card)
     } else {
       this.messagesTarget.append(card)
     }
     this.scrollToBottom()
+  }
+
+  // @spec CHAT-API-024
+  // A pending confirmation stands alone while it waits for the user. Once the
+  // user resolves it, the card is no longer pending, so it should merge into
+  // the preceding tool run instead of sitting between that run and the next
+  // tool card — otherwise the next tool result groups only with the resolved
+  // card, leaving two disclosures for what is logically one run, while a
+  // reload renders the same maximal run as one disclosure. The replaceWith
+  // above always places the card at the position of the old pending card,
+  // which is a direct child of messagesTarget (a pending confirmation cannot
+  // already be inside a group), so we only merge when that placement holds —
+  // otherwise a duplicate resolve would nest a fresh group inside the group
+  // the original merge already created.
+  mergeResolvedCardIntoAdjacentRun(card) {
+    if (card.parentElement !== this.messagesTarget) return
+    if (!this.groupableToolCard(card)) return
+
+    const precedingGroup = card.previousElementSibling?.matches?.("[data-chat-tool-group]") ? card.previousElementSibling : null
+    if (precedingGroup) {
+      card.remove()
+      precedingGroup.querySelector("[data-chat-tool-group-cards]").append(card)
+      this.updateToolGroupSummary(precedingGroup)
+      return
+    }
+
+    const precedingCard = card.previousElementSibling
+    if (precedingCard?.querySelector?.("[data-chat-tool-card]:not([data-chat-tool-pending])")) {
+      const group = this.createLiveToolGroup()
+      card.remove()
+      precedingCard.replaceWith(group)
+      group.querySelector("[data-chat-tool-group-cards]").append(precedingCard)
+      group.querySelector("[data-chat-tool-group-cards]").append(card)
+      this.updateToolGroupSummary(group)
+    }
   }
 
   approveToolCall(event) {

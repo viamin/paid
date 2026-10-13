@@ -257,7 +257,7 @@ class ChatControllerNodeHarness
       }
     }
 
-    // @spec CHAT-API-024 — Reconnect recovery replays persisted rows through
+// @spec CHAT-API-024 — Reconnect recovery replays persisted rows through
     // handleMessageCreated, which must group tool cards without treating them
     // as stale cards belonging to the current live attempt.
     function testReplayedToolCardsUseTheGroupingPath() {
@@ -303,6 +303,293 @@ class ChatControllerNodeHarness
       }
       if (controller.currentAttemptToolCards) {
         throw new Error("Expected replayed tool cards to stay out of the live fallback attempt");
+      }
+    }
+
+    // @spec CHAT-API-024 — A pending confirmation that follows an existing
+    // tool run must merge into that run when the user resolves it; otherwise
+    // the next tool result groups only with the resolved card and renders two
+    // disclosures for what is logically one run while a reload renders one.
+    function testResolvedToolCardMergesIntoPrecedingGroup() {
+      const groupChildren = [];
+      const summary = { textContent: "" };
+      const groupCardContainer = {
+        _children: groupChildren,
+        append(card) {
+          card.remove();
+          groupChildren.push(card);
+          card._parent = groupCardContainer;
+        }
+      };
+      const existingGroup = {
+        matches: (selector) => selector === "[data-chat-tool-group]",
+        querySelector(selector) {
+          if (selector === "[data-chat-tool-group-cards]") return groupCardContainer;
+          if (selector === "[data-chat-tool-group-summary]") return summary;
+          return null;
+        },
+        querySelectorAll(selector) {
+          if (selector === "[data-chat-tool-card]") return groupChildren;
+          return [];
+        }
+      };
+      const messagesChildren = [ existingGroup ];
+      const messagesTarget = {
+        _children: messagesChildren,
+        get lastElementChild() { return messagesChildren[messagesChildren.length - 1] || null; },
+        append(card) {
+          card.remove();
+          messagesChildren.push(card);
+          card._parent = messagesTarget;
+        },
+        querySelector: () => null
+      };
+      function makeCard({ pending = false } = {}) {
+        const card = {
+          matches(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return !pending;
+            if (selector === "[data-chat-tool-pending]") return pending;
+            return false;
+          },
+          querySelector(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return pending ? null : card;
+            return null;
+          },
+          // Simulate the wrapper div that contains the article. renderedMessageElement
+          // walks up via closest("details, div.flex.justify-start, ..."); in the mock
+          // the wrapper is the card itself, so closest returns the card.
+          closest(selector) {
+            if (selector.includes("div.flex.justify-start") || selector.includes("details")) return card;
+            return null;
+          },
+          remove() {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children.splice(i, 1);
+                card._parent = null;
+              }
+            }
+          },
+          replaceWith(replacement) {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children[i] = replacement;
+                replacement._parent = card._parent;
+              }
+            }
+          },
+          get previousElementSibling() {
+            if (!card._parent || !card._parent._children) return null;
+            const children = card._parent._children;
+            const i = children.indexOf(card);
+            return i > 0 ? children[i - 1] : null;
+          },
+          get parentElement() {
+            return card._parent || null;
+          }
+        };
+        return card;
+      }
+      const callCard = makeCard();
+      const resultCard = makeCard();
+      const pendingCard = makeCard({ pending: true });
+      const resolvedCard = makeCard();
+      const nextResultCard = makeCard();
+      const created = [];
+      const nextForToolCall = (html) => {
+        if (html === "call") return callCard;
+        if (html === "result") return resultCard;
+        if (html === "pending") return pendingCard;
+        if (html === "resolved") return resolvedCard;
+        if (html === "next-result") return nextResultCard;
+        return null;
+      };
+      const { controller } = makeController({
+        messagesTarget,
+        buildMessageElement: (html) => nextForToolCall(html),
+        createLiveToolGroup: () => {
+          created.push(existingGroup);
+          return existingGroup;
+        },
+        scrollToBottom: () => {},
+        streamEventMatches: () => true,
+        messageElementById: () => pendingCard,
+        element: { querySelector: () => null },
+        toggleTyping: () => {},
+        dispatchChatState: () => {}
+      });
+
+      // Pre-populate: a tool call and its result already form a group.
+      controller.handleMessageToolCall({ html: "call", tool_name: "search" });
+      controller.handleMessageToolResult({ html: "result" });
+
+      if (groupChildren.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error("Expected the existing tool run to start with 2 grouped cards");
+      }
+
+      // A pending confirmation card stands alone while it waits for the user.
+      controller.handleMessageToolConfirmation({ html: "pending", tool_name: "write_tool" });
+
+      if (messagesChildren.length !== 2 || messagesChildren[1] !== pendingCard) {
+        throw new Error("Expected the pending card to sit standalone after the existing group");
+      }
+      if (groupChildren.length !== 2) {
+        throw new Error("Expected the pending card not to merge into the group yet");
+      }
+
+      // Resolve merges the now non-pending card into the preceding group.
+      controller.handleMessageToolResolved({ html: "resolved", message_id: "pending-1" });
+
+      if (messagesChildren.length !== 1 || messagesChildren[0] !== existingGroup) {
+        throw new Error("Expected the resolved card to leave the trailing slot and merge into the preceding group");
+      }
+      if (groupChildren.length !== 3 || summary.textContent !== "3 tool actions") {
+        throw new Error(`Expected the resolved card to extend the preceding group (3 cards), got ${groupChildren.length} cards and summary '${summary.textContent}'`);
+      }
+
+      // The next tool result must extend the same maximal disclosure; without
+      // the merge fix it would create a separate group with just the resolved
+      // card and this result.
+      controller.handleMessageToolResult({ html: "next-result" });
+
+      if (groupChildren.length !== 4 || summary.textContent !== "4 tool actions") {
+        throw new Error(`Expected the next tool result to extend the merged group (4 cards), got ${groupChildren.length} cards`);
+      }
+      if (messagesChildren.length !== 1 || messagesChildren[0] !== existingGroup) {
+        throw new Error("Expected the next tool result to land inside the merged group, not create a second disclosure");
+      }
+      if (created.length > 0) {
+        throw new Error("Expected no new live tool group to be created during the resolve or subsequent result");
+      }
+    }
+
+    // @spec CHAT-API-024 — A single non-pending tool card precedes a resolved
+    // confirmation, so the two should land in one new group instead of leaving
+    // the resolved card standalone between the existing card and the next run.
+    function testResolvedToolCardMergesWithPrecedingSingleCard() {
+      const newGroupChildren = [];
+      const summary = { textContent: "" };
+      const newGroupCardContainer = {
+        _children: newGroupChildren,
+        append(card) {
+          card.remove();
+          newGroupChildren.push(card);
+          card._parent = newGroupCardContainer;
+        }
+      };
+      const messagesChildren = [];
+      const messagesTarget = {
+        _children: messagesChildren,
+        get lastElementChild() { return messagesChildren[messagesChildren.length - 1] || null; },
+        append(card) {
+          card.remove();
+          messagesChildren.push(card);
+          card._parent = messagesTarget;
+        },
+        querySelector: () => null
+      };
+      function makeCard({ pending = false } = {}) {
+        const card = {
+          matches(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return !pending;
+            if (selector === "[data-chat-tool-pending]") return pending;
+            return false;
+          },
+          querySelector(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return pending ? null : card;
+            return null;
+          },
+          closest(selector) {
+            if (selector.includes("div.flex.justify-start") || selector.includes("details")) return card;
+            return null;
+          },
+          remove() {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children.splice(i, 1);
+                card._parent = null;
+              }
+            }
+          },
+          replaceWith(replacement) {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children[i] = replacement;
+                replacement._parent = card._parent;
+              }
+            }
+          },
+          get previousElementSibling() {
+            if (!card._parent || !card._parent._children) return null;
+            const children = card._parent._children;
+            const i = children.indexOf(card);
+            return i > 0 ? children[i - 1] : null;
+          },
+          get parentElement() {
+            return card._parent || null;
+          }
+        };
+        return card;
+      }
+      const firstResultCard = makeCard();
+      const pendingCard = makeCard({ pending: true });
+      const resolvedCard = makeCard();
+      const { controller } = makeController({
+        messagesTarget,
+        buildMessageElement: (html) => {
+          if (html === "first-result") return firstResultCard;
+          if (html === "pending") return pendingCard;
+          if (html === "resolved") return resolvedCard;
+          return null;
+        },
+        createLiveToolGroup: () => {
+          const group = {
+            matches: (selector) => selector === "[data-chat-tool-group]",
+            querySelector(selector) {
+              if (selector === "[data-chat-tool-group-cards]") return newGroupCardContainer;
+              if (selector === "[data-chat-tool-group-summary]") return summary;
+              return null;
+            },
+            querySelectorAll(selector) {
+              if (selector === "[data-chat-tool-card]") return newGroupChildren;
+              return [];
+            }
+          };
+          return group;
+        },
+        scrollToBottom: () => {},
+        streamEventMatches: () => true,
+        messageElementById: () => pendingCard,
+        element: { querySelector: () => null },
+        toggleTyping: () => {},
+        dispatchChatState: () => {}
+      });
+
+      controller.handleMessageToolResult({ html: "first-result" });
+      controller.handleMessageToolConfirmation({ html: "pending", tool_name: "write_tool" });
+
+      if (messagesChildren.length !== 2 || messagesChildren[1] !== pendingCard) {
+        throw new Error("Expected the pending card to sit standalone after the single preceding card");
+      }
+
+      controller.handleMessageToolResolved({ html: "resolved", message_id: "pending-1" });
+
+      if (messagesChildren.length !== 1) {
+        throw new Error(`Expected the resolved card to merge with the preceding single card into one group, got ${messagesChildren.length} top-level entries`);
+      }
+      if (newGroupChildren.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error(`Expected the new group to hold both the preceding card and the resolved card (2 cards), got ${newGroupChildren.length}`);
+      }
+      if (messagesChildren[0].matches("[data-chat-tool-group]") !== true) {
+        throw new Error("Expected the merge to wrap the preceding single card in a fresh live tool group");
       }
     }
 
@@ -1962,6 +2249,8 @@ class ChatControllerNodeHarness
       testToolResultWithMissingHtmlDoesNotAppend();
       testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt();
       testReplayedToolCardsUseTheGroupingPath();
+      testResolvedToolCardMergesIntoPrecedingGroup();
+      testResolvedToolCardMergesWithPrecedingSingleCard();
       testMessageCompleteResetsStreamingState();
       testMessageCompleteRemovesStreamingBubble();
       testMessageCompleteReleasesFallbackWithoutActiveStreamId();

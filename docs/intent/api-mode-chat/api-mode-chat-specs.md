@@ -500,15 +500,22 @@
   frames. A
   runner-fallback cleanup SHALL remove an emptied live disclosure together with
   its stale cards. Grouping SHALL NOT make tool cards eligible as "Jump to
-  latest" response anchors.
+  latest" response anchors. When a user resolves a pending confirmation that
+  sat standalone after a tool run, the now-non-pending card SHALL merge into
+  the preceding group (or wrap with a preceding single non-pending tool card)
+  so the live view matches the persisted, maximal-disclosure rendering after
+  a reload (#4270).
   *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`,
   `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/older_messages`),
   `spec/lib/chat_controller_node_harness_spec.rb`
-  (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`),
+  (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`,
+  `testResolvedToolCardMergesIntoPrecedingGroup`,
+  `testResolvedToolCardMergesWithPrecedingSingleCard`),
   `spec/lib/chat_controller_node_harness_spec.rb` (existing
   `lastAssistantTextResponse` anchor tests).
   *Code:* `ChatSessionsHelper#each_chat_transcript_segment`,
   `#chat_tool_run?`, `app/views/chat_sessions/_conversation.html.erb`,
   `app/views/chat_sessions/_older_messages.html.erb`,
   `app/views/chat_messages/_tool_call_group.html.erb`,
-  `app/javascript/controllers/chat_controller.js#appendToolCard`.
+  `app/javascript/controllers/chat_controller.js#appendToolCard`,
+  `#mergeResolvedCardIntoAdjacentRun`.
