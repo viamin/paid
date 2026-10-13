@@ -104,6 +104,35 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
+  it "round-trips non-ASCII event content under the US-ASCII default locale" do
+    # The system locale is C/POSIX (US-ASCII default external encoding) on this
+    # image. The CLI normalizes to UTF-8 at the boundary so adjudicator reason
+    # text such as the section mark in cited_design_claim survives a validate
+    # cycle on the same disk file.
+    Dir.mktmpdir do |dir|
+      manifest = File.join(dir, "manifest.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+      File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
+      manifest_commit = commit_fixture_file(dir, manifest, "freeze")
+
+      stdout, stderr, status = run_cli("append", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", manifest_commit,
+        "--event", JSON.generate({ "event_id" => "freeze", "type" => "operators_frozen", "operators" => %w[op-a op-b], "recorded_at" => "2026-10-13T08:00:00Z", "cited_design_claim" => "RDR-067 §Materiality boundary" }))
+      expect(status.exitstatus).to eq(0), -> { "stderr: #{stderr}" }
+      expect(stdout).to be_empty
+
+      commit_fixture_file(dir, ledger, "append freeze")
+
+      # The pending-human-input exit code (2) proves the JSON parsed cleanly
+      # under the US-ASCII default locale — without the UTF-8 normalization
+      # the same call would crash with Encoding::InvalidByteSequenceError and
+      # an exit code of 1.
+      stdout, stderr, status = run_cli("validate", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", manifest_commit)
+      expect(status.exitstatus).to eq(2), -> { "stderr: #{stderr}" }
+      expect(stderr).to include("pending human input")
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-002
   it "reports malformed options without a backtrace" do
     _stdout, stderr, status = run_cli("validate", "--unknown")
 

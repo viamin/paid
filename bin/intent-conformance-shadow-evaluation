@@ -1,6 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# The system locale defaults to US-ASCII on this image, so File.read on a
+# ledger whose reason text contains non-ASCII characters (e.g. the section
+# mark used in the cited design claim) raises Encoding::InvalidByteSequenceError
+# before the JSON parser can run. Normalize to UTF-8 at the boundary as the
+# project's Ruby style guide mandates.
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
+
 require "json"
 require "optparse"
 require_relative "../lib/intent_conformance/shadow_evaluation_ledger"

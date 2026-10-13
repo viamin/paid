@@ -214,3 +214,26 @@ them, and its cost, human-time, rework, and resolution figures have no
 repository-visible inputs. It is not evidence of reviewer quality, blinded
 adjudication, or a promotion outcome. The RDR remains **Partially Implemented**;
 operators must repeat the run with an event-backed, post-event frozen corpus.
+
+## 2026-10-13 Blinded Adjudication Complete
+
+Issue [#4205](https://github.com/viamin/paid/issues/4205) recorded a
+frozen 30-case corpus (`docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml`,
+freeze commit `5ccf04bd0…`) and a complete, append-only, Git-history-bound
+adjudication ledger (`docs/intent/intent-conformance-rollout/shadow-evaluation-2026-10-13/adjudication-ledger.jsonl`)
+with two independent operators (`operator-alpha`, `operator-charlie`) and a
+reserved tie-break operator (`operator-delta`) that was never invoked: the
+two primary verdicts agreed on every case.
+
+The re-audit in
+[`audit-report-2026-10-13-rdr-067.md`](audit-report-2026-10-13-rdr-067.md)
+records the adjudicated state and the open gap. The
+[2026-10-13 worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-13.md)
+emits the active-adjudication human time and explicitly marks
+reviewer-derived measures as `not established` until a human operator
+invokes `bin/intent-conformance-shadow-evaluation shadow-run` and appends
+`shadow_run` events to the same ledger. The CLI's
+`pending-human-input` guard prevents the agent run from running reviews in
+shadow mode, so the corpus and adjudication record remain the only
+repository-visible evidence added by this audit. Enforcement remains
+disabled.
