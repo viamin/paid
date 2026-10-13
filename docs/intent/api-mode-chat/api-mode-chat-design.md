@@ -94,10 +94,12 @@ revalidate selection before every request, including follow-up tool rounds,
 so newly attached project context cannot bypass those restrictions. The current
 agent-harness API transport cannot transmit OpenRouter data-collection/ZDR
 options: managed free API chat therefore rejects confidential and restricted
-context before transmission with an actionable configuration error. Empty or
+context before transmission with an actionable configuration error. The shared
+selector applies the same rejection to free `pi` and `omp` runners regardless
+of transport, because they cannot enforce that routing. Empty or
 privacy-incompatible free pools are excluded from fallback candidates so a
-later configured runner remains reachable. Container-specific routing and
-sensitive-context enforcement are owned by the RDR-037 chat segments.
+later configured runner remains reachable. Broader container lifecycle and
+mutation behavior are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.

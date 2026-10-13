@@ -17,11 +17,15 @@
   and reference project currently attached to the chat. While the API
   transport cannot enforce OpenRouter data-collection and ZDR routing, Paid
   SHALL reject confidential or restricted project context before sending it.
+  The shared free-model selector SHALL apply the same rejection for free `pi`
+  and `omp` runners regardless of transport, because those runners likewise
+  cannot enforce the required privacy routing.
   An unavailable free-model fallback SHALL be skipped so later configured
   usable fallbacks can be tried without changing the session to the unusable
-  runner. Container-specific routing and sensitive-context enforcement are
-  owned by the RDR-037 chat segments and are not asserted as shipped behavior
-  by this API-mode claim.
+  runner. Broader container lifecycle and mutation behavior remain owned by
+  the RDR-037 chat segments.
+  *Test:* `spec/services/free_models/select_chat_model_spec.rb`.
+  *Code:* `FreeModels::SelectChatModel.for_session`.
 
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
