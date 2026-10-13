@@ -1,4 +1,4 @@
-# RDR-069–071 Epic Final-Acceptance Audit — 2026-10-12
+# RDR-069–071 Epic Final-Acceptance Audit — 2026-10-12 (refreshed 2026-10-13)
 
 - **Umbrella**: [#4309](https://github.com/viamin/paid/issues/4309)
 - **Result**: **Final acceptance is not yet eligible. The umbrella (#4309)
@@ -38,16 +38,19 @@ remain owned by focused, open children.
 
 ## 2. Verification re-run
 
-This audit re-verifies the prior RDR-specific findings against the current
-working tree without rerunning the test suite. The agent environment does not
-provide a reachable PostgreSQL service (`paid-svc-a3-s1-postgres` is
-unresolvable from this checkout), so this audit cannot report database-backed
-validation. The structural checks below do not depend on database reachability
-and are sufficient to confirm that no new code has shipped under the three
-RDRs' scope since the prior audits.
+This refresh re-verifies the prior RDR-specific findings against the current
+working tree. Database-backed validation remains unavailable in this agent
+environment: `bundle exec rspec` fails fast because its configured test
+database does not exist. `bin/rails db:version` cannot prepare that database
+because Rails rejects its `agent` role for having `SUPERUSER` and `BYPASSRLS`
+privileges, and `bin/rails db:prepare` subsequently cannot connect to the local
+PostgreSQL socket. The audit does not bypass the runtime-role guard or
+substitute a privileged connection. The structural checks below do not depend
+on database reachability and confirm that no new code has shipped under the
+three RDRs' scope since the prior audits.
 
 ```
-node bin/coherence-check.mjs       # 2026-10-12
+node bin/coherence-check.mjs       # 2026-10-13
 ```
 
 Result summary: all 15 `CONFIDENCE-DELIVERY-*` claims appear as uncovered
@@ -100,10 +103,10 @@ child issue under epic #4309:
 | Facets, evidence, assessments, explicit preferences, scoped 80/80 readiness | [#4314](https://github.com/viamin/paid/issues/4314) (P05), [#4315](https://github.com/viamin/paid/issues/4315) (P06), [#4316](https://github.com/viamin/paid/issues/4316) (P07), [#4318](https://github.com/viamin/paid/issues/4318) (P09) |
 | Confidence-driven policy/enrollment, release, builder baseline, follow-up completion | [#4310](https://github.com/viamin/paid/issues/4310) (P01), [#4314](https://github.com/viamin/paid/issues/4314) (P05), [#4315](https://github.com/viamin/paid/issues/4315) (P06), [#4318](https://github.com/viamin/paid/issues/4318) (P09), [#4319](https://github.com/viamin/paid/issues/4319) (P10), [#4320](https://github.com/viamin/paid/issues/4320) (P11), [#4321](https://github.com/viamin/paid/issues/4321) (P12) |
 
-The per-RDR closeouts [#4322](https://github.com/viamin/paid/issues/4322)
+The per-RDR closeout records [#4322](https://github.com/viamin/paid/issues/4322)
 (C69), [#4323](https://github.com/viamin/paid/issues/4323) (C70), and
-[#4324](https://github.com/viamin/paid/issues/4324) (C71) are completed
-closeouts, not open delivery owners. No new child issue is filed: every unmet
+[#4324](https://github.com/viamin/paid/issues/4324) (C71) are non-closing
+`Tracks #4309` audits, not delivery owners. No new child issue is filed: every unmet
 acceptance area already has a single-focus, independent, pickable owner. Per
 the implementation plan,
 P01 (#4310) owns the existing-work reconciliation across #3862/#3863/#3865
