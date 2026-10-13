@@ -177,3 +177,19 @@
   SHALL be populated so operators can audit which sections reached the agent.
   *Code:* `AgentRun#effective_prompt`, `PromptAssembly::BuildCustomPrompt`,
   `AgentRun#record_prompt_assembly!`.
+
+- [x] **PROMPT-ASSEMBLY-023** — When a TDD-governed run is assembled, its
+  required TDD section SHALL describe the persisted phase's allowed and
+  forbidden paths, completion condition, test-review transition, and the
+  phase-specific reconciliation of generic task, safety, and verification
+  instructions. `test_writing` SHALL say that expected assertion failures are
+  committable, that infrastructure/syntax/unrelated failures still require
+  attention, and that a test commit never unlocks implementation in the same
+  run; strict mode waits for human approval and non-strict mode waits for the
+  automated verdict. `test_fixing` SHALL describe returning to test review
+  before test edits, and `refactor` SHALL preserve frozen tests and green
+  results. Required-section provenance SHALL record this phase guidance.
+  *Code:* `PromptAssembly::Sections::TddBoundaries`,
+  `PromptAssembly::Sections::SafetyRules`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/prompt_assembly/build_custom_prompt_spec.rb`.

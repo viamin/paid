@@ -241,6 +241,16 @@ RSpec.describe AgentRun do
       expect(prompt).to include("TDD Boundaries — test-writing run")
     end
 
+    it "persists test-writing phase guidance with its final execution prompt provenance" do # @spec PROMPT-ASSEMBLY-023
+      tdd_run = create(:agent_run, project: project, issue: nil, custom_prompt: "Write tests for X", tdd_phase: "test_writing")
+
+      prompt = tdd_run.effective_prompt
+
+      expect(prompt).to include("does not unlock implementation within this run")
+      section = tdd_run.reload.prompt_assembly_provenance["sections"].find { |entry| entry["key"] == "tdd_boundaries" }
+      expect(section).to include("required" => true, "inclusion_reason" => "TDD phase guidance and write-boundary contract")
+    end
+
     # @spec PROMPT-ASSEMBLY-022
     it "persists provenance with the custom task and mandatory sections" do
       custom_only_run.effective_prompt

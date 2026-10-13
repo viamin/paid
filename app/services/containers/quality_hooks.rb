@@ -12,7 +12,7 @@ module Containers
     # commit loop. Their test hooks are no-op'd when no DB container is running.
     DB_DEPENDENT_TEST_LANGUAGES = %w[ruby elixir].freeze
 
-    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003
+    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec TDD-GUARD-009 # @spec TDD-GUARD-010
       languages = Prompts::LanguageCommands.test_languages(agent_run.project)
       db_available = agent_run.project.has_running_database_container?
 
@@ -31,6 +31,7 @@ module Containers
         test_command: test_commands,
         mutation_command: mutation_cmd || "true"
       }
+      install_args[:test_failure_behavior] = :permit if test_writing_phase?(agent_run)
       pre_commit_guard = tdd_write_guard_script(agent_run)
       install_args[:pre_commit_guard] = pre_commit_guard if pre_commit_guard.present?
 
@@ -44,6 +45,10 @@ module Containers
       return unless requirement
 
       MutantResultsReader.with_results_dir(requirement.command)
+    end
+
+    def test_writing_phase?(agent_run)
+      agent_run.tdd_test_writing_phase?
     end
 
     def resolve_scheduled_mutation_command(project, user, languages)

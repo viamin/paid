@@ -22,6 +22,20 @@ class PromptAssembly::Sections::SafetyRules
     When you're done, commit all your changes. Do not push.
   RULES
 
+  TEST_WRITING_SAFETY_RULES = <<~RULES.strip
+    # Rules — you MUST follow these
+
+    - **Lint MUST pass before every commit.** Do not bypass hooks or disable linters.
+    - In this test-writing run, expected assertion failures that demonstrate missing behavior are permitted. Resolve or clearly report infrastructure, syntax, and unrelated failures; do not treat them as red-phase evidence.
+    - **Never use `--no-verify`** or any flag that skips git hooks.
+    - **Fix forward** — if a check fails, fix the underlying issue or report the blocker. Do not bypass the check.
+    - Work within the existing codebase style and conventions
+    - Do not modify unrelated files
+    - Focus on completing the specific task in the issue
+
+    When you're done, commit the permitted tests and LID docs only. Do not push.
+  RULES
+
   LEGACY_RULES_SUFFIX = /
     \n{2,}
     (?:When\ you're\ done,\ commit\ all\ your\ changes\.\ Do\ not\ push\.\n{2,})?
@@ -39,6 +53,8 @@ class PromptAssembly::Sections::SafetyRules
   private
 
   def build_section
+    return TEST_WRITING_SAFETY_RULES if agent_run&.tdd_test_writing_phase?
+
     SAFETY_RULES
   end
 
