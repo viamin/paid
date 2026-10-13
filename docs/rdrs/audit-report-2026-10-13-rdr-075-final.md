@@ -24,7 +24,7 @@ artifacts the prerequisite for their stable `@spec` annotations.
 
 The live GitHub API check on 2026-10-13 confirmed that #4365, Phase 1 #4366,
 Phase 2 #4367, Phase 3 #4368, Phase 4 #4369, and closeout #4370 are open;
-#4364 is open and `merged: false`.
+\#4364 is open and `merged: false`.
 
 ## Acceptance reconciliation
 
