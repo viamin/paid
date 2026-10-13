@@ -984,11 +984,12 @@ module Workflows
     # Creates multiple issues from a decomposition plan with dependency
     # declarations wired between them. Uses a longer timeout to accommodate
     # multiple GitHub API calls (one per issue plus the parent update).
-    def create_multiple_issues(agent_run_id, plan)
+    def create_multiple_issues(agent_run_id, plan) # @spec ISSUE-TREE-003
       run_activity(Activities::CreateMultipleIssuesActivity,
         { agent_run_id: agent_run_id,
           tasks: plan[:tasks],
-          parent_issue_number: plan[:parent_issue_number] },
+          parent_issue_number: plan[:parent_issue_number],
+          plan_revision: plan[:plan_revision] },
         timeout: 300, retry_policy: NO_RETRY)
     end
 

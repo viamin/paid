@@ -30,6 +30,7 @@ module Activities
 
       tasks = validate_tasks!(input[:tasks])
       parent_issue_number = input[:parent_issue_number]
+      plan_revision = derived_plan_revision(tasks, parent_issue_number, input[:plan_revision])
 
       project = agent_run.project
       client = project.client
@@ -40,7 +41,7 @@ module Activities
 
       create_issues_with_partial_failure_guard(
         tasks, creation_order, index_to_github_number, created_issues,
-        client, project, agent_run, parent_issue_number
+        client, project, agent_run, parent_issue_number, plan_revision
       )
 
       parent_updated = false
@@ -55,7 +56,8 @@ module Activities
         tasks: tasks,
         created_issues: created_issues,
         parent_issue_number: parent_issue_number,
-        plan_revision: input[:plan_revision],
+        plan_revision: plan_revision,
+        parent_issue_updated: parent_updated,
         client: client
       )
 
@@ -72,7 +74,7 @@ module Activities
 
     def create_issues_with_partial_failure_guard(
       tasks, creation_order, index_to_github_number, created_issues,
-      client, project, agent_run, parent_issue_number
+      client, project, agent_run, parent_issue_number, plan_revision
     )
       resolved = ProjectConventions::IssueDependencies.convention_value(project)
 
@@ -116,7 +118,7 @@ module Activities
     rescue StandardError => e
       raise e if created_issues.empty?
 
-      record_partial_filing(agent_run, tasks, created_issues, parent_issue_number)
+      record_partial_filing(agent_run, tasks, created_issues, parent_issue_number, plan_revision)
 
       issue_numbers = created_issues.map { |i| "##{i[:github_number]}" }.join(", ")
       raise Temporalio::Error::ApplicationError.new(
@@ -253,7 +255,8 @@ module Activities
     # planning, persist and verify the receipt before publishing the terminal
     # run result; a partial sync/link failure stays visible and retryable.
     # @spec ISSUE-TREE-001 @spec ISSUE-TREE-002
-    def complete_after_tree_verification!(agent_run, tasks:, created_issues:, parent_issue_number:, plan_revision:, client:)
+    def complete_after_tree_verification!(agent_run, tasks:, created_issues:, parent_issue_number:,
+      plan_revision:, parent_issue_updated:, client:)
       feature_intent = feature_intent_for(agent_run)
       return complete_agent_run!(agent_run, created_issues) unless feature_intent
 
@@ -263,6 +266,7 @@ module Activities
         created_issues: created_issues,
         parent_issue_number: parent_issue_number,
         plan_revision: plan_revision,
+        parent_issue_updated: parent_issue_updated,
         client: client
       )
       return complete_agent_run!(agent_run, created_issues) if receipt.complete?
@@ -277,11 +281,30 @@ module Activities
       FeatureIntent.linked_to_issue(agent_run.issue).first
     end
 
+    # The parser supplies a revision through the workflow. Derive one here
+    # only for older callers and direct activity invocations; same plan on
+    # retry yields the same revision and a changed plan yields a different
+    # one. @spec ISSUE-TREE-003
+    def derived_plan_revision(tasks, parent_issue_number, supplied)
+      return supplied if supplied.present?
+
+      IdempotencyKey.compute("multi-issue-plan", parent_issue_number, canonical_tasks(tasks))
+    end
+
+    def canonical_tasks(tasks)
+      Array(tasks).map do |task|
+        task.to_h.symbolize_keys.slice(:index, :title, :body, :dependencies).then do |sliced|
+          deps = Array(sliced[:dependencies]).map(&:to_i)
+          sliced.merge(dependencies: deps).sort.to_h
+        end
+      end.sort_by { |task| task[:index].to_i }
+    end
+
     # Persist what was confirmed before the failure so retries and operators
     # retain the partial issue identities. We swallow errors here because the
     # caller is already re-raising the original creation failure; this must
     # never mask it. @spec ISSUE-TREE-003
-    def record_partial_filing(agent_run, tasks, created_issues, parent_issue_number)
+    def record_partial_filing(agent_run, tasks, created_issues, parent_issue_number, plan_revision)
       feature_intent = feature_intent_for(agent_run)
       return unless feature_intent
 
@@ -289,7 +312,8 @@ module Activities
         feature_intent: feature_intent,
         tasks: tasks,
         created_issues: created_issues,
-        parent_issue_number: parent_issue_number
+        parent_issue_number: parent_issue_number,
+        plan_revision: plan_revision
       )
     rescue StandardError => e
       logger.warn(

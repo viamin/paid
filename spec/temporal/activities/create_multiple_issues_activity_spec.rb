@@ -167,7 +167,7 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
       agent_run.update!(issue: brief_issue)
       allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Parent body"))
-      allow(github_client).to receive(:update_issue)
+      allow(github_client).to receive(:update_issue).and_raise(StandardError, "parent reconciliation refused")
 
       activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451)
 
@@ -176,6 +176,51 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
       expect(feature_intent.issue_tree_verification.fetch("unresolved")).to include(
         a_string_matching(/native parent link unavailable/)
       )
+    end
+
+    it "reports a feature-planning run complete when parent reconciliation succeeds" do
+      brief_issue = create(:issue, project: project)
+      feature_intent = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
+      agent_run.update!(issue: brief_issue)
+      allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Parent body"))
+      allow(github_client).to receive(:update_issue)
+
+      activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451)
+
+      expect(agent_run.reload.status).to eq("completed")
+      expect(feature_intent.reload.issue_tree_verification.fetch("state")).to eq("verified")
+      expect(feature_intent.issue_tree_verification.fetch("missing_native_links")).to be_empty
+    end
+
+    it "derives a stable plan revision from tasks and parent when none is supplied" do
+      brief_issue = create(:issue, project: project)
+      feature_intent = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
+      agent_run.update!(issue: brief_issue)
+      allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Parent body"))
+      allow(github_client).to receive(:update_issue)
+
+      activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451)
+
+      manifest = feature_intent.reload.issue_tree_manifest
+      verification = feature_intent.issue_tree_verification
+      expect(manifest.fetch("revision")).to be_present
+      expect(manifest.fetch("revision")).to eq(verification.fetch("revision"))
+      expect(manifest.fetch("revision")).to match(/\A[a-f0-9]{64}\z/)
+    end
+
+    it "honors a caller-supplied plan revision when one is passed through the workflow" do
+      brief_issue = create(:issue, project: project)
+      feature_intent = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: brief_issue)
+      agent_run.update!(issue: brief_issue)
+      allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Parent body"))
+      allow(github_client).to receive(:update_issue)
+
+      activity.execute(agent_run_id: agent_run.id, tasks: tasks, parent_issue_number: 451, plan_revision: "design-sha")
+
+      expect(feature_intent.reload.issue_tree_manifest.fetch("revision")).to eq("design-sha")
     end
 
     it "logs all created issue numbers" do
@@ -521,6 +566,7 @@ RSpec.describe Activities::CreateMultipleIssuesActivity do
     expect(feature_intent.issue_tree_manifest["filing_progress"]).to include(
       "confirmed" => 1, "expected" => tasks.size
     )
+    expect(feature_intent.issue_tree_manifest.fetch("revision")).to match(/\A[a-f0-9]{64}\z/)
     expect(feature_intent.issue_tree_verification.fetch("state")).to eq("incomplete")
     expect(feature_intent.issues).to include(Issue.find_by(github_number: 101))
   end

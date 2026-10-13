@@ -64,7 +64,8 @@ RSpec.describe FeatureIntents::IssueTreeReceipt do
   it "blocks completion while the native parent link remains unreconciled" do
     result = described_class.record(
       feature_intent:, tasks:, created_issues:,
-      plan_revision: "design-sha", parent_issue_number: 451
+      plan_revision: "design-sha", parent_issue_number: 451,
+      parent_issue_updated: false
     )
 
     expect(result).not_to be_complete
@@ -76,5 +77,19 @@ RSpec.describe FeatureIntents::IssueTreeReceipt do
       a_string_matching(/native parent link unavailable/)
     )
     expect(feature_intent.reload.issue_tree_verification.fetch("state")).to eq("incomplete")
+  end
+
+  it "treats a successfully updated parent as reconciled and does not flag the native link" do
+    result = described_class.record(
+      feature_intent:, tasks:, created_issues:,
+      plan_revision: "design-sha", parent_issue_number: 451,
+      parent_issue_updated: true
+    )
+
+    expect(result).to be_complete
+    expect(result.state).to eq("verified")
+    expect(result.missing_native_links).to be_empty
+    expect(result.unresolved).to be_empty
+    expect(feature_intent.reload.issue_tree_verification.fetch("state")).to eq("verified")
   end
 end

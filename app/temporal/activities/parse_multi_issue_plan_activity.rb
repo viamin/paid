@@ -31,7 +31,7 @@ module Activities
     PARENT_ISSUE_PATTERN = /<!--\s*parent-issue:\s*(\d+)\s*-->/.freeze
     MAX_ISSUES = 20
 
-    def execute(input)
+    def execute(input) # @spec ISSUE-TREE-003
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
 
@@ -41,6 +41,9 @@ module Activities
       if plan
         # Default parent to the source issue so it becomes the tracking issue
         plan[:parent_issue_number] ||= agent_run.issue&.github_number
+        plan[:plan_revision] = IdempotencyKey.compute(
+          "multi-issue-plan", plan[:parent_issue_number], plan[:tasks]
+        )
 
         agent_run.log!("system", "Detected multi-issue plan with #{plan[:tasks].size} issues")
 
@@ -48,7 +51,8 @@ module Activities
           message: "agent_execution.multi_issue_plan_detected",
           agent_run_id: agent_run_id,
           task_count: plan[:tasks].size,
-          parent_issue_number: plan[:parent_issue_number]
+          parent_issue_number: plan[:parent_issue_number],
+          plan_revision: plan[:plan_revision]
         )
       end
 

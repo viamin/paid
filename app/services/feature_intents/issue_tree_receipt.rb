@@ -13,12 +13,14 @@ module FeatureIntents
     def self.record(...) = new(...).record
     def self.verify(...) = new(...).verify
 
-    def initialize(feature_intent:, tasks: nil, created_issues: nil, parent_issue_number: nil, plan_revision: nil, client: nil)
+    def initialize(feature_intent:, tasks: nil, created_issues: nil, parent_issue_number: nil, plan_revision: nil,
+      parent_issue_updated: false, client: nil)
       @feature_intent = feature_intent
       @tasks = Array(tasks)
       @created_issues = Array(created_issues)
       @parent_issue_number = parent_issue_number
       @plan_revision = plan_revision
+      @parent_issue_updated = parent_issue_updated
       @client = client
     end
 
@@ -41,6 +43,7 @@ module FeatureIntents
     private
 
     attr_reader :feature_intent, :tasks, :created_issues, :parent_issue_number, :plan_revision, :client
+    attr_reader :parent_issue_updated
 
     def manifest
       {
@@ -133,6 +136,7 @@ module FeatureIntents
 
     def native_link_gaps
       return [] unless parent_issue_number
+      return [] if parent_issue_updated
 
       [ "native parent link unavailable; body relationship requires reconciliation" ]
     end
