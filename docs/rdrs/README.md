@@ -231,7 +231,12 @@ and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
 2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
 confirm that #4309 remains open until those focused gaps ship and a future
 audit can rerun the structural and database-backed checks against shipped
-behavior.
+behavior. The [2026-10-13 umbrella final-acceptance refresh](audit-report-2026-10-13-rdr-069-071-epic-final-acceptance.md)
+re-runs every structural and database-backed check used by the prior
+audits against the current working tree (1,310 focused specs, 0 failures;
+176 tables; no facet / exploration / investigation / diagram /
+preference / confidence-driven schema), reaches the same conclusion, and
+keeps the umbrella open with non-closing `Tracks #4309` language.
 
 RDR-075 is held for human review in
 [#4364](https://github.com/viamin/paid/pull/4364) and is not yet merged,
