@@ -52,6 +52,14 @@ module Activities
           validate_tdd_write_guard!(agent_run, client)
         end
 
+        # Bootstrap has its own narrow harness boundary. It does not alter the
+        # TDD phase guard because later red/green runs must retain their exact
+        # test_writing/test_fixing/refactor semantics.
+        # @spec PROJECT-READINESS-008
+        if agent_run.bootstrap_readiness_goal?
+          validate_bootstrap_write_guard!(agent_run, client)
+        end
+
         pr_body = nil
 
         if existing_pr
@@ -1145,6 +1153,28 @@ module Activities
         "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
       )
       raise "TDD write guard violation (#{result.phase}): #{result.forbidden_files.join(', ')}"
+    end
+
+    # @spec PROJECT-READINESS-008
+    def validate_bootstrap_write_guard!(agent_run, client)
+      changed_files = fetch_changed_files(agent_run, client)
+      raise "Bootstrap write guard validation requires changed file data (missing client or commit SHAs)" if changed_files.nil?
+
+      result = Projects::Readiness::BootstrapWriteGuard.call(changed_files: changed_files)
+      return if result.valid?
+
+      logger.error(
+        message: "agent_execution.bootstrap_write_guard_violation",
+        agent_run_id: agent_run.id,
+        forbidden_files: result.forbidden_files,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "Bootstrap write guard violation: #{result.reason}. " \
+        "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
+      )
+      raise "Bootstrap write guard violation: #{result.forbidden_files.join(', ')}"
     end
 
     def create_feature_pr_title(agent_run)

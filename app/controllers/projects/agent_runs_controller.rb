@@ -256,6 +256,23 @@ module Projects
       )
     end
 
+    # @spec PROJECT-READINESS-007
+    def bootstrap_readiness
+      authorize @project, :run_agent?
+      return redirect_to(inbox_path, alert: "This project no longer needs bootstrap setup.") unless @project.tdd_readiness_blocked?
+
+      if @project.agent_runs.where(goal: "bootstrap_readiness", status: AgentRun::UNFINISHED_STATUSES).exists?
+        redirect_to(inbox_path, alert: "A bootstrap attempt is already in progress for this project.")
+        return
+      end
+
+      create_run_and_redirect(
+        on_error_path: inbox_path,
+        custom_prompt: Projects::Readiness::BuildBootstrapPrompt.call(project: @project),
+        goal: "bootstrap_readiness"
+      )
+    end
+
     def bump_priority
       authorize @project, :run_agent?
 
@@ -575,6 +592,12 @@ module Projects
 
     def retry
       authorize @agent_run
+
+      if @agent_run.bootstrap_readiness_goal?
+        redirect_to inbox_path,
+          alert: "Bootstrap attempts must be started again from the project setup Inbox entry."
+        return
+      end
 
       unless @agent_run.finished?
         redirect_to project_agent_run_path(@project, @agent_run),

@@ -22,6 +22,10 @@
     </ul>
   </div>
 
-  <%= link_to "Open project settings", entry.action_url,
-        class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500" %>
+  <div class="flex gap-3">
+    <%= button_to "Start bootstrap run", bootstrap_readiness_project_agent_runs_path(entry.project),
+          class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500" %>
+    <%= link_to "Open project settings", entry.action_url,
+          class: "inline-flex items-center rounded-md border border-amber-600 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100" %>
+  </div>
 </div>

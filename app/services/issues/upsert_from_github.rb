@@ -31,6 +31,7 @@ module Issues
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
       establish_local_tdd_gate(issue, project: project)
       reconcile_design_pull_request(project, github_issue, github_pull_request) if issue.is_pull_request? && github_pull_request
+      enqueue_readiness_evaluation_after_bootstrap_merge(project, issue, github_pull_request)
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       require_reopen_review(issue, was_closed: was_closed)
@@ -91,6 +92,18 @@ module Issues
       )
     end
     private_class_method :reconcile_design_pull_request
+
+    # The readiness snapshot is repository evidence, not a durable latch.
+    # Refresh only after GitHub confirms the bootstrap PR merged, so the
+    # evaluator checks the target branch rather than the agent's branch.
+    # @spec PROJECT-READINESS-007
+    def self.enqueue_readiness_evaluation_after_bootstrap_merge(project, issue, github_pull_request)
+      return unless github_pull_request&.merged_at.present?
+      return unless project.agent_runs.where(goal: "bootstrap_readiness", pull_request_number: issue.github_number).exists?
+
+      EvaluateProjectReadinessJob.perform_later(project.id)
+    end
+    private_class_method :enqueue_readiness_evaluation_after_bootstrap_merge
 
     # @spec ISSUE-REOPEN-REVIEW-001
     def self.require_reopen_review(issue, was_closed:)

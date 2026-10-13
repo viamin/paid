@@ -57,3 +57,26 @@ prefix: PROJECT-READINESS
   `Project`, `AgentRun`.
   *Test:* `spec/services/projects/readiness/record_spec.rb`,
   `spec/models/project_spec.rb`, `spec/models/agent_run_spec.rb`.
+
+- [x] **PROJECT-READINESS-007** — When an authorized operator explicitly
+  triggers bootstrap from a current `project_setup_pending` Inbox entry, the
+  system SHALL queue one manual `bootstrap_readiness` run carrying the current
+  readiness gaps and normal token accounting. It SHALL not create another
+  unfinished bootstrap run for that project, SHALL not automatically retry a
+  terminal bootstrap attempt, and SHALL leave a failed attempt's readiness
+  entry visible for a new explicit trigger.
+  It SHALL re-evaluate only after GitHub reports that the bootstrap PR merged,
+  so the next snapshot is target-branch evidence.
+  *Code:* `Projects::AgentRunsController`, `AgentRun`, `Issues::UpsertFromGithub`.
+  *Test:* `spec/requests/agent_runs_spec.rb`, `spec/services/issues/upsert_from_github_spec.rb`.
+
+- [x] **PROJECT-READINESS-008** — When `bootstrap_readiness` creates or
+  reuses a pull request, the system SHALL allow only CI configuration,
+  scaffold/project manifests, conventional test-directory layout, and tool
+  configuration files. It SHALL abort changes outside that harness class with
+  the offending file names in the system log. It SHALL preserve every
+  `Tdd::WriteGuard` phase semantic unchanged.
+  *Code:* `Projects::Readiness::BootstrapWriteGuard`,
+  `Activities::CreatePullRequestActivity`.
+  *Test:* `spec/services/projects/readiness/bootstrap_write_guard_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.

@@ -297,6 +297,7 @@ Rails.application.routes.draw do
       post :promote_session_summary, on: :member
       get :provenance, on: :member
       post :quick_create, on: :collection
+      post :bootstrap_readiness, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
       post :unblock_escalation, on: :collection
