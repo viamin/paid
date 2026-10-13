@@ -1166,9 +1166,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       # @spec LABEL-CONTROL-007
-      it "does not scan a deactivated PR that is linked to a parent issue" do
+      it "does not scan a deactivated PR whose parent issue is paid-activated" do
         project.update!(label_integration_mode: "ignored")
         parent = create(:issue, project: project, github_number: 7)
+        parent.paid_activate!
         pull_request = create(:issue, :pull_request,
           project: project,
           github_number: 43,

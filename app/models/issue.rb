@@ -17,9 +17,8 @@ class Issue < ApplicationRecord
   PAID_ACTIVATION_STATES = %w[activated deactivated].freeze
   # The marker string FeatureActivation returns to label-read callers when an
   # issue/PR is paid-activated in ignored mode (instead of consulting the
-  # activation label name). Identical-shape return so callers like
-  # LabelPolicy#label_decision_for can branch on trust-only-or-trusted-creator
-  # semantics without changing their contract.
+  # activation label name). Callers use it to select Paid-local authorization
+  # rather than attempting to replay a GitHub label event.
   PAID_ACTIVATION_SENTINEL = "__paid_activated__"
   # The first four reasons denote agent failure. `awaiting_approval` denotes
   # an unanswered human gate: the PR is green, blocked only on owner

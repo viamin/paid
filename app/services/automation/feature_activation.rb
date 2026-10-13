@@ -7,8 +7,8 @@ module Automation
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-004 @spec AUTOMATION-ACTIVATION-005 @spec AUTOMATION-ACTIVATION-006
     # @spec LABEL-CONTROL-007 — In ignored mode the activation signal lives
     # on the Issue row (paid_activation_state = "activated") rather than on a
-    # GitHub label; the sentinel return keeps the "trust_label_only" branch
-    # in {Automation::LabelPolicy} happy without touching its contract.
+    # GitHub label; its caller uses the sentinel to take the authenticated
+    # Paid-local authorization path without replaying label history.
     def issue_auto_pick_trigger(project:, issue:)
       return paid_local_trigger(issue) if project.paid_local_activation?
 
@@ -142,9 +142,8 @@ module Automation
 
     # Returns the sentinel that signals "this issue is paid-activated" to
     # {Automation::LabelPolicy#label_decision_for} without a label read. The
-    # sentinel is consumed by +trust_label_only: true+ on the trigger hash,
-    # which is the same path activation labels use today — so the existing
-    # caller doesn't need to know about ignored mode to honor the result.
+    # sentinel is consumed by that policy's explicit local-activation path,
+    # so it never attempts to replay a GitHub label event that cannot exist.
     # @spec LABEL-CONTROL-007
     def paid_local_trigger(issue)
       issue&.paid_activated? ? Issue::PAID_ACTIVATION_SENTINEL : nil

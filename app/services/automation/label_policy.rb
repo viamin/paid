@@ -165,9 +165,8 @@ module Automation
     # @spec LABEL-CONTROL-007 — In ignored mode the activation label reads
     # are replaced by the local paid_activation_state column (#4253); the
     # +automation_on_label_enabled+ master switch does not apply because
-    # there are no labels to gate. The trust path is the same (the sentinel
-    # value never matches an unlabeled triggering path, so callers fall
-    # through to the existing no-label-no-trigger behaviour).
+    # there are no labels to gate. A local activation is authorized when it is
+    # persisted by Paid, rather than by replaying GitHub label history.
     def activation_trigger(project, record)
       return paid_local_trigger(project, record) if project.paid_local_activation?
 
@@ -196,7 +195,7 @@ module Automation
         "queue_create_pr_run"
       end
 
-      { action: action, label: activation_label, trust_label_only: true }
+      { action: action, local_activation: true }
     end
 
     def blocked_by_dependencies?(project, record)
@@ -233,11 +232,7 @@ module Automation
 
       trigger = triggering_label(project, record)
       return Result.noop unless trigger
-      if trigger[:trust_label_only]
-        return Result.noop unless trusted_user_added_label?(project, record, trigger[:label])
-      else
-        return Result.noop unless authorized_for_trigger?(project, record, trigger[:label])
-      end
+      return Result.noop unless authorized_trigger?(project, record, trigger)
       return Result.noop if blocked_by_dependencies?(project, record)
 
       decision = case trigger[:action]
@@ -255,6 +250,15 @@ module Automation
       end
 
       Result.new(decisions: [ decision ])
+    end
+
+    def authorized_trigger?(project, record, trigger)
+      # Local activation is set through Paid's authenticated local-control
+      # action. Its sentinel is not a GitHub label and has no label history.
+      return true if trigger[:local_activation]
+      return trusted_user_added_label?(project, record, trigger[:label]) if trigger[:trust_label_only]
+
+      authorized_for_trigger?(project, record, trigger[:label])
     end
   end
 end
