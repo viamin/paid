@@ -122,11 +122,12 @@ RSpec.describe Prompts::BuildForIssue do
     end
 
     it "uses an agent run's empty service list instead of the project's configured database" do # @spec POLYGLOT-TEST-011
-      postgres_container = create(:service_container, account: project.account, status: "running")
-      create(:project_service_container, project: project, service_container: postgres_container)
-      agent_run = create(:agent_run, project: project, service_container_ids: [])
+      real_project = create(:project)
+      postgres_container = create(:service_container, account: real_project.account, status: "running")
+      create(:project_service_container, project: real_project, service_container: postgres_container)
+      agent_run = create(:agent_run, project: real_project, service_container_ids: [])
 
-      prompt = described_class.call(issue: issue, project: project, agent_run: agent_run)
+      prompt = described_class.call(issue: issue, project: real_project, agent_run: agent_run)
 
       expect(prompt).not_to include("bundle exec rspec")
       expect(prompt).to include("No test command configured")
@@ -571,19 +572,19 @@ RSpec.describe Prompts::BuildForIssue do
         OpenStruct.new(running: running_scope, to_a: all_scope)
       end
 
-      it "treats configured containers as available for the run" do
+      it "does not expose stopped configured containers to the run" do
         prompt = described_class.call(issue: issue, project: project)
 
-        expect(prompt).to include("Available Services")
-        expect(prompt).to include("DATABASE_URL")
-        expect(prompt).not_to include("Environment Constraints")
+        expect(prompt).not_to include("Available Services")
+        expect(prompt).not_to include("DATABASE_URL")
+        expect(prompt).to include("Environment Constraints")
       end
     end
 
     context "when a project-specific service environment prompt override exists" do
       it "renders the override through Prompts::Render" do
         real_project = create(:project, allowed_github_usernames: [ "viamin" ])
-        service_container = create(:service_container, account: real_project.account)
+        service_container = create(:service_container, account: real_project.account, status: "running")
         create(:project_service_container, project: real_project, service_container: service_container)
 
         prompt = create(
@@ -1115,7 +1116,7 @@ RSpec.describe Prompts::BuildForIssue do
 
     it "uses project-scoped prompt overrides" do
       real_project = create(:project)
-      service_container = create(:service_container, account: real_project.account)
+      service_container = create(:service_container, account: real_project.account, status: "running")
       create(:project_service_container, project: real_project, service_container: service_container)
 
       prompt = create(
