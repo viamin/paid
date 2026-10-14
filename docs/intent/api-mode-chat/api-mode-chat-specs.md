@@ -27,6 +27,19 @@
   *Test:* `spec/services/free_models/select_chat_model_spec.rb`.
   *Code:* `FreeModels::SelectChatModel.for_session`.
 
+- [x] **CHAT-API-020** — When API-mode chat sends Paid tool definitions to an
+  OpenAI-compatible provider, every advertised tool parameter schema SHALL
+  have an object root and SHALL NOT use a root-level `oneOf`, `anyOf`,
+  `allOf`, `enum`, `const`, or `not` keyword. `trigger_agent_run` SHALL retain
+  its alternatives (an issue, a custom prompt, or `lid_planning` plan docs)
+  through Paid argument validation before an agent run is created.
+  *Tests:* `spec/mcp/tools/trigger_agent_run_spec.rb`,
+  `spec/mcp/tools/registry_spec.rb`,
+  `spec/services/chat_sessions/build_llm_client_spec.rb`.
+  *Code:* `Tools::TriggerAgentRun.input_schema`,
+  `Tools::TriggerAgentRun#perform`, `Tools::Registry.chat_definitions_for`,
+  `ChatSessions::BuildLlmClient::HttpClient#format_tools`.
+
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 

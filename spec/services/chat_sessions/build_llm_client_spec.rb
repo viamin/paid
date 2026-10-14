@@ -106,6 +106,18 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
   end
 
+  def openai_chat_client(chat_session:, chat_transport:)
+    ChatSessions::BuildLlmClient::HttpClient.new(
+      chat_session:,
+      provider: :openai,
+      protocol: :chat_completions,
+      endpoint: "https://api.openai.com/v1",
+      api_key: "sk-openai-test",
+      model: "gpt-4o",
+      chat_transport:
+    )
+  end
+
   describe ".call" do
     context "with an Anthropic API key runner" do
       it "returns an HttpClient with TextTransport" do
@@ -445,6 +457,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       expect(result[:model]).to eq("claude-sonnet-4-20250514")
       expect(result[:tokens_input]).to eq(20)
       expect(result[:tokens_output]).to eq(10)
+    end
+
+    # @spec CHAT-API-020
+    it "sends Paid chat tool definitions through an OpenAI request without a schema error" do
+      project = create(:project, account: account)
+      create(:project_membership, :member, user: user, project: project)
+      session = create(:chat_session, account: account, created_by: user, project: project)
+      openai_client = openai_chat_client(chat_session: session, chat_transport: chat_transport)
+      definitions = Tools::Registry.chat_definitions_for(user: user, session: session)
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(model: "gpt-4o"))
+
+      result = openai_client.call([ { role: "user", content: "Start work" } ], tools: definitions)
+
+      expect(result[:content]).to eq("I'm doing well!")
+      expect(chat_transport).to have_received(:call) do |request|
+        expect(request[:candidates].first).to include(provider: :openai, protocol: :chat_completions)
+        request[:tools].each do |tool|
+          expect(tool[:input_schema][:type]).to eq("object")
+          expect(tool[:input_schema]).not_to include(:oneOf, :anyOf, :allOf, :enum, :const, :not)
+        end
+      end
     end
 
     it "persists every reported attempt with the live chat attribution" do
