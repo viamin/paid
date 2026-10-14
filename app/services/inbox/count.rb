@@ -108,10 +108,8 @@ module Inbox
 
     # A direct indexed count: both abandonment producers (runner-retry-cap and
     # push-permission rejection) write the same `runner_retry_abandoned_at`
-    # column, so the lane is a single WHERE NOT NULL scan. No paid_state
-    # filter — the dashboard's Retry-Limited card deliberately shows both
-    # issues and PRs regardless of paid_state, and this lane matches that
-    # surface.
+    # column, so the lane is a single WHERE NOT NULL scan with no paid_state
+    # filter.
     # @spec OPERATOR-INBOX-002E
     def retry_limited_count
       project_ids = visible_project_ids

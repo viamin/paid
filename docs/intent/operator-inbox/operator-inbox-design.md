@@ -197,28 +197,23 @@ its nav badge at the exact moment it became more urgent.
 Backed by `Issue#runner_retry_abandoned_at` directly (the same column the
 runner-retry-cap path writes via `Issue#abandon_due_to_runner_retry_cap!` and
 the push-permission path writes via `Issue#abandon_due_to_push_permission_rejection!`,
-which share an abandonment gate but encode different causes). Before this kind
-existed, both abandonments were dashboard-only — visible on the
-Retry-Limited card (#2674) but absent from the Inbox and its nav badge, so
-operators only learned about the block by scrolling the dashboard, and the
-dashboard card had no action buttons. The HLD tenet "No silent stops" requires
-the system to surface *that* automation stopped, *why*, and *what clears it*
-the same way it surfaces `manual_review`; this kind closes that gap (#3902).
+which share an abandonment gate but encode different causes). The Inbox is the
+sole operator surface for these abandonments: the Dashboard does not duplicate
+the lane. The HLD tenet "No silent stops" requires the system to surface *that*
+automation stopped, *why*, and *what clears it* the same way it surfaces
+`manual_review` (#3902).
 
 The query is `paid_state`-agnostic (the abandonment gate is independent of
-`paid_state`, and the dashboard card deliberately surfaces both issues and PRs
-that hit the cap), so it filters on `runner_retry_abandoned_at IS NOT NULL` and
+`paid_state`), so it filters on `runner_retry_abandoned_at IS NOT NULL` and
 `github_state = "open"` only. It reuses the same account+owner visibility
-(`INBOX-FOUNDATION-006`), independent of auto-pick eligibility, every other
-kind uses, the same divergence from the dashboard's account-wide scope that
-`escalated_pr` and `manual_review` already record (`OPERATOR-INBOX-002C`,
-`OPERATOR-INBOX-002D`).
+(`INBOX-FOUNDATION-006`), independent of auto-pick eligibility, that every
+other Inbox kind uses.
 
 The entry payload carries `runner_retry_abandon_reason` as the summary and
 distinguishes `push_permission_abandoned?` (prefixed `Push rejected:` — the
 GitHub App installation token lacked the permission) from the runner-retry-cap
-case in the list and detail views via the same Push Blocked vs Retry Cap badge
-split the dashboard card already shows. `waiting_since` is
+case in the list and detail views via the Push Blocked vs Retry Cap badge
+split. `waiting_since` is
 `runner_retry_abandoned_at`; both producers stamp the timestamp on
 abandonment, so there are no legacy nulls to worry about. The clearing path is
 the existing `clear_runner_retry_abandonment!` (called from
@@ -227,10 +222,9 @@ flag already has — no inbox-side controller change is needed, just the cache
 invalidation that `Issue#inbox_count_cache_invalidation_needed?` adds for
 `saved_change_to_runner_retry_abandoned_at?`.
 
-The detail pane offers the same path the dashboard card implies but does not
-actually render: link to the GitHub issue/PR (the operator needs to read the
-failure surface anyway) plus a per-project "Start manual run" hint pointing at
-the project's runs page. The operator-facing action is the existing
+The detail pane offers a link to the GitHub issue/PR (the operator needs to
+read the failure surface anyway) plus a per-project "Start manual run" hint
+pointing at the project's runs page. The operator-facing action is the existing
 `clear_runner_retry_abandonment!` path on a successful manual run, so there is
 no new endpoint to introduce — the kind exists to make the abandonment
 discoverable, not to invent a new clearing workflow. The entry leaves the lane
