@@ -4697,7 +4697,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness])
     end
 
     it "defines valid TRIGGER_TYPES" do
@@ -7021,6 +7021,16 @@ RSpec.describe AgentRun do
     # @spec PROJECT-READINESS-006
     it "does not queue re-evaluation for a completed synthetic run" do
       agent_run = create(:agent_run, :synthetic, status: "running")
+
+      expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
+        .not_to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+
+    # @spec PROJECT-READINESS-007 — bootstrap runs defer their re-evaluation to
+    # the post-merge sync so the evaluator reads merged-target evidence; the
+    # completion callback must not fire eagerly off the bootstrap PR's tip.
+    it "does not queue re-evaluation when a bootstrap_readiness run completes" do
+      agent_run = create(:agent_run, status: "running", goal: "bootstrap_readiness")
 
       expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
         .not_to have_enqueued_job(EvaluateProjectReadinessJob)

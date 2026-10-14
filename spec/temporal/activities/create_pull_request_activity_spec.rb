@@ -1381,6 +1381,35 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     # @spec TDD-GUARD-006
+    # @spec PROJECT-READINESS-008
+    context "when the run is a readiness bootstrap" do
+      let(:bootstrap_run) do
+        create(:agent_run, :with_git_context, project: project, goal: "bootstrap_readiness", issue: nil,
+          custom_prompt: "Establish the missing test harness prerequisites.")
+      end
+
+      before do
+        bootstrap_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+      end
+
+      it "allows harness artifacts" do
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ ".github/workflows/gdunit.yml", "project.godot", "tests/.gitkeep" ])
+
+        expect { activity.execute(agent_run_id: bootstrap_run.id) }.not_to raise_error
+      end
+
+      it "reports behavior-bearing files outside the harness boundary" do
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ ".github/workflows/gdunit.yml", "scripts/player.gd" ])
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*scripts\/player.gd/)
+        expect(bootstrap_run.reload.agent_run_logs.where(log_type: "system").pluck(:content).join("\n")).to include("scripts/player.gd")
+      end
+    end
+
     context "when the run is TDD-governed" do
       let(:tdd_phase) { "refactor" }
       let(:tdd_agent_run) do

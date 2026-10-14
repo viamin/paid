@@ -52,4 +52,30 @@ Evaluation is queued when TDD readiness settings change and after a completed
 run that produced a result commit. A snapshot update bumps the Inbox cache
 version only when the gap set changes, so queue, filters, and nav badge refresh
 together without re-evaluating a checkout on every poll. Surfacing a gap never
-queues a bootstrap run; remediation remains a human decision for Phase 3.
+queues a bootstrap run. Phase 3 lets an authorized operator explicitly start
+one `bootstrap_readiness` run from this Inbox entry. Only one unfinished
+bootstrap attempt may exist for a project; after it reaches a terminal state,
+another attempt requires another explicit click. A failed attempt leaves the
+readiness entry and its run failure visible. Successful bootstrap PRs use the
+ordinary draft/ready review flow and are separate from the later TDD
+test-review PR.
+
+## Bootstrap write boundary
+
+`bootstrap_readiness` is a distinct harness class, enforced at
+`CreatePullRequestActivity` before a PR is created or reused. It permits only
+CI configuration (`.github/workflows/`, `.circleci/`, `.gitlab-ci.yml`),
+project/scaffold manifests (including `project.godot`, `package.json`, and
+`go.mod`), conventional test-directory layout (`test/`, `tests/`, `spec/`,
+`__tests__/`, `Tests/`), and tool configuration files. Any other changed file
+aborts the run with the offending paths recorded in its system log. This
+structural boundary is not a judgment about whether a configuration is
+runnable; the bootstrap prompt must inspect the actual checkout and configure
+a runnable harness.
+
+The bootstrap class is deliberately separate from `Tdd::WriteGuard`. The
+`test_writing`, `test_fixing`, and `refactor` allowed-write semantics are
+unchanged. A completed bootstrap run never schedules an eager readiness
+evaluation: the issue-sync path schedules it only after GitHub confirms the
+bootstrap PR merged, so the checkout reads target-branch evidence. No durable
+ready latch exists.

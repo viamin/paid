@@ -30,7 +30,7 @@ class AgentRun < ApplicationRecord
   # cannot retroactively alter a run's review behavior. @spec REVIEW-DEPTH-005
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
@@ -1770,6 +1770,11 @@ class AgentRun < ApplicationRecord
 
   def create_feature_goal?
     goal == "create_feature"
+  end
+
+  # @spec PROJECT-READINESS-007
+  def bootstrap_readiness_goal?
+    goal == "bootstrap_readiness"
   end
 
   def assign_default_tdd_phase
@@ -4135,8 +4140,10 @@ class AgentRun < ApplicationRecord
     AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
   end
 
-  # @spec PROJECT-READINESS-006
+  # @spec PROJECT-READINESS-006 @spec PROJECT-READINESS-007
   def project_readiness_refresh_needed?
+    return false if bootstrap_readiness_goal?
+
     saved_change_to_status? && status == "completed" && result_commit_sha.present? && !synthetic_operational_run?
   end
 
@@ -4277,6 +4284,7 @@ class AgentRun < ApplicationRecord
 
   def recovery_decision_required?
     return false if synthetic_operational_run?
+    return false if bootstrap_readiness_goal?
 
     previous_changes.key?("status") && status.in?(recovery_decision_statuses)
   end
