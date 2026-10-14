@@ -294,6 +294,110 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
     end
 
+    context "when quiet-mode questions are being replaced" do
+      before do
+        project.update!(quiet_mode: true)
+        allow(client).to receive(:update_issue)
+        issue.update!(enhance_issue_rounds: 1, body: <<~MARKDOWN)
+          Record user actions
+
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          1. Which events should be recorded?
+          <!-- /paid:clarifying-questions -->
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          **Q1: Which events should be recorded?**
+          **A1:** Login events
+          <!-- /paid:clarifying-answers -->
+        MARKDOWN
+        allow(client).to receive(:issue).and_return(OpenStruct.new(body: "Human-edited remote description"))
+        log_agent_stdout({
+          sufficient_context: false,
+          comment_body: <<~MARKDOWN
+            ## Clarifying questions
+            1. Which compliance events are required?
+
+            ## Current context
+            The audit trail must include compliance events.
+          MARKDOWN
+        }.to_json)
+      end
+
+      it "replaces prior questions without duplicating questions before documented context" do # @spec QUIET-MODE-009 @spec QUIET-MODE-011
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(client).to have_received(:update_issue).with(
+          project.full_name,
+          issue.github_number,
+          body: a_string_including(
+            "Human-edited remote description",
+            "The audit trail must include compliance events.",
+            "Which compliance events are required?"
+          )
+        )
+        expect(issue.reload.body.scan(ClarifyingQuestions::DescriptionSection::QUESTIONS_OPEN_MARKER).size).to eq(1)
+        expect(ClarifyingQuestions::DescriptionSection.parse_questions(issue.body).questions).to eq(
+          [ "Which compliance events are required?" ]
+        )
+        expect(client).not_to have_received(:add_comment)
+      end
+    end
+
+    it "processes a rerun after matching quiet-mode answers were submitted" do # @spec QUIET-MODE-009 @spec QUIET-MODE-011
+      project.update!(quiet_mode: true)
+      issue.update!(body: <<~MARKDOWN)
+        Record user actions
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        <!-- paid:clarifying-questions-digest:#{ClarifyingQuestions::DescriptionSection.digest_for([ "Which events should be recorded?" ])} -->
+        1. Which events should be recorded?
+        <!-- /paid:clarifying-questions -->
+
+        <!-- paid:clarifying-answers -->
+        ## Clarifying question answers
+
+        <!-- paid:clarifying-answers-digest:#{ClarifyingQuestions::DescriptionSection.digest_for([ "Which events should be recorded?" ])} -->
+        **Q1: Which events should be recorded?**
+        **A1:** Login events
+        <!-- /paid:clarifying-answers -->
+      MARKDOWN
+      log_agent_stdout(structured_output)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:already_enhanced]).not_to be(true)
+      expect(result[:sufficient_context]).to be(true)
+      expect_label_added(project.enhance_issue_enhanced_label_name)
+      expect(agent_run.reload.status).to eq("completed")
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    it "posts a comment when quiet mode is disabled with stale body questions" do # @spec QUIET-MODE-009
+      issue.update!(body: <<~MARKDOWN)
+        Record user actions
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        1. Which events should be recorded?
+        <!-- /paid:clarifying-questions -->
+      MARKDOWN
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Clarifying questions\n1. Which compliance events are required?"
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect_comment_including("Which compliance events are required?")
+    end
+
     it "fails before moving to needs_input when adding the GitHub label fails" do
       allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
       log_agent_stdout({

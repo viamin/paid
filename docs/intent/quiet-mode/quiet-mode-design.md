@@ -24,9 +24,23 @@ blocking `action_required` notification for the project instead of a GitHub
 comment. Escalations remain load-bearing through labels and PR phase state.
 
 Clarifying-question answers currently persist only in a marker-tagged GitHub
-comment. Until #4236 provides their description-section write-back, quiet mode
-rejects answer submission before it can clear an issue's needs-input state or
-misreport a successful post.
+comment. In quiet mode, the channel moves into a marked section of the issue
+or PR description: questions are written between `<!-- paid:clarifying-questions -->`
+and `<!-- /paid:clarifying-questions -->` markers, and answers between
+`<!-- paid:clarifying-answers -->` and `<!-- /paid:clarifying-answers -->` markers, with a
+stable question-set digest embedded in both sections so `Load` can match
+them without relying on `comment.created_at`. Body editing is the permitted
+channel in quiet mode, and a single shared `ClarifyingQuestions::SubmitAnswers`
+service writes through that channel for both the inbox controller and the
+linked-chat MCP tool so per-call-site branching stays out of the request path.
+Before writing either section, the service re-fetches the description and
+rebuilds the marked replacement when it changed, retaining a human edit that
+arrived while the replacement was being prepared. GitHub does not offer a
+conditional issue-body PATCH, so the API failure remains visible rather than
+claiming a retryable conflict response that the endpoint does not provide.
+When an operator has supplied a complete answer section matching the current
+questions digest, the next enhancement run consumes its new agent output; the
+preserved questions section is not treated as an incomplete prior enhancement.
 
 ## Commit-message commentary channel (#4232)
 
