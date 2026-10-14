@@ -610,9 +610,7 @@ module Inbox
     # via Issue#abandon_due_to_push_permission_rejection!) write the same two
     # columns — runner_retry_abandoned_at + runner_retry_abandon_reason — so the
     # inbox lane derives from those columns directly rather than from
-    # paid_state (the dashboard's Retry-Limited card deliberately shows both
-    # issues and PRs regardless of paid_state, the same surface this lane
-    # matches). The push_permission_abandoned? split is preserved via
+    # paid_state. The push_permission_abandoned? split is preserved via
     # summary_text and the entry's underlying issue, so the list/detail views
     # can render the Push Blocked vs Retry Cap badge split (#3902).
     # @spec OPERATOR-INBOX-002E

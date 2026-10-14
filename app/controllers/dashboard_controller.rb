@@ -6,6 +6,7 @@ class DashboardController < ApplicationController
   before_action :authenticate_user!
   before_action :set_live_agent_run, only: :cancel_run
 
+  # @spec OPERATOR-INBOX-002E
   def show
     @time_range = valid_time_range
     @status_filter = valid_status_filter
@@ -30,14 +31,6 @@ class DashboardController < ApplicationController
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)
       .limit(10)
-    @retry_limited_issues = Issue.joins(:project)
-      .where(projects: { account_id: current_account.id })
-      .where.not(runner_retry_abandoned_at: nil)
-      .excluding_body
-      .preload(:project)
-      .order(runner_retry_abandoned_at: :desc)
-      .limit(20)
-      .to_a
   end
 
   def recent_activity
