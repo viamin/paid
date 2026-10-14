@@ -447,3 +447,27 @@
   seeing a recency-ordered title list (#3797).
   *Code:* `app/services/knowledge/context_bundle/build.rb`.
   *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
+
+- [x] **KNOWLEDGE-DASHBOARD-001** — When the Dashboard renders Knowledge
+  Runner Health, it SHALL retain both Embedding and Decision Drafting sections
+  and report configuration readiness separately from operational health. A
+  runner without a configured applicable credential SHALL be
+  `missing_credential`, a runner unsupported by its operation transport SHALL
+  be `unsupported_transport`, and a configured local credential SHALL be
+  `ready`; the status SHALL expose only its safe source/service metadata and
+  SHALL state that it is not upstream authentication validation. Rendering
+  SHALL not make a provider call or expose a secret.
+  *Code:* `app/services/knowledge/runner_readiness.rb`,
+  `app/services/knowledge/dashboard_stats.rb`,
+  `app/views/dashboard/_knowledge_widget.html.erb`.
+  *Test:* `spec/services/knowledge/dashboard_stats_spec.rb`,
+  `spec/views/dashboard/knowledge_widget_partial_spec.rb`.
+
+- [x] **KNOWLEDGE-DASHBOARD-002** — When account-level Knowledge Runner
+  Health is computed, it SHALL aggregate configured runners by every
+  project's `effective_owner`, identify each row's owner scope and project
+  count, and version its bounded cache from project ownership, owner settings,
+  credentials, and runner state changes. It SHALL not present the account
+  fallback owner's readiness as valid for another project's owner.
+  *Code:* `app/services/knowledge/dashboard_stats.rb`.
+  *Test:* `spec/services/knowledge/dashboard_stats_spec.rb`.

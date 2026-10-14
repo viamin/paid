@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Knowledge
+  # @spec KNOWLEDGE-DASHBOARD-001 KNOWLEDGE-DASHBOARD-002
   class DashboardStats
     # @spec KNOWLEDGE-CURATED-005
     CACHE_TTL = 5.minutes
@@ -148,72 +149,67 @@ module Knowledge
       [
         "knowledge/dashboard_stats/provider_health",
         account.id,
-        owner&.id || "none",
-        user_setting&.updated_at&.to_i || "none"
+        account.projects.cache_key_with_version,
+        UserSetting.joins(:user).where(users: { account_id: account.id }).cache_key_with_version,
+        ProviderApiKey.joins(:user).where(users: { account_id: account.id }).cache_key_with_version,
+        account.runner_credentials.cache_key_with_version,
+        RunnerState.joins(:user).where(users: { account_id: account.id }).cache_key_with_version
       ].join("/")
     end
 
     def build_provider_health
-      return empty_provider_health unless user_setting && owner
-
-      embedding_runners = configured_runners_for(:embedding)
-      chat_runners = configured_runners_for(:chat)
-      runner_states = owner.runner_states
-        .where(runner_name: (embedding_runners + chat_runners).uniq)
-        .index_by(&:runner_name)
-
-      embedding = embedding_runners.map { |runner| runner_status(runner, runner_states) }
-      chat = chat_runners.map { |runner| runner_status(runner, runner_states) }
+      owners = project_owner_groups
+      embedding = owners.flat_map { |owner, count| runner_health(owner, count, :embedding) }
+      chat = owners.flat_map { |owner, count| runner_health(owner, count, :chat) }
 
       {
         embedding: embedding,
         chat: chat,
         embedding_available: embedding.any? { |runner| runner[:available] },
-        chat_available: chat.any? { |runner| runner[:available] }
+        chat_available: chat.any? { |runner| runner[:available] },
+        scope: "project_effective_owners",
+        project_count: owners.sum(&:last),
+        owner_count: owners.size
       }
     end
 
-    def empty_provider_health
-      {
-        embedding: [],
-        chat: [],
-        embedding_available: false,
-        chat_available: false
-      }
+    def project_owner_groups
+      groups = account.projects.includes(:account, :created_by).to_a.group_by(&:effective_owner)
+      groups.transform_values(&:size).to_a
     end
 
-    def configured_runners_for(operation)
-      return [] unless user_setting
+    def runner_health(owner, project_count, operation)
+      setting = owner.settings
+      runners = configured_runners_for(setting, operation)
+      states = owner.runner_states.where(runner_name: runners).index_by(&:runner_name)
+
+      runners.map do |runner|
+        readiness = RunnerReadiness.call(account:, owner:, operation:, runner:)
+        runner_status(runner, states, readiness, owner).merge(owner_id: owner.id, project_count: project_count)
+      end
+    end
+
+    def configured_runners_for(setting, operation)
+      return [] unless setting
 
       runners =
         case operation.to_sym
         when :embedding
-          [ user_setting.kb_embedding_runner, *Array(user_setting.kb_embedding_fallback_runners) ]
+          [ setting.kb_embedding_runner, *Array(setting.kb_embedding_fallback_runners) ]
         when :chat
-          [ user_setting.kb_chat_runner, *Array(user_setting.kb_chat_fallback_runners) ]
+          [ setting.kb_chat_runner, *Array(setting.kb_chat_fallback_runners) ]
         else
           []
         end
 
       runners.filter_map { |runner| runner.to_s.strip.downcase.presence }
         .uniq
-        .select { |runner| supported_runners_for(operation).include?(runner) }
     end
 
-    def supported_runners_for(operation)
-      case operation.to_sym
-      when :embedding
-        UserSetting::KB_EMBEDDING_RUNNERS
-      when :chat
-        UserSetting::KB_CHAT_RUNNERS
-      else
-        []
-      end
-    end
-
-    def runner_status(runner, runner_states)
+    def runner_status(runner, runner_states, readiness, owner)
       state = runner_states[runner]
-      state.check_circuit_recovery!(timeout: user_setting.circuit_breaker_timeout_seconds) if state
+      state.check_circuit_recovery!(timeout: owner.settings.circuit_breaker_timeout_seconds) if state
+      operational_status = operational_status_for(state)
 
       {
         runner: runner,
@@ -221,8 +217,20 @@ module Knowledge
         rate_limited: state&.rate_limited? || false,
         rate_limited_until: state&.rate_limited_until,
         recent_failures: state&.failure_count || 0,
-        available: state.nil? || !state.unavailable?
+        operational_status: operational_status,
+        configuration_status: readiness.status,
+        credential_source: readiness.credential_source,
+        credential_service: readiness.credential_service,
+        validated_with_provider: readiness.validated_with_provider,
+        available: readiness.status == "ready" && operational_status != "unavailable"
       }
+    end
+
+    def operational_status_for(state)
+      return "unavailable" if state&.unavailable?
+      return "degraded" if state&.failure_count.to_i.positive?
+
+      "healthy"
     end
 
     def pipeline_metrics_cache_key
@@ -320,14 +328,6 @@ module Knowledge
       return 0.0 if denominator.zero?
 
       ((numerator.to_f / denominator) * 100).round(1)
-    end
-
-    def owner
-      @owner ||= account.fallback_owner
-    end
-
-    def user_setting
-      @user_setting ||= owner&.settings
     end
   end
 end
