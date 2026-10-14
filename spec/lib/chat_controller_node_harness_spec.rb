@@ -882,10 +882,10 @@ class ChatControllerNodeHarness
         controller.handleEvent({
           type: "onboarding_retry",
           message: "That API key was rejected. Please try another key.",
-          redirect_url: "/onboarding?chat_api_key_error=invalid"
+          redirect_url: "/onboarding?onboarding_retry=invalid"
         });
 
-        if (redirectedTo !== "/onboarding?chat_api_key_error=invalid") {
+        if (redirectedTo !== "/onboarding?onboarding_retry=invalid") {
           throw new Error(`Expected onboarding retry redirect, got ${redirectedTo}`);
         }
         if (statusMessages[statusMessages.length - 1] !== "That API key was rejected. Please try another key.") {

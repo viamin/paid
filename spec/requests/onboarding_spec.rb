@@ -62,7 +62,7 @@ RSpec.describe "Onboarding" do
       it "shows the API-key retry form after asynchronous validation rejects a key" do
         Onboarding::CompleteStep.call(account: account, step: "account_profile")
 
-        get onboarding_path, params: { chat_api_key_error: "invalid" }
+        get onboarding_path, params: { onboarding_retry: "invalid" }
 
         expect(response.body).to include("That API key was rejected. Please try another key.")
         expect(response.body).to include('name="chat_api_key[api_key]"')
