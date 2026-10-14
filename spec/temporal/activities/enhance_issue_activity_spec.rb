@@ -317,11 +317,17 @@ RSpec.describe Activities::EnhanceIssueActivity do
         allow(client).to receive(:issue).and_return(OpenStruct.new(body: "Human-edited remote description"))
         log_agent_stdout({
           sufficient_context: false,
-          comment_body: "The audit trail must include compliance events.\n\n## Clarifying questions\n1. Which compliance events are required?"
+          comment_body: <<~MARKDOWN
+            ## Clarifying questions
+            1. Which compliance events are required?
+
+            ## Current context
+            The audit trail must include compliance events.
+          MARKDOWN
         }.to_json)
       end
 
-      it "replaces prior questions with the next enhancement's questions and preamble" do # @spec QUIET-MODE-009
+      it "replaces prior questions without duplicating questions before documented context" do # @spec QUIET-MODE-009 @spec QUIET-MODE-011
         activity.execute(agent_run_id: agent_run.id)
 
         expect(client).to have_received(:update_issue).with(

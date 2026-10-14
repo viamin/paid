@@ -564,7 +564,6 @@ module Activities
     # is asking and why.
     def build_description_preamble(comment_body)
       text = comment_body.to_s.sub(/\A#{Regexp.escape(COMMENT_MARKER)}/, "")
-      text = text.sub(/\A\s*##\s+[^\n]*clarifying questions[^\n]*\n/i, "")
       text = text.sub(ClarifyingQuestions::Parse::CLARIFYING_SECTION_PATTERN, "")
       text.strip
     end
