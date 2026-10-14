@@ -372,6 +372,26 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "posts a comment when quiet mode is disabled with stale body questions" do # @spec QUIET-MODE-009
+      issue.update!(body: <<~MARKDOWN)
+        Record user actions
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        1. Which events should be recorded?
+        <!-- /paid:clarifying-questions -->
+      MARKDOWN
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Clarifying questions\n1. Which compliance events are required?"
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect_comment_including("Which compliance events are required?")
+    end
+
     it "fails before moving to needs_input when adding the GitHub label fails" do
       allow(client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("GitHub unavailable"))
       log_agent_stdout({

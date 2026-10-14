@@ -332,6 +332,13 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
         expect(described_class.call(project: project, issue: issue)).to eq([ "What is the current scope?" ])
       end
+
+      it "does not reopen answered description questions without an enhancement comment" do # @spec QUIET-MODE-011
+        allow(github_client).to receive(:issue_comments).and_return([])
+        expect(ClarifyingQuestions::IngestAnswers).not_to receive(:call)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
     end
 
     context "when quiet-mode answer digest matches but answer pairs are missing" do
@@ -659,7 +666,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
     end
 
     it "returns nil when GitHub credentials are missing" do
-      credentialless = double(github_credential_present?: false)
+      credentialless = double(github_credential_present?: false, quiet_mode?: false)
       load = described_class.new(project: credentialless, issue: issue)
 
       expect(load.context_markdown).to be_nil

@@ -25,6 +25,9 @@ module ClarifyingQuestions
         return reconcile_answered if quiet_mode? && answered_via_body?(current_questions)
         return reconcile_answered if answered_after_latest_questions?(body_questions: current_questions)
 
+        return latest_comment_questions || current_questions unless marked_description_questions?
+        return latest_comment_questions || [] unless quiet_mode?
+
         return latest_comment_questions || current_questions
       end
 
@@ -107,6 +110,8 @@ module ClarifyingQuestions
     # carry a "Current Context" block — the section's preamble (everything
     # before the numbered list) is the fallback the inbox needs.
     def description_section_context_markdown
+      return nil unless quiet_mode?
+
       parsed = DescriptionSection.parse_questions(issue.body)
       return nil unless parsed.any?
 
@@ -164,6 +169,10 @@ module ClarifyingQuestions
       return unless enhancement_comment
 
       Parse.call(comment_body: comment_body(enhancement_comment)).presence
+    end
+
+    def marked_description_questions?
+      DescriptionSection.parse_questions(issue.body).any?
     end
 
     def answer_satisfies_latest_questions?(answer_comment)

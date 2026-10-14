@@ -76,7 +76,9 @@ module Activities
       existing_comment = enhancement_comment(comments)
       if issue.enhance_issue_rounds.zero?
         return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment
-        return complete_existing_body(agent_run, client, project, issue) if description_has_unanswered_questions?(issue)
+        if project.quiet_mode? && description_has_unanswered_questions?(issue)
+          return complete_existing_body(agent_run, client, project, issue)
+        end
       end
 
       parsed = parse_agent_output!(agent_run, project, issue, client, raw_comments)
