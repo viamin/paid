@@ -1,4 +1,4 @@
-# RDR-069–071 Epic Final-Acceptance Audit — 2026-10-12 (refreshed 2026-10-13)
+# RDR-069–071 Epic Final-Acceptance Audit — 2026-10-12 (refreshed 2026-10-14)
 
 - **Umbrella**: [#4309](https://github.com/viamin/paid/issues/4309)
 - **Result**: **Final acceptance is not yet eligible. The umbrella (#4309)
