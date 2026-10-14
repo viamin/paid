@@ -30,7 +30,7 @@ module Knowledge
     attr_reader :account, :owner, :operation, :runner
 
     def supported?
-      supported_runners.include?(runner)
+      supported_runners.include?(runner) && (operation == :embedding || AnalysisRunner.supported_provider?(runner))
     end
 
     def supported_runners
@@ -40,7 +40,10 @@ module Knowledge
     def credential
       return embedding_credential if operation == :embedding
 
-      owner_api_key_credential("anthropic") || platform_anthropic_credential
+      service_type = RunnerSupport.api_service_type_for(runner)
+      return unless service_type
+
+      owner_api_key_credential(service_type) || platform_credential(service_type)
     end
 
     def embedding_credential
@@ -64,14 +67,20 @@ module Knowledge
 
     attr_reader :credential_availability
 
+    def platform_credential(service_type)
+      return platform_openai_credential if service_type == "openai"
+
+      platform_anthropic_credential if service_type == "anthropic"
+    end
+
     def platform_openai_credential
-      return unless runner == "openai" && platform_openai_api_key.present?
+      return unless (operation == :chat || runner == "openai") && platform_openai_api_key.present?
 
       ready(source: "platform_fallback", service: "openai")
     end
 
     def platform_anthropic_credential
-      return unless runner == "claude" && Llm::TextMode.enabled?
+      return unless Llm::TextMode.enabled?
 
       ready(source: "platform_fallback", service: "anthropic")
     end

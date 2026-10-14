@@ -33,12 +33,13 @@ The account dashboard retains Embedding and Decision Drafting runner health, but
 does not treat the absence of a `RunnerState` as evidence that a runner can
 execute. `Knowledge::RunnerReadiness` resolves local configuration only: a
 supported embedding transport is `ready` when its applicable owner API key or
-documented platform fallback is configured. Decision drafting is `ready` only
-when its effective owner's Anthropic API key or the documented host Anthropic
-text-mode credential is configured, because those are the credential sources
-its containerized execution path materializes. Otherwise it is `missing_credential`
-or `unsupported_transport`. It never materializes a secret or contacts an
-upstream provider, so ready credentials are explicitly not a live
+documented platform fallback is configured. Decision drafting resolves its API
+service from the configured runner (for example, Claude to Anthropic and Codex
+to OpenAI), then is `ready` only when its effective owner's corresponding API
+key or documented host fallback is configured, because those are the credential
+sources its containerized execution path materializes. Otherwise it is
+`missing_credential` or `unsupported_transport`. It never materializes a secret
+or contacts an upstream provider, so ready credentials are explicitly not a live
 authentication validation.
 
 Embedding candidate selection uses the same readiness result before runtime

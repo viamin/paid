@@ -116,6 +116,43 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with Codex configured for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        owner.settings.update!(kb_chat_runner: "codex", kb_chat_fallback_runners: [])
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the OpenAI credential materialized by the Codex execution path" do
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "owner_api_key",
+          credential_service: "openai",
+          available: true
+        )
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "does not report an Anthropic key as usable by Codex" do
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
+
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "missing_credential",
+          credential_source: nil,
+          credential_service: nil,
+          available: false
+        )
+      end
+    end
+
     context "with changed project ownership" do
       let(:first_owner) { create(:user, account: account) }
       let(:second_owner) { create(:user, account: account) }
