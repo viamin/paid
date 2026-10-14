@@ -325,6 +325,14 @@ docs/                 # Long-form docs; docs/intent/ holds the LID arrow
 | Agent image tooling | Versions pinned from `agent_harness` contracts | Control plane and agent image stay in lockstep without separate pins. |
 | Release management | release-please + Conventional Commits | Semantic releases from conventional commit headers. |
 
+## Contributor verification
+
+CI executes the complete non-system spec suite across isolated jobs while
+retaining a stable aggregate test check and the whole-suite coverage floor.
+Performance improvements must preserve behavior, tenant isolation and mandatory
+checks. See `docs/intent/test-suite-performance/` for partitioning, coverage
+aggregation and measurement intent.
+
 ## LID adoption posture
 
 This repository adopts LID in **Full** mode on a **going-forward** basis. The

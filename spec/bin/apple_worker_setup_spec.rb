@@ -39,6 +39,13 @@ RSpec.describe "bin/apple-worker-setup" do # rubocop:disable RSpec/DescribeClass
       expect(stderr).to include("Usage:")
     end
 
+    # @spec TEST-SUITE-008
+    it "uses Rails database settings when DATABASE_URL is absent" do
+      stdout, stderr, status = run_setup("--preflight", env: { "DATABASE_URL" => nil })
+      expect([ 0, 1 ]).to include(status.exitstatus), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("# Apple worker setup report")
+    end
+
     it "exits 0 or 1 in preflight mode and prints a Markdown report" do
       stdout, _stderr, status = run_setup("--preflight")
       # Preflight on a non-macOS test host will surface gaps (no Tart,
@@ -53,10 +60,8 @@ RSpec.describe "bin/apple-worker-setup" do # rubocop:disable RSpec/DescribeClass
   def run_setup(*args, env: {})
     base_env = {
       "BUNDLE_GEMFILE" => File.expand_path("../../Gemfile", __dir__),
-      "DATABASE_URL" => ENV.fetch("DATABASE_URL"),
-      "DB_HOST" => ENV.fetch("DB_HOST", "paid-svc-a3-s1-postgres"),
-      "DB_USERNAME" => ENV.fetch("DB_USERNAME", "agent"),
-      "DB_PASSWORD" => ENV.fetch("DB_PASSWORD", "agent"),
+      # @spec TEST-SUITE-008
+      # Open3 inherits DB_* settings; a URL is optional in Rails config.
       "PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD" => "true",
       "APPLE_VERIFICATION_HOST_URL" => "",
       "APPLE_VERIFICATION_HOST_TOKEN" => ""

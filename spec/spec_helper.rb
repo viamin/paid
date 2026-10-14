@@ -24,7 +24,12 @@ coverage_enabled = SpecCoverageDecision.call(env: ENV, mutant_defined: defined?(
 if coverage_enabled
   require "simplecov"
   SimpleCov.start "rails" do
-    minimum_coverage 80 unless SpecRunMode.focused?
+    # @spec TEST-SUITE-005
+    minimum_coverage 80 unless SpecRunMode.focused? || ENV.key?("RSPEC_SHARD_INDEX")
+    if ENV.key?("RSPEC_SHARD_INDEX")
+      command_name "RSpec shard #{Integer(ENV.fetch('RSPEC_SHARD_INDEX')) + 1}/#{Integer(ENV.fetch('RSPEC_SHARD_COUNT'))}"
+      self.formatters = []
+    end
     skip "/spec/"
     skip "/config/"
     skip "/vendor/"

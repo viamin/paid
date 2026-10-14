@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "open3"
+require "rbconfig"
 
 class ProviderSmokeScript < Pathname
 end
@@ -13,7 +14,7 @@ RSpec.describe ProviderSmokeScript, :no_db do
         "RAILS_ENV" => "test",
         "SECRET_KEY_BASE" => "test-secret-key-base"
       },
-      "bundle", "exec", "ruby", "bin/provider-smoke", *args,
+      RbConfig.ruby, "bin/provider-smoke", *args,
       chdir: Rails.root.to_s
     )
   end
