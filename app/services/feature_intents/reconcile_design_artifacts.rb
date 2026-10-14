@@ -69,10 +69,17 @@ module FeatureIntents
     end
 
     def stale_metadata(artifact)
-      linked = artifact[:stored_identities].select { |identity| issue_identities.include?(identity) }
-      return [ "missing_tree", [ "No explicit qualified issue links were found" ] ] if linked.empty?
+      artifact[:stored_identities].then do |identities|
+        [ "stale_metadata", identities.map { |identity| stale_metadata_evidence(identity) } ]
+      end
+    end
 
-      [ "stale_metadata", linked.map { |identity| "Stored identity #{identity} is not linked from the artifact" } ]
+    def stale_metadata_evidence(identity)
+      if issue_identities.include?(identity)
+        "Stored identity #{identity} is not linked from the artifact"
+      else
+        "Stored identity #{identity} could not be found in GitHub coverage"
+      end
     end
 
     def qualified_references(values)

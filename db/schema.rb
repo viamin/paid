@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_102522) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1306,6 +1306,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_102522) do
     t.index ["project_id", "status"], name: "index_design_amendments_on_project_id_and_status"
     t.index ["project_id"], name: "index_design_amendments_on_project_id"
     t.index ["status"], name: "index_design_amendments_on_status"
+  end
+
+  create_table "design_artifact_findings", comment: "Durable issue-tree traceability gaps found while reconciling repository design artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "artifact_path", limit: 2048, null: false
+    t.datetime "covered_at", null: false, comment: "When the GitHub issue coverage used for this finding was read."
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: [], null: false
+    t.string "fingerprint", limit: 64, null: false, comment: "Stable reconciliation finding identity for one artifact, revision, and state."
+    t.bigint "project_id", null: false
+    t.datetime "resolved_at"
+    t.string "revision", limit: 255, null: false
+    t.string "state", limit: 32, null: false, comment: "missing_tree, partial_tree, stale_metadata, deferred, or unverifiable."
+    t.string "status", limit: 16, default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_design_artifact_findings_on_account_id"
+    t.index ["project_id", "fingerprint"], name: "index_design_artifact_findings_on_project_id_and_fingerprint", unique: true
+    t.index ["project_id", "status"], name: "index_design_artifact_findings_on_project_id_and_status"
+    t.index ["project_id"], name: "index_design_artifact_findings_on_project_id"
+    t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying, 'partial_tree'::character varying, 'stale_metadata'::character varying, 'deferred'::character varying, 'unverifiable'::character varying]::text[])", name: "chk_design_artifact_findings_state"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
   end
 
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
@@ -4111,6 +4132,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_102522) do
   add_foreign_key "design_amendments", "feature_intents"
   add_foreign_key "design_amendments", "projects"
   add_foreign_key "design_amendments", "users", column: "approved_by_id"
+  add_foreign_key "design_artifact_findings", "accounts", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "projects", on_delete: :cascade
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"

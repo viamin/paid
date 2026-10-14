@@ -391,6 +391,7 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      get "projects/:project_id/design_artifact_findings", to: "design_artifact_findings#index"
       scope "chat" do
         resources :sessions, controller: "chat_sessions", only: %i[index create show update destroy] do
           patch :archive, on: :member

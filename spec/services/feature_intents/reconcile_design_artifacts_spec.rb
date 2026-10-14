@@ -64,4 +64,17 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
 
     expect(result.findings.map(&:state)).to contain_exactly("partial_tree", "stale_metadata")
   end
+
+  it "retains an unknown stored identity as stale metadata evidence" do
+    result = described_class.call(
+      project:,
+      revision: "a" * 40,
+      artifacts: [ { path: "docs/rdrs/RDR-105.md", related_issues: [], stored_identities: [ "acme/widget#99" ] } ],
+      issues:
+    )
+
+    finding = result.findings.sole
+    expect(finding.state).to eq("stale_metadata")
+    expect(finding.evidence).to include("Stored identity acme/widget#99 could not be found in GitHub coverage")
+  end
 end
