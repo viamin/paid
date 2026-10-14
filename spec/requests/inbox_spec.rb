@@ -57,6 +57,95 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  # @spec OPERATOR-INBOX-017
+  it "renders question actions before requesting GitHub-only context" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body)
+    expect(github_client).not_to receive(:issue_comments)
+
+    get inbox_entry_path(entry_id("clarifying_questions", issue)), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    frame = document.at_css("turbo-frame#inbox-supplement")
+    expect(frame["loading"]).to eq("lazy")
+    expect(frame["src"]).to include("/supplement")
+    expect(document.at_css("textarea[data-testid='inbox-answer-0']")).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "loads only the selected detail without querying unrelated lanes or rendering the queue" do
+    issue = create(:issue, :needs_input, project: project, title: "Selected question", body: questions_body)
+    create(:issue, :needs_input, project: project, title: "Other question", body: questions_body)
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+        headers: { "Turbo-Frame" => "inbox-detail" }
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include('id="inbox-detail"', "Selected question")
+    expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
+    expect(queries.grep(/FROM "(?:decomposition_decisions|feature_intents|change_intents|issue_continuation_requests)"/)).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "rejects a detail frame selection excluded by the kind filter" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue), kind: "plan_review"),
+      headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to redirect_to(inbox_path(kind: "plan_review"))
+  end
+
+  # @spec OPERATOR-INBOX-015 @spec OPERATOR-INBOX-017
+  it "does not expose another owner's entry in detail or supplementary frames" do
+    hidden_project = create(:project, account: account, created_by: create(:user, account: account))
+    hidden_issue = create(:issue, :needs_input, project: hidden_project, body: questions_body)
+    key = entry_id("clarifying_questions", hidden_issue)
+    expect(github_client).not_to receive(:issue_comments)
+
+    get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response).to redirect_to(inbox_path)
+
+    get inbox_entry_supplement_path(key), headers: { "Turbo-Frame" => "inbox-supplement" }
+    expect(response).to have_http_status(:ok)
+    expect(Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-supplement").text.strip).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "honors the project filter on selected detail requests" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body)
+
+    get inbox_entry_path(entry_id("clarifying_questions", issue), project_id: second_project.id),
+      headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to redirect_to(inbox_path(project_id: second_project.id))
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "redirects malformed and resolved detail selections" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body, github_state: "closed")
+    [ "clarifying_questions:invalid", "invalid:#{issue.id}", "clarifying_questions:#{issue.id}" ].each do |key|
+      get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+      expect(response).to redirect_to(inbox_path)
+    end
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "promotes a stale detail redirect to a full-page visit even when the inbox is empty" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body, github_state: "closed")
+
+    get inbox_entry_path(entry_id("clarifying_questions", issue)), headers: { "Turbo-Frame" => "inbox-detail" }
+    follow_redirect!(headers: { "Turbo-Frame" => "inbox-detail" })
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Inbox clear")
+    expect(Nokogiri::HTML(response.body).at_css('meta[name="turbo-visit-control"]')&.[]("content")).to eq("reload")
+  end
+
   def create_inbox_entries
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
     create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
@@ -1108,11 +1197,16 @@ RSpec.describe "Inbox" do
 
   # @spec OPERATOR-INBOX-002D
   it "links the manual_review detail pane to the enhancement comment when it can be resolved" do
+    project.update!(github_token: nil, github_installation: create(:github_installation, :covering_project, account: account, project: project))
+    allow(Github::AppInstallation).to receive(:token_for).and_return("installation-token")
     parked = create_manual_review_issue(title: "Parked issue", github_number: 516)
     comment_url = "#{parked.github_url}#issuecomment-1"
-    allow(Inbox::ManualReviewCommentLink).to receive(:call).and_return(comment_url)
+    allow(github_client).to receive(:issue_comments).and_return([
+      double(body: IssueEnhancements::StopForManualReview::COMMENT_MARKER,
+        html_url: comment_url, user: double(login: Github::AppRegistry.bot_login))
+    ])
 
-    get inbox_entry_path(
+    get inbox_entry_supplement_path(
       entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
       kind: Inbox::Queue::MANUAL_REVIEW_KIND
     )
@@ -1273,7 +1367,7 @@ RSpec.describe "Inbox" do
     it "renders the context panel inside a details disclosure with the preamble + Current context body wired into markdown-text" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
-      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Context from Paid")
@@ -1292,15 +1386,15 @@ RSpec.describe "Inbox" do
 
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
-      grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']").parent
-      expect(grid["class"]).to include("lg:grid")
-      expect(grid["class"]).to include("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-layout']")
+      expect(grid["class"]).to include("lg:has-[[data-testid=inbox-clarifying-context]]:grid")
+      expect(grid["class"]).to include("grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
     end
 
     it "does not collapse the disclosure on lg+ so the operator does not have to tap to read context" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
-      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
       # OPERATOR-INBOX-011 expects the context to be visible by default on lg+
@@ -1309,14 +1403,13 @@ RSpec.describe "Inbox" do
       # Nokogiri represents a present boolean attribute as `""`, so we look
       # for the attribute itself rather than a truthy string value.
       expect(panel.attribute("open")).not_to be_nil
-      expect(panel["class"]).to include("lg:sticky")
       expect(panel.at_css("summary")["class"]).to include("lg:cursor-default")
     end
 
     it "escapes the fallback text so it never renders as raw HTML before JS runs" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
-      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       # The comment contains a markdown backtick, so the fallback should ship
       # the escaped raw string — never a live <code> tag — until the JS
@@ -1356,9 +1449,9 @@ RSpec.describe "Inbox" do
       expect(response).to have_http_status(:ok)
       expect(response.body).not_to include("Context from Paid")
       expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
-      # The two-column grid wrapper is only emitted when context_markdown
-      # is present, so absence here is the signal that we fell back cleanly.
-      expect(response.body).not_to include("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
       # Existing form + View Issue link remain so the operator can still
       # answer the question and consult GitHub directly.
       expect(response.body).to include("View Issue")

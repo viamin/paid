@@ -5,6 +5,16 @@ require "rails_helper"
 RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
   let(:project) { create(:project, auto_pick_enabled: true) }
 
+  # @spec OPERATOR-INBOX-016
+  it "limits closeout eligibility checks to supplied candidates without bypassing guards" do
+    eligible = create(:issue, project: project, github_state: "open")
+    held = create(:issue, project: project, github_state: "open")
+    held.update_columns(paused: true)
+    create(:issue, project: project, github_state: "open")
+
+    expect(described_class.eligible_scope(project, issue_ids: [ eligible.id, held.id ]).pluck(:id)).to eq([ eligible.id ])
+  end
+
   describe ".next_candidate" do
     it "returns the top-ranked eligible issue for the project" do
       issue = create(:issue, project: project, github_state: "open")

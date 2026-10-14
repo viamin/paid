@@ -453,8 +453,8 @@
   alongside the answer form: the "Current Context" section plus the prose
   that introduced the `## Clarifying questions` heading (the "preamble").
   The context SHALL be surfaced via `ClarifyingQuestions::Load#context_markdown`
-  reusing the same `issue_comments` list the queue already loads (no extra
-  GitHub API call), SHALL flow through `Inbox::Queue::Entry#context_markdown`,
+  in a separate lazy Turbo Frame, fetching comments once per supplementary
+  request, SHALL flow through `Inbox::Queue::Entry#context_markdown`,
   and SHALL be exposed through `shared/markdown_text` rendered in block
   mode so paragraphs and lists keep their structure. On `lg+` viewports
   the context SHALL sit in a two-column grid beside the questions; below
@@ -575,3 +575,36 @@
   `app/views/inbox/index.html.erb`, `app/controllers/projects/change_intents_controller.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`,
   `spec/services/inbox/count_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-015** — When a signed-in operator requests the
+  `inbox-detail` Turbo Frame, the system SHALL resolve only the requested
+  entry using its lane's current visibility, admission, and active filters,
+  render only the detail frame, and avoid building other lanes or filter
+  availability. Missing, malformed, resolved, or unauthorized entries SHALL
+  redirect to the filtered Inbox as a full-page navigation so the queue and
+  empty state refresh without a missing-frame error. Opening an Inbox chat
+  SHALL revalidate membership with the same targeted lookup rather than
+  rebuilding other lanes.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+
+- [x] **OPERATOR-INBOX-016** — When the system renders an unfiltered Inbox,
+  it SHALL derive filter availability from the entries already built for
+  that request and reuse a partial-closeout entry's computed status and
+  evidence when rendering its detail and assessment. Closeout candidate
+  discovery SHALL batch visible projects, eligibility checks SHALL restrict
+  their scope to closeout candidates without bypassing admission guards,
+  prerequisites SHALL be read once per status, and assessment reads SHALL
+  exclude unrelated agent-run payloads such as transcripts.
+  *Test:* `spec/services/inbox/availability_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`,
+  `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/partial_closeouts/assessment_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+
+- [x] **OPERATOR-INBOX-017** — When an Inbox detail needs GitHub-only
+  context or an enhancement-comment link, the system SHALL load that
+  supplementary content in a separate lazy Turbo Frame so the queue and
+  local detail actions render without waiting for GitHub. The supplementary
+  request SHALL recheck entry visibility and lane membership and render an
+  empty frame if the entry is no longer available.
+  *Test:* `spec/requests/inbox_spec.rb`.

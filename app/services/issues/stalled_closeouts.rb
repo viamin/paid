@@ -14,25 +14,33 @@ module Issues
   class StalledCloseouts
     Pair = Struct.new(:issue, :status, keyword_init: true)
 
-    def self.call(projects)
-      projects.flat_map { |project| pairs_for(project) }
+    # @spec OPERATOR-INBOX-016
+    def self.call(projects, issue_id: nil)
+      return [] if projects.empty?
+
+      scope = candidates_for(projects)
+      scope = scope.where(id: issue_id) if issue_id
+      candidates_by_project = scope.to_a.group_by(&:project_id)
+      projects.flat_map do |project|
+        pairs_for(project, candidates: candidates_by_project.fetch(project.id, []))
+      end
     end
 
-    def self.pairs_for(project)
-      candidates = candidates_for(project).to_a
+    def self.pairs_for(project, candidates: candidates_for(project).to_a)
       return [] if candidates.empty?
 
       eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_scope(project).pluck(:id).to_set
+        .eligible_scope(project, issue_ids: candidates.map(&:id)).pluck(:id).to_set
       # The scoped admission decision each candidate's continuation would
       # face at dequeue (`CloseoutStatus#residual_eligibility_blocker`),
       # batched once per project. The guards are per-issue, so authorizing
       # every candidate at once yields each candidate's own scoped verdict.
       continuation_eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_scope(project, continuation_authorized_issue_ids: candidates.map(&:id))
+        .eligible_scope(project, continuation_authorized_issue_ids: candidates.map(&:id), issue_ids: candidates.map(&:id))
         .pluck(:id).to_set
 
       candidates.filter_map do |issue|
+        issue.project = project
         status = CloseoutStatus.call(
           issue,
           eligible_issue_ids: eligible_ids,
@@ -51,7 +59,7 @@ module Issues
         project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
       ).where.not(issue_id: nil).select(:issue_id)
 
-      project.issues.includes(:project)
+      Issue.where(project: project)
         .where(github_state: "open", is_pull_request: false, paused: false)
         .where.not(paid_state: %w[needs_input manual_review])
         .where(runner_retry_abandoned_at: nil)
