@@ -32,6 +32,15 @@ and the run-scoped file boundary checks in
   review only through the existing completed-run, round, and retry limits; it
   never manufactures an unbounded pending trigger after those guards decline
   to request another review.
+- Draft-round cap: test-revision follow-ups caused by a persistent rejected
+  test verdict are subject to the same `max_draft_review_rounds` hard cap as
+  every other automatic draft follow-up, including no-change outcomes. At the
+  cap Paid escalates to the operator instead of scheduling another revision.
+  A current actionable human review thread may still take the normal
+  human-feedback path, and a test approval may still start implementation;
+  neither exception turns a persistent automated rejection into an unbounded
+  test-revision route. A configured zero limit remains disabled, and an
+  operator restart explicitly resets the normal draft attempt budget.
 - PR-body review sections derived mechanically from the run diff:
   - `## Test Outline` for any PR whose diff touches tests.
   - `## LID Phase Report` for LID-enabled projects, summarizing changed LID

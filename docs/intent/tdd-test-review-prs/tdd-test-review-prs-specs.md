@@ -51,3 +51,17 @@
   `app/controllers/api/github_proxy_controller.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/requests/api/github_proxy_spec.rb`.
+
+- [x] **TDD-PR-007** — When strict or non-strict TDD test review requests a
+  test revision and `draft_review_count` has reached a positive configured
+  `max_draft_review_rounds`, the scanner SHALL escalate to the operator rather
+  than schedule another automatic test-revision run, whether the verdict comes
+  from GitHub labels or Paid-local control state and including repeated
+  no-change outcomes. A current actionable human review thread MAY proceed
+  through the ordinary human-feedback path, and an approved test verdict SHALL
+  still transition to implementation; neither exception SHALL permit repeated
+  automated rejected-test revisions beyond the cap. A zero limit SHALL remain
+  disabled and an explicit operator restart SHALL retain its established
+  counter-reset semantics.
+  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

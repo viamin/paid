@@ -873,9 +873,10 @@ module Activities
         type: "tdd_tests_approved",
         details: "Test review approved; implementation may begin") if issue.effective_tdd_review_state == "approved"
 
-      return tdd_followup_trigger(issue,
-        type: "tdd_test_changes_requested",
-        details: "Test review requested changes before implementation") if issue.effective_tdd_review_state == "changes_requested"
+      if issue.effective_tdd_review_state == "changes_requested"
+        return tdd_test_revision_result(project, client, issue,
+          details: "Test review requested changes before implementation")
+      end
 
       return nil if tdd_mode == "strict"
 
@@ -900,8 +901,7 @@ module Activities
 
       if tdd_review_rejected?(status_triggers)
         sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
-        return tdd_followup_trigger(issue,
-          type: "tdd_test_changes_requested",
+        return tdd_test_revision_result(project, client, issue,
           details: "Automated test review requested changes before implementation")
       end
 
@@ -917,6 +917,19 @@ module Activities
 
       pending_review = check_paid_agent_review_status(project, issue)
       draft_trigger_payload(issue, pending_review) if pending_review.any?
+    end
+
+    # @spec TDD-PR-007
+    # A rejected test verdict is an automatic draft follow-up just like CI or
+    # review-bot feedback. Let real human threads fall through to the normal
+    # draft scan, but never let a persistent TDD verdict bypass the hard cap.
+    def tdd_test_revision_result(project, client, issue, details:)
+      return tdd_followup_trigger(issue, type: "tdd_test_changes_requested", details:) unless draft_review_limit_reached?(project, issue)
+
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return :not_applicable if human_review_thread_triggers(project, unresolved_threads).any?
+
+      escalate_trigger(issue)
     end
 
     def current_tdd_test_review_verdicts(project, issue, reviews, pr_data: nil)
