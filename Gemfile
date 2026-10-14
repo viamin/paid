@@ -191,7 +191,7 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.21"
+gem "good_job", "~> 4.22"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.7"
