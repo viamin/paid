@@ -70,3 +70,9 @@
   same database SHALL be identical.
   *Tests:* `spec/config/schema_column_order_spec.rb`.
   *Code:* `config/initializers/schema_column_order.rb`.
+
+- [x] **POSTGRESQL-PERSISTENCE-010** — The checked-in primary and cable schema
+  artifacts SHALL define disjoint table sets. CI SHALL reject a table appearing
+  in both artifacts, independent of migration replay or live database state.
+  *Tests:* `spec/config/schema_database_isolation_spec.rb`.
+  *Code:* `db/schema.rb`, `db/cable_schema.rb`.
