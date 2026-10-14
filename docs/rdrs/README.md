@@ -250,11 +250,15 @@ operations. Initial delivery is a bounded user-directed audit, evaluated with
 and without formal models. The user accepted the design on 2026-10-14. Implementation follows LID
 planning; acceptance does not claim that the capability has shipped.
 
-Earlier layered-verification proposals and audits used RDR-075, while the
-previous RDR-076 described an extension. Their active PRs and issue trees need
-reconciliation against this accepted design. Historical audit
-files retain their original names and numbering; they are not the current
-implementation contract. See [RDR-076's consolidation context](RDR-076.md#numbering-and-consolidation).
+The canonical tracking umbrella is
+[#4385](https://github.com/viamin/paid/issues/4385), with required replacement
+work #4431–#4438 and optional integrations #4439–#4440. The tree is
+planning-held pending accepted LID artifacts; implementation does not depend
+on closure of its own umbrella. The previous draft PRs and issue trees are
+superseded by [consolidation PR #4430](https://github.com/viamin/paid/pull/4430).
+Historical audit files retain their original names and numbering; they are
+not the current implementation contract. See
+[RDR-076's consolidation context](RDR-076.md#numbering-and-consolidation).
 
 ## Decision Summary
 
