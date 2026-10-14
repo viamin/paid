@@ -7,7 +7,7 @@
   `intent_conformance_shadow_review` for a released feature intent with an
   approved design revision, the system SHALL schedule and run an independent
   conformance review, while the final merge guard remains disabled because it
-  continues to require `approved_intent_amendments`.
+  continues to require the complete enforcement pair.
   *Code:* `app/services/intent_conformance/schedule_review.rb`,
   `app/services/intent_conformance/review_run.rb`,
   `app/services/intent_conformance/verify_at_merge.rb`.

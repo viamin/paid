@@ -7,10 +7,12 @@
 
 - [x] **INTENT-CONFORMANCE-REVIEW-001** — `IntentConformance::ReviewRun`
   SHALL apply only when the PR issue is linked to a `FeatureIntent` and the
-  project has either the `approved_intent_amendments` flag or the read-only
+  project has the complete enforcement pair (`approved_intent_amendments` and
+  `intent_conformance_enforcement`) or the read-only
   `intent_conformance_shadow_review` flag enabled; otherwise it SHALL be a
-  no-op and persist nothing. Shadow review alone SHALL not enable
-  `IntentConformance::VerifyAtMerge` (see INTENT-CONFORMANCE-ROLLOUT-001).
+  no-op and persist nothing. Shadow review or the amendment flag alone SHALL
+  not enable `IntentConformance::VerifyAtMerge` (see
+  INTENT-CONFORMANCE-ROLLOUT-001).
   *Code:* `app/services/intent_conformance/review_run.rb`.
   *Test:* `spec/services/intent_conformance/review_run_spec.rb`.
 

@@ -665,7 +665,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       # @spec INTENT-CONFORMANCE-010
       it "schedules one independent review for the live head of a released feature intent" do
-        project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+        project.account.tenant_setting!.update!(features: {
+          "approved_intent_amendments" => true,
+          "intent_conformance_enforcement" => true
+        })
         feature_intent = create(:feature_intent,
           project: project,
           status: "released",
@@ -709,7 +712,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         end
 
         before do
-          project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+          project.account.tenant_setting!.update!(features: {
+            "approved_intent_amendments" => true,
+            "intent_conformance_enforcement" => true
+          })
           create(:feature_intent_issue, feature_intent: feature_intent, issue: pr_issue)
         end
 

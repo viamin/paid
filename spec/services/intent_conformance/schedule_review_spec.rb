@@ -21,7 +21,7 @@ RSpec.describe IntentConformance::ScheduleReview do
   let(:head_sha) { "head-v1" }
 
   before do
-    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
     create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
   end
 
@@ -76,8 +76,8 @@ RSpec.describe IntentConformance::ScheduleReview do
       .and not_have_enqueued_job(IntentConformance::ReviewJob)
   end
 
-  it "does not schedule when the project has not opted into the rollout flag" do
-    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => false })
+  it "does not schedule when the project has not opted into shadow review or complete enforcement" do
+    project.account.tenant_setting!.update!(features: {})
 
     expect {
       schedule
@@ -88,6 +88,28 @@ RSpec.describe IntentConformance::ScheduleReview do
   # @spec INTENT-CONFORMANCE-ROLLOUT-001
   it "schedules a shadow review without enabling the amendment or merge guard" do
     project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
+
+    expect {
+      schedule
+    }.to change(IntentConformanceReviewSchedule, :count).by(1)
+      .and have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-001
+  it "does not schedule a shadow review when only the amendment flow is enabled" do
+    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+
+    expect {
+      schedule
+    }.to not_change(IntentConformanceReviewSchedule, :count)
+      .and not_have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
+  it "schedules an enforcement review only when both enforcement flags are enabled" do
+    project.account.tenant_setting!.update!(features: {
+      "approved_intent_amendments" => true,
+      "intent_conformance_enforcement" => true
+    })
 
     expect {
       schedule
