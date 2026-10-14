@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "psych"
+require "open3"
 
 class CiWorkflowFile < Pathname
 end
@@ -27,10 +28,32 @@ RSpec.describe CiWorkflowFile, :no_db do
       .find { |step| step["name"] == "Verify Postgres image pins and client install sources are in sync" }
   end
 
+  # @spec TEST-SUITE-003
+  it "assigns every shard index an isolated set of test services" do
+    job = workflow.fetch("jobs").fetch("test-shards")
+    count = Integer(job.fetch("env").fetch("RSPEC_SHARD_COUNT"))
+    expect(job.fetch("strategy").fetch("matrix").fetch("shard")).to eq((0...count).to_a)
+    expect(job.fetch("strategy").fetch("fail-fast")).to be(false)
+    expect(job.fetch("env").fetch("RSPEC_SHARD_INDEX")).to eq("${{ matrix.shard }}")
+    expect(job.fetch("services").keys).to include("postgres", "qdrant")
+  end
+
+  # @spec TEST-SUITE-006
+  it "fails the stable test check when any shard fails or is cancelled" do
+    job = workflow.fetch("jobs").fetch("test")
+    expect(job.fetch("needs")).to eq("test-shards")
+    expect(job.fetch("if")).to include("always()")
+    gate = job.fetch("steps").first.fetch("run")
+    %w[success failure cancelled skipped].each do |result|
+      _stdout, _stderr, status = Open3.capture3({ "SHARD_RESULT" => result }, "sh", "-c", gate)
+      expect(status.success?).to eq(result == "success")
+    end
+  end
+
   it "passes the expected test credentials to the database-backed ci jobs" do
     jobs = workflow.fetch("jobs")
 
-    expect(jobs.fetch("test").fetch("env")).to include(
+    expect(jobs.fetch("test-shards").fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
       "PAID_DEVELOPMENT_DATABASE" => "paid_test",
@@ -85,7 +108,7 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   it "installs ast-grep into a user-writable directory during the test job" do
-    install_step = workflow.fetch("jobs").fetch("test").fetch("steps")
+    install_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
       .find { |step| step["name"] == "Install ast-grep" }
 
     expect(install_step.fetch("run")).to include('mkdir -p "$HOME/.local/bin"')
@@ -94,7 +117,7 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   it "fetches full git history for the test job checkout" do
-    checkout_step = workflow.fetch("jobs").fetch("test").fetch("steps")
+    checkout_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
       .find { |step| step["name"] == "Checkout code" }
 
     expect(checkout_step.fetch("with")).to include(
