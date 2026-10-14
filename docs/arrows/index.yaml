@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -104,7 +104,7 @@ arrows:
     parent: PAID
     taxonomy: chat
     status: PARTIAL
-    audited: 2026-10-12
+    audited: 2026-10-13
     next: "Chat-entry/reuse, final-answer submission, access control and Inbox-chat context shipped (001, 002, 007, 014-017). Remaining: diagram cards (#4312), durable per-question progress (#4313), adaptive clarification and explicit preferences (#4316), bounded investigations (#4317), conversation-open API parity and the RDR-069 rollout-guard setting (#4311)."
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
@@ -114,7 +114,7 @@ arrows:
     taxonomy: intelligence
     status: MAPPED
     sampled: 2026-09-22
-    audited: 2026-10-12
+    audited: 2026-10-13
     next: "RDR-070 remains Accepted: implement facets/evidence (#4314), assessments/corpus (#4315), explicit preferences (#4316), and scoped 80/80 readiness (#4318) before a terminal closeout."
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
@@ -123,7 +123,7 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-10-12
+    audited: 2026-10-13
     blockedBy: [facet-confidence, question-exploration]
     next: "Approval-gated foundations are shipped; implement policy/enrollment foundation (#4310), facets/evidence (#4314), assessments (#4315), scoped readiness (#4318), held-issue publication and release (#4319), builder dispatch (#4320), completion follow-ups (#4321), then complete the RDR-070 audit (#4323)."
   apple-verification:
