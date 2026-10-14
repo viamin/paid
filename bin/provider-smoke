@@ -5,9 +5,8 @@ require "shellwords"
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 
-require "bundler/setup"
-require_relative "../config/environment"
-require_relative "../spec/support/runner_smoke_helpers"
+# @spec TEST-SUITE-010
+require_relative "../lib/runner_provider_catalog"
 
 # Runners for which Runners::TestAgent#container_provider_runtime has
 # direct-outbound smoke plumbing (i.e. an api_provider + model pair resolves
@@ -52,8 +51,8 @@ def usage
   DIRECT_OUTBOUND_RUNNER_KEYS.each do |runner_key|
     puts "      #{runner_key}:"
 
-    RunnerSmokeHelpers.provider_configs_for_runner(runner_key).each_key do |provider|
-      env_var = RunnerSmokeHelpers.api_key_env_var_for(runner_key: runner_key, api_provider: provider)
+    RunnerProviderCatalog.provider_configs_for_runner(runner_key).each_key do |provider|
+      env_var = RunnerProviderCatalog.api_key_env_var_for(runner_key: runner_key, api_provider: provider)
       puts "        #{provider.ljust(14)} #{env_var || '(no env var mapping)'}"
     end
   end
@@ -88,14 +87,14 @@ unless DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
   exit 1
 end
 
-provider_config = RunnerSmokeHelpers.provider_config_for(runner_key: runner_key, api_provider: provider)
+provider_config = RunnerProviderCatalog.provider_config_for(runner_key: runner_key, api_provider: provider)
 if provider_config.nil?
-  valid_providers = RunnerSmokeHelpers.provider_configs_for_runner(runner_key).keys.join(", ")
+  valid_providers = RunnerProviderCatalog.provider_configs_for_runner(runner_key).keys.join(", ")
   warn "Unsupported provider #{provider.inspect} for #{runner_key}. Supported: #{valid_providers}."
   exit 1
 end
 
-env_var = RunnerSmokeHelpers.api_key_env_var_for(runner_key: runner_key, api_provider: provider)
+env_var = RunnerProviderCatalog.api_key_env_var_for(runner_key: runner_key, api_provider: provider)
 if env_var && ENV[env_var].to_s.strip.empty?
   warn "Note: #{env_var} is not set; the test will be skipped unless a matching " \
        "provider/api key exists in the development DB."
@@ -107,7 +106,7 @@ env = {
   "PAID_SMOKE_ADHOC_RUNNER" => runner_key,
   "PAID_SMOKE_ADHOC_PROVIDER" => provider,
   "PAID_SMOKE_ADHOC_DIAGNOSTIC" => diagnostic.to_s,
-  RunnerSmokeHelpers::ADHOC_MODEL_ENV => model
+  RunnerProviderCatalog::ADHOC_MODEL_ENV => model
 }
 spec_command = [
   "bundle", "exec", "rspec",

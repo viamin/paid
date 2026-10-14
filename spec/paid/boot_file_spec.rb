@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "open3"
+require "rbconfig"
 
 class BootFile < Pathname
 end
@@ -29,7 +30,7 @@ RSpec.describe BootFile, :no_db do
         "RAILS_TEST_KEY" => "test-master-key",
         "RAILS_MASTER_KEY" => nil
       },
-      "bundle", "exec", "ruby", "-e", boot_script,
+      RbConfig.ruby, "-e", boot_script,
       chdir: Rails.root.to_s
     )
 
@@ -44,7 +45,7 @@ RSpec.describe BootFile, :no_db do
         "RAILS_TEST_KEY" => "test-master-key",
         "RAILS_MASTER_KEY" => "already-set"
       },
-      "bundle", "exec", "ruby", "-e", boot_script,
+      RbConfig.ruby, "-e", boot_script,
       chdir: Rails.root.to_s
     )
 
@@ -59,7 +60,7 @@ RSpec.describe BootFile, :no_db do
         "RAILS_TEST_KEY" => "",
         "RAILS_MASTER_KEY" => ""
       },
-      "bundle", "exec", "ruby", "-e", boot_script,
+      RbConfig.ruby, "-e", boot_script,
       chdir: Rails.root.to_s
     )
 
@@ -74,7 +75,7 @@ RSpec.describe BootFile, :no_db do
         "RAILS_TEST_KEY" => "test-master-key",
         "RAILS_MASTER_KEY" => nil
       },
-      "bundle", "exec", "ruby", "-e", boot_script,
+      RbConfig.ruby, "-e", boot_script,
       chdir: Rails.root.to_s
     )
 
@@ -88,9 +89,13 @@ RSpec.describe BootFile, :no_db do
         "RAILS_ENV" => "test",
         "RAILS_TEST_KEY" => nil,
         "RAILS_MASTER_KEY" => nil,
-        "SECRET_KEY_BASE" => "test-secret-key-base"
+        "SECRET_KEY_BASE" => "test-secret-key-base",
+        # Test-prof output must not replace the credential probe's result.
+        "FPROF" => nil,
+        "FDOC" => nil,
+        "EVENT_PROF" => nil
       },
-      "bundle", "exec", "ruby", "-e", environment_boot_script,
+      RbConfig.ruby, "-e", environment_boot_script,
       chdir: Rails.root.to_s
     )
 

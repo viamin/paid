@@ -76,7 +76,8 @@ The most common follow-up optimizations are:
 - Replace `create(...)` with `build(...)` or `build_stubbed(...)` when persistence is not required.
 - Use `create_default(...)` selectively to reduce factory cascades in deeply-associated factories.
 - Collapse repeated factory graphs by reusing already-created account/user/project fixtures inside a spec when creator fields are not part of the assertion.
-- Promote very stable, heavily reused persisted graphs into `fixture_kit` definitions under `spec/fixture_kit/` only when the profiling data shows that the extra risk is justified.
+- For stable setup reused throughout a group, use test-prof `let_it_be(..., refind: true)` to retain a group transaction while refetching fresh records per example. Keep scenario-specific records per example. See `spec/support/hotspot_projects.rb` for scoped examples.
+- Promote very stable, heavily reused persisted graphs into `fixture_kit` definitions under `spec/fixture_kit/` only when profiling justifies it. Compare actual CI timings: replaying snapshots and verifying foreign keys can cost more than the factories they replace.
 
 ## Deep-Dive Findings
 
