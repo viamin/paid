@@ -58,7 +58,9 @@ module Tdd
 
     def update_remote_labels
       project.client.add_labels_to_issue(project.full_name, pull_request_number, [ READY_LABEL ])
-      VERDICT_LABELS.each { |label| project.client.remove_label_from_issue(project.full_name, pull_request_number, label) }
+      verdict_labels_to_remove.each do |label|
+        project.client.remove_label_from_issue(project.full_name, pull_request_number, label)
+      end
     end
 
     def update_local_gate
@@ -81,6 +83,10 @@ module Tdd
 
     def local_pull_request
       project.issues.find_by(github_number: pull_request_number, is_pull_request: true)
+    end
+
+    def verdict_labels_to_remove
+      Array(local_pull_request&.labels) & VERDICT_LABELS
     end
 
     def failure(error)

@@ -22,6 +22,10 @@ RSpec.describe Tdd::PublishTestRevision do
   end
 
   it "returns a revised test commit to review and removes the preceding rejection" do
+    allow(github_client).to receive(:remove_label_from_issue)
+      .with(project.full_name, 42, "paid-tests-approved")
+      .and_raise(GithubClient::NotFoundError, "Label does not exist")
+
     result = described_class.call(agent_run: agent_run)
 
     expect(result).to be_success
@@ -29,6 +33,18 @@ RSpec.describe Tdd::PublishTestRevision do
       .with(project.full_name, 42, [ "paid-tests-ready-for-review" ])
     expect(github_client).to have_received(:remove_label_from_issue)
       .with(project.full_name, 42, "paid-test-changes-requested")
+    expect(github_client).not_to have_received(:remove_label_from_issue)
+      .with(project.full_name, 42, "paid-tests-approved")
+    expect(pull_request.reload.labels).to contain_exactly("paid-tests-ready-for-review")
+  end
+
+  it "does not remove verdict labels when the pull request has no verdict" do
+    pull_request.update!(labels: [])
+
+    result = described_class.call(agent_run: agent_run)
+
+    expect(result).to be_success
+    expect(github_client).not_to have_received(:remove_label_from_issue)
     expect(pull_request.reload.labels).to contain_exactly("paid-tests-ready-for-review")
   end
 
