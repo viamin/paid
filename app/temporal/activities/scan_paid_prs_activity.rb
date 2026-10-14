@@ -927,6 +927,8 @@ module Activities
       return tdd_followup_trigger(issue, type: "tdd_test_changes_requested", details:) unless draft_review_limit_reached?(project, issue)
 
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return :skipped if unresolved_threads.nil?
+
       return :not_applicable if human_review_thread_triggers(project, unresolved_threads).any?
 
       escalate_trigger(issue)

@@ -12057,6 +12057,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).to include("queue_create_pr_run")
     end
 
+    it "defers an exhausted rejected-test revision when review threads are unavailable" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict", max_draft_review_rounds: 10)
+      pull_request.update!(
+        draft_review_count: 10,
+        labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ]
+      )
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_raise(GithubClient::Error, "GitHub review threads API unavailable")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+    end
+
     it "queues an automated review run in non-strict mode while tests are awaiting verdict" do
       project.update!(tdd_mode: "non_strict")
       enable_paid_agent_review!
