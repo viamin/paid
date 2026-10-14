@@ -91,7 +91,7 @@ module Automation
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
             epic_ids = epic_issue_ids(project)
             base = without_open_non_pr_subissues(
               base_scope(
@@ -101,6 +101,7 @@ module Automation
                 continuation_authorized_issue_ids: continuation_authorized_issue_ids
               )
             )
+            base = base.where(id: issue_ids) if issue_ids
             scope = apply_issue_analysis_backoff(Issue.auto_pick_eligible_paid_state_scope(base), project)
 
             # @spec INTENT-AMENDMENT-009 — branches held by a design

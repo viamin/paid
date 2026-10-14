@@ -1,4 +1,6 @@
 <% content_for(:title) { "Inbox - Paid" } %>
+<%# @spec OPERATOR-INBOX-015 %>
+<% turbo_page_requires_reload if turbo_frame_request_id == "inbox-detail" %>
 
 <%# @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 @spec INBOX-FOUNDATION-009 %>
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"

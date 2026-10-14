@@ -55,12 +55,8 @@
           target: "_blank",
           rel: "noopener noreferrer",
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-    <% if entry.manual_review_comment_url.present? %>
-      <%= link_to "View enhancement comment",
-            entry.manual_review_comment_url,
-            target: "_blank",
-            rel: "noopener noreferrer",
-            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-    <% end %>
+    <%= turbo_frame_tag "inbox-supplement",
+          src: inbox_entry_supplement_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
+          loading: :lazy %>
   </div>
 </div>

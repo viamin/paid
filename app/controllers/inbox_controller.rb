@@ -2,10 +2,11 @@
 
 class InboxController < ApplicationController
   before_action :authenticate_user!
-  before_action :load_inbox, only: %i[index show open_chat]
+  before_action :load_inbox, only: %i[index show open_chat supplement]
 
   # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
   def index
+    flash.keep if turbo_frame_request_id == "inbox-detail"
     @selected_entry = @inbox_entries.first
     @detail_view = false
   end
@@ -21,7 +22,7 @@ class InboxController < ApplicationController
     return redirect_to(inbox_path(**inbox_redirect_params), status: :see_other) unless @selected_entry
 
     @detail_view = true
-    render :index
+    render(detail_frame_request? ? :show : :index)
   end
 
   # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
@@ -43,17 +44,42 @@ class InboxController < ApplicationController
     @inbox_count = Inbox::Count.call(user: current_user)
   end
 
+  # @spec OPERATOR-INBOX-017
+  def supplement
+    @selected_entry = resolve_selected_entry(@inbox_entries)
+  end
+
   private
 
   # @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010 @spec INBOX-FOUNDATION-011
+  # @spec OPERATOR-INBOX-016
   def load_inbox
     @scoped_project = scoped_needs_input_project
     @selected_kind = valid_inbox_kind
     @selected_sort = valid_inbox_sort
-    @inbox_availability = Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
-    @inbox_projects = @inbox_availability.available_projects
+    if detail_frame_request? || %w[open_chat supplement].include?(action_name)
+      @inbox_entries = selected_entry_queue
+      return
+    end
+
     @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind, sort: @selected_sort)
+    @inbox_availability = if @scoped_project.nil? && @selected_kind.nil?
+      Inbox::Availability.call(user: current_user, entries: @inbox_entries)
+    else
+      Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+    end
+    @inbox_projects = @inbox_availability.available_projects
     redirect_for_empty_filtered_combination
+  end
+
+  # @spec OPERATOR-INBOX-015
+  def detail_frame_request?
+    action_name == "show" && turbo_frame_request_id == "inbox-detail"
+  end
+
+  def selected_entry_queue
+    [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
+      project: @scoped_project, kind: @selected_kind) ].compact
   end
 
   # A filter combination with no matching items would otherwise render the

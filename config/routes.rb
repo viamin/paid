@@ -61,6 +61,7 @@ Rails.application.routes.draw do
   get "inbox/count", to: "inbox#count", as: :inbox_count
   get "inbox/partial-closeout-guide", to: "inbox#partial_closeout_guide", as: :partial_closeout_guide
   post "inbox/:entry_id/interactive_chat", to: "inbox#open_chat", as: :inbox_interactive_chat
+  get "inbox/:entry_id/supplement", to: "inbox#supplement", as: :inbox_entry_supplement
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
   get "dashboard/inbox/entries/:entry_kind/:entry_id", to: "legacy_inbox_redirects#show", as: :dashboard_inbox_entry

@@ -40,6 +40,23 @@ RSpec.describe Inbox::Availability do
   end
 
   describe "#kind_counts and #available_kinds" do
+    # @spec OPERATOR-INBOX-016
+    it "derives counts and projects from supplied entries without database queries" do
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      entries = Inbox::Queue.call(user: user)
+      queries = []
+      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        availability = described_class.call(user: user, entries: entries)
+        expect(availability.available_projects.map(&:id)).to eq([ project_a.id ])
+        expect(availability.kind_counts["clarifying_questions"]).to eq(1)
+        expect(availability.total_count).to eq(entries.size)
+      end
+
+      expect(queries).to be_empty
+    end
+
     it "counts entries per kind across visible projects and hides kinds with nothing waiting" do
       create(:issue, :needs_input, project: project_a, body: questions_body)
       create(:issue, :needs_input, project: project_b, body: questions_body)

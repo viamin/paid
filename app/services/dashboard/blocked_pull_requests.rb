@@ -20,8 +20,9 @@ module Dashboard
 
     def self.call(...) = new(...).call
 
-    def initialize(account:)
+    def initialize(account:, pull_request_id: nil)
       @account = account
+      @pull_request_id = pull_request_id
     end
 
     def call
@@ -36,6 +37,7 @@ module Dashboard
 
     def blocked_scope
       Issue.joins(:project)
+        .then { |scope| @pull_request_id ? scope.where(id: @pull_request_id) : scope }
         .where(projects: { account_id: account.id })
         .where(is_pull_request: true, github_state: "open", pr_review_phase: "escalated")
         .excluding_body

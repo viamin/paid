@@ -56,6 +56,23 @@ own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
 `inbox-master-detail` Stimulus controller; only the layout rules move to the
 shared pattern.
 
+## Request cost
+
+Inbox detail-frame requests resolve only the requested entry through its
+lane's existing visibility and admission rules and render only `inbox-detail`.
+They do not build filter availability or render the queue. Invalid, resolved,
+filtered-out, and unauthorized entries return to the filtered inbox with a
+full-page navigation that refreshes the list, filters, and empty state.
+Interactive-chat authorization revalidates the entry with the same targeted
+lookup, retaining the current lane policy and membership checks.
+Full unfiltered renders derive filter availability from the queue already
+built for the request. Closeout entries carry their computed status through
+to the detail pane and assessment so rendering does not repeat admission or
+terminal-evidence queries.
+GitHub-only context and enhancement-comment links load in a separate lazy
+Turbo Frame after the local detail and its actions have rendered. That request
+rechecks current queue membership and returns an empty frame for stale entries.
+
 ## Entry Kinds
 
 ### `clarifying_questions`
@@ -85,8 +102,8 @@ The entry payload also carries the agent-authored context that surrounded
 the numbered questions in the latest enhancement comment — the
 "Current Context" section plus the prose that introduced the
 `## Clarifying questions` heading — as `context_markdown`, surfaced by
-`ClarifyingQuestions::Load#context_markdown` reusing the cached
-`issue_comments` list the queue already loads. The inbox detail pane
+`ClarifyingQuestions::Load#context_markdown` fetching and memoizing
+`issue_comments` in the separate supplementary request. The inbox detail pane
 (`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
 viewports (two-column grid, sticky scrollable sidebar) and inside a
 collapsible native `<details>` disclosure above the questions on smaller

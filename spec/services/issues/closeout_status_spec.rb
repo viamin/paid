@@ -7,6 +7,19 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
   let(:project) { create(:project, account: account, owner: "acme", repo: "alpha") }
   let(:issue) { create(:issue, project: project, github_state: "open", paid_state: "in_progress") }
 
+  # @spec OPERATOR-INBOX-016
+  it "reads prerequisites once for both blockers and the status summary" do
+    issue
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [])
+    end
+
+    expect(queries.grep(/SELECT "issues"\."github_number" FROM "issues"/).size).to eq(1)
+  end
+
   def merged_partial_pr(number:)
     create(
       :issue,

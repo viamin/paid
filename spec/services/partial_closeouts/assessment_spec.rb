@@ -9,6 +9,23 @@ RSpec.describe PartialCloseouts::Assessment do
     create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
   end
 
+  # @spec OPERATOR-INBOX-016
+  it "reads assessment data without loading agent run transcripts or requerying supplied evidence" do
+    pull_request
+    run = create(:agent_run, :completed, project: project, issue: issue)
+    run.update!(reconciliation: { "assessment" => described_class.snapshot(run, { "classification" => "unknown" }) })
+    evidence = Issues::CloseoutEvidence.call(issue)
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      expect(described_class.call(issue, evidence: evidence).stale?).to be(false)
+    end
+
+    expect(queries.grep(/SELECT "agent_runs"\.\*/)).to be_empty
+    expect(queries.grep(/SELECT .*FROM "issues"/)).to be_empty
+  end
+
   # @spec PARTIAL-CLOSEOUT-023
   it "keeps a closed child unmet and marks the audit stale instead of inventing acceptance" do
     pull_request
