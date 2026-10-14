@@ -63,7 +63,12 @@ module IntentConformance
 
     def ensure_ledger_matches_head!(repo_root, ledger_path, relative_path)
       content, _stderr, status = Open3.capture3("git", "-C", repo_root, "show", "HEAD:#{relative_path}")
-      raise invalid_ledger, "ledger file must be committed before validation" unless status.success? && File.binread(ledger_path) == content
+      # Compare bytes rather than characters so a different default external
+      # encoding (US-ASCII vs UTF-8) does not turn a byte-identical working
+      # tree into a validation failure.
+      disk_content = File.binread(ledger_path).force_encoding(Encoding::BINARY)
+      head_content = content.to_s.force_encoding(Encoding::BINARY)
+      raise invalid_ledger, "ledger file must be committed before validation" unless status.success? && disk_content == head_content
     rescue Errno::ENOENT
       raise invalid_ledger, "ledger file must be committed before validation"
     end

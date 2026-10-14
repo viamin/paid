@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_103406) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_103927) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2113,6 +2113,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_103406) do
     t.datetime "operational_failure_reset_at"
     t.datetime "orphaned_needs_input_label_evaluated_at", comment: "When the historical questionless needs-input label reconciliation last evaluated this issue. Cleared labels do not need a later backfill scan; labels added after the evaluation are handled directly by the GitHub sync delta."
     t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
+    t.datetime "paid_activated_at", comment: "Timestamp this issue/PR was most recently marked paid-activated. Distinct from updated_at so unrelated sync metadata cannot clear the activation signal."
+    t.string "paid_activation_state", comment: "Paid-local per-item activation state for ignored label mode. Set to 'activated' when a user marks this issue/PR as Paid's to work on; auto-pick, auto-enhance, and PR-scan scope read this column instead of GitHub labels in ignored mode."
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
@@ -2159,6 +2161,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_103406) do
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
     t.index ["project_id", "orphaned_needs_input_label_evaluated_at"], name: "index_issues_pending_orphaned_needs_input_label_evaluation", where: "(orphaned_needs_input_label_evaluated_at IS NULL)"
+    t.index ["project_id", "paid_activation_state"], name: "index_issues_on_project_id_and_paid_activation_state"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "paused"], name: "index_issues_on_project_id_and_paused"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
@@ -3541,6 +3544,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_103406) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_service_containers_on_account_id"
+  end
+
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
   end
 
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|

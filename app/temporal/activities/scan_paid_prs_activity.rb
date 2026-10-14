@@ -348,7 +348,7 @@ module Activities
       }.compact
     end
 
-    # @spec PR-ESCALATION-003
+    # @spec PR-ESCALATION-003 @spec LABEL-CONTROL-007
     def find_paid_prs(project)
       return upstream_conflict_fix_prs(project) if upstream_conflict_scan?(project)
 
@@ -391,12 +391,13 @@ module Activities
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008 LABEL-CONTROL-006
-    # Ignored-mode projects use the durable project setting as their activation
-    # surface: scanning all eligible local PRs does not depend on remote labels.
-    # Other modes retain the historical automation-label behavior.
+    # @spec LABEL-CONTROL-007 — Ignored-mode projects use Paid-local PR and
+    # parent activation state together with Paid-run linkage, never labels.
     def activation_scannable_prs(project, candidate_prs)
       if project.label_integration_mode == "ignored"
-        return project.auto_scan_prs ? candidate_prs : candidate_prs.none
+        return ignored_mode_scannable_prs(project, candidate_prs) if project.auto_scan_prs
+
+        return candidate_prs.none
       end
 
       if project.auto_scan_prs
@@ -415,13 +416,65 @@ module Activities
       end.or(candidate_prs.where(parent_issue_id: catchall_parent_issue_ids(project, candidate_prs)))
     end
 
+    # Explicit PR activation admits externally opened PRs. A paid-activated
+    # parent admits its child PRs, and Paid-run linkage preserves existing
+    # generated-PR scanning. Explicit deactivation wins over all three paths.
+    # @spec LABEL-CONTROL-007
+    def ignored_mode_scannable_prs(project, candidate_prs)
+      activated_parent_ids = project.issues.paid_activated.select(:id)
+      activated_prs = candidate_prs.paid_activated
+      parent_activated_prs = candidate_prs.where(parent_issue_id: activated_parent_ids)
+
+      paid_linked_scannable_prs(project, candidate_prs)
+        .or(activated_prs)
+        .or(parent_activated_prs)
+        .where("issues.paid_activation_state IS NULL OR issues.paid_activation_state != ?", "deactivated")
+    end
+
+    # Scoped to PRs a Paid agent run already linked back to the project.
+    # A parent_issue_id alone is user-declared GitHub content and is not
+    # Paid-work evidence; parent-linked PRs are instead admitted by the
+    # separately scoped paid-activated-parent path above. An agent run's
+    # pull_request_number is stamped when the PR is published, so a just-
+    # published PR is in scope before sync arrives.
+    # @spec LABEL-CONTROL-007
+    def paid_linked_scannable_prs(project, candidate_prs)
+      agent_run_pr_numbers = AgentRun
+        .where(project_id: project.id)
+        .where.not(pull_request_number: nil)
+        .select(:pull_request_number)
+
+      candidate_prs.where(
+        "issues.github_number IN (?)",
+        agent_run_pr_numbers
+      )
+    end
+
     def dependabot_auto_merge_prs(candidate_prs)
       candidate_prs.where("LOWER(github_creator_login) IN (?)", DEPENDABOT_AUTO_MERGE_AUTHORS.map(&:downcase))
     end
 
+    # @spec LABEL-CONTROL-007 — A local activation is an authorized operator
+    # decision. Parent activation carries that decision to its child PRs.
     def authorized_for_automation_scan?(project, issue)
       return true if project.trusted_github_author?(issue.github_creator_login)
       return true if dependency_update_bot_author?(issue.github_creator_login)
+
+      if project.paid_local_activation?
+        return true if issue.paid_activated?
+        return true if trusted_issue_catchall_for_pr?(project, issue)
+
+        Rails.logger.warn(
+          message: "pr_scanner.untrusted_pr_blocked",
+          project_id: project.id,
+          issue_id: issue.id,
+          pr_number: issue.github_number,
+          creator: issue.github_creator_login,
+          reason: "ignored_mode_untrusted_author"
+        )
+        return false
+      end
+
       # Setting-on projects build their scan set from the automation label, so
       # a trusted-added automation label must still authorize an untrusted
       # creator there — activation labels are additive-only (#3804 rule 3) and
@@ -446,6 +499,8 @@ module Activities
 
     # @spec AUTOMATION-ACTIVATION-006
     def trusted_pr_activation?(project, issue)
+      return false if project.paid_local_activation?
+
       %w[auto_scan_prs auto_merge auto_fix_merge_conflicts].any? do |feature|
         label = project.feature_activation_label_for(feature)
         label.present? && issue.has_label?(label) && trusted_user_added_label?(project, issue, label)
@@ -453,9 +508,15 @@ module Activities
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-006
+    # @spec LABEL-CONTROL-007 — In ignored mode the catchall label has no
+    # analog on parent issues; the activation signal is paid_activation_state.
     def trusted_issue_catchall_for_pr?(project, issue)
       parent_issue = issue.parent_issue
       return false unless parent_issue
+
+      if project.paid_local_activation?
+        return parent_issue.paid_activated?
+      end
 
       label = project.feature_activation_label_for("paid_in_full")
       label.present? && parent_issue.has_label?(label) && trusted_user_added_label?(project, parent_issue, label)

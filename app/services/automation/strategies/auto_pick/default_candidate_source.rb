@@ -292,7 +292,11 @@ module Automation
             end
 
             if project.label_integration_mode == "ignored"
-              base.where(auto_pick_excluded_reason: nil)
+              # @spec LABEL-CONTROL-007 — In ignored mode auto-pick must only
+              # operate on issues the user has explicitly marked as Paid's to
+              # work on (the activation label has no analog); excluded issues
+              # and the rest of the eligibility filters still apply.
+              base.where(paid_activation_state: "activated", auto_pick_excluded_reason: nil)
             else
               needs_input_excluded = project.needs_input_labels.reduce(base) do |scope, label|
                 scope.where.not("labels @> ?::jsonb", [ label ].to_json)
