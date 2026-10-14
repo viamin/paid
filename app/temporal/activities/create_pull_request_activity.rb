@@ -522,8 +522,11 @@ module Activities
       else
         best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
       end
+      best_effort(agent_run_id, context: "publish_tdd_test_revision") do
+        publish_tdd_test_revision(agent_run, pr.number) if agent_run.tdd_test_writing_phase? && pr_action != "reused"
+      end
       best_effort(agent_run_id, context: "add_pr_labels") do
-        add_pr_labels(client, project, pr.number, agent_run, issue: issue)
+        add_pr_labels(client, project, pr.number, issue: issue)
       end
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
@@ -1215,12 +1218,7 @@ module Activities
     end
 
     # @spec TDD-PR-001
-    def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
-      if agent_run.tdd_test_writing_phase?
-        publish_tdd_test_revision(agent_run, pr_number)
-        return if project.label_integration_mode == "ignored"
-      end
-
+    def add_pr_labels(client, project, pr_number, issue: nil)
       if project.label_integration_mode == "ignored"
         return
       end
