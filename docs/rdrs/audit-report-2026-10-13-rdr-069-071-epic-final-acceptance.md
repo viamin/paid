@@ -17,10 +17,12 @@ and the three per-RDR audits
 [RDR-071](audit-report-2026-10-12-rdr-071.md))
 using the [RDR Closeout Checklist](closeout-checklist.md). It verifies the
 repository and a live test run on 2026-10-13 and does **not** treat closed
-child issues as evidence; the twelve delivery children (#4310–#4321) and
-the three closeout children (#4322–#4324) remain open per the umbrella's
-explicit dependency graph, and no implementation surfaces exist for the
-facet, diagram, investigation, preference, or confidence-driven paths.
+issues as evidence. The twelve delivery children (#4310–#4321) remain open
+per the umbrella's explicit dependency graph. The three non-closing closeout
+records (#4322 at 09:34:49Z, #4323 at 18:33:12Z, and #4324 at 17:51:32Z)
+closed on 2026-10-12 and do not change the absence of implementation
+surfaces for the facet, diagram, investigation, preference, or
+confidence-driven paths.
 
 ## 1. Acceptance criteria, evidence, and verdict
 
@@ -172,9 +174,9 @@ correctly-scoped child issue under epic [#4309](https://github.com/viamin/paid/i
 
 The per-RDR closeout records [#4322](https://github.com/viamin/paid/issues/4322)
 (C69), [#4323](https://github.com/viamin/paid/issues/4323) (C70), and
-[#4324](https://github.com/viamin/paid/issues/4324) (C71) are non-closing
-`Tracks #4309` audits, not delivery owners. **No new child issue is
-filed:** every unmet acceptance area already has a single-focus,
+[#4324](https://github.com/viamin/paid/issues/4324) (C71) are closed,
+non-closing `Tracks #4309` audits, not delivery owners. **No new child issue
+is filed:** every unmet acceptance area already has a single-focus,
 independent, pickable owner. Per the implementation plan, P01 (#4310) owns
 the existing-work reconciliation across #3862 / #3863 / #3865 and the
 RDR-066 / 067 epics and must not recreate or relabel the approval-gated
@@ -183,10 +185,11 @@ historical; only the shipped code and tests count as evidence, and this
 audit confirms that the cited legacy work ships the RDR-066 / 067
 contracts that the new tree reuses, not the confidence-driven behavior.
 
-The umbrella has no new authoritative child-issue state to reconcile
-against the prior 2026-10-12 and 2026-10-13 audit reports: every child
-issue listed in the per-RDR audits' §3 / §4 dependency tables and the
-prior umbrella audit's §3 remains open with the same scope, and the
+The umbrella has no new authoritative **delivery**-issue state to reconcile
+against the prior 2026-10-12 and 2026-10-13 audit reports: the twelve
+delivery children listed in the per-RDR audits' §3 / §4 dependency tables
+and the prior umbrella audit's §3 remain open with the same scope. The three
+non-closing closeout records are closed and do not own delivery work. The
 implementation plan's Mermaid dependency graph (`P01→…→P12`, `C69/C70/C71`)
 is unchanged. The 2026-09-22 existing-work reconciliation in
 [`human-centered-inbox-implementation.md`](human-centered-inbox-implementation.md)
@@ -221,10 +224,11 @@ following hold:
    immutable confidence-driven builder context is exercised with
    contradictory late evidence at start, mid-run, and post-completion
    states, with and without feature-flag isolation.
-4. The three per-RDR closeouts (#4322, #4323, #4324) each run the
+4. Any future per-RDR closeout verification runs the
    [RDR Closeout Checklist](closeout-checklist.md) against shipped code
-   and tests rather than against closed-issue state, and update the RDRs'
-   `Metadata: Status` and `Implementation Status` sections accordingly.
+   and tests rather than treating the closed #4322–#4324 audit records as
+   evidence, and updates the RDRs' `Metadata: Status` and
+   `Implementation Status` sections accordingly.
 5. This audit's verification section can rerun against the then-current
    code with the project's PostgreSQL service reachable and report
    database-backed passing evidence for the focus areas.
