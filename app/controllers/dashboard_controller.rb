@@ -38,7 +38,6 @@ class DashboardController < ApplicationController
       .order(runner_retry_abandoned_at: :desc)
       .limit(20)
       .to_a
-    @blocked_pull_requests = Dashboard::BlockedPullRequests.call(account: current_account)
   end
 
   def recent_activity

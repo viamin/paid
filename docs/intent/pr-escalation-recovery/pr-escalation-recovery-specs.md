@@ -121,32 +121,6 @@
   *Code:* `ScanPaidPrsActivity#scan_age_exceeds_ceiling?`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
-## Blocked-work surface
-
-- [x] **PR-ESCALATION-011** — The dashboard SHALL list every open pull request
-  in the current account whose review phase is `escalated`, showing the
-  escalation reason and how long the pull request has been stopped, ordered
-  longest-stopped first.
-  *Code:* `Dashboard::BlockedPullRequests`, `DashboardController#show`,
-  `app/views/dashboard/_blocked_pull_requests.html.erb`.
-  *Test:* `spec/services/dashboard/blocked_pull_requests_spec.rb`,
-  `spec/requests/dashboard_spec.rb`.
-
-- [x] **PR-ESCALATION-012** — For each listed pull request the dashboard SHALL
-  show every counter that has reached its configured limit with that limit, and
-  for an `operational_failures` escalation SHALL show the time since the pull
-  request last made meaningful progress.
-  *Code:* `Dashboard::BlockedPullRequests`.
-  *Test:* `spec/services/dashboard/blocked_pull_requests_spec.rb`.
-
-- [x] **PR-ESCALATION-013** — The blocked-PR listing SHALL exclude pull
-  requests held only by the operator's per-PR auto-continue pause, and SHALL
-  indicate that pause distinctly on any listed pull request that is both
-  escalated and operator-paused.
-  *Code:* `Dashboard::BlockedPullRequests`,
-  `app/views/dashboard/_blocked_pull_requests.html.erb`.
-  *Test:* `spec/services/dashboard/blocked_pull_requests_spec.rb`.
-
 ## Unblock action
 
 - [x] **PR-ESCALATION-014** — When an authorized user unblocks a listed pull
@@ -182,17 +156,17 @@
 - [x] **PR-ESCALATION-022** — When the system prompts the operator to confirm
   an unblock, and when it reports that unblock's outcome, whether applied or
   refused, it SHALL identify the pull request by its project's `owner/repo`
-  alongside its number, because the blocked-work surface spans every project in
+  alongside its number, because the Inbox spans every authorized project in
   the account and a number alone does not identify a pull request there.
-  *Code:* `app/views/dashboard/_blocked_pull_requests.html.erb`,
+  *Code:* `app/views/dashboard/_inbox_detail_escalated_pr.html.erb`,
   `Projects::AgentRunsController#unblock_flash`.
-  *Test:* `spec/requests/dashboard_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
 - [x] **PR-ESCALATION-023** — When an unblock succeeds on a pull request the
   operator has also paused, the outcome SHALL tell the operator where that
-  remaining pause can be released, because clearing the escalation drops the
-  pull request from the blocked-work listing the operator is returned to while
-  the pause still holds it, and the release control is not on that surface.
+  remaining pause can be released, because clearing the escalation removes the
+  pull request from the Inbox while the pause still holds it, and the release
+  control is not on that surface.
   *Code:* `Projects::AgentRunsController#unblock_flash`.
   *Test:* `spec/requests/agent_runs_spec.rb`.
 

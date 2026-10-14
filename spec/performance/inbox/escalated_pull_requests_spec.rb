@@ -2,8 +2,8 @@
 
 require "rails_helper"
 
-RSpec.describe Dashboard::BlockedPullRequests do
-  # @spec PR-ESCALATION-011
+RSpec.describe Inbox::EscalatedPullRequests do
+  # @spec OPERATOR-INBOX-002C
   it "keeps queries bounded by project count, not blocked-PR row count" do
     account = create(:account)
     project = create(:project, account: account)

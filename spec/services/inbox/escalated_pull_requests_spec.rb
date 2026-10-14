@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Dashboard::BlockedPullRequests do
+RSpec.describe Inbox::EscalatedPullRequests do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:project) do
@@ -25,7 +25,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
       **attrs)
   end
 
-  # @spec PR-ESCALATION-011
+  # @spec OPERATOR-INBOX-002C
   it "lists escalated open pull requests for the account, longest-stopped first" do
     recent = escalated_pr(number: 2, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
       draft_review_count: 10, pr_escalation_started_at: 2.hours.ago)
@@ -44,7 +44,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
     expect(entries.first.blocked_since).to be_within(1.minute).of(3.days.ago)
   end
 
-  # @spec PR-ESCALATION-011
+  # @spec OPERATOR-INBOX-002C
   it "keeps the stopped age stable when unrelated writes touch the PR" do
     pull_request = escalated_pr(number: 1,
       reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
@@ -59,7 +59,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
     expect(entry.blocked_since).to be_within(1.minute).of(2.days.ago)
   end
 
-  # @spec PR-ESCALATION-011
+  # @spec OPERATOR-INBOX-002C
   it "excludes closed pull requests, non-escalated pull requests, and other accounts" do
     escalated_pr(number: 1, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK, draft_review_count: 10)
     escalated_pr(number: 2, reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
@@ -79,7 +79,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
   end
 
   describe "counters" do
-    # @spec PR-ESCALATION-012
+    # @spec OPERATOR-INBOX-002C
     it "reports every counter that has reached its configured limit" do
       escalated_pr(number: 1,
         reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
@@ -94,7 +94,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
       )
     end
 
-    # @spec PR-ESCALATION-012
+    # @spec OPERATOR-INBOX-002C
     it "omits counters that are below their limit" do
       escalated_pr(number: 1,
         reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
@@ -124,7 +124,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
       )
     end
 
-    # @spec PR-ESCALATION-012
+    # @spec OPERATOR-INBOX-002C
     it "reports time since meaningful progress for an operational escalation" do
       pull_request = escalated_pr(number: 1,
         reason: Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES)
@@ -149,7 +149,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
   end
 
   describe "operator pause" do
-    # @spec PR-ESCALATION-013
+    # @spec OPERATOR-INBOX-002C
     it "excludes pull requests held only by the operator pause" do
       create(:issue, :pull_request,
         project: project,
@@ -160,7 +160,7 @@ RSpec.describe Dashboard::BlockedPullRequests do
       expect(described_class.call(account: account)).to be_empty
     end
 
-    # @spec PR-ESCALATION-013
+    # @spec OPERATOR-INBOX-002C
     it "flags a listed pull request that is also operator-paused" do
       escalated_pr(number: 1,
         reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
