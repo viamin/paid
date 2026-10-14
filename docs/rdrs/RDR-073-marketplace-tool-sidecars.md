@@ -5,11 +5,11 @@
 ## Metadata
 
 - **Date**: 2026-10-10
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: P1 `[inferred — not supplied by the feature brief]`
 - **Related RDRs**: [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-055](RDR-055-agent-container-egress-allowlisting.md) (Agent Container Egress Allowlisting), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation), [RDR-062](RDR-062-execution-network-policy-intent.md) (Provider-Neutral Execution Network Policy Intent)
-- **Related Issues**: implementation issue tree filed by the creating run (one epic, four phase issues, one closeout issue); numbers are recorded in the epic issue body.
+- **Related Issues**: #4263 (epic), #4264–#4268 (implementation and closeout), #4445 (attachment contract gap), #4446 (rule-scoping gap), #4447 (endpoint exposure gap).
 
 ## Problem Statement
 
@@ -429,6 +429,24 @@ ships behind a feature flag:
 - **Cleanup criteria**: remove the flag once the RDR-073 closeout audit
   verifies the hardened provisioning path is complete, image gating is
   enforced, and pilot tenants have run tool-attached runs without incident.
+
+## Implementation Status
+
+**Partially Implemented — 2026-10-14.** Hardened provisioning, image gating,
+flag-off behavior, per-run tracking, retry adoption, cleanup, and capacity
+inventory have shipped. The marketplace attachment contract, rule-scoping
+predicates, and agent-facing endpoint exposure remain gaps. The rollout guard
+remains because no incident-free pilot evidence exists. See
+[the closeout audit](audit-report-2026-10-14-rdr-073.md) and the follow-up
+issues #4445, #4446, and #4447.
+
+## 2026-10-14 Closeout
+
+Closeout #4268 validated shipped code and permanent tests rather than relying
+on issue state. It found the Phase 3 hardened provisioner implemented, but the
+RDR's end-to-end marketplace and agent outcome incomplete. Status is therefore
+**Partially Implemented**. The epic #4263 remains open for its final acceptance
+audit; this closeout does not close it.
 
 ## Implementation Plan
 
