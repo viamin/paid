@@ -568,9 +568,23 @@ class Issue < ApplicationRecord
       ci_retry_requested_at: nil
     }
     attrs.merge!(escalation_counter_reset_attributes) if reset_counters
-    attrs[:pr_auto_continue_token_limit_overridden_at] = Time.current if token_limit_override
+    attrs.merge!(token_limit_override_attributes) if token_limit_override
 
     update!(attrs)
+  end
+
+  # @spec PR-ESCALATION-007
+  def pr_auto_continue_token_limit_override?
+    pr_auto_continue_token_limit_override_usage.present? &&
+      pr_auto_continue_token_limit_override_allowance.present?
+  end
+
+  # @spec PR-ESCALATION-007
+  def pr_auto_continue_token_limit_effective_limit(project_limit)
+    return project_limit.to_i unless pr_auto_continue_token_limit_override?
+
+    pr_auto_continue_token_limit_override_usage.to_i +
+      pr_auto_continue_token_limit_override_allowance.to_i
   end
 
   def ready_to_work?
@@ -977,6 +991,20 @@ class Issue < ApplicationRecord
       stuck_confirmation_count: 0,
       review_goal_retry_reset_at: reset_at,
       operational_failure_reset_at: reset_at
+    }
+  end
+
+  def token_limit_override_attributes
+    usage = AgentRun.pr_auto_continue_tokens_used(
+      project: project,
+      issue: self,
+      pr_number: github_number
+    )
+
+    {
+      pr_auto_continue_token_limit_overridden_at: Time.current,
+      pr_auto_continue_token_limit_override_usage: usage,
+      pr_auto_continue_token_limit_override_allowance: project.max_pr_auto_continue_tokens.to_i
     }
   end
 

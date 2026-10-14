@@ -144,8 +144,10 @@ Clearing an owner-initiated escalation clears everything the escalation counted:
   PR stuck across scan cycles, so it cannot survive the owner's intervention
 - `review_goal_retry_reset_at`, `operational_failure_reset_at` → now
 - `ci_retry_requested_at` → `nil`
-- for a `pr_auto_continue_token_limit` escalation,
-  `pr_auto_continue_token_limit_overridden_at` → now
+- for a `pr_auto_continue_token_limit` escalation, snapshot the current
+  automatic-run usage and grant one additional allowance equal to the current
+  project cap. The timestamp records the operator action; the baseline and
+  allowance record its bounded authority.
 
 The counters measure *attempts since the owner last looked*, not attempts for
 all time. Escalation is the moment the owner looks, so clearing it restarts the
@@ -153,8 +155,19 @@ count. A clearing that resets the phase but leaves the counters at their limit
 re-escalates on the next scan, which reads to the owner as the unblock button
 not working.
 
-The token-limit override is deliberately different: it is a standing permission
-to exceed the cap on that PR, not a counter, so it is stamped once and persists.
+The token-limit override is deliberately different: it is a bounded, one-time
+additional allowance on that PR. At dismissal, Paid snapshots both the
+recorded automatic-run usage and the project cap. Its effective limit is
+`usage_at_dismissal + allowance_at_dismissal`; visible state reports total
+usage, that effective limit, and remaining allowance. Later project-cap edits
+do not rewrite an already approved allowance. Once the remaining allowance is
+zero, Paid escalates again and blocks further automatic runs until another
+explicit owner dismissal grants another bounded allowance.
+
+Timestamp-only overrides created before this design are not approvals for a new
+allowance. They have no baseline or allowance snapshot, so the scanner and
+quality gate conservatively evaluate their already-recorded usage against the
+current project cap. This neither resets spend nor silently authorizes more.
 
 **Operational auto-dismissal releases the hold without zeroing the counters.**
 Its justification — the owner has looked — is exactly what did not happen. An
@@ -250,7 +263,7 @@ unchanged by that work.
 | Which flag excludes a PR from the scan | Only `auto_continue_paused`, only ever set by the operator | Exclude on escalation too | Recovery is detected inside the scan, so anything the system sets must not hide the PR from it. The operator's pause is safe to exclude on because the operator also clears it. |
 | Clearing semantics | Full reset of every escalation counter | Reset only the counter named by `pr_escalation_reason`; clear the phase and leave counters intact | The counters mean "attempts since the owner last looked". A partial reset lets a second cap re-trip immediately, which is indistinguishable from a broken button. |
 | Operational auto-dismissal | Releases the hold, leaves counters | Apply the full reset like the owner-initiated paths | The full reset is justified by owner attention, which auto-dismissal does not involve. Recovering infrastructure should return the PR to work, not grant it a fresh failure budget. |
-| Token-cap override on clearing | Stamp `pr_auto_continue_token_limit_overridden_at` | Zero the token usage; raise the project cap | Token spend is real and already incurred; it cannot be un-spent. The override is the owner granting one PR permission to exceed the cap, and it is scoped to that PR. |
+| Token-cap override on clearing | Snapshot usage and grant one additional allowance equal to the then-current project cap | Zero the token usage; raise the project cap; standing waiver | Token spend is real and already incurred; it cannot be un-spent. A snapshot makes the owner's authority explicit, visible, PR-scoped, and bounded; a timestamp-only legacy record is not a new approval. |
 | What Unblock enqueues | Nothing; the scan picks the work | Enqueue a `create_pr` follow-up immediately | What a stopped PR needs next is a semantic judgment the scan already makes from live PR state. A button that hardcodes `create_pr` queues the wrong run for a PR stopped on a review-goal retry limit. Costs one poll cycle. |
 | Approval-wait origin | First scan observation of blocked-only-on-approval (`awaiting_approval_since`) | PR creation time; the last green CI run | The wait is a property of the approval gate, not of the PR. Creation time counts review time the owner was never asked to answer for; the gate can also open and close as other blockers appear, so the stamp resets when they do. |
 | Approval-wait ceiling | Per-project hours (`pr_approval_escalation_hours`, default 24, 0 disables) | A fixed constant; scan-confirmation counts | How long an owner should take is a team property. The failure detectors need scan confirmations because their signal can be a scan artifact; an unanswered approval cannot be. |

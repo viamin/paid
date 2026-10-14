@@ -28,7 +28,8 @@ module Dashboard
     def call
       blocked = blocked_scope.to_a
       runs = operational_failure_runs(blocked)
-      blocked.map { |pull_request| build_entry(pull_request, runs) }
+      token_usage = token_usage_by_pull_request(blocked)
+      blocked.map { |pull_request| build_entry(pull_request, runs, token_usage) }
     end
 
     private
@@ -49,12 +50,12 @@ module Dashboard
         .order(Arel.sql("COALESCE(issues.pr_escalation_started_at, issues.updated_at) ASC"))
     end
 
-    def build_entry(pull_request, runs_pool)
+    def build_entry(pull_request, runs_pool, token_usage)
       Entry.new(
         pull_request: pull_request,
         reason: pull_request.pr_escalation_reason,
         blocked_since: pull_request.pr_escalation_started_at || pull_request.updated_at,
-        counters: tripped_counters(pull_request),
+        counters: tripped_counters(pull_request, token_usage.fetch(pull_request.id, 0)),
         last_progress_at: last_progress_at(pull_request, runs_pool),
         operator_paused: pull_request.auto_continue_paused?
       )
@@ -64,7 +65,7 @@ module Dashboard
     # the draft-round or the follow-up counter, and an operational escalation
     # has neither. Report every counter that is at or over its limit and let the
     # surface show them all.
-    def tripped_counters(pull_request)
+    def tripped_counters(pull_request, tokens_used)
       project = pull_request.project
 
       candidates = [
@@ -79,7 +80,52 @@ module Dashboard
           limit: review_goal_retry_limit(project))
       ]
 
-      candidates.select { |counter| counter.limit.positive? && counter.value >= counter.limit }
+      candidates << token_counter(pull_request, tokens_used)
+      candidates.compact.select { |counter| counter.limit.positive? && counter.value >= counter.limit }
+    end
+
+    # @spec PR-ESCALATION-007
+    def token_counter(pull_request, tokens_used)
+      return unless pull_request.pr_escalation_reason == Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+
+      Counter.new(
+        name: :pr_auto_continue_tokens,
+        value: tokens_used,
+        limit: pull_request.pr_auto_continue_token_limit_effective_limit(
+          pull_request.project.max_pr_auto_continue_tokens
+        )
+      )
+    end
+
+    def token_usage_by_pull_request(blocked)
+      token_limited = blocked.select do |pull_request|
+        pull_request.pr_escalation_reason == Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+      end
+      return {} if token_limited.empty?
+
+      targets = token_usage_targets(token_limited)
+      token_usage_runs(token_limited).each_with_object(Hash.new(0)) do |run, usage|
+        target = targets[run.issue_id] ||
+          targets[[ run.project_id, run.source_pull_request_number ]] ||
+          targets[[ run.project_id, run.pull_request_number ]]
+        usage[target] += run.tokens_input.to_i + run.tokens_output.to_i if target
+      end
+    end
+
+    def token_usage_targets(pull_requests)
+      pull_requests.each_with_object({}) do |pull_request, targets|
+        targets[pull_request.id] = pull_request.id
+        targets[[ pull_request.project_id, pull_request.github_number ]] = pull_request.id
+      end
+    end
+
+    def token_usage_runs(pull_requests)
+      clauses = pull_requests.map { "(agent_runs.issue_id = ? OR agent_runs.source_pull_request_number = ? OR agent_runs.pull_request_number = ?)" }
+      bindings = pull_requests.flat_map { |pull_request| [ pull_request.id, pull_request.github_number, pull_request.github_number ] }
+
+      AgentRun.where(project_id: pull_requests.map(&:project_id), trigger_type: "automatic")
+        .where([ clauses.join(" OR "), *bindings ])
+        .select(:project_id, :issue_id, :source_pull_request_number, :pull_request_number, :tokens_input, :tokens_output)
     end
 
     # Mirrors ScanPaidPrsActivity#review_goal_max_retries: the configured retry

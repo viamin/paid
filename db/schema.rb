@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_103927) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_102522) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2123,7 +2123,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_103927) do
     t.text "partial_completion_reason", comment: "Operator-visible evidence for the latest partial-completion assessment."
     t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
-    t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
+    t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When the owner last dismissed a PR token-cap escalation; timestamp-only legacy records grant no allowance."
+    t.bigint "pr_auto_continue_token_limit_override_allowance", comment: "Additional automatic PR token allowance granted by the owner's latest token-cap dismissal."
+    t.bigint "pr_auto_continue_token_limit_override_usage", comment: "Recorded automatic PR token usage when the owner granted the current bounded override."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.datetime "pr_escalation_started_at", comment: "Timestamp when this PR entered the escalated phase. Bounds the paid-escalated label-event replay so an unlabeled event from a prior escalation cycle cannot read as a fresh owner dismissal."
     t.integer "pr_followup_count", default: 0, null: false
