@@ -56,16 +56,17 @@ module ClarifyingQuestions
     # QUIET-MODE-002 because the project-scoped GitHub client short-circuits
     # `add_comment` requests when quiet mode is on.
     def submit_via_description!
-      body = issue.body.to_s
       questions = questions_and_answers.map { |qa| qa[:question].to_s }
       digest = DescriptionSection.digest_for(questions)
-      new_body = DescriptionSection.replace_answers_section(
-        body: body,
-        answers_block: formatted_answers_block,
-        digest: digest
-      )
-      client = github_client
-      result = client.update_issue(project.full_name, issue.github_number, body: new_body)
+      result, new_body = DescriptionSection.update_issue_body(
+        client: github_client, repo: project.full_name, number: issue.github_number
+      ) do |body|
+        DescriptionSection.replace_answers_section(
+          body: body,
+          answers_block: formatted_answers_block,
+          digest: digest
+        )
+      end
       update_local_body!(new_body)
       result
     end

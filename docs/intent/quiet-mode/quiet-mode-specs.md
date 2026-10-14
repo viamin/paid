@@ -53,7 +53,10 @@ prefix: QUIET-MODE
   SHALL be unchanged. A subsequent enhancement run SHALL process its fresh
   agent output when the marked questions have a matching complete marked
   answers section, rather than treating those answered questions as a prior
-  incomplete enhancement.
+  incomplete enhancement. Before replacing the marked questions section, the
+  system SHALL fetch the current remote description and derive its update from
+  that value, retrying one detected remote write conflict so a human edit made
+  after local issue sync is retained.
 - [x] **QUIET-MODE-010** — When a project's quiet mode is enabled, the
   clarifying-question answer submission path (`Projects::ClarifyingQuestionsController#create`,
   `Tools::SubmitClarifyingAnswers#perform`, and any future quiet-mode-aware
@@ -62,7 +65,11 @@ prefix: QUIET-MODE
   description (`<!-- paid:clarifying-answers -->` … `<!-- /paid:clarifying-answers -->`),
   preserving any human-written content outside the section, instead of
   issuing a `GitHubClient#add_comment` request. When quiet mode is disabled,
-  the prior marker-tagged comment submission path SHALL be unchanged.
+  the prior marker-tagged comment submission path SHALL be unchanged. Before
+  replacing either marked description section, the system SHALL fetch the
+  current remote description and derive the replacement from that value so a
+  human edit since the last issue sync is preserved; it SHALL retry a detected
+  remote write conflict once and otherwise surface the conflict.
 - [x] **QUIET-MODE-011** — `ClarifyingQuestions::Load` SHALL resolve pending
   questions and answers from the description sections when present and from
   the marker-tagged GitHub comments otherwise; freshness between a questions

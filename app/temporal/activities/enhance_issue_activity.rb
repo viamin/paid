@@ -539,14 +539,16 @@ module Activities
       questions = ClarifyingQuestions::Parse.call(comment_body: comment_body)
       return nil if questions.empty?
 
-      body = issue.body.to_s
       preamble_block = build_description_preamble(comment_body)
-      new_body = ClarifyingQuestions::DescriptionSection.replace_questions_section(
-        body: body,
-        questions: questions,
-        preamble: preamble_block
-      )
-      response = client.update_issue(project.full_name, issue.github_number, body: new_body)
+      response, new_body = ClarifyingQuestions::DescriptionSection.update_issue_body(
+        client: client, repo: project.full_name, number: issue.github_number
+      ) do |body|
+        ClarifyingQuestions::DescriptionSection.replace_questions_section(
+          body: body,
+          questions: questions,
+          preamble: preamble_block
+        )
+      end
       issue.update!(body: new_body)
       response
     end

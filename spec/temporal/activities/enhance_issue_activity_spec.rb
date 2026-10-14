@@ -314,6 +314,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
           **A1:** Login events
           <!-- /paid:clarifying-answers -->
         MARKDOWN
+        allow(client).to receive(:issue).and_return(OpenStruct.new(body: "Human-edited remote description"))
         log_agent_stdout({
           sufficient_context: false,
           comment_body: "The audit trail must include compliance events.\n\n## Clarifying questions\n1. Which compliance events are required?"
@@ -327,6 +328,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
           project.full_name,
           issue.github_number,
           body: a_string_including(
+            "Human-edited remote description",
             "The audit trail must include compliance events.",
             "Which compliance events are required?"
           )

@@ -25,10 +25,11 @@ module ClarifyingQuestions
   # questions from a prior one when both happen to live in the description.
   #
   # Body editing is the permitted channel in quiet mode (`QUIET-MODE-009`,
-  # `QUIET-MODE-010`, `QUIET-MODE-011`); the helpers here only manipulate
-  # text in memory — callers are responsible for issuing `update_issue` /
-  # `update_pull_request` against the project-scoped GitHub client.
+  # `QUIET-MODE-010`, `QUIET-MODE-011`). `update_issue_body` obtains the
+  # current remote text immediately before replacing a section, avoiding a
+  # stale local sync overwriting a human edit.
   module DescriptionSection
+    REMOTE_UPDATE_ATTEMPTS = 2
     QUESTIONS_OPEN_MARKER = "<!-- paid:clarifying-questions -->"
     QUESTIONS_CLOSE_MARKER = "<!-- /paid:clarifying-questions -->"
     ANSWERS_OPEN_MARKER = "<!-- paid:clarifying-answers -->"
@@ -140,6 +141,27 @@ module ClarifyingQuestions
       end
     end
 
+    # Reads the GitHub description immediately before yielding it for a
+    # section replacement. GitHub reports simultaneous writes as 409/412;
+    # retrying those errors re-reads the human's newer description before
+    # rebuilding the marked section. Other API failures remain visible to the
+    # caller and Temporal's retry policy.
+    # @spec QUIET-MODE-009 @spec QUIET-MODE-010
+    def update_issue_body(client:, repo:, number:)
+      attempts = 0
+      begin
+        remote_issue = client.issue(repo, number)
+        new_body = yield(remote_issue.body.to_s)
+        response = client.update_issue(repo, number, body: new_body)
+        [ response, new_body ]
+      rescue GithubClient::ApiError => error
+        attempts += 1
+        retry if concurrent_update?(error) && attempts < REMOTE_UPDATE_ATTEMPTS
+
+        raise
+      end
+    end
+
     # Computes the stable question-set digest for a list of normalized
     # question strings. The digest is what links a questions section to its
     # matching answers section without relying on `comment.created_at`
@@ -226,6 +248,10 @@ module ClarifyingQuestions
       return block if stripped.empty?
 
       "#{stripped}\n\n#{block}\n"
+    end
+
+    def concurrent_update?(error)
+      error.status.in?([ 409, 412 ])
     end
   end
 end

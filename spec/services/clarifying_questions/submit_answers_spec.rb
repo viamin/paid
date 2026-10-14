@@ -147,6 +147,7 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
       before { allow(project).to receive(:quiet_mode?).and_return(true) }
 
       it "writes answers into the description without posting a comment" do # @spec QUIET-MODE-010
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Human-written issue context"))
         allow(github_client).to receive(:update_issue)
         allow(issue).to receive(:update!)
 
@@ -167,6 +168,44 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
           )
         )
         expect(github_client).not_to have_received(:add_comment)
+      end
+
+      it "preserves a human edit made after the issue was last synced" do # @spec QUIET-MODE-010
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new("Human-edited remote description"))
+        allow(github_client).to receive(:update_issue)
+        allow(issue).to receive(:update!)
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(github_client).to have_received(:update_issue).with(
+          project.full_name,
+          issue.github_number,
+          body: a_string_including("Human-edited remote description", "<!-- paid:clarifying-answers -->")
+        )
+      end
+
+      it "retries a remote write conflict using the latest description" do # @spec QUIET-MODE-010
+        first_body = Struct.new(:body).new("First human edit")
+        second_body = Struct.new(:body).new("Second human edit")
+        allow(github_client).to receive(:issue).and_return(first_body, second_body)
+        updated_bodies = []
+        allow(github_client).to receive(:update_issue) do |_repo, _number, body:|
+          updated_bodies << body
+          raise GithubClient::ApiError.new("conflict", status: 409) if updated_bodies.one?
+        end
+        allow(issue).to receive(:update!)
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(updated_bodies.last).to include("Second human edit")
       end
     end
 
