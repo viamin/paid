@@ -47,6 +47,23 @@ RSpec.describe Automation::Strategies::AutoReview do
       )
     end
 
+    it "carries TDD rejection feedback into a test-writing revision decision" do # @spec TDD-PR-007
+      feedback = { "fingerprint" => "feedback-digest", "reviews" => [ { "body" => "Add an edge case." } ] }
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "draft",
+        current_draft_review_count: 0,
+        focus: "tdd_test_revision",
+        triggers: [ { type: "tdd_test_changes_requested", feedback: feedback } ]
+      })
+
+      expect(result.to_h[:decisions]).to include(hash_including(
+        type: "queue_create_pr_run", focus: "tdd_test_revision",
+        tdd_phase: "test_writing", tdd_review_feedback: feedback.deep_symbolize_keys
+      ))
+    end
+
     it "suppresses follow-up decisions while paid_agent_review_pending is outstanding (#1135)" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

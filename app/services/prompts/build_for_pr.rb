@@ -240,6 +240,7 @@ module Prompts
     def build_sections
       [
         task_section,
+        (tdd_test_revision_section if tdd_test_revision?),
         (issue_requirements_section if include_issue_requirements_section?),
         (merge_conflicts_section if include_merge_conflicts_section?),
         (ci_failures_section if include_ci_failures_section?),
@@ -364,6 +365,7 @@ module Prompts
 
     def dynamic_priority_list
       priorities = []
+      priorities << "Revise the proposed tests using the rejected test-review feedback" if tdd_test_revision?
       priorities << "Resolve merge conflicts" if merge_conflicts_present?
       priorities << "Fix CI failures" if ci_failures_present?
       priorities << "Close implementation gaps against the linked issue" if issue_requirements_present?
@@ -917,6 +919,7 @@ module Prompts
 
     def focused_priority_section_present?
       {
+        "tdd_test_revision" => tdd_test_revision?,
         "ci_fix" => include_ci_failures_section?,
         "review_feedback" => includes_review_threads?,
         "merge_conflict" => include_merge_conflicts_section?,
@@ -932,6 +935,7 @@ module Prompts
 
     def focused_priority_item
       {
+        "tdd_test_revision" => "Revise the proposed tests using the rejected test-review feedback",
         "ci_fix" => "Fix the failing CI checks on this PR",
         "review_feedback" => "Address the unresolved code review comments on this PR",
         "merge_conflict" => "Resolve the merge conflicts on this PR",
@@ -940,6 +944,50 @@ module Prompts
         "issue_implementation" => "Close implementation gaps against the linked issue for this PR",
         "label_action" => "Handle the actionable labels on this PR"
       }.fetch(focus, "Complete the scoped task for this PR")
+    end
+
+    # @spec TDD-PR-007
+    def tdd_test_revision?
+      focus == "tdd_test_revision" && tdd_review_feedback.present?
+    end
+
+    def tdd_review_feedback
+      metadata = agent_run&.external_metadata
+      return {} unless metadata.is_a?(Hash)
+
+      metadata["tdd_review_feedback"].to_h
+    end
+
+    def tdd_test_revision_section
+      reviews = Array(tdd_review_feedback["reviews"])
+      threads = Array(tdd_review_feedback["threads"])
+      review_text = reviews.map { |review| "- **#{review["author"]}** (review ##{review["review_id"]}): #{review["body"]}" }
+      thread_text = threads.flat_map do |thread|
+        Array(thread["comments"]).map do |comment|
+          location = [ comment["path"], comment["line"] ].compact.join(":")
+          "- **#{comment["author"]}**#{" (#{location})" if location.present?}: #{comment["body"]}"
+        end
+      end
+
+      PromptAssembly::Section.new(
+        key: :tdd_test_revision,
+        source: :tdd_test_review,
+        content: <<~SECTION,
+          # Rejected Test Review: Revise Tests Only
+
+          The following trusted review evidence caused the current TDD test-review rejection:
+
+          #{(review_text + thread_text).join("\n")}
+
+          Revise the proposed tests to address this feedback. Do not implement
+          production behavior in this run. Completion means the updated tests
+          are pushed and this PR is returned to the TDD test-review gate for a
+          fresh verdict; it does not mean implementation may begin.
+        SECTION
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "trusted current TDD test-review rejection snapshot"
+      )
     end
 
     def deferred_issue_descriptions

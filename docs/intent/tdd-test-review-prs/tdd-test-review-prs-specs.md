@@ -51,3 +51,21 @@
   `app/controllers/api/github_proxy_controller.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/requests/api/github_proxy_spec.rb`.
+
+- [x] **TDD-PR-007** — When a current TDD test review rejects the proposed
+  tests, the scanner SHALL queue a `test_writing` revision run only with a
+  snapshot of the trusted review body and/or unresolved trusted review-thread
+  comments that caused that rejection. The revision prompt SHALL identify the
+  review provenance and require updating only the proposed tests and returning
+  the PR to the test-review gate; it SHALL NOT treat implementation as complete.
+  Untrusted comment bodies SHALL be excluded. If no current trusted feedback is
+  available, or the latest test-writing run ended `no_changes` against the same
+  feedback snapshot, the scanner SHALL escalate the PR for manual review rather
+  than queueing another generic run.
+  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/services/automation/strategies/auto_review.rb`,
+  `app/temporal/activities/queue_agent_run_activity.rb`,
+  `app/services/prompts/build_for_pr.rb`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_review_spec.rb`,
+  `spec/services/prompts/build_for_pr_spec.rb`.

@@ -299,6 +299,7 @@ module Automation
 
       def followup_decisions(signals)
         focus_evidence = focus_evidence_for(signals)
+        tdd_feedback = tdd_review_feedback_for(signals)
         if signals.draft_phase?
           [
             Automation::Decision.queue_create_pr_run(
@@ -307,7 +308,9 @@ module Automation
               focus: signals.focus,
               count_toward_draft_review_round: true,
               expected_draft_review_count: signals.draft_review_count,
-              focus_evidence: focus_evidence
+              focus_evidence: focus_evidence,
+              tdd_review_feedback: tdd_feedback,
+              tdd_phase: tdd_feedback ? "test_writing" : nil
             )
           ]
         else
@@ -316,7 +319,9 @@ module Automation
               issue_id: signals.issue_id,
               source_pull_request_number: signals.pr_number,
               focus: signals.focus,
-              focus_evidence: focus_evidence
+              focus_evidence: focus_evidence,
+              tdd_review_feedback: tdd_feedback,
+              tdd_phase: tdd_feedback ? "test_writing" : nil
             ),
             Automation::Decision.record_pr_followup(
               issue_id: signals.issue_id,
@@ -338,6 +343,13 @@ module Automation
 
         trigger = signals.trigger("page_load_regression")
         trigger&.dig(:evidence)
+      end
+
+      # @spec TDD-PR-007
+      def tdd_review_feedback_for(signals)
+        return nil unless signals.trigger_types.include?("tdd_test_changes_requested")
+
+        signals.trigger("tdd_test_changes_requested")&.dig(:feedback)
       end
 
       # A dismissal the scan attributed to the owner (they removed the
