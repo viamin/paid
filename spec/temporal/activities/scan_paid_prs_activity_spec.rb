@@ -592,6 +592,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.last_scanned_head_sha).to eq("abc123")
       end
 
+      # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+      it "persists current-head manual-merge assessment while auto-merge is off without scheduling a merge" do
+        project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(review_freshness: :fresh)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.auto_merge_blockers).to eq("failed" => [], "not_evaluated" => [])
+        expect(pr_issue.auto_merge_evaluated_at).to be_present
+        expect(automation_scan_results(result)).to be_empty
+      end
+
+      # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+      it "does not assess human PR merge eligibility in Dependabot-only mode" do
+        project.update!(auto_merge_mode: "dependabot_only", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(review_freshness: :fresh)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.auto_merge_blockers).to be_nil
+        expect(pr_issue.auto_merge_evaluated_at).to be_nil
+        expect(automation_scan_results(result)).to be_empty
+      end
+
       # @spec INTENT-CONFORMANCE-010
       it "schedules one independent review for the live head of a released feature intent" do
         project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
@@ -793,7 +819,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(auto_fix_merge_conflicts: true)
         prior_evaluated_at = 30.minutes.ago
         pr_issue.update!(
-          last_pr_scan_at: 1.hour.ago,
+          last_pr_scan_at: Time.current,
           github_updated_at: 2.hours.ago,
           auto_merge_blockers: stale_approval_snapshot,
           auto_merge_evaluated_at: prior_evaluated_at,
@@ -815,7 +841,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "resets the per-execute auto-merge snapshot cache so prior-pass staging cannot leak" do
         project.update!(auto_fix_merge_conflicts: true)
         pr_issue.update!(
-          last_pr_scan_at: 1.hour.ago,
+          last_pr_scan_at: Time.current,
           github_updated_at: 2.hours.ago
         )
         leaked_snapshot = { "failed" => [ { "leaked" => true } ], "not_evaluated" => [] }
@@ -12176,7 +12202,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     )
   end
 
-  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123")
+  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123", review_freshness: :stale)
     stub_github_for_pr(
       checks: [ { name: "rspec", conclusion: checks_conclusion } ],
       reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ],
@@ -12186,7 +12212,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
-      review_freshness_for_head: :stale
+      review_freshness_for_head: review_freshness
     )
   end
 

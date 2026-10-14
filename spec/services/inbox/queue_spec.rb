@@ -91,6 +91,83 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "surfaces a manual merge decision for a clear PR when auto-merge and auto-pick are off" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [], not_evaluated: [])
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Manual merge decision required")
+    end
+
+    # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "excludes a clear PR with a trusted auto-merge activation" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        labels: [ project.feature_activation_label_for("auto_merge") ],
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [], not_evaluated: [])
+      )
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+        .with(project, pr, project.feature_activation_label_for("auto_merge")).and_return(true)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "excludes a human PR when only Dependabot auto-merge is enabled" do
+      project.update!(auto_merge_mode: "dependabot_only", auto_pick_enabled: false)
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ], not_evaluated: [])
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "distinguishes review, re-approval, and machine blockers for auto-merge-off PRs" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      review_required = create(
+        :issue, :pull_request, project: project, github_number: 42,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ], not_evaluated: [])
+      )
+      reapproval_required = create(
+        :issue, :pull_request, project: project, github_number: 43,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "reviews_fresh", reason_code: "stale_approval") ], not_evaluated: [])
+      )
+      checks_pending = create(
+        :issue, :pull_request, project: project, github_number: 44,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "checks_green", reason_code: "checks_not_green") ], not_evaluated: [])
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.find { |entry| entry.issue == review_required }.summary).to eq("Human review required before manual merge")
+      expect(entries.find { |entry| entry.issue == reapproval_required }.summary).to eq("Waiting for owner re-approval on the current HEAD commit")
+      expect(entries.map(&:issue)).not_to include(checks_pending)
+    end
+
     it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
       project.update!(label_integration_mode: "ignored")
       pr = create(

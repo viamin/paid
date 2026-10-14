@@ -75,14 +75,20 @@ Today three kinds exist:
   has either parsed questions in `body` or a locally-persisted
   `needs_input_questions` (create_feature flow).
 - `:plan_review` — an open `DecompositionDecision` pending human review.
-- `:merge_approval` — an open PR whose persisted auto-merge blocker snapshot
+- `:merge_approval` — an open PR whose persisted current-head policy snapshot
   shows approval-only failures (`owner_approved` and/or `reviews_fresh`) with
-  no other failed or short-circuited blockers. The inbox entry uses the PR's
-  approval-wait/head-activity timestamp instead of `needs_input_since`, so PRs
-  do not need to enter `paid_state: "needs_input"` just to become visible. An
-  open ready PR with `paid-hold-review` is also a `:merge_approval` entry,
-  irrespective of its ordinary blocker snapshot, because the label is an
-  explicit request for human action.
+  no other failed or short-circuited blockers. For a project with auto-merge
+  off, the scanner still persists that same policy assessment: an
+  approval-only result means human review/re-approval is needed, while an
+  all-clear result means a human must make the manual merge decision. Pending
+  or failed CI, dependency, conflict, review-feedback, and policy signals do
+  not create a human-action row; their snapshot remains available as machine
+  work/blocker context. The inbox entry uses the PR's approval-wait/head-
+  activity timestamp instead of `needs_input_since`, so PRs do not need to
+  enter `paid_state: "needs_input"` just to become visible. An open ready PR
+  with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
+  its ordinary blocker snapshot, because the label is an explicit request for
+  human action.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

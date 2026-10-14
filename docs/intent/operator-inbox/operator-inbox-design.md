@@ -128,14 +128,19 @@ remediation guidance, so every Action Required entry has meaningful context.
 
 ### `merge_approval`
 
-Backed by the PR scanner's persisted auto-merge blocker snapshot on `Issue`.
-The inbox only surfaces PRs whose failed blockers are approval-only
-(`owner_approved` and/or `reviews_fresh`) and whose `not_evaluated` blocker
-list is empty, so red CI, merge conflicts, unresolved review threads, and
-unresolved dependencies stay out of the human-approval queue. The detail pane
-reuses the standard PR badge and GitHub-link conventions and directs the
-operator to re-approve on GitHub, after which the next scan naturally removes
-the entry.
+Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.
+The scanner assesses human-led projects even when automatic merging is off;
+that assessment never authorizes an automatic merge. The inbox surfaces an
+approval-only result (`owner_approved` and/or `reviews_fresh`) with no
+`not_evaluated` blockers as review/re-approval work. For auto-merge-off
+projects, it also surfaces a fully clear assessment as a manual merge decision,
+unless the pull request has a trusted per-PR auto-merge activation: that PR is
+automatically managed and must not race or misdirect an operator with a manual
+decision. The structured `paid-hold-review` lane still takes precedence.
+Red or pending CI, merge conflicts, unresolved review threads, dependencies,
+or policy checks remain machine/blocker state rather than Inbox noise. The
+detail pane reuses the standard PR badge and GitHub-link conventions and
+directs the operator to GitHub for the supported human action.
 
 ### `escalated_pr`
 
