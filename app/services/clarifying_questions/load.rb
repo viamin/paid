@@ -110,10 +110,11 @@ module ClarifyingQuestions
       parsed = DescriptionSection.parse_questions(issue.body)
       return nil unless parsed.any?
 
-      inner = extract_questions_inner(parsed.raw_body)
-      return nil if inner.blank?
+      inner = extract_questions_inner(parsed.raw_body).to_s.gsub(DescriptionSection::DIGEST_LINE_PATTERN, "")
+      section_context = Context.call(comment_body: inner)
+      prose_context = strip_sections_for_context(issue.body)
 
-      Context.call(comment_body: inner)
+      [ prose_context, section_context ].compact.reject(&:blank?).join("\n\n").presence
     end
 
     def extract_questions_inner(section_block)
@@ -121,6 +122,14 @@ module ClarifyingQuestions
       return nil unless match
 
       match[1].to_s
+    end
+
+    def strip_sections_for_context(body)
+      body.to_s
+        .sub(DescriptionSection::QUESTIONS_SECTION_PATTERN, "")
+        .sub(DescriptionSection::ANSWERS_SECTION_PATTERN, "")
+        .strip
+        .presence
     end
 
     def answered_after_latest_questions?(body_questions:)

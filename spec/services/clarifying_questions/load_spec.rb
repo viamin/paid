@@ -624,6 +624,27 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       )
     end
 
+    # @spec QUIET-MODE-011
+    it "returns description prose without rendering the quiet-mode digest" do
+      allow(project).to receive(:quiet_mode?).and_return(true)
+      allow(issue).to receive(:body).and_return(<<~BODY)
+        Original issue body.
+
+        The agent needs the rollout scope before implementation.
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        <!-- paid:clarifying-questions-digest:abc12345 -->
+        1. What is the original scope?
+        <!-- /paid:clarifying-questions -->
+      BODY
+
+      expect(context_loaded_load.context_markdown).to eq(
+        "Original issue body.\n\nThe agent needs the rollout scope before implementation."
+      )
+    end
+
     it "returns nil when the latest enhancement comment has no recoverable context" do
       comment_body_without_context = <<~COMMENT
         <!-- paid:enhance-issue -->
