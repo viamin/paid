@@ -249,8 +249,10 @@ reconfirms that outcome against the live issue state and repository, without
 claiming that RDR-075 is merged or ready to close. The
 [2026-10-13 umbrella final-acceptance audit](audit-report-2026-10-13-rdr-075-epic-final-acceptance.md)
 refreshes the same conclusion with database-backed runtime confirmation and
-the live GitHub issue/PR state, and likewise leaves #4365 open until the
-focused gaps ship.
+the live GitHub issue/PR state. The
+[2026-10-14 epic final-acceptance audit](audit-report-2026-10-14-rdr-075-epic-final-acceptance.md)
+reconfirms the absence findings and current open RDR/issue state, and likewise
+leaves #4365 open until the focused gaps ship.
 
 ## Decision Summary
 
