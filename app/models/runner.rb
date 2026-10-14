@@ -3,6 +3,7 @@
 require "base64"
 require "set"
 require "shellwords"
+require_relative "../../lib/runner_provider_catalog"
 
 class Runner < ApplicationRecord
   has_logidze
@@ -56,38 +57,7 @@ class Runner < ApplicationRecord
   #     prefix (e.g. "minimax/<model>"). Required for any @ai-sdk/anthropic entry.
   #   - env_var: overrides the auto-derived "<SERVICE_TYPE>_API_KEY" name (MiniMax
   #     authenticates via ANTHROPIC_API_KEY despite its "minimax" service type).
-  DIRECT_OUTBOUND_API_PROVIDERS = {
-    "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter",
-                      opencode_model_provider: "openrouter" },
-    "anthropic" => { label: "Anthropic", base_url: "https://api.anthropic.com", service_type: "anthropic",
-                     opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
-                     opencode_model_provider: "anthropic" },
-    "openai" => { label: "OpenAI", base_url: "https://api.openai.com/v1", service_type: "openai",
-                  kilocode_provider_id: "openai", opencode_model_provider: "openai" },
-    "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception",
-                     kilocode_provider_id: "inception", opencode_model_provider: "inception" },
-    "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek",
-                    opencode_model_provider: "deepseek" },
-    "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
-                   opencode_model_provider: "mistral" },
-    "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic/v1", chat_base_url: "https://api.minimax.io/v1", service_type: "minimax",
-                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
-                   opencode_model_provider: "minimax" },
-    "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
-               opencode_model_provider: "xai" },
-    "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
-               opencode_model_provider: "zai", chat_max_tokens: 16_384 },
-    # Both KiloCode and OpenCode ship a built-in "zai-coding-plan" provider
-    # whose availability probe checks ZHIPU_API_KEY (not ZAI_CODING_API_KEY).
-    # Override the auto-derived name so the key lands where the CLIs look.
-    # opencode_model_provider matches the built-in provider id (hyphenated).
-    # opencode_custom marks this as needing a declared model entry: opencode's
-    # catalog tops out before glm-5.x, so opencode_runner_runtime extends the
-    # built-in provider with the configured model instead of overriding it.
-    "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding",
-                      env_var: "ZHIPU_API_KEY", kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai-coding-plan",
-                      opencode_custom: true, chat_max_tokens: 16_384 }
-  }.freeze
+  DIRECT_OUTBOUND_API_PROVIDERS = RunnerProviderCatalog::DIRECT_OUTBOUND_API_PROVIDERS
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
   OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.filter_map do |provider_key, config|
@@ -111,17 +81,7 @@ class Runner < ApplicationRecord
   # Pi supports multiple upstream API-key providers selected via --provider.
   # Keep this list aligned to providers Paid can represent as ProviderApiKey
   # records and that Pi documents as built-in API-key auth targets.
-  PI_API_PROVIDERS = {
-    "anthropic" => { label: "Anthropic", service_type: "anthropic", env_var: "ANTHROPIC_API_KEY" },
-    "openai" => { label: "OpenAI", service_type: "openai", env_var: "OPENAI_API_KEY" },
-    "deepseek" => { label: "DeepSeek", service_type: "deepseek", env_var: "DEEPSEEK_API_KEY" },
-    "google" => { label: "Google Gemini", service_type: "google", env_var: "GEMINI_API_KEY" },
-    "mistral" => { label: "Mistral", service_type: "mistral", env_var: "MISTRAL_API_KEY" },
-    "minimax" => { label: "MiniMax", service_type: "minimax", env_var: "ANTHROPIC_API_KEY" },
-    "xai" => { label: "xAI", service_type: "xai", env_var: "XAI_API_KEY" },
-    "zai" => { label: "z.ai", service_type: "zai", env_var: "ZAI_API_KEY" },
-    "openrouter" => { label: "OpenRouter", service_type: "openrouter", env_var: "OPENROUTER_API_KEY" }
-  }.freeze
+  PI_API_PROVIDERS = RunnerProviderCatalog::PI_API_PROVIDERS
   PI_API_PROVIDER_KEYS = PI_API_PROVIDERS.keys.freeze
   PI_DEFAULT_API_PROVIDER = "deepseek"
   OMP_API_PROVIDERS = PI_API_PROVIDERS

@@ -54,5 +54,21 @@ setup runner minutes; they do not claim a fourfold reduction in total CPU work.
 ## Open decisions
 
 Use observed timing artifacts to refine balancing if source-size estimates cause
-material skew. Optimize expensive factory graphs only with direct profiles and
-isolation evidence; do not globally bypass callbacks, tenant checks or validation.
+material skew. Broader fixture adoption requires direct profiles and isolation
+evidence; do not globally bypass callbacks, tenant checks or validation.
+
+## Reducing repeated work
+
+CLI listing, help and invalid-argument checks run before Rails boot. Provider
+metadata lives in one Rails-independent catalog shared with Runner; actual smoke
+execution still delegates to the existing RSpec entry point, which boots Rails.
+Apple preflight and project lookup retain Rails and database checks.
+
+Reuse stable persisted setup graphs in profiled hotspot groups through the
+existing fixture_kit integration, which materializes fresh records inside each
+example transaction. Generate snapshots through normal factories, preserving their
+persisted callback effects. Cache only stable user/project graphs; keep issues,
+agent runs, scenario-specific records and settings in each example, including
+contexts that override creation under active-run uniqueness constraints. Preserve
+association identity within each example when reconnecting the fresh objects.
+Do not share mutable model objects or disable callbacks and validations.

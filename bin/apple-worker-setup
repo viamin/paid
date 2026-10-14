@@ -103,7 +103,7 @@ end
 def require_smoke_environment!
   host_url = ENV["APPLE_VERIFICATION_HOST_URL"].to_s
   token = ENV["APPLE_VERIFICATION_HOST_TOKEN"].to_s
-  return if host_url.present? && token.present?
+  return unless host_url.strip.empty? || token.strip.empty?
 
   warn "--smoke requires APPLE_VERIFICATION_HOST_URL and APPLE_VERIFICATION_HOST_TOKEN."
   warn usage
@@ -196,11 +196,20 @@ parser = OptionParser.new do |opts|
   opts.on("-h", "--help") { puts usage; exit 0 }
 end.parse!
 
+# @spec TEST-SUITE-010
+if options[:mode] == :smoke || options[:mode] == :all
+  require_smoke_environment!
+  if options[:project_id].nil? || options[:image_digest].to_s.strip.empty?
+    warn(options[:project_id].nil? ? "Smoke mode requires --project and --image." : "Smoke mode requires --image.")
+    warn usage
+    exit 2
+  end
+end
+
 require_relative "../config/environment"
 
 smoke_project = nil
 if options[:mode] == :smoke || options[:mode] == :all
-  require_smoke_environment!
   smoke_project = resolve_smoke_project(options) || begin
     warn usage
     exit 2

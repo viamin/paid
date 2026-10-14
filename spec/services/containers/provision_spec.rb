@@ -4,6 +4,12 @@ require "rails_helper"
 require "timeout"
 
 RSpec.describe Containers::Provision do
+  fixture "containers/provision/base"
+
+  def fixture_repository
+    instance_variable_get(:@_fixture_kit_repository)
+  end
+
   # Extracts and decodes the base64 payload from a write_container_file command
   def decoded_base64_content(cmd)
     match = cmd.match(/echo (\S+) \| base64 -d >/)
@@ -169,7 +175,7 @@ RSpec.describe Containers::Provision do
       provider_resource_id: provider_resource_id)
   end
 
-  let(:project) { create(:project) }
+  let(:project) { fixture_repository.project }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
   let(:service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }

@@ -14,3 +14,6 @@ prefix: TEST-SUITE
 - [x] **TEST-SUITE-007** — When certificate behavior specs generate keys, they SHALL use the existing explicit smaller test-key option without changing production defaults or omitting signing, chain validation or encryption assertions.
 - [x] **TEST-SUITE-008** — When Apple worker CLI specs run without DATABASE_URL, they SHALL inherit the configured Rails test connection rather than fail solely because a URL is absent.
 - [x] **TEST-SUITE-009** — When CI profiles the test suite, it SHALL retain per-example timing artifacts and SHALL give the opt-in full-suite profiler a timeout sufficient for the known serial suite duration.
+
+- [x] **TEST-SUITE-010** — When CLI commands only list providers, show usage, or reject invalid smoke arguments, they SHALL finish without booting Rails, preserve documented output and exit codes, and use the same provider catalog as application runner configuration.
+- [x] **TEST-SUITE-011** — When hotspot specs reuse a persisted fixture graph, each example SHALL receive fresh model instances and transactional isolation; mutations SHALL NOT leak between examples and normal callbacks, validations and tenant constraints SHALL remain enabled.
