@@ -3,6 +3,7 @@
 module ClarifyingQuestions
   class SubmitAnswers
     ANSWER_MARKER = Load::ANSWER_MARKER
+    StaleQuestionsError = Class.new(ArgumentError)
     # Stable HTML marker that delimits the operator's freeform note (not tied
     # to any individual question). Also serves as the boundary that stops
     # ClarifyingQuestions::AnswerPairs from folding the notes block into the
@@ -61,6 +62,7 @@ module ClarifyingQuestions
       result, new_body = DescriptionSection.update_issue_body(
         client: github_client, repo: project.full_name, number: issue.github_number
       ) do |body|
+        ensure_questions_are_current!(body, digest)
         DescriptionSection.replace_answers_section(
           body: body,
           answers_block: formatted_answers_block,
@@ -69,6 +71,18 @@ module ClarifyingQuestions
       end
       update_local_body!(new_body)
       result
+    end
+
+    # The form's questions came from an earlier load. The remote description
+    # can change between that load and this write, so answers must only be
+    # attached to the same question set. Raising here also prevents the
+    # caller from clearing the newer set's needs-input state.
+    # @spec QUIET-MODE-010 @spec QUIET-MODE-011
+    def ensure_questions_are_current!(body, digest)
+      remote_questions = DescriptionSection.parse_questions(body).questions
+      return if remote_questions.any? && DescriptionSection.digest_for(remote_questions) == digest
+
+      raise StaleQuestionsError, "Clarifying questions changed. Please reload and try again."
     end
 
     # Mirror the body edit onto the local Issue row so subsequent

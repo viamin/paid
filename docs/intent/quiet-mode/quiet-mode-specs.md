@@ -68,8 +68,11 @@ prefix: QUIET-MODE
   the prior marker-tagged comment submission path SHALL be unchanged. Before
   replacing either marked description section, the system SHALL fetch the
   current remote description and derive the replacement from that value so a
-  human edit since the last issue sync is preserved; it SHALL retry a detected
-  remote write conflict once and otherwise surface the conflict.
+  human edit since the last issue sync is preserved. Before replacing an
+  answers section, the system SHALL reject the submission when the fresh
+  remote questions section no longer matches the submitted questions, without
+  clearing the needs-input state. It SHALL retry a detected remote write
+  conflict once and otherwise surface the conflict.
 - [x] **QUIET-MODE-011** — `ClarifyingQuestions::Load` SHALL resolve pending
   questions and answers from the description sections when present and from
   the marker-tagged GitHub comments otherwise; freshness between a questions
