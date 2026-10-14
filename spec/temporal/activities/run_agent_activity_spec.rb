@@ -4,9 +4,9 @@ require "rails_helper"
 
 # @spec PROMPT-EVOLUTION-003, RUNNER-FALLBACK-001, RUNNER-FALLBACK-002, RUNNER-FALLBACK-011, RUNNER-FALLBACK-012
 RSpec.describe Activities::RunAgentActivity do
+  include_context "with stable agent execution project"
+
   let(:activity) { described_class.new }
-  let(:user) { create(:user) }
-  let(:project) { create(:project, account: user.account, created_by: user) }
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, :with_git_context, project: project, issue: issue, container_id: "abc123") }
   let(:container_service) { instance_double(Containers::Provision) }

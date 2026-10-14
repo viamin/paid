@@ -780,6 +780,8 @@ RSpec.describe Containers::Provision do
   end
 
   describe "#provision" do
+    include_context "with stable provisioning project"
+
     context "when successful" do
       it "creates and starts a container" do
         expect(Docker::Container).to receive(:create).and_return(mock_container)

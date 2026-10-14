@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "open3"
+require "rbconfig"
 
 class SpecHelperCoverage < Pathname
 end
@@ -19,7 +20,8 @@ RSpec.describe SpecHelperCoverage, :no_db do
       puts Object.const_defined?(:SimpleCov)
     RUBY
 
-    Open3.capture3(env, "bundle", "exec", "ruby", "-e", probe_script, chdir: Rails.root.to_s)
+    probe_env = { "FPROF" => nil, "FDOC" => nil, "EVENT_PROF" => nil }.merge(env)
+    Open3.capture3(probe_env, RbConfig.ruby, "-e", probe_script, chdir: Rails.root.to_s)
   end
 
   # The decision logic is unit-tested in-process against the pure

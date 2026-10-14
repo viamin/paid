@@ -2,6 +2,7 @@
 
 require "json"
 require "open3"
+require_relative "../../lib/runner_provider_catalog"
 
 module RunnerSmokeHelpers
   Scenario = Struct.new(
@@ -32,19 +33,7 @@ module RunnerSmokeHelpers
 
   ScenarioUnavailableError = Class.new(StandardError)
 
-  SERVICE_TYPE_ENV_VARS = {
-    "anthropic" => "ANTHROPIC_API_KEY",
-    "openai" => "OPENAI_API_KEY",
-    "openrouter" => "OPENROUTER_API_KEY",
-    "google" => "GOOGLE_API_KEY",
-    "inception" => "INCEPTION_API_KEY",
-    "deepseek" => "DEEPSEEK_API_KEY",
-    "mistral" => "MISTRAL_API_KEY",
-    "minimax" => "ANTHROPIC_API_KEY",
-    "xai" => "XAI_API_KEY",
-    "zai" => "ZAI_API_KEY",
-    "zai_coding" => "ZHIPU_API_KEY"
-  }.freeze
+  SERVICE_TYPE_ENV_VARS = RunnerProviderCatalog::SERVICE_TYPE_ENV_VARS
   DEFAULT_SCENARIO_NAMES = %w[
     claude-subscription
     codex-subscription
@@ -193,7 +182,7 @@ module RunnerSmokeHelpers
   }.freeze
 
   # Env var carrying the model id for an ad-hoc (bin/provider-smoke) run.
-  ADHOC_MODEL_ENV = "PAID_SMOKE_ADHOC_MODEL"
+  ADHOC_MODEL_ENV = RunnerProviderCatalog::ADHOC_MODEL_ENV
 
   module_function
 
@@ -224,16 +213,7 @@ module RunnerSmokeHelpers
   end
 
   def provider_configs_for_runner(runner_key)
-    case runner_key.to_s
-    when "opencode", "kilocode"
-      Runner::DIRECT_OUTBOUND_API_PROVIDERS
-    when "pi"
-      Runner::PI_API_PROVIDERS
-    when "omp"
-      Runner::OMP_API_PROVIDERS
-    else
-      {}
-    end
+    RunnerProviderCatalog.provider_configs_for_runner(runner_key)
   end
 
   def provider_config_for(runner_key:, api_provider:)
@@ -245,10 +225,7 @@ module RunnerSmokeHelpers
   end
 
   def api_key_env_var_for(runner_key:, api_provider:)
-    config = provider_config_for(runner_key: runner_key, api_provider: api_provider)
-    return if config.blank?
-
-    config[:env_var].presence || SERVICE_TYPE_ENV_VARS[config.fetch(:service_type)]
+    RunnerProviderCatalog.api_key_env_var_for(runner_key:, api_provider:)
   end
 
   def scenarios_from_env
