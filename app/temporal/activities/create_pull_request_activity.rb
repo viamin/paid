@@ -522,8 +522,11 @@ module Activities
       else
         best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
       end
+      best_effort(agent_run_id, context: "publish_tdd_test_revision") do
+        publish_tdd_test_revision(agent_run, pr.number) if agent_run.tdd_test_writing_phase? && pr_action != "reused"
+      end
       best_effort(agent_run_id, context: "add_pr_labels") do
-        add_pr_labels(client, project, pr.number, agent_run, issue: issue)
+        add_pr_labels(client, project, pr.number, issue: issue)
       end
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
@@ -1215,10 +1218,8 @@ module Activities
     end
 
     # @spec TDD-PR-001
-    def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+    def add_pr_labels(client, project, pr_number, issue: nil)
       if project.label_integration_mode == "ignored"
-        return mark_local_tdd_ready(project, pr_number) if agent_run.tdd_test_writing_phase?
-
         return
       end
 
@@ -1226,7 +1227,6 @@ module Activities
       return unless project.upstream_feature_enabled?(:upstream_issue_labeling)
 
       labels = []
-      labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?
         labels << project.generated_label_name
         labels << project.automation_label_name
@@ -1237,6 +1237,19 @@ module Activities
 
       client.add_labels_to_issue(project.full_name, pr_number, labels)
       merge_local_pr_labels(project, pr_number, labels)
+    end
+
+    # @spec TDD-PR-007
+    def publish_tdd_test_revision(agent_run, pr_number)
+      result = Tdd::PublishTestRevision.call(agent_run: agent_run, pull_request_number: pr_number)
+      return if result.success?
+
+      logger.warn(
+        message: "tdd.publish_test_revision_failed",
+        agent_run_id: agent_run.id,
+        pull_request_number: pr_number,
+        reason: result.error
+      )
     end
 
     # @spec TDD-PR-001
@@ -1285,18 +1298,6 @@ module Activities
 
       pull_request.with_lock do
         pull_request.update!(labels: (pull_request.labels + labels).uniq)
-      end
-    end
-
-    # Only initializes the gate when unset, under a lock, so a retried
-    # test-writing activity cannot clobber an operator's already-recorded
-    # approved/changes_requested verdict back to ready_for_review.
-    def mark_local_tdd_ready(project, pr_number)
-      issue = project.issues.find_by(github_number: pr_number, is_pull_request: true)
-      return unless issue
-
-      issue.with_lock do
-        issue.update!(tdd_review_state: "ready_for_review") if issue.tdd_review_state.nil?
       end
     end
 

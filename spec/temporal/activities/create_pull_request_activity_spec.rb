@@ -2142,6 +2142,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
         pull_request = project.issues.pull_requests_only.find_by!(github_number: existing_pr.number)
         expect(pull_request.tdd_review_state).to eq("approved")
+        expect(github_client).not_to have_received(:add_labels_to_issue)
       end
 
       it "still marks the run completed when post-processing raises" do

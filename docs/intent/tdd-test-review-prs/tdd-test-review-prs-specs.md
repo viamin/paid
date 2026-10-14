@@ -61,11 +61,20 @@
   Untrusted comment bodies SHALL be excluded. If no current trusted feedback is
   available, or the latest test-writing run ended `no_changes` against the same
   feedback snapshot, the scanner SHALL escalate the PR for manual review rather
-  than queueing another generic run.
-  *Code:* `app/temporal/activities/scan_paid_prs_activity.rb`,
+  than queueing another generic run. When that revision publishes a new commit,
+  Paid SHALL replace the preceding approval or changes-requested verdict with
+  `paid-tests-ready-for-review`, for both GitHub-label and local-control
+  projects. A no-output run or failed/partial remote-label transition SHALL NOT
+  claim a new local revision, and an older rejection SHALL NOT trigger another
+  test-writing run after a newer revision exists.
+  *Code:* `app/services/tdd/publish_test_revision.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
   `app/services/automation/strategies/auto_review.rb`,
   `app/temporal/activities/queue_agent_run_activity.rb`,
   `app/services/prompts/build_for_pr.rb`.
-  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  *Test:* `spec/services/tdd/publish_test_revision_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/services/automation/strategies/auto_review_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
