@@ -46,6 +46,8 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
     allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:remove_label_from_issue)
     allow(github_client).to receive(:update_pull_request)
     allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(
       OpenStruct.new(
@@ -304,6 +306,19 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
         42,
         body: include("## Test Outline")
       )
+    end
+
+    it "returns a revised test-writing commit to fresh review" do # @spec TDD-PR-007
+      agent_run.update!(tdd_phase: "test_writing")
+      issue.update!(github_number: 42, labels: [ "paid-test-changes-requested" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ "paid-tests-ready-for-review" ])
+      expect(github_client).to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-test-changes-requested")
+      expect(issue.reload.labels).to contain_exactly("paid-tests-ready-for-review")
     end
 
     it "enqueues ProcessRunQueueJob" do

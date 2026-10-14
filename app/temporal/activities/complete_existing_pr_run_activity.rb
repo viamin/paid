@@ -78,6 +78,7 @@ module Activities
         record_draft_review_round_if_needed(agent_run)
         capture_session_summary_if_needed(agent_run)
         refresh_pull_request_body(client, project, pr, agent_run)
+        publish_tdd_test_revision(agent_run, pr.number)
         post_update_comment(client, project, pr.number, agent_run)
 
         agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
@@ -190,6 +191,19 @@ module Activities
         pr_number: pr.number,
         error_class: e.class.name,
         error: e.message
+      )
+    end
+
+    # @spec TDD-PR-007
+    def publish_tdd_test_revision(agent_run, pr_number)
+      result = Tdd::PublishTestRevision.call(agent_run: agent_run, pull_request_number: pr_number)
+      return if result.success? || result.error == :not_test_writing_phase
+
+      logger.warn(
+        message: "tdd.publish_test_revision_failed",
+        agent_run_id: agent_run.id,
+        pull_request_number: pr_number,
+        reason: result.error
       )
     end
 
