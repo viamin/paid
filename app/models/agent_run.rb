@@ -278,6 +278,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
   after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
+  after_commit :enqueue_project_readiness_evaluation, on: :update, if: :project_readiness_refresh_needed?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -2555,18 +2556,30 @@ class AgentRun < ApplicationRecord
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
+  # When a `custom_prompt` is set (manually supplied, materialized from a
+  # queue-time PromptVersion, or otherwise bypassing the normal issue path),
+  # the custom text is wrapped with the mandatory safety, service-environment,
+  # and TDD-phase sections through `PromptAssembly::BuildCustomPrompt` so
+  # profile suppression or template overrides cannot omit them. The
+  # code-scanning remediation path keeps its supplementary-instructions
+  # wrapping (the issue path already carries the safety and service sections).
+  #
   # When the create_pr path produced a PromptAssembly result that already
   # includes marketplace content, the marketplace injection is skipped to
   # avoid duplication. Section provenance is persisted to external_metadata.
   #
   # @return [String, nil] The prompt to send to the agent
-  # @spec GITHUB-SYNC-019
+  # @spec GITHUB-SYNC-019, PROMPT-ASSEMBLY-019, PROMPT-ASSEMBLY-020,
+  #       PROMPT-ASSEMBLY-021, PROMPT-ASSEMBLY-022
   def effective_prompt
-    if code_scanning_remediation?
-      base = prompt_for_goal
-      base = [ base, "# Supplementary run instructions\n\n#{custom_prompt}" ].compact.join("\n\n") if custom_prompt.present?
+    base = if code_scanning_remediation?
+      prompt_for_goal.then do |goal_prompt|
+        custom_prompt.present? ? [ goal_prompt, "# Supplementary run instructions\n\n#{custom_prompt}" ].join("\n\n") : goal_prompt
+      end
+    elsif custom_prompt.present?
+      assembled_custom_prompt
     else
-      base = custom_prompt.presence || prompt_for_goal
+      prompt_for_goal
     end
 
     unless prompt_assembly_marketplace_handled?
@@ -2606,6 +2619,23 @@ class AgentRun < ApplicationRecord
   # @spec PROMPT-ASSEMBLY-014
   def prompt_assembly_marketplace_handled?
     @prompt_assembly_result&.sections&.any? { |section| section.key == :marketplace_attachments }
+  end
+
+  # Assembles a `custom_prompt` through `PromptAssembly::BuildCustomPrompt`,
+  # wrapping the custom task text with the mandatory safety, service
+  # environment, and TDD-boundary sections. Memoizes the assembly result so
+  # the existing provenance-persistence path can record it.
+  #
+  # @spec PROMPT-ASSEMBLY-019, PROMPT-ASSEMBLY-020, PROMPT-ASSEMBLY-021,
+  #       PROMPT-ASSEMBLY-022
+  def assembled_custom_prompt
+    @prompt_assembly_result = PromptAssembly::BuildCustomPrompt.call(
+      custom_prompt: custom_prompt,
+      project: project,
+      agent_run: self
+    )
+    record_prompt_assembly!(@prompt_assembly_result.provenance.transform_keys(&:to_s))
+    @prompt_assembly_result.text
   end
 
   # Persists section provenance from the memoized PromptAssembly result into
@@ -4103,6 +4133,15 @@ class AgentRun < ApplicationRecord
 
   def enqueue_resource_profile_refresh
     AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
+  end
+
+  # @spec PROJECT-READINESS-006
+  def project_readiness_refresh_needed?
+    saved_change_to_status? && status == "completed" && result_commit_sha.present? && !synthetic_operational_run?
+  end
+
+  def enqueue_project_readiness_evaluation
+    EvaluateProjectReadinessJob.perform_later(project_id)
   end
 
   # Records the dispatch circuit breaker outcome for every terminal run,

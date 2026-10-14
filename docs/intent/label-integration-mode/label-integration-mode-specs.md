@@ -54,6 +54,13 @@
   is disabled, Paid SHALL not use those labels as a PR-scanning activation
   channel.
 
+- [x] **LABEL-CONTROL-007** — When an ignored-mode project has
+  `auto_scan_prs` enabled, Paid SHALL scan an open PR linked to Paid work, an
+  explicitly paid-activated PR, or a PR whose parent issue is paid-activated.
+  An explicit PR deactivation SHALL override each of those scan-eligibility
+  paths. An explicit PR or parent activation SHALL authorize scanning of an
+  externally opened PR without consulting a GitHub label.
+
 - [x] **LABEL-INTEGRATION-005** — When a project enters `ignored` from another
   mode, Paid SHALL idempotently import the currently label-derived paused and
   escalated states into their local representations before later label edits

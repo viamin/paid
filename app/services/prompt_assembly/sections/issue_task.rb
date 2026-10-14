@@ -8,6 +8,29 @@ class PromptAssembly::Sections::IssueTask
 
   PROMPT_SLUG = "coding.issue_implementation"
 
+  # The instruction block rendered into the issue-implementation prompt when
+  # the project has quiet mode enabled. Kept identical to the PR follow-up
+  # variant so the agent's commit-message contract is stable across run
+  # shapes (#4232).
+  QUIET_MODE_COMMIT_MESSAGE_BODY = <<~SECTION.freeze
+    # Commit Message Is The Commentary Channel
+
+    Quiet mode is enabled for this project: Paid does NOT post a summary
+    comment after this push. The commit message is the only record of what
+    this run changed and why. Every commit on this branch MUST therefore
+    carry the reviewer-facing explanation in its message body.
+
+    Subject line: conventional-commit style, ≤ 72 characters — for example
+    `Implement: extract runner selection into AgentRun#select_runner` rather
+    than `implement runner selection`.
+
+    Commit body (one or more wrapped paragraphs):
+    - What changed (the substantive code shape, not a list of file names).
+    - Why it changed (which issue requirement, review comment, CI failure, or
+      follow-up request it satisfies).
+    - Anything the reviewer should know that the diff alone does not show.
+  SECTION
+
   FALLBACK_PROMPT = <<~'PROMPT'.freeze
     # Task
 
@@ -58,7 +81,7 @@ class PromptAssembly::Sections::IssueTask
   private
 
   def build_section
-    PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
+    [ task_template, commit_message_guidance ].compact_blank.join("\n\n")
   end
 
   def required
@@ -76,8 +99,27 @@ class PromptAssembly::Sections::IssueTask
       body: issue.body.to_s,
       lint_command: lint_command,
       test_command: test_command,
-      setup_database_instruction: setup_database_instruction
+      setup_database_instruction: setup_database_instruction,
+      commit_message_guidance: ""
     }
+  end
+
+  # Quiet mode (`Project#quiet_mode`) silently routes agent commentary into
+  # commit messages instead of issue/PR comments. For issue-implementation
+  # runs the agent still writes a descriptive message either way; in quiet
+  # mode the body must explicitly cover the substantive change so the Git
+  # log stays the project's authoritative review-tracking surface (#4232).
+  # @spec QUIET-MODE-008
+  def commit_message_guidance
+    return "" unless quiet_mode?
+
+    QUIET_MODE_COMMIT_MESSAGE_BODY
+  end
+
+  def quiet_mode?
+    return false unless project
+
+    project.respond_to?(:quiet_mode?) && project.quiet_mode?
   end
 
   def selected_prompt_version
@@ -96,6 +138,10 @@ class PromptAssembly::Sections::IssueTask
       variables: variables,
       fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, variables) }
     )
+  end
+
+  def task_template
+    PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
   end
 
   def lint_command

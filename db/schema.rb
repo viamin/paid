@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_103927) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1726,7 +1726,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
     t.bigint "issue_id", null: false
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id"], name: "index_feature_intent_issues_on_feature_intent_id"
-    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id", unique: true
+    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id"
   end
 
   create_table "feature_intents", comment: "RDR-066 feature intent: links a feature's approved design revision to its issue tree.", force: :cascade do |t|
@@ -1741,6 +1741,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
     t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
     t.string "criteria_clarity_state", default: "pending", null: false, comment: "Cached AI clarity judgment for acceptance criteria: pending, clear, or vague. Computed by FeatureIntents::EvaluateCriteriaClarity, not on Inbox render, so listing entries never makes a live LLM call per feature."
     t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
+    t.jsonb "issue_tree_manifest", default: {}, null: false, comment: "Planned issue-tree receipt keyed by stable task identity, including expected relationships and qualified remote identities."
+    t.jsonb "issue_tree_verification", default: {}, null: false, comment: "Latest structural issue-tree verification result, revision, time, filing progress, and unresolved work."
     t.bigint "project_id", null: false
     t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
     t.string "title", null: false, comment: "Human-readable feature name."
@@ -2110,6 +2112,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
     t.datetime "operational_failure_reset_at"
     t.datetime "orphaned_needs_input_label_evaluated_at", comment: "When the historical questionless needs-input label reconciliation last evaluated this issue. Cleared labels do not need a later backfill scan; labels added after the evaluation are handled directly by the GitHub sync delta."
     t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
+    t.datetime "paid_activated_at", comment: "Timestamp this issue/PR was most recently marked paid-activated. Distinct from updated_at so unrelated sync metadata cannot clear the activation signal."
+    t.string "paid_activation_state", comment: "Paid-local per-item activation state for ignored label mode. Set to 'activated' when a user marks this issue/PR as Paid's to work on; auto-pick, auto-enhance, and PR-scan scope read this column instead of GitHub labels in ignored mode."
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
@@ -2156,6 +2160,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
     t.index ["project_id", "orphaned_needs_input_label_evaluated_at"], name: "index_issues_pending_orphaned_needs_input_label_evaluation", where: "(orphaned_needs_input_label_evaluated_at IS NULL)"
+    t.index ["project_id", "paid_activation_state"], name: "index_issues_on_project_id_and_paid_activation_state"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "paused"], name: "index_issues_on_project_id_and_paused"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
@@ -3029,6 +3034,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
     t.boolean "quiet_mode", default: false, null: false, comment: "When true, Paid suppresses all issue/PR comment posting for this project (PR description writes are unaffected)."
+    t.datetime "readiness_evaluated_at", comment: "When the current project-readiness snapshot was evaluated against a checkout."
+    t.jsonb "readiness_gaps", default: [], null: false, comment: "Latest deterministic project-readiness gaps used by the operator Inbox."
     t.string "repo", null: false
     t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
     t.boolean "retry_failed_manual_runs", default: true, null: false, comment: "When true, a failed manual agent run with no issue/PR attachment and no observable work is automatically re-queued with backoff, up to AgentRun::MAX_MANUAL_RETRY_ATTEMPTS."
@@ -3536,6 +3543,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_023127) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_service_containers_on_account_id"
+  end
+
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
   end
 
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|

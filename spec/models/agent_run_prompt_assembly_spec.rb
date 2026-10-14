@@ -205,4 +205,93 @@ RSpec.describe AgentRun do
       expect(agent_run.external_metadata["issue_prompt_assembly"]).to be_present
     end
   end
+
+  describe "#effective_prompt with a manual custom_prompt" do
+    let(:custom_only_run) { create(:agent_run, project: project, issue: nil, custom_prompt: "Run a one-off cleanup task") }
+
+    # @spec PROMPT-ASSEMBLY-019
+    it "preserves the custom task text verbatim" do
+      prompt = custom_only_run.effective_prompt
+
+      expect(prompt).to include("Run a one-off cleanup task")
+    end
+
+    # @spec PROMPT-ASSEMBLY-019
+    it "wraps the custom task text with the mandatory safety rules" do
+      prompt = custom_only_run.effective_prompt
+
+      expect(prompt).to include("MUST pass before every commit")
+      expect(prompt).to include("Never use `--no-verify`")
+      expect(prompt).to include("Fix forward")
+    end
+
+    # @spec PROMPT-ASSEMBLY-021
+    it "includes the service environment section for issue-less create_pr runs" do
+      prompt = custom_only_run.effective_prompt
+
+      expect(prompt).to include("Service Environment").or include("Available Services").or include("Environment Constraints")
+    end
+
+    # @spec PROMPT-ASSEMBLY-020
+    it "includes TDD boundaries when the run is TDD-governed" do
+      tdd_run = create(:agent_run, project: project, issue: nil, custom_prompt: "Write tests for X", tdd_phase: "test_writing")
+
+      prompt = tdd_run.effective_prompt
+
+      expect(prompt).to include("TDD Boundaries — test-writing run")
+    end
+
+    it "persists test-writing phase guidance with its final execution prompt provenance" do # @spec PROMPT-ASSEMBLY-023
+      tdd_run = create(:agent_run, project: project, issue: nil, custom_prompt: "Write tests for X", tdd_phase: "test_writing")
+
+      prompt = tdd_run.effective_prompt
+
+      expect(prompt).to include("does not unlock implementation within this run")
+      section = tdd_run.reload.prompt_assembly_provenance["sections"].find { |entry| entry["key"] == "tdd_boundaries" }
+      expect(section).to include("required" => true, "inclusion_reason" => "TDD phase guidance and write-boundary contract")
+    end
+
+    # @spec PROMPT-ASSEMBLY-022
+    it "persists provenance with the custom task and mandatory sections" do
+      custom_only_run.effective_prompt
+
+      custom_only_run.reload
+      provenance = custom_only_run.prompt_assembly_provenance
+      expect(provenance).to be_present
+      expect(provenance["sections"].map { |s| s["key"] }).to include("task_custom", "safety_rules", "service_environment")
+    end
+
+    it "keeps the mandatory safety rules even when a profile disables them" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :safety_rules ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      prompt = custom_only_run.effective_prompt
+
+      expect(prompt).to include("MUST pass before every commit")
+    end
+  end
+
+  describe "#effective_prompt with a materialized prompt version" do
+    # @spec PROMPT-ASSEMBLY-019
+    it "preserves the rendered PromptVersion text and wraps it with mandatory sections" do
+      prompt_record = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |prompt|
+        prompt.name = "Issue implementation"
+        prompt.category = "coding"
+        prompt.active = true
+      end
+      prompt_record.create_version!(
+        template: "Queued template body for {{title}}",
+        variables: []
+      )
+      materialized_run = create(
+        :agent_run, project: project, issue: nil, custom_prompt: "Materialized task",
+        prompt_version: prompt_record.current_version
+      )
+
+      prompt = materialized_run.effective_prompt
+
+      expect(prompt).to include("Materialized task")
+      expect(prompt).to include("MUST pass before every commit")
+    end
+  end
 end

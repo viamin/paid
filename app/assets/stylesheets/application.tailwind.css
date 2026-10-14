@@ -62,6 +62,20 @@
    transcript instead of sitting idle below the composer. At `lg`+ the page
    keeps symmetric `py-8` padding, so the panel subtracts the matching `2rem`
    to avoid leaking the document into a scroll. (@spec CHAT-API-009)
+
+   At `lg`+ the panel is mounted inside the shared list-and-detail shell,
+   whose grid is bound to `calc(100dvh - 12rem)` and whose detail pane wraps
+   the panel in an `lg:h-full lg:overflow-y-auto` inner wrapper. The mobile
+   viewport-subtraction height would extend below the grid track, so
+   `--chat-panel-height` is set to `100%` here and the panel's inline
+   `height: var(--chat-panel-height, ...)` resolves to `100%` of that inner
+   wrapper (the grid track). The media query is unconditional, so this `100%`
+   override applies to every caller at `lg`+ — a panel rendered outside the
+   shared shell at desktop still resolves to `100%` here, not to the
+   `var(...)` fallback. The fallback inside `var(...)` therefore only takes
+   effect below `lg`, where the media query does not fire and the original
+   `100dvh - offset-top - bottom-space` calculation still produces the
+   intended viewport-bound height. (@spec CHAT-API-009)
    ======================================== */
 [data-controller~="chat"] {
   --chat-panel-bottom-space: 0px;
@@ -69,6 +83,7 @@
 @media (min-width: 1024px) {
   [data-controller~="chat"] {
     --chat-panel-bottom-space: 2rem;
+    --chat-panel-height: 100%;
   }
 }
 

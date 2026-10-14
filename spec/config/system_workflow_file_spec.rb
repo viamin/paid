@@ -22,6 +22,11 @@ RSpec.describe SystemWorkflowFile, :no_db do
     system_job.fetch("steps").find { |step| step["name"] == name }
   end
 
+  # @spec MOBILE-API-016
+  it "allows the browser suite to install the mobile contract toolchain from a cold cache" do
+    expect(system_job.fetch("timeout-minutes")).to eq(30)
+  end
+
   it "passes test credentials to the system job" do
     expect(system_job.fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",

@@ -669,4 +669,16 @@ RSpec.describe Inbox::Count do
       "not_evaluated" => []
     }
   end
+  describe "project setup pending Inbox count" do
+    # @spec PROJECT-READINESS-005
+    it "counts the same authorized auto-pick-disabled project as the queue" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "description" => "CI is required." } ])
+
+      expect(described_class.call(user:)).to eq(1)
+      expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+    end
+  end
 end

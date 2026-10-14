@@ -32,7 +32,7 @@ module MasterDetailLayoutHelper
   # card so the two halves of the surface read as one unit. `rounded-xl`
   # matches the existing inbox pane chrome; chat's container switches from
   # `rounded-lg bg-white shadow` to this shared chrome.
-  MASTER_DETAIL_PANE_CLASSES = "overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm".freeze
+  MASTER_DETAIL_PANE_CLASSES = "min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm".freeze
 
   # Empty-state card rendered in the detail pane slot when there is no
   # selection. Both Inbox ("Inbox clear") and Chat ("No conversation
@@ -54,7 +54,13 @@ module MasterDetailLayoutHelper
   #
   # Written as a literal string rather than interpolating
   # `MASTER_DETAIL_LIST_PANE_WIDTH` — see the note on that constant.
-  MASTER_DETAIL_GRID_CLASSES = "grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]".freeze
+  MASTER_DETAIL_GRID_CLASSES =
+    "grid gap-6 lg:h-[calc(100dvh-12rem)] lg:min-h-0 lg:grid-cols-[22rem_minmax(0,1fr)]".freeze
+
+  # Desktop cards clip their own rounded corners while this inner wrapper owns
+  # scrolling. Keeping the scroll region inside the card preserves the shared
+  # pane chrome and lets the list and detail retain independent scroll state.
+  MASTER_DETAIL_PANE_SCROLL_CLASSES = "lg:h-full lg:overflow-y-auto".freeze
 
   def master_detail_grid_classes
     MASTER_DETAIL_GRID_CLASSES
@@ -65,6 +71,11 @@ module MasterDetailLayoutHelper
   # applied centrally without re-encoding the constant in the views.
   def master_detail_pane_classes
     MASTER_DETAIL_PANE_CLASSES
+  end
+
+  # @spec LIST-DETAIL-007
+  def master_detail_pane_scroll_classes
+    MASTER_DETAIL_PANE_SCROLL_CLASSES
   end
 
   # Selected-row class set — see `MASTER_DETAIL_ACTIVE_ROW_CLASSES`.

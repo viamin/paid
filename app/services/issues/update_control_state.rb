@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module Issues
-  # @spec LABEL-CONTROL-002
+  # @spec LABEL-CONTROL-002 @spec LABEL-CONTROL-007
   class UpdateControlState
-    ACTIONS = %w[pause resume dismiss_escalation skip_auto_merge allow_auto_merge hold_for_review release_review_hold approve_tests request_test_changes set_priority exclude_from_auto_pick clear_auto_pick_exclusion].freeze
+    ACTIONS = %w[pause resume dismiss_escalation skip_auto_merge allow_auto_merge hold_for_review release_review_hold approve_tests request_test_changes set_priority exclude_from_auto_pick clear_auto_pick_exclusion mark_paid_activated unmark_paid_activated].freeze
 
     def self.call(...) = new(...).call
 
@@ -40,6 +40,8 @@ module Issues
       when "set_priority" then issue.update!(control_priority: priority.presence)
       when "exclude_from_auto_pick" then exclude_from_auto_pick!
       when "clear_auto_pick_exclusion" then issue.update!(auto_pick_excluded_reason: nil)
+      when "mark_paid_activated" then issue.paid_activate!
+      when "unmark_paid_activated" then issue.paid_deactivate!
       else raise ArgumentError, "Unsupported control action: #{action}"
       end
     end

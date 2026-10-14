@@ -84,29 +84,31 @@ automatic routers are never substitutes. The selected model is reported by
 the client and response and saved on API sessions without mutating the runner's
 agent-run tier mappings.
 
-API client construction, fallback selection, container chat plans, and
-chat-only runner tests share the selector. Mixed agent/chat runner tests retain
-the agent tier test behavior. Free chat selection is separate from automatic
-retry: existing chat runner fallback and rate-limit handling remain in force.
+API client construction, fallback selection, and chat-only runner tests share
+the selector. Mixed agent/chat runner tests retain the agent tier test
+behavior. Free chat selection is separate from automatic retry: existing chat
+runner fallback and rate-limit handling remain in force.
 
 All attached primary and reference projects constrain the pool. API clients
 revalidate selection before every request, including follow-up tool rounds,
 so newly attached project context cannot bypass those restrictions. The current
 agent-harness API transport cannot transmit OpenRouter data-collection/ZDR
 options: managed free API chat therefore rejects confidential and restricted
-context before transmission with an actionable configuration error. Container
-chat uses the most restrictive attached project's routing controls; Pi/OMP
-container chat also rejects sensitive context until those runners consume the
-routing metadata. Empty or privacy-incompatible free pools are excluded from fallback candidates so a
-later configured runner remains reachable.
+context before transmission with an actionable configuration error. The shared
+selector applies the same rejection to free `pi` and `omp` runners regardless
+of transport, because they cannot enforce that routing. Empty or
+privacy-incompatible free pools are excluded from fallback candidates so a
+later configured runner remains reachable. Broader container lifecycle and
+mutation behavior are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
 
 What ships today:
 
-- sessions default to inline-only (`container_capability: none`) unless the
-  caller explicitly requests workspace capability
+- API sessions default to inline-only (`container_capability: none`); a
+  capability request is a handoff to the RDR-037 workspace lifecycle, not
+  behavior shipped by this RDR-028 coverage
 - `ChatMessagesController` supports JSON and SSE request/response flows
 - `ChatChannel` plus `ChatSessions::ProcessMessageJob` support ActionCable
   progress events for the browser UI. The client's in-flight streaming bubble
@@ -140,9 +142,13 @@ What ships today:
 - the transcript hides leading `<think>` reasoning blocks from assistant
   messages during streaming and on reload while retaining the original
   content and escaping ordinary HTML
-- non-pending tool calls render as muted, left-railed cards so they are
-  distinguishable from assistant prose by silhouette; pending confirmations
-  retain their amber approval treatment as the transcript's strongest signal
+- consecutive non-pending tool calls render inside one closed, low-contrast
+  transcript disclosure so multi-step tool activity is skimmable; expanding it
+  preserves the existing muted left-railed individual cards. Pending
+  confirmations never join a group and retain their amber approval treatment
+  as the transcript's strongest signal. Pagination extends its message slice
+  across a leading tool-run boundary so a persisted run is always rendered in
+  one maximal disclosure, including when older transcript frames load lazily
 - MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back

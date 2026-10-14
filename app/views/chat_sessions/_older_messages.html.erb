@@ -7,7 +7,11 @@
       <p class="py-2 text-center text-xs text-gray-400">Loading older messages...</p>
     <% end %>
   <% end %>
-  <% messages.each do |message| %>
-    <%= render "chat_messages/message", message: message %>
+  <% each_chat_transcript_segment(messages) do |segment| %>
+    <% if chat_tool_run?(segment) %>
+      <%= render "chat_messages/tool_call_group", messages: segment %>
+    <% else %>
+      <%= render "chat_messages/message", message: segment.first %>
+    <% end %>
   <% end %>
 <% end %>

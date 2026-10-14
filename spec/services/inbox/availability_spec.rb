@@ -238,4 +238,27 @@ RSpec.describe Inbox::Availability do
       expect(described_class.call(user: other_user).total_count).to eq(0)
     end
   end
+
+  describe "project setup pending Inbox availability" do
+    around do |example|
+      original_store = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      example.run
+    ensure
+      Rails.cache = original_store
+    end
+
+    # @spec PROJECT-READINESS-005
+    it "uses the same project-backed readiness lane as the queue and count" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "description" => "CI is required." } ])
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::PROJECT_SETUP_PENDING_KIND]).to eq(1)
+      expect(availability.project_counts[project.id]).to eq(1)
+    end
+  end
 end

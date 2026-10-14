@@ -4,6 +4,9 @@ module Activities
   # Completes an agent run that pushed to an existing PR's branch.
   # Marks the run as completed with the existing PR's URL/number
   # and adds a comment to the PR noting the agent pushed updates.
+  # When the project has quiet_mode enabled (#4232), the per-push summary
+  # comment is suppressed — the agent's commit message is the only
+  # commentary channel.
   class CompleteExistingPrRunActivity < BaseActivity
     activity_name "CompleteExistingPrRun"
     COMMENT_MARKER = "<!-- paid:agent-update -->"
@@ -110,8 +113,13 @@ module Activities
       }
     end
 
+    # @spec QUIET-MODE-007
     def post_update_comment(client, project, pr_number, agent_run)
       return unless project.upstream_feature_enabled?(:upstream_issue_comments)
+      # Quiet mode skips the per-push summary comment — the agent's commit
+      # message is the only commentary channel left (#4232).
+      return if quiet_mode?(project)
+      return unless summary_comments_enabled?(agent_run)
 
       body = build_comment_body(client, project, pr_number, agent_run)
       return if body.blank?
@@ -130,6 +138,7 @@ module Activities
     end
 
     def post_update_comment_unless_already_posted(client, project, pr_number, agent_run)
+      return if quiet_mode?(project)
       return if client.issue_comments(project.full_name, pr_number).any? { |comment| self.class.agent_update_comment?(comment.body) }
 
       post_update_comment(client, project, pr_number, agent_run)
@@ -143,6 +152,10 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    def quiet_mode?(project)
+      project.respond_to?(:quiet_mode?) && project.quiet_mode?
     end
 
     # Re-evaluates the PR gate after PushBranchActivity has persisted the
@@ -187,7 +200,7 @@ module Activities
     # (CreatePullRequestActivity, per LID-RUNS-003) and in structured logs +
     # agent-run metadata (Lid::CoherenceCheck).
     def build_comment_body(client, project, pr_number, agent_run)
-      summary = summary_comments_enabled?(agent_run) ? generate_summary(client, project, pr_number, agent_run) : nil
+      summary = generate_summary(client, project, pr_number, agent_run)
       return if summary.blank?
 
       "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary}"

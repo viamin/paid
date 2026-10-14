@@ -226,7 +226,38 @@ and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
 (reused approval-gated foundations are shipped; the new RDR-specific behavior
 remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
 and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
-no implementation shipped.
+no implementation shipped. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
+and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
+2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
+confirm that #4309 remains open until those focused gaps ship and a future
+audit can rerun the structural and database-backed checks against shipped
+behavior. The [2026-10-13 umbrella final-acceptance refresh](audit-report-2026-10-13-rdr-069-071-epic-final-acceptance.md)
+re-runs every structural and database-backed check used by the prior
+audits against the current working tree (1,310 focused specs, 0 failures;
+176 tables; no facet / exploration / investigation / diagram /
+preference / confidence-driven schema), reaches the same conclusion, and
+keeps the umbrella open with non-closing `Tracks #4309` language.
+
+RDR-075 is held for human review in
+[#4364](https://github.com/viamin/paid/pull/4364) and is not yet merged,
+so it does not appear in the index above; the umbrella
+[#4365](https://github.com/viamin/paid/issues/4365) tracks its
+implementation tree. The 2026-10-12 readiness audit
+[(`audit-report-2026-10-12-rdr-075.md`)](audit-report-2026-10-12-rdr-075.md)
+records that no RDR-075 code, schema, model, coordinator, rubric, evidence,
+finding synthesis, or `layered_verification_coordinator` flag has shipped,
+that no `docs/intent/layered-verification/` LID segment yet exists, and that
+the umbrella issue must remain open until Phases 1–4 (#4366–#4369) and the
+closeout (#4370) own their part of the implementation. The
+[2026-10-13 final-acceptance audit](audit-report-2026-10-13-rdr-075-final.md)
+reconfirms that outcome against the live issue state and repository, without
+claiming that RDR-075 is merged or ready to close. The
+[2026-10-13 umbrella final-acceptance audit](audit-report-2026-10-13-rdr-075-epic-final-acceptance.md)
+refreshes the same conclusion with database-backed runtime confirmation and
+the live GitHub issue/PR state. The
+[2026-10-14 epic final-acceptance audit](audit-report-2026-10-14-rdr-075-epic-final-acceptance.md)
+reconfirms the absence findings and current open RDR/issue state, and likewise
+leaves #4365 open until the focused gaps ship.
 
 ## Decision Summary
 

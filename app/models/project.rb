@@ -460,14 +460,28 @@ class Project < ApplicationRecord
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
+  after_update_commit :enqueue_readiness_evaluation, if: :saved_change_to_tdd_mode?
   before_update :reset_issue_sync_state, if: :will_change_issue_target_repository?
   before_update :archive_previous_target_issues, if: :will_change_issue_target_repository?
   after_update_commit :cancel_previous_target_issue_runs, if: :saved_change_to_issue_target_repository?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
+  def enqueue_readiness_evaluation
+    EvaluateProjectReadinessJob.perform_later(id)
+  end
+
   def full_name
     "#{owner}/#{repo}"
+  end
+
+  # @spec PROJECT-READINESS-005
+  def tdd_readiness_blocked?
+    tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) && readiness_gaps.any?
+  end
+
+  def readiness_gap_descriptions
+    readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
   end
 
   # Repository where new PRs are opened for this project. For "own_repo"
@@ -666,6 +680,15 @@ class Project < ApplicationRecord
   # @spec AUTOMATION-ACTIVATION-001
   def feature_activation_label_for(feature)
     effective_feature_activation_labels[feature.to_s]
+  end
+
+  # @spec LABEL-CONTROL-007. Whether per-item activation is read from
+  # GitHub labels (read_write / read_only) or from the local
+  # +issues.paid_activation_state+ column (ignored). Activation labels
+  # themselves still exist in ignored mode for projects transitioning back
+  # to read_write, but selection and scan scope ignore them.
+  def paid_local_activation?
+    label_integration_mode == "ignored"
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.

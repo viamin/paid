@@ -345,6 +345,17 @@ RSpec.describe ApplicationJob do # @spec EXCEPTION-NOTIFY-003
       expect(job.send(:tenant_account)).to eq(account)
     end
 
+    it "extracts project_id from EvaluateProjectReadinessJob positional arguments" do
+      account = instance_double(Account)
+      project = instance_double(Project, account: account)
+      job = EvaluateProjectReadinessJob.new(123)
+
+      allow(Project).to receive(:find_by).and_call_original
+      allow(Project).to receive(:find_by).with(id: 123).and_return(project)
+
+      expect(job.send(:tenant_account)).to eq(account)
+    end
+
     it "extracts agent_run_id from AgentRunCancellationJob arguments" do
       account = instance_double(Account)
       project = instance_double(Project, account: account)

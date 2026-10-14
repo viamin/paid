@@ -58,6 +58,7 @@ module Prompts
       Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
       {{already_addressed_instruction}}
+      {{commit_message_guidance}}
 
       When you're done, commit all your changes. Do not push.
 
@@ -203,7 +204,18 @@ module Prompts
     end
 
     def legacy_injected_section?(section)
+      # The legacy string builder renders `{{commit_message_guidance}}` from
+      # the seeded instructions template; emitting the explicit section here
+      # would duplicate the body. A custom or pinned prompt version can omit
+      # that interpolation, though, so retain the required section in that
+      # case. PromptAssembly always emits the section instead.
+      return quiet_mode_guidance_rendered? if section.key == :quiet_mode_commit_message
+
       [ :style_guides, :project_conventions, :lid_workflow ].include?(section.key)
+    end
+
+    def quiet_mode_guidance_rendered?
+      instructions_and_rules_shell.content.include?(quiet_mode_commit_message_body)
     end
 
     # Resolves the assembly profile from project/account/global config.
@@ -236,6 +248,7 @@ module Prompts
         *conversation_section_with_excluded,
         other_issues_section,
         instructions_and_rules_shell,
+        (quiet_mode_commit_message_section if quiet_mode?),
         service_environment_section,
         style_guides_section,
         project_conventions_section,
@@ -249,6 +262,7 @@ module Prompts
         setup_database_instruction: setup_database_instruction,
         review_scan_instruction: review_scan_instruction,
         already_addressed_instruction: already_addressed_instruction,
+        commit_message_guidance: commit_message_guidance,
         lint_command: lint_command,
         test_command: test_command
       }
@@ -263,7 +277,6 @@ module Prompts
           fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
         )
       end
-
       PromptAssembly::Section.new(
         key: :instructions_and_rules,
         source: :instructions_and_rules,
@@ -745,6 +758,72 @@ module Prompts
         "addressed on the current branch and no code changes are needed, do not " \
         "make a no-op commit. End your final response with a standalone line " \
         "containing exactly `#{ALREADY_ADDRESSED_MARKER}`."
+    end
+
+    # Quiet mode (`Project#quiet_mode`) silently routes agent commentary into
+    # commit messages instead of issue/PR comments. The agent still writes a
+    # descriptive message either way; in quiet mode the body must explicitly
+    # cover what review feedback was addressed so the Git log stays the
+    # project's authoritative review-tracking surface (#4232).
+    # @spec QUIET-MODE-008
+    def commit_message_guidance
+      return "" unless quiet_mode?
+      # The PromptAssembly path emits the body as its own section via
+      # `quiet_mode_commit_message_section`. Leaving the seed-template slot
+      # empty here stops the same text from being rendered twice when the
+      # assembler composes `instructions_and_rules` from the seed template.
+      return "" if prompt_assembly?
+
+      "\n\n#{quiet_mode_commit_message_body}"
+    end
+
+    def quiet_mode?
+      return false unless project
+
+      project.respond_to?(:quiet_mode?) && project.quiet_mode?
+    end
+
+    # Section-form variant of `commit_message_guidance`, used by
+    # PromptAssembly callers that compose this section outside the legacy
+    # seed-template interpolation path (e.g. when BuildForPr is invoked via
+    # `prompt_assembly` and the seed is rendered as a separate Section).
+    def quiet_mode_commit_message_section
+      return nil unless quiet_mode?
+
+      PromptAssembly::Section.new(
+        key: :quiet_mode_commit_message,
+        source: :quiet_mode_commit_message,
+        content: quiet_mode_commit_message_body,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "quiet mode routes commentary into commit messages"
+      )
+    end
+
+    def quiet_mode_commit_message_body
+      <<~SECTION
+        # Commit Message Is The Commentary Channel
+
+        Quiet mode is enabled for this project: Paid does NOT post a summary
+        comment after this push. The commit message is the only record of what
+        this run changed and why. Every commit on this branch MUST therefore
+        carry the reviewer-facing explanation in its message body.
+
+        Subject line: conventional-commit style, ≤ 72 characters — for example
+        `Address review: extract runner selection into AgentRun#select_runner`
+        rather than `fix review feedback`.
+
+        Commit body (one or more wrapped paragraphs):
+        - What changed (the substantive code shape, not a list of file names).
+        - Why it changed (which review comment, CI failure, or follow-up
+          request it satisfies).
+        - Anything the reviewer should know that the diff alone does not show.
+
+        When this run is addressing a review-fix follow-up, the commit body
+        MUST include a short note on which review feedback was addressed; the
+        example above names the reviewer concern it satisfies. Git push must
+        still succeed; do not push commentary-only commits with no diff.
+      SECTION
     end
 
     def include_section?(section) # @spec FOCUSED-RUN-003

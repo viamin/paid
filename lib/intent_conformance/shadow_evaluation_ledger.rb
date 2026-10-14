@@ -38,7 +38,7 @@ module IntentConformance
     def events(path)
       return [] unless File.exist?(path)
 
-      entries = File.readlines(path, chomp: true).reject(&:empty?).map { |line| JSON.parse(line) }
+      entries = File.readlines(path, chomp: true, encoding: "UTF-8").reject(&:empty?).map { |line| JSON.parse(line) }
       raise InvalidLedger, "invalid JSONL event: each event must be a JSON object" unless entries.all?(Hash)
 
       entries
@@ -80,7 +80,7 @@ module IntentConformance
       raise InvalidLedger, "event_id already exists" if events(path).any? { |entry| entry["event_id"] == event["event_id"] }
 
       event = event.merge("manifest_digest" => manifest_digest(manifest_path))
-      File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644) { |file| file.puts(JSON.generate(event)) }
+      File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644, encoding: "UTF-8") { |file| file.puts(JSON.generate(event)) }
     end
 
     def manifest_digest(manifest_path)

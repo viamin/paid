@@ -46,6 +46,15 @@
         <%= button_to "Approve tests", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "approve_tests" }, class: "text-xs font-medium text-indigo-600" %>
         <%= button_to "Request test changes", update_issue_control_state_project_path(project), method: :post, params: { issue_id: pull_request.id, control_action: "request_test_changes" }, class: "text-xs font-medium text-indigo-600" %>
       <% end %>
+      <%# @spec LABEL-CONTROL-007 — per-PR paid-activation toggle. PRs
+          inherit activation from their parent issue when the parent is paid-
+          activated, but a PR opened by an external actor can also be
+          activated independently for scan scope. %>
+      <%= button_to(pull_request.paid_activated? ? "Deactivate" : "Activate for Paid",
+                    update_issue_control_state_project_path(project), method: :post,
+                    params: { issue_id: pull_request.id, control_action: pull_request.paid_activated? ? "unmark_paid_activated" : "mark_paid_activated" },
+                    class: "text-xs font-medium #{pull_request.paid_activated? ? 'text-gray-600' : 'text-green-700'}",
+                    title: pull_request.paid_activated? ? "Stop Paid scanning/following up on this PR." : "Let Paid scan and follow up on this PR.") %>
     <% end %>
     <% subscription_locals = { issue: pull_request, project: project } %>
     <% if local_assigns.key?(:merge_notification_issue_ids) %>

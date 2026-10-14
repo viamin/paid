@@ -5,7 +5,13 @@ module Automation
     module_function
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-004 @spec AUTOMATION-ACTIVATION-005 @spec AUTOMATION-ACTIVATION-006
+    # @spec LABEL-CONTROL-007 — In ignored mode the activation signal lives
+    # on the Issue row (paid_activation_state = "activated") rather than on a
+    # GitHub label; its caller uses the sentinel to take the authenticated
+    # Paid-local authorization path without replaying label history.
     def issue_auto_pick_trigger(project:, issue:)
+      return paid_local_trigger(issue) if project.paid_local_activation?
+
       return nil if blocked_by_skip_labels?(project, issue)
 
       label = trusted_issue_specific_label(project, issue, "auto_pick")
@@ -14,7 +20,13 @@ module Automation
       trusted_issue_specific_label(project, issue, "paid_in_full")
     end
 
+    # @spec LABEL-CONTROL-007 — In ignored mode there is no per-item
+    # auto-enhance activation; auto-enhance follows the project-level
+    # setting alone. The issue itself need only be paid-activated for the
+    # underlying run to be queued, which is checked by the caller.
     def issue_auto_enhance_enabled?(project:, issue:)
+      return project.auto_enhance_enabled? if project.paid_local_activation?
+
       return true if project.auto_enhance_enabled?
       return false if blocked_by_skip_labels?(project, issue)
 
@@ -22,7 +34,15 @@ module Automation
         trusted_issue_specific_label(project, issue, "paid_in_full").present?
     end
 
+    # @spec LABEL-CONTROL-007 — Ignored-mode TDD mode follows the project
+    # setting alone; per-item TDD activation labels do not exist (#4253).
     def issue_tdd_mode(project:, issue:)
+      if project.paid_local_activation?
+        return project.tdd_mode if project.tdd_mode.in?(%w[strict non_strict])
+
+        return "off"
+      end
+
       return project.tdd_mode if project.tdd_mode.in?(%w[strict non_strict])
       return "off" unless issue
       return "off" if blocked_by_skip_labels?(project, issue)
@@ -37,9 +57,15 @@ module Automation
     # A per-PR activation label must never re-enable a PR-side feature that
     # upstream mode disables: acting on the upstream repository or on PRs
     # opened in it is not something a label added to a PR can authorize.
-    # @spec UPSTREAM-GATE-002
+    # @spec UPSTREAM-GATE-002 @spec LABEL-CONTROL-007 — In ignored mode
+    # there is no per-PR feature activation; PR features resolve to the
+    # project-level setting alone.
     def pull_request_feature_enabled?(project:, pull_request:, feature:)
       return false if upstream_mode_disables?(project, feature)
+
+      # @spec LABEL-CONTROL-007 — ignored mode has no per-PR feature
+      # activation; the project-level setting is the only signal.
+      return project_setting_enabled?(project, feature) if project.paid_local_activation?
 
       return true if project_setting_enabled?(project, feature)
       return false unless pull_request
@@ -55,19 +81,22 @@ module Automation
     # the human pull-request merge path. A trusted per-PR activation label can
     # opt an individual human PR into that path while the project setting is
     # off, but cannot broaden Dependabot-only mode.
-    # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-007
     def human_pull_request_auto_merge_enabled?(project:, pull_request:)
       return false if upstream_mode_disables?(project, "auto_merge")
+      return project.auto_merge_enabled? if project.paid_local_activation?
       return true if project.auto_merge_mode == "all"
       return false unless project.auto_merge_mode == "off"
 
       trusted_pr_specific_label(project, pull_request, "auto_merge").present?
     end
 
+    # @spec LABEL-CONTROL-007
     def any_pull_request_feature_enabled?(project:, feature:)
       return false if upstream_mode_disables?(project, feature)
 
       return true if project_setting_enabled?(project, feature)
+      return false if project.paid_local_activation?
 
       activation_candidate_prs(project, feature).find_each
         .any? { |pull_request| pull_request_feature_enabled?(project:, pull_request:, feature:) }
@@ -122,6 +151,15 @@ module Automation
       return false unless issue
 
       (Array(issue.labels) & Array(project.effective_auto_pick_skip_labels)).any?
+    end
+
+    # Returns the sentinel that signals "this issue is paid-activated" to
+    # {Automation::LabelPolicy#label_decision_for} without a label read. The
+    # sentinel is consumed by that policy's explicit local-activation path,
+    # so it never attempts to replay a GitHub label event that cannot exist.
+    # @spec LABEL-CONTROL-007
+    def paid_local_trigger(issue)
+      issue&.paid_activated? ? Issue::PAID_ACTIVATION_SENTINEL : nil
     end
 
     private_class_method def trusted_issue_specific_label(project, issue, feature)

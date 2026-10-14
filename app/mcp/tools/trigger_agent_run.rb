@@ -72,6 +72,11 @@ module Tools
       external_metadata = named_plan_docs.any? ? { "plan_docs" => named_plan_docs } : {}
       external_metadata["feature_brief"] = feature_brief if feature_brief
 
+      # @spec LABEL-CONTROL-007 — In ignored mode the MCP trigger marks the
+      # targeted issue/PR as paid-activated, mirroring the controller path
+      # so a chat-triggered run is indistinguishable from a UI-triggered one.
+      Issues::ActivatePaid.call(project: project, issue: issue)
+
       run = AgentRun.create!(
         project: project,
         issue: issue,

@@ -1786,4 +1786,91 @@ RSpec.describe Prompts::BuildForPr do
       )
     end
   end
+
+  # @spec QUIET-MODE-008
+  describe "quiet mode commit-message guidance (#4232)" do
+    it "omits the quiet mode commit-message guidance by default" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).not_to include("Commit Message Is The Commentary Channel")
+    end
+
+    it "injects the quiet mode commit-message guidance via the seed-template interpolation path" do
+      project.update!(quiet_mode: true)
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+expect(prompt).to include("Commit Message Is The Commentary Channel")
+      expect(prompt).to include("Subject line: conventional-commit style, ≤ 72 characters")
+      expect(prompt).to include("Address review: extract runner selection into AgentRun#select_runner")
+      expect(prompt).to include("do not push commentary-only commits with no diff")
+
+      # The seed-template interpolation path renders the body exactly once via
+      # `{{commit_message_guidance}}`; the explicit PromptAssembly section is
+      # suppressed here because the legacy string builder concatenates sections.
+      occurrences = prompt.scan(/# Commit Message Is The Commentary Channel/).length
+      expect(occurrences).to eq(1)
+    end
+
+    # @spec QUIET-MODE-008
+    it "appends guidance when a custom legacy prompt omits its interpolation" do
+      project.update!(quiet_mode: true)
+      prompt = create(:prompt, :global, slug: "test.#{SecureRandom.hex(8)}")
+      prompt_version = prompt.create_version!(template: "Custom instructions", variables: [])
+
+      rendered = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_version: prompt_version
+      )
+
+      expect(rendered).to include("Custom instructions")
+      expect(rendered).to include("Commit Message Is The Commentary Channel")
+      expect(rendered.scan(/# Commit Message Is The Commentary Channel/).length).to eq(1)
+    end
+
+    it "adds a quiet_mode_commit_message section to the PromptAssembly result when quiet mode is on" do
+      project.update!(quiet_mode: true)
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: described_class::PROMPT_ASSEMBLY_BUILDER
+      )
+      result = builder.build_result
+
+      quiet_section = result.sections.find { |s| s.key == :quiet_mode_commit_message }
+      expect(quiet_section).to be_present
+      expect(quiet_section.trust_level).to eq(:trusted)
+      expect(quiet_section.required?).to be(true)
+      expect(quiet_section.content).to include("Commit Message Is The Commentary Channel")
+    end
+
+    it "does not add a quiet_mode_commit_message section when quiet mode is off" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: described_class::PROMPT_ASSEMBLY_BUILDER
+      )
+      result = builder.build_result
+
+      expect(result.sections.map(&:key)).not_to include(:quiet_mode_commit_message)
+    end
+  end
 end

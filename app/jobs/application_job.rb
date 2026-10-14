@@ -168,6 +168,7 @@ class ApplicationJob < ActiveJob::Base
       DependencyBackfillJob,
       EmbedChunksJob,
       EnqueueKnowledgeCollectionJob,
+      EvaluateProjectReadinessJob,
       ProjectConventions::OpenHookGuardrailPullRequestJob,
       ProjectHealthCheckJob,
       PoolReplenishmentJob,

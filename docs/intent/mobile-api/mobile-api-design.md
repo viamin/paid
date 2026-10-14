@@ -331,27 +331,30 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
 ## OpenAPI as the Contract Source of Truth
 
 - `docs/api/openapi.yaml` (OpenAPI 3.0.3, the version supported by the
-  Committee runtime validator) is the single normative description
-  of `/api/v1`: paths, the polymorphic inbox envelope (`oneOf` with `kind`
-  discriminators), chat payloads, the error envelope, and the versioning
-  policy (additive changes within `v1`; breaking changes require a new
-  path version).
-- The SSE event catalog ships as a schema **extension**: an
-  `x-sse-events` map on the send/resolve operations listing each event name
-  with its payload schema (`message_start`, `message_chunk`,
+  Committee runtime validator) is the single normative description of the
+  implemented `/api/v1` surface: paths, the polymorphic inbox envelope
+  (`oneOf` with `kind` discriminators), the error envelope, and the versioning
+  policy (additive changes within `v1`; breaking changes require a new path
+  version). Chat paths and payloads are added with their controllers in
+  MOBILE-API-011 through MOBILE-API-014. HTTP bearer security requirements use
+  empty arrays as OpenAPI requires; the per-operation `x-required-pat-scopes`
+  extension declares Paid PAT scopes for client discovery.
+- The chat implementation will add an SSE event catalog as a schema
+  **extension**: an `x-sse-events` map on the send/resolve operations listing
+  each event name with its payload schema (`message_start`, `message_chunk`,
   `message_created`, `message_tool_call`, `message_tool_confirmation`,
-  `message_tool_result`, `message_tool_resolved`, `message_complete`,
-  `error`), so the catalog is machine-checkable from the same file the iOS
-  client generates from.
+  `message_tool_result`, `message_tool_resolved`, `message_complete`, `error`),
+  so the catalog remains machine-checkable from the same file the iOS client
+  generates from.
 - `committee` validates requests and responses against the schema: strict
   (raise) in test, warn-and-log in development and production. Request
   specs in `spec/requests/api/v1/` run behind the middleware, so every
   endpoint's conformance is asserted on every test run.
-- Pact provider verification runs in CI from the same schema file: the
-  consumer contract (maintained by the iOS repo) is verified against
-  provider states whose responses are validated by `committee` against
-  `openapi.yaml`, so schema drift between the two mechanisms is impossible
-  by construction.
+- Pact provider verification runs in CI from an OpenAPI-derived Pact until
+  the iOS consumer publishes its Pact: its provider response is validated by
+  `committee` against `openapi.yaml`, so schema drift between the two
+  mechanisms is impossible by construction. The iOS consumer Pact replaces
+  the interim Pact when available.
 - Schemathesis fuzzes the running app in CI against `openapi.yaml`:
   full property-based fuzzing on read endpoints, and request-conformance
   checks on mutation endpoints without executing real chat sends (state

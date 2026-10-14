@@ -20,6 +20,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   def project_class
     @project_class ||= Struct.new(:id, :auto_pick_enabled?) do
       def auto_enhance_enabled? = false
+      def paid_local_activation? = false
       def effective_auto_pick_skip_labels = []
       def feature_activation_label_for(_feature) = nil
       def model_preferences
@@ -39,7 +40,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   let(:project) do
-    instance_double(project_class, id: 7, auto_enhance_enabled?: false,
+    instance_double(project_class, id: 7, auto_enhance_enabled?: false, paid_local_activation?: false,
       effective_auto_pick_skip_labels: [], feature_activation_label_for: nil)
   end
   let(:issue) do

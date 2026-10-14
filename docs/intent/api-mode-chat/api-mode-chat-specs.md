@@ -17,11 +17,15 @@
   and reference project currently attached to the chat. While the API
   transport cannot enforce OpenRouter data-collection and ZDR routing, Paid
   SHALL reject confidential or restricted project context before sending it.
-  Container chat SHALL apply the most restrictive attached project's routing
-  or reject sensitive context when its runner cannot enforce those controls.
+  The shared free-model selector SHALL apply the same rejection for free `pi`
+  and `omp` runners regardless of transport, because those runners likewise
+  cannot enforce the required privacy routing.
   An unavailable free-model fallback SHALL be skipped so later configured
   usable fallbacks can be tried without changing the session to the unusable
-  runner.
+  runner. Broader container lifecycle and mutation behavior remain owned by
+  the RDR-037 chat segments.
+  *Test:* `spec/services/free_models/select_chat_model_spec.rb`.
+  *Code:* `FreeModels::SelectChatModel.for_session`.
 
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
@@ -485,3 +489,37 @@
   `#handleConnected`, `#resyncTranscript`, `#fetchRecentMessages`,
   `#lastRenderedMessageId`, `#lastAssistantTextResponse`, `#handleMessageChunk`,
   `ChatSessionsController#recent_messages`.
+
+- [x] **CHAT-API-024** — When two or more consecutive persisted or live
+  transcript rows are non-pending tool calls or results, the transcript SHALL
+  render them in one initially closed, low-contrast disclosure with a count
+  summary. Its expanded contents SHALL retain each existing individual,
+  initially closed tool card and its current styling. A pending confirmation,
+  a non-tool row, or a token-limit, rate-limit, provider-error, or pending-
+  confirmation notice SHALL end the run; pending confirmation cards SHALL
+  remain standalone, open, and retain their amber Approve/Deny treatment. A
+  paginated persisted transcript SHALL extend a page across its leading
+  groupable-tool boundary, so lazy older-message loading renders every
+  consecutive run in one maximal disclosure rather than splitting it between
+  frames. A
+  runner-fallback cleanup SHALL remove an emptied live disclosure together with
+  its stale cards. Grouping SHALL NOT make tool cards eligible as "Jump to
+  latest" response anchors. When a user resolves a pending confirmation that
+  sat standalone after a tool run, the now-non-pending card SHALL merge into
+  the preceding group (or wrap with a preceding single non-pending tool card)
+  so the live view matches the persisted, maximal-disclosure rendering after
+  a reload (#4270).
+  *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`,
+  `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/older_messages`),
+  `spec/lib/chat_controller_node_harness_spec.rb`
+  (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`,
+  `testResolvedToolCardMergesIntoPrecedingGroup`,
+  `testResolvedToolCardMergesWithPrecedingSingleCard`),
+  `spec/lib/chat_controller_node_harness_spec.rb` (existing
+  `lastAssistantTextResponse` anchor tests).
+  *Code:* `ChatSessionsHelper#each_chat_transcript_segment`,
+  `#chat_tool_run?`, `app/views/chat_sessions/_conversation.html.erb`,
+  `app/views/chat_sessions/_older_messages.html.erb`,
+  `app/views/chat_messages/_tool_call_group.html.erb`,
+  `app/javascript/controllers/chat_controller.js#appendToolCard`,
+  `#mergeResolvedCardIntoAdjacentRun`.

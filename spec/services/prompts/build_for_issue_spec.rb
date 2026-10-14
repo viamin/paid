@@ -122,6 +122,26 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Depends on #123")
     end
 
+    # @spec QUIET-MODE-008
+    it "omits the quiet mode commit-message guidance by default" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).not_to include("Commit Message Is The Commentary Channel")
+    end
+
+    # @spec QUIET-MODE-008
+    it "injects the quiet mode commit-message guidance when the project has quiet mode enabled" do
+      quiet_project = project.tap do |p|
+        p.quiet_mode = true
+        p.define_singleton_method(:quiet_mode?) { quiet_mode == true }
+      end
+
+      prompt = described_class.call(issue: issue, project: quiet_project)
+
+      expect(prompt).to include("Commit Message Is The Commentary Channel")
+      expect(prompt).to include("Implement: extract runner selection into AgentRun#select_runner")
+    end
+
     context "when the project is LID-configured" do
       let(:github_client) { instance_double(GithubClient) }
       let(:project_with_lid) do

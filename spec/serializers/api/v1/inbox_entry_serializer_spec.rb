@@ -188,6 +188,14 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url])
     end
 
+    it "serializes project_setup_pending with its task descriptions" do
+      entry = build_entry(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, tasks: [ "CI is required." ])
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(tasks: [ "CI is required." ])
+    end
+
     it "raises for an unrecognized kind rather than silently returning an empty payload" do
       entry = build_entry("unknown_kind")
 

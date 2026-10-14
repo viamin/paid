@@ -22,20 +22,23 @@ RSpec.describe "Mobile inbox API" do
   # @spec MOBILE-API-006 MOBILE-API-010
   it "lists filtered entries and conditionally returns not modified" do
     issue
-    get "/api/v1/inbox", params: { kind: "clarifying_questions", project_id: project.id }, headers: headers
 
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.fetch("entries").first).to include(
-      "id" => "clarifying_questions:#{issue.id}", "kind" => "clarifying_questions",
-      "project" => { "id" => project.id, "owner" => "acme", "repo" => "mobile", "name" => "acme/mobile" }
-    )
-    expect(response.headers["Cache-Control"]).to include("private", "max-age=0")
+    travel_to(Time.zone.local(2026, 10, 12, 12, 0, 0)) do
+      get "/api/v1/inbox", params: { kind: "clarifying_questions", project_id: project.id }, headers: headers
 
-    get "/api/v1/inbox", params: { kind: "clarifying_questions", project_id: project.id },
-      headers: headers.merge("If-None-Match" => response.headers.fetch("ETag"))
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("entries").first).to include(
+        "id" => "clarifying_questions:#{issue.id}", "kind" => "clarifying_questions",
+        "project" => { "id" => project.id, "owner" => "acme", "repo" => "mobile", "name" => "acme/mobile" }
+      )
+      expect(response.headers["Cache-Control"]).to include("private", "max-age=0")
 
-    expect(response).to have_http_status(:not_modified)
-    expect(response.body).to be_empty
+      get "/api/v1/inbox", params: { kind: "clarifying_questions", project_id: project.id },
+        headers: headers.merge("If-None-Match" => response.headers.fetch("ETag"))
+
+      expect(response).to have_http_status(:not_modified)
+      expect(response.body).to be_empty
+    end
   end
 
   # @spec MOBILE-API-006 MOBILE-API-010
@@ -85,6 +88,17 @@ RSpec.describe "Mobile inbox API" do
     post "/api/v1/inbox/entries/#{entry_id}/chat", headers: headers
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
+  end
+
+  # @spec MOBILE-API-008 MOBILE-API-018
+  it "accepts a percent-encoded colon in an inbox entry ID" do
+    issue
+    entry_id = "clarifying_questions%3A#{issue.id}"
+
+    get "/api/v1/inbox/entries/#{entry_id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "id")).to eq("clarifying_questions:#{issue.id}")
   end
 
   # @spec MOBILE-API-009

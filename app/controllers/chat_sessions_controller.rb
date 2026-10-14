@@ -453,8 +453,20 @@ class ChatSessionsController < ApplicationController
     end
   end
 
+  # @spec CHAT-API-024
   def latest_messages(scope, limit: MESSAGE_PAGE_SIZE)
-    scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
+    messages = scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
+    return messages unless messages.first&.groupable_tool?
+
+    leading_tool_run(scope, messages)
+  end
+
+  def leading_tool_run(scope, messages)
+    preceding = scope.where("chat_messages.id < ?", messages.first.id)
+    boundary = preceding.where.not(id: preceding.groupable_tools.select(:id)).reorder(created_at: :desc, id: :desc).first
+    tool_run = boundary ? preceding.where("chat_messages.id > ?", boundary.id) : preceding
+
+    tool_run.groupable_tools.to_a + messages
   end
 
   def create_rate_limited?
