@@ -177,6 +177,18 @@
 
 ## Create-feature and LID-planning attachment (#3863)
 
+- [x] **DESIGN-RECONCILIATION-001** — When a bounded repository reconciliation
+  examines configured RDR artifacts or open design PRs at a pinned revision,
+  the system SHALL classify explicit issue-tree evidence as missing, partial,
+  stale/unlinked, deliberately deferred, or unverifiable. Failed or partial
+  GitHub reads SHALL yield `unverifiable`, not an absence finding; draft and
+  superseded/deferred artifacts SHALL not be treated as missing merely from
+  their status. Findings SHALL retain cited evidence and last successful
+  coverage, be deduplicated by artifact/revision, and SHALL NOT automatically
+  create, close, transfer, or hold GitHub work.
+  *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`.
+  *Code:* `app/services/feature_intents/reconcile_design_artifacts.rb`.
+
 - [x] **ISSUE-TREE-001** — When a feature-planning run creates or adopts
   implementation issues, the system SHALL persist an issue-tree manifest on
   its `FeatureIntent`, keyed by stable task identity and containing expected

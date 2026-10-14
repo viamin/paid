@@ -54,6 +54,28 @@ Partial or unknown remote state stays incomplete and retains confirmed
 identities for retry. An implementation issue may belong to related feature
 intents, with each intent's receipt making its own membership explicit.
 
+## Repository design-artifact reconciliation
+
+Run-local receipts do not cover an RDR authored outside Paid, a partially
+completed planning run, or repository metadata that drifted after a merge.
+`FeatureIntents::ReconcileDesignArtifacts` is the bounded, deterministic
+backstop for those cases. At a pinned repository revision it discovers the
+project's configured RDR paths and open design PRs, then compares explicit
+qualified issue references, persisted issue identities, and body/native-tree
+relationships. It produces one deduplicated finding per artifact/revision and
+reports evidence, coverage time, and an explicit state: `missing_tree`,
+`partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
+
+Only structural existence and linkage checks happen in Rails. A weak semantic
+candidate is not linked until an `agent_harness` assessment confirms it.
+Failures or partial GitHub reads produce `unverifiable`, never an absence
+finding. Repository-specific draft, deferred, and superseded statuses are
+reported rather than treated as missing work. The reconciliation is read-only:
+operators may inspect evidence, link verified existing work, repair metadata,
+or request a draft, but it never creates/duplicates/closes/transfers issues or
+changes execution holds. Any repair revalidates the current head and uses the
+normal authorized, idempotent write path.
+
 ## Operating mode, profile, and onboarding
 
 ### Operating-mode setting
