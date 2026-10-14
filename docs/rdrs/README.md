@@ -259,6 +259,24 @@ the live GitHub issue/PR state. The
 reconfirms the absence findings and current open RDR/issue state, and likewise
 leaves #4365 open until the focused gaps ship.
 
+RDR-076 ([RDR-076.md](RDR-076.md)) is a Draft add-on to RDR-075 that
+proposes a business-facing review package and a nine-layer selection
+rubric on top of the RDR-075 foundation. It is held for human review in
+[#4406](https://github.com/viamin/paid/issues/4406) and is not yet merged,
+so it does not appear in the index above. RDR-076 ships no runtime
+behavior, schema, model, or feature flag on its own; the package and
+rubric it describes are produced by the RDR-075 coordinator when the
+RDR-075 umbrella #4365 ships, behind the `layered_verification_coordinator`
+flag (or its successor), default off. The RDR-075 prerequisite
+relationship recorded above applies to RDR-076 as well: the
+`docs/intent/layered-verification/` LID segment does not yet exist, no
+RDR-076 code, schema, model, package, rubric, audit path, or coordinator
+contract has shipped, and the umbrella must remain open until Phases 1–4
+(#4366–#4369) and the closeout (#4370) own their part of the
+implementation. RDR-076's own implementation plan is downstream of that
+umbrella and is tentative on EARS claim ids (`LAYER-VERIFY-###`) until
+the LID Planning PR lands.
+
 ## Decision Summary
 
 ### Core Stack
