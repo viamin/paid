@@ -11,6 +11,7 @@ class PromptAssembly::Sections::ServiceEnvironment
   def build_section
     Prompts::ServiceContainerSections.service_environment_section_for(
       project: project,
+      agent_run: agent_run,
       include_setup_instruction: false
     )
   end

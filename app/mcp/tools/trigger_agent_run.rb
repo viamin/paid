@@ -21,6 +21,7 @@ module Tools
       run_agent_available_to?(user:)
     end
 
+    # @spec CHAT-API-020
     def self.input_schema
       {
         type: "object",
@@ -36,12 +37,7 @@ module Tools
           },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
-        required: %w[project_id confirmed],
-        anyOf: [
-          { required: %w[issue_id] },
-          { required: %w[custom_prompt] },
-          { required: %w[plan_docs goal], properties: { goal: { const: "lid_planning" } } }
-        ]
+        required: %w[project_id confirmed]
       }
     end
 

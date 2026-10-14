@@ -75,9 +75,11 @@ RSpec.describe Activities::CloneRepoActivity do
     end
 
     context "when project has a running database container" do
+      let!(:database_container) { create(:service_container, :running, image: "postgres:16") }
+
       before do
-        sc = create(:service_container, :running, image: "postgres:16")
-        create(:project_service_container, project: project, service_container: sc)
+        create(:project_service_container, project: project, service_container: database_container)
+        agent_run.update!(service_container_ids: [ database_container.id ])
       end
 
       it "installs git hooks with both lint and test commands" do
@@ -211,9 +213,11 @@ RSpec.describe Activities::CloneRepoActivity do
       end
 
       context "when project has a running database container" do
+        let!(:database_container) { create(:service_container, :running, image: "postgres:16") }
+
         before do
-          sc = create(:service_container, :running, image: "postgres:16")
-          create(:project_service_container, project: project, service_container: sc)
+          create(:project_service_container, project: project, service_container: database_container)
+          agent_run.update!(service_container_ids: [ database_container.id ])
         end
 
         it "installs git hooks with both lint and test commands" do

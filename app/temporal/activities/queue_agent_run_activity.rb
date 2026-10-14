@@ -100,6 +100,7 @@ module Activities
             status: "queued"
           )
           snapshot_page_load_evidence!(run, input[:focus_evidence])
+          snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
           [ run, false, false ]
         end
       rescue ActiveRecord::RecordNotUnique
@@ -217,6 +218,16 @@ module Activities
 
       metadata = run.external_metadata.is_a?(Hash) ? run.external_metadata.deep_dup : {}
       metadata["page_load_regression"] = evidence.deep_stringify_keys
+      run.update_columns(external_metadata: metadata)
+    end
+
+    # @spec TDD-PR-007
+    def snapshot_tdd_review_feedback!(run, feedback)
+      return unless run.tdd_test_writing_phase?
+      return if feedback.blank?
+
+      metadata = run.external_metadata.is_a?(Hash) ? run.external_metadata.deep_dup : {}
+      metadata["tdd_review_feedback"] = feedback.deep_stringify_keys
       run.update_columns(external_metadata: metadata)
     end
 

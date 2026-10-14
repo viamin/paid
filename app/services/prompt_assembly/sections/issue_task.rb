@@ -144,15 +144,33 @@ class PromptAssembly::Sections::IssueTask
     PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
   end
 
+  # Whether the agent's runtime environment has a usable database service
+  # container. The prompt and the pre-commit hook must agree on this to
+  # avoid telling the agent contradictory things about whether
+  # database-dependent verification can run (POLYGLOT-TEST-011).
+  def database_available?
+    return @database_available if defined?(@database_available)
+
+    @database_available = Prompts::ServiceContainerSections.has_database_container?(
+      project: project,
+      agent_run: agent_run
+    )
+  end
+
   def lint_command
-    Prompts::LanguageCommands.format_for_prompt(Prompts::LanguageCommands.lint_commands_for(project))
+    Prompts::LanguageCommands.format_for_prompt(Prompts::LanguageCommands.lint_commands_for(project, db_available: database_available?))
   end
 
   def test_command
-    Prompts::LanguageCommands.format_for_prompt(Prompts::LanguageCommands.test_commands_for(project))
+    Prompts::LanguageCommands.format_for_prompt(
+      Prompts::LanguageCommands.test_commands_for(project, db_available: database_available?)
+    )
   end
 
   def setup_database_instruction
-    Prompts::ServiceContainerSections.setup_database_instruction_for(project: project)
+    Prompts::ServiceContainerSections.setup_database_instruction_for(
+      project: project,
+      agent_run: agent_run
+    )
   end
 end

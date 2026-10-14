@@ -268,6 +268,16 @@ RSpec.describe Tools::Registry do
       expect(schema[:required]).not_to include("confirmed")
     end
 
+    # @spec CHAT-API-020
+    it "advertises OpenAI-compatible parameter-schema roots" do
+      schemas = described_class.chat_definitions_for(user: user, session: chat_session).map { |definition| definition[:inputSchema] }
+
+      schemas.each do |schema|
+        expect(schema[:type]).to eq("object")
+        expect(schema).not_to include(:oneOf, :anyOf, :allOf, :enum, :const, :not)
+      end
+    end
+
     it "leaves read-only tool schemas untouched" do
       get_project = described_class.chat_definitions_for(user: user, session: chat_session).find { |definition| definition[:name] == "get_project" }
 

@@ -287,7 +287,8 @@ module Activities
       no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
-      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue)
+      token_limit_budget = pr_auto_continue_token_limit_budget(project, issue)
+      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue, budget: token_limit_budget)
 
       reason, reason_key = if op_breaker
         [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
@@ -306,8 +307,9 @@ module Activities
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
         pr_auto_continue_token_limit_reached: token_limit_breach.present?,
-        pr_auto_continue_tokens_used: token_limit_breach&.fetch(:used, nil).to_i,
-        pr_auto_continue_token_limit: token_limit_breach&.fetch(:limit, nil).to_i,
+        pr_auto_continue_tokens_used: token_limit_budget[:used],
+        pr_auto_continue_token_limit: token_limit_budget[:limit],
+        pr_auto_continue_token_limit_remaining: token_limit_budget[:remaining],
         no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
@@ -873,9 +875,7 @@ module Activities
         type: "tdd_tests_approved",
         details: "Test review approved; implementation may begin") if review_state == "approved"
 
-      return tdd_followup_trigger(issue,
-        type: "tdd_test_changes_requested",
-        details: "Test review requested changes before implementation") if review_state == "changes_requested"
+      return tdd_rejection_trigger(project, client, issue, pr_data:) if review_state == "changes_requested"
 
       return nil if tdd_mode == "strict"
 
@@ -900,9 +900,7 @@ module Activities
 
       if tdd_review_rejected?(status_triggers)
         sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
-        return tdd_followup_trigger(issue,
-          type: "tdd_test_changes_requested",
-          details: "Automated test review requested changes before implementation")
+        return tdd_rejection_trigger(project, client, issue, reviews:, unresolved_threads:, pr_data:)
       end
 
       latest_paid_agent_review = latest_allowed_bot_review(reviews, tdd_paid_agent_review_logins)
@@ -1062,14 +1060,74 @@ module Activities
       end
     end
 
-    def tdd_followup_trigger(issue, type:, details:)
-      log_triggers(issue.project, issue, [ { type: type, details: details } ])
+    # @spec TDD-PR-007
+    def tdd_rejection_trigger(project, client, issue, reviews: nil, unresolved_threads: nil, pr_data: nil)
+      feedback = tdd_rejection_feedback(project, client, issue, reviews:, unresolved_threads:, pr_data:)
+      return escalate_trigger(issue, reason: "TDD test review requested changes, but no trusted current feedback is accessible") if feedback.blank?
+      return escalate_trigger(issue, reason: "TDD test revision reported no changes for the same unresolved feedback") if repeated_tdd_no_changes?(project, issue, feedback)
+
+      tdd_followup_trigger(issue,
+        type: "tdd_test_changes_requested",
+        details: "Test review requested changes before implementation",
+        feedback: feedback)
+    end
+
+    def tdd_rejection_feedback(project, client, issue, reviews: nil, unresolved_threads: nil, pr_data: nil)
+      reviews ||= fetch_reviews(client, project, issue)
+      unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
+      return if reviews.nil? || unresolved_threads.nil?
+
+      reviews = reviews.select { |review| tdd_review_current_for_revision?(project, issue, review, pr_data:) }
+      review_feedback = reviews.filter_map do |review|
+        next unless trusted_tdd_feedback_author?(project, review[:user_login])
+        next if review[:body].blank?
+
+        { "review_id" => review[:id], "author" => review[:user_login], "body" => review[:body], "submitted_at" => review[:submitted_at] }
+      end
+      thread_feedback = unresolved_threads.filter_map do |thread|
+        comments = thread[:comments].filter_map do |comment|
+          next unless trusted_tdd_feedback_author?(project, comment[:author])
+          next unless tdd_thread_comment_current_for_revision?(project, issue, comment, pr_data:)
+          next if comment[:body].blank?
+
+          { "author" => comment[:author], "body" => comment[:body], "path" => comment[:path], "line" => comment[:line] }
+        end
+        next if comments.empty?
+
+        { "thread_id" => thread[:id], "comments" => comments }
+      end
+      return if review_feedback.empty? && thread_feedback.empty?
+
+      payload = { "reviews" => review_feedback, "threads" => thread_feedback }
+      payload["fingerprint"] = Digest::SHA256.hexdigest(tdd_feedback_fingerprint_payload(payload).to_json)
+      payload
+    end
+
+    def tdd_feedback_fingerprint_payload(payload)
+      payload.merge("reviews" => payload.fetch("reviews").map { |review| review.except("submitted_at") })
+    end
+
+    def trusted_tdd_feedback_author?(project, login)
+      PromptAssembly::Trust.human_trusted?(project, login) || tdd_paid_agent_review_logins.include?(login.to_s.downcase)
+    end
+
+    def repeated_tdd_no_changes?(project, issue, feedback)
+      run = pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", tdd_phase: "test_writing", status: "no_output", error_message: "no_changes")
+        .order(completed_at: :desc)
+        .first
+      run&.external_metadata&.dig("tdd_review_feedback", "fingerprint") == feedback["fingerprint"]
+    end
+
+    def tdd_followup_trigger(issue, type:, details:, feedback: nil)
+      trigger = { type: type, details: details, feedback: feedback }.compact
+      log_triggers(issue.project, issue, [ trigger ])
 
       {
-        focus: "general",
+        focus: feedback ? "tdd_test_revision" : "general",
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: type, details: details } ],
+        triggers: [ trigger ],
         phase: issue.pr_review_phase,
         labels_to_remove: [],
         current_draft_review_count: issue.draft_review_count
@@ -1926,15 +1984,16 @@ module Activities
         .exists?
     end
 
-    def pr_auto_continue_token_limit_breach(project, issue)
-      return if issue.respond_to?(:pr_auto_continue_token_limit_overridden_at) &&
-        issue.pr_auto_continue_token_limit_overridden_at.present?
+    def pr_auto_continue_token_limit_breach(project, issue, budget: pr_auto_continue_token_limit_budget(project, issue))
+      budget if budget[:used] >= budget[:limit]
+    end
 
-      limit = project.max_pr_auto_continue_tokens.to_i
+    # @spec PR-ESCALATION-007
+    def pr_auto_continue_token_limit_budget(project, issue)
       used = pr_auto_continue_tokens_used(project, issue)
-      return if used < limit
+      limit = issue.pr_auto_continue_token_limit_effective_limit(project.max_pr_auto_continue_tokens)
 
-      { used: used, limit: limit }
+      { used: used, limit: limit, remaining: [ limit - used, 0 ].max }
     end
 
     def pr_auto_continue_tokens_used(project, issue)

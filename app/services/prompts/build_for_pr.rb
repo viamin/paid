@@ -84,12 +84,12 @@ module Prompts
       @pr_number = pr_number
       @github_client = github_client
       @rebase_succeeded = rebase_succeeded
+      @agent_run = agent_run
       @lint_command = lint_command || detected_lint_command
       @test_command = test_command || detected_test_command
       @issue = issue
       @prompt_version = prompt_version
       @focus = focus.presence || "general"
-      @agent_run = agent_run
       @prompt_builder = prompt_builder.to_s
     end
 
@@ -97,9 +97,10 @@ module Prompts
       new(...).build
     end
 
-    def self.service_environment_section_render_for(project:, include_setup_instruction: false)
+    def self.service_environment_section_render_for(project:, agent_run: nil, include_setup_instruction: false)
       ServiceContainerSections.service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end
@@ -239,6 +240,7 @@ module Prompts
     def build_sections
       [
         task_section,
+        (tdd_test_revision_section if tdd_test_revision?),
         (issue_requirements_section if include_issue_requirements_section?),
         (merge_conflicts_section if include_merge_conflicts_section?),
         (ci_failures_section if include_ci_failures_section?),
@@ -277,19 +279,46 @@ module Prompts
           fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
         )
       end
+      # Strip the inline rules suffix from the rendered shell so the
+      # database-aware safety rules section can render it back with the
+      # variant that matches the actual database availability (POLYGLOT-TEST-011).
+      stripped_content = PromptAssembly::Sections::SafetyRules
+        .strip_legacy_suffix(content.to_s)
+        .rstrip
+
+      rendered = [ stripped_content, safety_rules_body ].compact.reject(&:empty?).join("\n\n")
+
       PromptAssembly::Section.new(
         key: :instructions_and_rules,
         source: :instructions_and_rules,
-        content: content.to_s,
+        content: rendered,
         trust_level: :trusted,
         required: true,
         inclusion_reason: "core instructions and rules shell"
       )
     end
 
+    # Mirrors {PromptAssembly::Sections::SafetyRules}'s body selection so a
+    # PR follow-up run does not embed the unconditional "tests MUST pass"
+    # rule when no database is provisioned — the prompt and the pre-commit
+    # hook must agree on whether database-dependent verification is
+    # available (#4305, POLYGLOT-TEST-011).
+    def safety_rules_body
+      if database_unavailable?
+        PromptAssembly::Sections::SafetyRules::NO_DATABASE_SAFETY_RULES
+      else
+        PromptAssembly::Sections::SafetyRules::SAFETY_RULES
+      end
+    end
+
+    def database_unavailable?
+      !database_available?
+    end
+
     def service_environment_section
       content = ServiceContainerSections.service_environment_section_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: false
       )
 
@@ -336,6 +365,7 @@ module Prompts
 
     def dynamic_priority_list
       priorities = []
+      priorities << "Revise the proposed tests using the rejected test-review feedback" if tdd_test_revision?
       priorities << "Resolve merge conflicts" if merge_conflicts_present?
       priorities << "Fix CI failures" if ci_failures_present?
       priorities << "Close implementation gaps against the linked issue" if issue_requirements_present?
@@ -889,6 +919,7 @@ module Prompts
 
     def focused_priority_section_present?
       {
+        "tdd_test_revision" => tdd_test_revision?,
         "ci_fix" => include_ci_failures_section?,
         "review_feedback" => includes_review_threads?,
         "merge_conflict" => include_merge_conflicts_section?,
@@ -904,6 +935,7 @@ module Prompts
 
     def focused_priority_item
       {
+        "tdd_test_revision" => "Revise the proposed tests using the rejected test-review feedback",
         "ci_fix" => "Fix the failing CI checks on this PR",
         "review_feedback" => "Address the unresolved code review comments on this PR",
         "merge_conflict" => "Resolve the merge conflicts on this PR",
@@ -912,6 +944,50 @@ module Prompts
         "issue_implementation" => "Close implementation gaps against the linked issue for this PR",
         "label_action" => "Handle the actionable labels on this PR"
       }.fetch(focus, "Complete the scoped task for this PR")
+    end
+
+    # @spec TDD-PR-007
+    def tdd_test_revision?
+      focus == "tdd_test_revision" && tdd_review_feedback.present?
+    end
+
+    def tdd_review_feedback
+      metadata = agent_run&.external_metadata
+      return {} unless metadata.is_a?(Hash)
+
+      metadata["tdd_review_feedback"].to_h
+    end
+
+    def tdd_test_revision_section
+      reviews = Array(tdd_review_feedback["reviews"])
+      threads = Array(tdd_review_feedback["threads"])
+      review_text = reviews.map { |review| "- **#{review["author"]}** (review ##{review["review_id"]}): #{review["body"]}" }
+      thread_text = threads.flat_map do |thread|
+        Array(thread["comments"]).map do |comment|
+          location = [ comment["path"], comment["line"] ].compact.join(":")
+          "- **#{comment["author"]}**#{" (#{location})" if location.present?}: #{comment["body"]}"
+        end
+      end
+
+      PromptAssembly::Section.new(
+        key: :tdd_test_revision,
+        source: :tdd_test_review,
+        content: <<~SECTION,
+          # Rejected Test Review: Revise Tests Only
+
+          The following trusted review evidence caused the current TDD test-review rejection:
+
+          #{(review_text + thread_text).join("\n")}
+
+          Revise the proposed tests to address this feedback. Do not implement
+          production behavior in this run. Completion means the updated tests
+          are pushed and this PR is returned to the TDD test-review gate for a
+          fresh verdict; it does not mean implementation may begin.
+        SECTION
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "trusted current TDD test-review rejection snapshot"
+      )
     end
 
     def deferred_issue_descriptions
@@ -1137,11 +1213,22 @@ module Prompts
     end
 
     def detected_lint_command
-      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project))
+      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project, db_available: database_available?))
     end
 
     def detected_test_command
-      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project))
+      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project, db_available: database_available?))
+    end
+
+    # Whether the agent's runtime environment has a usable database service
+    # container. The prompt and the pre-commit hook must agree on this so a
+    # PR follow-up run does not contradict itself by running services that
+    # weren't actually provisioned (#4305, POLYGLOT-TEST-011).
+    def database_available?
+      @database_available ||= Prompts::ServiceContainerSections.has_database_container?(
+        project: project,
+        agent_run: agent_run
+      )
     end
   end
 end

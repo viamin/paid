@@ -139,6 +139,10 @@ What ships today:
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default
+- chat-advertised tool schemas keep an OpenAI-compatible root object. Tool
+  descriptions may express individual property constraints, but alternative
+  argument combinations are enforced by the Paid tool's argument validation
+  rather than a root composition keyword that OpenAI rejects
 - the transcript hides leading `<think>` reasoning blocks from assistant
   messages during streaming and on reload while retaining the original
   content and escaping ordinary HTML

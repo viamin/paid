@@ -55,7 +55,7 @@
                   <td class="whitespace-nowrap px-3 py-3 text-sm text-amber-700">
                     <% if entry.counters.any? %>
                       <% entry.counters.each do |counter| %>
-                        <div><%= escalation_counter_label(counter.name) %> <span class="font-medium"><%= counter.value %> / <%= counter.limit %></span></div>
+                        <div><%= escalation_counter_label(counter.name) %> <span class="font-medium"><%= counter.value %> / <%= counter.limit %></span><%= " (#{[counter.limit - counter.value, 0].max} remaining)" if counter.name == :pr_auto_continue_tokens %></div>
                       <% end %>
                     <% elsif entry.last_progress_at %>
                       <span title="Time since this PR last made meaningful progress">No progress for <%= time_ago_in_words(entry.last_progress_at) %></span>

@@ -15,13 +15,12 @@ RSpec.describe Tools::TriggerAgentRun do
   end
 
   describe ".input_schema" do
-    it "requires goal=lid_planning alongside plan_docs so clients get the real contract at validation time" do
-      plan_docs_branch = described_class.input_schema[:anyOf].find do |branch|
-        branch[:required]&.include?("plan_docs")
-      end
+    # @spec CHAT-API-020
+    it "uses an OpenAI-compatible object root" do
+      schema = described_class.input_schema
 
-      expect(plan_docs_branch[:required]).to include("goal")
-      expect(plan_docs_branch[:properties][:goal][:const]).to eq("lid_planning")
+      expect(schema[:type]).to eq("object")
+      expect(schema).not_to include(:oneOf, :anyOf, :allOf, :enum, :const, :not)
     end
   end
 
@@ -138,7 +137,8 @@ RSpec.describe Tools::TriggerAgentRun do
         expect(run.custom_prompt).to eq("Fix the invisible chat popup overlay blocking clicks.")
       end
 
-      it "raises when neither issue_id nor custom_prompt is given" do
+      # @spec CHAT-API-020
+      it "rejects an agent run without an issue, prompt, or planning docs" do
         expect {
           tool.call(project_id: project.id, goal: "create_issue", confirmed: true)
         }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
@@ -267,6 +267,7 @@ RSpec.describe Tools::TriggerAgentRun do
         )
       end
 
+      # @spec CHAT-API-020
       it "creates a run from plan_docs alone with no issue_id or custom_prompt" do
         result = tool.call(
           project_id: project.id,

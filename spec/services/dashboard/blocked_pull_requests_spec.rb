@@ -106,6 +106,24 @@ RSpec.describe Dashboard::BlockedPullRequests do
       expect(entry.counters.map(&:name)).to eq([ :draft_review_count ])
     end
 
+    # @spec PR-ESCALATION-007
+    it "reports bounded token allowance usage for a token-cap escalation" do
+      project.update!(max_pr_auto_continue_tokens: 50_000)
+      pull_request = escalated_pr(number: 1,
+        reason: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT,
+        pr_auto_continue_token_limit_override_usage: 50_000,
+        pr_auto_continue_token_limit_override_allowance: 50_000)
+      create(:agent_run, project: project, issue: pull_request,
+        source_pull_request_number: pull_request.github_number,
+        trigger_type: "automatic", tokens_input: 100_000)
+
+      entry = described_class.call(account: account).first
+
+      expect(entry.counters).to contain_exactly(
+        having_attributes(name: :pr_auto_continue_tokens, value: 100_000, limit: 100_000)
+      )
+    end
+
     # @spec PR-ESCALATION-012
     it "reports time since meaningful progress for an operational escalation" do
       pull_request = escalated_pr(number: 1,

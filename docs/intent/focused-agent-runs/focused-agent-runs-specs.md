@@ -88,8 +88,11 @@
   has already consumed at least the project's `max_pr_auto_continue_tokens`,
   the poll workflow SHALL skip queueing another automatic create-pr or review
   run for that PR and SHALL escalate the PR to the owner instead, even when an
-  existing queued automatic PR run is still active. Clearing the resulting
-  escalation is owned by `PR-ESCALATION-006`.
+  existing queued automatic PR run is still active. A bounded allowance granted
+  by an owner dismissal is included in the effective limit; a timestamp-only
+  legacy override is not. Clearing the resulting escalation is owned by
+  `PR-ESCALATION-006` and the bounded override semantics by
+  `PR-ESCALATION-007`.
   *Code:* `CheckQualityGateActivity#pr_auto_continue_token_limit_result`,
   `GitHubPollWorkflow#handle_quality_gate_block`,
   `ScanPaidPrsActivity#pr_auto_continue_token_limit_breach`,
