@@ -1920,4 +1920,25 @@ expect(prompt).to include("Commit Message Is The Commentary Channel")
       expect(result.sections.map(&:key)).not_to include(:quiet_mode_commit_message)
     end
   end
+
+  describe "TDD test-review revisions" do
+    it "renders the trusted rejection snapshot and red-phase completion condition" do # @spec TDD-PR-007
+      run = create(:agent_run, :existing_pr, project: project, source_pull_request_number: 42,
+        focus: "tdd_test_revision", tdd_phase: "test_writing", external_metadata: {
+          "tdd_review_feedback" => {
+            "fingerprint" => "feedback-digest",
+            "reviews" => [ { "review_id" => 9, "author" => "paid-code-reviewer[bot]", "body" => "Add the nil edge case." } ],
+            "threads" => [ { "thread_id" => "thread-9", "comments" => [ { "author" => "trusteduser", "body" => "Cover timeout.", "path" => "spec/foo_spec.rb", "line" => 12 } ] } ]
+          }
+        })
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client,
+        rebase_succeeded: true, agent_run: run, focus: run.focus)
+
+      expect(prompt).to include("Revise the proposed tests using the rejected test-review feedback")
+      expect(prompt).to include("Add the nil edge case.", "Cover timeout.")
+      expect(prompt).to include("Do not implement\nproduction behavior in this run.")
+      expect(prompt).to include("returned to the TDD test-review gate")
+    end
+  end
 end
