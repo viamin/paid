@@ -161,6 +161,62 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
     end
   end
 
+  describe ".test_commands_for db_available gate" do # @spec POLYGLOT-TEST-011
+    it "drops the Ruby test command when db_available: false for a Ruby project" do
+      project = create(:project)
+      project.define_singleton_method(:detected_language) { "ruby" }
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq(
+        [ described_class::NO_TEST_COMMAND ]
+      )
+    end
+
+    it "keeps the Ruby test command when db_available: true" do
+      project = create(:project)
+      project.define_singleton_method(:detected_language) { "ruby" }
+
+      expect(described_class.test_commands_for(project, db_available: true)).to eq(
+        [ "bundle exec rspec" ]
+      )
+    end
+
+    it "drops the Elixir test command when db_available: false for an Elixir project" do
+      project = create(:project, repo_profile: { "test_languages" => [ "elixir" ] })
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq(
+        [ described_class::NO_TEST_COMMAND ]
+      )
+    end
+
+    it "keeps a non-DB-dependent language command even when db_available: false" do
+      project = create(:project, repo_profile: { "test_languages" => [ "go" ] })
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq([ "go test ./..." ])
+    end
+
+    it "keeps non-DB commands and drops DB-dependent commands in a polyglot project without a database" do
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "elixir", "go" ] })
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq([ "go test ./..." ])
+    end
+
+    it "preserves every command for a polyglot project with a database" do
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "elixir", "go" ] })
+
+      expect(described_class.test_commands_for(project, db_available: true)).to eq(
+        [ "bundle exec rspec", "mix test", "go test ./..." ]
+      )
+    end
+
+    it "always returns lint commands regardless of db_available" do
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "go" ] })
+
+      expect(described_class.lint_commands_for(project, db_available: false)).to eq(
+        [ "bundle exec rubocop", "golangci-lint run" ]
+      )
+    end
+  end
+
   describe "DEFAULT_LANGUAGE" do
     it "is ruby" do
       expect(described_class::DEFAULT_LANGUAGE).to eq("ruby")

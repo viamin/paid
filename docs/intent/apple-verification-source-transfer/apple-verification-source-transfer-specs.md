@@ -2,6 +2,11 @@
 
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code.
+>
+> The listed source-lane, manifest, and artifact-ingestion components have
+> focused unit coverage, but no production attempt-dispatch path composes them
+> into a guest job or persists the returned result/artifact records. They remain
+> active gaps until that end-to-end integration is shipped.
 
 - [ ] **APPLE-TRANSFER-001** — When a verification attempt runs against
   committed source, the input manifest's git lane SHALL carry the exact

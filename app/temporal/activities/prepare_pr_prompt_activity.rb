@@ -23,6 +23,7 @@ module Activities
       prompt_builder_path = prompt_builder_for(agent_run)
       service_environment_prompt_blocks = Prompts::BuildForPr.service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: false
       ).prompt_blocks
 

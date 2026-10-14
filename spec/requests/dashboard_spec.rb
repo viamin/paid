@@ -18,26 +18,8 @@ RSpec.describe "Dashboard" do
 
       before { sign_in user }
 
-      # @spec PR-ESCALATION-011
-      it "lists escalated pull requests in the blocked PRs panel with an unblock action" do
-        pr = create(:issue, :pull_request,
-          project: project,
-          github_number: 91,
-          title: "Fix the flaky suite",
-          pr_review_phase: "escalated",
-          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
-          draft_review_count: 12)
-
-        get dashboard_path
-
-        expect(response.body).to include("Blocked PRs")
-        expect(response.body).to include("##{pr.github_number}")
-        expect(response.body).to include("Unblock")
-      end
-
-      # @spec PR-ESCALATION-022
-      it "names the project in the unblock confirmation prompt" do
-        pr = create(:issue, :pull_request,
+      it "does not render escalated pull requests" do
+        create(:issue, :pull_request,
           project: project,
           github_number: 91,
           pr_review_phase: "escalated",
@@ -46,7 +28,7 @@ RSpec.describe "Dashboard" do
 
         get dashboard_path
 
-        expect(response.body).to include(CGI.escapeHTML("#{project.full_name}##{pr.github_number}"))
+        expect(response.body).not_to include("Blocked PRs")
       end
 
       it "renders the dashboard" do

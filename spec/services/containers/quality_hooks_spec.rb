@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003
+RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011
   subject(:host) { host_class.new }
 
   let(:host_class) do
@@ -15,15 +15,21 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
   let(:project) { create(:project, account: account) }
   let(:user) { project.effective_owner }
 
+  # Stub the centralized database-availability check the same way the
+  # prompts do (#4305, POLYGLOT-TEST-011) so this unit-level spec stays
+  # scoped to the hook behavior, not to live service-container provisioning.
+  def stub_database_availability(value)
+    allow(Prompts::ServiceContainerSections).to receive(:has_database_container?)
+      .and_return(value)
+  end
+
   describe "#install_quality_hooks" do
     let(:git_ops) { instance_double(Containers::GitOperations, install_git_hooks: nil) }
     let(:agent_run) { create(:agent_run, project: project) }
 
     it "disables DB-dependent test and mutation hooks when no database container is running" do
-      allow(project).to receive_messages(
-        test_languages: %w[ruby],
-        has_running_database_container?: false
-      )
+      allow(project).to receive(:test_languages).and_return(%w[ruby])
+      stub_database_availability(false)
       create(
         :pre_commit_requirement,
         :mutation_test,
@@ -42,10 +48,8 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "keeps test and mutation hooks when a database container is running" do
-      allow(project).to receive_messages(
-        detected_language: "ruby",
-        has_running_database_container?: true
-      )
+      allow(project).to receive(:detected_language).and_return("ruby")
+      stub_database_availability(true)
       create(
         :pre_commit_requirement,
         :mutation_test,
@@ -64,10 +68,8 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "keeps test hooks for non-DB-dependent languages without a database" do
-      allow(project).to receive_messages(
-        detected_language: "go",
-        has_running_database_container?: false
-      )
+      allow(project).to receive(:detected_language).and_return("go")
+      stub_database_availability(false)
       host.install_quality_hooks(git_ops, agent_run)
 
       expect(git_ops).to have_received(:install_git_hooks).with(
@@ -78,10 +80,8 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "gates Elixir/Phoenix test hooks the same as Ruby when no database is running" do
-      allow(project).to receive_messages(
-        detected_language: "elixir",
-        has_running_database_container?: false
-      )
+      allow(project).to receive(:detected_language).and_return("elixir")
+      stub_database_availability(false)
       host.install_quality_hooks(git_ops, agent_run)
 
       expect(git_ops).to have_received(:install_git_hooks).with(
@@ -93,7 +93,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
     it "runs each language's commands for a polyglot repo with a database" do
       project.update!(repo_profile: { "test_languages" => [ "ruby", "elixir" ] })
-      allow(project).to receive(:has_running_database_container?).and_return(true)
+      stub_database_availability(true)
       create(
         :pre_commit_requirement,
         :mutation_test,
@@ -113,7 +113,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
     it "gates only DB-dependent languages for a polyglot repo without a database" do
       project.update!(repo_profile: { "test_languages" => [ "ruby", "go" ] })
-      allow(project).to receive(:has_running_database_container?).and_return(false)
+      stub_database_availability(false)
       host.install_quality_hooks(git_ops, agent_run)
 
       expect(git_ops).to have_received(:install_git_hooks).with(
@@ -125,7 +125,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
     it "keeps non-db test commands when the repo profile is polyglot" do # @spec POLYGLOT-TEST-003
       project.update!(repo_profile: { "test_languages" => %w[elixir javascript] })
-      allow(project).to receive(:has_running_database_container?).and_return(false)
+      stub_database_availability(false)
 
       host.install_quality_hooks(git_ops, agent_run)
 
@@ -138,10 +138,8 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
     # @spec TDD-GUARD-009 # @spec TDD-GUARD-010
     it "suppresses the mutation command during a test_writing phase run even when mutation testing is configured" do
-      allow(project).to receive_messages(
-        detected_language: "ruby",
-        has_running_database_container?: true
-      )
+      allow(project).to receive(:detected_language).and_return("ruby")
+      stub_database_availability(true)
       create(:pre_commit_requirement, :mutation_test, account:, project:, name: "mutant", command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1")
       test_writing_run = create(:agent_run, project: project, tdd_phase: "test_writing")
 
@@ -158,10 +156,8 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
     # @spec TDD-GUARD-009
     it "keeps the mutation command during a test_fixing phase run" do
-      allow(project).to receive_messages(
-        detected_language: "ruby",
-        has_running_database_container?: true
-      )
+      allow(project).to receive(:detected_language).and_return("ruby")
+      stub_database_availability(true)
       create(
         :pre_commit_requirement,
         :mutation_test,
@@ -183,10 +179,8 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     end
 
     it "installs a frozen-test write guard during a refactor phase run" do
-      allow(project).to receive_messages(
-        detected_language: "ruby",
-        has_running_database_container?: true
-      )
+      allow(project).to receive(:detected_language).and_return("ruby")
+      stub_database_availability(true)
       refactor_run = create(:agent_run, project: project, tdd_phase: "refactor")
 
       host.install_quality_hooks(git_ops, refactor_run)
@@ -197,6 +191,23 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         mutation_command: "true",
         pre_commit_guard: a_string_including("tdd_phase=\"refactor\"")
       )
+    end
+
+    # @spec POLYGLOT-TEST-011 — the hook reads the same database-availability
+    # signal the prompt uses, so the unit under test (#4305).
+    it "queries the same database-availability helper the prompt uses" do
+      allow(project).to receive_messages(
+        detected_language: "ruby",
+        test_languages: %w[ruby]
+      )
+      stubbed = false
+      allow(Prompts::ServiceContainerSections).to receive(:has_database_container?) do
+        stubbed = true
+        false
+      end
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(stubbed).to be(true)
     end
   end
 

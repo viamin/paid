@@ -12,6 +12,15 @@ module Prompts
   # an unsupported-only profile) and fall back to the single detected primary
   # language only when no profile is persisted at all.
   module LanguageCommands
+    # Languages whose test suites require a running database service
+    # container — Ruby (Rails/ActiveRecord) and Elixir (Phoenix/Ecto) both
+    # fail unconditionally without PostgreSQL. The container's pre-commit
+    # hook gates these commands when no database is provisioned; the prompt
+    # must apply the same gate so it does not ask the agent to run the
+    # command the hook already no-op'd, nor demand that an unavailable
+    # suite pass (#4305, POLYGLOT-TEST-011).
+    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby elixir].freeze
+
     LANGUAGE_TEST_COMMANDS = {
       "ruby" => "bundle exec rspec",
       "javascript" => "npm test",
@@ -68,18 +77,37 @@ module Prompts
     # Resolves the test commands for every language in the project's test set,
     # dropping languages that have no command mapping.
     #
+    # When +db_available+ is false, commands for every language in
+    # {DB_DEPENDENT_TEST_LANGUAGES} are dropped — matching the pre-commit
+    # hook's database gate so the prompt and the hook agree on which
+    # suites are runnable (POLYGLOT-TEST-011).
+    #
     # @param project [Project]
+    # @param db_available [Boolean, nil] when false, DB-dependent commands
+    #   are dropped; nil/true preserves the full list
     # @return [Array<String>] test command strings (never empty)
     # @spec POLYGLOT-TEST-003
-    def self.test_commands_for(project)
-      commands_for(project, LANGUAGE_TEST_COMMANDS, NO_TEST_COMMAND)
+    # @spec POLYGLOT-TEST-011
+    def self.test_commands_for(project, db_available: true)
+      languages = test_languages(project)
+      languages = languages - DB_DEPENDENT_TEST_LANGUAGES if db_available == false
+      commands = languages.filter_map { |language| LANGUAGE_TEST_COMMANDS[language] }
+      commands.empty? ? [ NO_TEST_COMMAND ] : commands
     end
 
     # Resolves the lint commands for every language in the project's test set.
     #
+    # Lint always runs — it does not depend on infrastructure the agent is
+    # forbidden to provision. The +db_available+ parameter is accepted (and
+    # ignored) for symmetry with {.test_commands_for} so callers can pass
+    # the same database-availability signal to both resolvers without
+    # branching.
+    #
     # @param project [Project]
+    # @param db_available [Boolean, nil] unused, kept for parallel signature
     # @return [Array<String>] lint command strings (never empty)
-    def self.lint_commands_for(project)
+    # @spec POLYGLOT-TEST-011
+    def self.lint_commands_for(project, db_available: true)
       commands_for(project, LANGUAGE_LINT_COMMANDS, NO_LINT_COMMAND)
     end
 

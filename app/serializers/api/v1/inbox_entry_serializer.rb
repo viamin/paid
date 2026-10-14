@@ -88,8 +88,8 @@ module Api
         { blockers: entry.record.auto_merge_blockers&.fetch("failed", []) || [] }
       end
 
-      # entry.record is Dashboard::BlockedPullRequests::Entry (see
-      # app/services/dashboard/blocked_pull_requests.rb) — the reason,
+      # entry.record is Inbox::EscalatedPullRequests::Entry (see
+      # app/services/inbox/escalated_pull_requests.rb) — the reason,
       # tripped counters, last-progress timestamp, and operator-pause state
       # the web detail pane renders.
       def escalated_pr_payload

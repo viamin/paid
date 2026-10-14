@@ -25,9 +25,9 @@
   <div class="space-y-4 lg:has-[[data-testid=inbox-clarifying-context]]:grid lg:has-[[data-testid=inbox-clarifying-context]]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:has-[[data-testid=inbox-clarifying-context]]:items-start lg:has-[[data-testid=inbox-clarifying-context]]:gap-6 lg:has-[[data-testid=inbox-clarifying-context]]:space-y-0"
        data-testid="inbox-question-layout">
     <% if entry.clarifying_questions? %>
-      <%= turbo_frame_tag "inbox-supplement",
-            src: inbox_entry_supplement_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
-            loading: :lazy, class: "block min-h-px lg:sticky lg:top-4" %>
+      <div class="block min-h-px lg:sticky lg:top-4">
+        <%= render "inbox/supplement_content", entry: entry %>
+      </div>
     <% end %>
 
     <div class="space-y-4">

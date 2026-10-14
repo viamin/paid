@@ -379,7 +379,9 @@ module Workflows
         goal: "create_pr",
         count_toward_draft_review_round: decision.fetch(:count_toward_draft_review_round, false),
         expected_draft_review_count: decision[:expected_draft_review_count],
-        focus_evidence: decision[:focus_evidence]
+        focus_evidence: decision[:focus_evidence],
+        tdd_review_feedback: decision[:tdd_review_feedback],
+        tdd_phase: decision[:tdd_phase]
       }.compact
       queue_input[:focus] = decision[:focus] || "general" if decision[:source_pull_request_number].present?
       queue_input.delete(:count_toward_draft_review_round) unless queue_input[:count_toward_draft_review_round]

@@ -24,7 +24,7 @@ class AgentRun < ApplicationRecord
   # container-executable runner key"). When you add a runner key, add its
   # agent_type here too.
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi omp api devin factory internal_agent].freeze
-  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action tdd_test_revision].freeze # @spec FOCUSED-RUN-001 TDD-PR-007
   # Effective review_depth preset captured at review-run creation time. Same
   # vocabulary as Project::REVIEW_DEPTHS so a project-level preset change
   # cannot retroactively alter a run's review behavior. @spec REVIEW-DEPTH-005
