@@ -217,6 +217,7 @@ Scaling & Distribution above).
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
+| [RDR-076](RDR-076.md) | Extended Verification Add-On (Defense in Depth) — Business Review Package and Rubric | Draft | P1 |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
@@ -240,24 +241,33 @@ keeps the umbrella open with non-closing `Tracks #4309` language.
 
 RDR-075 is held for human review in
 [#4364](https://github.com/viamin/paid/pull/4364) and is not yet merged,
-so it does not appear in the index above; the umbrella
-[#4365](https://github.com/viamin/paid/issues/4365) tracks its
-implementation tree. The 2026-10-12 readiness audit
+so it does not appear in the index above. Its authoritative implementation
+umbrella is [#4385](https://github.com/viamin/paid/issues/4385), with
+implementation issues #4386–#4391 and the `layered_verification_add_on`
+rollout guard, default off. The 2026-10-12 readiness audit
 [(`audit-report-2026-10-12-rdr-075.md`)](audit-report-2026-10-12-rdr-075.md)
 records that no RDR-075 code, schema, model, coordinator, rubric, evidence,
-finding synthesis, or `layered_verification_coordinator` flag has shipped,
-that no `docs/intent/layered-verification/` LID segment yet exists, and that
-the umbrella issue must remain open until Phases 1–4 (#4366–#4369) and the
-closeout (#4370) own their part of the implementation. The
-[2026-10-13 final-acceptance audit](audit-report-2026-10-13-rdr-075-final.md)
-reconfirms that outcome against the live issue state and repository, without
-claiming that RDR-075 is merged or ready to close. The
-[2026-10-13 umbrella final-acceptance audit](audit-report-2026-10-13-rdr-075-epic-final-acceptance.md)
-refreshes the same conclusion with database-backed runtime confirmation and
-the live GitHub issue/PR state. The
-[2026-10-14 epic final-acceptance audit](audit-report-2026-10-14-rdr-075-epic-final-acceptance.md)
-reconfirms the absence findings and current open RDR/issue state, and likewise
-leaves #4365 open until the focused gaps ship.
+or finding synthesis had shipped; the current #4385 implementation tree and
+its planned `docs/intent/layered-verification/` LID segment remain the source
+of implementation tracking.
+
+RDR-076 ([RDR-076.md](RDR-076.md)) is a Draft add-on to RDR-075 that
+proposes a business-facing review package and a nine-layer selection
+rubric on top of the RDR-075 foundation. Its Draft index entry reflects
+that it is under review in [#4406](https://github.com/viamin/paid/issues/4406),
+not that the described behavior has shipped. RDR-076 ships no runtime
+behavior, schema, model, or feature flag on its own; the package and
+rubric it describes are produced by the RDR-075 coordinator when the
+RDR-075 umbrella #4385 ships, behind the `layered_verification_add_on`
+flag, default off. The RDR-075 prerequisite
+relationship recorded above applies to RDR-076 as well: the
+`docs/intent/layered-verification/` LID segment does not yet exist, no
+RDR-076 code, schema, model, package, rubric, audit path, or coordinator
+contract has shipped, and the umbrella must remain open until its current
+implementation tree (#4386–#4391) closes. RDR-076's own implementation plan
+is downstream of that umbrella and is tentative on EARS claim ids
+(`LAYER-VERIFY-###`) until
+the LID Planning PR lands.
 
 ## Decision Summary
 
