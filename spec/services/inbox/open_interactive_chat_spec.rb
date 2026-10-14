@@ -14,6 +14,36 @@ RSpec.describe Inbox::OpenInteractiveChat do
     Inbox::Queue.call(user:, project:).first
   end
 
+  # @spec OPERATOR-INBOX-015
+  it "revalidates the selected entry without rebuilding unrelated inbox lanes" do
+    selected_entry = entry
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      expect(described_class.call(user: user, entry: selected_entry)).to be_persisted
+    end
+
+    expect(queries.grep(/FROM "(?:decomposition_decisions|issue_continuation_requests)"/)).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "refuses a formerly valid entry after it leaves the queue" do
+    selected_entry = entry
+    issue.update_columns(github_state: "closed")
+
+    expect { described_class.call(user: user, entry: selected_entry) }.to raise_error(Pundit::NotAuthorizedError)
+  end
+
+  # @spec OPERATOR-INBOX-015 @spec QUESTION-EXPLORATION-007
+  it "refuses another account's entry without creating a chat" do
+    foreign_user = create(:user, :owner)
+    selected_entry = entry
+
+    expect { described_class.call(user: foreign_user, entry: selected_entry) }
+      .to raise_error(Pundit::NotAuthorizedError)
+  end
+
   it "creates and audits the current user's active chat for an inbox item" do
     # @spec QUESTION-EXPLORATION-001
     chat = described_class.call(user:, entry:)

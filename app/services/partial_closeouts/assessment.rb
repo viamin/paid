@@ -27,8 +27,10 @@ module PartialCloseouts
       Digest::SHA256.hexdigest([ issue.title, issue.body ].map(&:to_s).join("\0"))
     end
 
-    def initialize(issue)
+    # @spec OPERATOR-INBOX-016
+    def initialize(issue, evidence: nil)
       @issue = issue
+      @evidence = evidence
     end
 
     def call
@@ -52,7 +54,8 @@ module PartialCloseouts
     end
 
     def latest_run
-      @latest_run ||= issue.agent_runs.where("reconciliation ? 'assessment'").order(id: :desc).first
+      @latest_run ||= issue.agent_runs.where("reconciliation ? 'assessment'")
+        .select(:reconciliation).order(id: :desc).first
     end
 
     def criteria
@@ -102,7 +105,7 @@ module PartialCloseouts
     end
 
     def current_source_revision
-      @current_source_revision ||= Issues::CloseoutEvidence.call(issue).digest
+      @current_source_revision ||= (@evidence || Issues::CloseoutEvidence.call(issue)).digest
     end
 
     def next_action

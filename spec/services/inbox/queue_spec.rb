@@ -40,6 +40,18 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec OPERATOR-INBOX-015
+    it "restricts a lane lookup to the requested record while enforcing membership" do
+      selected = create_needs_input(body: questions_body)
+      create_needs_input(body: questions_body)
+
+      entries = described_class.call(user: user, kind: "clarifying_questions", record_id: selected.id)
+
+      expect(entries.map(&:record)).to eq([ selected ])
+      selected.update!(github_state: "closed")
+      expect(described_class.call(user: user, kind: "clarifying_questions", record_id: selected.id)).to be_empty
+    end
+
     it "orders entries newest-waiting-first when requested" do
       older = create_needs_input(body: questions_body)
       newer = create_needs_input(body: questions_body)

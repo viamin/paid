@@ -46,6 +46,19 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
   end
 
   describe ".pairs_for" do
+    # @spec OPERATOR-INBOX-016
+    it "scans projects without closeout evidence in one query" do
+      projects = [ project, create(:project, account: account), create(:project, account: account) ]
+      queries = []
+      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        expect(described_class.call(projects)).to be_empty
+      end
+
+      expect(queries.grep(/SELECT .*FROM "issues"/)).to have_attributes(size: 1)
+    end
+
     it "keeps a stall held by a non-walked eligibility guard in the lane with an unavailable-guard reason" do # @spec PARTIAL-CLOSEOUT-012
       merged_pr_row(number: 12, parent_issue_id: issue.id)
       create(

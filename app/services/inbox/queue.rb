@@ -80,6 +80,7 @@ module Inbox
       :summary_text,
       :title_text,
       :action_url,
+      :closeout_status,
       keyword_init: true
     ) do
       def to_param
@@ -195,6 +196,16 @@ module Inbox
       new(...).call
     end
 
+    # @spec OPERATOR-INBOX-015
+    def self.find_entry(user:, entry_id:, project: nil, kind: nil)
+      entry_kind, record_id = entry_id.to_s.split(":", 2)
+      return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
+      return if kind.present? && kind != entry_kind
+
+      call(user: user, project: project, kind: entry_kind, record_id: record_id)
+        .find { |entry| entry.id == entry_id.to_s }
+    end
+
     # Questionless rows are invalid and repaired during sync, so keep them out
     # of every queue consumer until reconciliation clears the stale state.
     # @spec INBOX-FOUNDATION-010
@@ -230,11 +241,12 @@ module Inbox
       label_gated.or(local_gated)
     end
 
-    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT)
+    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil)
       @user = user
       @project = project
       @kind = kind.to_s.presence
       @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
+      @record_id = record_id
     end
 
     # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
@@ -259,6 +271,11 @@ module Inbox
     private
 
     attr_reader :kind, :project, :sort, :user
+
+    # @spec OPERATOR-INBOX-015
+    def only_record(scope)
+      @record_id ? scope.where(id: @record_id) : scope
+    end
 
     def include_kind?(entry_kind)
       kind.blank? || kind == entry_kind
@@ -319,6 +336,7 @@ module Inbox
           .joins(:project)
           .includes(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
+          .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end
@@ -360,7 +378,7 @@ module Inbox
       scope = PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve
       scope = scope.where(project: project) if project
 
-      scope.open_plan_reviews.includes(:project, :issue).map do |review|
+      only_record(scope.open_plan_reviews).includes(:project, :issue).map do |review|
         tasks = Array(review.plan_data&.dig("tasks"))
 
         Entry.new(
@@ -428,9 +446,7 @@ module Inbox
         ids = scoped_projects.map(&:id)
         return Issue.none if ids.empty?
 
-        Issue
-          .includes(:project)
-          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+        only_record(Inbox::MergeApproval.candidates(ids))
       end
     end
 
@@ -461,10 +477,7 @@ module Inbox
         ids = scoped_projects.map(&:id)
         return Issue.none if ids.empty?
 
-        Issue
-          .includes(:project)
-          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
-          .where.not(auto_merge_blockers: nil)
+        only_record(Inbox::IntentConformance.candidates(ids))
       end
     end
 
@@ -478,7 +491,7 @@ module Inbox
       ids = scoped_projects.map(&:id)
       return [] if ids.empty?
 
-      Dashboard::BlockedPullRequests.call(account: user.account)
+      Dashboard::BlockedPullRequests.call(account: user.account, pull_request_id: @record_id)
         .select { |blocked| ids.include?(blocked.pull_request.project_id) }
         .map { |blocked| escalated_pr_entry(blocked) }
     end
@@ -543,6 +556,7 @@ module Inbox
         .joins(:project)
         .includes(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
+        .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
     end
@@ -560,7 +574,7 @@ module Inbox
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
-      scope.includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
+      only_record(scope).includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
         .order(:created_at, :id)
         .map { |feature_intent| feature_decision_entry(feature_intent) }
     end
@@ -619,6 +633,7 @@ module Inbox
         .includes(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
+        .then { |scope| only_record(scope) }
         .order(runner_retry_abandoned_at: :desc)
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
     end
@@ -631,7 +646,7 @@ module Inbox
       scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
       scope = scope.where(project: project) if project
 
-      scope.includes(:project, :issue).order(:created_at, :id).map do |change_intent|
+      only_record(scope).includes(:project, :issue).order(:created_at, :id).map do |change_intent|
         change_intent_draft_entry(change_intent)
       end
     end
@@ -668,7 +683,7 @@ module Inbox
     # prerequisites, and the authorized recovery actions (#4120).
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
     def partial_closeout_entries
-      Issues::StalledCloseouts.call(scoped_projects).map do |pair|
+      Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id).map do |pair|
         status = pair.status
         Entry.new(
           id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
@@ -676,6 +691,7 @@ module Inbox
           project: pair.issue.project,
           issue: pair.issue,
           record: pair.issue,
+          closeout_status: status,
           waiting_since: status.evidence.terminal_at,
           questions: [],
           tasks: status.unresolved_prerequisites,
@@ -723,6 +739,7 @@ module Inbox
         return Issue.none if ids.empty?
 
         self.class.test_review_pending_issues(ids)
+          .then { |scope| only_record(scope) }
           .joins(:project)
           .includes(:project)
           .order("issues.github_updated_at ASC")
@@ -734,7 +751,8 @@ module Inbox
     # this query intentionally never acquires a checkout or re-runs rules.
     # @spec PROJECT-READINESS-005
     def project_setup_pending_entries
-      scoped_projects.select(&:tdd_readiness_blocked?).map do |candidate|
+      scoped_projects.select { |candidate| !@record_id || candidate.id.to_s == @record_id.to_s }
+        .select(&:tdd_readiness_blocked?).map do |candidate|
         gap_descriptions = candidate.readiness_gap_descriptions
         Entry.new(
           id: "#{PROJECT_SETUP_PENDING_KIND}:#{candidate.id}",
@@ -754,7 +772,7 @@ module Inbox
 
     def visible_blocking_notifications
       @visible_blocking_notifications ||= begin
-        notifications = NotificationPolicy::Scope.new(user, Notification).resolve
+        notifications = only_record(NotificationPolicy::Scope.new(user, Notification).resolve)
           .active
           .blocking
           .includes(:subject)

@@ -27,7 +27,7 @@ module Inbox
     end
 
     def authoritative_entry
-      @authoritative_entry ||= Inbox::Queue.call(user:).find { |candidate| candidate.id == entry.id }
+      @authoritative_entry ||= Inbox::Queue.find_entry(user: user, entry_id: entry.id)
     end
 
     def active_chat
