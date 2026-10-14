@@ -217,6 +217,7 @@ Scaling & Distribution above).
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
+| [RDR-076](RDR-076.md) | Extended Verification Add-On (Defense in Depth) — Business Review Package and Rubric | Draft | P1 |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
@@ -252,9 +253,9 @@ of implementation tracking.
 
 RDR-076 ([RDR-076.md](RDR-076.md)) is a Draft add-on to RDR-075 that
 proposes a business-facing review package and a nine-layer selection
-rubric on top of the RDR-075 foundation. It is held for human review in
-[#4406](https://github.com/viamin/paid/issues/4406) and is not yet merged,
-so it does not appear in the index above. RDR-076 ships no runtime
+rubric on top of the RDR-075 foundation. Its Draft index entry reflects
+that it is under review in [#4406](https://github.com/viamin/paid/issues/4406),
+not that the described behavior has shipped. RDR-076 ships no runtime
 behavior, schema, model, or feature flag on its own; the package and
 rubric it describes are produced by the RDR-075 coordinator when the
 RDR-075 umbrella #4385 ships, behind the `layered_verification_add_on`
