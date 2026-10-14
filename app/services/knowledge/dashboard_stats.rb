@@ -152,7 +152,6 @@ module Knowledge
         account.projects.cache_key_with_version,
         UserSetting.joins(:user).where(users: { account_id: account.id }).cache_key_with_version,
         ProviderApiKey.joins(:user).where(users: { account_id: account.id }).cache_key_with_version,
-        account.runner_credentials.cache_key_with_version,
         RunnerState.joins(:user).where(users: { account_id: account.id }).cache_key_with_version
       ].join("/")
     end
@@ -190,8 +189,7 @@ module Knowledge
 
       {
         provider_api_keys: ProviderApiKey.where(user_id: owner_ids).group_by(&:user_id),
-        runner_states: RunnerState.where(user_id: owner_ids).group_by(&:user_id).transform_values { |states| states.index_by(&:runner_name) },
-        managed_runner_keys: account.runner_credentials.active.distinct.pluck(:runner_key)
+        runner_states: RunnerState.where(user_id: owner_ids).group_by(&:user_id).transform_values { |states| states.index_by(&:runner_name) }
       }
     end
 
@@ -200,12 +198,11 @@ module Knowledge
       runners = configured_runners_for(setting, operation)
       states = readiness_data[:runner_states].fetch(owner.id, {})
       credential_availability = {
-        provider_api_keys: readiness_data[:provider_api_keys].fetch(owner.id, []),
-        managed_runner_keys: readiness_data[:managed_runner_keys]
+        provider_api_keys: readiness_data[:provider_api_keys].fetch(owner.id, [])
       }
 
       runners.map do |runner|
-        readiness = RunnerReadiness.call(account:, owner:, operation:, runner:, credential_availability:)
+        readiness = RunnerReadiness.call(owner:, operation:, runner:, credential_availability:)
         runner_status(runner, states, readiness, owner).merge(owner_id: owner.id, project_count: project_count)
       end
     end

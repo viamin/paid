@@ -81,13 +81,17 @@ RSpec.describe Knowledge::DashboardStats do
       before { project }
 
       # @spec KNOWLEDGE-DASHBOARD-002
-      it "invalidates cached readiness when the account adds a managed credential" do
+      it "does not report chat ready when the account adds an unusable managed credential" do
         expect(stats[:provider_health][:chat].first[:configuration_status]).to eq("missing_credential")
 
         create(:runner_credential, account: account, created_by: owner, runner_key: owner.settings.kb_chat_runner)
 
         refreshed = described_class.call(account: account)
-        expect(refreshed[:provider_health][:chat].first[:configuration_status]).to eq("ready")
+        expect(refreshed[:provider_health][:chat].first).to include(
+          configuration_status: "missing_credential",
+          credential_source: nil,
+          available: false
+        )
       end
     end
 
@@ -100,13 +104,14 @@ RSpec.describe Knowledge::DashboardStats do
       end
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "does not report chat ready because drafting cannot materialize the owner API key" do
+      it "reports chat ready because drafting materializes the owner API key" do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
-          configuration_status: "missing_credential",
-          credential_source: nil,
-          available: false
+          configuration_status: "ready",
+          credential_source: "owner_api_key",
+          credential_service: "anthropic",
+          available: true
         )
       end
     end
@@ -155,6 +160,7 @@ RSpec.describe Knowledge::DashboardStats do
 
       before do
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
         create(:runner_credential, account: account, created_by: owner, runner_key: owner.settings.kb_chat_runner)
       end
 
@@ -171,7 +177,8 @@ RSpec.describe Knowledge::DashboardStats do
         )
         expect(chat).to include(
           configuration_status: "ready",
-          credential_source: "managed_runner_credential",
+          credential_source: "owner_api_key",
+          credential_service: "anthropic",
           validated_with_provider: false
         )
       end
@@ -604,6 +611,6 @@ RSpec.describe Knowledge::DashboardStats do
   end
 
   def readiness_table_patterns
-    [ /FROM "user_settings"/, /FROM "runner_states"/, /FROM "provider_api_keys"/, /FROM "runner_credentials"/ ]
+    [ /FROM "user_settings"/, /FROM "runner_states"/, /FROM "provider_api_keys"/ ]
   end
 end

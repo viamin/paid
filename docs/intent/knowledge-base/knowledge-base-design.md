@@ -34,9 +34,9 @@ does not treat the absence of a `RunnerState` as evidence that a runner can
 execute. `Knowledge::RunnerReadiness` resolves local configuration only: a
 supported embedding transport is `ready` when its applicable owner API key or
 documented platform fallback is configured. Decision drafting is `ready` only
-when its managed runner credential or the documented host Anthropic text-mode
-credential is configured, because those are the credential sources its
-in-process execution path materializes. Otherwise it is `missing_credential`
+when its effective owner's Anthropic API key or the documented host Anthropic
+text-mode credential is configured, because those are the credential sources
+its containerized execution path materializes. Otherwise it is `missing_credential`
 or `unsupported_transport`. It never materializes a secret or contacts an
 upstream provider, so ready credentials are explicitly not a live
 authentication validation.

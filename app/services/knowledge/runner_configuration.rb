@@ -126,7 +126,7 @@ module Knowledge
 
     # @spec KNOWLEDGE-DASHBOARD-001
     def embedding_readiness_for(runner)
-      RunnerReadiness.call(account: project.account, owner:, operation: :embedding, runner:)
+      RunnerReadiness.call(owner:, operation: :embedding, runner:)
     end
 
     def platform_openai_api_key

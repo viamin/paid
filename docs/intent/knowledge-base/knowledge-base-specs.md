@@ -470,7 +470,7 @@
   count, and version its bounded cache from project ownership, owner settings,
   credentials, and runner state changes. It SHALL not present the account
   fallback owner's readiness as valid for another project's owner. On a cache
-  miss, it SHALL batch-load the owners' settings, runner states, API keys, and
-  managed credential availability rather than issuing owner-level queries.
+  miss, it SHALL batch-load the owners' settings, runner states, and API keys
+  rather than issuing owner-level queries.
   *Code:* `app/services/knowledge/dashboard_stats.rb`.
   *Test:* `spec/services/knowledge/dashboard_stats_spec.rb`.

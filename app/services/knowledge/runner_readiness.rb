@@ -12,8 +12,7 @@ module Knowledge
       new(...).call
     end
 
-    def initialize(account:, owner:, operation:, runner:, credential_availability: nil)
-      @account = account
+    def initialize(owner:, operation:, runner:, credential_availability: nil)
       @owner = owner
       @operation = operation.to_sym
       @runner = runner
@@ -41,7 +40,7 @@ module Knowledge
     def credential
       return embedding_credential if operation == :embedding
 
-      managed_runner_credential || platform_anthropic_credential
+      owner_api_key_credential("anthropic") || platform_anthropic_credential
     end
 
     def embedding_credential
@@ -49,12 +48,6 @@ module Knowledge
       return unless config
 
       owner_api_key_credential(config.fetch(:service_type)) || platform_openai_credential
-    end
-
-    def managed_runner_credential
-      return unless managed_runner_keys.include?(runner)
-
-      ready(source: "managed_runner_credential", service: Runner.display_name_for(runner))
     end
 
     def owner_api_key_credential(service_type)
@@ -67,12 +60,6 @@ module Knowledge
       return credential_availability.fetch(:provider_api_keys) if credential_availability
 
       owner.provider_api_keys.to_a
-    end
-
-    def managed_runner_keys
-      return credential_availability.fetch(:managed_runner_keys) if credential_availability
-
-      account.runner_credentials.active.distinct.pluck(:runner_key)
     end
 
     attr_reader :credential_availability
