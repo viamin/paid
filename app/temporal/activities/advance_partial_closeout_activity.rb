@@ -11,6 +11,11 @@ module Activities
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       track_phase(agent_run_id: agent_run.id, phase_key: "advance_partial_closeout",
         phase_group: "post", agent_run: agent_run) do
+        # Bootstrap runs deliberately have no issue. They have no accepted
+        # issue intent to advance, and must not fail after publishing a PR.
+        # @spec PROJECT-READINESS-007
+        return { agent_run_id: agent_run.id, scheduled: false, code: "skipped_no_issue" } unless agent_run.issue
+
         assessment = agent_run.reconciliation.fetch("assessment", {})
         result = PartialCloseouts::Advance.call(agent_run: agent_run, assessment: assessment)
 

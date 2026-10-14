@@ -120,9 +120,9 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     end
 
     # Cloning follows an HTML redirect. CHAT-API-009 deliberately renders
-    # Session details closed on every server response, so reopen it before
-    # asserting on the newly rendered workspace details.
-    open_desktop_session_details
+    # Session details closed on ordinary server responses, but a successful
+    # clone opens the indicator so its new workspace path and token identity
+    # are visible as confirmation.
 
     expect(page).to have_text("/workspace/#{project.full_name.tr('/', '-')}")
     expect(page).to have_text("project-token:#{project.github_token.name}")

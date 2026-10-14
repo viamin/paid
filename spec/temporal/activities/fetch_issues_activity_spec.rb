@@ -169,6 +169,76 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(feature.reload).to be_released
       expect(feature.approved_design_revision).to eq("c" * 40)
     end
+
+    # @spec FEATURE-APPROVAL-025 — without memoization, sync_issue would
+    # issue a fresh `FeatureIntentDesignPr.exists?` query per PR. With the
+    # activity's 1,000-PR fetch cap, that becomes 1,000 extra queries per
+    # poll. Load the design PR numbers once and reuse them.
+    it "loads the design PR numbers once per project sync, not once per PR" do
+      feature = create(:feature_intent, project: project)
+      [ 50, 51, 52 ].each do |n|
+        create(:feature_intent_design_pr, feature_intent: feature, pull_request_number: n)
+      end
+      github_issues = [ 49, 50, 51, 52, 53 ].map { |n| github_pr_issue(n) }
+      stub_issues_by_label(nil => github_issues)
+
+      queries = capture_queries do
+        activity.execute(project_id: project.id)
+      end
+
+      design_queries = queries.grep(/FROM "feature_intent_design_prs"/)
+      expect(design_queries.size).to eq(1)
+    end
+  end
+
+  describe "bootstrap readiness pull request fetch" do
+    # @spec PROJECT-READINESS-007
+    it "re-fetches a bootstrap PR's GitHub state during issue sync" do
+      create(:agent_run, project: project, goal: "bootstrap_readiness", pull_request_number: 99)
+      github_issue = github_pr_issue(99)
+      github_issue.state = "closed"
+      github_pull_request = OpenStruct.new(merged_at: Time.current, merged: true)
+      allow(github_client).to receive(:pull_request)
+        .with(project.issue_target_repository, 99)
+        .and_return(github_pull_request)
+      stub_issues_by_label(nil => [ github_issue ])
+
+      activity.execute(project_id: project.id)
+
+      expect(project.issues.find_by!(github_number: 99)).to have_attributes(github_state: "closed", is_pull_request: true)
+      expect(github_client).to have_received(:pull_request).with(project.issue_target_repository, 99)
+      expect(EvaluateProjectReadinessJob).to have_been_enqueued.at_least(:once).with(project.id)
+    end
+
+    # @spec PROJECT-READINESS-007
+    it "does not fetch PR details for an unrelated closed PR" do
+      github_issue = github_pr_issue(77)
+      github_issue.state = "closed"
+      stub_issues_by_label(nil => [ github_issue ])
+
+      activity.execute(project_id: project.id)
+
+      expect(github_client).not_to have_received(:pull_request).with(project.issue_target_repository, 77)
+    end
+
+    # @spec PROJECT-READINESS-007 — without memoization, sync_issue would
+    # issue a fresh `agent_runs.exists?` query per non-design PR; with the
+    # activity's 1,000-PR fetch cap, that becomes 1,000 extra queries per
+    # poll. Load the bootstrap PR numbers once and reuse them.
+    it "loads the bootstrap PR numbers once per project sync, not once per PR" do
+      [ 97, 98, 99 ].each do |n|
+        create(:agent_run, :completed, project: project, goal: "bootstrap_readiness", pull_request_number: n)
+      end
+      github_issues = [ 96, 97, 98, 99, 100 ].map { |n| github_pr_issue(n) }
+      stub_issues_by_label(nil => github_issues)
+
+      queries = capture_queries do
+        activity.execute(project_id: project.id)
+      end
+
+      bootstrap_queries = queries.grep(/FROM "agent_runs".*"goal" = 'bootstrap_readiness'/)
+      expect(bootstrap_queries.size).to eq(1)
+    end
   end
 
   def set_up_reconciled_questionless_issue(project, github_client, updated_issue, labels: nil, refreshed_labels: nil)

@@ -58,7 +58,7 @@
       transitions unfold the parent chain so recovery stays reachable.
       (@spec CHAT-API-009, #3925) %>
   <header class="relative z-20 shrink-0 border-b border-gray-200 px-3 py-1 xl:hidden" data-chat-header="mobile">
-    <details class="group" data-chat-session-details-disclosure>
+    <%= tag.details class: "group", data: { chat_session_details_disclosure: true }, open: params[:workspace_cloned].present? do %>
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
         <span class="flex shrink-0 items-center gap-1 text-xs font-semibold text-gray-600">
@@ -90,11 +90,11 @@
           <%= render "capability_panel", chat_session: chat_session, dom_id_suffix: "_mobile" %>
         </div>
       <% end %>
-    </details>
+    <% end %>
   </header>
 
   <header class="relative z-20 hidden shrink-0 border-b border-gray-200 px-4 sm:px-6 xl:block" data-chat-header="desktop">
-    <details class="group" data-chat-session-details-disclosure>
+    <%= tag.details class: "group", data: { chat_session_details_disclosure: true }, open: params[:workspace_cloned].present? do %>
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 py-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
         <span class="flex shrink-0 items-center gap-1 text-xs font-semibold text-gray-600">
@@ -130,7 +130,7 @@
           <%= render "capability_panel", chat_session: chat_session %>
         </div>
       <% end %>
-    </details>
+    <% end %>
   </header>
 
   <div class="relative z-0 min-h-0 flex-1 overflow-hidden px-4 pb-1 pt-1 sm:px-6 sm:pt-5">

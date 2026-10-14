@@ -256,6 +256,31 @@ module Projects
       )
     end
 
+    # @spec PROJECT-READINESS-007
+    def bootstrap_readiness
+      authorize @project, :run_agent?
+      return redirect_to(inbox_path, alert: "This project no longer needs bootstrap setup.") unless @project.tdd_readiness_blocked?
+
+      # Bootstrap runs are issue-less and PR-less, so the existing partial
+      # unique indexes on (project_id, issue_id, goal) and (project_id,
+      # source_pull_request_number, goal) do not protect them. Serialize the
+      # check-and-create on the project row, then rely on
+      # idx_agent_runs_unique_active_bootstrap_readiness as the DB-level
+      # backstop so a missed lock still cannot create a duplicate.
+      @project.with_lock do
+        if @project.agent_runs.where(goal: "bootstrap_readiness", status: AgentRun::DEDUP_BLOCKING_STATUSES).exists?
+          redirect_to(inbox_path, alert: "A bootstrap attempt is already in progress for this project.")
+          return
+        end
+
+        create_run_and_redirect(
+          on_error_path: inbox_path,
+          custom_prompt: Projects::Readiness::BuildBootstrapPrompt.call(project: @project),
+          goal: "bootstrap_readiness"
+        )
+      end
+    end
+
     def bump_priority
       authorize @project, :run_agent?
 
@@ -575,6 +600,12 @@ module Projects
 
     def retry
       authorize @agent_run
+
+      if @agent_run.bootstrap_readiness_goal?
+        redirect_to inbox_path,
+          alert: "Bootstrap attempts must be started again from the project setup Inbox entry."
+        return
+      end
 
       unless @agent_run.finished?
         redirect_to project_agent_run_path(@project, @agent_run),
