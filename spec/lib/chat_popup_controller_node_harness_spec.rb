@@ -14,6 +14,80 @@ class ChatPopupControllerNodeHarness
 
     const ChatPopupController = new Function(transformed)();
 
+    function localStorageWith(values = {}) {
+      const entries = new Map(Object.entries(values));
+
+      return {
+        getItem(key) {
+          return entries.get(key) || null;
+        },
+        setItem(key, value) {
+          entries.set(key, value);
+        }
+      };
+    }
+
+    function renderTargets() {
+      const classes = new Set();
+
+      return {
+        button: {
+          attributes: {},
+          setAttribute(name, value) {
+            this.attributes[name] = value;
+          }
+        },
+        panel: {
+          classList: {
+            toggle(name, present) {
+              if (present) classes.add(name);
+              else classes.delete(name);
+            },
+            contains(name) {
+              return classes.has(name);
+            }
+          }
+        }
+      };
+    }
+
+    // @spec CHAT-API-021
+    function runNavigationPersistenceCase() {
+      const targets = renderTargets();
+      const localStorage = localStorageWith({
+        "paid:chat-popup:7": JSON.stringify({ open: true, sessionId: 42 })
+      });
+      const controller = Object.create(ChatPopupController.prototype);
+      let loadedSession = false;
+
+      global.window = { console: { error() {} }, localStorage };
+      controller.accountIdValue = 7;
+      controller.buttonTarget = targets.button;
+      controller.panelTarget = targets.panel;
+      controller.loadPanel = () => { loadedSession = true; };
+
+      controller.connect();
+
+      if (controller.state.open !== true || controller.state.sessionId !== 42) {
+        throw new Error(`Expected navigation to restore the open popup session, saw ${JSON.stringify(controller.state)}`);
+      }
+
+      if (!loadedSession || targets.panel.classList.contains("hidden") || targets.button.attributes["aria-expanded"] !== "true") {
+        throw new Error("Expected navigation to reopen and load the persisted chat popup");
+      }
+
+      controller.close();
+      const persisted = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+
+      if (persisted.open !== false || persisted.sessionId !== 42) {
+        throw new Error(`Expected explicit dismissal to persist a closed popup without losing its session, saw ${JSON.stringify(persisted)}`);
+      }
+
+      if (!targets.panel.classList.contains("hidden") || targets.button.attributes["aria-expanded"] !== "false") {
+        throw new Error("Expected explicit dismissal to hide the popup");
+      }
+    }
+
     async function runNewChatSuccessCase() {
       const writes = [];
       const fetchCalls = [];
@@ -187,6 +261,11 @@ class ChatPopupControllerNodeHarness
         console: { error() {} }
       };
 
+      if (process.argv[1] === "navigation") {
+        runNavigationPersistenceCase();
+        return;
+      }
+
       await runNewChatSuccessCase();
       await runNewChatFailureCase();
       await runArchiveAndNewChatSuccessCase();
@@ -199,12 +278,25 @@ class ChatPopupControllerNodeHarness
     });
   JAVASCRIPT
 
-  def self.run
-    Open3.capture3("node", "-e", SCRIPT, chdir: Rails.root.to_s)
+  def self.run(scenario = "sessions")
+    Open3.capture3("node", "-e", SCRIPT, scenario, chdir: Rails.root.to_s)
   end
 end
 
 RSpec.describe ChatPopupControllerNodeHarness, :no_db do
+  # @spec CHAT-API-021
+  it "restores popup state and session after navigation, then honors dismissal" do
+    stdout, stderr, status = described_class.run("navigation")
+
+    expect(status.success?).to be(true), <<~MESSAGE
+      Node regression harness failed.
+      stdout:
+      #{stdout}
+      stderr:
+      #{stderr}
+    MESSAGE
+  end
+
   it "replaces popup state only after a fresh session is created" do
     stdout, stderr, status = described_class.run
 
