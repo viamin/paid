@@ -128,9 +128,8 @@ module IntentConformance
         rollout_enabled?
     end
 
-    # Shadow review must be explicitly opted into. The amendment flag alone
-    # also gates VerifyAtMerge, so normal reviews require the complete
-    # enforcement pair and cannot silently run as shadow evaluation.
+    # Shadow review must be explicitly opted into. Normal reviews require the
+    # complete enforcement pair and cannot silently run as shadow evaluation.
     def rollout_enabled?
       FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
         enforcement_enabled?

@@ -30,7 +30,7 @@ module IntentConformance
 
     # Shadow evaluation is read-only and must be explicitly opted into. Normal
     # enforcement reviews require the complete enforcement pair; the amendment
-    # flag alone also gates VerifyAtMerge and must not silently start reviews.
+    # flag alone must not silently start reviews.
     def rollout_enabled?
       FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
         enforcement_enabled?
