@@ -217,7 +217,7 @@ Scaling & Distribution above).
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
-| [RDR-076](RDR-076.md) | Extended Verification Add-On (Defense in Depth) — Business Review Package and Rubric | Draft | P1 |
+| [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Accepted | P1 |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
@@ -239,35 +239,26 @@ audits against the current working tree (1,310 focused specs, 0 failures;
 preference / confidence-driven schema), reaches the same conclusion, and
 keeps the umbrella open with non-closing `Tracks #4309` language.
 
-RDR-075 is held for human review in
-[#4364](https://github.com/viamin/paid/pull/4364) and is not yet merged,
-so it does not appear in the index above. Its authoritative implementation
-umbrella is [#4385](https://github.com/viamin/paid/issues/4385), with
-implementation issues #4386–#4391 and the `layered_verification_add_on`
-rollout guard, default off. The 2026-10-12 readiness audit
-[(`audit-report-2026-10-12-rdr-075.md`)](audit-report-2026-10-12-rdr-075.md)
-records that no RDR-075 code, schema, model, coordinator, rubric, evidence,
-or finding synthesis had shipped; the current #4385 implementation tree and
-its planned `docs/intent/layered-verification/` LID segment remain the source
-of implementation tracking.
+RDR-075 is reserved for **General Maintenance Runs**, proposed in
+[PR #4308](https://github.com/viamin/paid/pull/4308).
 
-RDR-076 ([RDR-076.md](RDR-076.md)) is a Draft add-on to RDR-075 that
-proposes a business-facing review package and a nine-layer selection
-rubric on top of the RDR-075 foundation. Its Draft index entry reflects
-that it is under review in [#4406](https://github.com/viamin/paid/issues/4406),
-not that the described behavior has shipped. RDR-076 ships no runtime
-behavior, schema, model, or feature flag on its own; the package and
-rubric it describes are produced by the RDR-075 coordinator when the
-RDR-075 umbrella #4385 ships, behind the `layered_verification_add_on`
-flag, default off. The RDR-075 prerequisite
-relationship recorded above applies to RDR-076 as well: the
-`docs/intent/layered-verification/` LID segment does not yet exist, no
-RDR-076 code, schema, model, package, rubric, audit path, or coordinator
-contract has shipped, and the umbrella must remain open until its current
-implementation tree (#4386–#4391) closes. RDR-076's own implementation plan
-is downstream of that umbrella and is tentative on EARS claim ids
-(`LAYER-VERIFY-###`) until
-the LID Planning PR lands.
+[RDR-076](RDR-076.md) is the consolidated **Accepted** layered-verification
+design. It covers correspondence between approved business intent and its
+representations, flexible verification selection, durable intent records,
+business validation and evidence coverage, and separate audit and repair
+operations. Initial delivery is a bounded user-directed audit, evaluated with
+and without formal models. The user accepted the design on 2026-10-14. Implementation follows LID
+planning; acceptance does not claim that the capability has shipped.
+
+The canonical tracking umbrella is
+[#4385](https://github.com/viamin/paid/issues/4385), with required replacement
+work #4431–#4438 and optional integrations #4439–#4440. The tree is
+planning-held pending accepted LID artifacts; implementation does not depend
+on closure of its own umbrella. The previous draft PRs and issue trees are
+superseded by [consolidation PR #4430](https://github.com/viamin/paid/pull/4430).
+Historical audit files retain their original names and numbering; they are
+not the current implementation contract. See
+[RDR-076's consolidation context](RDR-076.md#numbering-and-consolidation).
 
 ## Decision Summary
 
