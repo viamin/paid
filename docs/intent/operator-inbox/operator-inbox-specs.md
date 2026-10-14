@@ -66,13 +66,11 @@
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
   visibility, independent of automatic work-selection eligibility; the same
-  scope every other inbox kind uses — this is a deliberate divergence from
-  the dashboard's account-wide Blocked PRs panel, so the two surfaces are not
-  expected to agree on counts), the system SHALL
+  scope every other inbox kind uses), the system SHALL
   expose that pull request as an `escalated_pr` inbox entry showing the
   escalation reason, how long it has been stopped (`pr_escalation_started_at`,
   falling back to `updated_at`), and the tripped counters computed by
-  `Dashboard::BlockedPullRequests` (reused, not reimplemented), including its
+  `Inbox::EscalatedPullRequests` (reused, not reimplemented), including its
   operator-paused indicator when the pull request is both escalated and
   paused. The entry SHALL offer the `unblock_escalation` clearing action for
   every reason except `awaiting_approval`, for which the entry SHALL instead

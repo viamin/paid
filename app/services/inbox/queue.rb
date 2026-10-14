@@ -493,17 +493,15 @@ module Inbox
       end
     end
 
-    # Reuses Dashboard::BlockedPullRequests (PR-ESCALATION-011/012/013) rather
-    # than reimplementing the escalated-PR query, then narrows the account-wide
-    # result to the operator's authorized Inbox projects, the same scope every
-    # other inbox kind uses. That is a deliberate divergence from the
-    # dashboard panel's account-wide scope (see operator-inbox-design.md).
+    # Reuses Inbox::EscalatedPullRequests rather than reimplementing the
+    # escalated-PR query, then narrows the account-wide result to the operator's
+    # authorized Inbox projects, the same scope every other inbox kind uses.
     # @spec OPERATOR-INBOX-002C
     def escalated_pr_entries
       ids = scoped_projects.map(&:id)
       return [] if ids.empty?
 
-      Dashboard::BlockedPullRequests.call(account: user.account, pull_request_id: @record_id)
+      EscalatedPullRequests.call(account: user.account, pull_request_id: @record_id)
         .select { |blocked| ids.include?(blocked.pull_request.project_id) }
         .map { |blocked| escalated_pr_entry(blocked) }
     end
