@@ -61,16 +61,18 @@ module Prompts
       @agent_run = agent_run
     end
 
-    def self.service_environment_section_for(project:, include_setup_instruction: true)
+    def self.service_environment_section_for(project:, agent_run: nil, include_setup_instruction: true)
       ServiceContainerSections.service_environment_section_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end
 
-    def self.service_environment_section_render_for(project:, include_setup_instruction: true)
+    def self.service_environment_section_render_for(project:, agent_run: nil, include_setup_instruction: true)
       ServiceContainerSections.service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end

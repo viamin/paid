@@ -186,8 +186,55 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("bundle exec rubocop")
     end
 
-    it "includes language-specific test command for ruby" do
-      expect(prompt).to include("bundle exec rspec")
+    it "includes language-specific test command for ruby when a database is available" do
+      pg_container = create(:service_container, account: project.account, status: "running")
+      create(:project_service_container, project: project, service_container: pg_container)
+      agent_run_with_db = create(:agent_run, project: project, service_container_ids: [ pg_container.id ])
+
+      configured_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: agent_run_with_db
+      )
+
+      expect(configured_prompt).to include("bundle exec rspec")
+    end
+
+    it "agrees with the pre-commit hook gate on no-database runs and requires reporting skipped suite" do
+      no_db_agent_run = create(:agent_run, project: project, service_container_ids: [])
+
+      no_db_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: no_db_agent_run
+      )
+
+      expect(no_db_prompt).not_to include("bundle exec rspec")
+      expect(no_db_prompt).to include("No test command configured")
+      expect(no_db_prompt).to include("Report skipped database-dependent tests")
+      expect(no_db_prompt).not_to include("- **Lint and tests MUST pass before every commit.**")
+    end
+
+    it "uses the agent run before resolving default test commands" do
+      postgres_container = create(:service_container, account: project.account, image: "postgres:16", status: "running")
+      redis_container = create(:service_container, :redis, account: project.account, status: "running")
+      create(:project_service_container, project: project, service_container: postgres_container)
+      agent_run_without_db = create(:agent_run, project: project, service_container_ids: [ redis_container.id ])
+
+      configured_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: agent_run_without_db
+      )
+
+      expect(configured_prompt).not_to include("bundle exec rspec")
+      expect(configured_prompt).to include("Report skipped database-dependent tests")
     end
 
     it "omits merge conflicts section when rebase succeeded" do
@@ -1096,7 +1143,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured database containers" do
-      let!(:service_container) { create(:service_container, account: project.account) }
+      let!(:service_container) { create(:service_container, account: project.account, status: "running") }
 
       before do
         project.service_containers << service_container
@@ -1127,7 +1174,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured non-database service containers" do
-      let!(:redis_container) { create(:service_container, :redis, account: project.account) }
+      let!(:redis_container) { create(:service_container, :redis, account: project.account, status: "running") }
 
       before do
         project.service_containers << redis_container
