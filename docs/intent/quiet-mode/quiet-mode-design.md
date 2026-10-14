@@ -33,6 +33,11 @@ them without relying on `comment.created_at`. Body editing is the permitted
 channel in quiet mode, and a single shared `ClarifyingQuestions::SubmitAnswers`
 service writes through that channel for both the inbox controller and the
 linked-chat MCP tool so per-call-site branching stays out of the request path.
+Before writing either section, the service re-fetches the description and
+rebuilds the marked replacement when it changed, retaining a human edit that
+arrived while the replacement was being prepared. GitHub does not offer a
+conditional issue-body PATCH, so the API failure remains visible rather than
+claiming a retryable conflict response that the endpoint does not provide.
 When an operator has supplied a complete answer section matching the current
 questions digest, the next enhancement run consumes its new agent output; the
 preserved questions section is not treated as an incomplete prior enhancement.

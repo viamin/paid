@@ -55,8 +55,8 @@ prefix: QUIET-MODE
   answers section, rather than treating those answered questions as a prior
   incomplete enhancement. Before replacing the marked questions section, the
   system SHALL fetch the current remote description and derive its update from
-  that value, retrying one detected remote write conflict so a human edit made
-  after local issue sync is retained.
+  that value, then re-fetch and re-derive immediately before writing when the
+  description changed so a human edit made after local issue sync is retained.
 - [x] **QUIET-MODE-010** — When a project's quiet mode is enabled, the
   clarifying-question answer submission path (`Projects::ClarifyingQuestionsController#create`,
   `Tools::SubmitClarifyingAnswers#perform`, and any future quiet-mode-aware
@@ -71,8 +71,9 @@ prefix: QUIET-MODE
   human edit since the last issue sync is preserved. Before replacing an
   answers section, the system SHALL reject the submission when the fresh
   remote questions section no longer matches the submitted questions, without
-  clearing the needs-input state. It SHALL retry a detected remote write
-  conflict once and otherwise surface the conflict.
+  clearing the needs-input state. It SHALL re-fetch and re-derive immediately
+  before writing when the description changed, and otherwise surface API
+  failures.
 - [x] **QUIET-MODE-011** — `ClarifyingQuestions::Load` SHALL resolve pending
   questions and answers from the description sections when present and from
   the marker-tagged GitHub comments otherwise; freshness between a questions

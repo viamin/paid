@@ -202,14 +202,13 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         )
       end
 
-      it "retries a remote write conflict using the latest description" do # @spec QUIET-MODE-010
+      it "rebuilds answers from a human edit that arrives before the write" do # @spec QUIET-MODE-010
         first_body = Struct.new(:body).new(remote_body("First human edit"))
         second_body = Struct.new(:body).new(remote_body("Second human edit"))
         allow(github_client).to receive(:issue).and_return(first_body, second_body)
         updated_bodies = []
         allow(github_client).to receive(:update_issue) do |_repo, _number, body:|
           updated_bodies << body
-          raise GithubClient::ApiError.new("conflict", status: 409) if updated_bodies.one?
         end
         allow(issue).to receive(:update!)
 
@@ -219,7 +218,7 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
           questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
         )
 
-        expect(updated_bodies.last).to include("Second human edit")
+        expect(updated_bodies).to contain_exactly(a_string_including("Second human edit"))
       end
 
       it "rejects answers when the remote questions changed before submission" do # @spec QUIET-MODE-010 @spec QUIET-MODE-011
