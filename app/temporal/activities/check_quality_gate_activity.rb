@@ -84,10 +84,10 @@ module Activities
     # @spec FOCUSED-RUN-007
     def pr_auto_continue_token_limit_result
       return if source_pull_request_number.blank?
-      return if source_pull_request&.pr_auto_continue_token_limit_overridden_at.present?
 
-      limit = project.max_pr_auto_continue_tokens.to_i
       used = pr_auto_continue_tokens_used
+      limit = source_pull_request&.pr_auto_continue_token_limit_effective_limit(project.max_pr_auto_continue_tokens) ||
+        project.max_pr_auto_continue_tokens.to_i
       return if used < limit
 
       {

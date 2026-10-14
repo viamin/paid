@@ -38,6 +38,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,
+        pr_auto_continue_token_limit_effective_limit: project.max_pr_auto_continue_tokens,
         project: project)
     end
 
@@ -53,7 +54,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         def consecutive_operational_failures; end
         def last_meaningful_progress_at; end
       end)
-      stub_const("IssueDouble", Class.new)
+      stub_const("IssueDouble", Class.new do
+        def pr_auto_continue_token_limit_effective_limit(_project_limit); end
+      end)
       stub_const("PrDataDouble", Class.new do
         def [](key); end
       end)
@@ -713,7 +716,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         def self.find_by(id:); end
       end)
       stub_const("ExecuteCacheProjectStub", Class.new)
-      stub_const("ExecuteCacheIssueStub", Class.new)
+      stub_const("ExecuteCacheIssueStub", Class.new do
+        def pr_auto_continue_token_limit_effective_limit(_project_limit); end
+      end)
       stub_const("ExecuteCacheAccountStub", Class.new)
       stub_const("ExecuteCacheTenantSettingStub", Class.new)
       stub_const("ExecuteCacheGithubTokenStub", Class.new)
@@ -754,6 +759,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         draft_review_count: 0,
         review_goal_retry_count: 0,
         pr_followup_count: 0,
+        pr_auto_continue_token_limit_effective_limit: project.max_pr_auto_continue_tokens,
         escalated_phase?: false,
         stuck_confirmation_count: 0
       )
@@ -937,7 +943,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   describe "#build_lifecycle_signals", :no_db do
     before do
       stub_const("LifecycleSignalsProjectStub", Class.new)
-      stub_const("LifecycleSignalsIssueStub", Class.new)
+      stub_const("LifecycleSignalsIssueStub", Class.new do
+        def pr_auto_continue_token_limit_effective_limit(_project_limit); end
+      end)
       stub_const("LifecycleSignalsProgressStateStub", Class.new)
       allow(activity).to receive(:update_stuck_confirmation!)
     end
@@ -958,7 +966,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_review_phase: "ready",
         draft_review_count: 0,
         review_goal_retry_count: 1,
-        pr_followup_count: 0
+        pr_followup_count: 0,
+        pr_auto_continue_token_limit_effective_limit: project.max_pr_auto_continue_tokens
       )
     end
     let(:progress_state) do

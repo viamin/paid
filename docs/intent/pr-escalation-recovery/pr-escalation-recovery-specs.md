@@ -60,13 +60,20 @@
   *Test:* `spec/models/issue_spec.rb`.
 
 - [x] **PR-ESCALATION-007** — When a `pr_auto_continue_token_limit` escalation
-  is cleared, the system SHALL record a standing per-PR override of the
-  project's automatic-run token cap and SHALL allow subsequent automatic runs
-  on that pull request to exceed the cap.
+  is cleared, the system SHALL snapshot the recorded automatic-run usage and
+  grant that pull request one additional allowance equal to the project's
+  token cap at the time of the owner action. The scanner and quality gate SHALL
+  expose the total usage, effective limit, and remaining allowance, and SHALL
+  escalate and block automatic runs again when that allowance is exhausted.
+  A later project-cap change SHALL not alter an already granted allowance. A
+  pre-existing timestamp-only override SHALL grant no allowance and SHALL be
+  evaluated against the current project cap without resetting recorded usage.
   *Code:* `Issue#clear_escalation!`,
-  `ScanPaidPrsActivity#pr_auto_continue_token_limit_breach`.
+  `ScanPaidPrsActivity#pr_auto_continue_token_limit_breach`,
+  `CheckQualityGateActivity#pr_auto_continue_token_limit_result`.
   *Test:* `spec/models/issue_spec.rb`,
-  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/temporal/activities/check_quality_gate_activity_spec.rb`.
 
 - [x] **PR-ESCALATION-008** — When an `operational_failures` escalation is
   dismissed automatically because its failure signals recovered, the system

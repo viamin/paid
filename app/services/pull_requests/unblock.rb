@@ -7,8 +7,8 @@ module PullRequests
   # picks the work on its next pass.
   #
   # For a `pr_auto_continue_token_limit` escalation, +Issue#clear_escalation!+
-  # stamps `pr_auto_continue_token_limit_overridden_at`, granting a standing
-  # per-PR override of the project's automatic-run token cap. Because this
+  # snapshots the current recorded spend and grants one additional allowance
+  # equal to the current project cap. Because this
   # path is reachable from any project member with `run_agent?` (unlike the
   # label-removal and draft-conversion paths, which require repo-write access
   # by an allowlisted GitHub user), the waiver is recorded as an
@@ -34,7 +34,7 @@ module PullRequests
     def call
       error = nil
       prior_escalation_reason = nil
-      token_limit_waiver_granted = false
+      token_limit_allowance_granted = false
 
       # Guards run inside the lock against reloaded state: a concurrent
       # MarkEscalatedActivity or a PR closing between render and click would
@@ -46,7 +46,7 @@ module PullRequests
           error = :not_escalated
         else
           prior_escalation_reason = pull_request.pr_escalation_reason
-          token_limit_waiver_granted = prior_escalation_reason == Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+          token_limit_allowance_granted = prior_escalation_reason == Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
           pull_request.clear_escalation!(draft: draft)
         end
       end
@@ -54,7 +54,7 @@ module PullRequests
       return failure(error) if error
 
       record_audit_trail(prior_escalation_reason: prior_escalation_reason,
-        token_limit_waiver_granted: token_limit_waiver_granted)
+        token_limit_allowance_granted: token_limit_allowance_granted)
       remove_escalated_label
       Result.new(success: true, error: nil, pull_request: pull_request)
     end
@@ -63,7 +63,7 @@ module PullRequests
 
     attr_reader :pull_request, :actor, :draft
 
-    def record_audit_trail(prior_escalation_reason:, token_limit_waiver_granted:)
+    def record_audit_trail(prior_escalation_reason:, token_limit_allowance_granted:)
       OrchestrationDecision.record(
         project: pull_request.project,
         issue: pull_request,
@@ -72,7 +72,7 @@ module PullRequests
         status: "applied",
         signals: {
           prior_escalation_reason: prior_escalation_reason,
-          token_limit_waiver_granted: token_limit_waiver_granted,
+          token_limit_allowance_granted: token_limit_allowance_granted,
           actor_user_id: actor&.id,
           actor_email: actor&.email,
           draft: draft
@@ -90,7 +90,7 @@ module PullRequests
         pr_number: pull_request.github_number,
         project_id: pull_request.project_id,
         prior_escalation_reason: prior_escalation_reason,
-        token_limit_waiver_granted: token_limit_waiver_granted,
+        token_limit_allowance_granted: token_limit_allowance_granted,
         actor_user_id: actor&.id
       )
     end
