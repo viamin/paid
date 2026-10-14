@@ -39,15 +39,14 @@ remain owned by focused, open children.
 ## 2. Verification re-run
 
 This refresh re-verifies the prior RDR-specific findings against the current
-working tree. The configured PostgreSQL service (`paid-svc-a3-s1-postgres`,
-database `agent_run_12154_attempt_0`) is available in this refresh
-environment, and `RAILS_ENV=test bin/rails db:prepare` prepares the test
-database end-to-end. The `development`-mode runtime role guard rejects the
-shared `agent` role (`SUPERUSER` and `BYPASSRLS`) so this audit runs the
-focused specs under `RAILS_ENV=test` only and does not bypass the guard or
-substitute a privileged connection. The structural checks below additionally
-confirm that no new code has shipped under the three RDRs' scope since the
-prior audits.
+working tree. The structural checks below additionally confirm that no new
+code has shipped under the three RDRs' scope since the prior audits. The
+configured test database host (`paid-svc-a3-s1-postgres`) was not resolvable
+in this audit environment, so `bundle exec rspec` stopped before loading the
+first spec with `ActiveRecord::DatabaseConnectionError`. This audit does not
+present a database-backed green run that it could not reproduce. The prior
+focused-spec result remains historical evidence only; a terminal closeout
+must rerun it against a reachable database.
 
 ```
 node bin/coherence-check.mjs       # 2026-10-13
@@ -116,21 +115,27 @@ RAILS_ENV=test bundle exec rspec \
   spec/models/agent_run_spec.rb                            # 2026-10-13
 ```
 
-Result: **1,310 examples pass on the cited RDR-069 chat/reuse/access-control
-foundation, the RDR-070 final-answer validator, and the RDR-071
-approval-gated admission/release/conformance/spec set, with 0 failures**.
-The RDR-069 count (468) differs from the 2026-10-06 number (467) by one
-example in `clarifying_questions/open_chat_spec.rb`; the other counts
-match the per-RDR audits because no behavior changed. The test runs re-prove
-the reused approval-gated foundations; they do not supply false evidence for
-the unimplemented `FACET-CONFIDENCE-*` or `CONFIDENCE-DELIVERY-*` claims,
-which the structural checks above already record as not shipped.
+Historical result: **1,310 examples passed on the cited RDR-069
+chat/reuse/access-control foundation, the RDR-070 final-answer validator, and
+the RDR-071 approval-gated admission/release/conformance/spec set, with 0
+failures**. The RDR-069 count (468) differed from the 2026-10-06 number (467)
+by one example in `clarifying_questions/open_chat_spec.rb`; the other counts
+matched the per-RDR audits because no behavior changed.
 
-The grep results, the coherence-check gap list, the database-backed test run,
-and the existing RDR-specific audit reports all reach the same conclusion:
-no RDR-069-070-071 claim that was `[ ]` on 2026-10-12 has shipped code,
-migration, or test evidence between then and this audit. The prior `[x]`
-markers remain valid.
+Current result (2026-10-14): **not reproducible in this environment**.
+`bundle exec rspec` aborts before loading specs because PostgreSQL cannot
+resolve `paid-svc-a3-s1-postgres`. This is infrastructure-blocked verification,
+not a green test result and not evidence that any RDR-069–071 behavior has
+shipped. It also does not weaken the structural evidence for the unchecked
+claims. Rerun the listed command with a reachable test database before a
+terminal closeout.
+
+The grep results, the coherence-check gap list, the existing RDR-specific
+audit reports, and the historical focused-spec result all reach the same
+conclusion: no RDR-069-070-071 claim that was `[ ]` on 2026-10-12 has shipped
+code, migration, or test evidence between then and this audit. The prior `[x]`
+markers remain valid; their runtime verification must be refreshed before a
+terminal closeout.
 
 ## 3. Gap ownership and reconciliation
 
