@@ -888,6 +888,16 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Run Volume")
     end
 
+    it "formats high dollar costs with thousands separators" do
+      project = create(:project, account: account, total_cost_cents: 1_234_567_890)
+      create(:agent_run, :completed, project: project, cost_cents: 1_234_567_890, tokens_input: 1)
+
+      get dashboard_metrics_path(time_range: "7d")
+
+      expect(response.body.scan("$12,345,678.90").length).to eq(4)
+      expect(response.body).not_to include("$12345678.90")
+    end
+
     it "renders the phase breakdown, chart, and knowledge widget inside the frame" do
       project = create(:project, account: account)
       create(:agent_run, :completed, project: project, created_at: 1.day.ago)
