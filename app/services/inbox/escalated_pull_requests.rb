@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-module Dashboard
+module Inbox
   # Open pull requests Paid has stopped working, with the numbers that stopped
   # them. Reads issue state directly — it surfaces the escalated phase, it does
   # not decide what counts as blocked.
   #
-  # @spec PR-ESCALATION-011 @spec PR-ESCALATION-012 @spec PR-ESCALATION-013
-  class BlockedPullRequests
+  # @spec OPERATOR-INBOX-002C
+  class EscalatedPullRequests
     Counter = Data.define(:name, :value, :limit)
 
     Entry = Data.define(

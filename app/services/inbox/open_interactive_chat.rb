@@ -62,8 +62,8 @@ module Inbox
 
     # @spec OPERATOR-INBOX-002I
     # record-backed lanes do not always carry an ActiveRecord: intent_conformance
-    # wraps an Inbox::IntentConformance::Snapshot and escalated_pr wraps a
-    # Dashboard::BlockedPullRequests::Entry. Both are plain data objects without
+    # wraps an Inbox::IntentConformance::Snapshot and escalated_pr wraps an
+    # Inbox::EscalatedPullRequests::Entry. Both are plain data objects without
     # `#id`, so `record&.id` would raise NoMethodError and 500 the new chat
     # affordance for exactly those lanes. `try` is a no-op on nil and on any
     # object that does not implement the method, which is what every record-backed

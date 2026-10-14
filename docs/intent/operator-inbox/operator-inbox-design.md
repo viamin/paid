@@ -161,18 +161,12 @@ directs the operator to GitHub for the supported human action.
 
 ### `escalated_pr`
 
-Backed by `Dashboard::BlockedPullRequests`, the same query the dashboard's
-Blocked PRs panel uses — `Inbox::Queue` calls it and filters the result to the
+Backed by `Inbox::EscalatedPullRequests`, which `Inbox::Queue` filters to the
 operator's authorized Inbox projects rather than reimplementing the
-escalated-PR query. This is a deliberate scoping divergence: every other
-inbox kind is account+owner scoped, independent of auto-pick eligibility
-(`INBOX-FOUNDATION-006`), while the dashboard panel is account-wide, so the
-two surfaces will not agree on counts. That is intentional
-— the Inbox stays consistent with itself rather than adopting the dashboard's
-broader scope for one kind — and is recorded here so the divergence reads as a
-decision, not drift.
+escalated-PR query. Like every other Inbox kind, it is account+owner scoped
+and independent of auto-pick eligibility (`INBOX-FOUNDATION-006`).
 
-The entry payload carries the `Dashboard::BlockedPullRequests::Entry` as its
+The entry payload carries the `Inbox::EscalatedPullRequests::Entry` as its
 `record`, so the detail pane shows the same reason, tripped counters,
 `last_progress_at`, and operator-paused indicator the dashboard panel shows —
 one query, two surfaces, no duplicated blocked-PR logic. The detail pane offers

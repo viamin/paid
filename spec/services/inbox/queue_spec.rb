@@ -505,7 +505,7 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec OPERATOR-INBOX-002C
-    it "returns typed entries for escalated pull requests, reusing Dashboard::BlockedPullRequests" do
+    it "returns typed entries for escalated pull requests" do
       pr = create_escalated_pr(
         github_number: 91,
         draft_review_count: 12,
@@ -523,7 +523,7 @@ RSpec.describe Inbox::Queue do
         issue: pr
       )
       expect(entry.waiting_since).to be_within(1.second).of(2.days.ago)
-      expect(entry.record).to be_a(Dashboard::BlockedPullRequests::Entry)
+      expect(entry.record).to be_a(Inbox::EscalatedPullRequests::Entry)
       expect(entry.record.counters.map(&:name)).to contain_exactly(:draft_review_count, :pr_followup_count)
       expect(entry.summary).to eq("Failure streak")
     end

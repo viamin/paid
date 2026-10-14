@@ -179,19 +179,19 @@ RSpec.describe Inbox::OpenInteractiveChat do
   end
 
   # @spec OPERATOR-INBOX-002I
-  # The escalated_pr lane stores a Dashboard::BlockedPullRequests::Entry (also
+  # The escalated_pr lane stores an Inbox::EscalatedPullRequests::Entry (also
   # a plain Data object) in `record`. audit_metadata must read it defensively.
-  it "creates a chat for an escalated_pr entry whose record is a BlockedPullRequests Entry" do
+  it "creates a chat for an escalated_pr entry whose record is an EscalatedPullRequests Entry" do
     pr = create_escalated_pull_request
     entry = inbox_entry(kind: Inbox::Queue::ESCALATED_PR_KIND)
-    expect(entry.record).to be_a(Dashboard::BlockedPullRequests::Entry)
+    expect(entry.record).to be_a(Inbox::EscalatedPullRequests::Entry)
 
     chat = described_class.call(user:, entry:)
 
     expect(chat).to have_attributes(inbox_item_key: entry.id, status: "active", project: project)
     expect(chat.inbox_item_metadata).to include("kind" => Inbox::Queue::ESCALATED_PR_KIND, "issue_id" => pr.id)
     expect(chat.inbox_item_metadata).not_to have_key("record_id")
-    expect(chat.inbox_item_metadata).to include("record_type" => "Dashboard::BlockedPullRequests::Entry")
+    expect(chat.inbox_item_metadata).to include("record_type" => "Inbox::EscalatedPullRequests::Entry")
   end
 
   def create_intent_conformance_pull_request

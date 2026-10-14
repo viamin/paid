@@ -214,45 +214,11 @@ context matches zero rows and silently succeeds having changed nothing.
 
 ## Blocked-work surface
 
-A dashboard panel lists every open PR in the account that Paid has stopped
-working, so the state is visible without opening a project or reading the
-database.
-
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ Blocked PRs (10)                                                         │
-├───────────┬──────────────┬───────────────┬──────────┬──────────┬─────────┤
-│ PR        │ Project      │ Why           │ Counter  │ Blocked  │         │
-├───────────┼──────────────┼───────────────┼──────────┼──────────┼─────────┤
-│ #3396     │ paid         │ Failure streak│ 18 / 10  │ 1d 2h    │[Unblock]│
-│ #3486     │ paid         │ Token cap     │ 51M / 50M│ 1d 1h    │[Unblock]│
-│ #24       │ ColorMatch…  │ Retry limit   │ 8 / 8    │ 1d 4h    │[Unblock]│
-└───────────┴──────────────┴───────────────┴──────────┴──────────┴─────────┘
-```
-
-Rows are scoped to the current account, ordered longest-blocked first, and each
-carries the reason in the project's own words, how long the PR has been stopped,
-and a one-click **Unblock**.
-
-A reason does not map to one counter. `failure_streak` is tripped by either the
-draft-round counter or the follow-up counter, and `operational_failures` has no
-counter of that shape at all. The panel therefore shows *every* counter that has
-reached its limit, and for an operational escalation shows time since the PR
-last made meaningful progress.
-
-The panel reads issue state directly, like the other dashboard panels. It is a
-*surface*, not a detector — no new blocked-state logic lives in the view layer.
-
-**Cascade note:** escalated pull requests also surface as an `escalated_pr`
-entry in the operator inbox (`docs/intent/operator-inbox/`), which owns that
-spec (`OPERATOR-INBOX-002C`). The inbox reuses `Dashboard::BlockedPullRequests`
-for the same reason/counter data rather than duplicating this panel's query,
-but scopes results to the operator's authorized Inbox projects (account
-isolation plus owner visibility, independent of automatic work-selection
-eligibility) instead of this panel's account-wide scope — the two surfaces
-intentionally do not agree on
-counts. This segment and `Dashboard::BlockedPullRequests` are otherwise
-unchanged by that work.
+Escalated pull requests surface only as `escalated_pr` entries in the operator
+Inbox (`docs/intent/operator-inbox/`), which owns the behavior specification
+(`OPERATOR-INBOX-002C`). `Inbox::EscalatedPullRequests` supplies the reason,
+tripped counters, stopped age, and operator-paused indicator for that entry;
+the Inbox scopes results to the operator's authorized projects.
 
 ## Decisions & Alternatives
 

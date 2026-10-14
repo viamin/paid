@@ -62,9 +62,9 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
     it "serializes escalated_pr with the reason, counters, last progress, and operator-pause state" do
       pull_request = create(:issue, :pull_request, project: project)
-      counters = [ Dashboard::BlockedPullRequests::Counter.new(name: :draft_review_count, value: 3, limit: 3) ]
+      counters = [ Inbox::EscalatedPullRequests::Counter.new(name: :draft_review_count, value: 3, limit: 3) ]
       last_progress_at = 2.days.ago
-      blocked = Dashboard::BlockedPullRequests::Entry.new(
+      blocked = Inbox::EscalatedPullRequests::Entry.new(
         pull_request: pull_request,
         reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
         blocked_since: 1.day.ago,
