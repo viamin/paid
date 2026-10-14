@@ -178,10 +178,10 @@ module Knowledge
       return [] if created_by_ids.empty?
 
       fallback_owner_id = account.fallback_owner_id
-      owner_ids = created_by_ids.map { |id| id || fallback_owner_id }
+      owner_ids = created_by_ids.filter_map { |id| id || fallback_owner_id }
       owners = User.where(id: owner_ids.uniq).includes(:user_setting).index_by(&:id)
 
-      owner_ids.tally.map { |owner_id, count| [ owners.fetch(owner_id), count ] }
+      owner_ids.tally.filter_map { |owner_id, count| [ owners[owner_id], count ] if owners.key?(owner_id) }
     end
 
     def readiness_data_for(owners)

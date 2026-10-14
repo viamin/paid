@@ -43,6 +43,29 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with a project that has no effective owner" do
+      let(:project) do
+        create(:project,
+          account: account,
+          created_by: nil,
+          github_token: create(:github_token, :without_creator, account: account))
+      end
+
+      before { project }
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "omits the project from runner health" do
+        provider_health = stats[:provider_health]
+
+        expect(provider_health).to include(
+          embedding: [],
+          chat: [],
+          project_count: 0,
+          owner_count: 0
+        )
+      end
+    end
+
     context "with a changed credential" do
       let(:owner) { project.effective_owner }
 

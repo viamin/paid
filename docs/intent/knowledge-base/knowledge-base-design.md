@@ -54,6 +54,8 @@ presented as account-wide. Configuration readiness and operational health
 (rate-limit, circuit, and failure state) remain distinct. The short-lived
 readiness cache versions projects, owner settings, credentials, and runner
 states so ownership and credential changes are visible without a provider call.
+Projects without a resolvable effective owner are omitted from runner-health
+rows and counts because no owner's configuration can be reported truthfully.
 On a cache miss, its aggregation loads those owner-scoped records in batches,
 rather than querying once for every effective owner.
 
