@@ -3,6 +3,40 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Provision do
+  around do |example|
+    FeatureFlags.enable!(:apple_verification_workers, project: example.metadata[:project]) if example.metadata[:project]
+    example.run
+  end
+
+  # @spec APPLE-ATTEMPT-004
+  # @spec APPLE-TRANSFER-001
+  # @spec APPLE-TRANSFER-004
+  # @spec APPLE-TRANSFER-005
+  it "transports committed source, ingests guest artifacts, and persists the terminal manifest" do
+    project = create(:project, :with_github_installation)
+    attempt = create(:apple_verification_attempt, :committed, status: "provisioning", project:, account: project.account,
+      agent_run: create(:agent_run, project:))
+    FeatureFlags.enable!(:apple_verification_workers, project:)
+    lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    storage = instance_double(AppleVerification::ArtifactIngestion::Storage)
+    allow(storage).to receive(:upload_bytes).and_return("apple-verification/screenshot.png")
+    allow(storage).to receive(:signed_url).and_return("https://storage.example.test/screenshot.png")
+
+    stub_transport_guest(guest_job, attempt)
+    stub_transport_completion(completion, attempt)
+
+    described_class.new(lifecycle:, guest_job:, completion:, artifact_storage: storage).call(attempt)
+
+    expect(storage).to have_received(:upload_bytes).with(hash_including(attempt_id: attempt.id, kind: "screenshot", name: "screen.png"))
+    expect(attempt.apple_verification_artifacts.find_by!(kind: "screenshot").storage_key).to eq("apple-verification/screenshot.png")
+    manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
+    expect(manifest.dig("result", "failure_classification")).to eq("test_assertion")
+  ensure
+    FeatureFlags.disable!(:apple_verification_workers, project:) if project
+  end
+
   # @spec APPLE-ATTEMPT-004
   # @spec APPLE-ATTEMPT-003
   it "dispatches the guest manifest before recording the attempt as running" do
@@ -140,6 +174,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
   def provisioning_attempt
     project = create(:project)
+    FeatureFlags.enable!(:apple_verification_workers, project:)
     create(
       :apple_verification_attempt,
       status: "provisioning",
@@ -169,8 +204,9 @@ RSpec.describe AppleVerificationAttempts::Provision do
       expect(attempt.reload.status).to eq("provisioning")
       expect(arguments).to include(
         agent_run: attempt.agent_run, image_digest: attempt.apple_worker_profile.image_digest,
-        manifest: guest_manifest_for(attempt), guest_connection: have_attributes(read_timeout: 50.minutes)
+        guest_connection: have_attributes(read_timeout: 50.minutes)
       )
+      expect(arguments.fetch(:manifest)).to include("version" => AppleVerification::GuestProtocol::VERSION)
       guest_result_for(guest_manifest_for(attempt))
     end
   end
@@ -178,11 +214,24 @@ RSpec.describe AppleVerificationAttempts::Provision do
   def guest_manifest_for(attempt)
     {
       "version" => AppleVerification::GuestProtocol::VERSION,
+      "source_lanes" => { git: [], credentials: [], object_storage: [], control_plane_api: [] },
       "operations" => [
         { "type" => "materialize_source", "payload" => { "digest" => attempt.source_digest } },
         { "type" => "export_artifacts", "payload" => {} }
       ]
     }
+  end
+
+  def stub_transport_guest(guest_job, attempt)
+    allow(guest_job).to receive(:call) do |manifest:, **|
+      expect(manifest.dig("source_lanes", "git", 0, "locator", "commit_sha")).to eq(attempt.commit_sha)
+      expect(manifest.dig("source_lanes", "credentials", 0, "kind")).to eq("github_app_installation")
+      guest_result_for(manifest).tap { |result| result.operations.last["artifacts"] = [ { "kind" => "screenshot", "name" => "screen.png", "bytes" => "png" } ] }
+    end
+  end
+
+  def stub_transport_completion(completion, attempt)
+    allow(completion).to receive(:call) { attempt.update!(status: "failed", failure_classification: "test_assertion", finished_at: Time.current) }
   end
 
   def guest_result_for(manifest)
