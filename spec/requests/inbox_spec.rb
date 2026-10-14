@@ -58,17 +58,15 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-017
-  it "renders question actions before requesting GitHub-only context" do
+  it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
-    expect(github_client).not_to receive(:issue_comments)
+    expect(github_client).to receive(:issue_comments).once.and_return([])
 
     get inbox_entry_path(entry_id("clarifying_questions", issue)), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
     document = Nokogiri::HTML(response.body)
-    frame = document.at_css("turbo-frame#inbox-supplement")
-    expect(frame["loading"]).to eq("lazy")
-    expect(frame["src"]).to include("/supplement")
+    expect(document.at_css("turbo-frame#inbox-supplement")).to be_nil
     expect(document.at_css("textarea[data-testid='inbox-answer-0']")).to be_present
   end
 
