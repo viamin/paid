@@ -5,9 +5,13 @@ module Issues
   # Mirrors HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL but
   # duplicated here to avoid a temporal-activity dependency on this service.
   RECOMMEND_CLOSE_LABEL = "paid-recommend-close"
+  # The normal upsert API resolves a design PR itself. FetchIssuesActivity has
+  # already loaded that project-scoped relation, so it passes either the record
+  # or nil to avoid a second lookup for every synced pull request.
+  UNRESOLVED_DESIGN_PULL_REQUEST = Object.new.freeze
 
   class UpsertFromGithub
-    def self.call(project:, github_issue:, github_pull_request: nil, body: github_issue.body, source: Issue::GITHUB_SOURCE)
+    def self.call(project:, github_issue:, github_pull_request: nil, design_pull_request: UNRESOLVED_DESIGN_PULL_REQUEST, body: github_issue.body, source: Issue::GITHUB_SOURCE)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
       was_open = issue.github_state == "open"
       was_closed = issue.persisted? && issue.github_state == "closed"
@@ -30,7 +34,7 @@ module Issues
 
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
       establish_local_tdd_gate(issue, project: project)
-      reconcile_design_pull_request(project, github_issue, github_pull_request) if issue.is_pull_request? && github_pull_request
+      reconcile_design_pull_request(project, github_issue, github_pull_request, design_pull_request) if issue.is_pull_request? && github_pull_request
       enqueue_readiness_evaluation_after_bootstrap_merge(project, issue, github_pull_request)
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
@@ -84,12 +88,16 @@ module Issues
     end
     private_class_method :sync_priority_labels_to_pull_request
 
-    def self.reconcile_design_pull_request(project, github_issue, github_pull_request)
-      FeatureIntents::ReconcileDesignPullRequest.call(
+    def self.reconcile_design_pull_request(project, github_issue, github_pull_request, design_pull_request)
+      return unless design_pull_request
+
+      arguments = {
         project: project,
         github_issue: github_issue,
         github_pull_request: github_pull_request
-      )
+      }
+      arguments[:design_pull_request] = design_pull_request unless design_pull_request.equal?(UNRESOLVED_DESIGN_PULL_REQUEST)
+      FeatureIntents::ReconcileDesignPullRequest.call(**arguments)
     end
     private_class_method :reconcile_design_pull_request
 

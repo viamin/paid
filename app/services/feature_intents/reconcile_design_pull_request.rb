@@ -10,10 +10,11 @@ module FeatureIntents
       new(...).call
     end
 
-    def initialize(project:, github_issue:, github_pull_request: nil, authenticated_login_resolver: nil)
+    def initialize(project:, github_issue:, github_pull_request: nil, design_pull_request: nil, authenticated_login_resolver: nil)
       @project = project
       @github_issue = github_issue
       @github_pull_request = github_pull_request
+      @design_pull_request = design_pull_request
       @authenticated_login_resolver = authenticated_login_resolver || ->(token) { token.client.authenticated_login }
     end
 
@@ -34,7 +35,7 @@ module FeatureIntents
     attr_reader :project, :github_issue, :github_pull_request, :authenticated_login_resolver
 
     def design_pr
-      @design_pr ||= FeatureIntentDesignPr.joins(:feature_intent).find_by(
+      @design_pull_request ||= FeatureIntentDesignPr.joins(:feature_intent).find_by(
         feature_intents: { project_id: project.id }, pull_request_number: github_issue.number
       )
     end
