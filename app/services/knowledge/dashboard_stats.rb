@@ -159,8 +159,9 @@ module Knowledge
 
     def build_provider_health
       owners = project_owner_groups
-      embedding = owners.flat_map { |owner, count| runner_health(owner, count, :embedding) }
-      chat = owners.flat_map { |owner, count| runner_health(owner, count, :chat) }
+      readiness_data = readiness_data_for(owners.map(&:first))
+      embedding = owners.flat_map { |owner, count| runner_health(owner, count, :embedding, readiness_data) }
+      chat = owners.flat_map { |owner, count| runner_health(owner, count, :chat, readiness_data) }
 
       {
         embedding: embedding,
@@ -174,17 +175,37 @@ module Knowledge
     end
 
     def project_owner_groups
-      groups = account.projects.includes(:account, :created_by).to_a.group_by(&:effective_owner)
-      groups.transform_values(&:size).to_a
+      created_by_ids = account.projects.pluck(:created_by_id)
+      return [] if created_by_ids.empty?
+
+      fallback_owner_id = account.fallback_owner_id
+      owner_ids = created_by_ids.map { |id| id || fallback_owner_id }
+      owners = User.where(id: owner_ids.uniq).includes(:user_setting).index_by(&:id)
+
+      owner_ids.tally.map { |owner_id, count| [ owners.fetch(owner_id), count ] }
     end
 
-    def runner_health(owner, project_count, operation)
+    def readiness_data_for(owners)
+      owner_ids = owners.map(&:id)
+
+      {
+        provider_api_keys: ProviderApiKey.where(user_id: owner_ids).group_by(&:user_id),
+        runner_states: RunnerState.where(user_id: owner_ids).group_by(&:user_id).transform_values { |states| states.index_by(&:runner_name) },
+        managed_runner_keys: account.runner_credentials.active.distinct.pluck(:runner_key)
+      }
+    end
+
+    def runner_health(owner, project_count, operation, readiness_data)
       setting = owner.settings
       runners = configured_runners_for(setting, operation)
-      states = owner.runner_states.where(runner_name: runners).index_by(&:runner_name)
+      states = readiness_data[:runner_states].fetch(owner.id, {})
+      credential_availability = {
+        provider_api_keys: readiness_data[:provider_api_keys].fetch(owner.id, []),
+        managed_runner_keys: readiness_data[:managed_runner_keys]
+      }
 
       runners.map do |runner|
-        readiness = RunnerReadiness.call(account:, owner:, operation:, runner:)
+        readiness = RunnerReadiness.call(account:, owner:, operation:, runner:, credential_availability:)
         runner_status(runner, states, readiness, owner).merge(owner_id: owner.id, project_count: project_count)
       end
     end

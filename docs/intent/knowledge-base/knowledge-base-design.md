@@ -32,11 +32,14 @@ the system that actually shipped.
 The account dashboard retains Embedding and Decision Drafting runner health, but
 does not treat the absence of a `RunnerState` as evidence that a runner can
 execute. `Knowledge::RunnerReadiness` resolves local configuration only: a
-supported transport is `ready` when its applicable owner API key, managed
-runner credential, or documented platform fallback is configured; otherwise it
-is `missing_credential` or `unsupported_transport`. It never materializes a
-secret or contacts an upstream provider, so ready credentials are explicitly
-not a live authentication validation.
+supported embedding transport is `ready` when its applicable owner API key or
+documented platform fallback is configured. Decision drafting is `ready` only
+when its managed runner credential or the documented host Anthropic text-mode
+credential is configured, because those are the credential sources its
+in-process execution path materializes. Otherwise it is `missing_credential`
+or `unsupported_transport`. It never materializes a secret or contacts an
+upstream provider, so ready credentials are explicitly not a live
+authentication validation.
 
 Embedding candidate selection uses the same readiness result before runtime
 configuration materializes a key, so the dashboard and runtime agree on the
@@ -50,6 +53,8 @@ presented as account-wide. Configuration readiness and operational health
 (rate-limit, circuit, and failure state) remain distinct. The short-lived
 readiness cache versions projects, owner settings, credentials, and runner
 states so ownership and credential changes are visible without a provider call.
+On a cache miss, its aggregation loads those owner-scoped records in batches,
+rather than querying once for every effective owner.
 
 ### Canonical knowledge storage
 

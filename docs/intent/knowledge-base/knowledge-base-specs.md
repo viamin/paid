@@ -453,10 +453,11 @@
   and report configuration readiness separately from operational health. A
   runner without a configured applicable credential SHALL be
   `missing_credential`, a runner unsupported by its operation transport SHALL
-  be `unsupported_transport`, and a configured local credential SHALL be
-  `ready`; the status SHALL expose only its safe source/service metadata and
-  SHALL state that it is not upstream authentication validation. Rendering
-  SHALL not make a provider call or expose a secret.
+  be `unsupported_transport`, and a configured credential that the relevant
+  execution path materializes SHALL be `ready`; the status SHALL expose only
+  its safe source/service metadata and SHALL state that it is not upstream
+  authentication validation. Rendering SHALL not make a provider call or
+  expose a secret.
   *Code:* `app/services/knowledge/runner_readiness.rb`,
   `app/services/knowledge/dashboard_stats.rb`,
   `app/views/dashboard/_knowledge_widget.html.erb`.
@@ -468,6 +469,8 @@
   project's `effective_owner`, identify each row's owner scope and project
   count, and version its bounded cache from project ownership, owner settings,
   credentials, and runner state changes. It SHALL not present the account
-  fallback owner's readiness as valid for another project's owner.
+  fallback owner's readiness as valid for another project's owner. On a cache
+  miss, it SHALL batch-load the owners' settings, runner states, API keys, and
+  managed credential availability rather than issuing owner-level queries.
   *Code:* `app/services/knowledge/dashboard_stats.rb`.
   *Test:* `spec/services/knowledge/dashboard_stats_spec.rb`.

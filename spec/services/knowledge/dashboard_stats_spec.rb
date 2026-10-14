@@ -23,13 +23,15 @@ RSpec.describe Knowledge::DashboardStats do
 
       # @spec KNOWLEDGE-DASHBOARD-001
       it "reports missing credentials rather than ready when no runner state exists" do
-        expect(stats[:projects_indexed]).to eq(0)
-        expect(stats[:projects_total]).to eq(1)
-        expect(stats[:total_artifacts]).to eq(0)
-        expect(stats[:stale_artifacts]).to eq(0)
-        expect(stats[:stale_percent]).to eq(0)
-        expect(stats[:artifacts_by_type]).to be_empty
-        expect(stats[:last_collection_at]).to be_nil
+        expect(stats).to include(
+          projects_indexed: 0,
+          projects_total: 1,
+          total_artifacts: 0,
+          stale_artifacts: 0,
+          stale_percent: 0,
+          artifacts_by_type: [],
+          last_collection_at: nil
+        )
         expect(stats[:operational_status]).to eq("unavailable")
         expect(stats[:provider_health][:embedding_available]).to be false
         expect(stats[:provider_health][:chat_available]).to be false
@@ -86,6 +88,26 @@ RSpec.describe Knowledge::DashboardStats do
 
         refreshed = described_class.call(account: account)
         expect(refreshed[:provider_health][:chat].first[:configuration_status]).to eq("ready")
+      end
+    end
+
+    context "with only an owner API key for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "does not report chat ready because drafting cannot materialize the owner API key" do
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "missing_credential",
+          credential_source: nil,
+          available: false
+        )
       end
     end
 
@@ -178,6 +200,29 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with the platform Anthropic fallback for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        owner.settings.update!(kb_chat_runner: "claude", kb_chat_fallback_runners: [])
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return("platform-key")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the credential source without exposing its value" do
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "platform_fallback",
+          credential_service: "anthropic"
+        )
+        expect(chat.values).not_to include("platform-key")
+      end
+    end
+
     context "with different project effective owners" do
       let(:first_owner) { create(:user, account: account) }
       let(:second_owner) { create(:user, account: account) }
@@ -197,6 +242,18 @@ RSpec.describe Knowledge::DashboardStats do
         expect(stats[:provider_health][:scope]).to eq("project_effective_owners")
         expect(embedding).to include(hash_including(owner_id: first_owner.id, configuration_status: "ready"))
         expect(embedding).to include(hash_including(owner_id: second_owner.id, configuration_status: "missing_credential"))
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "batch-loads readiness data for all effective owners" do
+        additional_owners = create_list(:user, 3, account: account)
+        additional_owners.each { |owner| create(:project, account: account, created_by: owner) }
+
+        queries = capture_queries { stats }
+
+        readiness_table_patterns.each do |pattern|
+          expect(queries.grep(pattern).size).to be <= 2
+        end
       end
     end
 
@@ -534,5 +591,19 @@ RSpec.describe Knowledge::DashboardStats do
         expect(stats[:total_artifacts]).to eq(1)
       end
     end
+  end
+
+  def capture_queries
+    queries = []
+    callback = lambda do |_name, _started, _finished, _unique_id, payload|
+      queries << payload[:sql] if payload[:name] != "SCHEMA" && !payload[:cached]
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+    queries
+  end
+
+  def readiness_table_patterns
+    [ /FROM "user_settings"/, /FROM "runner_states"/, /FROM "provider_api_keys"/, /FROM "runner_credentials"/ ]
   end
 end
