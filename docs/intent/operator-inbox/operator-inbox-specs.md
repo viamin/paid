@@ -158,17 +158,15 @@
   installation token lacks a required permission) and its project is within
   the operator's authorized Inbox visibility (`INBOX-FOUNDATION-006` —
   account isolation plus owner visibility, independent of automatic
-  work-selection eligibility; the same scope every other inbox kind uses — a
-  deliberate divergence from the dashboard's account-wide Retry-Limited card,
-  the same divergence `escalated_pr` and `manual_review` already record,
-  `OPERATOR-INBOX-002C` / `002D`), the system
-  SHALL expose that record as a `retry_limited` inbox entry showing why
+  work-selection eligibility; the same scope every other inbox kind uses), the
+  system SHALL expose retry-abandoned records only through the Inbox, not a
+  duplicate Dashboard panel, showing why
   automation stopped (`runner_retry_abandon_reason`) and how long it has
   been stopped (`runner_retry_abandoned_at`). The entry SHALL distinguish
   `push_permission_abandoned?` (the GitHub App lacked a required permission —
   prefixed `Push rejected:`) from the runner-retry-cap case in both the list
-  and detail views via the Push Blocked vs Retry Cap badge split the dashboard
-  card already shows, so operators can pick the right remediation (re-grant
+  and detail views via the Push Blocked vs Retry Cap badge split, so operators
+  can pick the right remediation (re-grant
   the GitHub App permission vs. clear the retry-cap flag and queue a manual
   run). The entry SHALL clear when `clear_runner_retry_abandonment!` runs
   (called by `RunAgentActivity#clear_issue_runner_retry_abandonment` after a
@@ -198,6 +196,7 @@
   SHALL accept `retry_limited` alongside the existing kinds.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/models/issue.rb`,
+  `app/controllers/dashboard_controller.rb`, `app/views/dashboard/show.html.erb`,
   `app/controllers/projects/agent_runs_controller.rb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
@@ -205,7 +204,8 @@
   `app/views/inbox/index.html.erb`,
   `config/routes.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  `spec/requests/dashboard_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002F** — When an issue or pull request re-enters the
   `retry_limited` Inbox lane after its retry abandonment has been cleared, the

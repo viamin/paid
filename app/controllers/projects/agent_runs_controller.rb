@@ -944,8 +944,7 @@ module Projects
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
     # path can abandon either), so this resolver does not narrow on
-    # is_pull_request — see OPERATOR-INBOX-002E / dashboard's
-    # Retry-Limited card. The runner_retry_abandoned_at gate is what makes
+    # is_pull_request — see OPERATOR-INBOX-002E. The runner_retry_abandoned_at gate is what makes
     # the row part of the lane in the first place; matching on it stops a
     # stale click from clearing the flag after the issue left the lane
     # (e.g. via RunAgentActivity#clear_issue_runner_retry_abandonment after
