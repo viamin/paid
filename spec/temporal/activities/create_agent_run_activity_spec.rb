@@ -1103,24 +1103,28 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to be_nil
       end
 
-      it "renders the selected prompt version at runtime with the correct variables" do
+      # @spec POLYGLOT-TEST-011
+      it "omits database-dependent tests when the run has no services" do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
         prompt_text = agent_run.prompt_for_issue
         expect(prompt_text).to include(issue.title)
         expect(prompt_text).to include(issue.github_number.to_s)
-        expect(prompt_text).to include("Test: bundle exec rspec")
+        expect(prompt_text).to include('Test: echo "No test command configured"')
         expect(prompt_text).to include("Lint: bundle exec rubocop")
       end
 
       # @spec POLYGLOT-TEST-003
       it "renders every language's command for a polyglot project at runtime" do
         project.update!(repo_profile: { "test_languages" => [ "ruby", "elixir" ] })
+        database_container = create(:service_container, :running, account: project.account, image: "postgres:16")
+        create(:project_service_container, project: project, service_container: database_container)
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
+        agent_run.update!(service_container_ids: [ database_container.id ])
         prompt_text = agent_run.prompt_for_issue
         expect(prompt_text).to include("Test: bundle exec rspec, then mix test")
         expect(prompt_text).to include("Lint: bundle exec rubocop, then mix credo --strict")
@@ -1224,11 +1228,13 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
 
       it "assembles service environment guidance for configured database containers" do
-        project.service_containers << create(:service_container, account: project.account)
+        database_container = create(:service_container, :running, account: project.account)
+        project.service_containers << database_container
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
+        agent_run.update!(service_container_ids: [ database_container.id ])
         prompt_text = agent_run.prompt_for_issue
         expect(prompt_text).to include("Available Services")
         expect(prompt_text).to include("Database Schema Workflow")
@@ -1237,7 +1243,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
 
       it "records rendered service environment prompt versions in phase metadata" do
-        project.service_containers << create(:service_container, account: project.account)
+        project.service_containers << create(:service_container, :running, account: project.account)
         prompts = create_service_environment_prompts
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
@@ -1250,11 +1256,13 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       it "separates assembled sections from a template without a trailing newline" do
         prompt.current_version.update_column(:template, "Work on {{title}}")
-        project.service_containers << create(:service_container, account: project.account)
+        database_container = create(:service_container, :running, account: project.account)
+        project.service_containers << database_container
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
+        agent_run.update!(service_container_ids: [ database_container.id ])
         expect(agent_run.prompt_for_issue).to include("Work on #{issue.title}\n\n# Available Services")
       end
     end
