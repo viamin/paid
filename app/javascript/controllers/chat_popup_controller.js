@@ -10,6 +10,7 @@ export default class extends Controller {
   }
 
   connect() {
+    // @spec CHAT-API-021
     this.state = this.readState()
     this.loading = false
     this.renderState()

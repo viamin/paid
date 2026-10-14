@@ -303,6 +303,15 @@
   *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`.
   *Code:* `app/views/chat_messages/_tool_call.html.erb`.
 
+- [x] **CHAT-API-021** — When a user opens the global chat popup, Paid SHALL
+  persist its open state and active chat-session ID in account-scoped browser
+  local storage. On a subsequent full-page navigation, Paid SHALL restore an
+  open popup and reload that same session so its persisted conversation remains
+  available. When the user explicitly dismisses the popup, Paid SHALL persist
+  the closed state so later navigations leave it closed.
+  *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
+  *Code:* `app/javascript/controllers/chat_popup_controller.js`.
+
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
   client for a project, the system SHALL prefer the project's own credential
