@@ -77,6 +77,20 @@ module Automation
       trusted_parent_issue_catchall_label(project, pull_request).present?
     end
 
+    # Dependabot-only mode enables the dedicated Dependabot evaluator, never
+    # the human pull-request merge path. A trusted per-PR activation label can
+    # opt an individual human PR into that path while the project setting is
+    # off, but cannot broaden Dependabot-only mode.
+    # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-007
+    def human_pull_request_auto_merge_enabled?(project:, pull_request:)
+      return false if upstream_mode_disables?(project, "auto_merge")
+      return project.auto_merge_enabled? if project.paid_local_activation?
+      return true if project.auto_merge_mode == "all"
+      return false unless project.auto_merge_mode == "off"
+
+      trusted_pr_specific_label(project, pull_request, "auto_merge").present?
+    end
+
     # @spec LABEL-CONTROL-007
     def any_pull_request_feature_enabled?(project:, feature:)
       return false if upstream_mode_disables?(project, feature)
