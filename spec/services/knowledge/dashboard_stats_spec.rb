@@ -201,6 +201,38 @@ RSpec.describe Knowledge::DashboardStats do
       end
     end
 
+    context "with an orphaned project whose fallback owner changes" do
+      let(:first_owner) { create(:user, :owner, account: account) }
+      let(:second_owner) { create(:user, :owner, account: account) }
+      let(:project) do
+        create(:project,
+          account: account,
+          created_by: nil,
+          github_token: create(:github_token, :without_creator, account: account))
+      end
+
+      before do
+        first_owner
+        second_owner
+        project
+        create(:provider_api_key, user: first_owner, api_service_type: "openai", api_key: "sk-first")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "invalidates cached readiness when the fallback owner changes" do
+        expect(stats[:provider_health][:embedding]).to include(
+          hash_including(owner_id: first_owner.id, configuration_status: "ready")
+        )
+
+        first_owner.account_membership_for(account).update!(role: :admin)
+
+        refreshed = described_class.call(account: account)
+        expect(refreshed[:provider_health][:embedding]).to include(
+          hash_including(owner_id: second_owner.id, configuration_status: "missing_credential")
+        )
+      end
+    end
+
     context "with an unsupported configured transport" do
       let(:owner) { project.effective_owner }
 

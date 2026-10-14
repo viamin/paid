@@ -150,6 +150,7 @@ module Knowledge
         "knowledge/dashboard_stats/provider_health",
         account.id,
         account.projects.cache_key_with_version,
+        AccountMembership.where(account_id: account.id).cache_key_with_version,
         UserSetting.joins(:user).where(users: { account_id: account.id }).cache_key_with_version,
         ProviderApiKey.joins(:user).where(users: { account_id: account.id }).cache_key_with_version,
         RunnerState.joins(:user).where(users: { account_id: account.id }).cache_key_with_version

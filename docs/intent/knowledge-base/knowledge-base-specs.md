@@ -467,8 +467,9 @@
 - [x] **KNOWLEDGE-DASHBOARD-002** — When account-level Knowledge Runner
   Health is computed, it SHALL aggregate configured runners by every
   project's `effective_owner`, identify each row's owner scope and project
-  count, and version its bounded cache from project ownership, owner settings,
-  credentials, and runner state changes. It SHALL not present the account
+  count, and version its bounded cache from project ownership, fallback-owner
+  account membership state, owner settings, credentials, and runner state
+  changes. It SHALL not present the account
   fallback owner's readiness as valid for another project's owner. On a cache
   miss, it SHALL batch-load the owners' settings, runner states, and API keys
   rather than issuing owner-level queries. Projects without a resolvable
