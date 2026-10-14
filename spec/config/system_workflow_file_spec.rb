@@ -24,7 +24,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
 
   # @spec MOBILE-API-016
   it "allows the browser suite to install the mobile contract toolchain from a cold cache" do
-    expect(system_job.fetch("timeout-minutes")).to eq(30)
+    expect(system_job.fetch("timeout-minutes")).to eq(60)
   end
 
   it "passes test credentials to the system job" do
