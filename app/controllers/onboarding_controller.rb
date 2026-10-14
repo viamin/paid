@@ -5,10 +5,11 @@ class OnboardingController < ApplicationController
   before_action :set_onboarding_steps
   skip_after_action :verify_authorized
 
+  # @spec ONBOARD-CHAT-003
   def show
     @current_step = current_account.current_onboarding_step
     redirect_to dashboard_path if @current_step.nil?
-    flash.now[:alert] = Onboarding::ConfigureChatRunner::ASYNC_RETRY_MESSAGE if params[:chat_api_key_error] == "invalid"
+    flash.now[:alert] = Onboarding::ConfigureChatRunner::ASYNC_RETRY_MESSAGE if params[:onboarding_retry] == "invalid"
     prepare_default_posture if @current_step&.step == "configure_defaults"
   end
 

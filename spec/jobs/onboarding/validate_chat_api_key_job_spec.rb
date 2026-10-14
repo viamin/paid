@@ -73,7 +73,7 @@ RSpec.describe Onboarding::ValidateChatApiKeyJob do
       hash_including(
         type: "onboarding_retry",
         message: "That API key was rejected. Please try another key.",
-        redirect_url: "/onboarding?chat_api_key_error=invalid"
+        redirect_url: "/onboarding?onboarding_retry=invalid"
       )
     )
   end
