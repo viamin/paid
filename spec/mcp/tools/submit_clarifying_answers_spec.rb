@@ -124,6 +124,11 @@ RSpec.describe Tools::SubmitClarifyingAnswers do
 
     it "writes quiet-mode answers to the description and clears the inbox item" do # @spec QUIET-MODE-010
       project.update!(quiet_mode: true)
+      remote_body = ClarifyingQuestions::DescriptionSection.replace_questions_section(
+        body: issue.body,
+        questions: questions
+      )
+      allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(remote_body))
       allow(github_client).to receive(:update_issue)
 
       result = tool.call(answers: [ "X is a feature", "Yes, by default" ], confirmed: true)
