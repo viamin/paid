@@ -15,7 +15,10 @@ RSpec.describe IntentConformance::ReviewJob do
   end
 
   before do
-    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    project.account.tenant_setting!.update!(features: {
+      "approved_intent_amendments" => true,
+      "intent_conformance_enforcement" => true
+    })
     create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
   end
 

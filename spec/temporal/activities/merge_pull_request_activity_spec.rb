@@ -289,7 +289,7 @@ RSpec.describe Activities::MergePullRequestActivity do
     # @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
     # @spec INTENT-MERGE-GUARD-005 @spec INTENT-MERGE-GUARD-006
     # @spec INTENT-MERGE-GUARD-008
-    context "when the PR belongs to a feature under the intent-conformance rollout flag" do
+    context "when the PR belongs to a feature under complete intent-conformance enforcement" do
       let(:feature_intent) do
         create(:feature_intent, project: project, status: "released", approved_design_revision: "rev1")
       end
@@ -307,7 +307,10 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
 
       before do
-        project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+        project.account.tenant_setting!.update!(features: {
+          "approved_intent_amendments" => true,
+          "intent_conformance_enforcement" => true
+        })
         create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
         allow(provider).to receive(:fetch_pull_request)
           .with(repo: project.full_name, number: 42)
