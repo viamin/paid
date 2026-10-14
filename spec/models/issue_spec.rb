@@ -922,14 +922,20 @@ RSpec.describe Issue do
       end
 
       # @spec PR-ESCALATION-007
-      it "records a standing token-cap override when clearing a token-cap escalation" do
+      it "records a bounded token-cap allowance when clearing a token-cap escalation" do
         escalated_pr.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+        escalated_pr.project.update!(max_pr_auto_continue_tokens: 50_000)
+        create(:agent_run, project: escalated_pr.project, issue: escalated_pr,
+          source_pull_request_number: escalated_pr.github_number,
+          trigger_type: "automatic", tokens_input: 55_000)
 
         freeze_time do
           escalated_pr.clear_escalation!(draft: false)
 
           expect(escalated_pr.reload.pr_auto_continue_token_limit_overridden_at)
             .to be_within(1.second).of(Time.current)
+          expect(escalated_pr.pr_auto_continue_token_limit_override_usage).to eq(55_000)
+          expect(escalated_pr.pr_auto_continue_token_limit_override_allowance).to eq(50_000)
         end
       end
 

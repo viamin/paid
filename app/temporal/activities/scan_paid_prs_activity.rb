@@ -287,7 +287,8 @@ module Activities
       no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
-      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue)
+      token_limit_budget = pr_auto_continue_token_limit_budget(project, issue)
+      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue, budget: token_limit_budget)
 
       reason, reason_key = if op_breaker
         [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
@@ -306,8 +307,9 @@ module Activities
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
         pr_auto_continue_token_limit_reached: token_limit_breach.present?,
-        pr_auto_continue_tokens_used: token_limit_breach&.fetch(:used, nil).to_i,
-        pr_auto_continue_token_limit: token_limit_breach&.fetch(:limit, nil).to_i,
+        pr_auto_continue_tokens_used: token_limit_budget[:used],
+        pr_auto_continue_token_limit: token_limit_budget[:limit],
+        pr_auto_continue_token_limit_remaining: token_limit_budget[:remaining],
         no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
@@ -1901,15 +1903,16 @@ module Activities
         .exists?
     end
 
-    def pr_auto_continue_token_limit_breach(project, issue)
-      return if issue.respond_to?(:pr_auto_continue_token_limit_overridden_at) &&
-        issue.pr_auto_continue_token_limit_overridden_at.present?
+    def pr_auto_continue_token_limit_breach(project, issue, budget: pr_auto_continue_token_limit_budget(project, issue))
+      budget if budget[:used] >= budget[:limit]
+    end
 
-      limit = project.max_pr_auto_continue_tokens.to_i
+    # @spec PR-ESCALATION-007
+    def pr_auto_continue_token_limit_budget(project, issue)
       used = pr_auto_continue_tokens_used(project, issue)
-      return if used < limit
+      limit = issue.pr_auto_continue_token_limit_effective_limit(project.max_pr_auto_continue_tokens)
 
-      { used: used, limit: limit }
+      { used: used, limit: limit, remaining: [ limit - used, 0 ].max }
     end
 
     def pr_auto_continue_tokens_used(project, issue)

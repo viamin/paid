@@ -338,15 +338,60 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(signals[:escalation_reason_key]).to eq(Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
     end
 
-    it "does not report token cap escalation after owner override", :aggregate_failures do
+    # @spec PR-ESCALATION-007
+    it "allows only the snapshot allowance after owner dismissal", :aggregate_failures do
+      project.update!(max_pr_auto_continue_tokens: 50_000)
+      create_token_limit_runs!(project:, pr_issue:)
+      pr_issue.update!(
+        pr_auto_continue_token_limit_overridden_at: Time.current,
+        pr_auto_continue_token_limit_override_usage: 50_000,
+        pr_auto_continue_token_limit_override_allowance: 50_000
+      )
+
+      signals = activity.send(:build_lifecycle_signals, project, pr_issue)
+
+      expect(signals[:pr_auto_continue_token_limit_reached]).to be(false)
+      expect(signals[:pr_auto_continue_tokens_used]).to eq(50_000)
+      expect(signals[:pr_auto_continue_token_limit]).to eq(100_000)
+
+      create(:agent_run, project:, issue: pr_issue, source_pull_request_number: pr_issue.github_number,
+        trigger_type: "automatic", tokens_input: 50_000, status: "completed")
+
+      signals = activity.send(:build_lifecycle_signals, project, pr_issue)
+
+      expect(signals[:pr_auto_continue_token_limit_reached]).to be(true)
+      expect(signals[:pr_auto_continue_tokens_used]).to eq(100_000)
+      expect(signals[:pr_auto_continue_token_limit]).to eq(100_000)
+      expect(signals[:escalation_reason_key]).to eq(Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+    end
+
+    # @spec PR-ESCALATION-007
+    it "keeps a granted allowance stable when the project cap changes", :aggregate_failures do
+      project.update!(max_pr_auto_continue_tokens: 50_000)
+      create_token_limit_runs!(project:, pr_issue:)
+      pr_issue.update!(
+        pr_auto_continue_token_limit_overridden_at: Time.current,
+        pr_auto_continue_token_limit_override_usage: 50_000,
+        pr_auto_continue_token_limit_override_allowance: 50_000
+      )
+      project.update!(max_pr_auto_continue_tokens: 10_000)
+
+      signals = activity.send(:build_lifecycle_signals, project, pr_issue)
+
+      expect(signals[:pr_auto_continue_token_limit_reached]).to be(false)
+      expect(signals[:pr_auto_continue_token_limit]).to eq(100_000)
+    end
+
+    # @spec PR-ESCALATION-007
+    it "does not treat a timestamp-only legacy override as an allowance" do
       project.update!(max_pr_auto_continue_tokens: 50_000)
       pr_issue.update!(pr_auto_continue_token_limit_overridden_at: Time.current)
       create_token_limit_runs!(project:, pr_issue:)
 
       signals = activity.send(:build_lifecycle_signals, project, pr_issue)
 
-      expect(signals[:pr_auto_continue_token_limit_reached]).to be(false)
-      expect(signals[:escalation_reason_key]).not_to eq(Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+      expect(signals[:pr_auto_continue_token_limit_reached]).to be(true)
+      expect(signals[:pr_auto_continue_token_limit]).to eq(50_000)
     end
 
     it "resets the confirmation count when progress clears the stuck state", :aggregate_failures do
