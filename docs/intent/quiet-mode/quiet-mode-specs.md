@@ -69,7 +69,10 @@ prefix: QUIET-MODE
   section and an answers section SHALL be determined by a stable
   question-set digest embedded in the questions section (computed from the
   normalized question text) and a matching digest in the answers section,
-  not by `comment.created_at`. When the project has no quiet mode, the
+  not by `comment.created_at`. When a replacement question set includes
+  agent-authored context, that context SHALL be contained in the replaceable
+  questions section so context from a prior question set is removed. When the
+  project has no quiet mode, the
   comment-based freshness check SHALL remain authoritative and the body
   parsing SHALL NOT regress.
 - [x] **QUIET-MODE-012** — `ClarifyingQuestions::IngestAnswers` SHALL
