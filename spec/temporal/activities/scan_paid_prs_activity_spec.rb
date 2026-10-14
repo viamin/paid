@@ -12047,7 +12047,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         draft_review_count: 143,
         labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ]
       )
-      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+      stub_current_non_strict_tdd_review(review_body: "Cover the timeout failure path.")
 
       result = activity.execute(project_id: project.id)
 
