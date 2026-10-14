@@ -21,9 +21,10 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    # A Gemfile.lock change invalidates ruby/setup-ruby's bundle cache. Leave
-    # enough room for a cold native-gem install before the browser suite runs.
-    timeout-minutes: 30
+    # A Gemfile.lock change invalidates ruby/setup-ruby's bundle cache, and the
+    # dependency installer can retry for up to 30 minutes before assets and the
+    # browser suite begin. Leave enough room for the checks to complete.
+    timeout-minutes: 60
 
     services:
       postgres:
