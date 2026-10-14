@@ -41,7 +41,7 @@ RSpec.describe IntentConformance::ReviewRun do
   end
 
   before do
-    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
     create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
     allow(project).to receive(:client).and_return(github_client)
     allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
@@ -65,8 +65,8 @@ RSpec.describe IntentConformance::ReviewRun do
   end
 
   # @spec INTENT-CONFORMANCE-REVIEW-001
-  context "when the project has not opted into the rollout flag" do
-    before { project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => false }) }
+  context "when the project has not opted into shadow review or complete enforcement" do
+    before { project.account.tenant_setting!.update!(features: {}) }
 
     it "is a no-op and persists nothing" do
       expect(call).to be_nil
@@ -79,6 +79,35 @@ RSpec.describe IntentConformance::ReviewRun do
     before { project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true }) }
 
     it "persists a verdict for measurement without changing merge eligibility" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
+      }.to_json))
+
+      expect(call).to be_within_scope
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-001
+  context "when only the amendment flow is enabled" do
+    before { project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true }) }
+
+    it "does not run a shadow review or persist a verdict" do
+      expect(AgentHarness).not_to receive(:send_message)
+
+      expect(call).to be_nil
+      expect(IntentConformanceVerdict.count).to eq(0)
+    end
+  end
+
+  context "when complete enforcement is enabled" do
+    before do
+      project.account.tenant_setting!.update!(features: {
+        "approved_intent_amendments" => true,
+        "intent_conformance_enforcement" => true
+      })
+    end
+
+    it "runs the independent review" do
       allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
       }.to_json))

@@ -28,11 +28,17 @@ module IntentConformance
         pr_head_sha.present? && rollout_enabled?
     end
 
-    # Keep the read-only evaluation path separate from approved_intent_amendments,
-    # which is also the final-merge guard's gate.
+    # Shadow evaluation is read-only and must be explicitly opted into. Normal
+    # enforcement reviews require the complete enforcement pair; the amendment
+    # flag alone also gates VerifyAtMerge and must not silently start reviews.
     def rollout_enabled?
       FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
-        FeatureFlags.enabled?(:approved_intent_amendments, project: project)
+        enforcement_enabled?
+    end
+
+    def enforcement_enabled?
+      FeatureFlags.enabled?(:approved_intent_amendments, project: project) &&
+        FeatureFlags.enabled?(:intent_conformance_enforcement, project: project)
     end
 
     def feature_intent = @feature_intent ||= issue.feature_intent
