@@ -54,11 +54,11 @@ RSpec.describe Prompts::ServiceContainerSections do # @spec POLYGLOT-TEST-011
       expect(described_class.has_database_container?(project: project, agent_run: agent_run)).to be(false)
     end
 
-    it "falls back to project config when the agent_run has no service_container_ids" do
+    it "does not fall back to project config when the agent_run has no provisioned services" do
       create(:project_service_container, project: project, service_container: postgres_container)
       agent_run = create(:agent_run, project: project, service_container_ids: [])
 
-      expect(described_class.has_database_container?(project: project, agent_run: agent_run)).to be(true)
+      expect(described_class.has_database_container?(project: project, agent_run: agent_run)).to be(false)
     end
 
     it "returns false when the configured postgres container is stopped" do

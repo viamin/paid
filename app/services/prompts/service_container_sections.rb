@@ -41,15 +41,14 @@ module Prompts
     # MUST agree on this answer; otherwise the agent gets contradictory
     # instructions (no database available vs. "fix all test failures").
     #
-    # When +agent_run+ has a non-empty +service_container_ids+ (i.e. the run
-    # has been provisioned), this consults THAT set — the agents running
-    # for that exact run — rather than the project's generic configured
-    # container list, which may include a postgres container the project
-    # owner configured but did not actually provision for this run.
+    # When +agent_run+ is present, this consults THAT set — the services
+    # provisioned for that exact run — rather than the project's generic
+    # configured container list, which may include a postgres container the
+    # project owner configured but did not actually provision for this run.
+    # An empty list is therefore authoritative: no service was provisioned.
     #
-    # When +agent_run+ is nil or has no provisioned service containers, this
-    # falls back to the project's configured service containers (a
-    # pre-prompt-build check for runs that have not been provisioned yet).
+    # When +agent_run+ is nil, this falls back to the project's configured
+    # service containers (a pre-prompt-build check before a run exists).
     # @spec POLYGLOT-TEST-011
     # @spec QUALITY-LOOPS-004
     def self.has_database_container?(project:, agent_run: nil)
@@ -60,7 +59,7 @@ module Prompts
       return [] unless project
 
       ids = extract_run_container_ids(agent_run)
-      return ServiceContainer.where(id: ids, status: "running").to_a if ids
+      return ServiceContainer.where(id: ids, status: "running").to_a unless ids.nil?
 
       running_project_service_containers(project)
     end
@@ -77,7 +76,7 @@ module Prompts
       return nil unless agent_run
 
       ids = agent_run.service_container_ids if agent_run.respond_to?(:service_container_ids)
-      return nil if ids.blank?
+      return [] if ids.blank?
 
       Array(ids).map(&:to_i).reject(&:zero?)
     end

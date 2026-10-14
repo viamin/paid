@@ -121,6 +121,18 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("No test command configured")
     end
 
+    it "uses an agent run's empty service list instead of the project's configured database" do # @spec POLYGLOT-TEST-011
+      postgres_container = create(:service_container, account: project.account, status: "running")
+      create(:project_service_container, project: project, service_container: postgres_container)
+      agent_run = create(:agent_run, project: project, service_container_ids: [])
+
+      prompt = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(prompt).not_to include("bundle exec rspec")
+      expect(prompt).to include("No test command configured")
+      expect(prompt).to include("Report skipped database-dependent tests")
+    end
+
     it "agrees with the pre-commit hook gate on no-database runs and requires reporting skipped suite" do
       prompt = described_class.call(issue: issue, project: project)
 
