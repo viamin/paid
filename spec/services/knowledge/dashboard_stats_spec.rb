@@ -282,6 +282,7 @@ RSpec.describe Knowledge::DashboardStats do
       before do
         project
         allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return(nil)
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("platform-key")
       end
@@ -311,6 +312,31 @@ RSpec.describe Knowledge::DashboardStats do
 
       # @spec KNOWLEDGE-DASHBOARD-001
       it "reports the credential source without exposing its value" do
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "platform_fallback",
+          credential_service: "anthropic"
+        )
+        expect(chat.values).not_to include("platform-key")
+      end
+    end
+
+    context "with the Rails-credentials Anthropic fallback for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        owner.settings.update!(kb_chat_runner: "claude", kb_chat_fallback_runners: [])
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return("platform-key")
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return(nil)
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the credential fallback accepted by the decision-drafting proxy" do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(

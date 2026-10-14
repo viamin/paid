@@ -80,13 +80,17 @@ module Knowledge
     end
 
     def platform_anthropic_credential
-      return unless Llm::TextMode.enabled?
+      return unless platform_anthropic_api_key.present?
 
       ready(source: "platform_fallback", service: "anthropic")
     end
 
     def platform_openai_api_key
       Rails.application.credentials.dig(:llm, :openai_api_key).presence || ENV["OPENAI_API_KEY"].presence
+    end
+
+    def platform_anthropic_api_key
+      Rails.application.credentials.dig(:llm, :anthropic_api_key).presence || ENV["ANTHROPIC_API_KEY"].presence
     end
 
     def ready(source:, service:)
