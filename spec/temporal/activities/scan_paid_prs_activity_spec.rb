@@ -12036,7 +12036,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(github_client).to receive(:issue_events).with(project.full_name, 42).and_return([
         OpenStruct.new(event: "labeled", label: OpenStruct.new(name: "paid-test-changes-requested"), created_at: 1.hour.ago)
       ])
-      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+      stub_current_non_strict_tdd_review(review_body: "Cover the nil edge case.")
 
       result = activity.execute(project_id: project.id)
 
