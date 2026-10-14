@@ -3827,8 +3827,7 @@ module Activities
     # enables auto-merge for that pull request even when the project-level
     # setting is off.
     def auto_merge_active?(project, issue)
-      project.auto_merge_enabled? ||
-        Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
+      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(project:, pull_request: issue)
     end
 
     def evaluate_auto_merge(project, signals)

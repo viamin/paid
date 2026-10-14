@@ -819,7 +819,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(auto_fix_merge_conflicts: true)
         prior_evaluated_at = 30.minutes.ago
         pr_issue.update!(
-          last_pr_scan_at: 1.hour.ago,
+          last_pr_scan_at: Time.current,
           github_updated_at: 2.hours.ago,
           auto_merge_blockers: stale_approval_snapshot,
           auto_merge_evaluated_at: prior_evaluated_at,
@@ -841,7 +841,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "resets the per-execute auto-merge snapshot cache so prior-pass staging cannot leak" do
         project.update!(auto_fix_merge_conflicts: true)
         pr_issue.update!(
-          last_pr_scan_at: 1.hour.ago,
+          last_pr_scan_at: Time.current,
           github_updated_at: 2.hours.ago
         )
         leaked_snapshot = { "failed" => [ { "leaked" => true } ], "not_evaluated" => [] }

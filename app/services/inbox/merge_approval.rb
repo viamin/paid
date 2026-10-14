@@ -129,10 +129,9 @@ module Inbox
     end
 
     def automatic_merge_active?
-      Automation::FeatureActivation.pull_request_feature_enabled?(
+      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
         project: issue.project,
         pull_request: issue,
-        feature: "auto_merge"
       )
     end
 
