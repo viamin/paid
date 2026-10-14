@@ -35,7 +35,7 @@ module Issues
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
       establish_local_tdd_gate(issue, project: project)
       reconcile_design_pull_request(project, github_issue, github_pull_request, design_pull_request) if issue.is_pull_request? && github_pull_request
-      enqueue_design_artifact_reconciliation(project, issue, design_pull_request) if issue.is_pull_request?
+      enqueue_design_artifact_reconciliation(project) if issue.is_pull_request?
       enqueue_readiness_evaluation_after_bootstrap_merge(project, issue, github_pull_request)
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
@@ -102,12 +102,11 @@ module Issues
     end
     private_class_method :reconcile_design_pull_request
 
-    def self.enqueue_design_artifact_reconciliation(project, issue, design_pull_request)
-      return unless design_pull_request || FeatureIntentDesignPr.joins(:feature_intent).exists?(
-        feature_intents: { project_id: project.id }, pull_request_number: issue.github_number
-      )
-
-      FeatureIntents::ReconcileDesignArtifactsJob.perform_later(project.id, issue.github_number)
+    def self.enqueue_design_artifact_reconciliation(project)
+      # A merged RDR PR changes the default-branch documents even before it is
+      # attached to a FeatureIntent, so every PR sync refreshes repository RDR
+      # discovery and tracked design PRs.
+      FeatureIntents::ReconcileDesignArtifactsJob.perform_later(project.id)
     end
     private_class_method :enqueue_design_artifact_reconciliation
 

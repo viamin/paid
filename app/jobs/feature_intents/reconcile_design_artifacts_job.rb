@@ -18,15 +18,12 @@ module FeatureIntents
 
     discard_on ActiveRecord::RecordNotFound
 
-    def perform(project_id, pull_request_number)
+    def perform(project_id, pull_request_number = nil)
       @project = Project.find(project_id)
-      design_pr = design_pull_request(pull_request_number)
-      return unless design_pr
+      return reconcile_project_artifacts unless pull_request_number
 
-      PersistDesignArtifactFindings.call(
-        project:, revision: design_pr.head_sha, artifacts: [ artifact_for(design_pr) ],
-        issues: issue_facts, coverage_complete: true
-      )
+      design_pr = design_pull_request(pull_request_number)
+      reconcile(artifact_for(design_pr), revision: design_pr.head_sha) if design_pr
     end
 
     private
@@ -54,10 +51,57 @@ module FeatureIntents
       @project_issue[number] ||= project.issues.find_by(github_number: number)
     end
 
-    def issue_facts
-      project.issues.where.not(github_number: nil).pluck(:github_number).map do |number|
-        { repository: project.full_name, number: }
+    def reconcile_rdr_artifacts
+      DiscoverRdrArtifacts.call(project:).each do |artifact|
+        reconcile(rdr_artifact(artifact), revision: artifact.revision, coverage_complete: artifact.body.present?)
       end
+    end
+
+    def reconcile_project_artifacts
+      reconcile_rdr_artifacts
+      open_design_pull_requests.find_each do |design_pr|
+        reconcile(artifact_for(design_pr), revision: design_pr.head_sha)
+      end
+    end
+
+    def open_design_pull_requests
+      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: :issues).where(
+        feature_intents: { project_id: project.id }, merged_at: nil
+      )
+    end
+
+    def reconcile(artifact, revision:, coverage_complete: true)
+      issues, complete = issue_coverage(artifact)
+      PersistDesignArtifactFindings.call(
+        project:, revision:, artifacts: [ artifact ], issues:, coverage_complete: coverage_complete && complete
+      )
+    end
+
+    def rdr_artifact(artifact)
+      { path: artifact.path, related_issues: explicit_references(artifact.body), stored_identities: [] }
+    end
+
+    def issue_coverage(artifact)
+      references = artifact.fetch(:related_issues)
+      projects = projects_for(references)
+      [ issue_facts(projects.values), references.all? { |reference| projects.key?(repository_for(reference)) } ]
+    end
+
+    def projects_for(references)
+      repositories = references.map { |reference| repository_for(reference) }.uniq
+      external = repositories - [ project.full_name ]
+      projects = Project.where(account_id: project.account_id, owner: external.map { |name| name.split("/").first }, repo: external.map { |name| name.split("/").last })
+      projects.to_a.append(project).index_by(&:full_name)
+    end
+
+    def issue_facts(projects)
+      Issue.joins(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil)
+        .pluck("projects.owner", "projects.repo", "issues.github_number")
+        .map { |owner, repo, number| { repository: "#{owner}/#{repo}", number: } }
+    end
+
+    def repository_for(reference)
+      reference.split("#", 2).first
     end
 
     def explicit_references(body)

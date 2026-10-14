@@ -59,9 +59,9 @@ intents, with each intent's receipt making its own membership explicit.
 Run-local receipts do not cover an RDR authored outside Paid, a partially
 completed planning run, or repository metadata that drifted after a merge.
 `FeatureIntents::ReconcileDesignArtifacts` is the bounded, deterministic
-backstop for those cases. At a pinned repository revision it discovers the
-project's configured RDR paths and open design PRs, then compares explicit
-qualified issue references, persisted issue identities, and body/native-tree
+backstop for those cases. At a pinned repository revision it discovers
+conventional `docs/rdrs/RDR-*.md` artifacts and open design PRs, then compares
+explicit qualified issue references, persisted issue identities, and body/native-tree
 relationships. It produces one deduplicated finding per artifact/revision and
 reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.

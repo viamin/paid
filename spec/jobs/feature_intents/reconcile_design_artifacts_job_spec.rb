@@ -26,4 +26,22 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
 
     expect(DesignArtifactFinding.count).to eq(0)
   end
+
+  it "treats an unmirrored cross-repository reference as unverifiable" do
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "Implements shared/platform#11")
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "unverifiable", artifact_path: "pull/100")
+  end
+
+  it "includes a locally mirrored cross-repository issue in coverage" do
+    shared_project = create(:project, account: project.account, owner: "shared", repo: "platform")
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "Implements shared/platform#11")
+    create(:issue, project: shared_project, github_number: 11)
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
 end
