@@ -248,7 +248,11 @@ class ChatSessionsController < ApplicationController
     )
 
     respond_to do |format|
-      format.html { redirect_to chat_session_path(@chat_session, format: :html), notice: "Project cloned into the workspace." }
+      # @spec CHAT-SESSION-REOPEN-006
+      format.html do
+        redirect_to chat_session_path(@chat_session, format: :html, workspace_cloned: true),
+          notice: "Project cloned into the workspace."
+      end
       format.json { render json: result }
     end
   rescue ActiveRecord::RecordNotFound, ArgumentError => e
