@@ -69,14 +69,14 @@ The guard is a no-op unless **both** of the following hold, preserving
 
 1. The merging issue is linked to a `FeatureIntent` (`issue.feature_intent`,
    via `feature_intent_issues`).
-2. The project has opted into the `approved_intent_amendments` feature flag —
-   the same RDR-067 mode flag `DesignAmendments::Open` already gates. Per the
+2. The project has opted into the complete enforcement pair:
+   `approved_intent_amendments` and `intent_conformance_enforcement`. Per the
    rollout instruction, operators MUST limit enablement until #3870 supplies
    representative accuracy and telemetry evidence. The production scanner now
    schedules a fresh independent review for each eligible PR-head/design-
    revision identity; features without populated approved design-document paths
-   still fail closed with `not_evaluated`. This segment does not introduce a
-   second flag.
+   still fail closed with `not_evaluated`. A partial amendment-only rollout
+   does not activate the merge guard.
 
 When either condition is false, `VerifyAtMerge.call` returns `nil` and the
 activity proceeds exactly as it did before this change.

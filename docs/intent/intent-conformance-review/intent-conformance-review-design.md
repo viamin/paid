@@ -71,14 +71,15 @@ and consumes the field.
 ### Applicability (rollout guard)
 
 `ReviewRun` is a no-op (returns `nil`, persists nothing) unless the PR is
-linked to a Feature Intent and either full amendment mode or the separate
-read-only shadow-review flag is enabled:
+linked to a Feature Intent and either the complete enforcement pair or the
+separate read-only shadow-review flag is enabled:
 
 1. The PR issue is not linked to a `FeatureIntent`.
-2. The project has opted into neither `approved_intent_amendments` nor
-   `intent_conformance_shadow_review`.
+2. The project has opted into neither `intent_conformance_shadow_review` nor
+   the complete enforcement pair: `approved_intent_amendments` and
+   `intent_conformance_enforcement`.
 
-`approved_intent_amendments` remains the exact gate for `VerifyAtMerge`.
+The complete enforcement pair is also the exact gate for `VerifyAtMerge`.
 `intent_conformance_shadow_review` intentionally runs only this reviewer and
 its scheduler, allowing #3870 to collect verdicts before any merge decision
 can be affected.

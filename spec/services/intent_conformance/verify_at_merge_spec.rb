@@ -21,7 +21,10 @@ RSpec.describe IntentConformance::VerifyAtMerge do
   end
 
   before do
-    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    project.account.tenant_setting!.update!(features: {
+      "approved_intent_amendments" => true,
+      "intent_conformance_enforcement" => true
+    })
   end
 
   # @spec INTENT-MERGE-GUARD-001
@@ -32,13 +35,25 @@ RSpec.describe IntentConformance::VerifyAtMerge do
   end
 
   # @spec INTENT-MERGE-GUARD-001
-  context "when the project has not opted into the rollout flag" do
+  context "when the project has not opted into complete enforcement" do
     before do
       create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
       project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => false })
     end
 
     it "is a no-op even without a verdict" do
+      expect(call).to be_nil
+    end
+  end
+
+  # @spec INTENT-MERGE-GUARD-001
+  context "when only the amendment flow is enabled" do
+    before do
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    end
+
+    it "does not apply the final merge guard without enforcement" do
       expect(call).to be_nil
     end
   end
