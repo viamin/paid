@@ -639,7 +639,8 @@ arrows:
     specs: docs/intent/tdd-test-review-prs/tdd-test-review-prs-specs.md
     parent: PAID
     taxonomy: runtime
-    audited: 2026-08-23
+    status: OK
+    audited: 2026-10-14
   review-verification:
     title: Independent Verification of PR Review Findings
     path: docs/intent/review-verification/review-verification-design.md

@@ -864,16 +864,18 @@ module Activities
       return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
-      if issue.effective_tdd_review_state == "approved" &&
+      review_state = effective_tdd_review_state_for_current_revision(project, issue)
+
+      if review_state == "approved" &&
           tdd_implementation_started_for_current_revision?(project, issue)
         return :not_applicable
       end
 
       return tdd_followup_trigger(issue,
         type: "tdd_tests_approved",
-        details: "Test review approved; implementation may begin") if issue.effective_tdd_review_state == "approved"
+        details: "Test review approved; implementation may begin") if review_state == "approved"
 
-      return tdd_rejection_trigger(project, client, issue, pr_data:) if issue.effective_tdd_review_state == "changes_requested"
+      return tdd_rejection_trigger(project, client, issue, pr_data:) if review_state == "changes_requested"
 
       return nil if tdd_mode == "strict"
 
@@ -964,9 +966,32 @@ module Activities
       timestamp >= baseline.completed_at
     end
 
+    # @spec TDD-PR-007
+    def effective_tdd_review_state_for_current_revision(project, issue)
+      state = issue.effective_tdd_review_state
+      return state unless state.in?(%w[approved changes_requested])
+      return state if issue.local_control_state?
+
+      verdict_label = state == "approved" ? TDD_TESTS_APPROVED_LABEL : TDD_TEST_CHANGES_REQUESTED_LABEL
+      return state if tdd_verdict_current_for_revision?(project, issue, verdict_label)
+
+      "ready_for_review"
+    end
+
+    def tdd_verdict_current_for_revision?(project, issue, verdict_label)
+      revision = latest_completed_tdd_test_revision_run(project, issue)
+      return true unless revision&.completed_at
+
+      applied_at = latest_label_applied_at(project, issue, verdict_label)
+      return true unless applied_at
+
+      applied_at >= revision.completed_at
+    end
+
     def latest_completed_tdd_test_revision_run(project, issue)
       pr_run_history_scope(project, issue)
-        .where(goal: "create_pr")
+        .where(goal: "create_pr", tdd_phase: [ nil, "test_writing" ])
+        .where.not(result_commit_sha: nil)
         .completed
         .order(completed_at: :desc)
         .first

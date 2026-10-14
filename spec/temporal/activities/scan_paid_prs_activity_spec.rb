@@ -12057,6 +12057,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).to include("queue_create_pr_run")
     end
 
+    it "does not requeue a stale rejection after a revised test commit" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
+      revised_at = 30.minutes.ago
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_writing",
+        result_commit_sha: "abc123",
+        completed_at: revised_at)
+      allow(github_client).to receive(:issue_events).with(project.full_name, 42).and_return([
+        OpenStruct.new(event: "labeled", label: OpenStruct.new(name: "paid-test-changes-requested"), created_at: 2.hours.ago)
+      ])
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).to eq([])
+    end
+
+    it "routes a rejection recorded after the revised test commit back to test writing" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
+      create(:agent_run, :completed,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_writing",
+        result_commit_sha: "abc123",
+        completed_at: 2.hours.ago)
+      allow(github_client).to receive(:issue_events).with(project.full_name, 42).and_return([
+        OpenStruct.new(event: "labeled", label: OpenStruct.new(name: "paid-test-changes-requested"), created_at: 1.hour.ago)
+      ])
+      stub_current_non_strict_tdd_review(review_body: "Cover the nil edge case.")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_test_changes_requested")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+    end
+
     it "defers an exhausted rejected-test revision when review threads are unavailable" do # @spec TDD-PR-007
       project.update!(tdd_mode: "strict", max_draft_review_rounds: 10)
       pull_request.update!(
