@@ -20,6 +20,11 @@ and the run-scoped file boundary checks in
   runs. The label marks the PR as waiting at the red-phase gate regardless of
   whether the project uses strict or non-strict TDD; non-strict mode will later
   replace it with an automated verdict.
+- Revision reset: a successful test-writing publication replaces either prior
+  verdict with `paid-tests-ready-for-review`. This happens only after a commit
+  was actually published. If a GitHub label operation partially fails, Paid
+  leaves the local verdict unchanged and the scanner treats the older verdict
+  as stale rather than scheduling another revision for it.
 - Non-strict verdict freshness: a `paid_agent` approval or change request only
   counts for the current test revision. Returning a PR from
   `paid-tests-approved` back to `paid-tests-ready-for-review` invalidates older

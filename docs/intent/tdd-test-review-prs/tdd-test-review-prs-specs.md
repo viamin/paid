@@ -51,3 +51,16 @@
   `app/controllers/api/github_proxy_controller.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/requests/api/github_proxy_spec.rb`.
+
+- [x] **TDD-PR-007** — When a `test_writing` run publishes a new commit to a
+  TDD pull request, Paid SHALL replace any preceding approval or changes
+  requested verdict with `paid-tests-ready-for-review`, both for GitHub-label
+  and local-control projects. A no-output run or a failed/partial remote label
+  transition SHALL NOT claim a new local revision; an older rejection SHALL
+  not trigger another test-writing run after a newer revision exists.
+  *Code:* `app/services/tdd/publish_test_revision.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/services/tdd/publish_test_revision_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

@@ -306,6 +306,21 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
     end
 
+    it "returns a revised test-writing commit to fresh review" do # @spec TDD-PR-007
+      agent_run.update!(tdd_phase: "test_writing")
+      issue.update!(labels: [ "paid-test-changes-requested" ])
+      allow(github_client).to receive(:add_labels_to_issue)
+      allow(github_client).to receive(:remove_label_from_issue)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ "paid-tests-ready-for-review" ])
+      expect(github_client).to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-test-changes-requested")
+      expect(issue.reload.labels).to contain_exactly("paid-tests-ready-for-review")
+    end
+
     it "enqueues ProcessRunQueueJob" do
       expect { activity.execute(agent_run_id: agent_run.id) }
         .to have_enqueued_job(ProcessRunQueueJob)
