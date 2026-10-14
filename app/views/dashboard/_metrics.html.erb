@@ -230,13 +230,13 @@
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-            $<%= format("%.2f", cost_tokens[:total_cost_cents] / 100.0) %>
+            <%= number_to_currency(cost_tokens[:total_cost_cents] / 100.0, precision: 2, delimiter: ",") %>
           </dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Cost (30 days)</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-            $<%= format("%.2f", cost_tokens[:trailing_30d_cost_cents] / 100.0) %>
+            <%= number_to_currency(cost_tokens[:trailing_30d_cost_cents] / 100.0, precision: 2, delimiter: ",") %>
           </dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
@@ -248,7 +248,7 @@
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-            $<%= format("%.2f", cost_tokens[:avg_cost_per_run_cents] / 100.0) %>
+            <%= number_to_currency(cost_tokens[:avg_cost_per_run_cents] / 100.0, precision: 2, delimiter: ",") %>
           </dd>
         </div>
       </dl>
@@ -465,7 +465,7 @@
             <% cost_by_project_with_data.each do |project_name, cost_cents| %>
               <tr>
                 <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= project_name %></td>
-                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">$<%= format("%.2f", cost_cents / 100.0) %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= number_to_currency(cost_cents / 100.0, precision: 2, delimiter: ",") %></td>
               </tr>
             <% end %>
           </tbody>
