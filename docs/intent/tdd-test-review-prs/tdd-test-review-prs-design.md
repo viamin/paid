@@ -38,6 +38,13 @@ and the run-scoped file boundary checks in
     docs/spec IDs, tests-first evidence, and the captured coherence-check line.
 - Refreshing those sections on existing-PR follow-up runs so later test-writing
   passes keep the draft PR current rather than leaving stale outlines in place.
+- Rejected-test revision handoff: the scanner snapshots the trusted, current
+  review body and unresolved thread evidence that caused a rejection into the
+  follow-up run. The prompt renders that snapshot as a dedicated test-revision
+  task with the red-phase completion condition. If no trusted current evidence
+  is accessible, or a `no_changes` run has already consumed that same snapshot,
+  the scanner escalates the PR for manual review instead of queueing an empty
+  follow-up indefinitely.
 
 ## Test outline rendering
 
