@@ -76,7 +76,7 @@ module Onboarding
       ActionCable.server.broadcast("chat_session:#{session.id}", {
         type: "onboarding_retry",
         message: ConfigureChatRunner::ASYNC_RETRY_MESSAGE,
-        redirect_url: Rails.application.routes.url_helpers.onboarding_path(chat_api_key_error: "invalid")
+        redirect_url: Rails.application.routes.url_helpers.onboarding_path(onboarding_retry: "invalid")
       })
     end
 
