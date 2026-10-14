@@ -5,7 +5,7 @@ module Tdd
   # shipped a commit. The local record changes only after every remote label
   # operation succeeds, so a partial GitHub failure cannot masquerade as a
   # fresh reviewable revision.
-  # @spec TDD-PR-007
+  # @spec TDD-PR-007 UPSTREAM-GATE-006
   class PublishTestRevision
     READY_LABEL = Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL
     VERDICT_LABELS = [
@@ -32,6 +32,7 @@ module Tdd
       return failure(:no_pull_request) if pull_request_number.blank?
 
       return update_local_gate if project.label_integration_mode == "ignored"
+      return failure(:upstream_labeling_disabled) unless project.upstream_feature_enabled?(:upstream_issue_labeling)
       return failure(:no_github_client) unless project.client
 
       update_remote_labels

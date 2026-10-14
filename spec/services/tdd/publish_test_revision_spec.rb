@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec TDD-PR-007
+# @spec TDD-PR-007 UPSTREAM-GATE-006
 RSpec.describe Tdd::PublishTestRevision do
   let(:project) { create(:project, owner: "acme", repo: "alpha") }
   let(:github_client) { instance_double(GithubClient) }
@@ -75,6 +75,32 @@ RSpec.describe Tdd::PublishTestRevision do
 
   it "resets the local control gate for a revised test commit" do
     project.update!(label_integration_mode: "ignored")
+
+    result = described_class.call(agent_run: agent_run)
+
+    expect(result).to be_success
+    expect(pull_request.reload.tdd_review_state).to eq("ready_for_review")
+    expect(github_client).not_to have_received(:add_labels_to_issue)
+  end
+
+  it "does not write test-review labels to an upstream pull request" do
+    project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+
+    result = described_class.call(agent_run: agent_run)
+
+    expect(result).not_to be_success
+    expect(result.error).to eq(:upstream_labeling_disabled)
+    expect(github_client).not_to have_received(:add_labels_to_issue)
+    expect(github_client).not_to have_received(:remove_label_from_issue)
+    expect(pull_request.reload.labels).to contain_exactly("paid-test-changes-requested")
+  end
+
+  it "resets the local control gate for an upstream pull request" do
+    project.update!(
+      label_integration_mode: "ignored",
+      pr_target: "upstream",
+      upstream_full_name: "upstream/alpha"
+    )
 
     result = described_class.call(agent_run: agent_run)
 
