@@ -14,6 +14,16 @@ RSpec.describe AppleVerificationAttempts::GuestResult do
   end
 
   # @spec APPLE-ATTEMPT-009
+  it "does not let an advisory operation satisfy a required check" do
+    revision = build_stubbed(:apple_verification_workflow_revision, required_checks: [ "ios-app.tests" ])
+    manifest = { "operations" => [ { "type" => "test", "payload" => { "scheme" => "App" }, "required" => false } ] }
+
+    result = described_class.call(revision:, manifest:, operations: [ { "type" => "test", "status" => "succeeded" } ])
+
+    expect(result).to have_attributes(status: "failed", failure_classification: "project_configuration")
+  end
+
+  # @spec APPLE-ATTEMPT-009
   it "classifies a failed test operation" do
     revision = build_stubbed(:apple_verification_workflow_revision, required_checks: [ "ios-app.tests" ])
     manifest = { "operations" => [ { "type" => "test", "payload" => { "scheme" => "App" } } ] }
@@ -21,6 +31,29 @@ RSpec.describe AppleVerificationAttempts::GuestResult do
     result = described_class.call(revision:, manifest:, operations: [ { "type" => "test", "status" => "failed" } ])
 
     expect(result).to have_attributes(status: "failed", failure_classification: "test_assertion")
+  end
+
+  # @spec APPLE-ATTEMPT-012
+  it "succeeds when advisory test and capture operations fail after required work succeeds" do
+    revision = build_stubbed(:apple_verification_workflow_revision, required_checks: [ "ios-app.tests" ])
+    manifest = {
+      "operations" => [
+        { "type" => "build", "payload" => { "scheme" => "App" }, "required" => true },
+        { "type" => "test", "payload" => { "scheme" => "App" }, "required" => true },
+        { "type" => "test", "payload" => { "scheme" => "Advisory" }, "required" => false },
+        { "type" => "capture", "payload" => { "platform" => "ios", "target" => "simulator_screen", "name" => "advisory" }, "required" => false }
+      ]
+    }
+    operations = [
+      { "type" => "build", "status" => "succeeded" },
+      { "type" => "test", "status" => "succeeded" },
+      { "type" => "test", "status" => "failed" },
+      { "type" => "capture", "status" => "failed" }
+    ]
+
+    result = described_class.call(revision:, manifest:, operations:)
+
+    expect(result).to have_attributes(status: "succeeded", failure_classification: nil)
   end
 
   # @spec APPLE-ATTEMPT-009

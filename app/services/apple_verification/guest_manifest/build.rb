@@ -25,7 +25,7 @@ module AppleVerification
       private
 
       def materialize_source
-        operation("materialize_source", "digest" => @attempt.source_digest)
+        operation("materialize_source", { "digest" => @attempt.source_digest })
       end
 
       def profile_operations
@@ -49,13 +49,14 @@ module AppleVerification
       end
 
       def test_operations(profile)
-        [ operation("test", scheme_payload(profile)) ] unless profile.tests_required.nil?
+        [ operation("test", scheme_payload(profile), required: profile.tests_required) ] unless profile.tests_required.nil?
       end
 
       def simulator_operations(profile)
         return [] unless profile.platform.in?(%w[ios ipados]) && profile.captures.any?
 
-        [ operation("boot_simulator", "destination" => profile.worker.simulator), operation("install_app", "bundle_id" => profile.xcode.bundle_id) ]
+        required = profile.captures.any?(&:required)
+        [ operation("boot_simulator", { "destination" => profile.worker.simulator }, required:), operation("install_app", { "bundle_id" => profile.xcode.bundle_id }, required:) ]
       end
 
       def capture_operations(profile)
@@ -63,10 +64,10 @@ module AppleVerification
       end
 
       def flow_operation(profile, capture, step)
-        return operation("launch_app", "bundle_id" => profile.xcode.bundle_id) if step.operation == "launch_app"
-        return operation("capture", capture_payload(profile, capture, step)) if step.operation == "capture"
+        return operation("launch_app", { "bundle_id" => profile.xcode.bundle_id }, required: capture.required) if step.operation == "launch_app"
+        return operation("capture", capture_payload(profile, capture, step), required: capture.required) if step.operation == "capture"
 
-        operation("ui_action", ui_action_payload(step))
+        operation("ui_action", ui_action_payload(step), required: capture.required)
       end
 
       def scheme_payload(profile)
@@ -97,8 +98,8 @@ module AppleVerification
         operation("export_artifacts")
       end
 
-      def operation(type, payload = {})
-        { "type" => type, "payload" => payload }
+      def operation(type, payload = {}, required: true)
+        { "type" => type, "payload" => payload, "required" => required }
       end
     end
   end

@@ -10,6 +10,7 @@ module AppleVerification
     CAPTURE_STAGES = %w[launch readiness action selection export].freeze
     ROOT_FIELDS = %w[version source_lanes operations].freeze
     OPERATION_FIELDS = %w[type payload].freeze
+    OPERATION_OPTIONAL_FIELDS = %w[required].freeze
     PAYLOAD_FIELDS = {
       "materialize_source" => %w[digest],
       "resolve_swift_packages" => [],
@@ -71,7 +72,8 @@ module AppleVerification
 
         type = operation["type"]
         raise UnsupportedOperationError, "unsupported guest operation #{type.inspect}" unless OPERATION_TYPES.include?(type)
-        validate_fields!(operation, OPERATION_FIELDS, "operation")
+        validate_fields!(operation, OPERATION_FIELDS, "operation", optional_fields: OPERATION_OPTIONAL_FIELDS)
+        validate_required!(operation)
         validate_payload!(type, operation["payload"])
         validate_capture_payload!(operation.fetch("payload")) if type == "capture"
       end
@@ -83,6 +85,13 @@ module AppleVerification
         return validate_ui_action_payload!(payload) if type == "ui_action"
 
         validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload")
+      end
+
+      def validate_required!(operation)
+        return unless operation.key?("required")
+        return if [ true, false ].include?(operation["required"])
+
+        raise InvalidManifestError, "operation required must be true or false"
       end
 
       def validate_fields!(value, allowed_fields, name, optional_fields: [])

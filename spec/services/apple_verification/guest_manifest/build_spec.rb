@@ -38,6 +38,32 @@ RSpec.describe AppleVerification::GuestManifest::Build do
     expect(operations[8].dig("payload", "target")).to eq("app_window")
   end
 
+  # @spec APPLE-WORKER-013
+  it "marks advisory tests and capture flows without suppressing their dispatch" do
+    attempt = attempt_for(<<~YAML)
+      version: 1
+      profiles:
+        app:
+          platform: ios
+          worker:
+            simulator: iPhone 17
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+            bundle_id: dev.paid.app
+          tests:
+            required: false
+          captures:
+            - id: advisory-screen
+              required: false
+              flow: [ { launch_app: {} }, { capture: {} } ]
+    YAML
+
+    operations = described_class.call(attempt:)
+
+    expect(operations.filter { |operation| %w[test boot_simulator install_app launch_app capture].include?(operation.fetch("type")) }).to all(include("required" => false))
+  end
+
   def attempt_for(content)
     attempt = create(:apple_verification_attempt)
     revision = attempt.apple_verification_workflow_revision
