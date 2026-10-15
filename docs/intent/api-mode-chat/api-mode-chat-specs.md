@@ -315,6 +315,18 @@
   *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
   *Code:* `app/javascript/controllers/chat_popup_controller.js`.
 
+- [x] **CHAT-API-025** — When a user follows a same-origin navigation from a
+  popup or full-page chat, Paid SHALL hand that chat session to the global
+  popup and open it on the destination page, without changing the user's
+  persistent "Keep Chat Open" preference. The navigation SHALL accept a
+  normal link `href` or a `data-chat-navigate-url` value and SHALL preserve a
+  URL fragment so the browser scrolls to the specified destination section.
+  *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`,
+  `spec/lib/chat_popup_controller_node_harness_spec.rb`.
+  *Code:* `app/javascript/controllers/chat_controller.js`,
+  `app/javascript/controllers/chat_popup_controller.js`,
+  `app/views/layouts/application.html.erb`.
+
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
   client for a project, the system SHALL prefer the project's own credential

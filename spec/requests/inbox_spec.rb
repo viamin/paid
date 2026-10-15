@@ -1182,6 +1182,35 @@ RSpec.describe "Inbox" do
     expect(response.body).to include(pr.title)
   end
 
+  # @spec DESIGN-RECONCILIATION-001
+  it "surfaces traceability gaps in the inbox filter and detail pane" do
+    finding = create(:design_artifact_finding, project: project, account: project.account,
+      artifact_path: "docs/rdrs/RDR-063-example.md", evidence: [ "No explicit qualified issue links were found" ])
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    option = document.at_css("input[name='kind'][value='#{Inbox::Queue::TRACEABILITY_GAP_KIND}']")
+    expect(option).to be_present
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("No explicit qualified issue links were found")
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "links traceability-gap pull request artifacts to GitHub pull requests" do
+    finding = create(:design_artifact_finding, project: project, account: project.account,
+      artifact_path: "pull/100")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+
+    expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
+  end
+
   # @spec OPERATOR-INBOX-002J
   it "links the test_review_pending detail pane to the pull request" do
     pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 518)

@@ -30,6 +30,9 @@ have moved elsewhere:
   surfaces distinguish a completed check from an unavailable one. Polling
   failures, disabled checks, and stale evidence must remain visible rather
   than being represented as a healthy empty result.
+- **Design traceability.** Repository design records, tracked delivery work,
+  and Paid's local links must be reconciled from explicit evidence. A failed
+  repository read is unknown coverage, never proof that no work exists.
 - **Orchestration.** Turning a labeled issue into a merged PR is a multi-step
   workflow — plan, execute in an isolated container, open a PR, respond to
   review — that must be durable, resumable, and parallelizable.

@@ -93,7 +93,10 @@ jobs:
         || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
       )
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Browser and PostgreSQL client setup precede a full Rails boot and page
+    # capture. Keep enough headroom for cold GitHub-hosted runners without
+    # weakening the required capture check.
+    timeout-minutes: 30
     permissions:
       contents: read
 

@@ -104,6 +104,15 @@ RSpec.describe Inbox::Availability do
       expect(availability.kind_counts[Inbox::Queue::CHANGE_INTENT_DRAFT_KIND]).to eq(1)
     end
 
+    # @spec DESIGN-RECONCILIATION-001
+    it "counts open traceability gaps" do
+      create(:design_artifact_finding, project: project_a, account: account)
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::TRACEABILITY_GAP_KIND]).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002A
     it "counts merge-approval candidates via the shared signal check" do
       create(

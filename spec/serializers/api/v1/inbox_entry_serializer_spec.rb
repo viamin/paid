@@ -196,6 +196,23 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(tasks: [ "CI is required." ])
     end
 
+    # @spec DESIGN-RECONCILIATION-001
+    it "serializes traceability_gap with the finding's actionable evidence" do
+      finding = create(:design_artifact_finding, project: project,
+        artifact_path: "docs/rdrs/RDR-123.md", revision: "abc123", state: "partial_tree",
+        evidence: [ "Missing linked issue acme/widgets#42" ])
+      entry = build_entry(Inbox::Queue::TRACEABILITY_GAP_KIND, record: finding, tasks: finding.evidence)
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(
+        artifact_path: "docs/rdrs/RDR-123.md",
+        revision: "abc123",
+        state: "partial_tree",
+        evidence: [ "Missing linked issue acme/widgets#42" ]
+      )
+    end
+
     it "raises for an unrecognized kind rather than silently returning an empty payload" do
       entry = build_entry("unknown_kind")
 

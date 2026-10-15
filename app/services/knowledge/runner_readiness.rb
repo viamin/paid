@@ -6,7 +6,7 @@ module Knowledge
   # information that knowledge execution uses to select its credential source.
   # @spec KNOWLEDGE-DASHBOARD-001
   class RunnerReadiness
-    Result = Data.define(:status, :credential_source, :credential_service, :validated_with_provider)
+    Result = Data.define(:status, :credential_source, :credential_service, :credential_name, :validated_with_provider)
 
     def self.call(...)
       new(...).call
@@ -22,7 +22,7 @@ module Knowledge
     def call
       return unsupported unless supported?
 
-      credential || missing_credential
+      credential
     end
 
     private
@@ -38,20 +38,12 @@ module Knowledge
     end
 
     def credential
-      return embedding_credential if operation == :embedding
-
-      selected_credential
-    end
-
-    def embedding_credential
-      selected_credential
-    end
-
-    def selected_credential
       selection = CredentialSelection.call(owner:, operation:, runner:, credentials: provider_api_keys)
-      return unless selection.status == :ready
+      return ready(selection) if selection.status == :ready
+      return invalid_credential(selection) if selection.status == :invalid_credential
+      return unsupported if selection.status == :unsupported_transport
 
-      ready(source: selection.source.to_s, service: selection.service_type)
+      missing_credential(selection.service_type)
     end
 
     def provider_api_keys
@@ -62,16 +54,32 @@ module Knowledge
 
     attr_reader :credential_availability
 
-    def ready(source:, service:)
-      Result.new(status: "ready", credential_source: source, credential_service: service, validated_with_provider: false)
+    def ready(selection)
+      Result.new(
+        status: "ready",
+        credential_source: selection.source.to_s,
+        credential_service: selection.service_type,
+        credential_name: selection.api_key_record&.name || "Platform credential",
+        validated_with_provider: false
+      )
     end
 
-    def missing_credential
-      Result.new(status: "missing_credential", credential_source: nil, credential_service: nil, validated_with_provider: false)
+    def invalid_credential(selection)
+      Result.new(
+        status: "invalid_credential",
+        credential_source: selection.source.to_s,
+        credential_service: selection.service_type,
+        credential_name: nil,
+        validated_with_provider: false
+      )
+    end
+
+    def missing_credential(service = nil)
+      Result.new(status: "missing_credential", credential_source: nil, credential_service: service, credential_name: nil, validated_with_provider: false)
     end
 
     def unsupported
-      Result.new(status: "unsupported_transport", credential_source: nil, credential_service: nil, validated_with_provider: false)
+      Result.new(status: "unsupported_transport", credential_source: nil, credential_service: nil, credential_name: nil, validated_with_provider: false)
     end
   end
 end

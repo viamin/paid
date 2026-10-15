@@ -68,11 +68,13 @@ prefix: PROJECT-READINESS
   a link to the run details.
   It SHALL re-evaluate only after GitHub reports that the bootstrap PR merged,
   so the next snapshot is target-branch evidence.
-  *Code:* `Projects::AgentRunsController`, `AgentRun`, `Inbox::Queue`,
+  *Code:* `Projects::Readiness::Bootstrap`, `Projects::AgentRunsController`,
+  `Tools::TriggerReadinessBootstrap`, `AgentRun`, `Inbox::Queue`,
   `dashboard/_inbox_detail_project_setup_pending`,
   `Activities::MarkAgentRunFailedActivity`, `RetryFailedManualRunJob`,
   `Issues::UpsertFromGithub`.
   *Test:* `spec/requests/agent_runs_spec.rb`,
+  `spec/mcp/tools/trigger_readiness_bootstrap_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
   `spec/jobs/retry_failed_manual_run_job_spec.rb`,

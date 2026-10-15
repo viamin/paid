@@ -145,6 +145,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily bounded reconciliation of legacy partial closeouts"
     },
+    design_artifact_reconciliation_sweep: {
+      cron: "0 6 * * *",
+      class: "FeatureIntents::DesignArtifactReconciliationSweepJob",
+      queue: "maintenance",
+      description: "Daily bounded reconciliation of open design pull requests against issue trees"
+    },
     ab_test_analysis: {
       cron: "0 */4 * * *",
       class: "AbTestAnalysisCheckJob",

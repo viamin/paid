@@ -48,6 +48,10 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
+  it "allows enough time for the full capture environment to initialize" do
+    expect(workflow.fetch("jobs").fetch("capture").fetch("timeout-minutes")).to eq(30)
+  end
+
   it "pins the detect job to the repo Ruby version before running the UI detector" do
     expect(detect_step("Set up Ruby").fetch("uses")).to match(/\Aruby\/setup-ruby@[0-9a-f]{40}\z/)
     expect(detect_step("Set up Ruby").fetch("with")).to include(

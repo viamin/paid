@@ -433,6 +433,27 @@ class UserSetting < ApplicationRecord
     self.issue_analysis_fallback_runners = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
+  def kb_embedding_fallback_runners_csv
+    Array(kb_embedding_fallback_runners).join(", ")
+  end
+
+  def kb_embedding_fallback_runners_csv=(value)
+    self.kb_embedding_fallback_runners = parse_runner_csv(value)
+  end
+
+  def kb_chat_fallback_runners_csv
+    Array(kb_chat_fallback_runners).join(", ")
+  end
+
+  def kb_chat_fallback_runners_csv=(value)
+    self.kb_chat_fallback_runners = parse_runner_csv(value)
+  end
+
+  def knowledge_runner_options(operation:)
+    supported = operation.to_sym == :embedding ? KB_EMBEDDING_RUNNERS : KB_CHAT_RUNNERS
+    supported.map { |key| [ Runner.display_name_for(key), key ] }
+  end
+
   # Select options ([label, key]) for the issue analysis runner dropdown: the
   # owner's chat-enabled runners plus all other supported chat runners, so a
   # user can pin a specific runner or leave it blank to use all chat runners.
@@ -786,6 +807,10 @@ class UserSetting < ApplicationRecord
     return if KB_EMBEDDING_RUNNERS.include?(kb_embedding_runner)
 
     errors.add(:kb_embedding_runner, "is not a supported knowledge embedding runner")
+  end
+
+  def parse_runner_csv(value)
+    value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
   def validate_kb_embedding_fallback_runners

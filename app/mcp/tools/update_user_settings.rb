@@ -45,6 +45,8 @@ module Tools
       kb_embedding_runner
       kb_embedding_provider_api_key_id
       kb_embedding_fallback_runners
+      kb_embedding_model
+      kb_embedding_dimensions
       kb_chat_runner
       kb_chat_provider_api_key_id
       kb_chat_fallback_runners
