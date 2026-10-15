@@ -111,6 +111,12 @@ What ships today:
   A full-page navigation restores the same persisted conversation only while
   that preference is enabled; otherwise the popup starts closed. Explicit
   dismissal persists closed without discarding the selected session.
+- A same-origin navigation initiated from either chat surface explicitly hands
+  its active session to the global popup for the destination load. Chat links
+  may use their normal `href` or a `data-chat-navigate-url` value; the browser
+  performs a full-page navigation so a URL fragment scrolls to the requested
+  destination element. This one-navigation handoff does not silently enable
+  the user's persistent "Keep Chat Open" preference.
 - API sessions default to inline-only (`container_capability: none`); a
   capability request is a handoff to the RDR-037 workspace lifecycle, not
   behavior shipped by this RDR-028 coverage

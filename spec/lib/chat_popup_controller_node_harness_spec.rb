@@ -124,6 +124,41 @@ class ChatPopupControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-025
+    function runExplicitNavigationHandoffCase() {
+      const localStorage = localStorageWith({
+        "paid:chat-popup:7": JSON.stringify({ open: false, sessionId: 11, keepOpen: false })
+      });
+      const controller = Object.create(ChatPopupController.prototype);
+
+      global.window = { console: { error() {} }, localStorage };
+      controller.accountIdValue = 7;
+      controller.state = controller.readState();
+      controller.followNavigation({ detail: { sessionId: 42 } });
+
+      const pending = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (!pending.open || !pending.followNavigation || pending.sessionId !== 42 || pending.keepOpen) {
+        throw new Error(`Expected an explicit navigation to stage session 42 without changing keep-open, saw ${JSON.stringify(pending)}`);
+      }
+
+      const targets = renderTargets();
+      const destination = Object.create(ChatPopupController.prototype);
+      let loaded = false;
+      destination.accountIdValue = 7;
+      destination.buttonTarget = targets.button;
+      destination.panelTarget = targets.panel;
+      destination.loadPanel = () => { loaded = true; };
+      destination.connect();
+
+      const consumed = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (!loaded || !destination.state.open || destination.state.sessionId !== 42 || targets.panel.classList.contains("hidden")) {
+        throw new Error("Expected the destination to open the handed-off chat session");
+      }
+      if (consumed.followNavigation || consumed.keepOpen || !consumed.open || consumed.sessionId !== 42) {
+        throw new Error(`Expected the one-navigation handoff to be consumed without enabling keep-open, saw ${JSON.stringify(consumed)}`);
+      }
+    }
+
     async function runNewChatSuccessCase() {
       const writes = [];
       const fetchCalls = [];
@@ -299,6 +334,7 @@ class ChatPopupControllerNodeHarness
 
       if (process.argv[1] === "navigation") {
         runNavigationPersistenceCase();
+        runExplicitNavigationHandoffCase();
         return;
       }
 
