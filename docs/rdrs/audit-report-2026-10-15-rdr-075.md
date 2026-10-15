@@ -77,6 +77,23 @@ No test can be cited as passing an RDR-075 behavior, because neither its
 approved EARS claims nor its implementation tests exist. Existing RDR-073 and
 mutation-sweep tests must not be relabelled as maintenance-run proof.
 
+## Validation evidence
+
+- A repository-wide source inspection on 2026-10-15 found no
+  `maintenance_runs`, `maintenance run`, or `general maintenance` implementation
+  outside this audit and index entry. The checked `AgentRun::GOALS`,
+  `FeatureFlags::DEFINITIONS`, schema, controllers, MCP tools, jobs, views, and
+  specs therefore cannot provide behavior-test evidence for this Draft.
+- `bundle exec rubocop` completed with **3,897 files inspected, no offenses**.
+- `bin/coherence-check.mjs` completed: arrow references are valid; its reported
+  reverse orphans, uncovered gap markers, staleness, and untagged-file signals
+  predate and are unrelated to this unimplemented RDR-075 segment.
+- `bundle exec rspec` completed 25,743 examples with one PostgreSQL deadlock in
+  the unrelated `CreateMarketplaceEntries` migration spec and 27 Chromium
+  unavailable pending system specs. A serial retry of
+  `spec/migrations/create_marketplace_entries_spec.rb` passed: **2 examples,
+  0 failures**. Neither result is presented as maintenance behavior evidence.
+
 ## Status, gaps, and rollout decision
 
 **Status: Partially Implemented — planning only.** The focused gaps were
