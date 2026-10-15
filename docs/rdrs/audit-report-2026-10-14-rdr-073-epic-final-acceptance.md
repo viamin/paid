@@ -2,7 +2,7 @@
 
 - **RDR**: [RDR-073: Marketplace Tool Sidecars — Per-Run Hardened Tool
   Provisioning](RDR-073-marketplace-tool-sidecars.md); metadata status remains
-  **Draft**.
+  **Partially Implemented**.
 - **Umbrella**: [#4263](https://github.com/viamin/paid/issues/4263).
 - **Result**: **Final acceptance is not eligible. #4263 remains open.** Only
   the hardened provisioning slice has shipped; the attachment contract, rule
