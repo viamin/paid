@@ -59,7 +59,8 @@
   SHALL reject host paths, provider lifecycle fields, and secret-shaped values.
   *Tests:* `spec/services/apple_verification/result_manifest/build_spec.rb`,
   `spec/services/apple_verification_attempts/provision_spec.rb`
-  *Code:* `AppleVerification::ResultManifest::Build`
+  *Code:* `AppleVerification::ResultManifest::Build`,
+  `AppleVerificationAttempts::Provision`
 
 - [x] **APPLE-TRANSFER-005** — `.xcresult`, build logs, screenshots, and
   diagnostics produced by an attempt SHALL be uploaded through the shared

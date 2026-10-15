@@ -14,10 +14,11 @@ RSpec.describe AppleVerificationAttempts::Provision do
   # @spec APPLE-TRANSFER-001
   # @spec APPLE-TRANSFER-004
   # @spec APPLE-TRANSFER-005
-  it "transports committed source, ingests guest artifacts, and persists the terminal manifest before completion" do
+  it "transports committed source, records workflow checks and screenshot metadata, and persists the terminal manifest before completion" do
     project = create(:project, :with_github_installation)
     attempt = create(:apple_verification_attempt, :committed, status: "provisioning", project:, account: project.account,
       agent_run: create(:agent_run, project:))
+    attempt.update!(started_at: 5.minutes.ago, queue_entered_at: 6.minutes.ago)
     FeatureFlags.enable!(:apple_verification_workers, project:)
     lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
@@ -263,7 +264,15 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(storage).to have_received(:upload_bytes).with(hash_including(attempt_id: attempt.id, kind: "screenshot", name: "screen.png"))
     expect(attempt.apple_verification_artifacts.find_by!(kind: "screenshot").storage_key).to eq("apple-verification/screenshot.png")
     manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
-    expect(manifest.fetch("result")).to include("status" => "failed", "failure_classification" => "project_configuration")
+    expect(manifest.fetch("result")).to include(
+      "status" => "failed",
+      "failure_classification" => "project_configuration",
+      "required_checks" => attempt.apple_verification_workflow_revision.required_checks,
+      "advisory_checks" => attempt.apple_verification_workflow_revision.advisory_checks,
+      "screenshot_metadata" => [ "apple-verification/screenshot.png" ]
+    )
+    expect(manifest.dig("result", "timings", "provisioning_ms")).to be > 0
+    expect(manifest.dig("result", "timings", "running_ms")).to be < manifest.dig("result", "timings", "provisioning_ms")
   end
 
   def guest_result_for(manifest)

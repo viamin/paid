@@ -6,6 +6,7 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-003
   # @spec APPLE-ATTEMPT-006
   # @spec APPLE-ATTEMPT-004
+  # @spec APPLE-TRANSFER-004
   class Provision
     # The timeout monitor runs every five minutes. Keep the request alive for
     # one full sweep after the attempt deadline so the monitor can destroy the
@@ -36,9 +37,10 @@ module AppleVerificationAttempts
       return unless handle
 
       result = dispatch_guest_job(attempt, handle:, source_lanes:)
-      return unless mark_running(attempt)
+      running_at = mark_running(attempt)
+      return unless running_at
 
-      complete_guest_result(attempt, result:, source_lanes:)
+      complete_guest_result(attempt, result:, source_lanes:, running_at:)
     end
 
     private
@@ -118,7 +120,7 @@ module AppleVerificationAttempts
     # a missing or failed required check cannot unblock a completion gate.
     # A dispatch raise leaves the attempt non-terminal for TimeoutMonitor and
     # Recovery.
-    def complete_guest_result(attempt, result:, source_lanes:)
+    def complete_guest_result(attempt, result:, source_lanes:, running_at:)
       attempt.with_lock do
         return if attempt.reload.terminal?
 
@@ -127,15 +129,15 @@ module AppleVerificationAttempts
           manifest: guest_manifest(attempt, source_lanes:),
           operations: result.operations
         )
-        persist_transport_result(attempt, result:, outcome:)
+        persist_transport_result(attempt, result:, outcome:, running_at:)
         completion.call(attempt:, outcome: outcome.status, failure_classification: outcome.failure_classification, lifecycle:)
       end
     end
 
-    def persist_transport_result(attempt, result:, outcome:)
+    def persist_transport_result(attempt, result:, outcome:, running_at:)
       references = artifact_ingestion.call(attempt:, descriptors: artifact_descriptors(result), storage: artifact_storage).references
       persist_artifacts(attempt, references)
-      persist_result_manifest(attempt, references, outcome:)
+      persist_result_manifest(attempt, references, outcome:, running_at:)
     end
 
     def artifact_descriptors(result)
@@ -154,13 +156,16 @@ module AppleVerificationAttempts
       end
     end
 
-    def persist_result_manifest(attempt, references, outcome:)
+    def persist_result_manifest(attempt, references, outcome:, running_at:)
       manifest = result_manifest.call(
         attempt:,
         artifact_references: references,
         status: outcome.status,
         failure_classification: outcome.failure_classification,
-        timings: timings(attempt)
+        required_checks: attempt.apple_verification_workflow_revision.required_checks,
+        advisory_checks: attempt.apple_verification_workflow_revision.advisory_checks,
+        screenshot_metadata: screenshot_metadata(references),
+        timings: timings(attempt, running_at:)
       ).manifest.as_json
       AppleVerificationArtifact.create!(
         apple_verification_attempt: attempt,
@@ -170,14 +175,20 @@ module AppleVerificationAttempts
       )
     end
 
-    def timings(attempt)
+    def screenshot_metadata(references)
+      references.filter_map do |reference|
+        reference.dig("locator", "key") if reference["kind"] == "screenshot"
+      end
+    end
+
+    def timings(attempt, running_at:)
       finished_at = attempt.finished_at || Time.current
       started_at = attempt.started_at || finished_at
       queued_at = attempt.queue_entered_at || started_at
       {
         "queued_ms" => ((started_at - queued_at) * 1000).round,
-        "provisioning_ms" => 0,
-        "running_ms" => ((finished_at - started_at) * 1000).round,
+        "provisioning_ms" => ((running_at - started_at) * 1000).round,
+        "running_ms" => ((finished_at - running_at) * 1000).round,
         "total_ms" => ((finished_at - queued_at) * 1000).round
       }
     end
@@ -186,8 +197,9 @@ module AppleVerificationAttempts
       attempt.with_lock do
         return false if attempt.reload.terminal?
 
+        running_at = Time.current
         attempt.update!(status: "running", started_at: attempt.started_at || Time.current)
-        true
+        running_at
       end
     end
 
