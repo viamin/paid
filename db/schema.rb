@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_030004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_135221) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3908,10 +3908,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_030004) do
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_runners", default: [], null: false
+    t.bigint "kb_chat_provider_api_key_id"
     t.string "kb_chat_runner", default: "claude", null: false
     t.integer "kb_embedding_dimensions", default: 3072, null: false, comment: "Vector dimensions to request from the embedding model. Must match what the chosen kb_embedding_model emits; changing this on a populated knowledge base requires re-embedding."
     t.jsonb "kb_embedding_fallback_runners", default: [], null: false
     t.string "kb_embedding_model", default: "text-embedding-3-large", null: false, comment: "User-configurable embedding model id. Defaults to text-embedding-3-large; users may pick any model from the provider catalog the configured embedding runner serves."
+    t.bigint "kb_embedding_provider_api_key_id"
     t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
@@ -3938,6 +3940,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_030004) do
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["kb_chat_provider_api_key_id"], name: "index_user_settings_on_kb_chat_provider_api_key_id"
+    t.index ["kb_embedding_provider_api_key_id"], name: "index_user_settings_on_kb_embedding_provider_api_key_id"
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
@@ -4369,6 +4373,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_030004) do
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "user_settings", "provider_api_keys", column: "kb_chat_provider_api_key_id", on_delete: :restrict
+  add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
