@@ -7,7 +7,8 @@ class AddConfigurationContentToAppleVerificationWorkflowRevisions < ActiveRecord
   end
 
   def down
-    remove_column :apple_verification_workflow_revisions, :configuration_content if column_exists?(:apple_verification_workflow_revisions, :configuration_content)
+    raise ActiveRecord::IrreversibleMigration,
+      "Cannot restore legacy approved workflow revisions disabled without their configuration content"
   end
 
   private
