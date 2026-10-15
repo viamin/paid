@@ -2205,7 +2205,7 @@ RSpec.describe GithubClient do
     # @spec TEST-SUITE-016
     it "honors Retry-After without waiting in the test process" do
       request = stub_request(:get, "#{api_base}/repos/#{repo}").to_return(
-        { status: 429, headers: { "Retry-After" => "7" } },
+        { status: 503, headers: { "Retry-After" => "7" } },
         { status: 200, body: { full_name: repo }.to_json, headers: { "Content-Type" => "application/json" } }
       )
 
