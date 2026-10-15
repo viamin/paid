@@ -103,3 +103,7 @@ graphs. Reuse stable request account/user/credential/project configuration only
 where overrides preserve its dependencies. Keep scenario records and roles per
 example, and verify graph mutation isolation. Do not disable callbacks or alter
 global factory defaults to reduce counts.
+
+Queue host-saturation setup reuses one project per generated load batch. Host
+occupancy retains a distinct active run and issue for every requested slot;
+other accounts and independently constructed batches remain separate.

@@ -41,7 +41,7 @@ RSpec.describe TestProf::LetItBe do
 
         user.update!(name: "changed in an example")
         create(:agent_run, project: project)
-        github_token.update!(validation_status: "validation_failed")
+        github_token.update!(validation_status: "failed")
       end
     end
   end
