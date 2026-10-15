@@ -1062,6 +1062,8 @@ module Activities
 
     # @spec TDD-PR-007
     def tdd_rejection_trigger(project, client, issue, reviews: nil, unresolved_threads: nil, pr_data: nil)
+      return tdd_draft_review_limit_result(project, client, issue) if draft_review_limit_reached?(project, issue)
+
       feedback = tdd_rejection_feedback(project, client, issue, reviews:, unresolved_threads:, pr_data:)
       return escalate_trigger(issue, reason: "TDD test review requested changes, but no trusted current feedback is accessible") if feedback.blank?
       return escalate_trigger(issue, reason: "TDD test revision reported no changes for the same unresolved feedback") if repeated_tdd_no_changes?(project, issue, feedback)
@@ -1070,6 +1072,17 @@ module Activities
         type: "tdd_test_changes_requested",
         details: "Test review requested changes before implementation",
         feedback: feedback)
+    end
+
+    # A rejected test verdict is an automatic draft follow-up just like CI or
+    # review-bot feedback. Let real human threads fall through to the normal
+    # draft scan, but never let a persistent TDD verdict bypass the hard cap.
+    def tdd_draft_review_limit_result(project, client, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return :skipped if unresolved_threads.nil?
+      return :not_applicable if human_review_thread_triggers(project, unresolved_threads).any?
+
+      escalate_trigger(issue)
     end
 
     def tdd_rejection_feedback(project, client, issue, reviews: nil, unresolved_threads: nil, pr_data: nil)
