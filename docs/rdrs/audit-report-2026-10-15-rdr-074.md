@@ -68,15 +68,13 @@ Required focused follow-ups:
    API/tool bootstrap action with parity to the existing UI action, including
    authorization, deduplication, failures, and accounting.
 
-Both focused issues were created on 2026-10-15. As of this audit, #4255's
-final `## Dependencies` section already contains `Depends on #4325`,
-`Depends on #4463`, and `Depends on #4464`. The intended direction is that
-the umbrella depends on its remaining acceptance gates, so #4463 and #4464
-must not also declare `Depends on #4255`; those reverse links form a cycle
-that keeps all three issues blocked. Remove the reverse links from the focused
-issues while retaining #4255's dependency lines. The focused issues remain
-open acceptance work; this closeout continues to track the umbrella issue
-without closing it.
+Both focused issues were created on 2026-10-15. #4255's final
+`## Dependencies` section contains `Depends on #4325`, `Depends on #4463`,
+and `Depends on #4464`. The intended direction is that the umbrella depends
+on its remaining acceptance gates. The reverse `Depends on #4255` lines were
+removed from #4463 and #4464, resolving the dependency cycle while retaining
+#4255's dependency lines. The focused issues remain open acceptance work; this
+closeout continues to track the umbrella issue without closing it.
 
 ## Rollout-guard disposition
 
