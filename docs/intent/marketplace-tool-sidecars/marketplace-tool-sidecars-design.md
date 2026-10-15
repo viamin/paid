@@ -43,6 +43,11 @@ with `"npx"` (stdio in-container), `"docker_image"` (MCP url sidecar on
   built-in families, `cap_add` restricted to `SAFE_OVERRIDE_CAPABILITIES`).
 - Tracks the container ID on `AgentRun#tool_sidecar_container_ids` so retries
   adopt existing sidecars and run cleanup removes them.
+- Records a run-scoped endpoint manifest on `AgentRun#tool_sidecar_endpoints`
+  only after each tool passes its health probe. `Containers::Provision` passes
+  that manifest to the agent as `PAID_TOOL_SIDECAR_ENDPOINTS`, a JSON array of
+  `{name, hostname, port, url}` objects. The variable is absent when no tools
+  provision successfully, and cleanup clears the persisted manifest.
 - Labels each container `paid.tool_sidecar=true`; capacity inventory also uses
   that label and the persisted IDs to retain sidecar resource usage in the
   paid-agent bucket without counting a sidecar as an additional running agent.
@@ -81,8 +86,6 @@ in `FeatureFlags::DEFINITIONS` and is checked against the run's project.
   registered as MCP servers; they are exposed via the per-run DNS alias
   and `PAID_SERVICE_HARDENING` style configuration, not the MCP url server
   list.
-- **Not endpoint exposure.** Phase 4 makes the resulting endpoint explicitly
-  available to agent prompts and environment construction. This segment uses
-  the existing `ProvisionMcpServersActivity` → `LocalDockerRunner` path for
-  provisioning and cleanup, so tool sidecars have the same run lifecycle as
-  MCP sidecars without gaining MCP registration semantics.
+- **Not MCP semantics.** `PAID_TOOL_SIDECAR_ENDPOINTS` is a runtime contract,
+  not an MCP configuration source. Tool sidecars remain absent from
+  `mcp_provisioned_servers`, including its `url_servers` list.

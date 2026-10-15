@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_102522) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -372,6 +372,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_102522) do
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
     t.jsonb "tool_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of marketplace tool sidecars provisioned for this run"
+    t.jsonb "tool_sidecar_endpoints", default: [], null: false, comment: "Run-scoped endpoint manifest for provisioned marketplace tool sidecars"
     t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.integer "turns_completed", default: 0, null: false, comment: "Number of agent turns completed, tracked via streaming JSONL progress events"
     t.datetime "updated_at", null: false

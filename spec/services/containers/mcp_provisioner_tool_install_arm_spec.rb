@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TOOL-SIDECAR-006
+RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TOOL-SIDECAR-006 # @spec TOOL-SIDECAR-007
   let(:provisioner) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
@@ -128,6 +128,20 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TO
         provisioner.provision(agent_run)
 
         expect(agent_run.reload.tool_sidecar_container_ids).to eq([ "tool-abc123" ])
+      end
+
+      # @spec TOOL-SIDECAR-007
+      it "records a runtime endpoint only after the tool is provisioned" do
+        provisioner.provision(agent_run)
+
+        expect(agent_run.reload.tool_sidecar_endpoints).to eq([
+          {
+            "name" => "code-search",
+            "hostname" => "paid-tool-code-search-run#{agent_run.id}",
+            "port" => 8080,
+            "url" => "http://paid-tool-code-search-run#{agent_run.id}:8080"
+          }
+        ])
       end
 
       it "does not register the tool as an MCP url server" do
@@ -499,11 +513,14 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TO
       end
 
       it "raises an error and cleans up the partially created container" do
+        agent_run.update_columns(tool_sidecar_endpoints: [ { "name" => "stale-tool" } ])
+
         expect { provisioner.provision(agent_run) }
           .to raise_error(Containers::McpProvisioner::Error, /Health check timeout for tool sidecar/)
 
         expect(docker_container).to have_received(:delete)
         expect(agent_run.reload.tool_sidecar_container_ids).to eq([])
+        expect(agent_run.reload.tool_sidecar_endpoints).to eq([])
       end
     end
   end
@@ -566,6 +583,15 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TO
         provisioner.cleanup_tool_sidecars(agent_run)
 
         expect(agent_run.reload.tool_sidecar_container_ids).to eq([])
+      end
+
+      # @spec TOOL-SIDECAR-007
+      it "clears the runtime endpoint handoff" do
+        agent_run.update_columns(tool_sidecar_endpoints: [ { "name" => "cleanup-tool" } ])
+
+        provisioner.cleanup_tool_sidecars(agent_run)
+
+        expect(agent_run.reload.tool_sidecar_endpoints).to eq([])
       end
     end
   end

@@ -43,3 +43,18 @@
   `Containers::McpProvisioner#image_allowed_for_account?`,
   `Containers::McpProvisioner#account_allowed_images`,
   `Containers::ServiceProvisioner#hardening_overrides_for`.
+
+- [x] **TOOL-SIDECAR-007** — When a marketplace tool sidecar successfully
+  passes provisioning and its health probe, Paid SHALL record its stable
+  per-run `{name, hostname, port, url}` endpoint in
+  `AgentRun#tool_sidecar_endpoints` and SHALL expose the complete manifest to
+  the agent through the non-MCP `PAID_TOOL_SIDECAR_ENDPOINTS` JSON environment
+  variable. The manifest SHALL contain no failed, skipped, or unprovisioned
+  tools; SHALL not alter `mcp_provisioned_servers`; and SHALL be cleared when
+  tool-sidecar cleanup runs or provisioning fails.
+  *Tests:* `spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb`,
+  `spec/services/containers/provision_spec.rb`.
+  *Code:* `Containers::McpProvisioner#provision`,
+  `Containers::McpProvisioner#provision_tool_sidecar`,
+  `Containers::McpProvisioner#cleanup_tool_sidecars`,
+  `Containers::Provision#environment_variables`.
