@@ -8,6 +8,8 @@ module FeatureIntents
   class ReconcileDesignArtifactsJob < ApplicationJob
     include GoodJob::ActiveJobExtensions::Concurrency
 
+    RDR_STATUS_PATTERN = /^\s*(?:\*\*)?status(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/i
+
     queue_as :maintenance
 
     good_job_control_concurrency_with(
@@ -88,7 +90,16 @@ module FeatureIntents
     end
 
     def rdr_artifact(artifact)
-      { path: artifact.path, related_issues: explicit_references(artifact.body), stored_identities: [] }
+      {
+        path: artifact.path,
+        status: rdr_status(artifact.body),
+        related_issues: explicit_references(artifact.body),
+        stored_identities: []
+      }
+    end
+
+    def rdr_status(body)
+      body.to_s[RDR_STATUS_PATTERN, 1]&.strip
     end
 
     def issue_coverage(artifact)

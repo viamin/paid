@@ -29,6 +29,23 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  it "does not treat draft, deferred, or superseded RDRs without links as missing" do
+    [ "Draft", "Deferred", "Superseded" ].each do |status|
+      artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-#{status.downcase}.md",
+        revision: status.downcase,
+        body: "Status: #{status}"
+      )
+      allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+      described_class.perform_now(project.id)
+
+      expect(DesignArtifactFinding.find_by!(artifact_path: artifact.path)).to have_attributes(
+        state: "deferred", status: "open"
+      )
+    end
+  end
+
   it "uses explicit linked issue references to clear the finding" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "Implements #101")
     create(:issue, project:, github_number: 101)
