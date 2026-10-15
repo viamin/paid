@@ -25,4 +25,15 @@ RSpec.describe FeatureIntents::DiscoverRdrArtifacts do
 
     expect(artifacts).to contain_exactly(have_attributes(path: "docs/rdrs", revision: "main", body: nil))
   end
+
+  it "returns an unverifiable artifact when GitHub is temporarily unreachable" do
+    client = instance_double(GithubClient)
+    project = instance_double(Project, full_name: "acme/widget", default_branch: "main", client:)
+    allow(client).to receive(:contents).with("acme/widget", path: "docs/rdrs", ref: "main")
+      .and_raise(Faraday::ConnectionFailed, "connection refused")
+
+    artifacts = described_class.call(project:)
+
+    expect(artifacts).to contain_exactly(have_attributes(path: "docs/rdrs", revision: "main", body: nil))
+  end
 end

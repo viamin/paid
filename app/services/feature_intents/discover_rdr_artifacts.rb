@@ -28,7 +28,7 @@ module FeatureIntents
 
     def entries
       Array(project.client.contents(project.full_name, path: RDRS_PATH, ref: project.default_branch))
-    rescue GithubClient::Error
+    rescue GithubClient::Error, Faraday::Error
       nil
     end
 
@@ -44,7 +44,7 @@ module FeatureIntents
 
     def body_for(path)
       project.client.file_content(project.full_name, path:, ref: project.default_branch)
-    rescue GithubClient::Error
+    rescue GithubClient::Error, Faraday::Error
       nil
     end
   end
