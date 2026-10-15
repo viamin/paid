@@ -241,14 +241,14 @@ keeps the umbrella open with non-closing `Tracks #4309` language.
 
 RDR-075 is reserved for **General Maintenance Runs**, proposed in
 [PR #4308](https://github.com/viamin/paid/pull/4308). Its
-[2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) records
-the evidence-supported **Partially Implemented — planning only** status: the
-design remains an unmerged Draft, no approved maintenance LLD/EARS or runtime
-surface has shipped, the `maintenance_runs` default-off tenant guard must be
-retained when implemented, and the separate RDR-073 tool guard remains
-authoritative. The audit tracks #4326 rather than closing it; its observed
-closed GitHub state must be reconciled before the umbrella's own final
-acceptance can legitimately close it.
+[2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) is
+**Blocked; no closeout status is assigned**: the design remains an unmerged
+Draft, no approved maintenance LLD/EARS or runtime surface has shipped, the
+`maintenance_runs` default-off tenant guard must be retained when implemented,
+and the separate RDR-073 tool guard remains authoritative. The audit tracks
+#4326 rather than closing it; its observed closed GitHub state must be
+reconciled before the umbrella's own final acceptance can legitimately close
+it.
 
 [RDR-076](RDR-076.md) is the consolidated **Accepted** layered-verification
 design. It covers correspondence between approved business intent and its
