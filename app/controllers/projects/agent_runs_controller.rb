@@ -259,26 +259,14 @@ module Projects
     # @spec PROJECT-READINESS-007
     def bootstrap_readiness
       authorize @project, :run_agent?
-      return redirect_to(inbox_path, alert: "This project no longer needs bootstrap setup.") unless @project.tdd_readiness_blocked?
-
-      # Bootstrap runs are issue-less and PR-less, so the existing partial
-      # unique indexes on (project_id, issue_id, goal) and (project_id,
-      # source_pull_request_number, goal) do not protect them. Serialize the
-      # check-and-create on the project row, then rely on
-      # idx_agent_runs_unique_active_bootstrap_readiness as the DB-level
-      # backstop so a missed lock still cannot create a duplicate.
-      @project.with_lock do
-        if @project.agent_runs.where(goal: "bootstrap_readiness", status: AgentRun::DEDUP_BLOCKING_STATUSES).exists?
-          redirect_to(inbox_path, alert: "A bootstrap attempt is already in progress for this project.")
-          return
-        end
-
-        create_run_and_redirect(
-          on_error_path: inbox_path,
-          custom_prompt: Projects::Readiness::BuildBootstrapPrompt.call(project: @project),
-          goal: "bootstrap_readiness"
-        )
-      end
+      run = Projects::Readiness::Bootstrap.call(project: @project, user: current_user)
+      audit_event("agent_run.created", metadata: { agent_run_id: run.id, project_name: @project.name, goal: run.goal })
+      redirect_to project_path(@project), notice: "Agent run queued. It will start automatically when a slot opens."
+    rescue Projects::Readiness::Bootstrap::NotReadyError,
+           Projects::Readiness::Bootstrap::ActiveRunError,
+           Projects::Readiness::Bootstrap::BudgetExceededError,
+           Projects::Readiness::Bootstrap::NoRunnableRunnerError => error
+      redirect_to inbox_path, alert: error.message
     end
 
     def bump_priority
