@@ -295,6 +295,7 @@ profiles:
     xcode:
       project: iOS/ColorMatchingLPS.xcodeproj
       scheme: ColorMatchingLPS
+      bundle_id: dev.viamin.ColorMatchingLPS
     tests:
       required: true
     captures:

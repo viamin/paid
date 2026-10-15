@@ -48,8 +48,10 @@
   `AppleVerification::TartRunner`, `ExecutionRunners::ResourceReconciler`
 - [x] **APPLE-WORKER-011** — When Paid parses `.paid/apple-verification.yml`,
   the system SHALL accept only typed fields describing Xcode projects or
-  workspaces, shared schemes, test plans, Swift Package Manager dependency
-  resolution, iOS/iPadOS Simulator destinations, and native macOS profiles,
+  workspaces, shared schemes, application bundle identifiers, test plans, Swift
+  Package Manager dependency resolution, iOS/iPadOS Simulator destinations,
+  and native macOS profiles; capture profiles SHALL declare a bundle identifier
+  and iOS/iPadOS capture profiles SHALL declare a Simulator destination,
   and SHALL reject an unknown declarative flow operation or an unsupported
   dependency bootstrap system with a deterministic diagnostic before any
   worker is provisioned.

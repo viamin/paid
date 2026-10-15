@@ -49,16 +49,21 @@ durable external VM identity.
 `AppleVerification::ConfigurationParser` reads `.paid/apple-verification.yml`
 into a typed `AppleVerification::Configuration`: one or more named profiles,
 each with a platform, an optional compatible worker constraint, an Xcode
-project or workspace with scheme and optional test plan, an optional
+project or workspace with scheme, application bundle identifier, and optional test plan, an optional
 dependency bootstrap declaration limited to Swift Package Manager, a tests
 block, and declarative UI-flow captures built from an allowlisted operation
 vocabulary. An unknown flow operation or an unsupported bootstrap system
 (CocoaPods, Carthage, Bazel, Tuist) raises a deterministic diagnostic before
-any provisioning is attempted. `AppleVerification::InferConfiguration`
+any provisioning is attempted. Capture profiles must declare an application
+bundle identifier; iOS and iPadOS capture profiles must also declare a Simulator
+destination. The approved configuration therefore determines the guest's
+`boot_simulator`, `install_app`, and `launch_app` operations without treating a
+scheme as a bundle identifier. `AppleVerification::InferConfiguration`
 derives a best-effort starting configuration from a repository file listing —
 detected `.xcodeproj`/`.xcworkspace` projects, their shared schemes and test
-plans — but the result is always advisory until a user reviews and commits
-it; inference never creates an approved revision.
+plans — but omits captures because neither a bundle identifier nor a Simulator
+destination can be safely inferred. The result is always advisory until a user
+reviews and commits it; inference never creates an approved revision.
 `AppleVerificationWorkflowRevisions::SyncFromConfiguration` parses committed
 configuration content, resolves an active worker profile compatible with
 every declared platform, Xcode version constraint, and simulator constraint,

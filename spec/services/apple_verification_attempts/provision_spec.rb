@@ -100,9 +100,12 @@ RSpec.describe AppleVerificationAttempts::Provision do
     described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
 
     expect(dispatched_manifest.fetch("operations").map { |operation| operation.fetch("type") }).to eq(
-      %w[materialize_source resolve_swift_packages build test launch_app ui_action capture export_artifacts]
+      %w[materialize_source resolve_swift_packages build test boot_simulator install_app launch_app ui_action capture export_artifacts]
     )
-    expect(dispatched_manifest.dig("operations", 6, "payload")).to include("platform" => "ios", "target" => "simulator_screen")
+    expect(dispatched_manifest.dig("operations", 4, "payload")).to eq("destination" => "iPhone 17")
+    expect(dispatched_manifest.dig("operations", 5, "payload")).to eq("bundle_id" => "dev.paid.app")
+    expect(dispatched_manifest.dig("operations", 6, "payload")).to eq("bundle_id" => "dev.paid.app")
+    expect(dispatched_manifest.dig("operations", 8, "payload")).to include("platform" => "ios", "target" => "simulator_screen")
     expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:)
   end
 
@@ -320,9 +323,12 @@ RSpec.describe AppleVerificationAttempts::Provision do
       profiles:
         ios-app:
           platform: ios
+          worker:
+            simulator: iPhone 17
           xcode:
             project: App.xcodeproj
             scheme: App
+            bundle_id: dev.paid.app
           bootstrap: spm
           tests:
             required: true

@@ -22,16 +22,20 @@ RSpec.describe AppleVerification::GuestManifest::Build do
   end
 
   # @spec APPLE-WORKER-013
-  it "keeps mixed profiles in declared sequential order and uses platform-specific capture targets" do
+  it "sets up an iOS simulator with the configured bundle before its capture flow" do
     attempt = attempt_for(mixed_profiles_yaml)
 
     operations = described_class.call(attempt:)
 
     expect(operations.map { |operation| operation.fetch("type") }).to eq(
-      %w[materialize_source build launch_app capture build launch_app capture export_artifacts]
+      %w[materialize_source build boot_simulator install_app launch_app capture build launch_app capture export_artifacts]
     )
-    expect(operations[3].dig("payload", "target")).to eq("simulator_screen")
-    expect(operations[6].dig("payload", "target")).to eq("app_window")
+    expect(operations[2].fetch("payload")).to eq("destination" => "iPhone 17")
+    expect(operations[3].fetch("payload")).to eq("bundle_id" => "dev.paid.ios")
+    expect(operations[4].fetch("payload")).to eq("bundle_id" => "dev.paid.ios")
+    expect(operations[5].dig("payload", "target")).to eq("simulator_screen")
+    expect(operations[7].fetch("payload")).to eq("bundle_id" => "dev.paid.mac")
+    expect(operations[8].dig("payload", "target")).to eq("app_window")
   end
 
   def attempt_for(content)
@@ -51,9 +55,12 @@ RSpec.describe AppleVerification::GuestManifest::Build do
       profiles:
         ios-app:
           platform: ios
+          worker:
+            simulator: iPhone 17
           xcode:
             project: iOS.xcodeproj
             scheme: IOS
+            bundle_id: dev.paid.ios
           captures:
             - id: ios-screen
               required: true
@@ -63,6 +70,7 @@ RSpec.describe AppleVerification::GuestManifest::Build do
           xcode:
             project: Mac.xcodeproj
             scheme: Mac
+            bundle_id: dev.paid.mac
           captures:
             - id: mac-screen
               required: true

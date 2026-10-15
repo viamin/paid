@@ -37,7 +37,7 @@ module AppleVerification
       end
 
       def operations_for(profile)
-        [ *package_operations(profile), build_operation(profile), *test_operations(profile), *capture_operations(profile) ]
+        [ *package_operations(profile), build_operation(profile), *test_operations(profile), *simulator_operations(profile), *capture_operations(profile) ]
       end
 
       def package_operations(profile)
@@ -52,12 +52,18 @@ module AppleVerification
         [ operation("test", scheme_payload(profile)) ] unless profile.tests_required.nil?
       end
 
+      def simulator_operations(profile)
+        return [] unless profile.platform.in?(%w[ios ipados]) && profile.captures.any?
+
+        [ operation("boot_simulator", "destination" => profile.worker.simulator), operation("install_app", "bundle_id" => profile.xcode.bundle_id) ]
+      end
+
       def capture_operations(profile)
         profile.captures.flat_map { |capture| capture.flow.map { |step| flow_operation(profile, capture, step) } }
       end
 
       def flow_operation(profile, capture, step)
-        return operation("launch_app", "bundle_id" => profile.xcode.scheme) if step.operation == "launch_app"
+        return operation("launch_app", "bundle_id" => profile.xcode.bundle_id) if step.operation == "launch_app"
         return operation("capture", capture_payload(profile, capture, step)) if step.operation == "capture"
 
         operation("ui_action", ui_action_payload(step))
