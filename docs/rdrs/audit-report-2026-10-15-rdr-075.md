@@ -84,25 +84,24 @@ mutation-sweep tests must not be relabelled as maintenance-run proof.
   outside this audit and index entry. The checked `AgentRun::GOALS`,
   `FeatureFlags::DEFINITIONS`, schema, controllers, MCP tools, jobs, views, and
   specs therefore cannot provide behavior-test evidence for this Draft.
-- `bundle exec rubocop` completed with **3,897 files inspected, no offenses**.
+- `bundle exec rubocop` completed with **3,918 files inspected, no offenses**.
 - `bin/coherence-check.mjs` completed: arrow references are valid; its reported
   reverse orphans, uncovered gap markers, staleness, and untagged-file signals
   predate and are unrelated to this unimplemented RDR-075 segment.
-- `bundle exec rspec` completed 25,743 examples with one PostgreSQL deadlock in
-  the unrelated `CreateMarketplaceEntries` migration spec and 27 Chromium
-  unavailable pending system specs. A serial retry of
-  `spec/migrations/create_marketplace_entries_spec.rb` passed: **2 examples,
-  0 failures**. Neither result is presented as maintenance behavior evidence.
+- `bundle exec rspec` completed **25,810 examples, 0 failures, 27 expected
+  pending examples**. Neither result is presented as maintenance behavior
+  evidence.
 
 ## Blocked readiness, gaps, and rollout decision
 
-**Readiness: Blocked; no closeout status is assigned.** The focused gaps were
-already separately filed rather than being re-filed as a catch-all: #4327
-through #4333 cover the seven implementation phases, and #4340 covers the
-required report-only intent-traceability recipe. Their open state matches the
-direct source inspection above; no duplicate issue is warranted. A closeout
-status is premature until the RDR, LLD, and EARS are repository authority and
-some shipped scope exists to reconcile against them.
+**Closeout conclusion: Blocked.** The proposed RDR remains unmerged, so it is
+not repository authority and cannot truthfully receive an implementation
+status. The focused gaps were already separately filed rather than being
+re-filed as a catch-all: #4327 through #4333 cover the seven implementation
+phases, and #4340 covers the required report-only intent-traceability recipe.
+Their open state matches the direct source inspection above; no duplicate issue
+is warranted. Rerun this audit once the RDR, LLD, and EARS are repository
+authority and shipped scope exists to reconcile against them.
 
 Keep `maintenance_runs` as a default-off per-tenant guard when Phase 1 creates
 it. There is no shipped evidence that could support removal, and recurring
