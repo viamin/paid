@@ -79,6 +79,13 @@ before any worker is provisioned. Sync only ever touches a draft; an approved
 revision's binding is immutable, so a functional change always lands in a new
 or updated draft, never in place.
 
+`AppleVerification::GuestManifest::Build` derives the guest's `build` and
+`test` operations from that approved content, carrying the selected project or
+workspace and scheme in each operation's closed payload and the optional test
+plan in the test payload.
+This preserves the administrator-approved Xcode target instead of allowing the
+guest executor to discover a different project, workspace, or test plan.
+
 The `apple_verification_workers` feature flag remains default-off. This phase
 implements the trusted host lifecycle boundary; it does not schedule project
 verification or execute guest jobs. Attempt admission, execution ordering,

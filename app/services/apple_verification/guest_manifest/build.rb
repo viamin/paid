@@ -49,7 +49,7 @@ module AppleVerification
       end
 
       def test_operations(profile)
-        [ operation("test", scheme_payload(profile), required: profile.tests_required) ] unless profile.tests_required.nil?
+        [ operation("test", test_payload(profile), required: profile.tests_required) ] unless profile.tests_required.nil?
       end
 
       def simulator_operations(profile)
@@ -71,7 +71,15 @@ module AppleVerification
       end
 
       def scheme_payload(profile)
-        { "scheme" => profile.xcode.scheme }
+        {
+          "project" => profile.xcode.project,
+          "workspace" => profile.xcode.workspace,
+          "scheme" => profile.xcode.scheme
+        }.compact
+      end
+
+      def test_payload(profile)
+        scheme_payload(profile).merge("test_plan" => profile.xcode.test_plan).compact
       end
 
       def capture_payload(profile, capture, step)

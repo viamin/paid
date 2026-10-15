@@ -11,6 +11,7 @@ module AppleVerification
     ROOT_FIELDS = %w[version source_lanes operations].freeze
     OPERATION_FIELDS = %w[type payload].freeze
     OPERATION_OPTIONAL_FIELDS = %w[required].freeze
+    XCODE_CONTAINER_FIELDS = %w[project workspace].freeze
     PAYLOAD_FIELDS = {
       "materialize_source" => %w[digest],
       "resolve_swift_packages" => [],
@@ -84,6 +85,8 @@ module AppleVerification
 
         return validate_ui_action_payload!(payload) if type == "ui_action"
 
+        return validate_xcode_payload!(type, payload) if xcode_operation?(type)
+
         validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload")
       end
 
@@ -92,6 +95,23 @@ module AppleVerification
         return if [ true, false ].include?(operation["required"])
 
         raise InvalidManifestError, "operation required must be true or false"
+      end
+
+      def xcode_operation?(type)
+        type.in?(%w[build test])
+      end
+
+      def validate_xcode_payload!(type, payload)
+        optional_fields = XCODE_CONTAINER_FIELDS
+        optional_fields += [ "test_plan" ] if type == "test"
+        validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload", optional_fields:)
+        validate_xcode_target!(payload)
+      end
+
+      def validate_xcode_target!(payload)
+        return unless payload.key?("project") && payload.key?("workspace")
+
+        raise InvalidManifestError, "Xcode operation must not contain both project and workspace"
       end
 
       def validate_fields!(value, allowed_fields, name, optional_fields: [])

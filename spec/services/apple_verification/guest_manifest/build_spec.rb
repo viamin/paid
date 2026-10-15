@@ -18,7 +18,28 @@ RSpec.describe AppleVerification::GuestManifest::Build do
             required: true
     YAML
 
-    expect(operation_types(attempt)).to eq(%w[materialize_source resolve_swift_packages build test export_artifacts])
+    operations = described_class.call(attempt:)
+
+    expect(operations.map { |operation| operation.fetch("type") }).to eq(%w[materialize_source resolve_swift_packages build test export_artifacts])
+    expect(operations[2].fetch("payload")).to eq("workspace" => "Mac.xcworkspace", "scheme" => "Mac")
+    expect(operations[3].fetch("payload")).to eq("workspace" => "Mac.xcworkspace", "scheme" => "Mac")
+  end
+
+  # @spec APPLE-WORKER-013
+  it "dispatches the approved Xcode project and test plan with build and test operations" do
+    attempt = attempt_for(project_with_test_plan_yaml)
+
+    operations = described_class.call(attempt:)
+
+    expected_build_payload = {
+      "project" => "Apps/Example.xcodeproj",
+      "scheme" => "Example"
+    }
+    expected_test_payload = expected_build_payload.merge(
+      "test_plan" => "Plans/Regression.xctestplan"
+    )
+    expect(operations[1].fetch("payload")).to eq(expected_build_payload)
+    expect(operations[2].fetch("payload")).to eq(expected_test_payload)
   end
 
   # @spec APPLE-WORKER-013
@@ -101,6 +122,21 @@ RSpec.describe AppleVerification::GuestManifest::Build do
             - id: mac-screen
               required: true
               flow: [ { launch_app: {} }, { capture: {} } ]
+    YAML
+  end
+
+  def project_with_test_plan_yaml
+    <<~YAML
+      version: 1
+      profiles:
+        app:
+          platform: ios
+          xcode:
+            project: Apps/Example.xcodeproj
+            scheme: Example
+            test_plan: Plans/Regression.xctestplan
+          tests:
+            required: true
     YAML
   end
 end
