@@ -129,15 +129,16 @@ module AppleVerificationAttempts
           manifest: guest_manifest(attempt, source_lanes:),
           operations: result.operations
         )
-        persist_transport_result(attempt, result:, outcome:, running_at:)
+        references, manifest_artifact = persist_transport_result(attempt, result:, outcome:, running_at:)
         completion.call(attempt:, outcome: outcome.status, failure_classification: outcome.failure_classification, lifecycle:)
+        refresh_result_manifest(attempt, manifest_artifact, references, outcome:, running_at:)
       end
     end
 
     def persist_transport_result(attempt, result:, outcome:, running_at:)
       references = artifact_ingestion.call(attempt:, descriptors: artifact_descriptors(result), storage: artifact_storage).references
       persist_artifacts(attempt, references)
-      persist_result_manifest(attempt, references, outcome:, running_at:)
+      [ references, persist_result_manifest(attempt, references, outcome:, running_at:) ]
     end
 
     def artifact_descriptors(result)
@@ -157,9 +158,28 @@ module AppleVerificationAttempts
     end
 
     def persist_result_manifest(attempt, references, outcome:, running_at:)
-      manifest = result_manifest.call(
+      AppleVerificationArtifact.create!(
+        apple_verification_attempt: attempt,
+        kind: "manifest",
+        storage_key: "apple-verification/#{attempt.account_id}/#{attempt.project_id}/#{attempt.id}/manifest/result.json",
+        metadata: { "manifest" => build_result_manifest(attempt, references, outcome:, running_at:) }
+      )
+    end
+
+    def refresh_result_manifest(attempt, manifest_artifact, references, outcome:, running_at:)
+      manifest_artifact.update!(
+        metadata: manifest_artifact.metadata.merge(
+          "manifest" => build_result_manifest(attempt, references, outcome:, running_at:)
+        )
+      )
+    end
+
+    def build_result_manifest(attempt, references, outcome:, running_at:)
+      result_manifest.call(
         attempt:,
         artifact_references: references,
+        audit_event_references: attempt.execution_audit_events.order(:id).pluck(:id),
+        ledger_entry_references: attempt.execution_resource_ledger_entries.order(:id).pluck(:id),
         status: outcome.status,
         failure_classification: outcome.failure_classification,
         required_checks: attempt.apple_verification_workflow_revision.required_checks,
@@ -167,12 +187,6 @@ module AppleVerificationAttempts
         screenshot_metadata: screenshot_metadata(references),
         timings: timings(attempt, running_at:)
       ).manifest.as_json
-      AppleVerificationArtifact.create!(
-        apple_verification_attempt: attempt,
-        kind: "manifest",
-        storage_key: "apple-verification/#{attempt.account_id}/#{attempt.project_id}/#{attempt.id}/manifest/result.json",
-        metadata: { "manifest" => manifest }
-      )
     end
 
     def screenshot_metadata(references)

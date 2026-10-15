@@ -14,7 +14,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
   # @spec APPLE-TRANSFER-001
   # @spec APPLE-TRANSFER-004
   # @spec APPLE-TRANSFER-005
-  it "transports committed source, records workflow checks and screenshot metadata, and persists the terminal manifest before completion" do
+  it "transports committed source, records workflow checks and screenshot metadata, and refreshes the manifest after completion" do
     project = create(:project, :with_github_installation)
     attempt = create(:apple_verification_attempt, :committed, status: "provisioning", project:, account: project.account,
       agent_run: create(:agent_run, project:))
@@ -125,6 +125,14 @@ RSpec.describe AppleVerificationAttempts::Provision do
   # @spec APPLE-ATTEMPT-006
   it "completes the finished guest result with the success cleanup before leaving provisioning" do
     attempt = provisioning_attempt
+    ledger_entry = create(:execution_resource_ledger_entry, :active,
+      entry_account: attempt.account,
+      project: attempt.project,
+      agent_run: attempt.agent_run,
+      apple_verification_attempt: attempt,
+      runner_type: "apple_tart",
+      backend: "tart",
+      resource_kind: "verification_vm")
     lifecycle = instance_double(AppleVerification::Lifecycle)
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
     allow(lifecycle).to receive_messages(provision: provisioned_handle, destroy: :destroyed, stop: :stopped)
@@ -134,6 +142,9 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     expect(attempt.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
     expect(attempt.reload.finished_at).to be_present
+    manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
+    expect(manifest.dig("result", "audit_event_references")).to match_array(attempt.execution_audit_events.pluck(:id).map(&:to_s))
+    expect(manifest.dig("result", "ledger_entry_references")).to eq([ ledger_entry.id.to_s ])
   end
 
   it "leaves the attempt non-terminal for the timeout monitor when guest dispatch fails" do
