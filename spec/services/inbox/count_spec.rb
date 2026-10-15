@@ -29,6 +29,17 @@ RSpec.describe Inbox::Count do
   end
 
   describe ".call" do
+    # @spec DESIGN-RECONCILIATION-001
+    it "counts open traceability gaps and invalidates after resolution" do
+      finding = create(:design_artifact_finding, project: project, account: account)
+
+      expect(described_class.call(user: user)).to eq(1)
+
+      finding.resolve!
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
     it "counts needs_input candidates, merge approvals, and open plan reviews" do
       create(:issue, :needs_input, project: project)
       create(:issue, :needs_input, project: project)

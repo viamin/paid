@@ -31,4 +31,12 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
 
     expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
   end
+
+  it "resolves an open RDR finding when its path was removed after a successful discovery" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+
+    described_class.resolve_removed_rdr_findings(project:, paths: [])
+
+    expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
 end

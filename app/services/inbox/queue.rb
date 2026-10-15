@@ -15,6 +15,7 @@ module Inbox
     PARTIAL_CLOSEOUT_KIND = "partial_closeout"
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
+    TRACEABILITY_GAP_KIND = "traceability_gap"
     DEFAULT_SORT = "oldest"
     SORTS = {
       DEFAULT_SORT => "Oldest first",
@@ -33,14 +34,16 @@ module Inbox
       CHANGE_INTENT_DRAFT_KIND,
       PARTIAL_CLOSEOUT_KIND,
       TEST_REVIEW_PENDING_KIND,
-      PROJECT_SETUP_PENDING_KIND
+      PROJECT_SETUP_PENDING_KIND,
+      TRACEABILITY_GAP_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
       RETRY_LIMITED_KIND => "Retry-limited",
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
       PARTIAL_CLOSEOUT_KIND => "Partial closeouts",
-      PROJECT_SETUP_PENDING_KIND => "Project setup"
+      PROJECT_SETUP_PENDING_KIND => "Project setup",
+      TRACEABILITY_GAP_KIND => "Traceability gaps"
     ).freeze
 
     # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
@@ -142,6 +145,11 @@ module Inbox
         kind == PROJECT_SETUP_PENDING_KIND
       end
 
+      # @spec DESIGN-RECONCILIATION-001
+      def traceability_gap?
+        kind == TRACEABILITY_GAP_KIND
+      end
+
       # This stays lazy because only the selected Inbox entry renders its
       # detail pane. The readiness gap remains actionable after a failure, but
       # the operator also needs the most recent failed bootstrap attempt to
@@ -162,7 +170,7 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending? || project_setup_pending?
+          test_review_pending? || project_setup_pending? || traceability_gap?
 
         "#{tasks.size} proposed tasks"
       end
@@ -277,6 +285,7 @@ module Inbox
       entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
       entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
       entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
+      entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
       sort_entries(entries)
     end
 
@@ -774,6 +783,29 @@ module Inbox
           summary_text: "#{gap_descriptions.size} setup prerequisite(s) need attention.",
           title_text: "Set up #{candidate.full_name}",
           action_url: Rails.application.routes.url_helpers.edit_project_path(candidate)
+        )
+      end
+    end
+
+    # Findings are durable reconciliation output, so queue rendering only
+    # reads the stored evidence and never re-contacts GitHub.
+    # @spec DESIGN-RECONCILIATION-001
+    def traceability_gap_entries
+      scope = project ? project.design_artifact_findings : DesignArtifactFinding.where(project: scoped_projects)
+
+      only_record(scope.open_findings.includes(:project).order(:created_at, :id)).map do |finding|
+        Entry.new(
+          id: "#{TRACEABILITY_GAP_KIND}:#{finding.id}",
+          kind: TRACEABILITY_GAP_KIND,
+          project: finding.project,
+          issue: nil,
+          record: finding,
+          waiting_since: finding.created_at,
+          questions: [],
+          tasks: finding.evidence,
+          summary_text: finding.state.humanize,
+          title_text: "Traceability gap: #{finding.artifact_path}",
+          action_url: nil
         )
       end
     end

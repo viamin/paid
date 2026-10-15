@@ -186,7 +186,13 @@
   superseded/deferred artifacts SHALL not be treated as missing merely from
   their status. Findings SHALL retain cited evidence and last successful
   coverage, be deduplicated by artifact/revision, and SHALL NOT automatically
-  create, close, transfer, or hold GitHub work.
+  create, close, transfer, or hold GitHub work. A successful RDR-directory
+  discovery SHALL resolve prior open RDR findings whose artifact paths are no
+  longer present; an unavailable directory read SHALL remain unverifiable and
+  SHALL NOT resolve prior findings. Open findings SHALL appear as authorized
+  Inbox traceability-gap work, including their pinned revision and evidence;
+  Inbox badge and filter caches SHALL invalidate when a finding enters or
+  leaves the open state.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
   `spec/jobs/feature_intents/design_artifact_reconciliation_sweep_job_spec.rb`.

@@ -7,6 +7,13 @@ module FeatureIntents
   class PersistDesignArtifactFindings
     def self.call(...) = new(...).call
 
+    def self.resolve_removed_rdr_findings(project:, paths:)
+      project.design_artifact_findings.open_findings
+        .where("artifact_path LIKE ?", "docs/rdrs/RDR-%.md")
+        .where.not(artifact_path: paths)
+        .find_each(&:resolve!)
+    end
+
     def initialize(project:, revision:, artifacts:, issues:, coverage_complete: true)
       @project = project
       @revision = revision

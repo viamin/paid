@@ -1,0 +1,25 @@
+<%# @spec DESIGN-RECONCILIATION-001 %>
+<p class="text-sm text-gray-700">
+  Reconciliation found a <strong><%= entry.record.state.humanize.downcase %></strong> traceability gap at the recorded revision.
+</p>
+
+<dl class="mt-4 space-y-3 text-sm">
+  <div>
+    <dt class="font-medium text-gray-900">Artifact</dt>
+    <dd class="mt-1"><%= link_to entry.record.artifact_path, "#{entry.project.github_url}/blob/#{entry.record.revision}/#{entry.record.artifact_path}", class: "text-indigo-600 hover:text-indigo-500", target: "_blank", rel: "noopener" %></dd>
+  </div>
+  <div>
+    <dt class="font-medium text-gray-900">Revision</dt>
+    <dd class="mt-1 font-mono text-xs text-gray-700"><%= entry.record.revision %></dd>
+  </div>
+  <div>
+    <dt class="font-medium text-gray-900">Evidence</dt>
+    <dd class="mt-1">
+      <ul class="list-disc space-y-1 pl-5 text-gray-700">
+        <% entry.tasks.each do |evidence| %>
+          <li><%= evidence %></li>
+        <% end %>
+      </ul>
+    </dd>
+  </div>
+</dl>

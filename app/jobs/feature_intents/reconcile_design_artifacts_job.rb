@@ -52,9 +52,19 @@ module FeatureIntents
     end
 
     def reconcile_rdr_artifacts
-      DiscoverRdrArtifacts.call(project:).each do |artifact|
+      artifacts = DiscoverRdrArtifacts.call(project:)
+      artifacts.each do |artifact|
         reconcile(rdr_artifact(artifact), revision: artifact.revision, coverage_complete: artifact.body.present?)
       end
+      resolve_removed_rdr_findings(artifacts) if rdr_directory_discovered?(artifacts)
+    end
+
+    def resolve_removed_rdr_findings(artifacts)
+      PersistDesignArtifactFindings.resolve_removed_rdr_findings(project:, paths: artifacts.map(&:path))
+    end
+
+    def rdr_directory_discovered?(artifacts)
+      artifacts.none? { |artifact| artifact.path == DiscoverRdrArtifacts::RDRS_PATH && artifact.body.nil? }
     end
 
     def reconcile_project_artifacts

@@ -55,4 +55,25 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
 
     expect(DesignArtifactFinding.count).to eq(0)
   end
+
+  it "resolves RDR findings removed from a successfully discovered directory" do
+    finding = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs/RDR-063-removed.md", revision: "a" * 40)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([])
+
+    described_class.perform_now(project.id)
+
+    expect(finding.reload.status).to eq("resolved")
+  end
+
+  it "keeps RDR findings open when directory discovery is unverifiable" do
+    finding = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs/RDR-063-unknown.md", revision: "a" * 40)
+    unavailable = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(path: "docs/rdrs", revision: "main", body: nil)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ unavailable ])
+
+    described_class.perform_now(project.id)
+
+    expect(finding.reload.status).to eq("open")
+  end
 end

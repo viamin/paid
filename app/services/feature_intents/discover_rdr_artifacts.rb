@@ -17,17 +17,27 @@ module FeatureIntents
     end
 
     def call
-      return [ unverifiable_artifact ] unless entries
+      revision = branch_revision
+      return [ unverifiable_artifact ] unless revision
 
-      entries.filter_map { |entry| artifact_for(entry) }
+      listed_entries = entries(revision)
+      return [ unverifiable_artifact ] unless listed_entries
+
+      listed_entries.filter_map { |entry| artifact_for(entry, revision) }
     end
 
     private
 
     attr_reader :project
 
-    def entries
-      Array(project.client.contents(project.full_name, path: RDRS_PATH, ref: project.default_branch))
+    def branch_revision
+      project.client.ref(project.full_name, "heads/#{project.default_branch}").object.sha
+    rescue GithubClient::Error, Faraday::Error
+      nil
+    end
+
+    def entries(revision)
+      Array(project.client.contents(project.full_name, path: RDRS_PATH, ref: revision))
     rescue GithubClient::Error, Faraday::Error
       nil
     end
@@ -36,14 +46,14 @@ module FeatureIntents
       Artifact.new(path: RDRS_PATH, revision: project.default_branch, body: nil)
     end
 
-    def artifact_for(entry)
+    def artifact_for(entry, revision)
       return unless entry.type == "file" && entry.path.match?(RDR_PATH)
 
-      Artifact.new(path: entry.path, revision: entry.sha, body: body_for(entry.path))
+      Artifact.new(path: entry.path, revision:, body: body_for(entry.path, revision))
     end
 
-    def body_for(path)
-      project.client.file_content(project.full_name, path:, ref: project.default_branch)
+    def body_for(path, revision)
+      project.client.file_content(project.full_name, path:, ref: revision)
     rescue GithubClient::Error, Faraday::Error
       nil
     end
