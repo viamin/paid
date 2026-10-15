@@ -15,7 +15,7 @@ class DesignArtifactFinding < ApplicationRecord
   validates :state, inclusion: { in: STATES }
   validates :status, inclusion: { in: STATUSES }
 
-  after_commit :bump_inbox_cache_version, if: :saved_change_to_status?
+  after_commit :bump_inbox_cache_version, if: :inbox_visibility_changed?
 
   scope :open_findings, -> { where(status: "open") }
 
@@ -24,6 +24,12 @@ class DesignArtifactFinding < ApplicationRecord
   end
 
   private
+
+  def inbox_visibility_changed?
+    return status == "open" if previously_new_record?
+
+    saved_change_to_status? && (status_before_last_save == "open" || status == "open")
+  end
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)

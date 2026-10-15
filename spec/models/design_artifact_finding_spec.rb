@@ -5,28 +5,53 @@ require "rails_helper"
 # @spec DESIGN-RECONCILIATION-001
 RSpec.describe DesignArtifactFinding do
   describe "Inbox cache invalidation" do
-    it "is registered for status changes" do
-      callback = described_class._commit_callbacks.find do |item|
-        item.kind == :after && item.filter == :bump_inbox_cache_version
-      end
+    it "bumps the cache when an open finding is created" do
+      finding = build(:design_artifact_finding)
 
-      expect(callback.instance_variable_get(:@if)).to include(:saved_change_to_status?)
+      expect(Dashboard::CacheVersion).to receive(:bump).with(
+        finding.project.account,
+        scope: Dashboard::CacheVersion::INBOX_SCOPE
+      )
+
+      finding.save!
     end
 
-    it "does not mark an evidence update as a status change" do
+    it "does not bump the cache when evidence changes" do
       finding = create(:design_artifact_finding)
+
+      expect(Dashboard::CacheVersion).not_to receive(:bump)
 
       finding.update!(evidence: [ "Updated evidence" ])
-
-      expect(finding.saved_change_to_status?).to be(false)
     end
 
-    it "marks resolving a finding as a status change" do
+    it "bumps the cache when a finding leaves the open state" do
       finding = create(:design_artifact_finding)
 
-      finding.resolve!
+      expect(Dashboard::CacheVersion).to receive(:bump).with(
+        finding.project.account,
+        scope: Dashboard::CacheVersion::INBOX_SCOPE
+      )
 
-      expect(finding.saved_change_to_status?).to be(true)
+      finding.resolve!
+    end
+
+    it "bumps the cache when a finding enters the open state" do
+      finding = create(:design_artifact_finding, status: "resolved")
+
+      expect(Dashboard::CacheVersion).to receive(:bump).with(
+        finding.project.account,
+        scope: Dashboard::CacheVersion::INBOX_SCOPE
+      )
+
+      finding.update!(status: "open")
+    end
+
+    it "does not bump the cache when a resolved finding is created" do
+      finding = build(:design_artifact_finding, status: "resolved")
+
+      expect(Dashboard::CacheVersion).not_to receive(:bump)
+
+      finding.save!
     end
   end
 end
