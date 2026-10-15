@@ -11956,6 +11956,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).not_to include("queue_review_run")
     end
 
+    it "starts implementation after an approved test verdict even when draft rounds are exhausted" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict", max_draft_review_rounds: 10)
+      pull_request.update!(
+        labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ],
+        draft_review_count: 10
+      )
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_tests_approved")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+    end
+
     it "falls through to the normal draft scan after implementation already started for the approved test revision" do
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])
@@ -12006,6 +12022,46 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).not_to include("queue_review_run")
     end
 
+    [ [ "strict", "labels" ], [ "strict", "local control" ] ].each do |mode, control|
+      it "escalates instead of scheduling an eleventh rejected-test revision in #{mode} mode with #{control}" do # @spec TDD-PR-007
+        project.update!(tdd_mode: mode, max_draft_review_rounds: 10)
+        pull_request.update!(draft_review_count: 10)
+
+        if control == "local control"
+          project.update!(label_integration_mode: "ignored")
+          pull_request.paid_activate!
+          pull_request.update!(tdd_review_state: "changes_requested")
+        else
+          pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
+        end
+
+        stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+          hash_including(type: "escalate_to_owner")
+        )
+        expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+      end
+    end
+
+    it "keeps rejected-test revisions enabled when the draft-round limit is disabled" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict", max_draft_review_rounds: 0)
+      pull_request.update!(
+        draft_review_count: 143,
+        labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ]
+      )
+      stub_current_non_strict_tdd_review(review_body: "Cover the timeout failure path.")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "tdd_test_changes_requested")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
+    end
+
     it "does not requeue a stale rejection after a revised test commit" do # @spec TDD-PR-007
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ])
@@ -12049,6 +12105,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         hash_including(type: "tdd_test_changes_requested")
       )
       expect(decision_types_for(result)).to include("queue_create_pr_run")
+    end
+
+    it "defers an exhausted rejected-test revision when review threads are unavailable" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict", max_draft_review_rounds: 10)
+      pull_request.update!(
+        draft_review_count: 10,
+        labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ]
+      )
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_raise(GithubClient::Error, "GitHub review threads API unavailable")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result)).to eq([])
+      expect(decision_types_for(result)).not_to include("queue_create_pr_run")
     end
 
     it "queues an automated review run in non-strict mode while tests are awaiting verdict" do
@@ -12222,6 +12295,52 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         .with(project.full_name, 42, "paid-tests-ready-for-review")
       expect(github_client).to have_received(:add_labels_to_issue)
         .with(project.full_name, 42, [ "paid-test-changes-requested" ])
+    end
+
+    [ "labels", "local control" ].each do |control|
+      it "escalates instead of scheduling an eleventh automated rejected-test revision with #{control}" do # @spec TDD-PR-007
+        project.update!(tdd_mode: "non_strict", max_draft_review_rounds: 10)
+        pull_request.update!(draft_review_count: 10)
+
+        if control == "local control"
+          project.update!(label_integration_mode: "ignored")
+          pull_request.paid_activate!
+        end
+
+        stub_non_strict_tdd_review(review_body: "Add an edge-case spec for the failure path.")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+          hash_including(type: "escalate_to_owner")
+        )
+        expect(decision_types_for(result)).not_to include("queue_create_pr_run")
+      end
+    end
+
+    it "preserves actionable human feedback at the draft-round cap" do # @spec TDD-PR-007
+      project.update!(tdd_mode: "strict", max_draft_review_rounds: 10)
+      pull_request.update!(
+        draft_review_count: 10,
+        labels: [ "paid-generated", "paid-automation", "paid-test-changes-requested" ]
+      )
+      stub_github_for_pr(
+        draft: true,
+        reviews: [],
+        checks: [ { name: "rspec", conclusion: "failure" } ],
+        review_threads: [ {
+          id: "human-test-feedback",
+          is_resolved: false,
+          comments: [ { body: "Please cover the authorization failure.", path: "spec/foo_spec.rb", line: 5, author: "viamin" } ]
+        } ]
+      )
+
+      result = activity.execute(project_id: project.id)
+
+      expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
+        hash_including(type: "review_threads")
+      )
+      expect(decision_types_for(result)).to include("queue_create_pr_run")
     end
 
     it "uses trusted unresolved thread feedback when the review has no body" do # @spec TDD-PR-007

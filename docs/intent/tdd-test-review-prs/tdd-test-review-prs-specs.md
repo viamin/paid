@@ -78,3 +78,13 @@
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/services/automation/strategies/auto_review_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
+  When `draft_review_count` has reached a positive configured
+  `max_draft_review_rounds`, it SHALL escalate rather than schedule another
+  automatic test-revision run, whether the verdict comes from GitHub labels or
+  Paid-local control state and including repeated no-change outcomes. A current
+  actionable human review thread MAY proceed through the ordinary
+  human-feedback path, and an approved test verdict SHALL still transition to
+  implementation; neither exception SHALL permit repeated automated rejected
+  test revisions beyond the cap. A zero limit SHALL remain disabled and an
+  explicit operator restart SHALL retain its established counter-reset
+  semantics.
