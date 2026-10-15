@@ -69,7 +69,9 @@ RSpec.describe "dashboard/_knowledge_widget", :no_db, type: :view do
     render partial: "dashboard/knowledge_widget", locals: { knowledge_stats: knowledge_stats }
 
     expect(rendered).to include("Runner Health")
-    expect(rendered).to include("knowledge chat and embedding runners")
+    expect(rendered).to include("Configuration readiness and operational health")
+    expect(rendered).to include("does not validate authentication with an upstream provider")
+    expect(rendered).to include("Service")
     expect(rendered).to include("one runner group remains available")
     expect(rendered).to include("openai")
     expect(rendered).to include("claude")

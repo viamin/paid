@@ -27,6 +27,38 @@ the system that actually shipped.
 
 ## Shipped Behavior
 
+### Dashboard runner readiness
+
+The account dashboard retains Embedding and Decision Drafting runner health, but
+does not treat the absence of a `RunnerState` as evidence that a runner can
+execute. `Knowledge::RunnerReadiness` resolves local configuration only: a
+supported embedding transport is `ready` when its applicable owner API key or
+documented platform fallback is configured. Decision drafting resolves its API
+service from the configured runner (for example, Claude to Anthropic and Codex
+to OpenAI), then is `ready` only when its effective owner's corresponding API
+key or documented host fallback is configured, because those are the credential
+sources its containerized execution path materializes. Otherwise it is
+`missing_credential` or `unsupported_transport`. It never materializes a secret
+or contacts an upstream provider, so ready credentials are explicitly not a live
+authentication validation.
+
+Embedding candidate selection uses the same readiness result before runtime
+configuration materializes a key, so the dashboard and runtime agree on the
+safe credential-source metadata without turning a dashboard render into a
+provider probe.
+
+Dashboard aggregation follows `Project#effective_owner`, not the account
+fallback owner. Each configured runner row identifies its effective owner and
+project count, preventing one owner's credentials or circuit state from being
+presented as account-wide. Configuration readiness and operational health
+(rate-limit, circuit, and failure state) remain distinct. The short-lived
+readiness cache versions projects, owner settings, credentials, and runner
+states so ownership and credential changes are visible without a provider call.
+Projects without a resolvable effective owner are omitted from runner-health
+rows and counts because no owner's configuration can be reported truthfully.
+On a cache miss, its aggregation loads those owner-scoped records in batches,
+rather than querying once for every effective owner.
+
 ### Canonical knowledge storage
 
 Collector runs are versioned by project commit and write artifact/chunk/link

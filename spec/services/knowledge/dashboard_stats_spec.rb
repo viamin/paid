@@ -21,17 +21,364 @@ RSpec.describe Knowledge::DashboardStats do
     context "with no knowledge data" do
       before { project } # ensure project exists
 
-      it "returns zero counts" do
-        expect(stats[:projects_indexed]).to eq(0)
-        expect(stats[:projects_total]).to eq(1)
-        expect(stats[:total_artifacts]).to eq(0)
-        expect(stats[:stale_artifacts]).to eq(0)
-        expect(stats[:stale_percent]).to eq(0)
-        expect(stats[:artifacts_by_type]).to be_empty
-        expect(stats[:last_collection_at]).to be_nil
-        expect(stats[:operational_status]).to eq("healthy")
-        expect(stats[:provider_health][:embedding_available]).to be true
-        expect(stats[:provider_health][:chat_available]).to be true
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports missing credentials rather than ready when no runner state exists" do
+        expect(stats).to include(
+          projects_indexed: 0,
+          projects_total: 1,
+          total_artifacts: 0,
+          stale_artifacts: 0,
+          stale_percent: 0,
+          artifacts_by_type: [],
+          last_collection_at: nil
+        )
+        expect(stats[:operational_status]).to eq("unavailable")
+        expect(stats[:provider_health][:embedding_available]).to be false
+        expect(stats[:provider_health][:chat_available]).to be false
+        expect(stats[:provider_health][:embedding].first).to include(
+          configuration_status: "missing_credential",
+          operational_status: "healthy",
+          available: false
+        )
+      end
+    end
+
+    context "with a project that has no effective owner" do
+      let(:project) do
+        create(:project,
+          account: account,
+          created_by: nil,
+          github_token: create(:github_token, :without_creator, account: account))
+      end
+
+      before { project }
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "omits the project from runner health" do
+        provider_health = stats[:provider_health]
+
+        expect(provider_health).to include(
+          embedding: [],
+          chat: [],
+          project_count: 0,
+          owner_count: 0
+        )
+      end
+    end
+
+    context "with a changed credential" do
+      let(:owner) { project.effective_owner }
+
+      before { project }
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "invalidates cached readiness when an owner adds an API key" do
+        expect(stats[:provider_health][:embedding].first[:configuration_status]).to eq("missing_credential")
+
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+
+        refreshed = described_class.call(account: account)
+        expect(refreshed[:provider_health][:embedding].first[:configuration_status]).to eq("ready")
+      end
+    end
+
+    context "with changed runner settings" do
+      let(:owner) { project.effective_owner }
+
+      before { project }
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "invalidates cached readiness when an owner changes the configured runner" do
+        expect(stats[:provider_health][:embedding].first[:runner]).to eq("openai")
+
+        owner.settings.update!(kb_embedding_runner: "openrouter")
+
+        refreshed = described_class.call(account: account)
+        expect(refreshed[:provider_health][:embedding].first[:runner]).to eq("openrouter")
+      end
+    end
+
+    context "with a changed managed runner credential" do
+      let(:owner) { project.effective_owner }
+
+      before { project }
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "does not report chat ready when the account adds an unusable managed credential" do
+        expect(stats[:provider_health][:chat].first[:configuration_status]).to eq("missing_credential")
+
+        create(:runner_credential, account: account, created_by: owner, runner_key: owner.settings.kb_chat_runner)
+
+        refreshed = described_class.call(account: account)
+        expect(refreshed[:provider_health][:chat].first).to include(
+          configuration_status: "missing_credential",
+          credential_source: nil,
+          available: false
+        )
+      end
+    end
+
+    context "with only an owner API key for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports chat ready because drafting materializes the owner API key" do
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "owner_api_key",
+          credential_service: "anthropic",
+          available: true
+        )
+      end
+    end
+
+    context "with Codex configured for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        owner.settings.update!(kb_chat_runner: "codex", kb_chat_fallback_runners: [])
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the OpenAI credential materialized by the Codex execution path" do
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "owner_api_key",
+          credential_service: "openai",
+          available: true
+        )
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "does not report an Anthropic key as usable by Codex" do
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
+
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "missing_credential",
+          credential_source: nil,
+          credential_service: nil,
+          available: false
+        )
+      end
+    end
+
+    context "with changed project ownership" do
+      let(:first_owner) { create(:user, account: account) }
+      let(:second_owner) { create(:user, account: account) }
+      let(:project) { create(:project, account: account, created_by: first_owner) }
+
+      before do
+        project
+        create(:provider_api_key, user: first_owner, api_service_type: "openai", api_key: "sk-first")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "invalidates cached readiness when a project changes effective owner" do
+        expect(stats[:provider_health][:embedding]).to include(
+          hash_including(owner_id: first_owner.id, configuration_status: "ready")
+        )
+
+        project.update!(created_by: second_owner)
+
+        refreshed = described_class.call(account: account)
+        expect(refreshed[:provider_health][:embedding]).to include(
+          hash_including(owner_id: second_owner.id, configuration_status: "missing_credential")
+        )
+      end
+    end
+
+    context "with an orphaned project whose fallback owner changes" do
+      let(:first_owner) { create(:user, :owner, account: account) }
+      let(:second_owner) { create(:user, :owner, account: account) }
+      let(:project) do
+        create(:project,
+          account: account,
+          created_by: nil,
+          github_token: create(:github_token, :without_creator, account: account))
+      end
+
+      before do
+        first_owner
+        second_owner
+        project
+        create(:provider_api_key, user: first_owner, api_service_type: "openai", api_key: "sk-first")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "invalidates cached readiness when the fallback owner changes" do
+        expect(stats[:provider_health][:embedding]).to include(
+          hash_including(owner_id: first_owner.id, configuration_status: "ready")
+        )
+
+        first_owner.account_membership_for(account).update!(role: :admin)
+
+        refreshed = described_class.call(account: account)
+        expect(refreshed[:provider_health][:embedding]).to include(
+          hash_including(owner_id: second_owner.id, configuration_status: "missing_credential")
+        )
+      end
+    end
+
+    context "with an unsupported configured transport" do
+      let(:owner) { project.effective_owner }
+
+      before { owner.settings.update_columns(kb_embedding_runner: "claude") }
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports unsupported transport separately from missing credentials" do
+        embedding = stats[:provider_health][:embedding].first
+
+        expect(embedding[:configuration_status]).to eq("unsupported_transport")
+        expect(embedding[:available]).to be(false)
+      end
+    end
+
+    context "with configured credentials" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
+        create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
+        create(:runner_credential, account: account, created_by: owner, runner_key: owner.settings.kb_chat_runner)
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports safe credential metadata without claiming a live validation" do
+        embedding = stats[:provider_health][:embedding].first
+        chat = stats[:provider_health][:chat].first
+
+        expect(embedding).to include(
+          configuration_status: "ready",
+          credential_source: "owner_api_key",
+          credential_service: "openai",
+          validated_with_provider: false
+        )
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "owner_api_key",
+          credential_service: "anthropic",
+          validated_with_provider: false
+        )
+      end
+    end
+
+    context "with the platform OpenAI fallback" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return(nil)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("platform-key")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the fallback source without exposing its value" do
+        embedding = stats[:provider_health][:embedding].first
+
+        expect(embedding).to include(
+          configuration_status: "ready",
+          credential_source: "platform_fallback",
+          credential_service: "openai"
+        )
+        expect(embedding.values).not_to include("platform-key")
+      end
+    end
+
+    context "with the platform Anthropic fallback for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        owner.settings.update!(kb_chat_runner: "claude", kb_chat_fallback_runners: [])
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return("platform-key")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the credential source without exposing its value" do
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "platform_fallback",
+          credential_service: "anthropic"
+        )
+        expect(chat.values).not_to include("platform-key")
+      end
+    end
+
+    context "with the Rails-credentials Anthropic fallback for decision drafting" do
+      let(:owner) { project.effective_owner }
+
+      before do
+        project
+        owner.settings.update!(kb_chat_runner: "claude", kb_chat_fallback_runners: [])
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return("platform-key")
+        allow(Rails.application.credentials).to receive(:dig).with(:llm, :openai_api_key).and_return(nil)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return(nil)
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-001
+      it "reports the credential fallback accepted by the decision-drafting proxy" do
+        chat = stats[:provider_health][:chat].first
+
+        expect(chat).to include(
+          configuration_status: "ready",
+          credential_source: "platform_fallback",
+          credential_service: "anthropic"
+        )
+        expect(chat.values).not_to include("platform-key")
+      end
+    end
+
+    context "with different project effective owners" do
+      let(:first_owner) { create(:user, account: account) }
+      let(:second_owner) { create(:user, account: account) }
+      let(:first_project) { create(:project, account: account, created_by: first_owner) }
+      let(:second_project) { create(:project, account: account, created_by: second_owner) }
+
+      before do
+        first_project
+        second_project
+        create(:provider_api_key, user: first_owner, api_service_type: "openai", api_key: "sk-first")
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "aggregates readiness by each project's effective owner" do
+        embedding = stats[:provider_health][:embedding]
+
+        expect(stats[:provider_health][:scope]).to eq("project_effective_owners")
+        expect(embedding).to include(hash_including(owner_id: first_owner.id, configuration_status: "ready"))
+        expect(embedding).to include(hash_including(owner_id: second_owner.id, configuration_status: "missing_credential"))
+      end
+
+      # @spec KNOWLEDGE-DASHBOARD-002
+      it "batch-loads readiness data for all effective owners" do
+        additional_owners = create_list(:user, 3, account: account)
+        additional_owners.each { |owner| create(:project, account: account, created_by: owner) }
+
+        queries = capture_queries { stats }
+
+        readiness_table_patterns.each do |pattern|
+          expect(queries.grep(pattern).size).to be <= 2
+        end
       end
     end
 
@@ -369,5 +716,19 @@ RSpec.describe Knowledge::DashboardStats do
         expect(stats[:total_artifacts]).to eq(1)
       end
     end
+  end
+
+  def capture_queries
+    queries = []
+    callback = lambda do |_name, _started, _finished, _unique_id, payload|
+      queries << payload[:sql] if payload[:name] != "SCHEMA" && !payload[:cached]
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+    queries
+  end
+
+  def readiness_table_patterns
+    [ /FROM "user_settings"/, /FROM "runner_states"/, /FROM "provider_api_keys"/ ]
   end
 end
