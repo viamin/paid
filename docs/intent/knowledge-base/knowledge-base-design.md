@@ -59,6 +59,27 @@ rows and counts because no owner's configuration can be reported truthfully.
 On a cache miss, its aggregation loads those owner-scoped records in batches,
 rather than querying once for every effective owner.
 
+### Knowledge settings and credentials
+
+User Settings exposes ordered primary and fallback runners independently for
+embedding and decision drafting. The form uses the same `RunnerReadiness`
+resolution contract as runtime and dashboard readiness: it shows each
+operation's API service type, selected safe API-key name or platform source,
+and missing/unsupported states without exposing a secret or probing a provider.
+The selected owner API key is the newest matching service key, which is also
+the key the embedding configuration materializes. Users can create or manage
+keys from that form. Settings always apply through each project's effective
+owner, including fallback ownership; an editor's own setting is not projected
+onto another owner's project.
+
+Embedding fallback endpoints must serve the configured model and dimensions.
+Changing either on a populated knowledge base requires re-embedding. Platform
+fallback credentials apply only when the host has configured one and their
+usage is billed to the platform; CLI subscription authentication belongs to
+agent runners and does not authorize knowledge API requests, which are billed
+by their selected API-key provider. Readiness is configuration-only, not live
+credential validation.
+
 ### Canonical knowledge storage
 
 Collector runs are versioned by project commit and write artifact/chunk/link

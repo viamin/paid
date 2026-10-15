@@ -464,6 +464,24 @@
   *Test:* `spec/services/knowledge/dashboard_stats_spec.rb`,
   `spec/views/dashboard/knowledge_widget_partial_spec.rb`.
 
+- [x] **KNOWLEDGE-SETTINGS-001** — When a user edits knowledge settings, the
+  system SHALL expose primary and ordered fallback runners for embedding and
+  decision drafting, display each configured runner's local safe readiness
+  metadata (API service, selected key name/source, missing credential, or
+  unsupported transport), and link to API-key management without exposing a
+  secret or contacting a provider. The selected owner key SHALL match runtime
+  resolution, project settings SHALL apply through each project's effective
+  owner including fallback ownership, and the form SHALL explain platform and
+  CLI subscription billing/authentication boundaries. Embedding fallbacks SHALL
+  be documented as requiring a compatible configured model and dimensions;
+  changing either for populated knowledge requires re-embedding.
+  *Code:* `app/controllers/user_settings_controller.rb`,
+  `app/models/user_setting.rb`, `app/services/knowledge/settings_readiness.rb`,
+  `app/services/knowledge/runner_readiness.rb`,
+  `app/views/user_settings/edit.html.erb`.
+  *Test:* `spec/requests/user_settings_spec.rb`,
+  `spec/services/knowledge/settings_readiness_spec.rb`.
+
 - [x] **KNOWLEDGE-DASHBOARD-002** — When account-level Knowledge Runner
   Health is computed, it SHALL aggregate configured runners by every
   project's `effective_owner`, identify each row's owner scope and project

@@ -1,0 +1,50 @@
+<div class="space-y-6">
+  <p class="text-sm text-gray-500 dark:text-gray-400">
+    Knowledge settings apply to each project through its effective owner, including that owner's fallback runners and API keys.
+    <%= link_to "Manage API keys", provider_api_keys_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+    or <%= link_to "add an API key", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>.
+  </p>
+
+  <% { embedding: "Embedding Configuration", chat: "Decision Drafting Configuration" }.each do |operation, title| %>
+    <section class="space-y-4 rounded-md border border-gray-200 p-4 dark:border-gray-600">
+      <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300"><%= title %></h4>
+      <% primary_attribute = operation == :embedding ? :kb_embedding_runner : :kb_chat_runner %>
+      <% fallback_attribute = operation == :embedding ? :kb_embedding_fallback_runners_csv : :kb_chat_fallback_runners_csv %>
+      <div>
+        <%= form.label primary_attribute, "Primary Runner", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+        <div class="mt-2">
+          <%= form.select primary_attribute,
+            options_for_select(user_setting.knowledge_runner_options(operation: operation), user_setting.public_send(primary_attribute)),
+            {},
+            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+        </div>
+      </div>
+      <div>
+        <%= form.label fallback_attribute, "Fallback Runners", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+        <div class="mt-2">
+          <%= form.text_field fallback_attribute, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "openrouter, deepseek" %>
+        </div>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated. Fallback runners are tried in the listed order after the primary runner.</p>
+      </div>
+      <dl class="space-y-2 rounded bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+        <% knowledge_readiness.fetch(operation).each do |entry| %>
+          <% readiness = entry.readiness %>
+          <div>
+            <dt class="font-medium"><%= entry.role %>: <%= Runner.display_name_for(entry.runner) %></dt>
+            <dd>
+              <% if readiness.status == "ready" %>
+                <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> — <%= readiness.credential_name %> (<%= readiness.credential_source.humanize %>)
+              <% elsif readiness.status == "missing_credential" %>
+                Missing <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> API key — <%= link_to "add one", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <% else %>
+                Unsupported runner/transport for this operation.
+              <% end %>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+    </section>
+  <% end %>
+
+  <p class="text-xs text-gray-500 dark:text-gray-400">Readiness is local configuration only; it does not validate credentials with a provider. A platform credential is used only when the host has configured the documented fallback, and its usage is billed to the platform. CLI subscription authentication is for agent runners and does not supply these knowledge API calls; API-key usage is billed by its provider.</p>
+</div>

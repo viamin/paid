@@ -6,7 +6,7 @@ module Knowledge
   # information that knowledge execution uses to select its credential source.
   # @spec KNOWLEDGE-DASHBOARD-001
   class RunnerReadiness
-    Result = Data.define(:status, :credential_source, :credential_service, :validated_with_provider)
+    Result = Data.define(:status, :credential_source, :credential_service, :credential_name, :validated_with_provider)
 
     def self.call(...)
       new(...).call
@@ -22,7 +22,10 @@ module Knowledge
     def call
       return unsupported unless supported?
 
-      credential || missing_credential
+      service_type = credential_service_type
+      return missing_credential unless service_type
+
+      credential(service_type) || missing_credential(service_type)
     end
 
     private
@@ -37,26 +40,23 @@ module Knowledge
       operation == :embedding ? UserSetting::KB_EMBEDDING_RUNNERS : UserSetting::KB_CHAT_RUNNERS
     end
 
-    def credential
-      return embedding_credential if operation == :embedding
-
-      service_type = RunnerSupport.api_service_type_for(runner)
-      return unless service_type
-
+    def credential(service_type)
       owner_api_key_credential(service_type) || platform_credential(service_type)
     end
 
-    def embedding_credential
-      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
-      return unless config
+    def credential_service_type
+      return Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(runner, :service_type) if operation == :embedding
 
-      owner_api_key_credential(config.fetch(:service_type)) || platform_openai_credential
+      RunnerSupport.api_service_type_for(runner)
     end
 
     def owner_api_key_credential(service_type)
-      return unless provider_api_keys.any? { |api_key| api_key.api_service_type == service_type }
+      api_key = provider_api_keys
+        .select { |candidate| candidate.api_service_type == service_type }
+        .max_by { |candidate| [ candidate.created_at, candidate.id ] }
+      return unless api_key
 
-      ready(source: "owner_api_key", service: service_type)
+      ready(source: "owner_api_key", service: service_type, name: api_key.name)
     end
 
     def provider_api_keys
@@ -76,13 +76,13 @@ module Knowledge
     def platform_openai_credential
       return unless (operation == :chat || runner == "openai") && platform_openai_api_key.present?
 
-      ready(source: "platform_fallback", service: "openai")
+      ready(source: "platform_fallback", service: "openai", name: "Platform credential")
     end
 
     def platform_anthropic_credential
       return unless platform_anthropic_api_key.present?
 
-      ready(source: "platform_fallback", service: "anthropic")
+      ready(source: "platform_fallback", service: "anthropic", name: "Platform credential")
     end
 
     def platform_openai_api_key
@@ -93,16 +93,16 @@ module Knowledge
       Rails.application.credentials.dig(:llm, :anthropic_api_key).presence || ENV["ANTHROPIC_API_KEY"].presence
     end
 
-    def ready(source:, service:)
-      Result.new(status: "ready", credential_source: source, credential_service: service, validated_with_provider: false)
+    def ready(source:, service:, name:)
+      Result.new(status: "ready", credential_source: source, credential_service: service, credential_name: name, validated_with_provider: false)
     end
 
-    def missing_credential
-      Result.new(status: "missing_credential", credential_source: nil, credential_service: nil, validated_with_provider: false)
+    def missing_credential(service = nil)
+      Result.new(status: "missing_credential", credential_source: nil, credential_service: service, credential_name: nil, validated_with_provider: false)
     end
 
     def unsupported
-      Result.new(status: "unsupported_transport", credential_source: nil, credential_service: nil, validated_with_provider: false)
+      Result.new(status: "unsupported_transport", credential_source: nil, credential_service: nil, credential_name: nil, validated_with_provider: false)
     end
   end
 end
