@@ -13,6 +13,29 @@ closed implementation issue was not used as evidence. The current evaluator
 scope is deterministic structural readiness; it must not be represented as
 proof that a real consumer bootstrap lifecycle ran successfully.
 
+## Executed focused-spec evidence
+
+On 2026-10-15, the following command completed successfully against the test
+database:
+
+```sh
+bundle exec rspec spec/services/projects/readiness_spec.rb \
+  spec/services/projects/readiness/record_spec.rb \
+  spec/models/project_spec.rb spec/models/agent_run_spec.rb \
+  spec/services/inbox/queue_spec.rb spec/services/inbox/count_spec.rb \
+  spec/services/inbox/availability_spec.rb spec/requests/agent_runs_spec.rb \
+  spec/services/issues/upsert_from_github_spec.rb \
+  spec/temporal/activities/mark_agent_run_failed_activity_spec.rb \
+  spec/jobs/retry_failed_manual_run_job_spec.rb \
+  spec/services/projects/readiness/bootstrap_write_guard_spec.rb \
+  spec/temporal/activities/create_pull_request_activity_spec.rb
+```
+
+Result: **1,802 examples, 0 failures** in 2 minutes 39.7 seconds (random seed
+10562). The command emitted existing GoodJob deprecation warnings, but no test
+failures. This is focused structural-contract evidence, not evidence that a
+real Godot/gdUnit4 lifecycle command ran.
+
 ## RDR-074 validation evidence
 
 | Criterion | Shipped evidence | Test evidence | Result |
@@ -38,17 +61,16 @@ equivalent bootstrap action; no corresponding tool surface was found.
 
 Required focused follow-ups:
 
-1. A Godot/gdUnit4 bootstrap-to-red-draft lifecycle validation, preserving
-   Forager historical evidence when available or using an isolated fixture.
-2. An authorized API/tool bootstrap action with parity to the existing UI
-   action, including authorization, deduplication, failures, and accounting.
+1. [#4463](https://github.com/viamin/paid/issues/4463) — Godot/gdUnit4
+   bootstrap-to-red-draft lifecycle validation, preserving Forager historical
+   evidence when available or using an isolated fixture.
+2. [#4464](https://github.com/viamin/paid/issues/4464) — an authorized
+   API/tool bootstrap action with parity to the existing UI action, including
+   authorization, deduplication, failures, and accounting.
 
-Creation of these child issues was attempted through the configured GitHub
-API proxy on 2026-10-15. GitHub rejected each create request with HTTP 422:
-`For 'links/0/schema', nil is not an object`. No child issue number is claimed
-until the proxy accepts the write. The umbrella must be updated with explicit
-`Depends on #…` entries for both focused issues once filed; this is an
-external coordination blocker, not evidence that either gap is resolved.
+Both focused issues were created on 2026-10-15 and #4255 now has explicit
+`Depends on #4463` and `Depends on #4464` entries. They remain open acceptance
+work; this closeout continues to track #4255 without closing it.
 
 ## Rollout-guard disposition
 
