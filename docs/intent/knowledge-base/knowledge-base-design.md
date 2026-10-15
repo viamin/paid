@@ -38,6 +38,10 @@ has precedence in direct embeddings, container drafting via the secrets proxy,
 and host drafting via Agent Harness `ProviderRuntime`. A new same-service key
 cannot alter a bound operation.
 
+Container drafting supplies its attempted runner to the secrets proxy before
+the run records a final runner, so the proxy can apply the same selected chat
+credential on the first attempt as it does after completion.
+
 When no binding exists, legacy installations retain their former newest-key
 behavior until the owner explicitly selects a key. If no saved key resolves,
 the platform API key (Rails credentials before environment) is the only API

@@ -414,6 +414,25 @@ RSpec.describe "Api::SecretsProxy" do # @spec SECRETS-PROXY-001 # @spec SECRETS-
         .with(headers: { "Authorization" => "Bearer #{selected_api_key.api_key}" })
     end
 
+    # @spec KNOWLEDGE-CREDENTIAL-001
+    it "uses the selected drafting key before a final runner has been recorded" do
+      selected_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openai", api_key: "sk-drafting-selected")
+      create(:provider_api_key, user: project.effective_owner, api_service_type: "openai", api_key: "sk-drafting-newer")
+      project.effective_owner.settings.update!(kb_chat_provider_api_key: selected_api_key)
+      knowledge_run.update!(
+        operation_type: "decision_drafting",
+        provider_attempts: [ { "provider" => "codex", "attempted_at" => Time.current.iso8601 } ]
+      )
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers.merge("X-Paid-Knowledge-Provider" => "codex")
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, target_url)
+        .with(headers: { "Authorization" => "Bearer #{selected_api_key.api_key}" })
+    end
+
     it "preserves runner-specific versioned paths for OpenAI-compatible providers" do
       api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "zai", api_key: "sk-zai")
       knowledge_run.update!(provider_attempts: [ { "provider" => "zai", "attempted_at" => Time.current.iso8601 } ])

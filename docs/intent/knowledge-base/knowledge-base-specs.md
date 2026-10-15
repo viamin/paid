@@ -33,9 +33,11 @@
   operation, and a bound key SHALL not be deletable until replaced or unbound.
   *Code:* `app/services/knowledge/credential_selection.rb`,
   `app/services/knowledge/runner_configuration.rb`,
+  `app/services/knowledge/analysis_runner.rb`,
   `app/controllers/api/secrets_proxy_controller.rb`,
   `app/services/knowledge/decisions/draft.rb`.
   *Test:* `spec/services/knowledge/runner_configuration_spec.rb`,
+  `spec/services/knowledge/analysis_runner_spec.rb`,
   `spec/services/knowledge/decisions/draft_spec.rb`,
   `spec/requests/api/secrets_proxy_spec.rb`.
 
