@@ -6,6 +6,30 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r TOOL-SIDECAR`).
 
+- [x] **TOOL-SIDECAR-001** — When a marketplace entry with `entry_type:
+  "tool"` is attached by the resolver (automatic, team-default, or manual),
+  its version SHALL require `install_type: "tool"`, a non-empty `image`, and
+  an integer `port` from 1 through 65535. Optional `env` and `hardening`
+  values SHALL be objects and optional `alias` SHALL be a non-empty string.
+  The renderer SHALL emit `tool_sidecar`, and the attachment pipeline SHALL
+  add the normalized definition and marketplace provenance to the run's
+  `tool_sidecar_snapshot`, not its MCP snapshot.
+  *Tests:* `spec/models/marketplace_entry_version_spec.rb`,
+  `spec/services/marketplace_entries/renderer_dbless_spec.rb`,
+  `spec/services/marketplace_entries/runtime_attachments_dbless_spec.rb`,
+  `spec/services/marketplace_entries/attach_to_run_spec.rb`.
+  *Code:* `MarketplaceEntryVersion`, `MarketplaceEntries::Renderer`,
+  `MarketplaceEntries::RuntimeAttachments`, `MarketplaceEntries::McpSnapshotSync`.
+
+- [x] **TOOL-SIDECAR-002** — When `marketplace_tool_sidecars` is disabled for
+  a run's project, the tool definition SHALL remain snapshotted but
+  `Containers::McpProvisioner` SHALL not create or record a tool sidecar
+  container. The flag defaults off and is enabled per tenant through
+  `tenant_settings.features`; disabling it is the RDR-073 rollback action.
+  *Tests:* `spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb`.
+  *Code:* `FeatureFlags::DEFINITIONS`,
+  `Containers::McpProvisioner#tool_sidecars_enabled?`.
+
 - [x] **TOOL-SIDECAR-005** — When a `tool` sidecar is provisioned for an
   agent run, the container SHALL be created on `NetworkPolicy::NETWORK_NAME`
   with all Linux capabilities dropped, `no-new-privileges`, the image-family

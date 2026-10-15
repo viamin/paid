@@ -11,6 +11,7 @@ class MarketplaceEntryVersion < ApplicationRecord
     uniqueness: { scope: :marketplace_entry_id }
   validates :canonical_artifact, presence: true
   validate :canonical_artifact_is_object
+  validate :tool_canonical_artifact_contract
   validate :renderers_is_object
   validate :renderer_payloads_are_objects
   validate :compatibility_constraints_is_object
@@ -31,6 +32,56 @@ class MarketplaceEntryVersion < ApplicationRecord
 
   def canonical_artifact_is_object
     errors.add(:canonical_artifact, "must be an object") unless canonical_artifact.is_a?(Hash)
+  end
+
+  # @spec TOOL-SIDECAR-001
+  def tool_canonical_artifact_contract
+    return unless marketplace_entry&.entry_type == "tool"
+    return unless canonical_artifact.is_a?(Hash)
+
+    validate_tool_install_type
+    validate_tool_image
+    validate_tool_port
+    validate_tool_optionals
+  end
+
+  def validate_tool_install_type
+    return if canonical_artifact["install_type"] == "tool"
+
+    errors.add(:canonical_artifact, "install_type must be \"tool\"")
+  end
+
+  def validate_tool_image
+    return if canonical_artifact["image"].is_a?(String) && canonical_artifact["image"].strip.present?
+
+    errors.add(:canonical_artifact, "image must be a non-empty string")
+  end
+
+  def validate_tool_port
+    port = canonical_artifact["port"]
+    return if port.is_a?(Integer) && port.between?(1, 65_535)
+
+    errors.add(:canonical_artifact, "port must be an integer between 1 and 65535")
+  end
+
+  def validate_tool_optionals
+    validate_tool_object("env")
+    validate_tool_alias
+    validate_tool_object("hardening")
+  end
+
+  def validate_tool_object(key)
+    return if !canonical_artifact.key?(key) || canonical_artifact[key].is_a?(Hash)
+
+    errors.add(:canonical_artifact, "#{key} must be an object")
+  end
+
+  def validate_tool_alias
+    alias_name = canonical_artifact["alias"]
+    return unless canonical_artifact.key?("alias")
+    return if alias_name.is_a?(String) && alias_name.strip.present?
+
+    errors.add(:canonical_artifact, "alias must be a non-empty string")
   end
 
   def renderers_is_object

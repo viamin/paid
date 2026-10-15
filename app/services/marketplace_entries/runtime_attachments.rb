@@ -34,6 +34,10 @@ module MarketplaceEntries
       new(agent_run, provider_key: provider_key).mcp_server_snapshots
     end
 
+    def self.tool_sidecar_snapshots(agent_run, provider_key: nil)
+      new(agent_run, provider_key: provider_key).tool_sidecar_snapshots
+    end
+
     def self.runtime_env(agent_run, provider_key: nil)
       new(agent_run, provider_key: provider_key).runtime_env
     end
@@ -55,6 +59,19 @@ module MarketplaceEntries
           "marketplace_entry_id" => attachment.marketplace_entry_id,
           "marketplace_entry_version_id" => attachment.marketplace_entry_version_id
         )
+      end
+    end
+
+    # @spec TOOL-SIDECAR-001
+    def tool_sidecar_snapshots
+      attachments.filter_map do |attachment|
+        rendered_payload = rendered_payload_for(attachment)
+        next unless rendered_payload["attachment_strategy"] == "tool_sidecar"
+
+        payload = rendered_payload["payload"]
+        next unless payload.is_a?(Hash)
+
+        tool_sidecar_snapshot(payload, attachment)
       end
     end
 
@@ -100,6 +117,20 @@ module MarketplaceEntries
 
     def rendered_payload_for(attachment)
       Renderer.for_attachment(attachment, provider_key: @provider_key)
+    end
+
+    def tool_sidecar_snapshot(payload, attachment)
+      env = payload.fetch("env", {}).deep_dup
+      hardening = payload["hardening"]
+      env[Containers::ServiceProvisioner::HARDENING_ENV_KEY] = hardening if hardening.present?
+
+      payload.except("alias", "hardening").merge(
+        "name" => payload["alias"].presence || attachment.marketplace_entry.name,
+        "env" => env,
+        "marketplace_attachment" => true,
+        "marketplace_entry_id" => attachment.marketplace_entry_id,
+        "marketplace_entry_version_id" => attachment.marketplace_entry_version_id
+      )
     end
 
     def extract_env(payload)

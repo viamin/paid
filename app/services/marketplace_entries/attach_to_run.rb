@@ -47,6 +47,7 @@ module MarketplaceEntries
         end
 
         synchronize_mcp_snapshot!
+        synchronize_tool_sidecar_snapshot!
       end
 
       agent_run.agent_run_marketplace_entries.ordered
