@@ -597,13 +597,13 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Embedding")
       end
 
-      it "shows unavailable helper copy when both runner groups are down" do
+      it "shows unavailable helper copy when no configured runner is ready" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, :circuit_open, user: user, runner_name: user.settings.kb_chat_runner)
 
         get dashboard_knowledge_stats_path
 
-        expect(response.body).to include("Knowledge capabilities are unavailable because both runner groups are down.")
+        expect(response.body).to include("Knowledge capabilities are unavailable because no configured runner is both ready and operational.")
         expect(response.body).not_to include("Knowledge capabilities are degraded while one runner group remains available.")
       end
 
