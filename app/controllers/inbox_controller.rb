@@ -30,7 +30,11 @@ class InboxController < ApplicationController
     entry = resolve_selected_entry(@inbox_entries)
     raise ActiveRecord::RecordNotFound unless entry
 
-    chat_session = Inbox::OpenInteractiveChat.call(user: current_user, entry:)
+    chat_session = Inbox::OpenInteractiveChat.call(
+      user: current_user,
+      entry:,
+      authoritative_entry: entry
+    )
     respond_to do |format|
       format.html { redirect_to chat_session_path(chat_session) }
       format.json { render json: { id: chat_session.id, url: chat_session_path(chat_session) }, status: :created }

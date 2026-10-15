@@ -1,15 +1,16 @@
 # frozen_string_literal: true
 
 module Inbox
-  # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014 @spec OPERATOR-INBOX-002F
+  # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014 @spec OPERATOR-INBOX-002F @spec OPERATOR-INBOX-015
   class OpenInteractiveChat
     def self.call(...)
       new(...).call
     end
 
-    def initialize(user:, entry:)
+    def initialize(user:, entry:, authoritative_entry: nil)
       @user = user
       @entry = entry
+      @authoritative_entry = authoritative_entry
     end
 
     def call

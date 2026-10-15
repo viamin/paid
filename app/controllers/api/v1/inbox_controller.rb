@@ -49,7 +49,11 @@ module Api
         entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
         return render_entry_not_found unless entry
 
-        chat_session = Inbox::OpenInteractiveChat.call(user: current_user, entry:)
+        chat_session = Inbox::OpenInteractiveChat.call(
+          user: current_user,
+          entry:,
+          authoritative_entry: entry
+        )
         render json: { chat_session_id: chat_session.id }, status: :created
       end
 

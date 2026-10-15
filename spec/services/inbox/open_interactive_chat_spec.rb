@@ -28,6 +28,19 @@ RSpec.describe Inbox::OpenInteractiveChat do
   end
 
   # @spec OPERATOR-INBOX-015
+  it "uses an entry already revalidated by the Inbox controller" do
+    selected_entry = entry
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      expect(described_class.call(user:, entry: selected_entry, authoritative_entry: selected_entry)).to be_persisted
+    end
+
+    expect(queries.grep(/FROM "issues".*paid_state.*needs_input/)).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015
   it "refuses a formerly valid entry after it leaves the queue" do
     selected_entry = entry
     issue.update_columns(github_state: "closed")
