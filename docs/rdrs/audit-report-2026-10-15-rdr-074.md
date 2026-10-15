@@ -73,7 +73,7 @@ retains only `Depends on #4325`; it does not yet explicitly depend on #4463
 or #4464. Until those dependency lines are added to the umbrella, Paid's
 dependency parser will not use these remaining acceptance gates to block
 auto-pick. They remain open acceptance work; this closeout continues to track
-#4255 without closing it.
+the umbrella issue without closing it.
 
 ## Rollout-guard disposition
 
