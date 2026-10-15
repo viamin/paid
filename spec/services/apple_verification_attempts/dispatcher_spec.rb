@@ -22,6 +22,7 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     )
   end
   let(:capacity_sampler) { ->(_attempt) { snapshot } }
+  let(:host_mount_check) { ->(_agent_run) { false } }
   let(:lifecycle) do
     instance_double(
       AppleVerification::Lifecycle,
@@ -49,7 +50,7 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
   end
 
   def dispatch
-    described_class.call(capacity_sampler:, lifecycle:)
+    described_class.call(capacity_sampler:, lifecycle:, host_mount_check:)
   end
 
   it "dispatches and completes the fair queue head after admission" do
@@ -102,6 +103,18 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
       last_health_failure_at: be_present,
       quarantine_reason: nil
     )
+  end
+
+  # @spec APPLE-TRANSFER-003
+  it "rejects dispatch when the authoritative mount check finds a writable host workspace" do
+    attempt = queued_attempt
+    host_mount_check = ->(run) { run == agent_run }
+
+    result = described_class.call(capacity_sampler:, lifecycle:, host_mount_check:)
+
+    expect(result).to have_attributes(started: 0, rejected: 1, skipped: false)
+    expect(attempt.reload).to have_attributes(status: "unavailable", failure_classification: "worker_infrastructure")
+    expect(AppleVerification::ExecuteGuestJob).not_to have_received(:call)
   end
 
   it "converges an unexpected provision error to unavailable" do

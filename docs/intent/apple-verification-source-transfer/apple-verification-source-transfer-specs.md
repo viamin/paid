@@ -3,19 +3,19 @@
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code.
 >
-> The listed source-lane, manifest, and artifact-ingestion components have
-> focused unit coverage, but no production attempt-dispatch path composes them
-> into a guest job or persists the returned result/artifact records. They remain
-> active gaps until that end-to-end integration is shipped.
+> The production attempt-dispatch path composes the source lane into the guest
+> job and persists returned result/artifact records. Remaining gaps are called
+> out in their individual EARS claims.
 
-- [ ] **APPLE-TRANSFER-001** — When a verification attempt runs against
+- [x] **APPLE-TRANSFER-001** — When a verification attempt runs against
   committed source, the input manifest's git lane SHALL carry the exact
   attempt's commit identity and the credentials lane SHALL carry only a
   short-lived read-only GitHub App installation reference scoped to the
   attempt's repository; the credential lane entry SHALL reject an installation
   that is suspended, revoked, or attached to a different account, and the
   manifest SHALL never carry the resolved installation token value.
-  *Tests:* `spec/services/apple_verification/source_lane/credential_lane_spec.rb`
+  *Tests:* `spec/services/apple_verification/source_lane/credential_lane_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`
   *Code:* `AppleVerification::SourceLane::CredentialLane`,
   `AppleVerification::SourceLane::Build`
 
@@ -32,7 +32,7 @@
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`
   *Code:* `AppleVerification::SourceLane::BundleBuilder`
 
-- [ ] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
+- [x] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
   reference a host path, a bind mount, or a writable cross-project cache, and
   the source lane builder SHALL refuse to build any lane when the originating
   paid-agent container has a write-host mount bound into its workspace (the
@@ -41,11 +41,15 @@
   builder SHALL refuse to build a bundle when the workspace contains a
   symlink whose target escapes the workspace root.
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`,
-  `spec/services/apple_verification/source_lane/build_spec.rb`
+  `spec/services/apple_verification/source_lane/build_spec.rb`,
+  `spec/services/apple_verification/source_lane/host_mount_check_spec.rb`,
+  `spec/services/apple_verification_attempts/dispatcher_spec.rb`
   *Code:* `AppleVerification::SourceLane::Build`,
-  `AppleVerification::SourceLane::BundleBuilder`
+  `AppleVerification::SourceLane::BundleBuilder`,
+  `AppleVerification::SourceLane::HostMountCheck`,
+  `AppleVerificationAttempts::Dispatcher`
 
-- [ ] **APPLE-TRANSFER-004** — The output manifest produced for an attempt
+- [x] **APPLE-TRANSFER-004** — The output manifest produced for an attempt
   SHALL include the attempt identity, source/lineage, workflow revision and
   lifecycle gate, profile digest, terminal status, queued/provisioning/running/
   total timings, retry lineage, failure classification, required and advisory
@@ -53,10 +57,12 @@
   execution audit events and external-resource ledger entries; the manifest
   SHALL be validated against `AppleVerificationWorkers::OutputManifest` and
   SHALL reject host paths, provider lifecycle fields, and secret-shaped values.
-  *Tests:* `spec/services/apple_verification/result_manifest/build_spec.rb`
-  *Code:* `AppleVerification::ResultManifest::Build`
+  *Tests:* `spec/services/apple_verification/result_manifest/build_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`
+  *Code:* `AppleVerification::ResultManifest::Build`,
+  `AppleVerificationAttempts::Provision`
 
-- [ ] **APPLE-TRANSFER-005** — `.xcresult`, build logs, screenshots, and
+- [x] **APPLE-TRANSFER-005** — `.xcresult`, build logs, screenshots, and
   diagnostics produced by an attempt SHALL be uploaded through the shared
   `ArtifactStorage` under a per-account/per-project/per-attempt namespace and
   SHALL be addressed in the output manifest as object-storage references
@@ -67,7 +73,8 @@
   disagrees with the uploaded bytes SHALL be rejected; the durable manifest
   metadata, attempt record, audit events, and ledger entries SHALL survive
   the binary retention window.
-  *Tests:* `spec/services/apple_verification/artifact_ingestion/ingest_spec.rb`
+  *Tests:* `spec/services/apple_verification/artifact_ingestion/ingest_spec.rb`,
+  `spec/services/apple_verification_attempts/provision_spec.rb`
   *Code:* `AppleVerification::ArtifactIngestion::Ingest`
 
 - [x] **APPLE-TRANSFER-006** — A successful attempt SHALL destroy its VM
