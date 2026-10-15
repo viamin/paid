@@ -17,6 +17,7 @@ class AppleVerificationWorkflowRevision < ApplicationRecord
 
   validates :revision, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :project_id }
   validates :content_digest, format: { with: /\Asha256:[a-f0-9]{64}\z/ }
+  validates :configuration_content, presence: true, if: :approved?
   validates :status, inclusion: { in: STATES }
   validates :lifecycle_gate, inclusion: { in: LIFECYCLE_GATES }
   validate :account_matches_project

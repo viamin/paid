@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module AppleVerification
   module Setup
     # Builds the per-agent-run +AppleVerificationAttempt+ the smoke
@@ -21,7 +23,18 @@ module AppleVerification
     class SmokeAttemptFactory
       PROFILE_NAME_PREFIX = "apple-setup-smoke-"
       PROFILE_NAME_DIGEST_FRAGMENT = 12
-      SYNTHETIC_CONTENT_DIGEST = "sha256:#{'0' * 64}"
+      SYNTHETIC_CONFIGURATION_CONTENT = <<~YAML.freeze
+        version: 1
+        profiles:
+          smoke-app:
+            platform: ios
+            xcode:
+              project: Smoke.xcodeproj
+              scheme: Smoke
+            tests:
+              required: true
+      YAML
+      SYNTHETIC_CONTENT_DIGEST = "sha256:#{Digest::SHA256.hexdigest(SYNTHETIC_CONFIGURATION_CONTENT)}"
       SMOKE_LIFECYCLE_GATE = "agent_iteration"
 
       Result = Data.define(:profile, :revision, :attempt)
@@ -83,6 +96,7 @@ module AppleVerification
           apple_worker_profile: profile,
           revision: next_revision_number,
           content_digest: SYNTHETIC_CONTENT_DIGEST,
+          configuration_content: SYNTHETIC_CONFIGURATION_CONTENT,
           verification_files: [
             { "path" => ".paid/apple-verification.yml", "digest" => SYNTHETIC_CONTENT_DIGEST }
           ],

@@ -68,6 +68,16 @@ RSpec.describe "Apple verification persistence", type: :model do
     expect(revision.errors[:base]).to include("approved workflow binding is immutable")
   end
 
+  it "requires digest-bound configuration content before approval" do # @spec APPLE-WORKER-004
+    project = create(:project)
+    administrator = create(:user, account: project.account)
+    administrator.add_role(:project_admin, project)
+    revision = create(:apple_verification_workflow_revision, project:, configuration_content: nil, content_digest: digest)
+
+    expect { revision.approve!(actor: administrator) }
+      .to raise_error(ActiveRecord::RecordInvalid, /Configuration content can't be blank/)
+  end
+
   it "does not permit clearing an approval record to rewrite the binding across two saves" do # @spec APPLE-WORKER-004
     project = create(:project)
     administrator = create(:user, account: project.account)
