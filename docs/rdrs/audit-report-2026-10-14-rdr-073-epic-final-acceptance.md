@@ -42,7 +42,7 @@ by labels/repo files/languages, or give the resulting endpoint to the agent.
 
 ## Live issue and rollout-guard disposition
 
-GitHub API state checked on 2026-10-14:
+GitHub API state checked on 2026-10-14; #4268 refreshed on 2026-10-15:
 
 | Issue | State |
 | --- | --- |
@@ -51,7 +51,7 @@ GitHub API state checked on 2026-10-14:
 | #4265 Phase 2 | open |
 | #4266 Phase 3 | closed 2026-10-12 |
 | #4267 Phase 4 | open |
-| #4268 closeout | open |
+| #4268 closeout | closed 2026-10-15 00:10:53 UTC |
 
 The `marketplace_tool_sidecars` rollout guard remains defined and default-off.
 `FeatureFlags.enabled?(:marketplace_tool_sidecars, project:)` gates the only
@@ -60,8 +60,8 @@ not remove or broaden the guard.
 
 ## Closure decision
 
-**Do not close #4263.** The prerequisite child and closeout issues remain
-open, and criteria 001, 003, 004, and 007 have material gaps. The focused
+**Do not close #4263.** The prerequisite child issues remain open, and
+criteria 001, 003, 004, and 007 have material gaps. The focused
 existing owners are sufficient; no duplicate issues are filed:
 
 1. #4264 must ship the tool attachment contract and its flag-off snapshot
@@ -69,9 +69,5 @@ existing owners are sufficient; no duplicate issues are filed:
 2. #4265 must add and test the three declarative rule conditions.
 3. #4267 must expose the stable alias/endpoint to the agent and demonstrate
    full lifecycle behavior from attached marketplace entry through cleanup.
-4. #4268 must reconcile the RDR and README status after the phases have
-   shipped, with all `TOOL-SIDECAR-001` through `TOOL-SIDECAR-007` claims in
-   the LID segment.
-
 Only after those conditions and passing evidence are present may a future
 umbrella audit use GitHub closing language for #4263.
