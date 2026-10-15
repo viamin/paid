@@ -7,10 +7,9 @@ module Inbox
       new(...).call
     end
 
-    def initialize(user:, entry:, authoritative_entry: nil)
+    def initialize(user:, entry:)
       @user = user
       @entry = entry
-      @authoritative_entry = authoritative_entry
     end
 
     def call

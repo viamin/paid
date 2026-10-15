@@ -32,8 +32,7 @@ class InboxController < ApplicationController
 
     chat_session = Inbox::OpenInteractiveChat.call(
       user: current_user,
-      entry:,
-      authoritative_entry: entry
+      entry:
     )
     respond_to do |format|
       format.html { redirect_to chat_session_path(chat_session) }

@@ -51,8 +51,7 @@ module Api
 
         chat_session = Inbox::OpenInteractiveChat.call(
           user: current_user,
-          entry:,
-          authoritative_entry: entry
+          entry:
         )
         render json: { chat_session_id: chat_session.id }, status: :created
       end
