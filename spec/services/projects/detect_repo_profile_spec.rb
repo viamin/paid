@@ -71,12 +71,7 @@ RSpec.describe Projects::DetectRepoProfile, :no_db do
     with_repo do |repo_path|
       File.write(File.join(repo_path, "mix.exs"), "defmodule Demo.MixProject do end\n")
       File.write(File.join(repo_path, ".paid.yml"), <<~YAML)
-        languages:
-          all:
-            - elixir
-            - javascript
-          test:
-            - elixir
+        languages: { all: [elixir, javascript], test: [elixir] }
         framework: phoenix
         rdr_convention:
           directory: architecture/decisions
@@ -85,13 +80,13 @@ RSpec.describe Projects::DetectRepoProfile, :no_db do
 
       profile = described_class.call(project:, repo_path:)
 
-      expect(profile["languages"]).to eq(%w[elixir javascript])
-      expect(profile["test_languages"]).to eq(%w[elixir])
-      expect(profile["framework"]).to eq("phoenix")
-      expect(profile["rdr_convention"]).to eq(
-        "directory" => "architecture/decisions", "file_pattern" => "ADR-*.md"
+      expect(profile).to include(
+        "languages" => %w[elixir javascript],
+        "test_languages" => %w[elixir],
+        "framework" => "phoenix",
+        "rdr_convention" => { "directory" => "architecture/decisions", "file_pattern" => "ADR-*.md" },
+        "manifest_path" => ".paid.yml"
       )
-      expect(profile["manifest_path"]).to eq(".paid.yml")
     end
   end
 

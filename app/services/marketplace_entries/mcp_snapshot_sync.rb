@@ -19,5 +19,18 @@ module MarketplaceEntries
         agent_run.mcp_server_snapshot = merged_snapshot
       end
     end
+
+    # @spec TOOL-SIDECAR-001
+    def synchronize_tool_sidecar_snapshot!(provider_key: nil)
+      snapshots = RuntimeAttachments.tool_sidecar_snapshots(agent_run, provider_key: provider_key)
+      return if snapshots == agent_run.tool_sidecar_snapshot
+
+      agent_run.class.where(id: agent_run.id).update_all(tool_sidecar_snapshot: snapshots)
+      if agent_run.respond_to?(:reload)
+        agent_run.reload
+      else
+        agent_run.tool_sidecar_snapshot = snapshots
+      end
+    end
   end
 end

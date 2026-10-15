@@ -84,7 +84,7 @@ gem "aws-sdk-s3", require: false
 # 0.44.9 includes viamin/agent-harness#472, which preserves a provider's
 # classified error when ChatTransport fails. Paid relies on this for the
 # rate-limit pause/recovery path (fixes #4217).
-gem "agent-harness", "0.44.9"
+gem "agent-harness", "0.44.14"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.

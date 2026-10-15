@@ -930,6 +930,7 @@ RSpec.describe "ChatSessions" do
       end
 
       it "renders the popup variant for embedded requests" do
+        # @spec CHAT-API-021
         chat_session.update!(
           metadata: {
             "page_context" => {
@@ -944,6 +945,8 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Untitled chat")
         expect(response.body).to include("Archive &amp; New Chat")
+        expect(response.body).to include("Keep Chat Open")
+        expect(response.body).to include('data-action="chat-popup#toggleKeepOpen"')
         expect(response.body).to include("New Chat")
         expect(response.body).to include("Open page")
         expect(response.body).to include("Projects - Paid")
