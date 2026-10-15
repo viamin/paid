@@ -18,6 +18,17 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  it "does not treat a synced draft design pull request without links as missing" do
+    design_pr.update!(draft: true)
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: "pull/100", revision: design_pr.head_sha, state: "deferred", status: "open"
+    )
+  end
+
   it "uses explicit linked issue references to clear the finding" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "Implements #101")
     create(:issue, project:, github_number: 101)

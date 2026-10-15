@@ -17,6 +17,8 @@ module FeatureIntents
     end
 
     def call
+      return [ unverifiable_artifact ] unless entries
+
       entries.filter_map { |entry| artifact_for(entry) }
     end
 
@@ -26,6 +28,12 @@ module FeatureIntents
 
     def entries
       Array(project.client.contents(project.full_name, path: RDRS_PATH, ref: project.default_branch))
+    rescue GithubClient::Error
+      nil
+    end
+
+    def unverifiable_artifact
+      Artifact.new(path: RDRS_PATH, revision: project.default_branch, body: nil)
     end
 
     def artifact_for(entry)

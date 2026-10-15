@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_235412) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1730,6 +1730,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_110000) do
   create_table "feature_intent_design_prs", comment: "RDR-066 design PRs (RDR and/or LID Planning) linked to a feature intent, tracked for staleness and required-artifact checks.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "design_pr_kind", null: false, comment: "rdr or lid_planning."
+    t.boolean "draft", comment: "GitHub pull request draft state from the most recent synchronization."
     t.bigint "feature_intent_id", null: false
     t.string "head_sha", null: false, comment: "Most recently synced PR head SHA."
     t.datetime "merged_at"

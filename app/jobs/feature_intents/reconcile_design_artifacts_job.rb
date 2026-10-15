@@ -40,7 +40,7 @@ module FeatureIntents
       issue = project_issue(design_pr.pull_request_number)
       {
         path: "pull/#{design_pr.pull_request_number}",
-        status: issue&.labels&.include?("draft") ? "draft" : nil,
+        status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
         stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) }
       }

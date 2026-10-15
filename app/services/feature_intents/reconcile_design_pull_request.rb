@@ -41,9 +41,18 @@ module FeatureIntents
     end
 
     def update_head
-      return if head_sha.blank? || design_pr.head_sha == head_sha
+      changes = {}
+      changes[:head_sha] = head_sha if head_sha.present? && design_pr.head_sha != head_sha
+      changes[:draft] = draft if draft_state_known? && design_pr.draft != draft
+      design_pr.update!(changes) if changes.any?
+    end
 
-      design_pr.update!(head_sha: head_sha)
+    def draft
+      pull_request_value(:draft)
+    end
+
+    def draft_state_known?
+      draft.in?([ true, false ])
     end
 
     def cancel_hold

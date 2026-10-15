@@ -80,4 +80,13 @@ RSpec.describe FeatureIntents::ReconcileDesignPullRequest do
     expect(feature.reload.status).to eq("ready_for_approval")
     expect(feature.approved_by).to be_nil
   end
+
+  it "records the synced GitHub draft state" do
+    pull_request = Data.define(:head, :merged_at, :merge_commit_sha, :merged_by, :draft).new(head, nil, nil, nil, true)
+    github_issue = github_issue_class.new(design_pr.pull_request_number, "open", pull_request)
+
+    described_class.call(project: project, github_issue: github_issue)
+
+    expect(design_pr.reload).to be_draft
+  end
 end
