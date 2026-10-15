@@ -68,9 +68,12 @@ Required focused follow-ups:
    API/tool bootstrap action with parity to the existing UI action, including
    authorization, deduplication, failures, and accounting.
 
-Both focused issues were created on 2026-10-15 and #4255 now has explicit
-`Depends on #4463` and `Depends on #4464` entries. They remain open acceptance
-work; this closeout continues to track #4255 without closing it.
+Both focused issues were created on 2026-10-15. As of this audit, #4255
+retains only `Depends on #4325`; it does not yet explicitly depend on #4463
+or #4464. Until those dependency lines are added to the umbrella, Paid's
+dependency parser will not use these remaining acceptance gates to block
+auto-pick. They remain open acceptance work; this closeout continues to track
+#4255 without closing it.
 
 ## Rollout-guard disposition
 
