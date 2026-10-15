@@ -79,3 +79,15 @@ unchanged. A completed bootstrap run never schedules an eager readiness
 evaluation: the issue-sync path schedules it only after GitHub confirms the
 bootstrap PR merged, so the checkout reads target-branch evidence. No durable
 ready latch exists.
+
+## Product-acceptance boundary
+
+RDR-074 formalizes the evaluator and the implementation above. It does not,
+by itself, prove the broader #4255 consumer outcome. That outcome additionally
+requires runnable Godot/gdUnit4 evidence through the full lifecycle: an
+authorized operator sees a missing-project Inbox entry, explicitly bootstraps
+only allowed files, GitHub confirms the bootstrap PR merge, target-branch
+re-evaluation clears the entry, and the next test-writing draft PR reaches
+intentionally red CI. The closeout records this lifecycle proof and
+equivalent authorized API/tool action as open acceptance work; no ready flag
+or automatic bootstrap retry may stand in for checkout re-evaluation.

@@ -5,10 +5,10 @@
 ## Metadata
 
 - **Date**: 2026-10-11
-- **Status**: Accepted
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Related RDRs**: [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-056](RDR-056-strict-test-driven-development-mode.md)
-- **Related Issues**: #4255, #4256
+- **Related Issues**: #4255, #4256, #4257, #4258, #4325, #4338
 
 ## Decision
 
@@ -88,3 +88,31 @@ matches Phase 1's structural scope and prevents duplicate command policy.
 - TDD-off reports no TDD gaps and remains open to independent future rules.
 - The result serializes gaps and an ISO-8601 evaluation timestamp without
   persistence.
+
+## Implementation Status
+
+**Partially Implemented (2026-10-15).** The deterministic evaluator and its
+persisted Inbox/bootstrap consumers are shipped. The implementation covers
+the structural contract in this RDR: strict/non-strict and TDD-off evaluation,
+registered language and Godot detectors, persisted snapshots, an authorized
+Inbox lane, a manual deduplicated bootstrap admission path, and a harness-only
+write guard.
+
+That narrow structural implementation is not evidence of the broader #4255
+consumer outcome. In particular, this closeout did not find a runnable
+Forager-iOS or equivalent isolated lifecycle proof showing a merged bootstrap
+PR, target-branch re-evaluation, cleared Inbox lane, and the subsequent
+test-writing draft PR with intentionally red CI. It also found no equivalent
+authorized API/tool action for the UI's bootstrap trigger. Those are required
+product-acceptance gaps; #4255 remains open and must explicitly depend on the
+focused follow-ups recorded in the closeout audit before its own final audit.
+
+## 2026-10-15 Closeout
+
+The [RDR-074 audit report](audit-report-2026-10-15-rdr-074.md) records
+criterion-by-criterion code, test, and command evidence. It reconciles the
+RDR's narrower evaluator formalization with the broader #4255 greenfield
+consumer outcome and uses non-closing `Tracks #4255` language. No rollout
+guard change is warranted: this closeout changes documentation only, and the
+shipped behavior remains governed by the existing TDD setting and explicit
+human bootstrap trigger.
