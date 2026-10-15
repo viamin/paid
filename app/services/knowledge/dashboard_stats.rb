@@ -240,6 +240,7 @@ module Knowledge
         configuration_status: readiness.status,
         credential_source: readiness.credential_source,
         credential_service: readiness.credential_service,
+        credential_name: readiness.credential_name,
         validated_with_provider: readiness.validated_with_provider,
         available: readiness.status == "ready" && operational_status != "unavailable"
       }

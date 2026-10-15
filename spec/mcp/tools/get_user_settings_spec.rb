@@ -80,6 +80,18 @@ RSpec.describe Tools::GetUserSettings do
       expect(user.settings.reload.kb_embedding_fallback_runners).to eq(%w[openai deepseek])
       expect(user.settings.kb_chat_fallback_runners).to eq(%w[claude cursor])
     end
+
+    # @spec KNOWLEDGE-SETTINGS-001
+    it "preserves knowledge runner and embedding configuration parity with settings updates" do
+      account = create(:account)
+      user = create(:user, :member, account:)
+      session = create(:chat_session, account:, created_by: user)
+      result = described_class.new(user:, session:).call(
+        settings: { kb_embedding_runner: "openrouter", kb_embedding_fallback_runners: [ "openai", "deepseek" ], kb_embedding_model: "text-embedding-3-small", kb_embedding_dimensions: 1536, kb_chat_runner: "claude", kb_chat_fallback_runners: [ "codex" ] },
+        confirmed: true
+      )
+      expect(result).to include("kb_embedding_runner" => "openrouter", "kb_embedding_fallback_runners" => %w[openai deepseek], "kb_embedding_model" => "text-embedding-3-small", "kb_embedding_dimensions" => 1536, "kb_chat_runner" => "claude", "kb_chat_fallback_runners" => [ "codex" ])
+    end
   end
 
   describe Tools::GetTenantSettings do
