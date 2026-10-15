@@ -195,6 +195,47 @@ RSpec.describe MarketplaceEntries::AttachToRun do
     )
   end
 
+  it "records attached tools in the separate tool sidecar snapshot" do # @spec TOOL-SIDECAR-001
+    entry = create(:marketplace_entry, account: project.account, name: "Search", entry_type: "tool")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "install_type" => "tool", "image" => "acme/search:1.0", "port" => 8080, "alias" => "search"
+      },
+      compatibility_constraints: {})
+    entry.update!(current_version: version)
+
+    described_class.call(agent_run:, manual_entry_ids: [ entry.id ])
+
+    expect(agent_run.reload.tool_sidecar_snapshot).to contain_exactly(
+      include(
+        "name" => "search",
+        "install_type" => "tool",
+        "marketplace_attachment" => true,
+        "marketplace_entry_id" => entry.id
+      )
+    )
+    expect(agent_run.mcp_server_snapshot).to be_empty
+  end
+
+  it "records automatic, team-default, and manual tools in the sidecar snapshot" do # @spec TOOL-SIDECAR-001
+    automatic = create_tool_entry(name: "Automatic search", rule_mode: "automatic", conditions: { "goals" => [ "create_pr" ] })
+    team_default = create_tool_entry(name: "Team search", rule_mode: "team_default")
+    manual = create_tool_entry(name: "Manual search")
+
+    automatic_attachments = described_class.call(agent_run:, auto_attach_enabled: true)
+    expect(automatic_attachments.map(&:marketplace_entry)).to eq([ automatic, team_default ])
+    expect(automatic_attachments.map(&:attachment_source)).to eq([ "automatic", "team_default" ])
+
+    manual_attachments = described_class.call(agent_run:, manual_entry_ids: [ manual.id ])
+    expect(manual_attachments.map(&:marketplace_entry)).to eq([ manual ])
+    expect(manual_attachments.map(&:attachment_source)).to eq([ "manual" ])
+
+    expect(agent_run.reload.tool_sidecar_snapshot.map { |snapshot| snapshot["name"] }).to eq(
+      [ "Manual search" ]
+    )
+  end
+
   def create_manual_entry
     create_entry(
       name: "Manual skill",
@@ -239,6 +280,17 @@ RSpec.describe MarketplaceEntries::AttachToRun do
       },
       compatibility_constraints: {})
     entry.update!(current_version: version)
+    entry
+  end
+
+  def create_tool_entry(name:, rule_mode: nil, conditions: {})
+    entry = create(:marketplace_entry, account: project.account, name:, entry_type: "tool")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: { "install_type" => "tool", "image" => "acme/search:1.0", "port" => 8080 },
+      compatibility_constraints: {})
+    entry.update!(current_version: version)
+    create(:marketplace_entry_rule, marketplace_entry: entry, mode: rule_mode, conditions:) if rule_mode
     entry
   end
 end

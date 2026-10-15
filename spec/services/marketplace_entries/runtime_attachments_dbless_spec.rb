@@ -36,6 +36,41 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     )
   end
 
+  it "extracts tool sidecar snapshots separately from MCP definitions" do # @spec TOOL-SIDECAR-001
+    agent_run = build_agent_run([ build_tool_attachment ])
+
+    expect(described_class.tool_sidecar_snapshots(agent_run)).to contain_exactly(
+      "install_type" => "tool",
+      "image" => "acme/search:1.0",
+      "port" => 8080,
+      "name" => "search",
+      "env" => {
+        "SEARCH_TOKEN" => "configured-at-runtime",
+        "PAID_SERVICE_HARDENING" => { "readonly_rootfs" => true }
+      },
+      "marketplace_attachment" => true,
+      "marketplace_entry_id" => 9,
+      "marketplace_entry_version_id" => 11
+    )
+  end
+
+  it "rejects malformed provider-specific tool renderers before snapshotting" do # @spec TOOL-SIDECAR-001
+    attachment = build_tool_attachment
+    attachment.marketplace_entry.entry_type = "tool"
+    attachment.marketplace_entry_version.renderers = {
+      "codex" => {
+        "install_type" => "tool",
+        "image" => "acme/search:1.0",
+        "port" => 8080,
+        "env" => [],
+        "hardening" => {}
+      }
+    }
+    agent_run = build_agent_run([ attachment ])
+
+    expect(described_class.tool_sidecar_snapshots(agent_run, provider_key: "codex")).to be_empty
+  end
+
   it "ignores unsafe runtime file paths" do
     agent_run = build_agent_run([
       build_attachment(
@@ -215,6 +250,22 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
         "name" => "repo-docs",
         "install_type" => "npx",
         "command" => "npx"
+      }
+    )
+  end
+
+  def build_tool_attachment
+    build_attachment(
+      strategy: "tool_sidecar",
+      entry_id: 9,
+      version_id: 11,
+      payload: {
+        "install_type" => "tool",
+        "image" => "acme/search:1.0",
+        "port" => 8080,
+        "alias" => "search",
+        "env" => { "SEARCH_TOKEN" => "configured-at-runtime" },
+        "hardening" => { "readonly_rootfs" => true }
       }
     )
   end

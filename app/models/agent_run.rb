@@ -253,7 +253,7 @@ class AgentRun < ApplicationRecord
     dependent: :nullify,
     inverse_of: :target_agent_run
 
-  attr_readonly :mcp_server_snapshot
+  attr_readonly :mcp_server_snapshot, :tool_sidecar_snapshot
 
   before_validation :set_initiating_user_from_current_user, on: :create
   before_validation :refresh_queue_entered_at, if: :should_refresh_queue_entered_at?
@@ -445,7 +445,7 @@ class AgentRun < ApplicationRecord
   # runs without an issue or PR link. Call sites that never render context
   # (recent activity) pass extra: %w[custom_prompt].
   LIST_PAYLOAD_EXCLUDED_COLUMNS = %w[
-    streaming_turns_data external_metadata mcp_server_snapshot
+    streaming_turns_data external_metadata mcp_server_snapshot tool_sidecar_snapshot
     mcp_provisioned_servers screenshot_hints review_proxy_diagnostics
   ].freeze
 

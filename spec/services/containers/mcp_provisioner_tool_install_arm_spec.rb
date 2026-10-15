@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TOOL-SIDECAR-006
+RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-002 # @spec TOOL-SIDECAR-005 # @spec TOOL-SIDECAR-006
   let(:provisioner) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
@@ -16,26 +16,9 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-005 # @spec TO
   end
 
   def create_run_with_tool_snapshot(snapshot)
-    definitions = snapshot.map do |defn|
-      build(:mcp_server_definition,
-        account: project.account,
-        name: defn["name"],
-        transport: defn["transport"],
-        install_type: defn["install_type"],
-        command: defn["command"],
-        args: defn.fetch("args", []),
-        url: defn["url"],
-        image: defn["image"],
-        env: defn.fetch("env", {}),
-        metadata: defn.fetch("metadata", {}),
-        enabled: true)
-    end
-
-    relation = McpServerDefinition.none
-    allow(relation).to receive_messages(enabled: relation, order: definitions)
-    allow(project).to receive(:mcp_server_definitions).and_return(relation)
-
-    create(:agent_run, project: project, issue: issue)
+    agent_run = create(:agent_run, project: project, issue: issue)
+    AgentRun.where(id: agent_run.id).update_all(tool_sidecar_snapshot: snapshot)
+    agent_run.reload
   end
 
   # The image gate evaluates `UserSetting.allowed_service_images` for the
