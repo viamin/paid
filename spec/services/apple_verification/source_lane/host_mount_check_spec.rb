@@ -43,6 +43,13 @@ RSpec.describe AppleVerification::SourceLane::HostMountCheck do
       .to raise_error(described_class::InspectionUnavailableError, /invalid/)
   end
 
+  it "fails closed when the container does not expose inspection metadata" do
+    allow(backend).to receive(:get_container).and_return(Object.new)
+
+    expect { described_class.call(agent_run) }
+      .to raise_error(described_class::InspectionUnavailableError, /cannot inspect/)
+  end
+
   it "fails closed when the attempt has no originating container" do
     agent_run.update!(container_id: nil)
 

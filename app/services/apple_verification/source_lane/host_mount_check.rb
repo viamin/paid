@@ -20,7 +20,7 @@ module AppleVerification
 
       def call
         workspace_mounts.any? { |mount| writable_host_workspace_mount?(mount) }
-      rescue Docker::Error::DockerError, KeyError, NoMethodError, TypeError => error
+      rescue Docker::Error::DockerError, KeyError, TypeError => error
         raise InspectionUnavailableError, "cannot inspect the paid-agent container mount table: #{error.message}"
       end
 
@@ -29,7 +29,12 @@ module AppleVerification
       attr_reader :agent_run
 
       def workspace_mounts
-        mounts = container.info.fetch("Mounts")
+        inspected_container = container
+        unless inspected_container.respond_to?(:info)
+          raise InspectionUnavailableError, "cannot inspect the paid-agent container mount table"
+        end
+
+        mounts = inspected_container.info.fetch("Mounts")
         raise InspectionUnavailableError, "paid-agent container mount table is invalid" unless mounts.is_a?(Array) && mounts.all?(Hash)
 
         mounts
