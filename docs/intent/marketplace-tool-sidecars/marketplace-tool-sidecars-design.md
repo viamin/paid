@@ -7,13 +7,14 @@ prefix: TOOL-SIDECAR
 
 > Companion to [`docs/high-level-design.md`](../../high-level-design.md) and
 > [`docs/rdrs/RDR-073-marketplace-tool-sidecars.md`](../../rdrs/RDR-073-marketplace-tool-sidecars.md).
-> Captures the per-run hardened sidecar provisioning shape — the third `install_type`
-> arm on `Containers::McpProvisioner#provision` that the RDR designates.
+> Captures the marketplace attachment contract and per-run hardened sidecar
+> provisioning shape that RDR-073 designates.
 
 ## Purpose
 
 A `MarketplaceEntry` of `entry_type: "tool"` publishes a Docker tool sidecar
-(`install_type: "tool"`, `image`, `port`, optional `env`) and must be
+(`install_type: "tool"`, `image`, `port`, optional `env`, `alias`, and
+`hardening`) and must be
 provisioned as a hardened per-run sidecar on the agent network, never as a
 plain MCP url server. The shape extends the existing `docker_image` MCP
 sidecar machinery so all networking, aliasing, idempotent adoption, retry-safe
@@ -22,6 +23,23 @@ without hardening, the tool path builds through the
 `Containers::ServiceProvisioner` hardening profile path so every tool sidecar
 ships with the same baseline controls already required for service containers
 (`CONTAINER-RUNTIME-040`).
+
+## Attachment Contract
+
+Tool versions validate their canonical artifact and every provider renderer
+that can replace it before publication. Each effective artifact requires
+`install_type: "tool"`, a non-empty image string, and an integer TCP port in
+the range 1–65535. Optional `env` and `hardening` values are objects; an
+optional `alias` is a non-empty string. At attachment time `Renderer` emits
+the `tool_sidecar` strategy. `RuntimeAttachments` writes those definitions to
+the run's immutable `tool_sidecar_snapshot`, never `mcp_server_snapshot`, and
+adds marketplace provenance. The entry name is the default sidecar name; an
+explicit alias replaces it. The optional hardening object is carried under the
+existing `PAID_SERVICE_HARDENING` environment key for the provisioner.
+
+This attachment behavior applies uniformly to automatic, team-default, and
+manual resolver results. The snapshot remains recorded while the rollout flag
+is off; only provisioning is suppressed by the guard.
 
 ## Runtime Contract
 
