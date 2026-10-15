@@ -8,9 +8,10 @@
 
 - [x] **TOOL-SIDECAR-001** — When a marketplace entry with `entry_type:
   "tool"` is attached by the resolver (automatic, team-default, or manual),
-  its version SHALL require `install_type: "tool"`, a non-empty `image`, and
-  an integer `port` from 1 through 65535. Optional `env` and `hardening`
-  values SHALL be objects and optional `alias` SHALL be a non-empty string.
+  its canonical artifact and every provider renderer that can replace it SHALL
+  require `install_type: "tool"`, a non-empty `image`, and an integer `port`
+  from 1 through 65535. Optional `env` and `hardening` values SHALL be objects
+  and optional `alias` SHALL be a non-empty string.
   The renderer SHALL emit `tool_sidecar`, and the attachment pipeline SHALL
   add the normalized definition and marketplace provenance to the run's
   `tool_sidecar_snapshot`, not its MCP snapshot.

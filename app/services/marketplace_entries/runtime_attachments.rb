@@ -70,6 +70,7 @@ module MarketplaceEntries
 
         payload = rendered_payload["payload"]
         next unless payload.is_a?(Hash)
+        next if MarketplaceEntryVersion.tool_payload_errors(payload).any?
 
         tool_sidecar_snapshot(payload, attachment)
       end

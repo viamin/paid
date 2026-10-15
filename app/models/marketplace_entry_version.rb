@@ -14,11 +14,25 @@ class MarketplaceEntryVersion < ApplicationRecord
   validate :tool_canonical_artifact_contract
   validate :renderers_is_object
   validate :renderer_payloads_are_objects
+  validate :tool_renderer_contract
   validate :compatibility_constraints_is_object
   validate :review_metadata_is_object
 
   def compatibility_for(key)
     compatibility_constraints[key.to_s]
+  end
+
+  def self.tool_payload_errors(payload)
+    return [ "must be an object" ] unless payload.is_a?(Hash)
+
+    errors = []
+    errors << 'install_type must be "tool"' unless payload["install_type"] == "tool"
+    errors << "image must be a non-empty string" unless payload["image"].is_a?(String) && payload["image"].strip.present?
+    errors << "port must be an integer between 1 and 65535" unless payload["port"].is_a?(Integer) && payload["port"].between?(1, 65_535)
+    errors << "env must be an object" if payload.key?("env") && !payload["env"].is_a?(Hash)
+    errors << "hardening must be an object" if payload.key?("hardening") && !payload["hardening"].is_a?(Hash)
+    errors << "alias must be a non-empty string" if payload.key?("alias") && (!payload["alias"].is_a?(String) || payload["alias"].strip.blank?)
+    errors
   end
 
   private
@@ -37,51 +51,24 @@ class MarketplaceEntryVersion < ApplicationRecord
   # @spec TOOL-SIDECAR-001
   def tool_canonical_artifact_contract
     return unless marketplace_entry&.entry_type == "tool"
-    return unless canonical_artifact.is_a?(Hash)
 
-    validate_tool_install_type
-    validate_tool_image
-    validate_tool_port
-    validate_tool_optionals
+    add_tool_payload_errors(canonical_artifact, :canonical_artifact)
   end
 
-  def validate_tool_install_type
-    return if canonical_artifact["install_type"] == "tool"
+  def tool_renderer_contract
+    return unless marketplace_entry&.entry_type == "tool"
+    return unless renderers.is_a?(Hash)
 
-    errors.add(:canonical_artifact, "install_type must be \"tool\"")
+    renderers.each do |provider_key, payload|
+      add_tool_payload_errors(payload, :renderers, provider_key:)
+    end
   end
 
-  def validate_tool_image
-    return if canonical_artifact["image"].is_a?(String) && canonical_artifact["image"].strip.present?
-
-    errors.add(:canonical_artifact, "image must be a non-empty string")
-  end
-
-  def validate_tool_port
-    port = canonical_artifact["port"]
-    return if port.is_a?(Integer) && port.between?(1, 65_535)
-
-    errors.add(:canonical_artifact, "port must be an integer between 1 and 65535")
-  end
-
-  def validate_tool_optionals
-    validate_tool_object("env")
-    validate_tool_alias
-    validate_tool_object("hardening")
-  end
-
-  def validate_tool_object(key)
-    return if !canonical_artifact.key?(key) || canonical_artifact[key].is_a?(Hash)
-
-    errors.add(:canonical_artifact, "#{key} must be an object")
-  end
-
-  def validate_tool_alias
-    alias_name = canonical_artifact["alias"]
-    return unless canonical_artifact.key?("alias")
-    return if alias_name.is_a?(String) && alias_name.strip.present?
-
-    errors.add(:canonical_artifact, "alias must be a non-empty string")
+  def add_tool_payload_errors(payload, attribute, provider_key: nil)
+    self.class.tool_payload_errors(payload).each do |message|
+      message = "#{provider_key} #{message}" if provider_key
+      errors.add(attribute, message)
+    end
   end
 
   def renderers_is_object

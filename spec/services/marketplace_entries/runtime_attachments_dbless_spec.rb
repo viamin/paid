@@ -54,6 +54,23 @@ RSpec.describe MarketplaceEntries::RuntimeAttachments, :no_db do
     )
   end
 
+  it "rejects malformed provider-specific tool renderers before snapshotting" do # @spec TOOL-SIDECAR-001
+    attachment = build_tool_attachment
+    attachment.marketplace_entry.entry_type = "tool"
+    attachment.marketplace_entry_version.renderers = {
+      "codex" => {
+        "install_type" => "tool",
+        "image" => "acme/search:1.0",
+        "port" => 8080,
+        "env" => [],
+        "hardening" => {}
+      }
+    }
+    agent_run = build_agent_run([ attachment ])
+
+    expect(described_class.tool_sidecar_snapshots(agent_run, provider_key: "codex")).to be_empty
+  end
+
   it "ignores unsafe runtime file paths" do
     agent_run = build_agent_run([
       build_attachment(

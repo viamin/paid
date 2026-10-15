@@ -26,10 +26,11 @@ ships with the same baseline controls already required for service containers
 
 ## Attachment Contract
 
-Tool versions validate their canonical artifact before publication. The artifact
-requires `install_type: "tool"`, a non-empty image string, and an integer TCP
-port in the range 1–65535. Optional `env` and `hardening` values are objects;
-an optional `alias` is a non-empty string. At attachment time `Renderer` emits
+Tool versions validate their canonical artifact and every provider renderer
+that can replace it before publication. Each effective artifact requires
+`install_type: "tool"`, a non-empty image string, and an integer TCP port in
+the range 1–65535. Optional `env` and `hardening` values are objects; an
+optional `alias` is a non-empty string. At attachment time `Renderer` emits
 the `tool_sidecar` strategy. `RuntimeAttachments` writes those definitions to
 the run's immutable `tool_sidecar_snapshot`, never `mcp_server_snapshot`, and
 adds marketplace provenance. The entry name is the default sidecar name; an

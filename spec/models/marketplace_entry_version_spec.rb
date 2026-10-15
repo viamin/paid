@@ -27,6 +27,19 @@ RSpec.describe MarketplaceEntryVersion do
       expect(version).to be_valid
     end
 
+    it "rejects a tool renderer whose env is not an object" do # @spec TOOL-SIDECAR-001
+      entry = build(:marketplace_entry, entry_type: "tool")
+      version = build(:marketplace_entry_version,
+        marketplace_entry: entry,
+        canonical_artifact: valid_tool_artifact,
+        renderers: {
+          "codex" => valid_tool_artifact.merge("env" => [])
+        })
+
+      expect(version).not_to be_valid
+      expect(version.errors[:renderers]).to include("codex env must be an object")
+    end
+
     [
       [ {}, "install_type must be \"tool\"" ],
       [ { "install_type" => "docker_image", "image" => "acme/search:1.0", "port" => 8080 }, "install_type must be \"tool\"" ],
@@ -61,5 +74,13 @@ RSpec.describe MarketplaceEntryVersion do
       expect(version.errors[:base]).to include("cannot delete marketplace entry versions that have been attached to agent runs")
       expect(described_class.exists?(version.id)).to be(true)
     end
+  end
+
+  def valid_tool_artifact
+    {
+      "install_type" => "tool",
+      "image" => "acme/search:1.0",
+      "port" => 8080
+    }
   end
 end
